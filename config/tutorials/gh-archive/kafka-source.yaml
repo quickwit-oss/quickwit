@@ -1,4 +1,4 @@
-version: 0.6
+version: 0.7
 source_id: kafka-source
 source_type: kafka
 max_num_pipelines_per_indexer: 1

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -45,6 +45,10 @@ impl PartitionId {
     /// Returns the partition ID as a `u64`.
     pub fn as_u64(&self) -> Option<u64> {
         self.0.parse().ok()
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -239,8 +243,9 @@ impl<'de> Deserialize<'de> for SourceCheckpoint {
 /// the checkpoint.
 #[derive(Clone, Debug, Error, Eq, PartialEq, Serialize, Deserialize)]
 #[error(
-    "incompatible checkpoint delta at partition `{partition_id}`: cur_pos:{partition_position:?} \
-     delta_pos:{delta_from_position:?}"
+    "incompatible checkpoint delta at partition `{partition_id}`: end position is \
+     `{partition_position:?}` (inclusive), whereas delta starts at `{delta_from_position:?}` \
+     (exclusive)"
 )]
 pub struct IncompatibleCheckpointDelta {
     /// The partition ID for which the incompatibility has been detected.

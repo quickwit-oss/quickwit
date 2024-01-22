@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -29,7 +29,7 @@ use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use super::RestConfig;
+use super::{GrpcConfig, RestConfig};
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
@@ -142,17 +142,18 @@ pub async fn load_node_config_with_env(
 #[derive(Debug, Deserialize)]
 #[serde(tag = "version")]
 enum VersionedNodeConfig {
-    #[serde(rename = "0.6")]
+    #[serde(rename = "0.7")]
     // Retro compatibility.
+    #[serde(alias = "0.6")]
     #[serde(alias = "0.5")]
     #[serde(alias = "0.4")]
-    V0_6(NodeConfigBuilder),
+    V0_7(NodeConfigBuilder),
 }
 
 impl From<VersionedNodeConfig> for NodeConfigBuilder {
     fn from(versioned_node_config: VersionedNodeConfig) -> Self {
         match versioned_node_config {
-            VersionedNodeConfig::V0_6(node_config_builder) => node_config_builder,
+            VersionedNodeConfig::V0_7(node_config_builder) => node_config_builder,
         }
     }
 }
@@ -184,6 +185,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "rest")]
     #[serde(default)]
     rest_config_builder: RestConfigBuilder,
+    #[serde(rename = "grpc")]
+    #[serde(default)]
+    grpc_config: GrpcConfig,
     #[serde(rename = "storage")]
     #[serde(default)]
     storage_configs: StorageConfigs,
@@ -236,6 +240,8 @@ impl NodeConfigBuilder {
         let rest_config = self
             .rest_config_builder
             .build_and_validate(listen_ip, env_vars)?;
+
+        self.grpc_config.validate()?;
 
         let gossip_listen_port = self
             .gossip_listen_port
@@ -296,6 +302,7 @@ impl NodeConfigBuilder {
             metastore_uri,
             default_index_root_uri,
             rest_config,
+            grpc_config: self.grpc_config,
             metastore_configs: self.metastore_configs,
             storage_configs: self.storage_configs,
             indexer_config: self.indexer_config,
@@ -342,6 +349,7 @@ impl Default for NodeConfigBuilder {
             metastore_uri: ConfigValue::none(),
             default_index_root_uri: ConfigValue::none(),
             rest_config_builder: RestConfigBuilder::default(),
+            grpc_config: GrpcConfig::default(),
             storage_configs: StorageConfigs::default(),
             metastore_configs: MetastoreConfigs::default(),
             indexer_config: IndexerConfig::default(),
@@ -433,6 +441,7 @@ pub fn node_config_for_test() -> NodeConfig {
         metastore_uri,
         default_index_root_uri,
         rest_config,
+        grpc_config: GrpcConfig::default(),
         storage_configs: StorageConfigs::default(),
         metastore_configs: MetastoreConfigs::default(),
         indexer_config: IndexerConfig::default(),
@@ -487,6 +496,8 @@ mod tests {
             config.rest_config.extra_headers.get("x-header-2").unwrap(),
             "header-value-2"
         );
+        assert_eq!(config.grpc_config.max_message_size, ByteSize::mb(10));
+
         assert_eq!(
             config.gossip_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 2222)
@@ -617,7 +628,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_node_config_default_values_minimal() {
-        let config_yaml = "version: 0.6";
+        let config_yaml = "version: 0.7";
         let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
@@ -666,7 +677,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_node_config_env_var_override() {
-        let config_yaml = "version: 0.6";
+        let config_yaml = "version: 0.7";
         let mut env_vars = HashMap::new();
         env_vars.insert("QW_CLUSTER_ID".to_string(), "test-cluster".to_string());
         env_vars.insert("QW_NODE_ID".to_string(), "test-node".to_string());
@@ -748,7 +759,7 @@ mod tests {
     #[tokio::test]
     async fn test_quickwwit_config_default_values_storage() {
         let config_yaml = r#"
-            version: 0.6
+            version: 0.7
             node_id: "node-1"
             metastore_uri: postgres://username:password@host:port/db
         "#;
@@ -770,7 +781,7 @@ mod tests {
     #[tokio::test]
     async fn test_node_config_config_default_values_default_indexer_searcher_config() {
         let config_yaml = r#"
-            version: 0.6
+            version: 0.7
             metastore_uri: postgres://username:password@host:port/db
             data_dir: /opt/quickwit/data
         "#;
@@ -956,7 +967,7 @@ mod tests {
     async fn test_config_validates_uris() {
         {
             let config_yaml = r#"
-            version: 0.6
+            version: 0.7
             node_id: 1
             metastore_uri: ''
         "#;
@@ -970,7 +981,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-            version: 0.6
+            version: 0.7
             node_id: 1
             metastore_uri: postgres://username:password@host:port/db
             default_index_root_uri: ''
@@ -989,7 +1000,7 @@ mod tests {
     async fn test_node_config_data_dir_accepts_both_file_uris_and_file_paths() {
         {
             let config_yaml = r#"
-                version: 0.6
+                version: 0.7
                 data_dir: /opt/quickwit/data
             "#;
             let config = load_node_config_with_env(
@@ -1003,7 +1014,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-                version: 0.6
+                version: 0.7
                 data_dir: file:///opt/quickwit/data
             "#;
             let config = load_node_config_with_env(
@@ -1017,7 +1028,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-                version: 0.6
+                version: 0.7
                 data_dir: s3://indexes/foo
             "#;
             let error = load_node_config_with_env(
@@ -1034,7 +1045,7 @@ mod tests {
     #[tokio::test]
     async fn test_config_invalid_when_both_listen_ports_params_are_configured() {
         let config_yaml = r#"
-                version: 0.6
+                version: 0.7
                 rest_listen_port: 1789
                 rest:
                   listen_port: 1789
@@ -1069,7 +1080,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_config_accepts_wildcard() {
         let rest_config_yaml = r#"
-            version: 0.6
+            version: 0.7
             rest:
               cors_allow_origins: '*'
         "#;
@@ -1086,7 +1097,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_config_accepts_single_origin() {
         let rest_config_yaml = r#"
-            version: 0.6
+            version: 0.7
             rest:
               cors_allow_origins:
                 - https://www.my-domain.com
@@ -1104,7 +1115,7 @@ mod tests {
         );
 
         let rest_config_yaml = r#"
-            version: 0.6
+            version: 0.7
             rest:
               cors_allow_origins: http://192.168.0.108:7280
         "#;
@@ -1124,8 +1135,8 @@ mod tests {
     #[tokio::test]
     async fn test_rest_config_accepts_multi_origin() {
         let rest_config_yaml = r#"
-            version: 0.6
-            rest: 
+            version: 0.7
+            rest:
               cors_allow_origins:
                 - https://www.my-domain.com
         "#;
@@ -1142,7 +1153,7 @@ mod tests {
         );
 
         let rest_config_yaml = r#"
-            version: 0.6
+            version: 0.7
             rest:
               cors_allow_origins:
                 - https://www.my-domain.com
@@ -1164,7 +1175,7 @@ mod tests {
         );
 
         let rest_config_yaml = r#"
-            version: 0.6
+            version: 0.7
             rest:
               rest_cors_allow_origins:
         "#;
@@ -1177,7 +1188,7 @@ mod tests {
         .expect_err("Config should not allow empty origins.");
 
         let rest_config_yaml = r#"
-            version: 0.6
+            version: 0.7
             rest:
               cors_allow_origins:
                 -
@@ -1208,7 +1219,7 @@ mod tests {
         assert!(error_message.contains("either 1 or 2, got `3`"));
 
         let node_config_yaml = r#"
-            version: 0.6
+            version: 0.7
             ingest_api:
               replication_factor: 0
         "#;

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,12 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub mod file_backed_metastore;
+pub mod file_backed;
 pub(crate) mod index_metadata;
 #[cfg(feature = "postgres")]
-pub mod postgresql_metastore;
-#[cfg(feature = "postgres")]
-mod postgresql_model;
+pub mod postgres;
 
 pub mod control_plane_metastore;
 
@@ -49,16 +47,16 @@ use crate::checkpoint::IndexCheckpointDelta;
 use crate::{Split, SplitMetadata, SplitState};
 
 /// Splits batch size returned by the stream splits API
-const STREAM_SPLITS_CHUNK_SIZE: usize = 1_000;
+const STREAM_SPLITS_CHUNK_SIZE: usize = 100;
 
 static METASTORE_METRICS_LAYER: Lazy<PrometheusMetricsLayer<1>> =
-    Lazy::new(|| PrometheusMetricsLayer::new("metastore", ["request"]));
+    Lazy::new(|| PrometheusMetricsLayer::new("quickwit_metastore", ["request"]));
 
 pub(crate) fn instrument_metastore(
     metastore_impl: impl MetastoreService,
 ) -> MetastoreServiceClient {
     MetastoreServiceClient::tower()
-        .shared_layer(METASTORE_METRICS_LAYER.clone())
+        .stack_layer(METASTORE_METRICS_LAYER.clone())
         .build(metastore_impl)
 }
 

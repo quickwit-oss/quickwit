@@ -169,7 +169,7 @@ following syntax.
 {
   // ...
   "sort" : [
-    { "timestamp" : {"format": "epoch_millis_as_int","order" : "asc"}},
+    { "timestamp" : {"order" : "asc"}},
     { "serial_number" : "desc" }
   ]
   // ...
@@ -186,9 +186,21 @@ It is also possible to not supply an order and rely on the default order using t
 }
 ```
 
-If no format is provided for timestamps, timestamps are returned with nanosecond precision. Beware
-this means the resulting json may contain high numbers for which there is loss of precision when
-using languages where all numbers are floats, such as JavaScript.
+If no format is provided for timestamps, timestamps are returned with milliseconds precision.
+
+If you need nanosecond precision, you can use the `epoch_nanos_int` format. Beware this means the resulting
+JSON may contain high numbers for which there is loss of precision when using languages where all numbers are
+floats, such as JavaScript.
+
+```json
+{
+  // ...
+  "sort" : [
+    { "timestamp" : {"format": "epoch_nanos_int","order" : "asc"}},
+    { "serial_number" : "desc" }
+  ]
+  // ...
+}
 
 #### Search after
 
@@ -204,7 +216,7 @@ When sorting results, the answer looks like the following
       {
         // ...
         "sort": [
-          1701962929199000000
+          1701962929199
         ]
       }
     ]
@@ -217,7 +229,7 @@ You can pass the `sort` value of the last hit in a subsequent request where othe
 {
   // keep all fields from the original request
   "seach_after": [
-    1701962929199000000
+    1701962929199
   ]
 }
 ```

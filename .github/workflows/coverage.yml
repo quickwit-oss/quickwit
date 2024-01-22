@@ -26,6 +26,7 @@ jobs:
   test:
     name: Coverage
     runs-on: buildjet-8vcpu-ubuntu-2204 # ubuntu-latest
+    timeout-minutes: 40
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
       localstack:
@@ -41,9 +42,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
       postgres:
         image: postgres:latest
@@ -58,9 +56,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
       kafka-broker:
         image: confluentinc/cp-kafka:7.2.1
@@ -84,9 +79,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
       zookeeper:
         image: confluentinc/cp-zookeeper:7.2.1
@@ -101,9 +93,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
       gcp-pubsub-emulator:
         image: thekevjames/gcloud-pubsub-emulator:7555256f2c
@@ -111,9 +100,6 @@ jobs:
           - "9898:8681"
         env:
           PUBSUB_PROJECT1: "quickwit-emulator,emulator_topic:emulator_subscription"
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -145,6 +131,11 @@ jobs:
       # so we are running Azurite as a container manually.
       - name: Run Azurite service
         run: DOCKER_SERVICES=azurite make docker-compose-up
+
+      # GitHub Actions does not allow services to be started with a custom command,
+      # so we are running fake gcs server as a container manually.
+      - name: Run Fake GCS Server service
+        run: DOCKER_SERVICES=fake-gcs-server make docker-compose-up
 
       - name: Run Pulsar service
         run: DOCKER_SERVICES=pulsar make docker-compose-up

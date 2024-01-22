@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -19,19 +19,22 @@
 
 mod build_info;
 mod cluster_api;
+mod debugging_api;
 mod delete_task_api;
-mod elastic_search_api;
+mod elasticsearch_api;
 mod format;
 mod grpc;
 mod health_check_api;
 mod index_api;
 mod indexing_api;
 mod ingest_api;
+mod jaeger_api;
 mod json_api_response;
 mod metrics;
 mod metrics_api;
 mod node_info_handler;
 mod openapi;
+mod otlp_api;
 mod rate_modulator;
 mod rest;
 mod search_api;
@@ -76,6 +79,7 @@ use quickwit_ingest::{
     GetMemoryCapacity, IngestApiService, IngestRequest, IngestRouter, IngestServiceClient,
     Ingester, IngesterPool, LocalShardsUpdate,
 };
+use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
@@ -130,6 +134,9 @@ struct QuickwitServices {
     pub ingest_router_service: IngestRouterServiceClient,
     pub ingester_service_opt: Option<IngesterServiceClient>,
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
+    pub jaeger_service_opt: Option<JaegerService>,
+    pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
+    pub otlp_traces_service_opt: Option<OtlpGrpcTracesService>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
@@ -193,7 +200,7 @@ async fn start_ingest_client_if_needed(
         let min_rate = ConstantRate::new(ByteSize::mib(1).as_u64(), Duration::from_millis(100));
         let rate_modulator = RateModulator::new(rate_estimator.clone(), memory_capacity, min_rate);
         let ingest_service = IngestServiceClient::tower()
-            .ingest_layer(
+            .stack_ingest_layer(
                 ServiceBuilder::new()
                     .layer(EstimateRateLayer::<IngestRequest, _>::new(rate_estimator))
                     .layer(BufferLayer::new(100))
@@ -204,7 +211,10 @@ async fn start_ingest_client_if_needed(
         Ok(ingest_service)
     } else {
         let balance_channel = balance_channel_for_service(cluster, QuickwitService::Indexer).await;
-        let ingest_service = IngestServiceClient::from_balance_channel(balance_channel);
+        let ingest_service = IngestServiceClient::from_balance_channel(
+            balance_channel,
+            node_config.grpc_config.max_message_size,
+        );
         Ok(ingest_service)
     }
 }
@@ -253,6 +263,7 @@ async fn start_control_plane_if_needed(
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
         Ok(ControlPlaneServiceClient::from_balance_channel(
             balance_channel,
+            node_config.grpc_config.max_message_size,
         ))
     }
 }
@@ -270,6 +281,7 @@ pub async fn serve_quickwit(
     let indexer_pool = IndexerPool::default();
     let ingester_pool = IngesterPool::default();
     let universe = Universe::new();
+    let grpc_config = node_config.grpc_config.clone();
 
     // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
     let metastore_server_opt: Option<MetastoreServiceClient> =
@@ -279,11 +291,11 @@ pub async fn serve_quickwit(
                 .await?;
             let broker_layer = EventListenerLayer::new(event_broker.clone());
             let metastore = MetastoreServiceClient::tower()
-                .create_index_layer(broker_layer.clone())
-                .delete_index_layer(broker_layer.clone())
-                .add_source_layer(broker_layer.clone())
-                .delete_source_layer(broker_layer.clone())
-                .toggle_source_layer(broker_layer)
+                .stack_create_index_layer(broker_layer.clone())
+                .stack_delete_index_layer(broker_layer.clone())
+                .stack_add_source_layer(broker_layer.clone())
+                .stack_delete_source_layer(broker_layer.clone())
+                .stack_toggle_source_layer(broker_layer)
                 .build(metastore);
             Some(metastore)
         } else {
@@ -310,10 +322,13 @@ pub async fn serve_quickwit(
 
             let balance_channel =
                 balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
-            let metastore_client = MetastoreServiceClient::from_balance_channel(balance_channel);
+            let metastore_client = MetastoreServiceClient::from_balance_channel(
+                balance_channel,
+                grpc_config.max_message_size,
+            );
             let retry_layer = RetryLayer::new(RetryPolicy::default());
             MetastoreServiceClient::tower()
-                .shared_layer(retry_layer)
+                .stack_layer(retry_layer)
                 .build(metastore_client)
         };
 
@@ -374,6 +389,7 @@ pub async fn serve_quickwit(
     // Setup indexer pool.
     let cluster_change_stream = cluster.ready_nodes_change_stream().await;
     setup_indexer_pool(
+        &node_config,
         cluster_change_stream,
         indexer_pool.clone(),
         indexing_service_opt.clone(),
@@ -440,6 +456,7 @@ pub async fn serve_quickwit(
     ));
 
     let (search_job_placer, search_service) = setup_searcher(
+        &node_config,
         cluster_change_stream,
         metastore_through_control_plane.clone(),
         storage_resolver.clone(),
@@ -483,6 +500,34 @@ pub async fn serve_quickwit(
         None
     };
 
+    let jaeger_service_opt = if node_config.jaeger_config.enable_endpoint
+        && node_config.is_service_enabled(QuickwitService::Searcher)
+    {
+        let search_service = search_service.clone();
+        Some(JaegerService::new(
+            node_config.jaeger_config.clone(),
+            search_service,
+        ))
+    } else {
+        None
+    };
+
+    let otlp_logs_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer)
+        && node_config.indexer_config.enable_otlp_endpoint
+    {
+        Some(OtlpGrpcLogsService::new(ingest_service.clone()))
+    } else {
+        None
+    };
+
+    let otlp_traces_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer)
+        && node_config.indexer_config.enable_otlp_endpoint
+    {
+        Some(OtlpGrpcTracesService::new(ingest_service.clone(), None))
+    } else {
+        None
+    };
+
     let grpc_listen_addr = node_config.grpc_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
@@ -499,6 +544,9 @@ pub async fn serve_quickwit(
         ingest_service,
         ingester_service_opt: ingester_service_opt.clone(),
         janitor_service_opt,
+        jaeger_service_opt,
+        otlp_logs_service_opt,
+        otlp_traces_service_opt,
         search_service,
     });
     // Setup and start gRPC server.
@@ -516,6 +564,7 @@ pub async fn serve_quickwit(
     });
     let grpc_server = grpc::start_grpc_server(
         grpc_listen_addr,
+        grpc_config.max_message_size,
         quickwit_services.clone(),
         grpc_readiness_trigger,
         grpc_shutdown_signal,
@@ -581,7 +630,7 @@ pub async fn serve_quickwit(
 }
 
 async fn setup_ingest_v2(
-    config: &NodeConfig,
+    node_config: &NodeConfig,
     cluster: &Cluster,
     event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
@@ -589,7 +638,7 @@ async fn setup_ingest_v2(
 ) -> anyhow::Result<(IngestRouterServiceClient, Option<IngesterServiceClient>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
-    let replication_factor = config
+    let replication_factor = node_config
         .ingest_api_config
         .replication_factor()
         .expect("replication factor should have been validated")
@@ -606,22 +655,22 @@ async fn setup_ingest_v2(
     // We compute the burst limit as something a bit larger than the content length limit, because
     // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
     // line length is prefixed.
-    let burst_limit = (config.ingest_api_config.content_length_limit.as_u64() * 3 / 2)
+    let burst_limit = (node_config.ingest_api_config.content_length_limit.as_u64() * 3 / 2)
         .clamp(10_000_000, 200_000_000);
     let rate_limiter_settings = RateLimiterSettings {
         burst_limit,
         ..Default::default()
     };
     // Instantiate ingester.
-    let ingester_service_opt = if config.is_service_enabled(QuickwitService::Indexer) {
-        let wal_dir_path = config.data_dir_path.join("wal");
+    let ingester_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+        let wal_dir_path = node_config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
         let ingester = Ingester::try_new(
             cluster.clone(),
             ingester_pool.clone(),
             &wal_dir_path,
-            config.ingest_api_config.max_queue_disk_usage,
-            config.ingest_api_config.max_queue_memory_usage,
+            node_config.ingest_api_config.max_queue_disk_usage,
+            node_config.ingest_api_config.max_queue_memory_usage,
             rate_limiter_settings,
             replication_factor,
         )
@@ -635,6 +684,7 @@ async fn setup_ingest_v2(
     // Setup ingester pool change stream.
     let ingester_service_opt_clone = ingester_service_opt.clone();
     let cluster_change_stream = cluster.ready_nodes_change_stream().await;
+    let max_message_size = node_config.grpc_config.max_message_size;
     let ingester_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let ingester_service_opt = ingester_service_opt_clone.clone();
         Box::pin(async move {
@@ -652,6 +702,7 @@ async fn setup_ingest_v2(
                         let ingester_service = IngesterServiceClient::from_channel(
                             node.grpc_advertise_addr(),
                             node.channel(),
+                            max_message_size,
                         );
                         Some(Change::Insert(node_id, ingester_service))
                     }
@@ -666,6 +717,7 @@ async fn setup_ingest_v2(
 }
 
 async fn setup_searcher(
+    node_config: &NodeConfig,
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
@@ -681,6 +733,7 @@ async fn setup_searcher(
     )
     .await?;
     let search_service_clone = search_service.clone();
+    let max_message_size = node_config.grpc_config.max_message_size;
     let searcher_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let search_service_clone = search_service_clone.clone();
         Box::pin(async move {
@@ -696,8 +749,11 @@ async fn setup_searcher(
                         Some(Change::Insert(grpc_addr, search_client))
                     } else {
                         let timeout_channel = Timeout::new(node.channel(), Duration::from_secs(30));
-                        let search_client =
-                            create_search_client_from_channel(grpc_addr, timeout_channel);
+                        let search_client = create_search_client_from_channel(
+                            grpc_addr,
+                            timeout_channel,
+                            max_message_size,
+                        );
                         Some(Change::Insert(grpc_addr, search_client))
                     }
                 }
@@ -743,10 +799,12 @@ async fn setup_control_plane(
 }
 
 fn setup_indexer_pool(
+    node_config: &NodeConfig,
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
     indexer_pool: IndexerPool,
     indexing_service_opt: Option<Mailbox<IndexingService>>,
 ) {
+    let max_message_size = node_config.grpc_config.max_message_size;
     let indexer_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let indexing_service_clone_opt = indexing_service_opt.clone();
         Box::pin(async move {
@@ -778,6 +836,7 @@ fn setup_indexer_pool(
                         let client = IndexingServiceClient::from_channel(
                             node.grpc_advertise_addr(),
                             node.channel(),
+                            max_message_size,
                         );
                         Some(Change::Insert(
                             node_id,
@@ -986,11 +1045,13 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (indexing_service_mailbox, _indexing_service_inbox) =
             universe.create_test_mailbox::<IndexingService>();
+        let node_config = NodeConfig::for_test();
 
         let (indexer_change_stream_tx, indexer_change_stream_rx) = mpsc::channel(3);
         let indexer_change_stream = ReceiverStream::new(indexer_change_stream_rx);
         let indexer_pool = IndexerPool::default();
         setup_indexer_pool(
+            &node_config,
             indexer_change_stream,
             indexer_pool.clone(),
             Some(indexing_service_mailbox),
@@ -1047,15 +1108,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_setup_searcher() {
+        let node_config = NodeConfig::for_test();
         let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default(), None));
         let metastore = metastore_for_test();
         let (change_stream_tx, change_stream_rx) = mpsc::unbounded_channel();
         let change_stream = UnboundedReceiverStream::new(change_stream_rx);
         let storage_resolver = StorageResolver::unconfigured();
-        let (search_job_placer, _searcher_service) =
-            setup_searcher(change_stream, metastore, storage_resolver, searcher_context)
-                .await
-                .unwrap();
+        let (search_job_placer, _searcher_service) = setup_searcher(
+            &node_config,
+            change_stream,
+            metastore,
+            storage_resolver,
+            searcher_context,
+        )
+        .await
+        .unwrap();
 
         struct DummyJob(String);
 

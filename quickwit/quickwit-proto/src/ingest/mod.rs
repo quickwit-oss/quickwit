@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -37,12 +37,15 @@ pub type IngestV2Result<T> = std::result::Result<T, IngestV2Error>;
 pub enum IngestV2Error {
     #[error("an internal error occurred: {0}")]
     Internal(String),
+    /// Emitted when an ingester was not available for a given operation,
+    /// either directly or through replication.
     #[error("failed to connect to ingester `{ingester_id}`")]
     IngesterUnavailable { ingester_id: NodeId },
     #[error("shard `{shard_id}` not found")]
     ShardNotFound { shard_id: ShardId },
     #[error("request timed out")]
     Timeout,
+    // This error is provoked by semaphore located on the router.
     #[error("too many requests")]
     TooManyRequests,
     // TODO: Merge `Transport` and `IngesterUnavailable` into a single `Unavailable` error.
@@ -82,7 +85,6 @@ impl From<IngestV2Error> for tonic::Status {
 
 impl From<tonic::Status> for IngestV2Error {
     fn from(status: tonic::Status) -> Self {
-        dbg!(&status);
         match status.code() {
             tonic::Code::Unavailable => IngestV2Error::Transport(status.message().to_string()),
             tonic::Code::ResourceExhausted => IngestV2Error::TooManyRequests,
@@ -101,6 +103,16 @@ impl ServiceError for IngestV2Error {
             Self::Transport { .. } => ServiceErrorCode::Unavailable,
             Self::TooManyRequests => ServiceErrorCode::RateLimited,
         }
+    }
+}
+
+impl Shard {
+    /// List of nodes that are storing the shard (the leader, and optionally the follower).
+    pub fn ingester_nodes(&self) -> impl Iterator<Item = NodeId> + '_ {
+        [Some(&self.leader_id), self.follower_id.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(|node_id| NodeId::new(node_id.clone()))
     }
 }
 
@@ -183,6 +195,12 @@ impl MRecordBatch {
 }
 
 impl Shard {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
     pub fn is_open(&self) -> bool {
         self.shard_state().is_open()
     }
@@ -196,11 +214,13 @@ impl Shard {
     }
 
     pub fn queue_id(&self) -> super::types::QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
     }
 
-    pub fn publish_position_inclusive(&self) -> Position {
-        self.publish_position_inclusive.clone().unwrap_or_default()
+    pub fn publish_position_inclusive(&self) -> &Position {
+        self.publish_position_inclusive
+            .as_ref()
+            .expect("`publish_position_inclusive` should be a required field")
     }
 }
 
@@ -241,7 +261,7 @@ impl ShardIds {
     pub fn queue_ids(&self) -> impl Iterator<Item = QueueId> + '_ {
         self.shard_ids
             .iter()
-            .map(|shard_id| queue_id(&self.index_uid, &self.source_id, *shard_id))
+            .map(|shard_id| queue_id(&self.index_uid, &self.source_id, shard_id))
     }
 }
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -199,7 +199,7 @@ impl Handler<Loop> for GarbageCollector {
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         self.handle_inner(ctx).await;
-        ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
+        ctx.schedule_self_msg(RUN_INTERVAL, Loop);
         Ok(())
     }
 }

@@ -1,4 +1,4 @@
-version = "0.6"
+version = "0.7"
 
 cluster_id = "quickwit-cluster"
 node_id = "my-unique-node-id"
@@ -18,6 +18,9 @@ listen_port = 1111
 [rest.extra_headers]
 x-header-1 = "header-value-1"
 x-header-2 = "header-value-2"
+
+[grpc]
+max_message_size = "10 MB"
 
 [storage.azure]
 account = "quickwit-dev"

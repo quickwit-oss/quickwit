@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -523,7 +523,7 @@ impl IndexingService {
                 continue;
             };
             let assignment = Assignment {
-                shard_ids: task.shard_ids.iter().copied().collect(),
+                shard_ids: task.shard_ids.iter().cloned().collect(),
             };
             let message = AssignShards(assignment);
 
@@ -665,7 +665,7 @@ impl IndexingService {
                     .last_observation()
                     .shard_ids
                     .iter()
-                    .copied()
+                    .cloned()
                     .collect(),
             })
             .collect();
@@ -782,8 +782,7 @@ impl Handler<SuperviseLoop> for IndexingService {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.handle_supervise().await?;
-        ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, SuperviseLoop)
-            .await;
+        ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, SuperviseLoop);
         Ok(())
     }
 }

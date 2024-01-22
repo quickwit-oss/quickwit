@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -49,7 +49,7 @@ pub fn setup_logging_and_tracing(
     }
     let env_filter = env::var("RUST_LOG")
         .map(|_| EnvFilter::from_default_env())
-        .or_else(|_| EnvFilter::try_new(format!("quickwit={level}")))
+        .or_else(|_| EnvFilter::try_new(format!("quickwit={level},tantivy=WARN")))
         .context("Failed to set up tracing env filter.")?;
     global::set_text_map_propagator(TraceContextPropagator::new());
     let registry = tracing_subscriber::registry().with(env_filter);

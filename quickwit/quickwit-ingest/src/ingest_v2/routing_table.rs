@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -38,11 +38,12 @@ pub(super) struct RoutingEntry {
 
 impl From<Shard> for RoutingEntry {
     fn from(shard: Shard) -> Self {
+        let shard_id = shard.shard_id().clone();
         let shard_state = shard.shard_state();
         Self {
             index_uid: shard.index_uid.into(),
             source_id: shard.source_id,
-            shard_id: shard.shard_id,
+            shard_id,
             shard_state,
             leader_id: shard.leader_id.into(),
         }
@@ -71,8 +72,8 @@ impl RoutingTableEntry {
     ) -> Self {
         let num_shards = shards.len();
 
-        shards.sort_unstable_by_key(|shard| shard.shard_id);
-        shards.dedup_by_key(|shard| shard.shard_id);
+        shards.sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
+        shards.dedup_by(|left, right| left.shard_id == right.shard_id);
 
         let (local_shards, remote_shards): (Vec<_>, Vec<_>) = shards
             .into_iter()
@@ -88,8 +89,10 @@ impl RoutingTableEntry {
             index_uid,
             source_id,
             local_shards,
+            // local_shard_ids_range_opt,
             local_round_robin_idx: AtomicUsize::default(),
             remote_shards,
+            // remote_shard_ids_range_opt,
             remote_round_robin_idx: AtomicUsize::default(),
         }
     }
@@ -111,15 +114,25 @@ impl RoutingTableEntry {
     /// unavailable ingesters encountered along the way.
     pub fn has_open_shards(
         &self,
-        closed_shard_ids: &mut Vec<ShardId>,
         ingester_pool: &IngesterPool,
+        closed_shard_ids: &mut Vec<ShardId>,
         unavailable_leaders: &mut HashSet<NodeId>,
     ) -> bool {
-        for shards in [&self.local_shards, &self.remote_shards] {
-            for shard in shards {
-                if shard.shard_state.is_closed() {
-                    closed_shard_ids.push(shard.shard_id);
-                } else if shard.shard_state.is_open() {
+        let shards = self.local_shards.iter().chain(self.remote_shards.iter());
+
+        for shard in shards {
+            match shard.shard_state {
+                ShardState::Closed => {
+                    closed_shard_ids.push(shard.shard_id.clone());
+                    continue;
+                }
+                ShardState::Unavailable | ShardState::Unspecified => {
+                    continue;
+                }
+                ShardState::Open => {
+                    if unavailable_leaders.contains(&shard.leader_id) {
+                        continue;
+                    }
                     if ingester_pool.contains_key(&shard.leader_id) {
                         return true;
                     } else {
@@ -187,31 +200,31 @@ impl RoutingTableEntry {
 
         if num_target_shards == 0 {
             target_shards.reserve(num_target_shards);
-            target_shards.extend(shard_ids.iter().map(|&shard_id| RoutingEntry {
+            target_shards.extend(shard_ids.iter().map(|shard_id| RoutingEntry {
                 index_uid: self.index_uid.clone(),
                 source_id: self.source_id.clone(),
-                shard_id,
+                shard_id: shard_id.clone(),
                 shard_state: ShardState::Open,
                 leader_id: leader_id.clone(),
             }));
             num_inserted_shards = target_shards.len();
         } else {
-            let shard_ids_range =
-                target_shards[0].shard_id..=target_shards[num_target_shards - 1].shard_id;
+            let shard_ids_range = target_shards[0].shard_id.clone()
+                ..=target_shards[num_target_shards - 1].shard_id.clone();
 
-            for &shard_id in shard_ids {
+            for shard_id in shard_ids {
                 // If we can't find the shard, then we insert it.
-                if shard_ids_range.contains(&shard_id) {
+                if shard_ids_range.contains(shard_id) {
                     continue;
                 }
                 if target_shards[..num_target_shards]
-                    .binary_search_by_key(&shard_id, |shard| shard.shard_id)
+                    .binary_search_by(|shard| shard.shard_id.cmp(shard_id))
                     .is_err()
                 {
                     target_shards.push(RoutingEntry {
                         index_uid: self.index_uid.clone(),
                         source_id: self.source_id.clone(),
-                        shard_id,
+                        shard_id: shard_id.clone(),
                         shard_state: ShardState::Open,
                         leader_id: leader_id.clone(),
                     });
@@ -220,7 +233,7 @@ impl RoutingTableEntry {
             }
         }
         if num_inserted_shards > 0 {
-            target_shards.sort_unstable_by_key(|shard| shard.shard_id);
+            target_shards.sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
 
             info!(
                 index_id=%self.index_uid.index_id(),
@@ -250,13 +263,14 @@ impl RoutingTableEntry {
                 continue;
             }
             let num_shards = shards.len();
-            let shard_ids_range = shards[0].shard_id..=shards[num_shards - 1].shard_id;
+            let shard_ids_range =
+                shards[0].shard_id.clone()..=shards[num_shards - 1].shard_id.clone();
 
             for shard_id in shard_ids {
                 if !shard_ids_range.contains(shard_id) {
                     continue;
                 }
-                if let Ok(shard_idx) = shards.binary_search_by_key(shard_id, |shard| shard.shard_id)
+                if let Ok(shard_idx) = shards.binary_search_by(|shard| shard.shard_id.cmp(shard_id))
                 {
                     shards[shard_idx].shard_state = ShardState::Closed;
                 }
@@ -276,14 +290,15 @@ impl RoutingTableEntry {
                 continue;
             }
             let num_shards = shards.len();
-            let shard_ids_range = shards[0].shard_id..=shards[num_shards - 1].shard_id;
+            let shard_ids_range =
+                shards[0].shard_id.clone()..=shards[num_shards - 1].shard_id.clone();
             let mut deleted_any = false;
 
             for shard_id in shard_ids {
                 if !shard_ids_range.contains(shard_id) {
                     continue;
                 }
-                if let Ok(shard_idx) = shards.binary_search_by_key(shard_id, |shard| shard.shard_id)
+                if let Ok(shard_idx) = shards.binary_search_by(|shard| shard.shard_id.cmp(shard_id))
                 {
                     // We use `Unspecified` as a tombstone.
                     shards[shard_idx].shard_state = ShardState::Unspecified;
@@ -328,31 +343,36 @@ impl RoutingTable {
         self.table.get(&key)
     }
 
+    /// Returns `true` if the router already knows about a shard for a given source that has
+    /// an available `leader`.
+    ///
+    /// If this function returns false, it populates the set of unavailable leaders and closed
+    /// shards. These will be joined to the GetOrCreate shard request emitted to the control
+    /// plane.
     pub fn has_open_shards(
         &self,
         index_id: impl Into<IndexId>,
         source_id: impl Into<SourceId>,
-        closed_shards: &mut Vec<ShardIds>,
         ingester_pool: &IngesterPool,
+        closed_shards: &mut Vec<ShardIds>,
         unavailable_leaders: &mut HashSet<NodeId>,
     ) -> bool {
-        if let Some(entry) = self.find_entry(index_id, source_id) {
-            let mut closed_shard_ids: Vec<ShardId> = Vec::new();
+        let Some(entry) = self.find_entry(index_id, source_id) else {
+            return false;
+        };
+        let mut closed_shard_ids: Vec<ShardId> = Vec::new();
 
-            let result =
-                entry.has_open_shards(&mut closed_shard_ids, ingester_pool, unavailable_leaders);
+        let result =
+            entry.has_open_shards(ingester_pool, &mut closed_shard_ids, unavailable_leaders);
 
-            if !closed_shard_ids.is_empty() {
-                closed_shards.push(ShardIds {
-                    index_uid: entry.index_uid.clone().into(),
-                    source_id: entry.source_id.clone(),
-                    shard_ids: closed_shard_ids,
-                });
-            }
-            result
-        } else {
-            false
+        if !closed_shard_ids.is_empty() {
+            closed_shards.push(ShardIds {
+                index_uid: entry.index_uid.clone().into(),
+                source_id: entry.source_id.clone(),
+                shard_ids: closed_shard_ids,
+            });
         }
+        result
     }
 
     /// Replaces the routing table entry for the source with the provided shards.
@@ -472,7 +492,7 @@ mod tests {
             Shard {
                 index_uid: "test-index:0".into(),
                 source_id: "test-source".to_string(),
-                shard_id: 3,
+                shard_id: Some(ShardId::from(3)),
                 shard_state: ShardState::Open as i32,
                 leader_id: "test-node-0".to_string(),
                 ..Default::default()
@@ -480,7 +500,7 @@ mod tests {
             Shard {
                 index_uid: "test-index:0".into(),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
                 leader_id: "test-node-0".to_string(),
                 ..Default::default()
@@ -488,7 +508,7 @@ mod tests {
             Shard {
                 index_uid: "test-index:0".into(),
                 source_id: "test-source".to_string(),
-                shard_id: 2,
+                shard_id: Some(ShardId::from(2)),
                 shard_state: ShardState::Open as i32,
                 leader_id: "test-node-1".to_string(),
                 ..Default::default()
@@ -496,7 +516,7 @@ mod tests {
             Shard {
                 index_uid: "test-index:0".into(),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
                 leader_id: "test-node-0".to_string(),
                 ..Default::default()
@@ -504,7 +524,7 @@ mod tests {
             Shard {
                 index_uid: "test-index:0".into(),
                 source_id: "test-source".to_string(),
-                shard_id: 4,
+                shard_id: Some(ShardId::from(4)),
                 shard_state: ShardState::Closed as i32,
                 leader_id: "test-node-0".to_string(),
                 ..Default::default()
@@ -512,11 +532,11 @@ mod tests {
         ];
         let table_entry = RoutingTableEntry::new(&self_node_id, index_uid, source_id, shards);
         assert_eq!(table_entry.local_shards.len(), 2);
-        assert_eq!(table_entry.local_shards[0].shard_id, 1);
-        assert_eq!(table_entry.local_shards[1].shard_id, 3);
+        assert_eq!(table_entry.local_shards[0].shard_id, ShardId::from(1));
+        assert_eq!(table_entry.local_shards[1].shard_id, ShardId::from(3));
 
         assert_eq!(table_entry.remote_shards.len(), 1);
-        assert_eq!(table_entry.remote_shards[0].shard_id, 2);
+        assert_eq!(table_entry.remote_shards[0].shard_id, ShardId::from(2));
     }
 
     #[test]
@@ -530,8 +550,8 @@ mod tests {
         let mut unavailable_leaders = HashSet::new();
 
         assert!(!table_entry.has_open_shards(
-            &mut closed_shard_ids,
             &ingester_pool,
+            &mut closed_shard_ids,
             &mut unavailable_leaders
         ));
         assert!(closed_shard_ids.is_empty());
@@ -553,14 +573,14 @@ mod tests {
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 2,
+                    shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
@@ -570,12 +590,12 @@ mod tests {
             remote_round_robin_idx: AtomicUsize::default(),
         };
         assert!(table_entry.has_open_shards(
-            &mut closed_shard_ids,
             &ingester_pool,
+            &mut closed_shard_ids,
             &mut unavailable_leaders
         ));
         assert_eq!(closed_shard_ids.len(), 1);
-        assert_eq!(closed_shard_ids[0], 1);
+        assert_eq!(closed_shard_ids[0], ShardId::from(1));
         assert!(unavailable_leaders.is_empty());
 
         closed_shard_ids.clear();
@@ -589,21 +609,21 @@ mod tests {
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 2,
+                    shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-2".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 3,
+                    shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
@@ -611,12 +631,12 @@ mod tests {
             remote_round_robin_idx: AtomicUsize::default(),
         };
         assert!(table_entry.has_open_shards(
-            &mut closed_shard_ids,
             &ingester_pool,
+            &mut closed_shard_ids,
             &mut unavailable_leaders
         ));
         assert_eq!(closed_shard_ids.len(), 1);
-        assert_eq!(closed_shard_ids[0], 1);
+        assert_eq!(closed_shard_ids[0], ShardId::from(1));
         assert_eq!(unavailable_leaders.len(), 1);
         assert!(unavailable_leaders.contains("test-ingester-2"));
     }
@@ -647,21 +667,21 @@ mod tests {
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 2,
+                    shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 3,
+                    shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
@@ -673,17 +693,17 @@ mod tests {
         let shard = table_entry
             .next_open_shard_round_robin(&ingester_pool)
             .unwrap();
-        assert_eq!(shard.shard_id, 2);
+        assert_eq!(shard.shard_id, ShardId::from(2));
 
         let shard = table_entry
             .next_open_shard_round_robin(&ingester_pool)
             .unwrap();
-        assert_eq!(shard.shard_id, 3);
+        assert_eq!(shard.shard_id, ShardId::from(3));
 
         let shard = table_entry
             .next_open_shard_round_robin(&ingester_pool)
             .unwrap();
-        assert_eq!(shard.shard_id, 2);
+        assert_eq!(shard.shard_id, ShardId::from(2));
 
         let table_entry = RoutingTableEntry {
             index_uid: index_uid.clone(),
@@ -691,7 +711,7 @@ mod tests {
             local_shards: vec![RoutingEntry {
                 index_uid: "test-index:0".into(),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: ShardId::from(1),
                 shard_state: ShardState::Closed,
                 leader_id: "test-ingester-0".into(),
             }],
@@ -700,28 +720,28 @@ mod tests {
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 2,
+                    shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 3,
+                    shard_id: ShardId::from(3),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 4,
+                    shard_id: ShardId::from(4),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-2".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 5,
+                    shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
@@ -731,17 +751,17 @@ mod tests {
         let shard = table_entry
             .next_open_shard_round_robin(&ingester_pool)
             .unwrap();
-        assert_eq!(shard.shard_id, 2);
+        assert_eq!(shard.shard_id, ShardId::from(2));
 
         let shard = table_entry
             .next_open_shard_round_robin(&ingester_pool)
             .unwrap();
-        assert_eq!(shard.shard_id, 5);
+        assert_eq!(shard.shard_id, ShardId::from(5));
 
         let shard = table_entry
             .next_open_shard_round_robin(&ingester_pool)
             .unwrap();
-        assert_eq!(shard.shard_id, 2);
+        assert_eq!(shard.shard_id, ShardId::from(2));
     }
 
     #[test]
@@ -757,54 +777,79 @@ mod tests {
         assert_eq!(table_entry.local_shards.len(), 0);
         assert_eq!(table_entry.remote_shards.len(), 0);
 
-        table_entry.insert_open_shards(&local_node_id, &local_node_id, &index_uid_0, &[2]);
+        table_entry.insert_open_shards(
+            &local_node_id,
+            &local_node_id,
+            &index_uid_0,
+            &[ShardId::from(2)],
+        );
 
         assert_eq!(table_entry.local_shards.len(), 1);
         assert_eq!(table_entry.remote_shards.len(), 0);
 
         assert_eq!(table_entry.local_shards[0].index_uid, index_uid_0);
         assert_eq!(table_entry.local_shards[0].source_id, source_id);
-        assert_eq!(table_entry.local_shards[0].shard_id, 2);
+        assert_eq!(table_entry.local_shards[0].shard_id, ShardId::from(2));
         assert_eq!(table_entry.local_shards[0].shard_state, ShardState::Open);
         assert_eq!(table_entry.local_shards[0].leader_id, local_node_id);
 
         table_entry.local_shards[0].shard_state = ShardState::Closed;
-        table_entry.insert_open_shards(&local_node_id, &local_node_id, &index_uid_0, &[1, 2]);
+        table_entry.insert_open_shards(
+            &local_node_id,
+            &local_node_id,
+            &index_uid_0,
+            &[ShardId::from(1), ShardId::from(2)],
+        );
 
         assert_eq!(table_entry.local_shards.len(), 2);
         assert_eq!(table_entry.remote_shards.len(), 0);
 
-        assert_eq!(table_entry.local_shards[0].shard_id, 1);
+        assert_eq!(table_entry.local_shards[0].shard_id, ShardId::from(1));
         assert_eq!(table_entry.local_shards[0].shard_state, ShardState::Open);
-        assert_eq!(table_entry.local_shards[1].shard_id, 2);
+        assert_eq!(table_entry.local_shards[1].shard_id, ShardId::from(2));
         assert_eq!(table_entry.local_shards[1].shard_state, ShardState::Closed);
 
         table_entry.local_shards.clear();
-        table_entry.insert_open_shards(&local_node_id, &remote_node_id, &index_uid_0, &[2]);
+        table_entry.insert_open_shards(
+            &local_node_id,
+            &remote_node_id,
+            &index_uid_0,
+            &[ShardId::from(2)],
+        );
 
         assert_eq!(table_entry.local_shards.len(), 0);
         assert_eq!(table_entry.remote_shards.len(), 1);
 
         assert_eq!(table_entry.remote_shards[0].index_uid, index_uid_0);
         assert_eq!(table_entry.remote_shards[0].source_id, source_id);
-        assert_eq!(table_entry.remote_shards[0].shard_id, 2);
+        assert_eq!(table_entry.remote_shards[0].shard_id, ShardId::from(2));
         assert_eq!(table_entry.remote_shards[0].shard_state, ShardState::Open);
         assert_eq!(table_entry.remote_shards[0].leader_id, remote_node_id);
 
         table_entry.remote_shards[0].shard_state = ShardState::Closed;
-        table_entry.insert_open_shards(&local_node_id, &remote_node_id, &index_uid_0, &[1, 2]);
+        table_entry.insert_open_shards(
+            &local_node_id,
+            &remote_node_id,
+            &index_uid_0,
+            &[ShardId::from(1), ShardId::from(2)],
+        );
 
         assert_eq!(table_entry.local_shards.len(), 0);
         assert_eq!(table_entry.remote_shards.len(), 2);
 
-        assert_eq!(table_entry.remote_shards[0].shard_id, 1);
+        assert_eq!(table_entry.remote_shards[0].shard_id, ShardId::from(1));
         assert_eq!(table_entry.remote_shards[0].shard_state, ShardState::Open);
-        assert_eq!(table_entry.remote_shards[1].shard_id, 2);
+        assert_eq!(table_entry.remote_shards[1].shard_id, ShardId::from(2));
         assert_eq!(table_entry.remote_shards[1].shard_state, ShardState::Closed);
 
         // Update index incarnation.
         let index_uid_1: IndexUid = IndexUid::new_2("test-index", 1);
-        table_entry.insert_open_shards(&local_node_id, &local_node_id, &index_uid_1, &[1]);
+        table_entry.insert_open_shards(
+            &local_node_id,
+            &local_node_id,
+            &index_uid_1,
+            &[ShardId::from(1)],
+        );
 
         assert_eq!(table_entry.index_uid, index_uid_1);
         assert_eq!(table_entry.local_shards.len(), 1);
@@ -812,7 +857,7 @@ mod tests {
 
         assert_eq!(table_entry.local_shards[0].index_uid, index_uid_1);
         assert_eq!(table_entry.local_shards[0].source_id, source_id);
-        assert_eq!(table_entry.local_shards[0].shard_id, 1);
+        assert_eq!(table_entry.local_shards[0].shard_id, ShardId::from(1));
         assert_eq!(table_entry.local_shards[0].shard_state, ShardState::Open);
         assert_eq!(table_entry.local_shards[0].leader_id, local_node_id);
 
@@ -821,7 +866,7 @@ mod tests {
             &local_node_id,
             &local_node_id,
             &index_uid_0,
-            &[12, 42, 1337],
+            &[ShardId::from(12), ShardId::from(42), ShardId::from(1337)],
         );
         assert_eq!(table_entry.index_uid, index_uid_1);
         assert_eq!(table_entry.local_shards.len(), 1);
@@ -835,7 +880,7 @@ mod tests {
 
         let mut table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
         table_entry.close_shards(&index_uid, &[]);
-        table_entry.close_shards(&index_uid, &[1]);
+        table_entry.close_shards(&index_uid, &[ShardId::from(1)]);
         assert!(table_entry.local_shards.is_empty());
         assert!(table_entry.remote_shards.is_empty());
 
@@ -846,21 +891,21 @@ mod tests {
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 2,
+                    shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 3,
+                    shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
@@ -870,28 +915,37 @@ mod tests {
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 5,
+                    shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 6,
+                    shard_id: ShardId::from(6),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 7,
+                    shard_id: ShardId::from(7),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
             ],
             remote_round_robin_idx: AtomicUsize::default(),
         };
-        table_entry.close_shards(&index_uid, &[1, 3, 4, 6, 8]);
+        table_entry.close_shards(
+            &index_uid,
+            &[
+                ShardId::from(1),
+                ShardId::from(3),
+                ShardId::from(4),
+                ShardId::from(6),
+                ShardId::from(8),
+            ],
+        );
         assert!(table_entry.local_shards[0].shard_state.is_closed());
         assert!(table_entry.local_shards[1].shard_state.is_open());
         assert!(table_entry.local_shards[2].shard_state.is_closed());
@@ -907,7 +961,7 @@ mod tests {
 
         let mut table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
         table_entry.delete_shards(&index_uid, &[]);
-        table_entry.delete_shards(&index_uid, &[1]);
+        table_entry.delete_shards(&index_uid, &[ShardId::from(1)]);
         assert!(table_entry.local_shards.is_empty());
         assert!(table_entry.remote_shards.is_empty());
 
@@ -918,21 +972,21 @@ mod tests {
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 2,
+                    shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 3,
+                    shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
@@ -942,32 +996,41 @@ mod tests {
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 5,
+                    shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 6,
+                    shard_id: ShardId::from(6),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
                     index_uid: "test-index:0".into(),
                     source_id: "test-source".to_string(),
-                    shard_id: 7,
+                    shard_id: ShardId::from(7),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
             ],
             remote_round_robin_idx: AtomicUsize::default(),
         };
-        table_entry.delete_shards(&index_uid, &[1, 3, 4, 6, 8]);
+        table_entry.delete_shards(
+            &index_uid,
+            &[
+                ShardId::from(1),
+                ShardId::from(3),
+                ShardId::from(4),
+                ShardId::from(6),
+                ShardId::from(8),
+            ],
+        );
         assert_eq!(table_entry.local_shards.len(), 1);
-        assert_eq!(table_entry.local_shards[0].shard_id, 2);
+        assert_eq!(table_entry.local_shards[0].shard_id, ShardId::from(2));
         assert_eq!(table_entry.remote_shards.len(), 2);
-        assert_eq!(table_entry.remote_shards[0].shard_id, 5);
-        assert_eq!(table_entry.remote_shards[1].shard_id, 7);
+        assert_eq!(table_entry.remote_shards[0].shard_id, ShardId::from(5));
+        assert_eq!(table_entry.remote_shards[1].shard_id, ShardId::from(7));
     }
 }

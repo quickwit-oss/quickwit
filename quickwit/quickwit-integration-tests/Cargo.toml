@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-integration-tests"
-version = "0.6.5-dev"
+version = "0.7.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -25,6 +25,7 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
+tonic = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }

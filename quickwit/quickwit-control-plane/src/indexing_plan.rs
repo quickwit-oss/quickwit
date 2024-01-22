@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -66,21 +66,16 @@ impl PhysicalIndexingPlan {
 
     pub fn normalize(&mut self) {
         for tasks in self.indexing_tasks_per_indexer_id.values_mut() {
-            tasks.sort_by(|left, right| {
+            for task in tasks.iter_mut() {
+                task.shard_ids.sort_unstable();
+            }
+            tasks.sort_unstable_by(|left, right| {
                 left.index_uid
                     .cmp(&right.index_uid)
                     .then_with(|| left.source_id.cmp(&right.source_id))
-                    .then_with(|| {
-                        left.shard_ids
-                            .first()
-                            .copied()
-                            .cmp(&right.shard_ids.first().copied())
-                    })
-                    .then_with(|| left.pipeline_uid().cmp(&right.pipeline_uid()))
+                    .then_with(|| left.shard_ids.first().cmp(&right.shard_ids.first()))
+                    .then_with(|| left.pipeline_uid.cmp(&right.pipeline_uid))
             });
-            for task in tasks {
-                task.shard_ids.sort();
-            }
         }
     }
 }

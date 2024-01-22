@@ -42,8 +42,8 @@ pub struct IngestSuccess {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "4")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     /// Replication position inclusive.
     #[prost(message, optional, tag = "5")]
     pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
@@ -150,38 +150,44 @@ impl IngestRouterServiceClient {
     }
     pub fn as_grpc_service(
         &self,
+        max_message_size: bytesize::ByteSize,
     ) -> ingest_router_service_grpc_server::IngestRouterServiceGrpcServer<
         IngestRouterServiceGrpcServerAdapter,
     > {
         let adapter = IngestRouterServiceGrpcServerAdapter::new(self.clone());
         ingest_router_service_grpc_server::IngestRouterServiceGrpcServer::new(adapter)
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024)
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
-        let adapter = IngestRouterServiceGrpcClientAdapter::new(
-            ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(
+        let client = ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(
                 channel,
-            ),
+            )
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
+        let adapter = IngestRouterServiceGrpcClientAdapter::new(
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)
     }
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> IngestRouterServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let client = ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(
                 balance_channel,
             )
-            .max_decoding_message_size(20 * 1024 * 1024)
-            .max_encoding_message_size(20 * 1024 * 1024);
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = IngestRouterServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
@@ -195,8 +201,8 @@ impl IngestRouterServiceClient {
     {
         IngestRouterServiceClient::new(IngestRouterServiceMailbox::new(mailbox))
     }
-    pub fn tower() -> IngestRouterServiceTowerBlockBuilder {
-        IngestRouterServiceTowerBlockBuilder::default()
+    pub fn tower() -> IngestRouterServiceTowerLayerStack {
+        IngestRouterServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn mock() -> MockIngestRouterService {
@@ -256,9 +262,9 @@ impl tower::Service<IngestRequestV2> for Box<dyn IngestRouterService> {
         Box::pin(fut)
     }
 }
-/// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
+/// A tower service stack is a set of tower services.
 #[derive(Debug)]
-struct IngestRouterServiceTowerBlock {
+struct IngestRouterServiceTowerServiceStack {
     inner: Box<dyn IngestRouterService>,
     ingest_svc: quickwit_common::tower::BoxService<
         IngestRequestV2,
@@ -266,7 +272,7 @@ struct IngestRouterServiceTowerBlock {
         crate::ingest::IngestV2Error,
     >,
 }
-impl Clone for IngestRouterServiceTowerBlock {
+impl Clone for IngestRouterServiceTowerServiceStack {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -275,7 +281,7 @@ impl Clone for IngestRouterServiceTowerBlock {
     }
 }
 #[async_trait::async_trait]
-impl IngestRouterService for IngestRouterServiceTowerBlock {
+impl IngestRouterService for IngestRouterServiceTowerServiceStack {
     async fn ingest(
         &mut self,
         request: IngestRequestV2,
@@ -283,35 +289,61 @@ impl IngestRouterService for IngestRouterServiceTowerBlock {
         self.ingest_svc.ready().await?.call(request).await
     }
 }
-#[derive(Debug, Default)]
-pub struct IngestRouterServiceTowerBlockBuilder {
-    #[allow(clippy::type_complexity)]
-    ingest_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IngestRouterService>,
-            IngestRequestV2,
-            IngestResponseV2,
-            crate::ingest::IngestV2Error,
-        >,
+type IngestLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        IngestRequestV2,
+        IngestResponseV2,
+        crate::ingest::IngestV2Error,
     >,
+    IngestRequestV2,
+    IngestResponseV2,
+    crate::ingest::IngestV2Error,
+>;
+#[derive(Debug, Default)]
+pub struct IngestRouterServiceTowerLayerStack {
+    ingest_layers: Vec<IngestLayer>,
 }
-impl IngestRouterServiceTowerBlockBuilder {
-    pub fn shared_layer<L>(mut self, layer: L) -> Self
+impl IngestRouterServiceTowerLayerStack {
+    pub fn stack_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngestRouterService>> + Clone + Send + Sync + 'static,
-        L::Service: tower::Service<
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    IngestRequestV2,
+                    IngestResponseV2,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                IngestRequestV2,
+                IngestResponseV2,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
                 IngestRequestV2,
                 Response = IngestResponseV2,
                 Error = crate::ingest::IngestV2Error,
             > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<IngestRequestV2>>::Future: Send + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                IngestRequestV2,
+                IngestResponseV2,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<IngestRequestV2>>::Future: Send + 'static,
     {
-        self.ingest_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.ingest_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
-    pub fn ingest_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_ingest_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngestRouterService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    IngestRequestV2,
+                    IngestResponseV2,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 IngestRequestV2,
                 Response = IngestResponseV2,
@@ -319,7 +351,7 @@ impl IngestRouterServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<IngestRequestV2>>::Future: Send + 'static,
     {
-        self.ingest_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.ingest_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> IngestRouterServiceClient
@@ -332,17 +364,26 @@ impl IngestRouterServiceTowerBlockBuilder {
         self,
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> IngestRouterServiceClient {
         self.build_from_boxed(
-            Box::new(IngestRouterServiceClient::from_channel(addr, channel)),
+            Box::new(
+                IngestRouterServiceClient::from_channel(addr, channel, max_message_size),
+            ),
         )
     }
     pub fn build_from_balance_channel(
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> IngestRouterServiceClient {
         self.build_from_boxed(
-            Box::new(IngestRouterServiceClient::from_balance_channel(balance_channel)),
+            Box::new(
+                IngestRouterServiceClient::from_balance_channel(
+                    balance_channel,
+                    max_message_size,
+                ),
+            ),
         )
     }
     pub fn build_from_mailbox<A>(
@@ -359,16 +400,19 @@ impl IngestRouterServiceTowerBlockBuilder {
         self,
         boxed_instance: Box<dyn IngestRouterService>,
     ) -> IngestRouterServiceClient {
-        let ingest_svc = if let Some(layer) = self.ingest_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let tower_block = IngestRouterServiceTowerBlock {
+        let ingest_svc = self
+            .ingest_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let tower_svc_stack = IngestRouterServiceTowerServiceStack {
             inner: boxed_instance.clone(),
             ingest_svc,
         };
-        IngestRouterServiceClient::new(tower_block)
+        IngestRouterServiceClient::new(tower_svc_stack)
     }
 }
 #[derive(Debug, Clone)]

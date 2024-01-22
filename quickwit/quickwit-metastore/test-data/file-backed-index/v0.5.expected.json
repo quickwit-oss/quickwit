@@ -111,7 +111,7 @@
           "message"
         ]
       },
-      "version": "0.6"
+      "version": "0.7"
     },
     "index_uid": "my-index:",
     "sources": [
@@ -130,10 +130,10 @@
           "script": ".message = downcase(string!(.message))",
           "timezone": "UTC"
         },
-        "version": "0.6"
+        "version": "0.7"
       }
     ],
-    "version": "0.6"
+    "version": "0.7"
   },
   "splits": [
     {
@@ -165,8 +165,8 @@
       },
       "uncompressed_docs_size_in_bytes": 234234,
       "update_timestamp": 1789,
-      "version": "0.6"
+      "version": "0.7"
     }
   ],
-  "version": "0.6"
+  "version": "0.7"
 }

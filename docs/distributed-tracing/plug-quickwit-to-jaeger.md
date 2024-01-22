@@ -40,7 +40,7 @@ docker run --rm --name jaeger-qw \
 
 ### Linux
 
-By default, quickwit is listening to `127.0.0.1`, and will not respond to request directed
+By default, Quickwit is listening to `127.0.0.1`, and will not respond to request directed
 to the docker bridge (`172.17.0.1`). There are different ways to solve this problem.
 The easiest is probably to use host network mode.
 

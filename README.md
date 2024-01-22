@@ -14,7 +14,7 @@
 </p>
 
 <h2 align="center">
-Sub-second search & analytics engine on cloud storage
+Cloud-native search engine for observability (logs, traces, and soon metrics!). An open-source alternative to Datadog, Elasticsearch,  Loki, and Tempo.
 </h2>
 
 <h4 align="center">
@@ -26,7 +26,19 @@ Sub-second search & analytics engine on cloud storage
 </h4>
 <br/>
 
-<b>We just released Quickwit 0.6! Read the [blog post](https://quickwit.io/blog/quickwit-0.6) to learn about the latest powerful features!</b>
+<b>We just released Quickwit 0.7! Read the [blog post](https://quickwit.io/blog/quickwit-0.7) to learn about the latest powerful features!</b>
+
+### **Quickwit is the fastest search engine on cloud storage. It's the perfect fit for observability use cases**
+
+- [Log management](https://quickwit.io/docs/log-management/overview)
+- [Distributed tracing](https://quickwit.io/docs/distributed-tracing/overview)
+- Metrics support is on the roadmap
+
+### 🚀 Quickstart
+
+- [Search and analytics on StackOverflow dataset](https://quickwit.io/docs/get-started/quickstart)
+- [Tracing analytics with Grafana](https://quickwit.io/docs/get-started/tutorials/trace-analytics-with-grafana)
+- [Tracing with Jaeger](https://quickwit.io/docs/get-started/tutorials/tutorial-jaeger)
 
 <br/>
 
@@ -35,24 +47,17 @@ Sub-second search & analytics engine on cloud storage
 
 <br/>
 
-### **Quickwit is the fastest search engine on cloud storage. It is a great fit for:**
-
-- [Log management](https://quickwit.io/docs/log-management/overview)
-- [Distributed traces](https://quickwit.io/docs/distributed-tracing/overview)
-- Any immutable data: conversational data (emails, texts, messaging platforms) & event-based analytics
-… and more!
-
 # 💡 Features
 
 - Full-text search and aggregation queries
-- Elasticsearch query language support
-- Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, …)
-- Decoupled compute and storage, stateless indexers & searchers
-- [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing
-- Schemaless analytics
-- [Grafana data source](https://github.com/quickwit-oss/quickwit-datasource)
+- Elasticsearch-compatible API, use Quickwit with any Elasticsearch or OpenSearch client
 - [Jaeger-native](https://quickwit.io/docs/distributed-tracing/plug-quickwit-to-jaeger)
 - OTEL-native for [logs](https://quickwit.io/docs/log-management/overview) and [traces](https://quickwit.io/docs/distributed-tracing/overview)
+- [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing
+- Schemaless analytics
+- Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, Google Cloud Storage, …)
+- Decoupled compute and storage, stateless indexers & searchers
+- [Grafana data source](https://github.com/quickwit-oss/quickwit-datasource)
 - Kubernetes ready - See our [helm-chart](https://quickwit.io/docs/deployment/kubernetes)
 - RESTful API
 
@@ -63,10 +68,6 @@ Sub-second search & analytics engine on cloud storage
 - Retention policies
 - Delete tasks (for GDPR use cases)
 - Distributed and highly available* engine that scales out in seconds (*HA indexing only with Kafka)
-
-# 🚀 Quickstart
-
-For a quick guide on how to install Quickwit, start a server, add documents to index, and search them - check out our [Quickstart](https://quickwit.io/docs/get-started/quickstart) guide.
 
 # 📑 Architecture overview
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -33,15 +33,18 @@ use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
+use crate::debugging_api::debugging_handler;
 use crate::delete_task_api::delete_task_api_handlers;
-use crate::elastic_search_api::elastic_api_handlers;
+use crate::elasticsearch_api::elastic_api_handlers;
 use crate::health_check_api::health_check_handlers;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
+use crate::jaeger_api::jaeger_api_handlers;
 use crate::json_api_response::{ApiError, JsonApiResponse};
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
+use crate::otlp_api::otlp_ingest_api_handlers;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
 use crate::{BodyFormat, BuildInfo, QuickwitServices, RuntimeInfo};
@@ -85,12 +88,26 @@ pub(crate) async fn start_rest_server(
     // `/metrics` route.
     let metrics_routes = warp::path("metrics").and(warp::get()).map(metrics_handler);
 
+    // `/debugging` route.
+    let control_plane_service = quickwit_services.control_plane_service.clone();
+    let debugging_routes = warp::path("debugging")
+        .and(warp::get())
+        .then(move || debugging_handler(control_plane_service.clone()));
+
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
     let redirect_root_to_ui_route = warp::path::end()
         .and(warp::get())
         .map(|| redirect(http::Uri::from_static("/ui/search")));
+
+    let extra_headers = warp::reply::with::headers(
+        quickwit_services
+            .node_config
+            .rest_config
+            .extra_headers
+            .clone(),
+    );
 
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
@@ -99,8 +116,10 @@ pub(crate) async fn start_rest_server(
         .or(ui_handler())
         .or(health_check_routes)
         .or(metrics_routes)
+        .or(debugging_routes)
         .with(request_counter)
         .recover(recover_fn)
+        .with(extra_headers)
         .boxed();
 
     let warp_service = warp::service(rest_routes);
@@ -143,61 +162,50 @@ pub(crate) async fn start_rest_server(
 fn api_v1_routes(
     quickwit_services: Arc<QuickwitServices>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    if !quickwit_services
-        .node_config
-        .rest_config
-        .extra_headers
-        .is_empty()
-    {
-        info!(
-            "Extra headers will be added to all responses: {:?}",
-            quickwit_services.node_config.rest_config.extra_headers
-        );
-    }
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
-    api_v1_root_url
-        .and(
-            cluster_handler(quickwit_services.cluster.clone())
-                .or(node_info_handler(
-                    BuildInfo::get(),
-                    RuntimeInfo::get(),
-                    quickwit_services.node_config.clone(),
-                ))
-                .or(indexing_get_handler(
-                    quickwit_services.indexing_service_opt.clone(),
-                ))
-                .or(search_get_handler(quickwit_services.search_service.clone()))
-                .or(search_post_handler(
-                    quickwit_services.search_service.clone(),
-                ))
-                .or(search_stream_handler(
-                    quickwit_services.search_service.clone(),
-                ))
-                .or(ingest_api_handlers(
-                    quickwit_services.ingest_router_service.clone(),
-                    quickwit_services.ingest_service.clone(),
-                    quickwit_services.node_config.ingest_api_config.clone(),
-                ))
-                .or(index_management_handlers(
-                    quickwit_services.index_manager.clone(),
-                    quickwit_services.node_config.clone(),
-                ))
-                .or(delete_task_api_handlers(
-                    quickwit_services.metastore_client.clone(),
-                ))
-                .or(elastic_api_handlers(
-                    quickwit_services.node_config.clone(),
-                    quickwit_services.search_service.clone(),
-                    quickwit_services.ingest_service.clone(),
-                )),
-        )
-        .with(warp::reply::with::headers(
-            quickwit_services
-                .node_config
-                .rest_config
-                .extra_headers
-                .clone(),
-        ))
+    api_v1_root_url.and(
+        cluster_handler(quickwit_services.cluster.clone())
+            .or(node_info_handler(
+                BuildInfo::get(),
+                RuntimeInfo::get(),
+                quickwit_services.node_config.clone(),
+            ))
+            .or(indexing_get_handler(
+                quickwit_services.indexing_service_opt.clone(),
+            ))
+            .or(search_get_handler(quickwit_services.search_service.clone()))
+            .or(search_post_handler(
+                quickwit_services.search_service.clone(),
+            ))
+            .or(search_stream_handler(
+                quickwit_services.search_service.clone(),
+            ))
+            .or(ingest_api_handlers(
+                quickwit_services.ingest_router_service.clone(),
+                quickwit_services.ingest_service.clone(),
+                quickwit_services.node_config.ingest_api_config.clone(),
+            ))
+            .or(otlp_ingest_api_handlers(
+                quickwit_services.otlp_logs_service_opt.clone(),
+                quickwit_services.otlp_traces_service_opt.clone(),
+            ))
+            .or(index_management_handlers(
+                quickwit_services.index_manager.clone(),
+                quickwit_services.node_config.clone(),
+            ))
+            .or(delete_task_api_handlers(
+                quickwit_services.metastore_client.clone(),
+            ))
+            .or(jaeger_api_handlers(
+                quickwit_services.jaeger_service_opt.clone(),
+            ))
+            .or(elastic_api_handlers(
+                quickwit_services.node_config.clone(),
+                quickwit_services.search_service.clone(),
+                quickwit_services.ingest_service.clone(),
+                quickwit_services.ingest_router_service.clone(),
+            )),
+    )
 }
 
 /// This function returns a formatted error based on the given rejection reason.
@@ -593,22 +601,31 @@ mod tests {
             indexing_service_opt: None,
             index_manager: index_service,
             ingest_service: ingest_service_client(),
-
             ingester_service_opt: None,
             ingest_router_service: IngestRouterServiceClient::from(
                 IngestRouterServiceClient::mock(),
             ),
             janitor_service_opt: None,
+            otlp_logs_service_opt: None,
+            otlp_traces_service_opt: None,
             metastore_client,
             metastore_server_opt: None,
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
+            jaeger_service_opt: None,
         };
-        let handler = api_v1_routes(Arc::new(quickwit_services));
+
+        let handler = api_v1_routes(Arc::new(quickwit_services))
+            .recover(recover_fn)
+            .with(warp::reply::with::headers(
+                node_config.rest_config.extra_headers.clone(),
+            ));
+
         let resp = warp::test::request()
             .path("/api/v1/version")
-            .reply(&handler)
+            .reply(&handler.clone())
             .await;
+
         assert_eq!(resp.status(), 200);
         assert_eq!(
             resp.headers().get("x-custom-header").unwrap(),
@@ -616,6 +633,21 @@ mod tests {
         );
         assert_eq!(
             resp.headers().get("x-custom-header-2").unwrap(),
+            "custom-value-2"
+        );
+
+        let resp_404 = warp::test::request()
+            .path("/api/v1/version404")
+            .reply(&handler)
+            .await;
+
+        assert_eq!(resp_404.status(), 404);
+        assert_eq!(
+            resp_404.headers().get("x-custom-header").unwrap(),
+            "custom-value"
+        );
+        assert_eq!(
+            resp_404.headers().get("x-custom-header-2").unwrap(),
             "custom-value-2"
         );
     }

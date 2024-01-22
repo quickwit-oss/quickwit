@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -39,6 +39,7 @@ use tantivy::Term;
 
 use super::*;
 use crate::find_trace_ids_collector::Span;
+use crate::list_terms::leaf_list_terms;
 use crate::service::SearcherContext;
 use crate::single_node_search;
 
@@ -479,7 +480,7 @@ async fn test_single_node_without_timestamp_with_query_start_timestamp_enabled(
     let start_timestamp = OffsetDateTime::now_utc().unix_timestamp();
     for i in 0..30 {
         let body = format!("info @ t:{}", i + 1);
-        docs.push(json!({"body": body}));
+        docs.push(json!({ "body": body }));
     }
     test_sandbox.add_documents(docs).await?;
 
@@ -1688,7 +1689,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
 
     {
         let request = ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id().to_string(),
+            index_id_patterns: vec![test_sandbox.index_uid().index_id().to_string()],
             field: "title".to_string(),
             start_key: None,
             end_key: None,
@@ -1709,7 +1710,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id().to_string(),
+            index_id_patterns: vec![test_sandbox.index_uid().index_id().to_string()],
             field: "title".to_string(),
             start_key: None,
             end_key: None,
@@ -1730,7 +1731,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id().to_string(),
+            index_id_patterns: vec![test_sandbox.index_uid().index_id().to_string()],
             field: "title".to_string(),
             start_key: Some("casper".as_bytes().to_vec()),
             end_key: None,
@@ -1751,7 +1752,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id().to_string(),
+            index_id_patterns: vec![test_sandbox.index_uid().index_id().to_string()],
             field: "title".to_string(),
             start_key: None,
             end_key: Some("casper".as_bytes().to_vec()),
@@ -1782,6 +1783,8 @@ async fn test_single_node_find_trace_ids_collector() {
               - name: trace_id
                 type: bytes
                 fast: true
+                input_format: hex
+                output_format: hex
               - name: span_timestamp_secs
                 type: datetime
                 fast: true

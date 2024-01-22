@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-indexing"
-version = "0.6.5-dev"
+version = "0.7.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -16,6 +16,7 @@ aws-smithy-client = { workspace = true, optional = true }
 
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
+async-compression = { workspace = true }
 async-trait = { workspace = true }
 backoff = { workspace = true, optional = true }
 bytes = { workspace = true }
@@ -87,10 +88,10 @@ bytes = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 mockall = { workspace = true }
 proptest = { workspace = true }
-prost = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 tempfile = { workspace = true }
+prost = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }

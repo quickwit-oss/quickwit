@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -34,7 +34,7 @@ pub use serialize::load_source_config_from_user_config;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
 
-use crate::TestableForRegression;
+use crate::{enable_ingest_v2, TestableForRegression};
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
 pub const CLI_INGEST_SOURCE_ID: &str = "_ingest-cli-source";
@@ -44,10 +44,13 @@ pub const INGEST_API_SOURCE_ID: &str = "_ingest-api-source";
 
 /// Reserved source ID used for native Quickwit ingest.
 /// (this is for ingest v2)
-pub const INGEST_SOURCE_ID: &str = "_ingest-source";
+pub const INGEST_V2_SOURCE_ID: &str = "_ingest-source";
 
-pub const RESERVED_SOURCE_IDS: &[&str] =
-    &[CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_SOURCE_ID];
+pub const RESERVED_SOURCE_IDS: &[&str] = &[
+    CLI_INGEST_SOURCE_ID,
+    INGEST_API_SOURCE_ID,
+    INGEST_V2_SOURCE_ID,
+];
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(into = "VersionedSourceConfig")]
@@ -125,10 +128,10 @@ impl SourceConfig {
     /// Creates an ingest source v2.
     pub fn ingest_v2_default() -> Self {
         Self {
-            source_id: INGEST_SOURCE_ID.to_string(),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
             desired_num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
-            enabled: false,
+            enabled: enable_ingest_v2(),
             source_params: SourceParams::Ingest,
             transform_config: None,
             input_format: SourceInputFormat::Json,
@@ -691,7 +694,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.6",
+                "version": "0.7",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 0,
                 "max_num_pipelines_per_indexer": 1,
@@ -708,7 +711,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.6",
+                "version": "0.7",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 1,
                 "max_num_pipelines_per_indexer": 0,
@@ -725,7 +728,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.6",
+                "version": "0.7",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 1,
                 "max_num_pipelines_per_indexer": 2,
@@ -740,7 +743,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.6",
+                "version": "0.7",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 2,
                 "max_num_pipelines_per_indexer": 1,
@@ -759,7 +762,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.6",
+                "version": "0.7",
                 "source_id": "hdfs-logs-kafka-source",
                 "desired_num_pipelines": 3,
                 "max_num_pipelines_per_indexer": 3,
@@ -778,7 +781,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.6",
+                "version": "0.7",
                 "source_id": "hdfs-logs-pulsar-source",
                 "desired_num_pipelines": 3,
                 "max_num_pipelines_per_indexer": 3,
@@ -1191,7 +1194,7 @@ mod tests {
     #[tokio::test]
     async fn test_source_config_plain_text_input_format() {
         let file_content = r#"{
-            "version": "0.6",
+            "version": "0.7",
             "source_id": "logs-file-source",
             "desired_num_pipelines": 1,
             "max_num_pipelines_per_indexer": 1,

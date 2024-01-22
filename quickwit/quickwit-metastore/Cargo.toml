@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-metastore"
-version = "0.6.5-dev"
+version = "0.7.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -59,7 +59,6 @@ quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
-azure = ["quickwit-storage/azure"]
 ci-test = []
 postgres = ["quickwit-proto/postgres", "sea-query", "sea-query-binder", "sqlx"]
 testsuite = ["mockall", "tempfile", "quickwit-config/testsuite"]

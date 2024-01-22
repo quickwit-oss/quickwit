@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -220,6 +220,13 @@ impl<'de> Deserialize<'de> for Position {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let position_str = String::deserialize(deserializer)?;
         Ok(Self::from(position_str))
+    }
+}
+
+impl PartialEq<Position> for &Position {
+    #[inline]
+    fn eq(&self, other: &Position) -> bool {
+        *self == other
     }
 }
 

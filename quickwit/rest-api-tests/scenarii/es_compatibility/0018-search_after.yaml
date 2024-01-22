@@ -79,10 +79,6 @@ expected:
     hits:
       - sort: [9018]
 ---
-# Only works on quickwit engine as elasticsearch
-# expect timestamp value in milliseconds.
-engines:
-  - quickwit
 json:
   size: 100
   track_total_hits: true
@@ -91,17 +87,13 @@ json:
   sort:
     - created_at:
         order: asc
-  search_after: [1422748815000000000]
+  search_after: [1422748815000]
 expected:
   hits:
     hits:
       $expect: "len(val) == 4"
 ---
 # Quickwit should accept timestamp as string.
-# Only works on quickwit engine as elasticsearch
-# expect timestamp value in milliseconds.
-engines:
-  - quickwit
 json:
   size: 100
   track_total_hits: true
@@ -110,18 +102,12 @@ json:
   sort:
     - created_at:
         order: asc
-  search_after: ["1422748815000000000"]
+  search_after: ["1422748815000"]
 expected:
   hits:
     hits:
       $expect: "len(val) == 4"
 ---
-# Accept timestamp as string.
-# Quickwit should accept timestamp as string.
-# Only works on quickwit engine as elasticsearch
-# expect timestamp value in milliseconds.
-engines:
-  - quickwit
 json:
   size: 100
   track_total_hits: true
@@ -130,15 +116,14 @@ json:
   sort:
     - created_at:
         order: desc
-  search_after: ["1422748800001000000"]
+  search_after: ["1422748800001"]
 expected:
   hits:
     hits:
       $expect: "len(val) == 7"
 ---
-# Only works for quickwit engine.
-# Sadly, elasticsearch returns the same sort values
-# but as strings...
+# Only works for quickwit engine,
+# `epoch_nanos_int` format is quickwit specific
 engines:
   - quickwit
 json:
@@ -149,12 +134,12 @@ json:
   sort:
     - created_at:
         order: asc
-        format: epoch_millis_as_int
-  search_after: [1422748815000]
+        format: epoch_nanos_int
+  search_after: [1422748815000000000]
 expected:
   hits:
     hits:
-      - sort: [1422748816000]
-      - sort: [1422748816000]
-      - sort: [1422748816000]
-      - sort: [1422748816000]
+      - sort: [1422748816000000000]
+      - sort: [1422748816000000000]
+      - sort: [1422748816000000000]
+      - sort: [1422748816000000000]

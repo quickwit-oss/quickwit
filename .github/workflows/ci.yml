@@ -27,6 +27,7 @@ jobs:
   tests:
     name: Unit tests
     runs-on: "ubuntu-latest"
+    timeout-minutes: 40
     services:
       # PostgreSQL service container
       postgres:
@@ -94,6 +95,7 @@ jobs:
   lints:
     name: Lints
     runs-on: "ubuntu-latest"
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v2

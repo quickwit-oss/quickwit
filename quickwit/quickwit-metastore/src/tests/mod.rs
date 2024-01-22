@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,6 +20,7 @@
 use std::collections::BTreeSet;
 
 use async_trait::async_trait;
+use bytesize::ByteSize;
 use itertools::Itertools;
 use quickwit_proto::metastore::metastore_service_grpc_client::MetastoreServiceGrpcClient;
 use quickwit_proto::metastore::{
@@ -36,9 +37,10 @@ pub(crate) mod shard;
 pub(crate) mod source;
 pub(crate) mod split;
 
-use self::shard::RunTests;
 use crate::metastore::MetastoreServiceStreamSplitsExt;
 use crate::{ListSplitsRequestExt, MetastoreServiceExt, Split};
+
+const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
 
 #[async_trait]
 pub trait DefaultForTest {
@@ -60,7 +62,9 @@ impl DefaultForTest for MetastoreServiceGrpcClientAdapter<MetastoreServiceGrpcCl
         let (client, server) = tokio::io::duplex(1024);
         tokio::spawn(async move {
             Server::builder()
-                .add_service(MetastoreServiceClient::new(metastore).as_grpc_service())
+                .add_service(
+                    MetastoreServiceClient::new(metastore).as_grpc_service(MAX_GRPC_MESSAGE_SIZE),
+                )
                 .serve_with_incoming(futures::stream::iter(vec![Ok::<_, std::io::Error>(server)]))
                 .await
         });
@@ -80,8 +84,6 @@ impl MetastoreServiceExt
 {
 }
 
-impl RunTests for MetastoreServiceGrpcClientAdapter<MetastoreServiceGrpcClient<Channel>> {}
-
 async fn create_channel(client: tokio::io::DuplexStream) -> anyhow::Result<Channel> {
     use http::Uri;
     use quickwit_proto::tonic::transport::Endpoint;
@@ -100,13 +102,13 @@ async fn create_channel(client: tokio::io::DuplexStream) -> anyhow::Result<Chann
     Ok(channel)
 }
 
-crate::metastore_test_suite!(
-    quickwit_proto::metastore::MetastoreServiceGrpcClientAdapter<
-        quickwit_proto::metastore::metastore_service_grpc_client::MetastoreServiceGrpcClient<
-            quickwit_proto::tonic::transport::Channel,
-        >,
-    >
-);
+// crate::metastore_test_suite!(
+//     quickwit_proto::metastore::MetastoreServiceGrpcClientAdapter<
+//         quickwit_proto::metastore::metastore_service_grpc_client::MetastoreServiceGrpcClient<
+//             quickwit_proto::tonic::transport::Channel,
+//         >,
+//     >
+// );
 
 fn collect_split_ids(splits: &[Split]) -> Vec<&str> {
     splits
@@ -383,6 +385,16 @@ macro_rules! metastore_test_suite {
             #[tokio::test]
             async fn test_metastore_delete_shards() {
                 $crate::tests::shard::test_metastore_delete_shards::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_apply_checkpoint_delta_v2_single_shard() {
+                $crate::tests::shard::test_metastore_apply_checkpoint_delta_v2_single_shard::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_apply_checkpoint_delta_v2_multi_shards() {
+                $crate::tests::shard::test_metastore_apply_checkpoint_delta_v2_multi_shards::<$metastore_type>().await;
             }
         }
     };

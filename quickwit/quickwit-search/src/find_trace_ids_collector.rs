@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -226,7 +226,7 @@ impl SegmentCollector for FindTraceIdsSegmentCollector {
     }
 
     fn harvest(self) -> Self::Fruit {
-        let mut buffer = Vec::with_capacity(TraceId::BASE64_LENGTH);
+        let mut buffer = Vec::with_capacity(TraceId::HEX_LENGTH);
         self.select_trace_ids
             .harvest()
             .into_iter()

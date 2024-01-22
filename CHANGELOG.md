@@ -22,6 +22,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --->
 
+### Added
+
+- Elasticsearch-compatible API
+  - Added scroll and search_after APIs and support for multi-index search queries
+  - Added exists, multi-match, match phrase prefix, match bool prefix, bool queries
+  - Added `_field_caps` API
+- Added support for OTLP over HTTP API (Protobuf only) (#4335)
+- Added Jaeger REST endpoints for Grafana tracing support (#4197)
+- Added support for injecting custom HTTP headers and moved REST config parameters into REST config section (#4198)
+- Added support for OTLP trace data in arbitrary sources
+- Commit Kafka offsets on suggest truncate (#3638)
+- Honor `auto.offset.reset` parameter in Kafka source (#4095)
+- Added exact count optimization (#4019)
+- Added stream splits gRPC (#4109)
+- Adding a split cache in Searchers (#3857)
+- Added `coerce` and `output_format` options for numeric fields (#3704)
+- Added `PhraseMatchQuery` and `MultiMatchQuery` (#3727)
+- Added Elasticsearch's `TermsQuery` (#3747)
+- Added GCP PubSub source (#3720)
+- Parse timestamp strings (#3639)
+- Added Digital Ocean storage flavor (#3632)
+- Added new tokenizers: `source_code_default`, `source_code`, `multilang` (#3647, #3655, #3608)
+
+
+### Fixed
+
+- Fixed dates in UI (#4277)
+- Fixed duplicate splits planned on pipeline crash-respawn (#3854)
+- Fixed sorting (#3799)
+
+More details in tantivy's [changelog](https://github.com/quickwit-oss/tantivy/blob/main/CHANGELOG.md).
+
+### Changed
+
+- Improve OTEL traces index config (#4311)
+  - OTEL endpoints are now using by default indexes `otel-logs-v0_7` and `otel-traces-v0_7` instead of `otel-logs-v0_6` and `otel-traces-v0_6`
+  - OTEL indexes have more fields stored as "fast" and have Trace and Span ID bytes field in hex format
+
+- Increased the gRPC payload limits from 10MiB to 20MiB (#4227)
+- Reject malformed Elasticsearch API requests (#4175)
+- Better logging when doc processing fails (#4323)
+- Search performance improvements
+- Indexing performance improvements
+
+### Removed
+
+### Migration from 0.6.x to 0.7
+
+The format of the index and internal objects stored in the metastore of 0.7 is backward compatible with 0.6.
+
+If you are using the OTEL indexes and ingesting data into indexes the `otel-logs-v0_6` and `otel-traces-v0_6`, you must stop indexing before upgrading.
+Indeed, the first time you start Quickwit 0.7, it will update the doc mapping fields of Trace ID and Span ID of those two indexes by changing their input/output formats from base64 to hex. This is automatic: you don't have to perform any manual operation.
+Quickwit 0.7 will create new indexes `otel-logs-v0_7` and `otel-traces-v0_7`, which are now used by default when ingesting data with the OTEL gRPC and HTTP API. The Jaeger gRPC and HTTP APIs will query both `otel-traces-v0_6` and `otel-traces-v0_7` by default.
+It's possible to define the index ID you want to use for OTEL gRPC endpoints and Jaeger gRPC API by setting the request header `qw-otel-logs-index` or `qw-otel-traces-index` to the index ID you want to target.
+
+
 ## [0.6.1]
 
 ### Added

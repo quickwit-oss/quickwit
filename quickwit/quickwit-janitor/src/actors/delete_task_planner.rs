@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -414,8 +414,7 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.handle(PlanDeleteOperations, ctx).await?;
-        ctx.schedule_self_msg(PLANNER_REFRESH_INTERVAL, PlanDeleteLoop)
-            .await;
+        ctx.schedule_self_msg(PLANNER_REFRESH_INTERVAL, PlanDeleteLoop);
         Ok(())
     }
 }

@@ -27,7 +27,7 @@ Check out our guides to see how you can use Quickwit:
 
 - [Log management](../log-management/overview.md)
 - [Distributed Tracing](../distributed-tracing/overview.md)
-- Adding full-text search capabilities to [OLAP databases such as ClickHouse](../get-started/tutorials/add-full-text-search-to-your-olap-db).
+- Adding full-text search capabilities to [OLAP databases such as ClickHouse](../guides/add-full-text-search-to-your-olap-db).
 
 
 ## Key features
@@ -63,4 +63,4 @@ Use cases where you would likely *not* want to use Quickwit include:
 
 - [Quickstart](../get-started/quickstart.md)
 - [Concepts](architecture.md)
-- [Last release blog post](https://quickwit.io/blog/quickwit-0.6)
+- [Last release blog post](https://quickwit.io/blog/quickwit-0.7)

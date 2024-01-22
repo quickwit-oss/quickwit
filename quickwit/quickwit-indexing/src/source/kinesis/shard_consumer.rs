@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -237,7 +237,7 @@ impl Handler<Loop> for ShardConsumer {
             };
             // The `GetRecords` API has a limit of 5 transactions per second. 1s / 5 + ε = 210ms.
             let interval = Duration::from_millis(210);
-            ctx.schedule_self_msg(interval, Loop).await;
+            ctx.schedule_self_msg(interval, Loop);
             return Ok(());
         }
         let message = ShardConsumerMessage::ShardClosed(self.shard_id.clone());

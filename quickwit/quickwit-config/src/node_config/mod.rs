@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -29,6 +29,7 @@ use std::time::Duration;
 use anyhow::{bail, ensure};
 use bytesize::ByteSize;
 use http::HeaderMap;
+use once_cell::sync::Lazy;
 use quickwit_common::net::HostAddr;
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
@@ -49,6 +50,36 @@ pub struct RestConfig {
     pub cors_allow_origins: Vec<String>,
     #[serde(with = "http_serde::header_map")]
     pub extra_headers: HeaderMap,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GrpcConfig {
+    #[serde(default = "GrpcConfig::default_max_message_size")]
+    pub max_message_size: ByteSize,
+}
+
+impl GrpcConfig {
+    fn default_max_message_size() -> ByteSize {
+        ByteSize::mib(20)
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.max_message_size >= ByteSize::mb(1),
+            "max gRPC message size (`grpc.max_message_size`) must be at least 1MB, got `{}`",
+            self.max_message_size
+        );
+        Ok(())
+    }
+}
+
+impl Default for GrpcConfig {
+    fn default() -> Self {
+        Self {
+            max_message_size: Self::default_max_message_size(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -91,7 +122,7 @@ impl IndexerConfig {
     }
 
     pub fn default_split_store_max_num_bytes() -> ByteSize {
-        ByteSize::gb(100)
+        ByteSize::gib(100)
     }
 
     pub fn default_split_store_max_num_splits() -> usize {
@@ -212,6 +243,12 @@ impl Default for IngestApiConfig {
     }
 }
 
+/// Returns true if the ingest API v2 is enabled.
+pub fn enable_ingest_v2() -> bool {
+    static ENABLE_INGEST_V2: Lazy<bool> = Lazy::new(|| env::var("QW_ENABLE_INGEST_V2").is_ok());
+    *ENABLE_INGEST_V2
+}
+
 impl IngestApiConfig {
     pub fn replication_factor(&self) -> anyhow::Result<NonZeroUsize> {
         if let Ok(replication_factor_str) = env::var("QW_INGEST_REPLICATION_FACTOR") {
@@ -236,6 +273,17 @@ impl IngestApiConfig {
 
     fn validate(&self) -> anyhow::Result<()> {
         self.replication_factor()?;
+        ensure!(
+            self.max_queue_disk_usage > ByteSize::mib(256),
+            "max_queue_disk_usage must be at least 256 MiB, got `{}`",
+            self.max_queue_disk_usage
+        );
+        ensure!(
+            self.max_queue_disk_usage >= self.max_queue_memory_usage,
+            "max_queue_disk_usage ({}) must be at least max_queue_memory_usage ({})",
+            self.max_queue_disk_usage,
+            self.max_queue_memory_usage
+        );
         Ok(())
     }
 }
@@ -323,6 +371,7 @@ pub struct NodeConfig {
     pub metastore_uri: Uri,
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
+    pub grpc_config: GrpcConfig,
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
     pub indexer_config: IndexerConfig,
@@ -377,9 +426,9 @@ impl NodeConfig {
     }
 
     pub fn redact(&mut self) {
+        self.metastore_configs.redact();
         self.metastore_uri.redact();
         self.storage_configs.redact();
-        self.metastore_configs.redact();
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -392,10 +441,11 @@ impl NodeConfig {
 mod tests {
     use quickwit_proto::indexing::CpuCapacity;
 
+    use super::*;
     use crate::IndexerConfig;
 
     #[test]
-    fn test_index_config_serialization() {
+    fn test_indexer_config_serialization() {
         {
             let indexer_config: IndexerConfig = serde_json::from_str(r#"{}"#).unwrap();
             assert_eq!(&indexer_config, &IndexerConfig::default());
@@ -436,5 +486,64 @@ mod tests {
                 "1500m"
             );
         }
+    }
+    #[test]
+    fn test_validate_ingest_api_config() {
+        {
+            let indexer_config: IngestApiConfig = serde_yaml::from_str(
+                r#"
+                    max_queue_disk_usage: 100M
+                "#,
+            )
+            .unwrap();
+            assert_eq!(
+                indexer_config.validate().unwrap_err().to_string(),
+                "max_queue_disk_usage must be at least 256 MiB, got `100.0 MB`"
+            );
+        }
+        {
+            let indexer_config: IngestApiConfig = serde_yaml::from_str(
+                r#"
+                    max_queue_memory_usage: 600M
+                    max_queue_disk_usage: 500M
+                "#,
+            )
+            .unwrap();
+            assert_eq!(
+                indexer_config.validate().unwrap_err().to_string(),
+                "max_queue_disk_usage (500.0 MB) must be at least max_queue_memory_usage (600.0 \
+                 MB)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_grpc_config_serialization() {
+        let grpc_config: GrpcConfig = serde_json::from_str(r#"{}"#).unwrap();
+        assert_eq!(
+            grpc_config.max_message_size,
+            GrpcConfig::default().max_message_size
+        );
+
+        let grpc_config: GrpcConfig = serde_yaml::from_str(
+            r#"
+                max_message_size: 4MiB
+            "#,
+        )
+        .unwrap();
+        assert_eq!(grpc_config.max_message_size, ByteSize::mib(4));
+    }
+
+    #[test]
+    fn test_grpc_config_validate() {
+        let grpc_config = GrpcConfig {
+            max_message_size: ByteSize::mb(1),
+        };
+        assert!(grpc_config.validate().is_ok());
+
+        let grpc_config = GrpcConfig {
+            max_message_size: ByteSize::kb(1),
+        };
+        assert!(grpc_config.validate().is_err());
     }
 }

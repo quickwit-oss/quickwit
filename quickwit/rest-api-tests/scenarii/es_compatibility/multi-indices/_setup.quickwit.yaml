@@ -14,7 +14,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.6"
+  version: "0.7"
   index_id: gharchive-1
   doc_mapping:
     index_field_presence: true
@@ -36,7 +36,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.6"
+  version: "0.7"
   index_id: gharchive-2
   doc_mapping:
     index_field_presence: true

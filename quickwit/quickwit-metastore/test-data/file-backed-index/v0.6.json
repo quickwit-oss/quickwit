@@ -142,21 +142,6 @@
     ],
     "version": "0.6"
   },
-  "shards": {
-    "_ingest-source": {
-      "next_shard_id": 2,
-      "shards": [
-        {
-          "follower_id": "follower-ingester",
-          "index_uid": "my-index:00000000000000000000000000",
-          "leader_id": "leader-ingester",
-          "shard_id": 1,
-          "shard_state": 0,
-          "source_id": "_ingest-source"
-        }
-      ]
-    }
-  },
   "splits": [
     {
       "create_timestamp": 3,

@@ -5,7 +5,7 @@ sidebar_position: 1
 ---
 
 Quickwit is built from the ground up to [efficiently index unstructured data](../guides/schemaless.md), and search it effortlessly on cloud storage.
-Moreover, Quickwit supports OpenTelemetry out of the box and provides a REST API ready to ingest any JSON formatted logs.
+Moreover, Quickwit supports OpenTelemetry gRPC and HTTP (protobuf only) protocols out of the box and provides a REST API ready to ingest any JSON formatted logs.
 **This makes Quickwit a perfect fit for logs!**.
 
 ![Quickwit Log Management](../assets/images/log-management-overview-light.svg#gh-light-mode-only)![Quickwit Log Management](../assets/images/log-management-overview-dark.svg#gh-dark-mode-only)

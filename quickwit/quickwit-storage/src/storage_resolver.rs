@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -29,6 +29,8 @@ use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
 #[cfg(feature = "azure")]
 use crate::AzureBlobStorageFactory;
+#[cfg(feature = "gcs")]
+use crate::GoogleCloudStorageFactory;
 use crate::{S3CompatibleObjectStorageFactory, Storage, StorageFactory, StorageResolverError};
 
 /// Returns the [`Storage`] instance associated with the protocol of a URI. The actual creation of
@@ -58,6 +60,7 @@ impl StorageResolver {
             Protocol::File => StorageBackend::File,
             Protocol::Ram => StorageBackend::Ram,
             Protocol::S3 => StorageBackend::S3,
+            Protocol::Google => StorageBackend::Google,
             _ => {
                 let message = format!(
                     "Quickwit does not support {} as a storage backend",
@@ -107,6 +110,21 @@ impl StorageResolver {
             builder = builder.register(UnsupportedStorage::new(
                 StorageBackend::Azure,
                 "Quickwit was compiled without the `azure` feature.",
+            ))
+        }
+        #[cfg(feature = "gcs")]
+        {
+            builder = builder.register(GoogleCloudStorageFactory::new(
+                storage_configs.find_google().cloned().unwrap_or_default(),
+            ));
+        }
+        #[cfg(not(feature = "gcs"))]
+        {
+            use crate::storage_factory::UnsupportedStorage;
+
+            builder = builder.register(UnsupportedStorage::new(
+                StorageBackend::Google,
+                "Quickwit was compiled without the `gcs` feature.",
             ))
         }
         builder

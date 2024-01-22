@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -100,7 +100,7 @@ async fn test_standalone_server() {
             .indexes()
             .create(
                 r#"
-                version: 0.6
+                version: 0.7
                 index_id: my-new-index
                 doc_mapping:
                   field_mappings:
@@ -169,7 +169,7 @@ async fn test_multi_nodes_cluster() {
         .indexes()
         .create(
             r#"
-            version: 0.6
+            version: 0.7
             index_id: my-new-multi-node-index
             doc_mapping:
               field_mappings:
