@@ -89,8 +89,8 @@ impl ScrollContext {
     /// Remove elements which will no longer be needed to answer future queries.
     pub fn truncate_start(&mut self, scroll_key: &ScrollKeyAndStartOffset) {
         // we need to keep one more element, which we use as search_after parameter
-        let to_truncate =
-            (scroll_key.start_offset - self.cached_partial_hits_start_offset - 1) as usize;
+        let to_truncate = (scroll_key.start_offset - self.cached_partial_hits_start_offset)
+            .saturating_sub(1) as usize;
         self.cached_partial_hits.drain(..to_truncate);
         self.cached_partial_hits_start_offset += to_truncate as u64;
     }
