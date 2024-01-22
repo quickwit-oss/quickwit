@@ -138,7 +138,7 @@ impl RetentionPolicyExecutor {
                 // Inserts & schedule the index's first retention policy execution.
                 self.index_configs
                     .insert(index_config.index_id.clone(), index_config);
-                ctx.schedule_self_msg(next_interval, message).await;
+                ctx.schedule_self_msg(next_interval, message);
             } else {
                 error!(index_id=%index_config.index_id, "Couldn't extract the index next schedule time.")
             }
@@ -177,7 +177,7 @@ impl Handler<Loop> for RetentionPolicyExecutor {
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         self.handle_refresh_loop(ctx).await;
-        ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
+        ctx.schedule_self_msg(RUN_INTERVAL, Loop);
         Ok(())
     }
 }
@@ -223,7 +223,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
 
         if let Ok(next_interval) = retention_policy.duration_until_next_evaluation() {
             info!(index_id=?index_config.index_id, scheduled_in=?next_interval, "retention-policy-schedule-operation");
-            ctx.schedule_self_msg(next_interval, message).await;
+            ctx.schedule_self_msg(next_interval, message);
         } else {
             // Since we have failed to schedule next execution for this index,
             // we remove it from the cache for it to be retried next time it gets

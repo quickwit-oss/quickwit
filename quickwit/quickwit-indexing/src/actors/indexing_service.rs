@@ -782,8 +782,7 @@ impl Handler<SuperviseLoop> for IndexingService {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.handle_supervise().await?;
-        ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, SuperviseLoop)
-            .await;
+        ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, SuperviseLoop);
         Ok(())
     }
 }

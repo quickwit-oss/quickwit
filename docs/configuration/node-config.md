@@ -192,11 +192,23 @@ This section contains the configuration options for a Searcher.
 | --- | --- | --- |
 | `aggregation_memory_limit` | Controls the maximum amount of memory that can be used for aggregations before aborting. This limit is per request and single leaf query (a leaf query is querying one or multiple splits concurrently). It is used to prevent excessive memory usage during the aggregation phase, which can lead to performance degradation or crashes. Since it is per request, concurrent requests can exceed the limit. | `500M`|
 | `aggregation_bucket_limit` | Determines the maximum number of buckets returned to the client. | `65000` |
-| `fast_field_cache_capacity` | Fast field cache capacity on a Searcher. If your filter by dates, run aggregations, range queries, or if you use the search stream API, or even for tracing, it might worth increasing this parameter. The [metrics](../reference/metrics.md) starting by `quickwit_cache_fastfields_cache` can help you make an informed choice when setting this value. | `1G` |
-| `split_footer_cache_capacity` | Split footer cache (it is essentially the hotcache) capacity on a Searcher.| `500M` |
-| `partial_request_cache_capacity` | Partial request cache capacity on a Searcher. Cache intermediate state for a request, possibly making subsequent requests faster. It can be disabled by setting the size to `0`. | `64M` |
+| `fast_field_cache_capacity` | Fast field in memory cache capacity on a Searcher. If your filter by dates, run aggregations, range queries, or if you use the search stream API, or even for tracing, it might worth increasing this parameter. The [metrics](../reference/metrics.md) starting by `quickwit_cache_fastfields_cache` can help you make an informed choice when setting this value. | `1G` |
+| `split_footer_cache_capacity` | Split footer in memory cache (it is essentially the hotcache) capacity on a Searcher.| `500M` |
+| `partial_request_cache_capacity` | Partial request in memory cache capacity on a Searcher. Cache intermediate state for a request, possibly making subsequent requests faster. It can be disabled by setting the size to `0`. | `64M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `max_num_concurrent_split_streams` | Maximum number of concurrent split stream requests running on a Searcher. | `100` |
+| `split_cache` | Searcher split cache configuration options defined in the section below. | |
+
+
+### Searcher split cache configuration
+
+This section contains the configuration options for the searcher split cache.
+
+| Property | Description | Default value |
+| `max_num_bytes` | Maximum size in bytes allowed in the split cache. | `1G` |
+| `max_num_splits` | Maximum number of splits allowed in the split cache.   | `10000` |
+| `num_concurrent_downloads` | Maximum number of concurrent download of splits. | `1` |
+
 
 Example:
 
@@ -205,6 +217,10 @@ searcher:
   fast_field_cache_capacity: 1G
   split_footer_cache_capacity: 500M
   partial_request_cache_capacity: 64M
+  split_cache:
+    max_num_bytes: 1G
+    max_num_splits: 10000
+    num_concurrent_downloads: 1
 ```
 
 ## Jaeger configuration

@@ -258,8 +258,7 @@ impl IndexerState {
             ctx.schedule_self_msg(
                 self.indexing_settings.commit_timeout(),
                 commit_timeout_message,
-            )
-            .await;
+            );
             *indexing_workbench_opt = Some(indexing_workbench);
         }
         let current_indexing_workbench = indexing_workbench_opt.as_mut().context(
@@ -418,7 +417,7 @@ impl Actor for Indexer {
         // Time to take a nap.
         let sleep_for = commit_timeout - elapsed;
 
-        ctx.schedule_self_msg(sleep_for, Command::Resume).await;
+        ctx.schedule_self_msg(sleep_for, Command::Resume);
         self.handle(Command::Pause, ctx).await?;
         Ok(())
     }

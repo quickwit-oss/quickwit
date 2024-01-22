@@ -349,7 +349,7 @@ impl<A: Actor> ActorContext<A> {
 
     /// Schedules a message that will be sent to the high-priority
     /// queue of the actor Mailbox once `after_duration` has elapsed.
-    pub async fn schedule_self_msg<M>(&self, after_duration: Duration, message: M)
+    pub fn schedule_self_msg<M>(&self, after_duration: Duration, message: M)
     where
         A: DeferableReplyHandler<M>,
         M: Sync + Send + std::fmt::Debug + 'static,
