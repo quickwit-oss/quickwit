@@ -38,6 +38,7 @@ use quickwit_doc_mapper::{
 use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 pub use serialize::load_index_config_from_user_config;
+use tracing::warn;
 
 use crate::index_config::serialize::VersionedIndexConfig;
 use crate::merge_policy_config::{MergePolicyConfig, StableLogMergePolicyConfig};
@@ -97,14 +98,11 @@ pub struct IndexingResources {
     #[schema(value_type = String, default = "2 GB")]
     #[serde(default = "IndexingResources::default_heap_size")]
     pub heap_size: ByteSize,
-    /// Sets the maximum write IO throughput in bytes/sec for the merge and delete pipelines.
-    /// The IO limit is applied both to the downloader and to the merge executor.
-    /// On hardware where IO is limited, this parameter can help limiting the impact of
-    /// merges/deletes on indexing.
+    // DEPRECATED: See #4439
     #[schema(value_type = String)]
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_merge_write_throughput: Option<ByteSize>,
+    #[serde(skip_serializing)]
+    max_merge_write_throughput: Option<ByteSize>,
 }
 
 impl PartialEq for IndexingResources {
@@ -124,6 +122,16 @@ impl IndexingResources {
             heap_size: ByteSize::mb(20),
             ..Default::default()
         }
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.max_merge_write_throughput.is_some() {
+            warn!(
+                "`max_merge_write_throughput` is deprecated and will be removed in a future \
+                 version. See #4439. A global limit now exists in indexer configuration."
+            );
+        }
+        Ok(())
     }
 }
 

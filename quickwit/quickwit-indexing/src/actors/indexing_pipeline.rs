@@ -878,7 +878,7 @@ mod tests {
             split_store: split_store.clone(),
             merge_policy: default_merge_policy(),
             max_concurrent_split_uploads: 2,
-            merge_max_io_num_bytes_per_sec: None,
+            merge_io_throughput_limiter_opt: None,
             event_broker: Default::default(),
         };
         let merge_pipeline = MergePipeline::new(merge_pipeline_params, universe.spawn_ctx());

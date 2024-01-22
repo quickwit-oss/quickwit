@@ -125,7 +125,7 @@ impl IndexerState {
         let io_controls = IoControls::default()
             .set_progress(ctx.progress().clone())
             .set_kill_switch(ctx.kill_switch().clone())
-            .set_index_and_component(self.pipeline_id.index_uid.index_id(), "indexer");
+            .set_component("indexer");
 
         let indexed_split = IndexedSplitBuilder::new_in_dir(
             self.pipeline_id.clone(),
