@@ -1,12 +1,12 @@
 ---
-title: Send docker logs into Quickwit (using syslog)
+title: Send Docker container logs to Quickwit (using syslog)
 sidebar_label: Docker syslog config
-description: Send docker logs into Quickwit
+description: Send Docker container logs to Quickwit using syslog
 tags: [otel, docker, collector, log]
 sidebar_position: 5
 ---
 
-To send docker container logs into Quickwit, you just need to setup an OpenTelemetry Collector with the file logs receiver. In this tutorial, we will use `docker compose` to start the collector and Quickwit.
+To send Docker container logs to Quickwit, you just need to set up an OpenTelemetry Collector with the file logs receiver. This tutorial will use `docker compose` to start the collector and Quickwit.
 
 You only need a minute to get your Quickwit log UI!
 
@@ -14,7 +14,7 @@ You only need a minute to get your Quickwit log UI!
 
 ## OTEL collector configuration
 
-The following collector configuration will listen to RFC5424-compliant logs transmitted by docker over tcp, parse them and send them to Quickwit through gRPC at `http://quickwit:7281`.
+The following collector configuration will listen to RFC5424-compliant logs transmitted by Docker over TCP, parse them, and send them to Quickwit through gRPC at `http://quickwit:7281`.
 
 
 ```yaml title="otel-collector-config.yaml"
@@ -71,7 +71,7 @@ x-syslog-logging: &logging
 
 ```
 
-This snippet makes sure container networking behaves correctly on linux for the collector to export to Quickwit.
+The snippet below ensures container networking behaves correctly on Linux for the collector to export to Quickwit.
 
 ``` yaml
 networks:
@@ -83,7 +83,7 @@ networks:
       - subnet: "192.168.32.0/20"
 ```
 
-And here you have both the collector and Quickwit services. Notice the use of the logging fragment and logging network on both containers.
+Here, you have both the collector and Quickwit services. Notice the use of the logging fragment and logging network on both containers.
 
 ``` yaml
 services:
