@@ -1,0 +1,67 @@
+endpoint: "gharchive/_stats"
+expected:
+  _all:
+    primaries:
+      docs:
+        count: 100
+    total:
+      segments:
+        count: 1
+      docs:
+        count: 100
+  indices: 
+    gharchive:
+      primaries:
+        docs:
+          count: 100
+      total:
+        segments:
+          count: 1
+        docs:
+          count: 100
+---
+endpoint: "ghar*/_stats"
+expected:
+  _all:
+    primaries:
+      docs:
+        count: 100
+    total:
+      segments:
+        count: 1
+      docs:
+        count: 100
+  indices: 
+    gharchive:
+      primaries:
+        docs:
+          count: 100
+      total:
+        segments:
+          count: 1
+        docs:
+          count: 100
+---
+endpoint: "_stats"
+expected:
+  _all:
+    primaries:
+      docs:
+        count: 100
+    total:
+      segments:
+        count: 1
+      docs:
+        count: 100
+  indices: 
+    gharchive:
+      primaries:
+        docs:
+          count: 100
+      total:
+        segments:
+          count: 1
+        docs:
+          count: 100
+
+
