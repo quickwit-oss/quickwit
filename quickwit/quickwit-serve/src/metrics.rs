@@ -19,13 +19,11 @@
 
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use hyper::{Request, Response};
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter, new_counter_vec, new_histogram_vec, Histogram, HistogramVec, IntCounter,
-    IntCounterVec,
+    new_counter_vec, new_gauge_vec, new_histogram_vec, HistogramVec, IntCounterVec, IntGaugeVec,
 };
 use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
 use tower_http::trace::{
@@ -33,30 +31,37 @@ use tower_http::trace::{
 };
 
 pub struct RestMetrics {
-    pub http_requests_total: IntCounterVec<2>,
-    pub http_requests_error: IntCounter,
-    pub http_requests_duration_secs: HistogramVec<2>,
+    pub http_requests_total: IntCounterVec<3>,
+    pub http_requests_pending: IntGaugeVec<2>,
+    pub http_requests_duration_seconds: HistogramVec<3>,
 }
 
 impl Default for RestMetrics {
+    //! - `http_requests_total` (labels: endpoint, method, status): the total number of HTTP
+    //!   requests handled (counter)
+    //! - `http_requests_duration_seconds` (labels: endpoint, method, status): the request duration
+    //!   for all HTTP requests handled (histogram)
+    //! - `http_requests_pending` (labels: endpoint, method): the number of currently in-flight
+    //!   requests (gauge)
     fn default() -> Self {
         RestMetrics {
             http_requests_total: new_counter_vec(
                 "http_requests_total",
-                "Total number of HTTP requests received",
+                "Total total number of HTTP requests handled (counter)",
+                "quickwit",
+                ["method", "path", "status"],
+            ),
+            http_requests_pending: new_gauge_vec(
+                "http_requests_pending",
+                "Number of currently in-flight requests (gauge)",
                 "quickwit",
                 ["method", "path"],
             ),
-            http_requests_error: new_counter(
-                "http_requests_error",
-                "Number of HTTP requests with errors",
+            http_requests_duration_seconds: new_histogram_vec(
+                "http_requests_duration_seconds",
+                "Request duration for all HTTP requests handled (histogram)",
                 "quickwit",
-            ),
-            http_requests_duration_secs: new_histogram_vec(
-                "http_requests_duration_secs",
-                "Number of seconds required to run the HTTP request",
-                "quickwit",
-                ["method", "path"],
+                ["method", "path", "status"],
             ),
         }
     }
@@ -74,14 +79,14 @@ pub type RestMetricsTraceLayer<B> = TraceLayer<
 
 /// Holds the state required for recording metrics on a given request.
 pub struct RestMetricsRecorder<B> {
-    pub histogram: Arc<Mutex<Option<Histogram>>>,
+    pub labels: Arc<Mutex<Vec<String>>>,
     _phantom: PhantomData<B>,
 }
 
 impl<B> Clone for RestMetricsRecorder<B> {
     fn clone(&self) -> Self {
         Self {
-            histogram: self.histogram.clone(),
+            labels: self.labels.clone(),
             _phantom: self._phantom,
         }
     }
@@ -90,19 +95,8 @@ impl<B> Clone for RestMetricsRecorder<B> {
 impl<B> RestMetricsRecorder<B> {
     pub fn new() -> Self {
         Self {
-            histogram: Arc::new(Mutex::new(None)),
+            labels: Arc::new(Mutex::new(vec![])),
             _phantom: PhantomData,
-        }
-    }
-
-    fn record_latency(self, latency: Duration) {
-        if let Some(histogram) = self
-            .histogram
-            .lock()
-            .expect("Failed to unlock histogram")
-            .clone()
-        {
-            histogram.observe(latency.as_secs_f64())
         }
     }
 }
@@ -111,39 +105,52 @@ impl<B, FailureClass> OnFailure<FailureClass> for RestMetricsRecorder<B> {
     fn on_failure(
         &mut self,
         _failure_classification: FailureClass,
-        latency: std::time::Duration,
+        _latency: std::time::Duration,
         _span: &tracing::Span,
     ) {
-        SERVE_METRICS.http_requests_error.inc();
-        self.clone().record_latency(latency);
+        let labels = self.labels.lock().expect("Failed to unlock labels").clone();
+
+        SERVE_METRICS
+            .http_requests_pending
+            .with_label_values([labels[0].as_str(), labels[1].as_str()])
+            .inc();
     }
 }
 
 impl<B, RB> OnResponse<RB> for RestMetricsRecorder<B> {
     fn on_response(
         self,
-        _response: &Response<RB>,
+        response: &Response<RB>,
         latency: std::time::Duration,
         _span: &tracing::Span,
     ) {
-        self.clone().record_latency(latency);
+        let labels = self.labels.lock().expect("Failed to unlock labels").clone();
+
+        let method = labels[0].as_str();
+        let path = labels[1].as_str();
+        SERVE_METRICS
+            .http_requests_pending
+            .with_label_values([method, path])
+            .dec();
+
+        SERVE_METRICS
+            .http_requests_duration_seconds
+            .with_label_values([method, path, response.status().as_str()])
+            .observe(latency.as_secs_f64());
+
+        SERVE_METRICS
+            .http_requests_total
+            .with_label_values([method, path, response.status().as_str()])
+            .inc();
     }
 }
 
 impl<B, RB> OnRequest<RB> for RestMetricsRecorder<B> {
     fn on_request(&mut self, request: &Request<RB>, _span: &tracing::Span) {
-        let uri = request.uri().path();
-        if uri.starts_with("/api") {
-            SERVE_METRICS
-                .http_requests_total
-                .with_label_values([request.method().as_str(), uri])
-                .inc();
-            *self.histogram.lock().unwrap() = Some(
-                SERVE_METRICS
-                    .http_requests_duration_secs
-                    .with_label_values([request.method().as_str(), uri]),
-            );
-        }
+        *self.labels.lock().unwrap() = vec![
+            request.method().to_string(),
+            request.uri().path().to_string(),
+        ]
     }
 }
 
@@ -155,5 +162,5 @@ pub fn make_rest_metrics_layer<B>() -> RestMetricsTraceLayer<B> {
         .on_failure(metrics_recorder.clone())
 }
 
-/// Serve counters exposes a bunch a set of metrics about the request received to quickwit.
+/// Serve counters exposes a bunch a set of metrics about the request received to Quickwit.
 pub static SERVE_METRICS: Lazy<RestMetrics> = Lazy::new(RestMetrics::default);
