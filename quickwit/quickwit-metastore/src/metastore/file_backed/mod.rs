@@ -787,48 +787,20 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: AcquireShardsRequest,
     ) -> MetastoreResult<AcquireShardsResponse> {
-        let mut response = AcquireShardsResponse {
-            subresponses: Vec::with_capacity(request.subrequests.len()),
-        };
-        // We must group the subrequests by `index_uid` to mutate each index only once, since each
-        // mutation triggers an IO.
-        let grouped_subrequests: HashMap<IndexUid, Vec<AcquireShardsSubrequest>> = request
-            .subrequests
-            .into_iter()
-            .into_group_map_by(|subrequest| IndexUid::from(subrequest.index_uid.clone()));
+        let index_uid: IndexUid = request.index_uid.clone().into();
 
-        for (index_uid, subrequests) in grouped_subrequests {
-            let subresponses = self
-                .mutate(index_uid, |index| index.acquire_shards(subrequests))
-                .await?;
-            response.subresponses.extend(subresponses);
-        }
-        Ok(response)
+        self.mutate(index_uid, |index| index.acquire_shards(request))
+            .await
     }
 
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
     ) -> MetastoreResult<DeleteShardsResponse> {
-        let mut subresponses = Vec::with_capacity(request.subrequests.len());
-
-        // We must group the subrequests by `index_uid` to mutate each index only once, since each
-        // mutation triggers an IO.
-        let grouped_subrequests: HashMap<IndexUid, Vec<DeleteShardsSubrequest>> = request
-            .subrequests
-            .into_iter()
-            .into_group_map_by(|subrequest| IndexUid::from(subrequest.index_uid.clone()));
-
-        for (index_uid, subrequests) in grouped_subrequests {
-            let subresponse = self
-                .mutate(index_uid, |index| {
-                    index.delete_shards(subrequests, request.force)
-                })
-                .await?;
-            subresponses.push(subresponse);
-        }
-        let response = DeleteShardsResponse {};
-        Ok(response)
+        let index_uid: IndexUid = request.index_uid.clone().into();
+        self.mutate(index_uid, |index| index.delete_shards(request))
+            .await?;
+        Ok(DeleteShardsResponse {})
     }
 
     async fn list_shards(

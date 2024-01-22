@@ -23,7 +23,7 @@ use std::fmt;
 
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
-    AcquireShardsSubrequest, AcquireShardsSubresponse, DeleteShardsSubrequest, EntityKind,
+    AcquireShardsRequest, AcquireShardsResponse, DeleteShardsRequest, EntityKind,
     ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
     OpenShardsSubrequest, OpenShardsSubresponse,
 };
@@ -161,15 +161,15 @@ impl Shards {
 
     pub(super) fn acquire_shards(
         &mut self,
-        subrequest: AcquireShardsSubrequest,
-    ) -> MetastoreResult<MutationOccurred<AcquireShardsSubresponse>> {
+        request: AcquireShardsRequest,
+    ) -> MetastoreResult<MutationOccurred<AcquireShardsResponse>> {
         let mut mutation_occurred = false;
-        let mut acquired_shards = Vec::with_capacity(subrequest.shard_ids.len());
+        let mut acquired_shards = Vec::with_capacity(request.shard_ids.len());
 
-        for shard_id in subrequest.shard_ids {
-            if let Some(shard) = self.shards.get_mut(&shard_id) {
-                if shard.publish_token.as_ref() != Some(&subrequest.publish_token) {
-                    shard.publish_token = Some(subrequest.publish_token.clone());
+        for shard_id in &request.shard_ids {
+            if let Some(shard) = self.shards.get_mut(shard_id) {
+                if shard.publish_token() != request.publish_token {
+                    shard.publish_token = Some(request.publish_token.clone());
                     mutation_occurred = true;
                 }
                 acquired_shards.push(shard.clone());
@@ -182,30 +182,26 @@ impl Shards {
                 );
             }
         }
-        let subresponse = AcquireShardsSubresponse {
-            index_uid: subrequest.index_uid,
-            source_id: subrequest.source_id,
-            acquired_shards,
-        };
+        let response = AcquireShardsResponse { acquired_shards };
         if mutation_occurred {
-            Ok(MutationOccurred::Yes(subresponse))
+            Ok(MutationOccurred::Yes(response))
         } else {
-            Ok(MutationOccurred::No(subresponse))
+            Ok(MutationOccurred::No(response))
         }
     }
 
     pub(super) fn delete_shards(
         &mut self,
-        subrequest: DeleteShardsSubrequest,
-        force: bool,
+        request: DeleteShardsRequest,
     ) -> MetastoreResult<MutationOccurred<()>> {
         let mut mutation_occurred = false;
-        for shard_id in subrequest.shard_ids {
+        for shard_id in request.shard_ids {
             if let Entry::Occupied(entry) = self.shards.entry(shard_id.clone()) {
                 let shard = entry.get();
-                if !force && !shard.publish_position_inclusive().is_eof() {
-                    warn!("shard `{shard_id}` is not deletable");
-                    continue;
+                if !request.force && !shard.publish_position_inclusive().is_eof() {
+                    let message =
+                        format!("failed to delete shard `{shard_id}`: shard is not fully indexed");
+                    return Err(MetastoreError::InvalidArgument { message });
                 }
                 info!(
                     index_id=%self.index_uid.index_id(),
@@ -426,4 +422,10 @@ mod tests {
         assert_eq!(subresponse.shards.len(), 1);
         assert_eq!(subresponse.shards[0].shard_id(), ShardId::from(1));
     }
+
+    #[test]
+    fn test_acquire_shards() {}
+
+    #[test]
+    fn test_delete_shards() {}
 }

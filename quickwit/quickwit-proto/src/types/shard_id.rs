@@ -135,6 +135,27 @@ impl PartialEq<ShardId> for &ShardId {
     }
 }
 
+#[cfg(feature = "postgres")]
+impl sqlx::Type<sqlx::Postgres> for ShardId {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("VARCHAR")
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl sqlx::Encode<'_, sqlx::Postgres> for ShardId {
+    fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
+        sqlx::Encode::<sqlx::Postgres>::encode(&*self.0, buf)
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl sqlx::postgres::PgHasArrayType for ShardId {
+    fn array_type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("VARCHAR[]")
+    }
+}
+
 #[cfg(test)]
 mod tests {
 

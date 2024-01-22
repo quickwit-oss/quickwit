@@ -44,10 +44,9 @@ use quickwit_proto::control_plane::{
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
-    serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
-    DeleteShardsRequest, DeleteShardsSubrequest, DeleteSourceRequest, EmptyResponse,
-    FindIndexTemplateMatchesRequest, IndexTemplateMatch, MetastoreError, MetastoreResult,
-    MetastoreService, MetastoreServiceClient, ToggleSourceRequest,
+    serde_utils as metastore_serde_utils, AddSourceRequest, CreateIndexRequest,
+    CreateIndexResponse, DeleteIndexRequest, DeleteShardsRequest, DeleteSourceRequest,
+    EmptyResponse, MetastoreError, MetastoreService, MetastoreServiceClient, ToggleSourceRequest,
 };
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::Serialize;
@@ -240,16 +239,13 @@ impl ControlPlane {
     async fn delete_shards(
         &mut self,
         source_uid: &SourceUid,
-        shards: &[ShardId],
+        shard_ids: &[ShardId],
         progress: &Progress,
     ) -> anyhow::Result<()> {
-        let delete_shards_subrequest = DeleteShardsSubrequest {
+        let delete_shards_request = DeleteShardsRequest {
             index_uid: source_uid.index_uid.to_string(),
             source_id: source_uid.source_id.to_string(),
-            shard_ids: shards.to_vec(),
-        };
-        let delete_shards_request = DeleteShardsRequest {
-            subrequests: vec![delete_shards_subrequest],
+            shard_ids: shard_ids.to_vec(),
             force: false,
         };
         // We use a tiny bit different strategy here than for other handlers

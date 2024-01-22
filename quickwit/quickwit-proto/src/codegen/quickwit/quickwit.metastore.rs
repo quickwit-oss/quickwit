@@ -301,13 +301,6 @@ pub struct OpenShardsSubresponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AcquireShardsRequest {
-    #[prost(message, repeated, tag = "1")]
-    pub subrequests: ::prost::alloc::vec::Vec<AcquireShardsSubrequest>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AcquireShardsSubrequest {
     #[prost(string, tag = "1")]
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
@@ -321,17 +314,6 @@ pub struct AcquireShardsSubrequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AcquireShardsResponse {
-    #[prost(message, repeated, tag = "1")]
-    pub subresponses: ::prost::alloc::vec::Vec<AcquireShardsSubresponse>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AcquireShardsSubresponse {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "3")]
     pub acquired_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
 }
@@ -339,22 +321,15 @@ pub struct AcquireShardsSubresponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteShardsRequest {
-    #[prost(message, repeated, tag = "1")]
-    pub subrequests: ::prost::alloc::vec::Vec<DeleteShardsSubrequest>,
-    /// If false, only shards at EOF positions will be deleted.
-    #[prost(bool, tag = "2")]
-    pub force: bool,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteShardsSubrequest {
     #[prost(string, tag = "1")]
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "3")]
     pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
+    /// If false, only shards at EOF positions will be deleted.
+    #[prost(bool, tag = "4")]
+    pub force: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

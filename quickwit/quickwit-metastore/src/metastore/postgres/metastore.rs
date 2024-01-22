@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::time::Duration;
 
@@ -30,7 +31,7 @@ use quickwit_config::{
 };
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
-    serde_utils, AcquireShardsRequest, AcquireShardsResponse, AcquireShardsSubresponse,
+    serde_utils, AcquireShardsRequest, AcquireShardsResponse,
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, CreateIndexTemplateRequest,
     DeleteIndexRequest, DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
@@ -47,14 +48,14 @@ use quickwit_proto::metastore::{
     UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, SourceId};
-use sea_query::{Asterisk, PostgresQueryBuilder, Query};
+use sea_query::{Asterisk, Cond, Expr, PostgresQueryBuilder, Query, UnionType};
 use sea_query_binder::SqlxBinder;
 use sqlx::{Executor, Pool, Postgres, Transaction};
 use tracing::{debug, info, instrument, warn};
 
 use super::error::convert_sqlx_err;
 use super::migrator::run_migrations;
-use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits};
+use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Shards, Splits};
 use super::split_stream::SplitStream;
 use super::utils::{append_query_filters, establish_connection};
 use crate::checkpoint::{
@@ -1205,70 +1206,98 @@ impl MetastoreService for PostgresqlMetastore {
     ) -> MetastoreResult<AcquireShardsResponse> {
         const ACQUIRE_SHARDS_QUERY: &str = include_str!("queries/shards/acquire.sql");
 
-        let mut subresponses = Vec::with_capacity(request.subrequests.len());
-
-        for subrequest in request.subrequests {
-            let shard_ids: Vec<&str> = subrequest
-                .shard_ids
-                .iter()
-                .map(|shard_id| shard_id.as_str())
-                .collect();
-            let pg_shards: Vec<PgShard> = sqlx::query_as(ACQUIRE_SHARDS_QUERY)
-                .bind(&subrequest.index_uid)
-                .bind(&subrequest.source_id)
-                .bind(shard_ids)
-                .bind(subrequest.publish_token)
-                .fetch_all(&self.connection_pool)
-                .await?;
-
-            let acquired_shards = pg_shards
-                .into_iter()
-                .map(|pg_shard| pg_shard.into())
-                .collect();
-
-            subresponses.push(AcquireShardsSubresponse {
-                index_uid: subrequest.index_uid,
-                source_id: subrequest.source_id,
-                acquired_shards,
-            });
+        if request.shard_ids.is_empty() {
+            return Ok(Default::default());
         }
-        Ok(AcquireShardsResponse { subresponses })
+
+        let shard_ids: Vec<&str> = request
+            .shard_ids
+            .iter()
+            .map(|shard_id| shard_id.as_str())
+            .collect();
+        let pg_shards: Vec<PgShard> = sqlx::query_as(ACQUIRE_SHARDS_QUERY)
+            .bind(&request.index_uid)
+            .bind(&request.source_id)
+            .bind(shard_ids)
+            .bind(request.publish_token)
+            .fetch_all(&self.connection_pool)
+            .await?;
+        let acquired_shards = pg_shards
+            .into_iter()
+            .map(|pg_shard| pg_shard.into())
+            .collect();
+        let response = AcquireShardsResponse { acquired_shards };
+        Ok(response)
     }
 
     async fn list_shards(
         &mut self,
         request: ListShardsRequest,
     ) -> MetastoreResult<ListShardsResponse> {
-        const LIST_SHARDS_QUERY: &str = include_str!("queries/shards/list.sql");
-
-        let mut subresponses = Vec::with_capacity(request.subrequests.len());
-
-        for subrequest in request.subrequests {
-            let shard_state: Option<&'static str> = match subrequest.shard_state() {
-                ShardState::Unspecified => None,
-                ShardState::Open => Some("open"),
-                ShardState::Closed => Some("closed"),
-                ShardState::Unavailable => Some("unavailable"),
-            };
-            let pg_shards: Vec<PgShard> = sqlx::query_as(LIST_SHARDS_QUERY)
-                .bind(&subrequest.index_uid)
-                .bind(&subrequest.source_id)
-                .bind(shard_state)
-                .fetch_all(&self.connection_pool)
-                .await?;
-
-            let shards = pg_shards
-                .into_iter()
-                .map(|pg_shard| pg_shard.into())
-                .collect();
-
-            subresponses.push(ListShardsSubresponse {
-                index_uid: subrequest.index_uid,
-                source_id: subrequest.source_id,
-                shards,
-            });
+        if request.subrequests.is_empty() {
+            return Ok(Default::default());
         }
-        Ok(ListShardsResponse { subresponses })
+        let mut query_builder = Query::select();
+
+        for (idx, subrequest) in request.subrequests.iter().enumerate() {
+            let mut subquery_builder = Query::select();
+            subquery_builder.column(Asterisk).from(Shards::Table);
+
+            let mut cond = Cond::all()
+                .add(Expr::col(Shards::IndexUid).eq(Expr::val(&subrequest.index_uid)))
+                .add(Expr::col(Shards::SourceId).eq(Expr::val(&subrequest.source_id)));
+
+            match subrequest.shard_state() {
+                ShardState::Open => {
+                    cond = cond.add(
+                        Expr::col(Shards::ShardState).eq(Expr::cust("CAST('open' AS SHARD_STATE)")),
+                    );
+                }
+                ShardState::Closed => {
+                    cond = cond.add(
+                        Expr::col(Shards::ShardState)
+                            .eq(Expr::cust("CAST('closed' AS SHARD_STATE)")),
+                    );
+                }
+                ShardState::Unavailable => {
+                    cond = cond.add(
+                        Expr::col(Shards::ShardState)
+                            .eq(Expr::cust("CAST('unavailable' AS SHARD_STATE)")),
+                    );
+                }
+                ShardState::Unspecified => {}
+            };
+            query_builder.cond_where(cond);
+
+            if idx == 0 {
+                query_builder = subquery_builder;
+            } else {
+                query_builder.union(UnionType::All, subquery_builder);
+            }
+        }
+        let (query, values) = query_builder.build_sqlx(PostgresQueryBuilder);
+
+        let pg_shards: Vec<PgShard> = sqlx::query_as_with::<_, PgShard, _>(&query, values)
+            .fetch_all(&self.connection_pool)
+            .await?;
+
+        let mut per_source_subresponses = HashMap::with_capacity(request.subrequests.len());
+
+        for pg_shard in pg_shards {
+            let shard: Shard = pg_shard.into();
+            let subresponse = per_source_subresponses
+                .entry((shard.index_uid.clone(), shard.source_id.clone()))
+                .or_insert_with(|| ListShardsSubresponse {
+                    index_uid: shard.index_uid.clone(),
+                    source_id: shard.source_id.clone(),
+                    shards: Vec::new(),
+                });
+            subresponse.shards.push(shard);
+        }
+        let subresponses = per_source_subresponses.into_values().collect();
+
+        let response = ListShardsResponse { subresponses };
+        Ok(response)
     }
 
     async fn delete_shards(
@@ -1277,20 +1306,29 @@ impl MetastoreService for PostgresqlMetastore {
     ) -> MetastoreResult<DeleteShardsResponse> {
         const DELETE_SHARDS_QUERY: &str = include_str!("queries/shards/delete.sql");
 
-        for subrequest in request.subrequests {
-            let shard_ids: Vec<&str> = subrequest
-                .shard_ids
-                .iter()
-                .map(|shard_id| shard_id.as_str())
-                .collect();
-
-            sqlx::query(DELETE_SHARDS_QUERY)
-                .bind(&subrequest.index_uid)
-                .bind(&subrequest.source_id)
-                .bind(shard_ids)
-                .bind(request.force)
-                .execute(&self.connection_pool)
-                .await?;
+        if request.shard_ids.is_empty() {
+            return Ok(Default::default());
+        }
+        let shard_ids: Vec<&str> = request
+            .shard_ids
+            .iter()
+            .map(|shard_id| shard_id.as_str())
+            .collect();
+        let pg_shards: Vec<PgShard> = sqlx::query_as(DELETE_SHARDS_QUERY)
+            .bind(&request.index_uid)
+            .bind(&request.source_id)
+            .bind(&shard_ids)
+            .bind(request.force)
+            .fetch_all(&self.connection_pool)
+            .await?;
+        if !request.force
+            && pg_shards.into_iter().any(|pg_shard| {
+                let position: Position = pg_shard.publish_position_inclusive.into();
+                position.is_eof()
+            })
+        {
+            let message = "failed to delete shard ``: shard is not fully indexed".to_string();
+            return Err(MetastoreError::InvalidArgument { message });
         }
         Ok(DeleteShardsResponse {})
     }

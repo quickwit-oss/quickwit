@@ -38,10 +38,7 @@ use quickwit_proto::ingest::ingester::{
     TruncateShardsSubrequest,
 };
 use quickwit_proto::ingest::IngestV2Error;
-use quickwit_proto::metastore::{
-    AcquireShardsRequest, AcquireShardsSubrequest, AcquireShardsSubresponse, MetastoreService,
-    MetastoreServiceClient,
-};
+use quickwit_proto::metastore::{AcquireShardsRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{
     IndexUid, NodeId, Position, PublishToken, ShardId, SourceId, SourceUid,
 };
@@ -458,15 +455,6 @@ impl IngestSource {
         .await?;
         Ok(())
     }
-
-    fn contains_publish_token(&self, subresponse: &AcquireShardsSubresponse) -> bool {
-        if let Some(acquired_shard) = subresponse.acquired_shards.get(0) {
-            if let Some(publish_token) = &acquired_shard.publish_token {
-                return *publish_token == self.publish_token;
-            }
-        }
-        false
-    }
 }
 
 #[async_trait]
@@ -551,38 +539,29 @@ impl Source for IngestSource {
 
         info!(added_shards=?added_shard_ids, "adding shards assignment");
 
-        let acquire_shards_subrequest = AcquireShardsSubrequest {
+        let acquire_shards_request = AcquireShardsRequest {
             index_uid: self.client_id.source_uid.index_uid.to_string(),
             source_id: self.client_id.source_uid.source_id.clone(),
             shard_ids: added_shard_ids,
             publish_token: self.publish_token.clone(),
         };
-        let acquire_shards_request = AcquireShardsRequest {
-            subrequests: vec![acquire_shards_subrequest],
-        };
         let acquire_shards_response = ctx
             .protect_future(self.metastore.acquire_shards(acquire_shards_request))
             .await
             .context("failed to acquire shards")?;
-        let acquire_shards_subresponse = acquire_shards_response
-            .subresponses
-            .into_iter()
-            .find(|subresponse| self.contains_publish_token(subresponse))
-            .context("acquire shards response is empty")?;
 
         let mut truncate_up_to_positions =
-            Vec::with_capacity(acquire_shards_subresponse.acquired_shards.len());
+            Vec::with_capacity(acquire_shards_response.acquired_shards.len());
 
-        for acquired_shard in acquire_shards_subresponse.acquired_shards {
+        for acquired_shard in acquire_shards_response.acquired_shards {
             let shard_id = acquired_shard.shard_id().clone();
+            let mut current_position_inclusive =
+                acquired_shard.publish_position_inclusive().clone();
             let leader_id: NodeId = acquired_shard.leader_id.into();
             let follower_id_opt: Option<NodeId> = acquired_shard.follower_id.map(Into::into);
             let index_uid: IndexUid = acquired_shard.index_uid.into();
             let source_id: SourceId = acquired_shard.source_id;
             let partition_id = PartitionId::from(shard_id.as_str());
-            let mut current_position_inclusive = acquired_shard
-                .publish_position_inclusive
-                .unwrap_or_default();
             let from_position_exclusive = current_position_inclusive.clone();
 
             let status = if from_position_exclusive.is_eof() {
@@ -680,7 +659,7 @@ mod tests {
         FetchMessage, IngesterServiceClient, TruncateShardsResponse,
     };
     use quickwit_proto::ingest::{IngestV2Error, MRecordBatch, Shard, ShardState};
-    use quickwit_proto::metastore::{AcquireShardsResponse, AcquireShardsSubresponse};
+    use quickwit_proto::metastore::AcquireShardsResponse;
     use quickwit_proto::types::PipelineUid;
     use quickwit_storage::StorageResolver;
     use tokio::sync::mpsc::error::TryRecvError;
@@ -710,29 +689,21 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_acquire_shards()
-            .withf(|request| {
-                assert_eq!(request.subrequests.len(), 1);
-                request.subrequests[0].shard_ids == [ShardId::from(0)]
-            })
+            .withf(|request| request.shard_ids == [ShardId::from(0)])
             .once()
             .returning(|request| {
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid, "test-index:0");
-                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.source_id, "test-source");
                 let response = AcquireShardsResponse {
-                    subresponses: vec![AcquireShardsSubresponse {
+                    acquired_shards: vec![Shard {
+                        leader_id: "test-ingester-0".to_string(),
+                        follower_id: None,
                         index_uid: "test-index:0".to_string(),
                         source_id: "test-source".to_string(),
-                        acquired_shards: vec![Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
-                            index_uid: "test-index:0".to_string(),
-                            source_id: "test-source".to_string(),
-                            shard_id: Some(ShardId::from(0)),
-                            shard_state: ShardState::Open as i32,
-                            publish_position_inclusive: Some(Position::offset(10u64)),
-                            publish_token: Some(publish_token.to_string()),
-                        }],
+                        shard_id: Some(ShardId::from(0)),
+                        shard_state: ShardState::Open as i32,
+                        publish_position_inclusive: Some(Position::offset(10u64)),
+                        publish_token: Some(publish_token.to_string()),
                     }],
                 };
                 Ok(response)
@@ -740,22 +711,36 @@ mod tests {
         mock_metastore
             .expect_acquire_shards()
             .once()
-            .withf(|request| {
-                assert_eq!(request.subrequests.len(), 1);
-                request.subrequests[0].shard_ids == [ShardId::from(1)]
-            })
+            .withf(|request| request.shard_ids == [ShardId::from(1)])
             .returning(|request| {
-                assert_eq!(request.subrequests.len(), 1);
-
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid, "test-index:0");
-                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.source_id, "test-source");
 
                 let response = AcquireShardsResponse {
-                    subresponses: vec![AcquireShardsSubresponse {
+                    acquired_shards: vec![Shard {
+                        leader_id: "test-ingester-0".to_string(),
+                        follower_id: None,
                         index_uid: "test-index:0".to_string(),
                         source_id: "test-source".to_string(),
-                        acquired_shards: vec![Shard {
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        publish_position_inclusive: Some(Position::offset(11u64)),
+                        publish_token: Some(publish_token.to_string()),
+                    }],
+                };
+                Ok(response)
+            });
+        mock_metastore
+            .expect_acquire_shards()
+            .withf(|request| request.shard_ids == [ShardId::from(1), ShardId::from(2)])
+            .once()
+            .returning(|request| {
+                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.source_id, "test-source");
+
+                let response = AcquireShardsResponse {
+                    acquired_shards: vec![
+                        Shard {
                             leader_id: "test-ingester-0".to_string(),
                             follower_id: None,
                             index_uid: "test-index:0".to_string(),
@@ -764,52 +749,18 @@ mod tests {
                             shard_state: ShardState::Open as i32,
                             publish_position_inclusive: Some(Position::offset(11u64)),
                             publish_token: Some(publish_token.to_string()),
-                        }],
-                    }],
-                };
-                Ok(response)
-            });
-        mock_metastore
-            .expect_acquire_shards()
-            .withf(|request| {
-                assert_eq!(request.subrequests.len(), 1);
-                request.subrequests[0].shard_ids == [ShardId::from(1), ShardId::from(2)]
-            })
-            .once()
-            .returning(|request| {
-                assert_eq!(request.subrequests.len(), 1);
-
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid, "test-index:0");
-                assert_eq!(subrequest.source_id, "test-source");
-
-                let response = AcquireShardsResponse {
-                    subresponses: vec![AcquireShardsSubresponse {
-                        index_uid: "test-index:0".to_string(),
-                        source_id: "test-source".to_string(),
-                        acquired_shards: vec![
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: "test-index:0".to_string(),
-                                source_id: "test-source".to_string(),
-                                shard_id: Some(ShardId::from(1)),
-                                shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(Position::offset(11u64)),
-                                publish_token: Some(publish_token.to_string()),
-                            },
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: "test-index:0".to_string(),
-                                source_id: "test-source".to_string(),
-                                shard_id: Some(ShardId::from(2)),
-                                shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(Position::offset(12u64)),
-                                publish_token: Some(publish_token.to_string()),
-                            },
-                        ],
-                    }],
+                        },
+                        Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: "test-index:0".to_string(),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(2)),
+                            shard_state: ShardState::Open as i32,
+                            publish_position_inclusive: Some(Position::offset(12u64)),
+                            publish_token: Some(publish_token.to_string()),
+                        },
+                    ],
                 };
                 Ok(response)
             });
@@ -1082,40 +1033,33 @@ mod tests {
             .expect_acquire_shards()
             .once()
             .returning(|request| {
-                assert_eq!(request.subrequests.len(), 1);
-
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid, "test-index:0");
-                assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_ids, [ShardId::from(1), ShardId::from(2)]);
+                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.source_id, "test-source");
+                assert_eq!(request.shard_ids, [ShardId::from(1), ShardId::from(2)]);
 
                 let response = AcquireShardsResponse {
-                    subresponses: vec![AcquireShardsSubresponse {
-                        index_uid: "test-index:0".to_string(),
-                        source_id: "test-source".to_string(),
-                        acquired_shards: vec![
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: "test-index:0".to_string(),
-                                source_id: "test-source".to_string(),
-                                shard_id: Some(ShardId::from(1)),
-                                shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(Position::eof(11u64)),
-                                publish_token: Some(publish_token.to_string()),
-                            },
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: "test-index:0".to_string(),
-                                source_id: "test-source".to_string(),
-                                shard_id: Some(ShardId::from(2)),
-                                shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(Position::Beginning.as_eof()),
-                                publish_token: Some(publish_token.to_string()),
-                            },
-                        ],
-                    }],
+                    acquired_shards: vec![
+                        Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: "test-index:0".to_string(),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(1)),
+                            shard_state: ShardState::Open as i32,
+                            publish_position_inclusive: Some(Position::eof(11u64)),
+                            publish_token: Some(publish_token.to_string()),
+                        },
+                        Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: "test-index:0".to_string(),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(2)),
+                            shard_state: ShardState::Open as i32,
+                            publish_position_inclusive: Some(Position::Beginning.as_eof()),
+                            publish_token: Some(publish_token.to_string()),
+                        },
+                    ],
                 };
                 Ok(response)
             });
@@ -1229,40 +1173,33 @@ mod tests {
             .expect_acquire_shards()
             .once()
             .returning(|request| {
-                assert_eq!(request.subrequests.len(), 1);
-
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid, "test-index:0");
-                assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_ids, [ShardId::from(1), ShardId::from(2)]);
+                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.source_id, "test-source");
+                assert_eq!(request.shard_ids, [ShardId::from(1), ShardId::from(2)]);
 
                 let response = AcquireShardsResponse {
-                    subresponses: vec![AcquireShardsSubresponse {
-                        index_uid: "test-index:0".to_string(),
-                        source_id: "test-source".to_string(),
-                        acquired_shards: vec![
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: "test-index:0".to_string(),
-                                source_id: "test-source".to_string(),
-                                shard_id: Some(ShardId::from(1)),
-                                shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(Position::offset(11u64)),
-                                publish_token: Some(publish_token.to_string()),
-                            },
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: "test-index:0".to_string(),
-                                source_id: "test-source".to_string(),
-                                shard_id: Some(ShardId::from(2)),
-                                shard_state: ShardState::Closed as i32,
-                                publish_position_inclusive: Some(Position::eof(22u64)),
-                                publish_token: Some(publish_token.to_string()),
-                            },
-                        ],
-                    }],
+                    acquired_shards: vec![
+                        Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: "test-index:0".to_string(),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(1)),
+                            shard_state: ShardState::Open as i32,
+                            publish_position_inclusive: Some(Position::offset(11u64)),
+                            publish_token: Some(publish_token.to_string()),
+                        },
+                        Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: "test-index:0".to_string(),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(2)),
+                            shard_state: ShardState::Closed as i32,
+                            publish_position_inclusive: Some(Position::eof(22u64)),
+                            publish_token: Some(publish_token.to_string()),
+                        },
+                    ],
                 };
                 Ok(response)
             });
@@ -1562,28 +1499,21 @@ mod tests {
         mock_metastore
             .expect_acquire_shards()
             .once()
-            .returning(|request| {
-                assert_eq!(request.subrequests.len(), 1);
-
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid, "test-index:0");
-                assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_ids, [ShardId::from(1)]);
+            .returning(|request: AcquireShardsRequest| {
+                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.source_id, "test-source");
+                assert_eq!(request.shard_ids, [ShardId::from(1)]);
 
                 let response = AcquireShardsResponse {
-                    subresponses: vec![AcquireShardsSubresponse {
+                    acquired_shards: vec![Shard {
+                        leader_id: "test-ingester-0".to_string(),
+                        follower_id: None,
                         index_uid: "test-index:0".to_string(),
                         source_id: "test-source".to_string(),
-                        acquired_shards: vec![Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
-                            index_uid: "test-index:0".to_string(),
-                            source_id: "test-source".to_string(),
-                            shard_id: Some(ShardId::from(1)),
-                            shard_state: ShardState::Open as i32,
-                            publish_position_inclusive: Some(Position::Beginning),
-                            publish_token: Some(publish_token.to_string()),
-                        }],
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        publish_position_inclusive: Some(Position::Beginning),
+                        publish_token: Some(publish_token.to_string()),
                     }],
                 };
                 Ok(response)

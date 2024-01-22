@@ -276,6 +276,25 @@ impl prost::Message for Position {
     }
 }
 
+#[cfg(feature = "postgres")]
+impl sqlx::Type<sqlx::Postgres> for Position {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("VARCHAR")
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl sqlx::Encode<'_, sqlx::Postgres> for Position {
+    fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
+        match self {
+            Self::Beginning => sqlx::Encode::<sqlx::Postgres>::encode(&BEGINNING, buf),
+            Self::Offset(offset) => sqlx::Encode::<sqlx::Postgres>::encode(&*offset.0, buf),
+            Self::Eof(Some(offset)) => sqlx::Encode::<sqlx::Postgres>::encode(&*offset.0, buf),
+            Self::Eof(None) => sqlx::Encode::<sqlx::Postgres>::encode(&EOF_PREFIX, buf),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use prost::Message;

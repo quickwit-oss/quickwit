@@ -364,10 +364,6 @@ message OpenShardsSubresponse {
 }
 
 message AcquireShardsRequest {
-  repeated AcquireShardsSubrequest subrequests = 1;
-}
-
-message AcquireShardsSubrequest {
   string index_uid = 1;
   string source_id = 2;
   repeated quickwit.ingest.ShardId shard_ids = 3;
@@ -375,25 +371,15 @@ message AcquireShardsSubrequest {
 }
 
 message AcquireShardsResponse {
-  repeated AcquireShardsSubresponse subresponses = 1;
-}
-
-message AcquireShardsSubresponse {
-  string index_uid = 1;
-  string source_id = 2;
   repeated quickwit.ingest.Shard acquired_shards = 3;
 }
 
 message DeleteShardsRequest {
-  repeated DeleteShardsSubrequest subrequests = 1;
-  // If false, only shards at EOF positions will be deleted.
-  bool force = 2;
-}
-
-message DeleteShardsSubrequest {
   string index_uid = 1;
   string source_id = 2;
   repeated quickwit.ingest.ShardId shard_ids = 3;
+  // If false, only shards at EOF positions will be deleted.
+  bool force = 4;
 }
 
 message DeleteShardsResponse {

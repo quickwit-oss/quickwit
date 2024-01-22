@@ -32,9 +32,9 @@ use itertools::Itertools;
 use quickwit_common::PrettySample;
 use quickwit_config::{SourceConfig, INGEST_V2_SOURCE_ID};
 use quickwit_proto::metastore::{
-    AcquireShardsSubrequest, AcquireShardsSubresponse, DeleteQuery, DeleteShardsSubrequest,
-    DeleteTask, EntityKind, ListShardsSubrequest, ListShardsSubresponse, MetastoreError,
-    MetastoreResult, OpenShardsSubrequest, OpenShardsSubresponse,
+    AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest, DeleteTask,
+    EntityKind, ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
+    OpenShardsSubrequest, OpenShardsSubresponse,
 };
 use quickwit_proto::types::{IndexUid, PublishToken, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
@@ -602,44 +602,18 @@ impl FileBackedIndex {
 
     pub(crate) fn acquire_shards(
         &mut self,
-        subrequests: Vec<AcquireShardsSubrequest>,
-    ) -> MetastoreResult<MutationOccurred<Vec<AcquireShardsSubresponse>>> {
-        let mut mutation_occurred = false;
-        let mut subresponses = Vec::with_capacity(subrequests.len());
-
-        for subrequest in subrequests {
-            let subresponse = match self
-                .get_shards_for_source_mut(&subrequest.source_id)?
-                .acquire_shards(subrequest)?
-            {
-                MutationOccurred::Yes(subresponse) => {
-                    mutation_occurred = true;
-                    subresponse
-                }
-                MutationOccurred::No(subresponse) => subresponse,
-            };
-            subresponses.push(subresponse);
-        }
-        if mutation_occurred {
-            Ok(MutationOccurred::Yes(subresponses))
-        } else {
-            Ok(MutationOccurred::No(subresponses))
-        }
+        request: AcquireShardsRequest,
+    ) -> MetastoreResult<MutationOccurred<AcquireShardsResponse>> {
+        self.get_shards_for_source_mut(&request.source_id)?
+            .acquire_shards(request)
     }
 
     pub(crate) fn delete_shards(
         &mut self,
-        subrequests: Vec<DeleteShardsSubrequest>,
-        force: bool,
+        request: DeleteShardsRequest,
     ) -> MetastoreResult<MutationOccurred<()>> {
-        let mut mutation_occurred = MutationOccurred::No(());
-
-        for subrequest in subrequests {
-            mutation_occurred = self
-                .get_shards_for_source_mut(&subrequest.source_id)?
-                .delete_shards(subrequest, force)?
-        }
-        Ok(mutation_occurred)
+        self.get_shards_for_source_mut(&request.source_id)?
+            .delete_shards(request)
     }
 
     pub(crate) fn list_shards(

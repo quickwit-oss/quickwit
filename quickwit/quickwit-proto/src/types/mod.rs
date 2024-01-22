@@ -70,6 +70,8 @@ pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
 /// its incarnation allowing to distinguish between deleted and recreated indexes.
 /// It is represented as a string in index_id:incarnation_id format.
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "postgres", derive(sqlx::Type))]
+#[sqlx(transparent)]
 pub struct IndexUid(String);
 
 // It is super lame, but for backward compatibility reasons we accept having a missing ulid part.
