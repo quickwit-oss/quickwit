@@ -56,12 +56,13 @@ pub(crate) struct ScrollContext {
     pub max_hits_per_page: u64,
     pub cached_partial_hits_start_offset: u64,
     pub cached_partial_hits: Vec<PartialHit>,
+    pub last_page_in_cache: bool,
 }
 
 impl ScrollContext {
     /// Returns true if the current page in cache is incomplete.
     pub fn last_page_in_cache(&self) -> bool {
-        self.cached_partial_hits.len() < SCROLL_BATCH_LEN
+        self.last_page_in_cache
     }
 
     /// Returns as many results in cache.
@@ -85,13 +86,11 @@ impl ScrollContext {
         &truncated_partial_hits[..num_partial_hits]
     }
 
-    /// Truncate the first few stored partial hits if we have more than SCROLL_BATCH_LEN of them.
-    pub fn truncate_start(&mut self) {
-        if self.cached_partial_hits.len() <= SCROLL_BATCH_LEN {
-            return;
-        }
-
-        let to_truncate = self.cached_partial_hits.len() - SCROLL_BATCH_LEN;
+    /// Remove elements which will no longer be needed to answer future queries.
+    pub fn truncate_start(&mut self, scroll_key: &ScrollKeyAndStartOffset) {
+        // we need to keep one more element, which we use as search_after parameter
+        let to_truncate =
+            (scroll_key.start_offset - self.cached_partial_hits_start_offset - 1) as usize;
         self.cached_partial_hits.drain(..to_truncate);
         self.cached_partial_hits_start_offset += to_truncate as u64;
     }
@@ -146,6 +145,9 @@ impl ScrollContext {
         .await?;
         self.cached_partial_hits_start_offset = start_offset;
         self.cached_partial_hits = leaf_search_response.partial_hits;
+        if (self.cached_partial_hits.len() as u64) < self.search_request.max_hits {
+            self.last_page_in_cache = true;
+        }
         Ok(true)
     }
 }

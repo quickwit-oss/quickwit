@@ -355,17 +355,6 @@ pub(crate) async fn scroll(
         scroll_context_modified = true;
     }
 
-    if let Some(scroll_ttl_secs) = scroll_request.scroll_ttl_secs {
-        if scroll_context_modified {
-            scroll_context.truncate_start();
-            let payload = scroll_context.serialize();
-            let scroll_ttl = Duration::from_secs(scroll_ttl_secs as u64);
-            cluster_client
-                .put_kv(&scroll_key, &payload, scroll_ttl)
-                .await;
-        }
-    }
-
     // Fetch the actual documents.
     let hits: Vec<Hit> = fetch_docs_phase(
         &scroll_context.indexes_metas_for_leaf_search,
@@ -376,13 +365,24 @@ pub(crate) async fn scroll(
     )
     .await?;
 
-    let next_scroll_id = Some(current_scroll.next_page(hits.len() as u64));
+    let next_scroll_id = current_scroll.next_page(hits.len() as u64);
+
+    if let Some(scroll_ttl_secs) = scroll_request.scroll_ttl_secs {
+        if scroll_context_modified {
+            scroll_context.truncate_start(&next_scroll_id);
+            let payload = scroll_context.serialize();
+            let scroll_ttl = Duration::from_secs(scroll_ttl_secs as u64);
+            cluster_client
+                .put_kv(&scroll_key, &payload, scroll_ttl)
+                .await;
+        }
+    }
 
     Ok(SearchResponse {
         hits,
         num_hits: scroll_context.total_num_hits,
         elapsed_time_micros: start.elapsed().as_micros() as u64,
-        scroll_id: next_scroll_id.as_ref().map(ToString::to_string),
+        scroll_id: Some(next_scroll_id.to_string()),
         errors: Vec::new(),
         aggregation: None,
     })
