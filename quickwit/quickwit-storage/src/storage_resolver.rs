@@ -109,7 +109,7 @@ impl StorageResolver {
 
             builder = builder.register(UnsupportedStorage::new(
                 StorageBackend::Azure,
-                "Quickwit was compiled without the `azure` feature.",
+                "Quickwit was compiled without the `azure` feature",
             ))
         }
         #[cfg(feature = "gcs")]
@@ -124,12 +124,12 @@ impl StorageResolver {
 
             builder = builder.register(UnsupportedStorage::new(
                 StorageBackend::Google,
-                "Quickwit was compiled without the `gcs` feature.",
+                "Quickwit was compiled without the `gcs` feature",
             ))
         }
         builder
             .build()
-            .expect("Storage factory and config backends should match.")
+            .expect("storage factory and config backends should match")
     }
 
     /// Returns a [`StorageResolver`] for testing purposes. Unlike
@@ -140,7 +140,7 @@ impl StorageResolver {
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory)
             .build()
-            .expect("Storage factory and config backends should match.")
+            .expect("storage factory and config backends should match")
     }
 }
 
