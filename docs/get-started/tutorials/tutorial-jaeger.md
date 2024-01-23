@@ -1,6 +1,6 @@
 ---
-title: Tracing with Jaeger
-sidebar_position: 1
+title: Traces with Jaeger
+sidebar_position: 2
 ---
 
 In this quick start guide, we will set up a Quickwit instance and analyze its own traces with Jaeger using Docker Compose.
