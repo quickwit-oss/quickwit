@@ -51,12 +51,12 @@ impl Debouncer {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum DebouncerState {
-    /// More than cooldown_PERIOD has elapsed since the last time we emitted an event.
+    /// More than `cooldown_period` has elapsed since we last emitted an event.
     NoCooldown,
-    // Less than cooldown_PERIOD has elapsed since the last time we emitted an event,
+    // Less than `cooldown_period` has elapsed since we last emitted an event,
     // and no event has been received since then.
     CooldownNotScheduled,
-    // Less than cooldown_PERIOD has elapsed since the last time we emitted an event,
+    // Less than `cooldown_period` has elapsed since we last emitted an event,
     // and we have already received an event during this cooldown period.
     CooldownScheduled,
 }
