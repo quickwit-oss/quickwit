@@ -302,10 +302,7 @@ impl MergePipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([
-                        self.params.pipeline_id.index_uid.index_id(),
-                        "MergeSplitDownloader",
-                    ]),
+                    .with_label_values(["MergeSplitDownloader"]),
             )
             .spawn(merge_split_downloader);
 

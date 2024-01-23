@@ -33,7 +33,7 @@ use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tantivy::directory::{Advice, MmapDirectory};
 use tantivy::Directory;
 use time::OffsetDateTime;
-use tracing::{info_span, instrument, Instrument};
+use tracing::{debug, info_span, instrument, Instrument};
 
 use super::LocalSplitStore;
 use crate::get_tantivy_directory_from_split_bundle;

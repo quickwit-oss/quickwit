@@ -340,7 +340,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "publisher"]),
+                    .with_label_values(["publisher"]),
             )
             .spawn(publisher);
 
@@ -350,7 +350,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "sequencer"]),
+                    .with_label_values(["sequencer"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(sequencer);
@@ -370,7 +370,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "uploader"]),
+                    .with_label_values(["uploader"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(uploader);
@@ -405,7 +405,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "indexer"]),
+                    .with_label_values(["indexer"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(indexer);
@@ -423,7 +423,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "doc_processor"]),
+                    .with_label_values(["doc_processor"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(doc_processor);
