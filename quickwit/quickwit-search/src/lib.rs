@@ -212,14 +212,14 @@ pub async fn list_relevant_splits(
 /// List all splits of given index id patterns
 /// Returns a mapping from index uid to index id and a list of splits
 pub async fn resolve_index_patterns(
-    index_id_patterns: Vec<String>,
+    index_id_patterns: &[String],
     metastore: &mut MetastoreServiceClient,
 ) -> crate::Result<Vec<IndexMetadata>> {
     let list_indexes_metadata_request = if index_id_patterns.is_empty() {
         ListIndexesMetadataRequest::all()
     } else {
         ListIndexesMetadataRequest {
-            index_id_patterns: index_id_patterns.clone(),
+            index_id_patterns: index_id_patterns.to_owned(),
         }
     };
 
@@ -229,7 +229,7 @@ pub async fn resolve_index_patterns(
         .list_indexes_metadata(list_indexes_metadata_request)
         .await?
         .deserialize_indexes_metadata()?;
-    check_all_index_metadata_found(&indexes_metadata, &index_id_patterns)?;
+    check_all_index_metadata_found(&indexes_metadata, index_id_patterns)?;
     Ok(indexes_metadata)
 }
 

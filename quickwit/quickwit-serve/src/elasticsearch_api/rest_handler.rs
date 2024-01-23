@@ -370,7 +370,7 @@ async fn es_compat_index_stats(
     index_id_patterns: Vec<String>,
     mut metastore: MetastoreServiceClient,
 ) -> Result<ElasticsearchStatsResponse, ElasticsearchError> {
-    let indexes_metadata = resolve_index_patterns(index_id_patterns, &mut metastore).await?;
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
     // Index id to index uid mapping
     let index_uid_to_index_id: HashMap<IndexUid, String> = indexes_metadata
         .iter()
