@@ -209,8 +209,8 @@ pub async fn list_relevant_splits(
     Ok(splits_metadata)
 }
 
-/// List all splits of given index id patterns
-/// Returns a mapping from index uid to index id and a list of splits
+/// Resolve index patterns and returns IndexMetadata for found indices.
+/// Patterns follow the elastic search patterns.
 pub async fn resolve_index_patterns(
     index_id_patterns: &[String],
     metastore: &mut MetastoreServiceClient,
