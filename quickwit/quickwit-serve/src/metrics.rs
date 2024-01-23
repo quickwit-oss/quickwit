@@ -30,19 +30,22 @@ use tower_http::trace::{
     DefaultMakeSpan, DefaultOnBodyChunk, DefaultOnEos, OnFailure, OnRequest, OnResponse, TraceLayer,
 };
 
+const UI_RESOURCES_PATH: &str = "/ui/";
+
+/// `RestMetrics` is a structure representing a collection of metrics.
 pub struct RestMetrics {
+    /// `http_requests_total` (labels: endpoint, method, status): the total number of HTTP requests
+    /// handled (counter)
     pub http_requests_total: IntCounterVec<3>,
+    /// `http_requests_pending` (labels: endpoint, method): the number of currently in-flight
+    /// requests (gauge)
     pub http_requests_pending: IntGaugeVec<2>,
+    /// `http_requests_duration_seconds` (labels: endpoint, method, status): the request duration
+    /// for all HTTP requests handled (histogram)
     pub http_requests_duration_seconds: HistogramVec<3>,
 }
 
 impl Default for RestMetrics {
-    //! - `http_requests_total` (labels: endpoint, method, status): the total number of HTTP
-    //!   requests handled (counter)
-    //! - `http_requests_duration_seconds` (labels: endpoint, method, status): the request duration
-    //!   for all HTTP requests handled (histogram)
-    //! - `http_requests_pending` (labels: endpoint, method): the number of currently in-flight
-    //!   requests (gauge)
     fn default() -> Self {
         RestMetrics {
             http_requests_total: new_counter_vec(
@@ -77,7 +80,8 @@ pub type RestMetricsTraceLayer<B> = TraceLayer<
     RestMetricsRecorder<B>,
 >;
 
-/// Holds the state required for recording metrics on a given request.
+/// `RestMetricsRecorder` holds the state(labels) required for recording metrics on a given
+/// request/response.
 pub struct RestMetricsRecorder<B> {
     pub labels: Arc<Mutex<Vec<String>>>,
     _phantom: PhantomData<B>,
@@ -95,7 +99,7 @@ impl<B> Clone for RestMetricsRecorder<B> {
 impl<B> RestMetricsRecorder<B> {
     pub fn new() -> Self {
         Self {
-            labels: Arc::new(Mutex::new(vec![])),
+            labels: Arc::new(Mutex::new(vec!["".to_string(); 2])),
             _phantom: PhantomData,
         }
     }
@@ -109,10 +113,13 @@ impl<B, FailureClass> OnFailure<FailureClass> for RestMetricsRecorder<B> {
         _span: &tracing::Span,
     ) {
         let labels = self.labels.lock().expect("Failed to unlock labels").clone();
+        let labels_str: Vec<&str> = labels.iter().map(String::as_ref).collect();
+        let method_and_path =
+            <[&str; 2]>::try_from(labels_str).expect("Failed to convert to slice");
 
         SERVE_METRICS
             .http_requests_pending
-            .with_label_values([labels[0].as_str(), labels[1].as_str()])
+            .with_label_values(method_and_path)
             .inc();
     }
 }
@@ -125,32 +132,39 @@ impl<B, RB> OnResponse<RB> for RestMetricsRecorder<B> {
         _span: &tracing::Span,
     ) {
         let labels = self.labels.lock().expect("Failed to unlock labels").clone();
+        let labels_str: Vec<&str> = labels.iter().map(String::as_ref).collect();
+        let method_and_path =
+            <[&str; 2]>::try_from(labels_str).expect("Failed to convert to slice");
 
-        let method = labels[0].as_str();
-        let path = labels[1].as_str();
-        SERVE_METRICS
-            .http_requests_pending
-            .with_label_values([method, path])
-            .dec();
+        let code = response.status().to_string();
+        let method_path_and_code =
+            <[&str; 3]>::try_from([&method_and_path[..], &[code.as_str()]].concat())
+                .expect("Failed to convert to slice");
 
         SERVE_METRICS
             .http_requests_duration_seconds
-            .with_label_values([method, path, response.status().as_str()])
+            .with_label_values(method_path_and_code)
             .observe(latency.as_secs_f64());
 
         SERVE_METRICS
             .http_requests_total
-            .with_label_values([method, path, response.status().as_str()])
+            .with_label_values(method_path_and_code)
             .inc();
+
+        SERVE_METRICS
+            .http_requests_pending
+            .with_label_values(method_and_path)
+            .dec();
     }
 }
 
 impl<B, RB> OnRequest<RB> for RestMetricsRecorder<B> {
     fn on_request(&mut self, request: &Request<RB>, _span: &tracing::Span) {
-        *self.labels.lock().unwrap() = vec![
-            request.method().to_string(),
-            request.uri().path().to_string(),
-        ]
+        let path = request.uri().path();
+        if !path.starts_with(UI_RESOURCES_PATH) {
+            *self.labels.lock().expect("Failed to unlock labels") =
+                vec![request.method().to_string(), path.to_string()]
+        }
     }
 }
 
@@ -159,8 +173,8 @@ pub fn make_rest_metrics_layer<B>() -> RestMetricsTraceLayer<B> {
     TraceLayer::new_for_http()
         .on_request(metrics_recorder.clone())
         .on_response(metrics_recorder.clone())
-        .on_failure(metrics_recorder.clone())
+        .on_failure(metrics_recorder)
 }
 
-/// Serve counters exposes a bunch a set of metrics about the request received to Quickwit.
+/// `SERVE_METRICS` exposes a set of metrics about requests/response received to Quickwit.
 pub static SERVE_METRICS: Lazy<RestMetrics> = Lazy::new(RestMetrics::default);
