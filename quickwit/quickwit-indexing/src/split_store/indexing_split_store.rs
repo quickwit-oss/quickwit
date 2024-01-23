@@ -33,7 +33,7 @@ use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tantivy::directory::{Advice, MmapDirectory};
 use tantivy::Directory;
 use time::OffsetDateTime;
-use tracing::{info, info_span, instrument, Instrument};
+use tracing::{info_span, instrument, Instrument};
 
 use super::LocalSplitStore;
 use crate::get_tantivy_directory_from_split_bundle;
@@ -140,7 +140,7 @@ impl IndexingSplitStore {
         let split_size_in_megabytes = split_num_bytes as f32 / 1_000_000f32;
         let throughput_mb_s = split_size_in_megabytes / elapsed_secs;
 
-        info!(
+        debug!(
             split_size_in_megabytes = %split_size_in_megabytes,
             num_docs = %split.num_docs,
             elapsed_secs = %elapsed_secs,
@@ -150,7 +150,7 @@ impl IndexingSplitStore {
         );
 
         if !is_mature {
-            info!("store-in-cache");
+            debug!("store-in-cache");
             if self
                 .inner
                 .local_split_store
