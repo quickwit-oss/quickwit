@@ -91,6 +91,11 @@ pub struct IndexerConfig {
     pub split_store_max_num_splits: usize,
     #[serde(default = "IndexerConfig::default_max_concurrent_split_uploads")]
     pub max_concurrent_split_uploads: usize,
+    /// Limits the IO throughput of the `SplitDownloader` and the `MergeExecutor`.
+    /// On hardware where IO is constrained, it makes sure that Merges (a batch operation)
+    /// does not starve indexing itself (as it is a latency sensitive operation).
+    #[serde(default)]
+    pub max_merge_write_throughput: Option<ByteSize>,
     /// Enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry
     /// Protocol (OTLP).
     #[serde(default = "IndexerConfig::default_enable_otlp_endpoint")]
@@ -143,6 +148,7 @@ impl IndexerConfig {
             split_store_max_num_splits: 3,
             max_concurrent_split_uploads: 4,
             cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
+            max_merge_write_throughput: None,
         };
         Ok(indexer_config)
     }
@@ -157,6 +163,7 @@ impl Default for IndexerConfig {
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             cpu_capacity: Self::default_cpu_capacity(),
+            max_merge_write_throughput: None,
         }
     }
 }

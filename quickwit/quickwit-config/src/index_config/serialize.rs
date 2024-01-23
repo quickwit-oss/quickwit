@@ -105,6 +105,7 @@ impl IndexConfigForSerialization {
         build_doc_mapper(&self.doc_mapping, &self.search_settings)?;
 
         self.indexing_settings.merge_policy.validate()?;
+        self.indexing_settings.resources.validate()?;
 
         Ok(IndexConfig {
             index_id: self.index_id,
