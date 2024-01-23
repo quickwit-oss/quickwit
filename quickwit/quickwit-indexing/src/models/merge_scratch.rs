@@ -19,6 +19,7 @@
 
 use quickwit_common::temp_dir::TempDirectory;
 use tantivy::{Directory, TrackedObject};
+use tokio::sync::{Semaphore, SemaphorePermit};
 
 use crate::merge_policy::MergeOperation;
 
@@ -31,4 +32,5 @@ pub struct MergeScratch {
     pub merge_scratch_directory: TempDirectory,
     pub downloaded_splits_directory: TempDirectory,
     pub tantivy_dirs: Vec<Box<dyn Directory>>,
+    pub merge_permit: SemaphorePermit<'static>,
 }

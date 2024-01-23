@@ -25,6 +25,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::types::{IndexUid, PublishToken, SplitId};
 use tantivy::TrackedObject;
+use tokio::sync::{Semaphore, SemaphorePermit};
 use tracing::Span;
 
 use crate::merge_policy::MergeOperation;
@@ -72,6 +73,7 @@ pub struct PackagedSplitBatch {
     /// If `None`, the split batch was built in the `IndexingPipeline`.
     pub merge_operation_opt: Option<TrackedObject<MergeOperation>>,
     pub batch_parent_span: Span,
+    pub merge_permit: Option<SemaphorePermit<'static>>,
 }
 
 impl PackagedSplitBatch {
@@ -86,6 +88,7 @@ impl PackagedSplitBatch {
         publish_token_opt: Option<PublishToken>,
         merge_operation_opt: Option<TrackedObject<MergeOperation>>,
         batch_parent_span: Span,
+        merge_permit: Option<SemaphorePermit<'static>>,
     ) -> Self {
         assert!(!splits.is_empty());
         assert!(
@@ -102,6 +105,7 @@ impl PackagedSplitBatch {
             publish_token_opt,
             merge_operation_opt,
             batch_parent_span,
+            merge_permit,
         }
     }
 

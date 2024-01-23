@@ -161,6 +161,7 @@ impl Handler<IndexedSplitBatch> for Packager {
                 batch.publish_token_opt,
                 batch.merge_operation_opt,
                 batch.batch_parent_span,
+                batch.merge_permit,
             ),
         )
         .await?;

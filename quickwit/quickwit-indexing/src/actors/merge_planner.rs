@@ -24,6 +24,7 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use itertools::Itertools;
+use once_cell::sync::OnceCell;
 use quickwit_actors::channel_with_priority::TrySendError;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
@@ -31,6 +32,7 @@ use quickwit_proto::indexing::IndexingPipelineId;
 use serde::Serialize;
 use tantivy::Inventory;
 use time::OffsetDateTime;
+use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
 use crate::actors::MergeSplitDownloader;
@@ -38,6 +40,7 @@ use crate::merge_policy::MergeOperation;
 use crate::metrics::INDEXER_METRICS;
 use crate::models::NewSplits;
 use crate::MergePolicy;
+
 
 /// The merge planner decides when to start a merge task.
 pub struct MergePlanner {
@@ -234,7 +237,7 @@ impl MergePlanner {
 
     /// Updates `known_split_ids` and return true if the split was not
     /// previously known and should be recorded.
-    fn acknownledge_split(&mut self, split_id: &str) -> bool {
+    fn acknowledge_split(&mut self, split_id: &str) -> bool {
         if self.known_split_ids.contains(split_id) {
             return false;
         }
@@ -307,7 +310,7 @@ impl MergePlanner {
             // a split already in store to be received.
             //
             // See `known_split_ids`.
-            if !self.acknownledge_split(new_split.split_id()) {
+            if !self.acknowledge_split(new_split.split_id()) {
                 continue;
             }
             self.record_split(new_split);

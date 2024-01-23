@@ -138,6 +138,7 @@ impl Handler<MergeScratch> for MergeExecutor {
                     publish_token_opt: None,
                     batch_parent_span: merge_op.merge_parent_span.clone(),
                     merge_operation_opt: Some(merge_op),
+                    merge_permit: Some(merge_scratch.merge_permit),
                 },
             )
             .await?;

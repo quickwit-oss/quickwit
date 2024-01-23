@@ -27,6 +27,7 @@ use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{IndexUid, PublishToken};
 use tantivy::directory::MmapDirectory;
 use tantivy::{IndexBuilder, TrackedObject};
+use tokio::sync::SemaphorePermit;
 use tracing::{instrument, Span};
 
 use crate::controlled_directory::ControlledDirectory;
@@ -163,6 +164,7 @@ pub struct IndexedSplitBatch {
     /// If `None`, the split batch was built in the `IndexingPipeline`.
     pub merge_operation_opt: Option<TrackedObject<MergeOperation>>,
     pub batch_parent_span: Span,
+    pub merge_permit: Option<SemaphorePermit<'static>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

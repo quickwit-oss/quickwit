@@ -25,12 +25,15 @@ use quickwit_common::io::IoControls;
 use quickwit_common::temp_dir::{self, TempDirectory};
 use quickwit_metastore::SplitMetadata;
 use tantivy::{Directory, TrackedObject};
+use tokio::sync::Semaphore;
 use tracing::{debug, info, instrument};
 
 use super::MergeExecutor;
 use crate::merge_policy::MergeOperation;
 use crate::models::MergeScratch;
 use crate::split_store::IndexingSplitStore;
+
+static CONCURRENT_MERGE: Semaphore = Semaphore::const_new(4);
 
 #[derive(Clone)]
 pub struct MergeSplitDownloader {
@@ -76,6 +79,7 @@ impl Handler<TrackedObject<MergeOperation>> for MergeSplitDownloader {
             .join("downloaded-splits")
             .tempdir_in(merge_scratch_directory.path())
             .map_err(|error| anyhow::anyhow!(error))?;
+        let merge_permit = CONCURRENT_MERGE.acquire().await.unwrap();
         let tantivy_dirs = self
             .download_splits(
                 merge_operation.splits_as_slice(),
@@ -88,6 +92,7 @@ impl Handler<TrackedObject<MergeOperation>> for MergeSplitDownloader {
             merge_scratch_directory,
             downloaded_splits_directory,
             tantivy_dirs,
+            merge_permit,
         };
         ctx.send_message(&self.executor_mailbox, msg).await?;
         Ok(())
