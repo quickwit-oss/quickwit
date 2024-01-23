@@ -348,7 +348,6 @@ where A: IoControlsAccess
 mod tests {
     use std::io::{IoSlice, Write};
     use std::time::Duration;
-    use bytesize::ByteSize;
 
     use bytesize::ByteSize;
     use tokio::io::{sink, AsyncWriteExt};
