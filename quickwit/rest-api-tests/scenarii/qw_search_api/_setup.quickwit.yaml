@@ -23,6 +23,7 @@ json:
       tokenizer: default
       expand_dots: true
       fast: true
+sleep_after: 3
 ---
 # Ingest documents
 method: POST

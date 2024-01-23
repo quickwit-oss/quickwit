@@ -48,6 +48,8 @@ def run_step(step, previous_result):
             methods = [methods]
         for method in methods:
             result = run_request_step(method, step, previous_result)
+    if "sleep_after" in step:
+        time.sleep(step["sleep_after"])
     return result
 
 def load_data(path):

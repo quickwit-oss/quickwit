@@ -120,6 +120,23 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
     Duration::from_secs(10)
 };
 
+const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_CONCURRENCY";
+const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
+
+fn get_metastore_client_max_concurrency() -> usize {
+    std::env::var(METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY).ok()
+        .and_then(|metastore_client_max_concurrency_str| {
+            if let Ok(metastore_client_max_concurrency) = metastore_client_max_concurrency_str.parse::<usize>() {
+                info!("overriding max concurrent metastore requests to {metastore_client_max_concurrency}");
+                Some(metastore_client_max_concurrency)
+            } else {
+                error!("failed to parse environment variable `{METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY}={metastore_client_max_concurrency_str}` variable");
+                None
+            }
+        })
+        .unwrap_or(DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY)
+}
+
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
     pub cluster: Cluster,
@@ -329,6 +346,9 @@ pub async fn serve_quickwit(
             let retry_layer = RetryLayer::new(RetryPolicy::default());
             MetastoreServiceClient::tower()
                 .stack_layer(retry_layer)
+                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+                    get_metastore_client_max_concurrency(),
+                ))
                 .build(metastore_client)
         };
 

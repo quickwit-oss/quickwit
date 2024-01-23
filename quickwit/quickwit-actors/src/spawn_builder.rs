@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::Duration;
+
 use anyhow::Context;
 use quickwit_common::metrics::IntCounter;
 use sync_wrapper::SyncWrapper;
@@ -70,6 +72,20 @@ impl SpawnContext {
             kill_switch: self.kill_switch.child(),
             registry: self.registry.clone(),
         }
+    }
+
+    /// Schedules a new event.
+    /// Once `timeout` is elapsed, the future `fut` is
+    /// executed.
+    ///
+    /// `fut` will be executed in the scheduler task, so it is
+    /// required to be short.
+    pub fn schedule_event<F: FnOnce() + Send + Sync + 'static>(
+        &self,
+        callback: F,
+        timeout: Duration,
+    ) {
+        self.scheduler_client.schedule_event(callback, timeout)
     }
 }
 
