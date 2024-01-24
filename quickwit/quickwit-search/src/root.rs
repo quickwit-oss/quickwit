@@ -895,25 +895,39 @@ async fn root_search_aux(
 }
 
 fn finalize_aggregation(
-    intermediate_aggregation_result_bytes: &[u8],
+    intermediate_aggregation_result_bytes_opt: Option<Vec<u8>>,
     aggregations: QuickwitAggregations,
     searcher_context: &SearcherContext,
-) -> crate::Result<String> {
+) -> crate::Result<Option<String>> {
     let merge_aggregation_result = match aggregations {
         QuickwitAggregations::FindTraceIdsAggregation(_) => {
+            let Some(intermediate_aggregation_result_bytes) =
+                intermediate_aggregation_result_bytes_opt
+            else {
+                return Ok(None);
+            };
             // The merge collector has already merged the intermediate results.
-            let aggs: Vec<Span> = postcard::from_bytes(intermediate_aggregation_result_bytes)?;
+            let aggs: Vec<Span> = postcard::from_bytes(&intermediate_aggregation_result_bytes)?;
             serde_json::to_string(&aggs)?
         }
         QuickwitAggregations::TantivyAggregations(aggregations) => {
-            let intermediate_aggregation_results: IntermediateAggregationResults =
-                postcard::from_bytes(intermediate_aggregation_result_bytes)?;
+            let intermediate_aggregation_results =
+                if let Some(intermediate_aggregation_result_bytes) =
+                    intermediate_aggregation_result_bytes_opt
+                {
+                    let intermediate_aggregation_results: IntermediateAggregationResults =
+                        postcard::from_bytes(&intermediate_aggregation_result_bytes)?;
+                    intermediate_aggregation_results
+                } else {
+                    // Default, to return correct structure
+                    Default::default()
+                };
             let final_aggregation_results: AggregationResults = intermediate_aggregation_results
                 .into_final_result(aggregations, &searcher_context.get_aggregation_limits())?;
             serde_json::to_string(&final_aggregation_results)?
         }
     };
-    Ok(merge_aggregation_result)
+    Ok(Some(merge_aggregation_result))
 }
 
 fn finalize_aggregation_if_any(
@@ -925,15 +939,12 @@ fn finalize_aggregation_if_any(
         return Ok(None);
     };
     let aggregations: QuickwitAggregations = serde_json::from_str(aggregations_json)?;
-    let Some(intermediate_result_bytes) = intermediate_aggregation_result_bytes_opt else {
-        return Ok(None);
-    };
     let aggregation_result_json = finalize_aggregation(
-        &intermediate_result_bytes[..],
+        intermediate_aggregation_result_bytes_opt,
         aggregations,
         searcher_context,
     )?;
-    Ok(Some(aggregation_result_json))
+    Ok(aggregation_result_json)
 }
 
 /// Checks that all of the index researched as found.
