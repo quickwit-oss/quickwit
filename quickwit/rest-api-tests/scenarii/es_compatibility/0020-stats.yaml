@@ -1,3 +1,7 @@
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
 endpoint: "gharchive/_stats"
 expected:
   _all:
@@ -20,6 +24,10 @@ expected:
         docs:
           count: 100
 ---
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
 endpoint: "ghar*/_stats"
 expected:
   _all:
@@ -42,6 +50,10 @@ expected:
         docs:
           count: 100
 ---
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
 endpoint: "_stats"
 expected:
   _all:
