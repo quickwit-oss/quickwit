@@ -182,7 +182,7 @@ pub(crate) fn elastic_index_stats_filter(
 
 #[utoipa::path(get, tag = "Search", path = "/_stats")]
 pub(crate) fn elastic_stats_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
-    warp::path!("_elastic" / "_stats").and(warp::get().or(warp::post()).unify())
+    warp::path!("_elastic" / "_stats").and(warp::get())
 }
 
 #[utoipa::path(get, tag = "Search", path = "/{index}/_search")]
