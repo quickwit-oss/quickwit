@@ -181,7 +181,11 @@ impl<A: Actor> SpawnBuilder<A> {
         let ctx_clone = ctx.clone();
         let loop_async_actor_future =
             async move { actor_loop(actor, inbox, no_advance_time_guard, ctx).await };
-        let join_handle = ActorJoinHandle::new(runtime_handle.spawn(loop_async_actor_future));
+        let join_handle = ActorJoinHandle::new(quickwit_common::spawn_named_task_on(
+            loop_async_actor_future,
+            std::any::type_name::<A>(),
+            &runtime_handle,
+        ));
         ctx_clone.registry().register(&mailbox, join_handle.clone());
         let actor_handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
         (mailbox, actor_handle)
