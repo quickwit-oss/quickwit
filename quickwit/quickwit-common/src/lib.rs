@@ -47,6 +47,7 @@ pub mod uri;
 
 use std::env;
 use std::fmt::{Debug, Display};
+use std::future::Future;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
@@ -196,6 +197,56 @@ pub const fn div_ceil(lhs: i64, rhs: i64) -> i64 {
     } else {
         d
     }
+}
+
+#[cfg(not(feature = "named_tasks"))]
+pub fn spawn_named_task<F>(future: F, _name: &'static str) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::task::spawn(future)
+}
+
+#[cfg(not(feature = "named_tasks"))]
+pub fn spawn_named_task_on<F>(
+    future: F,
+    _name: &'static str,
+    runtime: &tokio::runtime::Handle,
+) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    runtime.spawn(future)
+}
+
+#[cfg(feature = "named_tasks")]
+pub fn spawn_named_task<F>(future: F, name: &'static str) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::task::Builder::new()
+        .name(name)
+        .spawn(future)
+        .unwrap()
+}
+
+#[cfg(feature = "named_tasks")]
+pub fn spawn_named_task_on<F>(
+    future: F,
+    name: &'static str,
+    runtime: &tokio::runtime::Handle,
+) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::task::Builder::new()
+        .name(name)
+        .spawn_on(future, runtime)
+        .unwrap()
 }
 
 #[cfg(test)]

@@ -31,7 +31,8 @@ use crate::registry::{ActorJoinHandle, ActorRegistry};
 use crate::scheduler::{NoAdvanceTimeGuard, SchedulerClient};
 use crate::supervisor::Supervisor;
 use crate::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, KillSwitch, Mailbox, QueueCapacity,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, KillSwitch, Mailbox,
+    QueueCapacity,
 };
 
 #[derive(Clone)]
@@ -181,7 +182,11 @@ impl<A: Actor> SpawnBuilder<A> {
         let ctx_clone = ctx.clone();
         let loop_async_actor_future =
             async move { actor_loop(actor, inbox, no_advance_time_guard, ctx).await };
-        let join_handle = ActorJoinHandle::new(runtime_handle.spawn(loop_async_actor_future));
+        let join_handle = ActorJoinHandle::new(quickwit_common::spawn_named_task_on(
+            loop_async_actor_future,
+            std::any::type_name::<A>(),
+            &runtime_handle,
+        ));
         ctx_clone.registry().register(&mailbox, join_handle.clone());
         let actor_handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
         (mailbox, actor_handle)
@@ -294,19 +299,28 @@ impl<A: Actor> ActorExecutionEnv<A> {
     async fn process_all_available_messages(&mut self) -> Result<(), ActorExitStatus> {
         self.yield_and_check_if_killed().await?;
         let envelope = recv_envelope(&mut self.inbox, &self.ctx).await;
-        self.ctx.process();
+        if self.ctx.state() == ActorState::Idle {
+            self.ctx.process();
+        }
         self.process_one_message(envelope).await?;
-        loop {
-            while let Some(envelope) = try_recv_envelope(&mut self.inbox, &self.ctx) {
-                self.process_one_message(envelope).await?;
-            }
-            self.ctx.yield_now().await;
-            if self.inbox.is_empty() {
-                break;
+        // If the actor is not Paused, we consume all of the message in the mailbox.
+        if self.ctx.state() == ActorState::Processing {
+            loop {
+                while let Some(envelope) = try_recv_envelope(&mut self.inbox, &self.ctx) {
+                    self.process_one_message(envelope).await?;
+                }
+                self.ctx.yield_now().await;
+                if self.inbox.is_empty() {
+                    break;
+                }
             }
         }
-        self.actor.get_mut().on_drained_messages(&self.ctx).await?;
-        self.ctx.idle();
+        if self.ctx.state().is_running() {
+            self.actor.get_mut().on_drained_messages(&self.ctx).await?;
+        }
+        if self.ctx.state() == ActorState::Processing {
+            self.ctx.idle();
+        }
         if self.ctx.mailbox().is_last_mailbox() {
             // We double check here that the mailbox does not contain any messages,
             // as someone on different runtime thread could have added a last message

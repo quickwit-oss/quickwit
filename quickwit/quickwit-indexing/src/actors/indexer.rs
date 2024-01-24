@@ -417,8 +417,9 @@ impl Actor for Indexer {
         // Time to take a nap.
         let sleep_for = commit_timeout - elapsed;
 
+        ctx.pause();
         ctx.schedule_self_msg(sleep_for, Command::Resume);
-        self.handle(Command::Pause, ctx).await?;
+
         Ok(())
     }
 
