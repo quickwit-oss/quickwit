@@ -34,6 +34,7 @@ json:
       fast:
         normalizer: lowercase
       record: position
+sleep_after: 3
 ---
 # Ingest documents
 method: POST
@@ -43,3 +44,4 @@ params:
   refresh: "true"
 headers: {"Content-Type": "application/json"}
 body_from_file: gharchive-bulk.json.gz
+sleep_after: 3

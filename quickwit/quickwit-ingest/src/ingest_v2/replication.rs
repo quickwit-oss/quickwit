@@ -19,7 +19,6 @@
 
 use std::iter::once;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use bytesize::ByteSize;
@@ -34,14 +33,14 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardState};
 use quickwit_proto::types::{NodeId, Position};
 use tokio::sync::mpsc::error::TryRecvError;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{error, warn};
 
-use super::ingester::IngesterState;
 use super::models::IngesterShard;
 use super::mrecord::MRecord;
 use super::mrecordlog_utils::check_enough_capacity;
+use super::state::IngesterState;
 use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::metrics::INGEST_METRICS;
 use crate::{estimate_size, with_request_metrics};
@@ -409,7 +408,7 @@ impl ReplicationClient {
 pub(super) struct ReplicationTask {
     leader_id: NodeId,
     follower_id: NodeId,
-    state: Arc<RwLock<IngesterState>>,
+    state: IngesterState,
     syn_replication_stream: ServiceStream<SynReplicationMessage>,
     ack_replication_stream_tx: mpsc::UnboundedSender<IngestV2Result<AckReplicationMessage>>,
     current_replication_seqno: ReplicationSeqNo,
@@ -421,7 +420,7 @@ impl ReplicationTask {
     pub fn spawn(
         leader_id: NodeId,
         follower_id: NodeId,
-        state: Arc<RwLock<IngesterState>>,
+        state: IngesterState,
         syn_replication_stream: ServiceStream<SynReplicationMessage>,
         ack_replication_stream_tx: mpsc::UnboundedSender<IngestV2Result<AckReplicationMessage>>,
         disk_capacity: ByteSize,
@@ -463,7 +462,7 @@ impl ReplicationTask {
         };
         let queue_id = replica_shard.queue_id();
 
-        let mut state_guard = self.state.write().await;
+        let mut state_guard = self.state.lock_fully().await;
 
         state_guard
             .mrecordlog
@@ -516,7 +515,7 @@ impl ReplicationTask {
         let mut replicate_successes = Vec::with_capacity(replicate_request.subrequests.len());
         let mut replicate_failures = Vec::new();
 
-        let mut state_guard = self.state.write().await;
+        let mut state_guard = self.state.lock_fully().await;
 
         if state_guard.status != IngesterStatus::Ready {
             replicate_failures.reserve_exact(replicate_request.subrequests.len());
@@ -738,7 +737,6 @@ impl Drop for ReplicationTaskHandle {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
 
     use mrecordlog::MultiRecordLog;
     use quickwit_proto::ingest::ingester::{
@@ -1014,15 +1012,7 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
         let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_trackers: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
+        let state = IngesterState::new(mrecordlog, observation_tx);
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1110,7 +1100,7 @@ mod tests {
         let init_replica_response = into_init_replica_response(ack_replication_message);
         assert_eq!(init_replica_response.replication_seqno, 2);
 
-        let state_guard = state.read().await;
+        let state_guard = state.lock_fully().await;
 
         let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
 
@@ -1216,7 +1206,7 @@ mod tests {
             Position::offset(1u64)
         );
 
-        let state_guard = state.read().await;
+        let state_guard = state.lock_fully().await;
 
         state_guard
             .mrecordlog
@@ -1273,7 +1263,7 @@ mod tests {
             Position::offset(1u64)
         );
 
-        let state_guard = state.read().await;
+        let state_guard = state.lock_fully().await;
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_01,
@@ -1289,15 +1279,7 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
         let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_trackers: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
+        let state = IngesterState::new(mrecordlog, observation_tx);
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1324,7 +1306,7 @@ mod tests {
             Position::Beginning,
         );
         state
-            .write()
+            .lock_fully()
             .await
             .shards
             .insert(queue_id_01.clone(), replica_shard);
@@ -1374,15 +1356,7 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
         let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_trackers: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
+        let state = IngesterState::new(mrecordlog, observation_tx);
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1409,7 +1383,7 @@ mod tests {
             Position::Beginning,
         );
         state
-            .write()
+            .lock_fully()
             .await
             .shards
             .insert(queue_id_01.clone(), replica_shard);
