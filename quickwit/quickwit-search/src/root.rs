@@ -876,11 +876,15 @@ async fn root_search_aux(
     )
     .await?;
 
-    let aggregation_result_json_opt = finalize_aggregation_if_any(
+    let mut aggregation_result_json_opt = finalize_aggregation_if_any(
         &search_request,
         first_phase_result.intermediate_aggregation_result,
         searcher_context,
     )?;
+    // In case there is no index, we don't want the response to contain any aggregation structure
+    if indexes_metas_for_leaf_search.is_empty() {
+        aggregation_result_json_opt = None;
+    }
 
     Ok(SearchResponse {
         aggregation: aggregation_result_json_opt,
