@@ -540,6 +540,11 @@ async fn search_partial_hits_phase_with_scroll(
         .await?;
         let cached_partial_hits = leaf_search_resp.partial_hits.clone();
         leaf_search_resp.partial_hits.truncate(max_hits as usize);
+        let last_hit = leaf_search_resp
+            .partial_hits
+            .last()
+            .cloned()
+            .unwrap_or_default();
 
         let scroll_context_search_request =
             simplify_search_request_for_scroll_api(&search_request)?;
@@ -550,17 +555,17 @@ async fn search_partial_hits_phase_with_scroll(
             total_num_hits: leaf_search_resp.num_hits,
             max_hits_per_page: max_hits,
             cached_partial_hits_start_offset: search_request.start_offset,
-            last_page_in_cache: (cached_partial_hits.len() as u64) < search_request.max_hits,
             cached_partial_hits,
         };
         let scroll_key_and_start_offset: ScrollKeyAndStartOffset =
             ScrollKeyAndStartOffset::new_with_start_offset(
                 scroll_ctx.search_request.start_offset,
                 max_hits as u32,
+                last_hit.clone(),
             )
-            .next_page(leaf_search_resp.partial_hits.len() as u64);
+            .next_page(leaf_search_resp.partial_hits.len() as u64, last_hit);
 
-        scroll_ctx.truncate_start(&scroll_key_and_start_offset);
+        scroll_ctx.clear_cache_if_unneeded();
         let payload: Vec<u8> = scroll_ctx.serialize();
         let scroll_key = scroll_key_and_start_offset.scroll_key();
         cluster_client

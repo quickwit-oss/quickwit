@@ -380,20 +380,18 @@ pub(crate) async fn scroll(
     let mut partial_hits = Vec::new();
     let mut scroll_context_modified = false;
 
-    loop {
-        let current_doc = start_doc + partial_hits.len() as u64;
-        partial_hits
-            .extend_from_slice(scroll_context.get_cached_partial_hits(current_doc..end_doc));
-        if partial_hits.len() as u64 >= scroll_context.max_hits_per_page {
-            break;
-        }
-        let cursor: u64 = start_doc + partial_hits.len() as u64;
-        if !scroll_context
-            .load_batch_starting_at(cursor, cluster_client, searcher_context)
-            .await?
-        {
-            break;
-        }
+    let cached_results = scroll_context.get_cached_partial_hits(start_doc..end_doc);
+    partial_hits.extend_from_slice(cached_results);
+    if (partial_hits.len() as u64) < current_scroll.max_hits_per_page as u64 {
+        let search_after = partial_hits
+            .last()
+            .cloned()
+            .unwrap_or_else(|| current_scroll.search_after.clone());
+        let cursor = start_doc + partial_hits.len() as u64;
+        scroll_context
+            .load_batch_starting_at(cursor, search_after, cluster_client, searcher_context)
+            .await?;
+        partial_hits.extend_from_slice(scroll_context.get_cached_partial_hits(cursor..end_doc));
         scroll_context_modified = true;
     }
 
@@ -407,11 +405,14 @@ pub(crate) async fn scroll(
     )
     .await?;
 
-    let next_scroll_id = current_scroll.next_page(hits.len() as u64);
+    let next_scroll_id = current_scroll.next_page(
+        hits.len() as u64,
+        partial_hits.last().cloned().unwrap_or_default(),
+    );
 
     if let Some(scroll_ttl_secs) = scroll_request.scroll_ttl_secs {
         if scroll_context_modified {
-            scroll_context.truncate_start(&next_scroll_id);
+            scroll_context.clear_cache_if_unneeded();
             let payload = scroll_context.serialize();
             let scroll_ttl = Duration::from_secs(scroll_ttl_secs as u64);
             cluster_client
