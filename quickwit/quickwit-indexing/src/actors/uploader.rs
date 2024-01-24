@@ -41,6 +41,7 @@ use tantivy::TrackedObject;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
 use tracing::{debug, info, instrument, warn, Instrument, Span};
+use quickwit_common::spawn_named_task;
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
@@ -301,7 +302,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let merge_policy = self.merge_policy.clone();
         debug!(split_ids=?split_ids, "start-stage-and-store-splits");
         let event_broker = self.event_broker.clone();
-        tokio::spawn(
+        spawn_named_task(
             async move {
                 fail_point!("uploader:intask:before");
 
@@ -383,6 +384,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 Result::<(), anyhow::Error>::Ok(())
             }
             .instrument(Span::current()),
+            "upload-single-task"
         );
         fail_point!("uploader:intask:after");
         Ok(())

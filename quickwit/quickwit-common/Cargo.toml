@@ -41,6 +41,9 @@ tracing = { workspace = true }
 
 [features]
 testsuite = []
+named_tasks = ["tokio/tracing"]
+
+
 
 [dev-dependencies]
 serde_json = { workspace = true }
