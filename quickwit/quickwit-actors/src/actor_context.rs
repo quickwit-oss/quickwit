@@ -191,15 +191,7 @@ impl<A: Actor> ActorContext<A> {
         self.actor_state.get_state()
     }
 
-    pub(crate) fn process(&self) {
-        self.actor_state.process();
-    }
-
-    pub(crate) fn idle(&self) {
-        self.actor_state.idle();
-    }
-
-    pub(crate) fn pause(&self) {
+    pub fn pause(&self) {
         self.actor_state.pause();
     }
 
