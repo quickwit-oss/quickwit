@@ -15,6 +15,8 @@ import yaml
 from ..services.quickwit_service import QuickwitService
 
 SEARCHER_FUNCTION_NAME_EXPORT_NAME = "mock-data-searcher-function-name"
+INDEX_STORE_BUCKET_NAME_EXPORT_NAME = "mock-data-index-store-bucket-name"
+SOURCE_BUCKET_NAME_EXPORT_NAME = "mock-data-source-bucket-name"
 
 
 class Source(Construct):
@@ -65,6 +67,12 @@ class Source(Construct):
         mock_data_bucket.grant_read(qw_svc.indexer.lambda_function)
         mock_data_bucket.add_object_created_notification(
             aws_s3_notifications.LambdaDestination(qw_svc.indexer.lambda_function)
+        )
+        aws_cdk.CfnOutput(
+            self,
+            "source-bucket-name",
+            value=mock_data_bucket.bucket_name,
+            export_name=SOURCE_BUCKET_NAME_EXPORT_NAME,
         )
 
 
@@ -164,6 +172,12 @@ class MockDataStack(Stack):
                 api_key=search_api_key,
             )
 
+        aws_cdk.CfnOutput(
+            self,
+            "index-store-bucket-name",
+            value=qw_svc.bucket.bucket_name,
+            export_name=INDEX_STORE_BUCKET_NAME_EXPORT_NAME,
+        )
         aws_cdk.CfnOutput(
             self,
             "searcher-function-name",

@@ -143,7 +143,9 @@ curl -d '{"query":"quantity:>5", "max_hits": 10}' \
     --compressed
 ```
 
+:::note
 The index is not created until the first run of the Indexer, so you might need a few minutes before your first search request succeeds. The API Gateway key configuration also takes a minute or two to propagate, so the first requests might receive an authorization error response.
+:::
 
 Because the JSON query responses are often quite verbose, the Searcher Lambda always compresses them before sending them on the wire. It is crucial to keep this size low, both to avoid hitting the Lambda payload size limit of 6MB and to avoid egress costs at around $0.10/GB. We do this regardless of the `accept-encoding` request header, this is why the `--compressed` flag needs to be set to `curl`.
 
