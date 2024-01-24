@@ -14,6 +14,7 @@ json:
     dynamic_mapping:
       tokenizer: default
       fast: true
+sleep_after: 3
 ---
 # Ingest documents
 method: POST

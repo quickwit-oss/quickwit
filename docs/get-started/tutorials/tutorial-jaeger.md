@@ -1,6 +1,6 @@
 ---
-title: Tracing with Jaeger
-sidebar_position: 1
+title: Traces with Jaeger
+sidebar_position: 2
 ---
 
 In this quick start guide, we will set up a Quickwit instance and analyze its own traces with Jaeger using Docker Compose.
@@ -16,7 +16,7 @@ version: "3"
 
 services:
   quickwit:
-    image: quickwit/quickwit:${QW_VERSION:-0.7.0}
+    image: quickwit/quickwit:${QW_VERSION:-0.7.1}
     volumes:
       - ./qwdata:/quickwit/qwdata
     ports:
@@ -69,7 +69,7 @@ You can also use the Quickwit UI at [http://localhost:7280](http://localhost:728
 Here are a couple of query examples:
 - `service_name:quickwit AND events.event_attributes.level:INFO`
 - `span_duration_millis:>100`
-- `resource_attributes.service.version:v0.7.0`
+- `resource_attributes.service.version:v0.7.1`
 - `service_name:quickwit`
 
 That's it! You can level up with the following tutorials to discover all Quickwit features.

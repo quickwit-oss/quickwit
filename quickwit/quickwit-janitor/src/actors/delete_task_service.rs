@@ -205,8 +205,7 @@ impl Handler<UpdatePipelines> for DeleteTaskService {
         if let Err(error) = result {
             error!(error=%error, "delete task pipelines update failed");
         }
-        ctx.schedule_self_msg(UPDATE_PIPELINES_INTERVAL, UpdatePipelines)
-            .await;
+        ctx.schedule_self_msg(UPDATE_PIPELINES_INTERVAL, UpdatePipelines);
         Ok(())
     }
 }

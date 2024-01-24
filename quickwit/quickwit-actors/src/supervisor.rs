@@ -83,8 +83,7 @@ impl<A: Actor> Actor for Supervisor<A> {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        ctx.schedule_self_msg(*crate::HEARTBEAT, SuperviseLoop)
-            .await;
+        ctx.schedule_self_msg(*crate::HEARTBEAT, SuperviseLoop);
         Ok(())
     }
 
@@ -201,8 +200,7 @@ impl<A: Actor> Handler<SuperviseLoop> for Supervisor<A> {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         self.supervise(ctx).await?;
-        ctx.schedule_self_msg(*crate::HEARTBEAT, SuperviseLoop)
-            .await;
+        ctx.schedule_self_msg(*crate::HEARTBEAT, SuperviseLoop);
         Ok(())
     }
 }

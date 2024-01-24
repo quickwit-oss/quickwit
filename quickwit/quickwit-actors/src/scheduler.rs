@@ -398,7 +398,7 @@ mod tests {
             ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count.fetch_add(1, Ordering::SeqCst);
-            ctx.schedule_self_msg(Duration::from_secs(1), Tick).await;
+            ctx.schedule_self_msg(Duration::from_secs(1), Tick);
             Ok(())
         }
     }

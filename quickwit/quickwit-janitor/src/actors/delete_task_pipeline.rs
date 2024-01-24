@@ -194,19 +194,12 @@ impl DeleteTaskPipeline {
             pipeline_uid: PipelineUid::from_u128(0u128),
             source_id: "unknown".to_string(),
         };
-        let throughput_limit: f64 = index_config
-            .indexing_settings
-            .resources
-            .max_merge_write_throughput
-            .as_ref()
-            .map(|bytes_per_sec| bytes_per_sec.as_u64() as f64)
-            .unwrap_or(f64::INFINITY);
-        let delete_executor_io_controls = IoControls::default()
-            .set_throughput_limit(throughput_limit)
-            .set_index_and_component(self.index_uid.index_id(), "deleter");
+
+        let delete_executor_io_controls = IoControls::default().set_component("deleter");
+
         let split_download_io_controls = delete_executor_io_controls
             .clone()
-            .set_index_and_component(self.index_uid.index_id(), "split_downloader_delete");
+            .set_component("split_downloader_delete");
         let delete_executor = MergeExecutor::new(
             index_pipeline_id,
             self.metastore.clone(),
@@ -278,8 +271,7 @@ impl Handler<Observe> for DeleteTaskPipeline {
                 publisher: handles.publisher.last_observation().clone(),
             }
         }
-        ctx.schedule_self_msg(OBSERVE_PIPELINE_INTERVAL, Observe)
-            .await;
+        ctx.schedule_self_msg(OBSERVE_PIPELINE_INTERVAL, Observe);
         Ok(())
     }
 }

@@ -43,12 +43,12 @@ use std::ops::Range;
 
 pub use error::MetastoreResolverError;
 pub use metastore::control_plane_metastore::ControlPlaneMetastore;
-pub use metastore::file_backed_metastore::FileBackedMetastore;
+pub use metastore::file_backed::FileBackedMetastore;
 pub(crate) use metastore::index_metadata::serialize::{IndexMetadataV0_7, VersionedIndexMetadata};
 #[cfg(feature = "postgres")]
-pub use metastore::postgresql_metastore::PostgresqlMetastore;
+pub use metastore::postgres::PostgresqlMetastore;
 pub use metastore::{
-    file_backed_metastore, AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata,
+    file_backed, AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata,
     IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
     ListSplitsRequestExt, ListSplitsResponseExt, MetastoreServiceExt,
     MetastoreServiceStreamSplitsExt, PublishSplitsRequestExt, StageSplitsRequestExt,

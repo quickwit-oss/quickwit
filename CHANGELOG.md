@@ -22,6 +22,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --->
 
+## [0.7.1]
+
+### Added
+
+- Add es _count API (#4410)
+- Add _elastic/_field_caps API (#4350)
+- Make gRPC message size configurable (#4388)
+- Add API endpoint to get some control-plan internal info (#4339)
+- Add Google Cloud Storage Implementation available for storage paths starting with `gs://` (#4344)
+
+### Changed
+
+- Return 404 on index not found in ES Bulk API (#4425)
+- Allow $ and @ characters in field names (#4413)
+
+### Fixed
+- Assign all sources/shards, even if this requires exceeding the indexer #4363 
+- Fix traces doc mapping (service name set as  fast) and update default otel logs index ID to `otel-logs-v0_7` (#4401)
+- Fix parsing multi-line queries (#4409)
+- Fix range query for optional fast field panics with Index out of bounds (#4362)
+
+### Migration from 0.7.0 to 0.7.1
+
+Quickwit 0.7.1 will create the new index `otel-logs-v0_7` which is now used by default when ingesting data with the OTEL gRPC and HTTP API.
+
+In the traces index `otel-traces-v0_7`, the `service_name` field is now fast. No migration is done if `otel-traces-v0_7` already exists. If you want `service_name` field to be fast, you have to delete first the existing `otel-traces-v0_7` index or create your own index.
+
+## [0.7.0]
+
 ### Added
 
 - Elasticsearch-compatible API

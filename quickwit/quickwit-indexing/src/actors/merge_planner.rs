@@ -41,8 +41,6 @@ use crate::MergePolicy;
 
 /// The merge planner decides when to start a merge task.
 pub struct MergePlanner {
-    pipeline_id: IndexingPipelineId,
-
     /// A young split is a split that has not reached maturity
     /// yet and can be candidate to merge operations.
     partitioned_young_splits: HashMap<u64, Vec<SplitMetadata>>,
@@ -196,7 +194,6 @@ impl MergePlanner {
             .filter(|split_metadata| belongs_to_pipeline(&pipeline_id, split_metadata))
             .collect();
         let mut merge_planner = MergePlanner {
-            pipeline_id,
             known_split_ids: Default::default(),
             partitioned_young_splits: Default::default(),
             merge_policy,
@@ -436,18 +433,13 @@ impl Handler<RefreshMetrics> for MergePlanner {
         }
         INDEXER_METRICS
             .ongoing_merge_operations
-            .with_label_values([
-                self.pipeline_id.index_uid.index_id(),
-                self.pipeline_id.source_id.as_str(),
-            ])
             .set(self.ongoing_merge_operations_inventory.list().len() as i64);
         ctx.schedule_self_msg(
             *quickwit_actors::HEARTBEAT,
             RefreshMetrics {
                 incarnation_started_at: self.incarnation_started_at,
             },
-        )
-        .await;
+        );
         Ok(())
     }
 }

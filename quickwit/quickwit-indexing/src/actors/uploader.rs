@@ -40,7 +40,7 @@ use serde::Serialize;
 use tantivy::TrackedObject;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
-use tracing::{info, instrument, warn, Instrument, Span};
+use tracing::{debug, info, instrument, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
@@ -299,7 +299,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let index_uid = batch.index_uid();
         let ctx_clone = ctx.clone();
         let merge_policy = self.merge_policy.clone();
-        info!(split_ids=?split_ids, "start-stage-and-store-splits");
+        debug!(split_ids=?split_ids, "start-stage-and-store-splits");
         let event_broker = self.event_broker.clone();
         tokio::spawn(
             async move {

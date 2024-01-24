@@ -357,7 +357,7 @@ impl Handler<Loop> for SourceActor {
             ctx.send_self_message(Loop).await?;
             return Ok(());
         }
-        ctx.schedule_self_msg(wait_for, Loop).await;
+        ctx.schedule_self_msg(wait_for, Loop);
         Ok(())
     }
 }

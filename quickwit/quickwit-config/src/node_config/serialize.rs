@@ -556,6 +556,7 @@ mod tests {
                 max_concurrent_split_uploads: 8,
                 cpu_capacity: IndexerConfig::default_cpu_capacity(),
                 enable_cooperative_indexing: false,
+                max_merge_write_throughput: None,
             }
         );
         assert_eq!(

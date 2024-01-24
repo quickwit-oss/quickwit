@@ -290,8 +290,7 @@ impl IndexingPipeline {
             Health::FailureOrUnhealthy => {
                 self.terminate().await;
                 let first_retry_delay = wait_duration_before_retry(0);
-                ctx.schedule_self_msg(first_retry_delay, Spawn { retry_count: 0 })
-                    .await;
+                ctx.schedule_self_msg(first_retry_delay, Spawn { retry_count: 0 });
             }
             Health::Success => {
                 return Err(ActorExitStatus::Success);
@@ -341,7 +340,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "publisher"]),
+                    .with_label_values(["publisher"]),
             )
             .spawn(publisher);
 
@@ -351,7 +350,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "sequencer"]),
+                    .with_label_values(["sequencer"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(sequencer);
@@ -371,7 +370,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "uploader"]),
+                    .with_label_values(["uploader"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(uploader);
@@ -406,7 +405,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "indexer"]),
+                    .with_label_values(["indexer"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(indexer);
@@ -424,7 +423,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "doc_processor"]),
+                    .with_label_values(["doc_processor"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(doc_processor);
@@ -510,8 +509,7 @@ impl Handler<SuperviseLoop> for IndexingPipeline {
     ) -> Result<(), ActorExitStatus> {
         self.perform_observe(ctx);
         self.perform_health_check(ctx).await?;
-        ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token)
-            .await;
+        ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token);
         Ok(())
     }
 }
@@ -543,8 +541,7 @@ impl Handler<Spawn> for IndexingPipeline {
                 Spawn {
                     retry_count: spawn.retry_count + 1,
                 },
-            )
-            .await;
+            );
         }
         Ok(())
     }
@@ -881,7 +878,7 @@ mod tests {
             split_store: split_store.clone(),
             merge_policy: default_merge_policy(),
             max_concurrent_split_uploads: 2,
-            merge_max_io_num_bytes_per_sec: None,
+            merge_io_throughput_limiter_opt: None,
             event_broker: Default::default(),
         };
         let merge_pipeline = MergePipeline::new(merge_pipeline_params, universe.spawn_ctx());
