@@ -1,5 +1,5 @@
 ---
-title: Trace analytics with Grafana
+title: Logs and Traces with Grafana
 description: A simple tutorial to use Grafana with Quickwit's datasource plugin.
 icon_url: /img/tutorials/quickwit-logo.png
 tags: [grafana, integration]
@@ -36,7 +36,7 @@ Then we create a [Grafana](https://grafana.com/docs/grafana/latest/setup-grafana
     ports:
       - "${MAP_HOST_GRAFANA:-127.0.0.1}:3000:3000"
     environment:
-      GF_INSTALL_PLUGINS: https://github.com/quickwit-oss/quickwit-datasource/releases/download/v0.3.0-beta.2/quickwit-quickwit-datasource-0.3.0-beta.2.zip;quickwit-quickwit-datasource
+      GF_INSTALL_PLUGINS: https://github.com/quickwit-oss/quickwit-datasource/releases/download/v0.3.1/quickwit-quickwit-datasource-0.3.1.zip;quickwit-quickwit-datasource
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
@@ -54,21 +54,26 @@ You should be able to access Quickwit's UI on `http://localhost:7280/` and Grafa
 
 In Grafana, head to [Data Sources](http://localhost:3000/connections/datasources). If the plugin is installed correctly you should be able to find Quickwit in the list.
 
-We're going to set up a new Quickwit data source lookig at Quickwit's own OpenTelemetry traces, let's configure the datasource with the following parameters:
+We're going to set up a new Quickwit data source looking at Quickwit's own OpenTelemetry traces, let's configure the datasource with the following parameters:
 
-- URL : `http://quickwit:7280/api/v1/` _This uses the docker service name as the host_
-- Index ID : `otel-traces-v0_6`
-- Timestamp field : `span_start_timestamp_nanos`
-- Timestamp output format : `unix_timestamp_nanos`
+- URL : `http://quickwit:7280/api/v1` _This uses the docker service name as the host_
+- Index ID : `otel-traces-v0_7`
 
 Save and test, you should obtain a confirmation that the datasource is correctly set up.
 
 
 ![Quickwit Plugin configuration success](../../assets/images/grafana-ui-quickwit-datasource-plugin-success.png)
 
+
+You can also set up a new Quickwit data source looking at Quickwit's own OpenTelemetry logs (or your own logs index), let's configure the datasource with the following parameters:
+
+- URL : `http://quickwit:7280/api/v1` _This uses the docker service name as the host_
+- Index ID : `otel-logs-v0_7`
+
+
 ## Creating a dashboard
 
-You can then [create a new dashboard](http://localhost:3000/dashboard/new) and add a visualization : you should be able to choose our new quickwit datasource here.
+You can then [create a new dashboard](http://localhost:3000/dashboard/new) and add a visualization : you should be able to choose the traces quickwit datasource here.
 
 Quickwit sends itself its own traces, so you should already have data to display. Let's configure some panels !
 
