@@ -372,7 +372,7 @@ impl IndexingService {
         self.indexing_pipelines
             .retain(|pipeline_uid, pipeline_handle| {
                 match pipeline_handle.handle.state() {
-                    ActorState::Idle | ActorState::Paused | ActorState::Processing => true,
+                    ActorState::Paused | ActorState::Running => true,
                     ActorState::Success => {
                         info!(
                             pipeline_uid=%pipeline_uid,

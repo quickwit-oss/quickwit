@@ -541,7 +541,6 @@ impl ReplicationTask {
         for subrequest in replicate_request.subrequests {
             let queue_id = subrequest.queue_id();
             let from_position_exclusive = subrequest.from_position_exclusive().clone();
-            let to_position_inclusive = subrequest.to_position_inclusive().clone();
 
             let Some(shard) = state_guard.shards.get(&queue_id) else {
                 let replicate_failure = ReplicateFailure {
@@ -652,12 +651,6 @@ impl ReplicationTask {
                 .replicated_num_docs_total
                 .inc_by(batch_num_docs);
 
-            if current_position_inclusive != to_position_inclusive {
-                return Err(IngestV2Error::Internal(format!(
-                    "bad replica position: expected {to_position_inclusive:?}, got \
-                     {current_position_inclusive:?}"
-                )));
-            }
             let replica_shard = state_guard
                 .shards
                 .get_mut(&queue_id)
@@ -868,14 +861,21 @@ mod tests {
                 let replicate_successes = replicate_request
                     .subrequests
                     .iter()
-                    .map(|subrequest| ReplicateSuccess {
-                        subrequest_id: subrequest.subrequest_id,
-                        index_uid: subrequest.index_uid.clone(),
-                        source_id: subrequest.source_id.clone(),
-                        shard_id: subrequest.shard_id.clone(),
-                        replication_position_inclusive: Some(
-                            subrequest.to_position_inclusive().clone(),
-                        ),
+                    .map(|subrequest| {
+                        let batch_len = subrequest.doc_batch.as_ref().unwrap().num_docs();
+                        let replication_position_inclusive = subrequest
+                            .from_position_exclusive()
+                            .as_usize()
+                            .map_or(batch_len - 1, |pos| pos + batch_len);
+                        ReplicateSuccess {
+                            subrequest_id: subrequest.subrequest_id,
+                            index_uid: subrequest.index_uid.clone(),
+                            source_id: subrequest.source_id.clone(),
+                            shard_id: subrequest.shard_id.clone(),
+                            replication_position_inclusive: Some(Position::offset(
+                                replication_position_inclusive,
+                            )),
+                        }
                     })
                     .collect::<Vec<_>>();
 
@@ -903,7 +903,6 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                 from_position_exclusive: Some(Position::Beginning),
-                to_position_inclusive: Some(Position::offset(0u64)),
             },
             ReplicateSubrequest {
                 subrequest_id: 1,
@@ -912,7 +911,6 @@ mod tests {
                 shard_id: Some(ShardId::from(2)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
                 from_position_exclusive: Some(Position::Beginning),
-                to_position_inclusive: Some(Position::offset(1u64)),
             },
             ReplicateSubrequest {
                 subrequest_id: 2,
@@ -921,7 +919,6 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-qux", "test-doc-tux"])),
                 from_position_exclusive: Some(Position::offset(0u64)),
-                to_position_inclusive: Some(Position::offset(2u64)),
             },
         ];
         let replicate_response = replication_stream_task_handle
@@ -1142,7 +1139,6 @@ mod tests {
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                     from_position_exclusive: Some(Position::Beginning),
-                    to_position_inclusive: Some(Position::offset(0u64)),
                 },
                 ReplicateSubrequest {
                     subrequest_id: 1,
@@ -1151,7 +1147,6 @@ mod tests {
                     shard_id: Some(ShardId::from(2)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
                     from_position_exclusive: Some(Position::Beginning),
-                    to_position_inclusive: Some(Position::offset(1u64)),
                 },
                 ReplicateSubrequest {
                     subrequest_id: 2,
@@ -1160,7 +1155,6 @@ mod tests {
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-qux", "test-doc-tux"])),
                     from_position_exclusive: Some(Position::Beginning),
-                    to_position_inclusive: Some(Position::offset(1u64)),
                 },
             ],
             replication_seqno: 3,
@@ -1236,7 +1230,6 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-moo"])),
                 from_position_exclusive: Some(Position::offset(0u64)),
-                to_position_inclusive: Some(Position::offset(1u64)),
             }],
             replication_seqno: 4,
         };
@@ -1322,7 +1315,6 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                 from_position_exclusive: Position::offset(0u64).into(),
-                to_position_inclusive: Some(Position::offset(1u64)),
             }],
             replication_seqno: 0,
         };
@@ -1399,7 +1391,6 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                 from_position_exclusive: Some(Position::Beginning),
-                to_position_inclusive: Some(Position::offset(0u64)),
             }],
             replication_seqno: 0,
         };

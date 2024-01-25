@@ -171,6 +171,20 @@ pub(crate) fn elastic_index_count_filter(
         .and(json_or_empty())
 }
 
+// No support for any query parameters for now.
+#[utoipa::path(get, tag = "Search", path = "/{index}/_stats")]
+pub(crate) fn elastic_index_stats_filter(
+) -> impl Filter<Extract = (Vec<String>,), Error = Rejection> + Clone {
+    warp::path!("_elastic" / String / "_stats")
+        .and_then(extract_index_id_patterns)
+        .and(warp::get().or(warp::post()).unify())
+}
+
+#[utoipa::path(get, tag = "Search", path = "/_stats")]
+pub(crate) fn elastic_stats_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_stats").and(warp::get())
+}
+
 #[utoipa::path(get, tag = "Search", path = "/{index}/_search")]
 pub(crate) fn elastic_index_search_filter(
 ) -> impl Filter<Extract = (Vec<String>, SearchQueryParams, SearchBody), Error = Rejection> + Clone
