@@ -1079,9 +1079,13 @@ mod tests {
             })
             .await
             .unwrap();
-        universe.sleep(Duration::from_secs(3)).await;
         let mut indexer_counters: IndexerCounters = Default::default();
         for _ in 0..100 {
+            // When a lot of unit tests are running concurrently we have a race condition here.
+            // It is very difficult to assess when drain will actually be called.
+            //
+            // Therefore we check that it happens "eventually".
+            universe.sleep(Duration::from_secs(1)).await;
             tokio::task::yield_now().await;
             indexer_counters = indexer_handle.observe().await.state;
             indexer_counters.pipeline_metrics_opt = None;

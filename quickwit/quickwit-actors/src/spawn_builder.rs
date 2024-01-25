@@ -298,8 +298,8 @@ impl<A: Actor> ActorExecutionEnv<A> {
                 }
                 // We have reached the last message.
                 // Let's still yield and see if we have more messages:
-                // an upstream actor might have experienced backpressure, and is now waiting for our mailbox
-                // to have some room.
+                // an upstream actor might have experienced backpressure, and is now waiting for our
+                // mailbox to have some room.
                 self.ctx.yield_now().await;
                 if self.inbox.is_empty() {
                     break;
