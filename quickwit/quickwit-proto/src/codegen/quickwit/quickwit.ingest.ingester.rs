@@ -198,8 +198,6 @@ pub struct ReplicateSubrequest {
     #[prost(message, optional, tag = "5")]
     pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
     #[prost(message, optional, tag = "6")]
-    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
-    #[prost(message, optional, tag = "7")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
