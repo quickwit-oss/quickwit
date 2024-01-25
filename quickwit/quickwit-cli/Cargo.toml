@@ -86,6 +86,7 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
 ci-test = []
 openssl-support = ["openssl-probe"]
+# Requires to enable tokio unstable via RUSTFLAGS="--cfg tokio_unstable"
 tokio-console = ["console-subscriber", "quickwit-common/named_tasks"]
 release-feature-set = [
   "jemalloc",

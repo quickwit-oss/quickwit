@@ -199,7 +199,6 @@ pub const fn div_ceil(lhs: i64, rhs: i64) -> i64 {
     }
 }
 
-
 // The following are helpers to build named tasks.
 //
 // Named tasks require the tokio feature `tracing` to be enabled.
@@ -219,7 +218,7 @@ pub const fn div_ceil(lhs: i64, rhs: i64) -> i64 {
 // Actors will get named after their type, which is fine.
 // For other tasks, please use `snake_case`.
 
-#[cfg(not(feature = "named_tasks"))]
+#[cfg(not(all(tokio_unstable, feature = "named_tasks")))]
 pub fn spawn_named_task<F>(future: F, _name: &'static str) -> tokio::task::JoinHandle<F::Output>
 where
     F: Future + Send + 'static,
@@ -228,7 +227,7 @@ where
     tokio::task::spawn(future)
 }
 
-#[cfg(not(feature = "named_tasks"))]
+#[cfg(not(all(tokio_unstable, feature = "named_tasks")))]
 pub fn spawn_named_task_on<F>(
     future: F,
     _name: &'static str,
@@ -241,7 +240,7 @@ where
     runtime.spawn(future)
 }
 
-#[cfg(feature = "named_tasks")]
+#[cfg(all(tokio_unstable, feature = "named_tasks"))]
 pub fn spawn_named_task<F>(future: F, name: &'static str) -> tokio::task::JoinHandle<F::Output>
 where
     F: Future + Send + 'static,
@@ -253,7 +252,7 @@ where
         .unwrap()
 }
 
-#[cfg(feature = "named_tasks")]
+#[cfg(all(tokio_unstable, feature = "named_tasks"))]
 pub fn spawn_named_task_on<F>(
     future: F,
     name: &'static str,

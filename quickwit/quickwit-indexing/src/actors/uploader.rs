@@ -30,6 +30,7 @@ use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::pubsub::EventBroker;
+use quickwit_common::spawn_named_task;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, StageSplitsRequest};
@@ -41,7 +42,6 @@ use tantivy::TrackedObject;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
 use tracing::{debug, info, instrument, warn, Instrument, Span};
-use quickwit_common::spawn_named_task;
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
