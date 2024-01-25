@@ -289,7 +289,7 @@ impl<A: Actor> ActorExecutionEnv<A> {
         self.yield_and_check_if_killed().await?;
         let envelope = recv_envelope(&mut self.inbox, &self.ctx).await;
         self.process_one_message(envelope).await?;
-        // If the actor is Running (not Paused), we consume all of the message in the mailbox
+        // If the actor is Running (not Paused), we consume all the messages in the mailbox
         // and call `on_drained_message`.
         if self.ctx.state().is_running() {
             loop {
@@ -298,7 +298,7 @@ impl<A: Actor> ActorExecutionEnv<A> {
                 }
                 // We have reached the last message.
                 // Let's still yield and see if we have more messages:
-                // an upstream actor might have been experience backpressure, and is now waiting for our mailbox
+                // an upstream actor might have experienced backpressure, and is now waiting for our mailbox
                 // to have some room.
                 self.ctx.yield_now().await;
                 if self.inbox.is_empty() {
