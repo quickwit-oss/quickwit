@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Ubuntu packages
         run: sudo apt-get -y install protobuf-compiler python3 python3-pip
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@v3
         id: modified
         with:
           filters: |
@@ -98,7 +98,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@v3
         id: modified
         with:
           filters: |
