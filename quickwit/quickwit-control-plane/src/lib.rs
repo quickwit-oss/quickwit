@@ -37,5 +37,6 @@ pub struct IndexerNodeInfo {
 
 pub type IndexerPool = Pool<String, IndexerNodeInfo>;
 
+mod debouncer;
 #[cfg(test)]
 mod tests;

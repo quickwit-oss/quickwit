@@ -47,7 +47,8 @@
         "enable_otlp_endpoint": true,
         "split_store_max_num_bytes": "1T",
         "split_store_max_num_splits": 10000,
-        "max_concurrent_split_uploads": 8
+        "max_concurrent_split_uploads": 8,
+o
     },
     "ingest_api": {
         "replication_factor": 2

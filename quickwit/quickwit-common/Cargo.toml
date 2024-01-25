@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-common"
-version = "0.7.0"
+version = "0.7.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -41,9 +41,9 @@ tracing = { workspace = true }
 
 [features]
 testsuite = []
+named_tasks = ["tokio/tracing"]
 
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-
 quickwit-macros = { workspace = true }

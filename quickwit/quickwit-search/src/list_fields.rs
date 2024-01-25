@@ -28,10 +28,8 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
 use quickwit_common::uri::Uri;
-use quickwit_metastore::{ListIndexesMetadataResponseExt, SplitMetadata};
-use quickwit_proto::metastore::{
-    ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
-};
+use quickwit_metastore::SplitMetadata;
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
     deserialize_split_fields, LeafListFieldsRequest, ListFields, ListFieldsEntryResponse,
     ListFieldsRequest, ListFieldsResponse, SplitIdAndFooterOffsets,
@@ -40,9 +38,8 @@ use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
 
 use crate::leaf::open_split_bundle;
-use crate::root::check_all_index_metadata_found;
 use crate::service::SearcherContext;
-use crate::{list_relevant_splits, ClusterClient, SearchError, SearchJob};
+use crate::{list_relevant_splits, resolve_index_patterns, ClusterClient, SearchError, SearchJob};
 
 /// Get the list of splits for the request which we need to scan.
 pub async fn get_fields_from_split<'a>(
@@ -290,24 +287,8 @@ pub async fn root_list_fields(
     cluster_client: &ClusterClient,
     mut metastore: MetastoreServiceClient,
 ) -> crate::Result<ListFieldsResponse> {
-    let list_indexes_metadata_request = if list_fields_req.index_id_patterns.is_empty() {
-        ListIndexesMetadataRequest::all()
-    } else {
-        ListIndexesMetadataRequest {
-            index_id_patterns: list_fields_req.index_id_patterns.clone(),
-        }
-    };
-
-    // Get the index ids from the request
-    let indexes_metadata = metastore
-        .clone()
-        .list_indexes_metadata(list_indexes_metadata_request)
-        .await?
-        .deserialize_indexes_metadata()?;
-    check_all_index_metadata_found(
-        &indexes_metadata[..],
-        &list_fields_req.index_id_patterns[..],
-    )?;
+    let indexes_metadata =
+        resolve_index_patterns(&list_fields_req.index_id_patterns[..], &mut metastore).await?;
     // The request contains a wildcard, but couldn't find any index.
     if indexes_metadata.is_empty() {
         return Ok(ListFieldsResponse { fields: vec![] });

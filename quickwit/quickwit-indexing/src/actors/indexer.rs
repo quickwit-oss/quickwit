@@ -125,7 +125,7 @@ impl IndexerState {
         let io_controls = IoControls::default()
             .set_progress(ctx.progress().clone())
             .set_kill_switch(ctx.kill_switch().clone())
-            .set_index_and_component(self.pipeline_id.index_uid.index_id(), "indexer");
+            .set_component("indexer");
 
         let indexed_split = IndexedSplitBuilder::new_in_dir(
             self.pipeline_id.clone(),
@@ -417,8 +417,9 @@ impl Actor for Indexer {
         // Time to take a nap.
         let sleep_for = commit_timeout - elapsed;
 
+        ctx.pause();
         ctx.schedule_self_msg(sleep_for, Command::Resume);
-        self.handle(Command::Pause, ctx).await?;
+
         Ok(())
     }
 
@@ -1078,13 +1079,25 @@ mod tests {
             })
             .await
             .unwrap();
-        universe.sleep(Duration::from_secs(3)).await;
-        let mut indexer_counters = indexer_handle.observe().await.state;
-        indexer_counters.pipeline_metrics_opt = None;
+        let mut indexer_counters: IndexerCounters = Default::default();
+        for _ in 0..100 {
+            // When a lot of unit tests are running concurrently we have a race condition here.
+            // It is very difficult to assess when drain will actually be called.
+            //
+            // Therefore we check that it happens "eventually".
+            universe.sleep(Duration::from_secs(1)).await;
+            tokio::task::yield_now().await;
+            indexer_counters = indexer_handle.observe().await.state;
+            indexer_counters.pipeline_metrics_opt = None;
+            // drain was called at least once.
+            if indexer_counters.num_splits_emitted > 0 {
+                break;
+            }
+        }
 
         assert_eq!(
-            indexer_counters,
-            IndexerCounters {
+            &indexer_counters,
+            &IndexerCounters {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0,

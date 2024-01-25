@@ -819,28 +819,15 @@ Disables [telemetry](../telemetry.md) when set to any non-empty value.
 
 `QW_DISABLE_TELEMETRY=1 quickwit help`
 
-<!--
-    End of auto-generated CLI docs
--->
+### RUST_LOG
 
-## Environment Variables
+Configure quickwit log level.
 
-### QW_CLUSTER_ENDPOINT
+*Examples*
 
-Specifies the address of the cluster to connect to. Management commands `index`, `split` and `source` require the `cluster_endpoint`, which you can set once and for all with the `QW_CLUSTER_ENDPOINT` environment variable.
-
-### QW_CONFIG
-
-Specifies the path to the [quickwit config](../configuration/node-config.md). Commands `run` and `tools` require the `config`, which you can set once and for all with the `QW_CONFIG` environment variable.
-
-*Example*
-
-`export QW_CONFIG=config/quickwit.yaml`
-
-### QW_DISABLE_TELEMETRY
-
-Disables [telemetry](../telemetry.md) when set to any non-empty value.
-
-*Example*
-
-`QW_DISABLE_TELEMETRY=1 quickwit help`
+```
+# run with higher verbosity
+RUST_LOG=debug quickwit run
+# run with log level info, except for indexing related logs
+RUST_LOG=info,quickwit_indexing=debug quickwit run
+```

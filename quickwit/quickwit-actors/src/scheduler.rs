@@ -25,6 +25,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
+use quickwit_common::spawn_named_task;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -203,16 +204,19 @@ pub fn start_scheduler() -> SchedulerClient {
         }),
     };
     let mut scheduler = Scheduler::new(&scheduler_client);
-    tokio::spawn(async move {
-        while let Ok(scheduler_message) = rx.recv_async().await {
-            match scheduler_message {
-                SchedulerMessage::ProcessTime => scheduler.process_time(),
-                SchedulerMessage::Schedule { callback, timeout } => {
-                    scheduler.process_schedule(callback, timeout);
+    spawn_named_task(
+        async move {
+            while let Ok(scheduler_message) = rx.recv_async().await {
+                match scheduler_message {
+                    SchedulerMessage::ProcessTime => scheduler.process_time(),
+                    SchedulerMessage::Schedule { callback, timeout } => {
+                        scheduler.process_schedule(callback, timeout);
+                    }
                 }
             }
-        }
-    });
+        },
+        "scheduler",
+    );
     scheduler_client
 }
 

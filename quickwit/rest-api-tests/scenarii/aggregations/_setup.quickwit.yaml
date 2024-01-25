@@ -3,6 +3,10 @@ method: DELETE
 endpoint: indexes/aggregations
 status_code: null
 ---
+method: DELETE
+endpoint: indexes/empty_aggregations
+status_code: null
+---
 # Create index
 method: POST
 endpoint: indexes/
@@ -21,6 +25,27 @@ json:
           - rfc3339
         fast_precision: seconds
         fast: true
+sleep_after: 3
+---
+# Create empty index
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: empty_aggregations
+  doc_mapping:
+    mode: dynamic
+    dynamic_mapping:
+      tokenizer: default
+      fast: true
+    field_mappings:
+      - name: date
+        type: datetime
+        input_formats:
+          - rfc3339
+        fast_precision: seconds
+        fast: true
+sleep_after: 3
 ---
 # Ingest documents
 method: POST

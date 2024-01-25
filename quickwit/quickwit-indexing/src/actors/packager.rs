@@ -134,7 +134,7 @@ impl Handler<IndexedSplitBatch> for Packager {
             .iter()
             .map(|split| split.split_id().to_string())
             .collect_vec();
-        info!(
+        debug!(
             split_ids=?split_ids,
             "start-packaging-splits"
         );
@@ -278,7 +278,7 @@ fn create_packaged_split(
     tag_fields: &[NamedField],
     ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<PackagedSplit> {
-    info!(split_id = split.split_id(), "create-packaged-split");
+    debug!(split_id = split.split_id(), "create-packaged-split");
     let split_files = list_split_files(segment_metas, &split.split_scratch_directory)?;
 
     // Extracts tag values from inverted indexes only when a field cardinality is less

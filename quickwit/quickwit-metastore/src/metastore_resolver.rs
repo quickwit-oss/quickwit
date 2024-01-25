@@ -136,7 +136,7 @@ impl MetastoreResolver {
         }
         builder
             .build()
-            .expect("Metastore factory and config backends should match.")
+            .expect("metastore factory and config backends should match")
     }
 }
 
@@ -162,7 +162,7 @@ impl MetastoreResolverBuilder {
         for (metastore_factory, metastore_config) in self.per_protocol_factories.values() {
             ensure!(
                 metastore_factory.backend() == metastore_config.backend(),
-                "Metastore factory and config backends do not match: {:?} vs. {:?}",
+                "metastore factory and config backends do not match: {:?} vs. {:?}",
                 metastore_factory.backend(),
                 metastore_config.backend(),
             );

@@ -30,6 +30,7 @@ use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::pubsub::EventBroker;
+use quickwit_common::spawn_named_task;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, StageSplitsRequest};
@@ -40,7 +41,7 @@ use serde::Serialize;
 use tantivy::TrackedObject;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
-use tracing::{info, instrument, warn, Instrument, Span};
+use tracing::{debug, info, instrument, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
@@ -299,9 +300,9 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let index_uid = batch.index_uid();
         let ctx_clone = ctx.clone();
         let merge_policy = self.merge_policy.clone();
-        info!(split_ids=?split_ids, "start-stage-and-store-splits");
+        debug!(split_ids=?split_ids, "start-stage-and-store-splits");
         let event_broker = self.event_broker.clone();
-        tokio::spawn(
+        spawn_named_task(
             async move {
                 fail_point!("uploader:intask:before");
 
@@ -383,6 +384,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 Result::<(), anyhow::Error>::Ok(())
             }
             .instrument(Span::current()),
+            "upload_single_task"
         );
         fail_point!("uploader:intask:after");
         Ok(())
