@@ -25,6 +25,7 @@ mod multi_search;
 mod scroll;
 mod search_body;
 mod search_query_params;
+mod stats;
 
 pub use bulk_body::BulkAction;
 pub use bulk_query_params::ElasticBulkOptions;
@@ -41,6 +42,7 @@ pub use scroll::ScrollQueryParams;
 pub use search_body::SearchBody;
 pub use search_query_params::{SearchQueryParams, SearchQueryParamsCount};
 use serde::{Deserialize, Serialize};
+pub use stats::{ElasticsearchStatsResponse, StatsResponseEntry};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SortField {

@@ -26,13 +26,8 @@ use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_common::PrettySample;
 use quickwit_config::build_doc_mapper;
-use quickwit_metastore::{
-    ListIndexesMetadataResponseExt, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt,
-    SplitMetadata,
-};
-use quickwit_proto::metastore::{
-    ListIndexesMetadataRequest, ListSplitsRequest, MetastoreService, MetastoreServiceClient,
-};
+use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata};
+use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{
     LeafListTermsRequest, LeafListTermsResponse, ListTermsRequest, ListTermsResponse,
     SplitIdAndFooterOffsets, SplitSearchError,
@@ -44,8 +39,7 @@ use tantivy::{ReloadPolicy, Term};
 use tracing::{debug, error, info, instrument};
 
 use crate::leaf::open_index_with_caches;
-use crate::root::check_all_index_metadata_found;
-use crate::{ClusterClient, SearchError, SearchJob, SearcherContext};
+use crate::{resolve_index_patterns, ClusterClient, SearchError, SearchJob, SearcherContext};
 
 /// Performs a distributed list terms.
 /// 1. Sends leaf request over gRPC to multiple leaf nodes.
@@ -59,23 +53,8 @@ pub async fn root_list_terms(
     cluster_client: &ClusterClient,
 ) -> crate::Result<ListTermsResponse> {
     let start_instant = tokio::time::Instant::now();
-    let list_indexes_metadata_request = if list_terms_request.index_id_patterns.is_empty() {
-        ListIndexesMetadataRequest::all()
-    } else {
-        ListIndexesMetadataRequest {
-            index_id_patterns: list_terms_request.index_id_patterns.clone(),
-        }
-    };
-
-    // Get the index ids from the request
-    let indexes_metadata = metastore
-        .list_indexes_metadata(list_indexes_metadata_request)
-        .await?
-        .deserialize_indexes_metadata()?;
-    check_all_index_metadata_found(
-        &indexes_metadata[..],
-        &list_terms_request.index_id_patterns[..],
-    )?;
+    let indexes_metadata =
+        resolve_index_patterns(&list_terms_request.index_id_patterns, &mut metastore).await?;
     // The request contains a wildcard, but couldn't find any index.
     if indexes_metadata.is_empty() {
         return Ok(ListTermsResponse {
