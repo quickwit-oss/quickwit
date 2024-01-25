@@ -62,6 +62,7 @@ use quickwit_cluster::{
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
 use quickwit_common::runtimes::RuntimesConfig;
+use quickwit_common::spawn_named_task;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
     EventListenerLayer, RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator,
@@ -611,12 +612,16 @@ pub async fn serve_quickwit(
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
-    tokio::spawn(node_readiness_reporting_task(
-        cluster,
-        metastore_through_control_plane,
-        grpc_readiness_signal_rx,
-        rest_readiness_signal_rx,
-    ));
+    spawn_named_task(
+        node_readiness_reporting_task(
+            cluster,
+            metastore_through_control_plane,
+            grpc_readiness_signal_rx,
+            rest_readiness_signal_rx,
+        ),
+        "node_readiness_reporting",
+    );
+
     let shutdown_handle = tokio::spawn(async move {
         shutdown_signal.await;
 
@@ -633,8 +638,8 @@ pub async fn serve_quickwit(
         }
         actor_exit_statuses
     });
-    let grpc_join_handle = tokio::spawn(grpc_server);
-    let rest_join_handle = tokio::spawn(rest_server);
+    let grpc_join_handle = spawn_named_task(grpc_server, "grpc_server");
+    let rest_join_handle = spawn_named_task(rest_server, "rest_server");
 
     let (grpc_res, rest_res) = tokio::try_join!(grpc_join_handle, rest_join_handle)
         .expect("the tasks running the gRPC and REST servers should not panic or be cancelled");
