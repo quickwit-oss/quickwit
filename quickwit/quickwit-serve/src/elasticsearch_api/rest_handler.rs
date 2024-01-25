@@ -463,7 +463,7 @@ async fn es_compat_index_multi_search(
             )));
         }
         for index in &request_header.index {
-            validate_index_id_pattern(index).map_err(|err| {
+            validate_index_id_pattern(index, true).map_err(|err| {
                 SearchError::InvalidArgument(format!(
                     "request header contains an invalid index: {}",
                     err

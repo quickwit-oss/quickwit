@@ -1401,32 +1401,67 @@ fn tags_filter_expression_helper(tags: &TagFilterAst) -> Cond {
 }
 
 /// Builds a SQL query that returns indexes which match at least one pattern in
-/// `index_id_patterns`. For each pattern, we check if the pattern is valid and replace `*` by `%`
+/// `index_id_patterns`, and none of the patterns starting with '-'
+///
+/// For each pattern, we check if the pattern is valid and replace `*` by `%`
 /// to build a SQL `LIKE` query.
 fn build_index_id_patterns_sql_query(index_id_patterns: &[String]) -> anyhow::Result<String> {
-    if index_id_patterns.is_empty() {
+    let mut positive_patterns = Vec::new();
+    let mut negative_patterns = Vec::new();
+    for pattern in index_id_patterns {
+        if let Some(negative_pattern) = pattern.strip_prefix('-') {
+            negative_patterns.push(negative_pattern.to_string());
+        } else {
+            positive_patterns.push(pattern);
+        }
+    }
+
+    if positive_patterns.is_empty() {
         anyhow::bail!("The list of index id patterns may not be empty.");
     }
-    if index_id_patterns.iter().any(|pattern| pattern == "*") {
+
+    if index_id_patterns.iter().any(|pattern| pattern == "*") && negative_patterns.is_empty() {
         return Ok("SELECT * FROM indexes".to_string());
     }
+
     let mut where_like_query = String::new();
-    for (index_id_pattern_idx, index_id_pattern) in index_id_patterns.iter().enumerate() {
-        validate_index_id_pattern(index_id_pattern).map_err(|error| MetastoreError::Internal {
-            message: "failed to build list indexes query".to_string(),
-            cause: error.to_string(),
+    for (index_id_pattern_idx, index_id_pattern) in positive_patterns.iter().enumerate() {
+        validate_index_id_pattern(index_id_pattern, false).map_err(|error| {
+            MetastoreError::Internal {
+                message: "failed to build list indexes query".to_string(),
+                cause: error.to_string(),
+            }
         })?;
+        if index_id_pattern_idx != 0 {
+            where_like_query.push_str(" OR ");
+        }
         if index_id_pattern.contains('*') {
             let sql_pattern = index_id_pattern.replace('*', "%");
             let _ = write!(where_like_query, "index_id LIKE '{sql_pattern}'");
         } else {
             let _ = write!(where_like_query, "index_id = '{index_id_pattern}'");
         }
-        if index_id_pattern_idx < index_id_patterns.len() - 1 {
-            where_like_query.push_str(" OR ");
+    }
+    let mut negative_like_query = String::new();
+    for index_id_pattern in negative_patterns.iter() {
+        validate_index_id_pattern(index_id_pattern, false).map_err(|error| {
+            MetastoreError::Internal {
+                message: "failed to build list indexes query".to_string(),
+                cause: error.to_string(),
+            }
+        })?;
+        negative_like_query.push_str(" AND ");
+        if index_id_pattern.contains('*') {
+            let sql_pattern = index_id_pattern.replace('*', "%");
+            let _ = write!(negative_like_query, "index_id NOT LIKE '{sql_pattern}'");
+        } else {
+            let _ = write!(negative_like_query, "index_id <> '{index_id_pattern}'");
         }
     }
-    Ok(format!("SELECT * FROM indexes WHERE {where_like_query}"))
+
+    Ok(format!(
+        "SELECT * FROM indexes WHERE ({where_like_query}){negative_like_query}"
+    ))
 }
 
 /// A postgres metastore factory
@@ -1868,7 +1903,7 @@ mod tests {
     fn test_index_id_pattern_like_query() {
         assert_eq!(
             &build_index_id_patterns_sql_query(&["*-index-*-last*".to_string()]).unwrap(),
-            "SELECT * FROM indexes WHERE index_id LIKE '%-index-%-last%'"
+            "SELECT * FROM indexes WHERE (index_id LIKE '%-index-%-last%')"
         );
         assert_eq!(
             &build_index_id_patterns_sql_query(&[
@@ -1876,8 +1911,8 @@ mod tests {
                 "another-index".to_string()
             ])
             .unwrap(),
-            "SELECT * FROM indexes WHERE index_id LIKE '%-index-%-last%' OR index_id = \
-             'another-index'"
+            "SELECT * FROM indexes WHERE (index_id LIKE '%-index-%-last%' OR index_id = \
+             'another-index')"
         );
         assert_eq!(
             &build_index_id_patterns_sql_query(&[
@@ -1895,6 +1930,25 @@ mod tests {
             "internal error: failed to build list indexes query; cause: `index ID pattern \
              `*-index-*-&-last**` is invalid: patterns must match the following regular \
              expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{0,254}$``"
+        );
+
+        assert_eq!(
+            &build_index_id_patterns_sql_query(&["*".to_string(), "-index-name".to_string()])
+                .unwrap(),
+            "SELECT * FROM indexes WHERE (index_id LIKE '%') AND index_id <> 'index-name'"
+        );
+
+        assert_eq!(
+            &build_index_id_patterns_sql_query(&[
+                "*-index-*-last*".to_string(),
+                "another-index".to_string(),
+                "-*-index-1-last*".to_string(),
+                "-index-2-last".to_string(),
+            ])
+            .unwrap(),
+            "SELECT * FROM indexes WHERE (index_id LIKE '%-index-%-last%' OR index_id = \
+             'another-index') AND index_id NOT LIKE '%-index-1-last%' AND index_id <> \
+             'index-2-last'"
         );
     }
 }

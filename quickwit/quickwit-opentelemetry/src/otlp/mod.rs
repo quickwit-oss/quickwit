@@ -176,7 +176,7 @@ pub fn extract_otel_traces_index_id_patterns_from_metadata(
         if index_id_pattern.is_empty() {
             continue;
         }
-        validate_index_id_pattern(index_id_pattern).map_err(|error| {
+        validate_index_id_pattern(index_id_pattern, true).map_err(|error| {
             Status::internal(format!(
                 "invalid index ID pattern in request header: {error}",
             ))
