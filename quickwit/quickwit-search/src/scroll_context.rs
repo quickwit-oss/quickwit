@@ -165,7 +165,7 @@ impl ScrollKeyAndStartOffset {
     ) -> ScrollKeyAndStartOffset {
         let scroll_ulid: Ulid = Ulid::new();
         // technically we could only initialize search_after on first call to next_page, and use
-        // default() before, but that feels like partial initilization.
+        // default() before, but that feels like partial initialization.
         ScrollKeyAndStartOffset {
             scroll_ulid,
             start_offset,
