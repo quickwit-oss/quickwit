@@ -199,6 +199,26 @@ pub const fn div_ceil(lhs: i64, rhs: i64) -> i64 {
     }
 }
 
+
+// The following are helpers to build named tasks.
+//
+// Named tasks require the tokio feature `tracing` to be enabled.
+// If the `named_tasks` feature is disabled, this is no-op.
+//
+// By default, these function will just ignore the name passed and just act
+// like a regular call to `tokio::spawn`.
+//
+// If the user compiles `quickwit-cli` with the `tokio-console` feature,
+// then tasks will automatically be named. This is not just "visual sugar".
+//
+// Without names, tasks will only show their spawn site on tokio-console.
+// This is a catastrophy for actors who all share the same spawn site.
+//
+// # Naming
+//
+// Actors will get named after their type, which is fine.
+// For other tasks, please use `snake_case`.
+
 #[cfg(not(feature = "named_tasks"))]
 pub fn spawn_named_task<F>(future: F, _name: &'static str) -> tokio::task::JoinHandle<F::Output>
 where

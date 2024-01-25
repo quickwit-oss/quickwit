@@ -43,10 +43,7 @@ tracing = { workspace = true }
 testsuite = []
 named_tasks = ["tokio/tracing"]
 
-
-
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-
 quickwit-macros = { workspace = true }

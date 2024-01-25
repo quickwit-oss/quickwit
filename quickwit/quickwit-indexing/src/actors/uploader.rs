@@ -384,7 +384,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 Result::<(), anyhow::Error>::Ok(())
             }
             .instrument(Span::current()),
-            "upload-single-task"
+            "upload_single_task"
         );
         fail_point!("uploader:intask:after");
         Ok(())

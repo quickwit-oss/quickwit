@@ -215,7 +215,7 @@ pub fn start_scheduler() -> SchedulerClient {
                 }
             }
         },
-        "Scheduler",
+        "scheduler",
     );
     scheduler_client
 }
