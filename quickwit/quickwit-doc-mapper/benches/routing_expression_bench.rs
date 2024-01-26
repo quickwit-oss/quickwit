@@ -48,6 +48,11 @@ pub fn simple_routing_expression_benchmark(c: &mut Criterion) {
     let doc_mapper: Box<dyn DocMapper> = serde_json::from_str(DOC_MAPPER_CONF).unwrap();
     let lines: Vec<&str> = JSON_TEST_DATA.lines().map(|line| line.trim()).collect();
 
+    let json_lines: Vec<serde_json::Map<String, JsonValue>> = lines
+        .iter()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+
     let mut group = c.benchmark_group("simple-routing-expression");
     group.throughput(Throughput::Bytes(JSON_TEST_DATA.len() as u64));
     group.bench_function("simple-json-to-doc", |b| {
@@ -60,9 +65,8 @@ pub fn simple_routing_expression_benchmark(c: &mut Criterion) {
     group.bench_function("simple-eval-hash", |b| {
         b.iter(|| {
             let routing_expr = RoutingExpr::new("seller.id").unwrap();
-            for line in &lines {
-                let ctx: serde_json::Map<String, JsonValue> = serde_json::from_str(line).unwrap();
-                routing_expr.eval_hash(&ctx);
+            for json in &json_lines {
+                routing_expr.eval_hash(json);
             }
         })
     });

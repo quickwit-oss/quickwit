@@ -27,7 +27,7 @@ use serde_json::Value as JsonValue;
 use siphasher::sip::SipHasher;
 
 pub trait RoutingExprContext {
-    fn hash_attribute<H: Hasher>(&self, attr_name: &str, hasher: &mut H);
+    fn hash_attribute<H: Hasher>(&self, attr_name: &[String], hasher: &mut H);
 }
 
 /// This is a bit overkill but this function has the merit of
@@ -70,11 +70,11 @@ fn hash_json_val<H: Hasher>(json_val: &JsonValue, hasher: &mut H) {
     }
 }
 
-fn extract_value(data: &JsonValue, keys: &[Cow<str>]) -> Option<JsonValue> {
+fn extract_value<'a>(data: &'a JsonValue, keys: &[String]) -> Option<&'a JsonValue> {
     match keys {
         [key, rest @ ..] => {
             if let JsonValue::Object(obj) = data {
-                if let Some(value) = obj.get(key.as_ref()) {
+                if let Some(value) = obj.get(key) {
                     extract_value(value, rest)
                 } else {
                     None
@@ -83,19 +83,15 @@ fn extract_value(data: &JsonValue, keys: &[Cow<str>]) -> Option<JsonValue> {
                 None
             }
         }
-        [] => Some(data.clone()), // No more keys, return the current value
+        [] => Some(data), // No more keys, return the current value
     }
 }
 
 impl RoutingExprContext for serde_json::Map<String, JsonValue> {
-    fn hash_attribute<H: Hasher>(&self, attr_name: &str, hasher: &mut H) {
-        if let Ok(keys) = expression_dsl::parse_keys(attr_name) {
-            if let Some(json_val) = extract_value(&JsonValue::Object(self.clone()), &keys) {
-                hasher.write_u8(1u8);
-                hash_json_val(&json_val, hasher);
-            } else {
-                hasher.write_u8(0u8);
-            }
+    fn hash_attribute<H: Hasher>(&self, attr_name: &[String], hasher: &mut H) {
+        if let Some(json_val) = extract_value(&JsonValue::Object(self.clone()), attr_name) {
+            hasher.write_u8(1u8);
+            hash_json_val(json_val, hasher);
         } else {
             hasher.write_u8(0u8);
         }
@@ -170,7 +166,7 @@ impl Display for RoutingExpr {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum InnerRoutingExpr {
-    Field(String),
+    Field(Vec<String>),
     Composite(Vec<InnerRoutingExpr>),
     Modulo(Box<InnerRoutingExpr>, u64),
     // TODO Enrich me! Map / ...
@@ -202,7 +198,7 @@ impl InnerRoutingExpr {
     // return all fields in a vector
     fn field_names(&self) -> Vec<String> {
         match self {
-            InnerRoutingExpr::Field(field_name) => vec![field_name.to_string()],
+            InnerRoutingExpr::Field(field_name) => vec![field_name.join(".")],
             InnerRoutingExpr::Composite(children) => {
                 let mut fields = vec![];
                 for child in children {
@@ -223,8 +219,18 @@ impl Hash for InnerRoutingExpr {
         match self {
             InnerRoutingExpr::Field(field_name) => {
                 ExprType::Field.hash(hasher);
-                hasher.write_u64(field_name.len() as u64);
-                hasher.write(field_name.as_bytes());
+                // this is to keep the same hash as before. we can simplify if we don't care about
+                // keeping that hash intact
+                hasher.write_u64(
+                    (field_name.len() - 1 + field_name.iter().map(|part| part.len()).sum::<usize>())
+                        as u64,
+                );
+                for (index, field) in field_name.iter().enumerate() {
+                    if index != 0 {
+                        hasher.write_u8(b'.');
+                    }
+                    hasher.write(field.as_bytes());
+                }
             }
             InnerRoutingExpr::Composite(children) => {
                 ExprType::Composite.hash(hasher);
@@ -263,7 +269,13 @@ fn convert_ast(ast: Vec<expression_dsl::ExpressionAst>) -> anyhow::Result<InnerR
     let mut result = ast
         .into_iter()
         .map(|ast_elem| match ast_elem {
-            ExpressionAst::Field(field_name) => Ok(InnerRoutingExpr::Field(field_name)),
+            ExpressionAst::Field(field_name) => {
+                let field_path = expression_dsl::parse_keys(&field_name)?
+                    .into_iter()
+                    .map(Cow::into_owned)
+                    .collect();
+                Ok(InnerRoutingExpr::Field(field_path))
+            }
             ExpressionAst::Function { name, mut args } => match &*name {
                 "hash_mod" => {
                     if args.len() != 2 {
@@ -304,7 +316,13 @@ impl Display for InnerRoutingExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
             InnerRoutingExpr::Field(field) => {
-                f.write_str(field)?;
+                for (index, part) in field.iter().enumerate() {
+                    if index != 0 {
+                        f.write_str(".")?;
+                    }
+                    // TODO actually we should escape .
+                    f.write_str(part)?;
+                }
             }
             InnerRoutingExpr::Composite(children) => {
                 if children.is_empty() {
@@ -459,11 +477,13 @@ mod tests {
 
     use super::*;
 
+    #[track_caller]
     fn test_ser_deser(expr: &InnerRoutingExpr) {
         let ser = expr.to_string();
         assert_eq!(&InnerRoutingExpr::from_str(&ser).unwrap(), expr);
     }
 
+    #[track_caller]
     fn deser_util(expr_dsl: &str) -> InnerRoutingExpr {
         let expr = InnerRoutingExpr::from_str(expr_dsl).unwrap();
         test_ser_deser(&expr);
@@ -488,14 +508,17 @@ mod tests {
         let routing_expr = deser_util("tenant_id");
         assert_eq!(
             routing_expr,
-            InnerRoutingExpr::Field("tenant_id".to_owned())
+            InnerRoutingExpr::Field(vec!["tenant_id".to_owned()])
         );
     }
 
     #[test]
     fn test_routing_expr_single_field_with_dot() {
         let routing_expr = deser_util("app.id");
-        assert_eq!(routing_expr, InnerRoutingExpr::Field("app.id".to_owned()));
+        assert_eq!(
+            routing_expr,
+            InnerRoutingExpr::Field(vec!["app".to_owned(), "id".to_owned()])
+        );
     }
 
     #[test]
@@ -503,7 +526,10 @@ mod tests {
         let routing_expr = deser_util("hash_mod(tenant_id, 4)");
         assert_eq!(
             routing_expr,
-            InnerRoutingExpr::Modulo(Box::new(InnerRoutingExpr::Field("tenant_id".to_owned())), 4)
+            InnerRoutingExpr::Modulo(
+                Box::new(InnerRoutingExpr::Field(vec!["tenant_id".to_owned()])),
+                4
+            )
         );
     }
 
@@ -515,15 +541,15 @@ mod tests {
             InnerRoutingExpr::Composite(vec![
                 InnerRoutingExpr::Modulo(
                     Box::new(InnerRoutingExpr::Composite(vec![
-                        InnerRoutingExpr::Field("tenant_id".to_owned()),
+                        InnerRoutingExpr::Field(vec!["tenant_id".to_owned()]),
                         InnerRoutingExpr::Modulo(
-                            Box::new(InnerRoutingExpr::Field("app_id".to_owned()),),
+                            Box::new(InnerRoutingExpr::Field(vec!["app_id".to_owned()]),),
                             3
                         ),
                     ])),
                     8
                 ),
-                InnerRoutingExpr::Field("cluster_id".to_owned()),
+                InnerRoutingExpr::Field(vec!["cluster_id".to_owned()]),
             ])
         );
     }
@@ -535,8 +561,8 @@ mod tests {
         assert_eq!(
             routing_expr,
             InnerRoutingExpr::Composite(vec![
-                InnerRoutingExpr::Field("tenant_id".to_owned()),
-                InnerRoutingExpr::Field("app_id".to_owned()),
+                InnerRoutingExpr::Field(vec!["tenant_id".to_owned()]),
+                InnerRoutingExpr::Field(vec!["app_id".to_owned()]),
             ])
         );
     }
@@ -548,8 +574,8 @@ mod tests {
         assert_eq!(
             routing_expr,
             InnerRoutingExpr::Composite(vec![
-                InnerRoutingExpr::Field("tenant.id".to_owned()),
-                InnerRoutingExpr::Field("app.id".to_owned()),
+                InnerRoutingExpr::Field(vec!["tenant".to_owned(), "id".to_owned()]),
+                InnerRoutingExpr::Field(vec!["app".to_owned(), "id".to_owned()]),
             ])
         );
     }
@@ -574,10 +600,14 @@ mod tests {
     #[test]
     fn test_extract_value_with_escaped_dot() {
         let ctx = serde_json::from_str(r#"{"tenant.id": "happy", "app": "happy"}"#).unwrap();
-        let keys = expression_dsl::parse_keys("tenant\\.id").unwrap();
+        let keys: Vec<_> = expression_dsl::parse_keys("tenant\\.id")
+            .unwrap()
+            .into_iter()
+            .map(Cow::into_owned)
+            .collect();
         assert_eq!(keys, vec![String::from("tenant.id")]);
         let value = extract_value(&ctx, &keys).unwrap();
-        assert_eq!(value, JsonValue::String(String::from("happy")));
+        assert_eq!(value, &JsonValue::String(String::from("happy")));
     }
 
     #[test]
@@ -586,10 +616,14 @@ mod tests {
             r#"{"tenant_id": "happy", "app": {"name": "happy", "id": "123"}}"#,
         )
         .unwrap();
-        let keys = expression_dsl::parse_keys("app.id").unwrap();
+        let keys: Vec<_> = expression_dsl::parse_keys("app.id")
+            .unwrap()
+            .into_iter()
+            .map(Cow::into_owned)
+            .collect();
         assert_eq!(keys, vec!["app", "id"]);
         let value = extract_value(&ctx, &keys).unwrap();
-        assert_eq!(value, JsonValue::String(String::from("123")));
+        assert_eq!(value, &JsonValue::String(String::from("123")));
     }
     // This unit test is here to ensure that the routing expr hash depends on
     // the expression itself as well as the expression value.
