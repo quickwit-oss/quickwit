@@ -151,7 +151,7 @@ impl Uri {
             DATABASE_URI_PATTERN
                 .get_or_init(|| {
                     Regex::new("(?P<before>^.*://.*)(?P<password>:.*@)(?P<after>.*)")
-                        .expect("the regular expression should compile")
+                        .expect("regular expression should compile")
                 })
                 .replace(&self.uri, "$before:***redacted***@$after")
         } else {

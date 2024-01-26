@@ -222,7 +222,7 @@ impl MergePipeline {
         let query = ListSplitsQuery::for_index(self.params.pipeline_id.index_uid.clone())
             .with_split_state(SplitState::Published)
             .retain_immature(OffsetDateTime::now_utc());
-        let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
+        let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
         let published_splits_stream = ctx
             .protect_future(self.params.metastore.list_splits(list_splits_request))
             .await?;

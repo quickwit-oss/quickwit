@@ -188,7 +188,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
     test_index_builder.add_documents(batch_2).await?;
     let query = ListSplitsQuery::for_index(test_index_builder.index_uid())
         .with_split_state(SplitState::Published);
-    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query).unwrap();
+    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query).unwrap();
     let mut splits = test_index_builder
         .metastore()
         .list_splits(list_splits_request)

@@ -46,7 +46,7 @@ use self::rest_handler::{
     es_compat_index_stats_handler, es_compat_stats_handler,
 };
 use crate::elasticsearch_api::model::ElasticsearchError;
-use crate::json_api_response::JsonApiResponse;
+use crate::rest_api_response::RestApiResponse;
 use crate::{BodyFormat, BuildInfo};
 
 /// Setup Elasticsearch API handlers
@@ -112,14 +112,13 @@ impl From<i64> for TrackTotalHits {
 
 fn make_elastic_api_response<T: serde::Serialize>(
     elasticsearch_result: Result<T, ElasticsearchError>,
-    format: BodyFormat,
-) -> JsonApiResponse {
+    body_format: BodyFormat,
+) -> RestApiResponse {
     let status_code = match &elasticsearch_result {
         Ok(_) => StatusCode::OK,
-        Err(err) => err.status,
+        Err(error) => error.status,
     };
-
-    JsonApiResponse::new(&elasticsearch_result, status_code, &format)
+    RestApiResponse::new(&elasticsearch_result, status_code, &body_format)
 }
 
 #[cfg(test)]

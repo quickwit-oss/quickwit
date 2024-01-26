@@ -40,7 +40,7 @@ use quickwit_cli::ClientArgs;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
-use quickwit_config::{SourceInputFormat, CLI_INGEST_SOURCE_ID};
+use quickwit_config::{SourceInputFormat, CLI_SOURCE_ID};
 use quickwit_metastore::{
     ListSplitsRequestExt, MetastoreResolver, MetastoreServiceExt, MetastoreServiceStreamSplitsExt,
     SplitMetadata, SplitState, StageSplitsRequestExt,
@@ -284,7 +284,7 @@ async fn test_ingest_docs_cli() {
         error.root_cause().downcast_ref::<ChecklistError>().unwrap(),
         ChecklistError {
             errors
-        } if errors.len() == 1 && errors[0].0 == CLI_INGEST_SOURCE_ID
+        } if errors.len() == 1 && errors[0].0 == CLI_SOURCE_ID
     ));
 }
 
@@ -830,7 +830,7 @@ async fn test_garbage_collect_index_cli() {
         .unwrap();
     metastore
         .stage_splits(
-            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata.clone())
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
                 .unwrap(),
         )
         .await
@@ -945,7 +945,7 @@ async fn test_all_local_index() {
 
     let metadata_file_exists = test_env
         .storage
-        .exists(&Path::new(&test_env.index_id).join("quickwit.json"))
+        .exists(&Path::new(&test_env.index_id).join("metastore.json"))
         .await
         .unwrap();
     assert_eq!(metadata_file_exists, false);

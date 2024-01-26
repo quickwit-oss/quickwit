@@ -39,6 +39,7 @@ use crate::jaeger_api::JaegerApi;
 use crate::metrics_api::MetricsApi;
 use crate::node_info_handler::NodeInfoApi;
 use crate::search_api::SearchApi;
+use crate::template_api::IndexTemplateApi;
 
 /// Builds the OpenApi docs structure using the registered/merged docs.
 pub fn build_docs() -> utoipa::openapi::OpenApi {
@@ -95,6 +96,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
         .merge_components_and_paths(ElasticCompatibleApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(NodeInfoApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(JaegerApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(IndexTemplateApi::openapi().with_path_prefix("/api/v1"));
 
     // Schemas
     docs_base.merge_components_and_paths(MetastoreApiSchemas::openapi());

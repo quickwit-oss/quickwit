@@ -741,11 +741,9 @@ mod tests {
         let mut new_split_metadata = splits[0].split_metadata.clone();
         new_split_metadata.split_id = new_split_id();
         new_split_metadata.num_merge_ops = 1;
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            new_split_metadata.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &new_split_metadata)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
         let publish_splits_request = PublishSplitsRequest {
             index_uid: index_uid.to_string(),

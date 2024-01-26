@@ -164,6 +164,7 @@ rdkafka = { version = "0.33", default-features = false, features = [
   "zstd",
 ] }
 regex = "1.10.0"
+regex-syntax = "0.8"
 reqwest = { version = "0.11", default-features = false, features = [
   "json",
   "rustls-tls",
@@ -222,7 +223,7 @@ ttl_cache = "0.5"
 typetag = "0.2"
 ulid = "1.1"
 username = "0.2"
-utoipa = "3.5.0"
+utoipa = "4.2.0"
 uuid = { version = "1.7", features = ["v4", "serde"] }
 vrl = { version = "0.8.1", default-features = false, features = [
   "compiler",

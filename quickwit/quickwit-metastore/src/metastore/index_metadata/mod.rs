@@ -99,7 +99,7 @@ impl IndexMetadata {
         &self.index_config().index_uri
     }
 
-    /// Adds a source to the index. Returns an error if the source_id already exists.
+    /// Adds a source to the index. Returns an error if the source already exists.
     pub fn add_source(&mut self, source_config: SourceConfig) -> MetastoreResult<()> {
         match self.sources.entry(source_config.source_id.clone()) {
             Entry::Occupied(_) => Err(MetastoreError::AlreadyExists(EntityKind::Source {
@@ -166,8 +166,8 @@ impl TestableForRegression for IndexMetadata {
         index_metadata
     }
 
-    fn test_equality(&self, other: &Self) {
-        self.index_config().test_equality(other.index_config());
+    fn assert_equality(&self, other: &Self) {
+        self.index_config().assert_equality(other.index_config());
         assert_eq!(self.checkpoint, other.checkpoint);
         assert_eq!(self.create_timestamp, other.create_timestamp);
         assert_eq!(self.sources, other.sources);

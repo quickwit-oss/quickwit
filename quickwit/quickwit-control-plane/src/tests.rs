@@ -27,7 +27,9 @@ use quickwit_cluster::{create_cluster_for_test, ChannelTransport, Cluster, Clust
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::tower::{Change, Pool};
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams};
+use quickwit_config::{
+    ClusterConfig, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
+};
 use quickwit_indexing::IndexingService;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
@@ -140,15 +142,17 @@ async fn start_control_plane(
     let indexer_change_stream = test_indexer_change_stream(change_stream, indexing_clients);
     indexer_pool.listen_for_changes(indexer_change_stream);
 
+    let mut cluster_config = ClusterConfig::for_test();
+    cluster_config.cluster_id = cluster.cluster_id().to_string();
+
     let self_node_id: NodeId = cluster.self_node_id().to_string().into();
     let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
         universe,
-        cluster.cluster_id().to_string(),
+        cluster_config,
         self_node_id,
         indexer_pool,
         ingester_pool,
         MetastoreServiceClient::from(metastore),
-        1,
     );
 
     (indexer_inboxes, control_plane_mailbox)

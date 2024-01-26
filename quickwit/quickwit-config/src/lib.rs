@@ -21,15 +21,17 @@
 
 use std::str::FromStr;
 
-use anyhow::{bail, Context};
+use anyhow::{bail, ensure, Context};
 use json_comments::StripComments;
 use once_cell::sync::Lazy;
 use quickwit_common::net::is_valid_hostname;
 use quickwit_common::uri::Uri;
 use regex::Regex;
 
+mod cluster_config;
 mod config_value;
 mod index_config;
+mod index_template;
 pub mod merge_policy_config;
 mod metastore_config;
 mod node_config;
@@ -39,6 +41,7 @@ mod source_config;
 mod storage_config;
 mod templating;
 
+pub use cluster_config::ClusterConfig;
 // We export that one for backward compatibility.
 // See #2048
 use index_config::serialize::{IndexConfigV0_7, VersionedIndexConfig};
@@ -53,10 +56,11 @@ pub use source_config::{
     load_source_config_from_user_config, FileSourceParams, GcpPubSubSourceParams,
     KafkaSourceParams, KinesisSourceParams, PulsarSourceAuth, PulsarSourceParams, RegionOrEndpoint,
     SourceConfig, SourceInputFormat, SourceParams, TransformConfig, VecSourceParams,
-    VoidSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
+    VoidSourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
 };
 use tracing::warn;
 
+pub use crate::index_template::{IndexTemplate, IndexTemplateId, VersionedIndexTemplate};
 use crate::merge_policy_config::{
     ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
 };
@@ -103,18 +107,17 @@ pub use crate::storage_config::{
 /// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct ConfigApiSchemas;
 
-/// Checks whether an identifier conforms to Quickwit object naming conventions.
+/// Checks whether an identifier conforms to Quickwit naming conventions.
 pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
     static IDENTIFIER_REGEX: Lazy<Regex> = Lazy::new(|| {
         Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_\.]{2,254}$").expect("regular expression should compile")
     });
-    if IDENTIFIER_REGEX.is_match(value) {
-        return Ok(());
-    }
-    bail!(
-        "{label} identifier `{value}` is invalid. identifiers must match the following regular \
+    ensure!(
+        IDENTIFIER_REGEX.is_match(value),
+        "{label} ID `{value}` is invalid: identifiers must match the following regular \
          expression: `^[a-zA-Z][a-zA-Z0-9-_\\.]{{2,254}}$`"
     );
+    Ok(())
 }
 
 /// Checks whether an index ID pattern conforms to Quickwit conventions.
@@ -188,7 +191,7 @@ impl ConfigFormat {
     pub fn sniff_from_uri(uri: &Uri) -> anyhow::Result<ConfigFormat> {
         let extension_str: &str = uri.extension().with_context(|| {
             format!(
-                "failed to read config file `{uri}`: file extension is missing. supported file \
+                "failed to parse config file `{uri}`: file extension is missing. supported file \
                  formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml)"
             )
         })?;
@@ -207,26 +210,26 @@ impl ConfigFormat {
                     warn!(version_value=?version_value, "`version` is supposed to be a string");
                     *version_value = JsonValue::String(version_number.to_string());
                 }
-                serde_json::from_value(json_value).context("failed to read JSON file")
+                serde_json::from_value(json_value).context("failed to parse JSON file")
             }
             ConfigFormat::Toml => {
                 let payload_str = std::str::from_utf8(payload)
                     .context("configuration file contains invalid UTF-8 characters")?;
                 let mut toml_value: toml::Value =
-                    toml::from_str(payload_str).context("failed to read TOML file")?;
+                    toml::from_str(payload_str).context("failed to parse TOML file")?;
                 let version_value = toml_value.get_mut("version").context("missing version")?;
                 if let Some(version_number) = version_value.as_integer() {
                     warn!(version_value=?version_value, "`version` is supposed to be a string");
                     *version_value = toml::Value::String(version_number.to_string());
                     let reserialized = toml::to_string(version_value)
                         .context("failed to reserialize toml config")?;
-                    toml::from_str(&reserialized).context("failed to read TOML file")
+                    toml::from_str(&reserialized).context("failed to parse TOML file")
                 } else {
-                    toml::from_str(payload_str).context("failed to read TOML file")
+                    toml::from_str(payload_str).context("failed to parse TOML file")
                 }
             }
             ConfigFormat::Yaml => {
-                serde_yaml::from_slice(payload).context("failed to read YAML file")
+                serde_yaml::from_slice(payload).context("failed to parse YAML file")
             }
         }
     }
@@ -249,8 +252,12 @@ impl FromStr for ConfigFormat {
 }
 
 pub trait TestableForRegression: Serialize + DeserializeOwned {
+    /// Produces an instance of `Self` whose serialization output will be tested against future
+    /// versions of the format for backward compatibility.
     fn sample_for_regression() -> Self;
-    fn test_equality(&self, other: &Self);
+
+    /// Asserts that `self` and `other` are equal. It must panic if they are not.
+    fn assert_equality(&self, other: &Self);
 }
 
 #[cfg(test)]
@@ -260,22 +267,22 @@ mod tests {
 
     #[test]
     fn test_validate_identifier() {
-        validate_identifier("Cluster ID", "").unwrap_err();
-        validate_identifier("Cluster ID", "-").unwrap_err();
-        validate_identifier("Cluster ID", "_").unwrap_err();
-        validate_identifier("Cluster ID", "f").unwrap_err();
-        validate_identifier("Cluster ID", "fo").unwrap_err();
-        validate_identifier("Cluster ID", "_fo").unwrap_err();
-        validate_identifier("Cluster ID", "_foo").unwrap_err();
-        validate_identifier("Cluster ID", ".foo.bar").unwrap_err();
-        validate_identifier("Cluster ID", "foo").unwrap();
-        validate_identifier("Cluster ID", "f-_").unwrap();
-        validate_identifier("Index ID", "foo.bar").unwrap();
+        validate_identifier("cluster", "").unwrap_err();
+        validate_identifier("cluster", "-").unwrap_err();
+        validate_identifier("cluster", "_").unwrap_err();
+        validate_identifier("cluster", "f").unwrap_err();
+        validate_identifier("cluster", "fo").unwrap_err();
+        validate_identifier("cluster", "_fo").unwrap_err();
+        validate_identifier("cluster", "_foo").unwrap_err();
+        validate_identifier("cluster", ".foo.bar").unwrap_err();
+        validate_identifier("cluster", "foo").unwrap();
+        validate_identifier("cluster", "f-_").unwrap();
+        validate_identifier("index", "foo.bar").unwrap();
 
-        assert!(validate_identifier("Cluster ID", "foo!")
+        assert!(validate_identifier("cluster", "foo!")
             .unwrap_err()
             .to_string()
-            .contains("Cluster ID identifier `foo!` is invalid."));
+            .contains("cluster ID `foo!` is invalid"));
     }
 
     #[test]

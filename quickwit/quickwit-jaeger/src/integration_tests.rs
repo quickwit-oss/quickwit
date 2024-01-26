@@ -397,7 +397,7 @@ async fn setup_traces_index(
         .unwrap();
     let index_config = OtlpGrpcTracesService::index_config(&index_root_uri).unwrap();
     let index_id = index_config.index_id.clone();
-    let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
     let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
@@ -406,7 +406,7 @@ async fn setup_traces_index(
         .into();
     let source_config = SourceConfig::ingest_api_default();
     let add_source_request =
-        AddSourceRequest::try_from_source_config(index_uid.clone(), source_config.clone()).unwrap();
+        AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();
     metastore.add_source(add_source_request).await.unwrap();
 
     let create_queue_request = CreateQueueRequest {

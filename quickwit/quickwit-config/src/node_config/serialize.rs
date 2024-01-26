@@ -317,17 +317,14 @@ impl NodeConfigBuilder {
 }
 
 fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
-    validate_identifier("Cluster ID", &node_config.cluster_id)?;
+    validate_identifier("cluster", &node_config.cluster_id)?;
     validate_node_id(&node_config.node_id)?;
 
     if node_config.cluster_id == DEFAULT_CLUSTER_ID {
-        warn!(
-            "cluster ID is not set, falling back to default value: `{}`",
-            DEFAULT_CLUSTER_ID
-        );
+        warn!("cluster ID is not set, falling back to default value `{DEFAULT_CLUSTER_ID}`",);
     }
     if node_config.peer_seeds.is_empty() {
-        warn!("peer seed list is empty");
+        warn!("peer seeds are empty");
     }
     Ok(())
 }
@@ -466,7 +463,7 @@ mod tests {
 
     fn get_config_filepath(config_filename: &str) -> String {
         format!(
-            "{}/resources/tests/config/{}",
+            "{}/resources/tests/node_config/{}",
             env!("CARGO_MANIFEST_DIR"),
             config_filename
         )

@@ -29,21 +29,21 @@ use crate::format::BodyFormat;
 const JSON_SERIALIZATION_ERROR: &str = "JSON serialization failed.";
 
 #[derive(Serialize)]
-pub(crate) struct ApiError {
-    // For now, we want to keep ApiError as simple as possible
+pub(crate) struct RestApiError {
+    // For now, we want to keep [`RestApiError`] as simple as possible
     // and return just a message.
     #[serde(skip_serializing)]
     pub service_code: ServiceErrorCode,
     pub message: String,
 }
 
-impl ServiceError for ApiError {
+impl ServiceError for RestApiError {
     fn error_code(&self) -> ServiceErrorCode {
         self.service_code
     }
 }
 
-impl ToString for ApiError {
+impl ToString for RestApiError {
     fn to_string(&self) -> String {
         self.message.clone()
     }
@@ -52,39 +52,39 @@ impl ToString for ApiError {
 /// Makes a JSON API response from a result.
 /// The error is wrapped into an [`ApiError`] to publicly expose
 /// a consistent error format.
-pub(crate) fn make_json_api_response<T: serde::Serialize, E: ServiceError>(
+pub(crate) fn into_rest_api_response<T: serde::Serialize, E: ServiceError>(
     result: Result<T, E>,
-    format: BodyFormat,
-) -> JsonApiResponse {
-    let result_with_api_error = result.map_err(|err| ApiError {
-        service_code: err.error_code(),
-        message: err.to_string(),
+    body_format: BodyFormat,
+) -> RestApiResponse {
+    let rest_api_result = result.map_err(|error| RestApiError {
+        service_code: error.error_code(),
+        message: error.to_string(),
     });
-    let status_code = match &result_with_api_error {
+    let status_code = match &rest_api_result {
         Ok(_) => status::StatusCode::OK,
-        Err(err) => err.error_code().to_http_status_code(),
+        Err(error) => error.error_code().to_http_status_code(),
     };
-    JsonApiResponse::new(&result_with_api_error, status_code, &format)
+    RestApiResponse::new(&rest_api_result, status_code, &body_format)
 }
 
 /// A JSON reply for the REST API.
-pub struct JsonApiResponse {
+pub struct RestApiResponse {
     status_code: status::StatusCode,
     inner: Result<Vec<u8>, ()>,
 }
 
-impl JsonApiResponse {
+impl RestApiResponse {
     pub fn new<T: serde::Serialize, E: serde::Serialize>(
         result: &Result<T, E>,
         status_code: status::StatusCode,
         body_format: &BodyFormat,
     ) -> Self {
         let inner = body_format.result_to_vec(result);
-        JsonApiResponse { status_code, inner }
+        RestApiResponse { status_code, inner }
     }
 }
 
-impl Reply for JsonApiResponse {
+impl Reply for RestApiResponse {
     #[inline]
     fn into_response(self) -> Response<Body> {
         match self.inner {
@@ -96,7 +96,7 @@ impl Reply for JsonApiResponse {
                 *response.status_mut() = self.status_code;
                 response
             }
-            Err(()) => warp::reply::json(&ApiError {
+            Err(()) => warp::reply::json(&RestApiError {
                 service_code: ServiceErrorCode::Internal,
                 message: JSON_SERIALIZATION_ERROR.to_string(),
             })

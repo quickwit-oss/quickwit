@@ -17,49 +17,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::Duration;
 
-use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
+use quickwit_proto::metastore::{serde_utils, EntityKind, MetastoreError, MetastoreResult};
 use quickwit_storage::{Storage, StorageError, StorageErrorKind};
-use serde::{Deserialize, Serialize};
 
-use super::{IndexState, LazyFileBackedIndex};
 use crate::metastore::file_backed::file_backed_index::FileBackedIndex;
 
-/// Indexes states file managed by [`FileBackedMetastore`](crate::FileBackedMetastore).
-const INDEXES_STATES_FILENAME: &str = "indexes_states.json";
-
-/// Index metadata file managed by [`FileBackedMetastore`](crate::FileBackedMetastore).
-const META_FILENAME: &str = "metastore.json";
-
-/// Index state used for serialization/deserialization only.
-#[derive(Serialize, Deserialize)]
-enum IndexStateValue {
-    Creating,
-    Alive,
-    Deleting,
-}
-
-impl From<&IndexState> for IndexStateValue {
-    fn from(index_state: &IndexState) -> IndexStateValue {
-        match index_state {
-            IndexState::Creating => IndexStateValue::Creating,
-            IndexState::Deleting => IndexStateValue::Deleting,
-            IndexState::Alive(_) => IndexStateValue::Alive,
-        }
-    }
-}
+/// Index metastore file managed by [`FileBackedMetastore`](crate::FileBackedMetastore).
+const METASTORE_FILE_NAME: &str = "metastore.json";
 
 /// Path to the metadata file from the given index ID.
-pub(crate) fn meta_path(index_id: &str) -> PathBuf {
-    Path::new(index_id).join(META_FILENAME)
+pub(super) fn metastore_filepath(index_id: &str) -> PathBuf {
+    Path::new(index_id).join(METASTORE_FILE_NAME)
 }
 
-fn convert_error(index_id: &str, storage_err: StorageError) -> MetastoreError {
-    match storage_err.kind() {
+fn convert_error(index_id: &str, storage_error: StorageError) -> MetastoreError {
+    match storage_error.kind() {
         StorageErrorKind::NotFound => MetastoreError::NotFound(EntityKind::Index {
             index_id: index_id.to_string(),
         }),
@@ -68,108 +42,23 @@ fn convert_error(index_id: &str, storage_err: StorageError) -> MetastoreError {
         },
         _ => MetastoreError::Internal {
             message: "failed to get index files".to_string(),
-            cause: storage_err.to_string(),
+            cause: storage_error.to_string(),
         },
     }
 }
 
-/// Checks whether `INDEXES_STATES_FILENAME` file exists.
-pub(crate) async fn check_indexes_states_exist(storage: Arc<dyn Storage>) -> anyhow::Result<()> {
-    let indexes_list_path = Path::new(INDEXES_STATES_FILENAME);
-    storage.exists(indexes_list_path).await?;
-    Ok(())
-}
-
-/// Fetch `INDEXES_STATES_FILENAME` file and build the map (index, state).
-/// If the file does not exist, it will create it and return an empty map.
-pub(crate) async fn fetch_or_init_indexes_states(
-    storage: Arc<dyn Storage>,
-    polling_interval_opt: Option<Duration>,
-) -> MetastoreResult<HashMap<String, IndexState>> {
-    let indexes_list_path = Path::new(INDEXES_STATES_FILENAME);
-    let exists = storage
-        .exists(indexes_list_path)
-        .await
-        .map_err(|storage_err| convert_error("indexes", storage_err))?;
-    if !exists {
-        let indexes_states: HashMap<String, IndexState> = HashMap::default();
-        put_indexes_states(&*storage, &indexes_states).await?;
-        return Ok(HashMap::default());
-    }
-    let content = storage
-        .get_all(indexes_list_path)
-        .await
-        .map_err(|storage_err| MetastoreError::Internal {
-            message: format!("failed to get `{INDEXES_STATES_FILENAME}` file"),
-            cause: storage_err.to_string(),
-        })?;
-    let indexes_states_deserialized: HashMap<String, IndexStateValue> =
-        serde_json::from_slice(&content[..]).map_err(|error| {
-            MetastoreError::JsonDeserializeError {
-                struct_name: "IndexManifest".to_string(),
-                message: error.to_string(),
-            }
-        })?;
-    Ok(indexes_states_deserialized
-        .into_iter()
-        .map(|(index_id, index_state)| match index_state {
-            IndexStateValue::Creating => (index_id, IndexState::Creating),
-            IndexStateValue::Deleting => (index_id, IndexState::Deleting),
-            IndexStateValue::Alive => {
-                let lazy_index = LazyFileBackedIndex::new(
-                    storage.clone(),
-                    index_id.clone(),
-                    polling_interval_opt,
-                    None,
-                );
-                (index_id, IndexState::Alive(lazy_index))
-            }
-        })
-        .collect())
-}
-
-pub(crate) async fn put_indexes_states(
-    storage: &dyn Storage,
-    indexes_states: &HashMap<String, IndexState>,
-) -> MetastoreResult<()> {
-    let indexes_states_serializable: HashMap<String, IndexStateValue> = indexes_states
-        .iter()
-        .map(|(index_id, index_state)| (index_id.clone(), IndexStateValue::from(index_state)))
-        .collect();
-    let indexes_list_path = Path::new(INDEXES_STATES_FILENAME);
-    let content: Vec<u8> =
-        serde_json::to_vec_pretty(&indexes_states_serializable).map_err(|serde_err| {
-            MetastoreError::Internal {
-                message: "failed to serialize indexes map".to_string(),
-                cause: serde_err.to_string(),
-            }
-        })?;
-    storage
-        .put(indexes_list_path, Box::new(content))
-        .await
-        .map_err(|storage_err| MetastoreError::Internal {
-            message: format!("failed to put `{INDEXES_STATES_FILENAME}` file"),
-            cause: storage_err.to_string(),
-        })?;
-    Ok(())
-}
-
-pub(crate) async fn fetch_index(
+pub(super) async fn load_index(
     storage: &dyn Storage,
     index_id: &str,
 ) -> MetastoreResult<FileBackedIndex> {
-    let metadata_path = meta_path(index_id);
+    let metastore_filepath = metastore_filepath(index_id);
+
     let content = storage
-        .get_all(&metadata_path)
+        .get_all(&metastore_filepath)
         .await
         .map_err(|storage_err| convert_error(index_id, storage_err))?;
 
-    let index: FileBackedIndex = serde_json::from_slice(&content[..]).map_err(|serde_error| {
-        MetastoreError::JsonDeserializeError {
-            struct_name: "FileBackedIndex".to_string(),
-            message: serde_error.to_string(),
-        }
-    })?;
+    let index: FileBackedIndex = serde_utils::from_json_bytes(&content)?;
 
     if index.index_id() != index_id {
         return Err(MetastoreError::Internal {
@@ -184,12 +73,12 @@ pub(crate) async fn fetch_index(
     Ok(index)
 }
 
-pub(crate) async fn index_exists(storage: &dyn Storage, index_id: &str) -> MetastoreResult<bool> {
-    let metadata_path = meta_path(index_id);
+pub(super) async fn index_exists(storage: &dyn Storage, index_id: &str) -> MetastoreResult<bool> {
+    let metastore_filepath = metastore_filepath(index_id);
     let exists = storage
-        .exists(&metadata_path)
+        .exists(&metastore_filepath)
         .await
-        .map_err(|storage_err| convert_error(index_id, storage_err))?;
+        .map_err(|storage_error| convert_error(index_id, storage_error))?;
     Ok(exists)
 }
 
@@ -197,29 +86,24 @@ pub(crate) async fn index_exists(storage: &dyn Storage, index_id: &str) -> Metas
 ///
 /// Do not call this method. Instead, call `put_index`.
 /// The point of having two methods here is just to make it usable in a unit test.
-pub(crate) async fn put_index_given_index_id(
+pub(super) async fn put_index_given_index_id(
     storage: &dyn Storage,
     index: &FileBackedIndex,
     index_id: &str,
 ) -> MetastoreResult<()> {
     // Serialize Index.
-    let content: Vec<u8> =
-        serde_json::to_vec_pretty(&index).map_err(|serde_err| MetastoreError::Internal {
-            message: "failed to serialize metadata set".to_string(),
-            cause: serde_err.to_string(),
-        })?;
-
-    let metadata_path = meta_path(index_id);
+    let content: Vec<u8> = serde_utils::to_json_bytes_pretty(index)?;
+    let metastore_filepath = metastore_filepath(index_id);
     // Put data back into storage.
     storage
-        .put(&metadata_path, Box::new(content))
+        .put(&metastore_filepath, Box::new(content))
         .await
         .map_err(|storage_err| convert_error(index_id, storage_err))?;
     Ok(())
 }
 
 /// Serializes the `Index` object and stores the data on the storage.
-pub(crate) async fn put_index(
+pub(super) async fn put_index(
     storage: &dyn Storage,
     index: &FileBackedIndex,
 ) -> MetastoreResult<()> {
@@ -227,11 +111,11 @@ pub(crate) async fn put_index(
 }
 
 /// Serializes the Index and stores the data on the storage.
-pub(crate) async fn delete_index(storage: &dyn Storage, index_id: &str) -> MetastoreResult<()> {
-    let metadata_path = meta_path(index_id);
+pub(super) async fn delete_index(storage: &dyn Storage, index_id: &str) -> MetastoreResult<()> {
+    let metastore_filepath = metastore_filepath(index_id);
 
     let file_exists = storage
-        .exists(&metadata_path)
+        .exists(&metastore_filepath)
         .await
         .map_err(|storage_err| convert_error(index_id, storage_err))?;
 
@@ -242,20 +126,20 @@ pub(crate) async fn delete_index(storage: &dyn Storage, index_id: &str) -> Metas
     }
     // Put data back into storage.
     storage
-        .delete(&metadata_path)
+        .delete(&metastore_filepath)
         .await
-        .map_err(|storage_err| match storage_err.kind() {
+        .map_err(|storage_error| match storage_error.kind() {
             StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
                 message: "the request credentials do not allow for this operation".to_string(),
             },
             _ => MetastoreError::Internal {
                 message: format!(
-                    "failed to write metastore file to `{}`",
-                    metadata_path.display()
+                    "failed to delete metastore file located at `{}/{}`",
+                    storage.uri(),
+                    metastore_filepath.display()
                 ),
-                cause: storage_err.to_string(),
+                cause: storage_error.to_string(),
             },
         })?;
-
     Ok(())
 }

@@ -490,7 +490,8 @@ mod pulsar_broker_tests {
     ) -> IndexUid {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(index_id, &index_uri);
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -504,7 +505,8 @@ mod pulsar_broker_tests {
         let split_id = new_split_id();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
         let stage_splits_request =
-            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let mut source_delta = SourceCheckpointDelta::default();

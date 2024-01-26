@@ -44,7 +44,7 @@ use tracing::{info, instrument, warn};
 /// The control plane maintains a model in sync with the metastore.
 ///
 /// The model stays consistent with the metastore, because all
-/// of the mutations go through the control plane.
+/// the mutations (create/delete index, add/delete source, etc.) go through the control plane.
 ///
 /// If a mutation yields an error, the control plane is killed
 /// and restarted.
@@ -59,6 +59,8 @@ pub(crate) struct ControlPlaneModel {
 
 #[derive(Clone, Copy, Debug, Default, Serialize)]
 pub struct ControlPlaneModelMetrics {
+    pub num_indexes: usize,
+    pub num_sources: usize,
     pub num_shards: usize,
 }
 
@@ -70,6 +72,8 @@ impl ControlPlaneModel {
 
     pub fn observable_state(&self) -> ControlPlaneModelMetrics {
         ControlPlaneModelMetrics {
+            num_indexes: self.index_table.len(),
+            num_sources: self.shard_table.num_sources(),
             num_shards: self.shard_table.num_shards(),
         }
     }
@@ -104,7 +108,7 @@ impl ControlPlaneModel {
             for source_config in index_metadata.sources.values() {
                 num_sources += 1;
 
-                if source_config.source_type() != SourceType::IngestV2 || !source_config.enabled {
+                if source_config.source_type() != SourceType::IngestV2 {
                     continue;
                 }
                 let request = ListShardsSubrequest {
@@ -123,30 +127,26 @@ impl ControlPlaneModel {
 
             for list_shards_subresponse in list_shard_response.subresponses {
                 num_shards += list_shards_subresponse.shards.len();
+
                 let ListShardsSubresponse {
                     index_uid,
                     source_id,
                     shards,
                 } = list_shards_subresponse;
-                let source_uid = SourceUid {
-                    index_uid: IndexUid::parse(&index_uid).map_err(|invalid_index_uri| {
-                        ControlPlaneError::Internal(format!(
-                            "invalid index uid received from the metastore: {invalid_index_uri:?}"
-                        ))
-                    })?,
-                    source_id,
-                };
+                let index_uid = IndexUid::parse(&index_uid).map_err(|invalid_index_uri| {
+                    ControlPlaneError::Internal(format!(
+                        "invalid index uid received from the metastore: {invalid_index_uri:?}"
+                    ))
+                })?;
                 self.shard_table
-                    .initialize_source_shards(source_uid, shards);
+                    .insert_shards(&index_uid, &source_id, shards);
             }
         }
+        let elapsed_secs = now.elapsed().as_secs();
+
         info!(
-            "synced internal state with metastore in {} seconds ({} indexes, {} sources, {} \
-             shards)",
-            now.elapsed().as_secs(),
-            num_indexes,
-            num_sources,
-            num_shards,
+            "synced control plane model with metastore in {elapsed_secs} seconds ({num_indexes} \
+             indexes, {num_sources} sources, {num_shards} shards)",
         );
         Ok(())
     }
@@ -155,9 +155,7 @@ impl ControlPlaneModel {
         self.index_uid_table.get(index_id).cloned()
     }
 
-    pub(crate) fn get_source_configs(
-        &self,
-    ) -> impl Iterator<Item = (SourceUid, &SourceConfig)> + '_ {
+    pub(crate) fn source_configs(&self) -> impl Iterator<Item = (SourceUid, &SourceConfig)> + '_ {
         self.index_table.values().flat_map(|index_metadata| {
             index_metadata
                 .sources
@@ -176,18 +174,25 @@ impl ControlPlaneModel {
 
     pub(crate) fn add_index(&mut self, index_metadata: IndexMetadata) {
         let index_uid = index_metadata.index_uid.clone();
-        self.index_uid_table
-            .insert(index_metadata.index_id().to_string(), index_uid.clone());
+        let index_id = index_uid.index_id().to_string();
+
+        self.index_uid_table.insert(index_id, index_uid.clone());
+
+        for (source_id, source_config) in &index_metadata.sources {
+            if source_config.source_type() == SourceType::IngestV2 {
+                self.shard_table.add_source(&index_uid, source_id);
+            }
+        }
         self.index_table.insert(index_uid, index_metadata);
     }
 
     pub(crate) fn delete_index(&mut self, index_uid: &IndexUid) {
-        // TODO: We need to let the routers and ingesters know.
         self.index_table.remove(index_uid);
+        self.index_uid_table.remove(index_uid.index_id());
         self.shard_table.delete_index(index_uid.index_id());
     }
 
-    /// Adds a source to a given index. Returns an error if a source with the same source_id already
+    /// Adds a source to a given index. Returns an error if the source already
     /// exists.
     pub(crate) fn add_source(
         &mut self,
@@ -199,9 +204,12 @@ impl ControlPlaneModel {
                 index_id: index_uid.to_string(),
             })
         })?;
-        let source_id = source_config.source_id.clone();
-        index_metadata.add_source(source_config)?;
-        self.shard_table.add_source(index_uid, &source_id);
+        index_metadata.add_source(source_config.clone())?;
+
+        if source_config.source_type() == SourceType::IngestV2 {
+            self.shard_table
+                .add_source(index_uid, &source_config.source_id);
+        }
         Ok(())
     }
 
@@ -209,12 +217,16 @@ impl ControlPlaneModel {
         // Removing shards from shard table.
         self.shard_table
             .delete_source(&source_uid.index_uid, &source_uid.source_id);
-        // Remove source from index config.
-        let Some(index_model) = self.index_table.get_mut(&source_uid.index_uid) else {
+        // Remove source from index metadata.
+        let Some(index_metadata) = self.index_table.get_mut(&source_uid.index_uid) else {
             warn!(index_uid=%source_uid.index_uid, source_id=%source_uid.source_id, "delete source: index not found");
             return;
         };
-        if index_model.sources.remove(&source_uid.source_id).is_none() {
+        if index_metadata
+            .sources
+            .remove(&source_uid.source_id)
+            .is_none()
+        {
             warn!(index_uid=%source_uid.index_uid, source_id=%source_uid.source_id, "delete source: source not found");
         };
     }
@@ -280,14 +292,14 @@ impl ControlPlaneModel {
     }
 
     /// Inserts the shards that have just been opened by calling `open_shards` on the metastore.
-    pub fn insert_newly_opened_shards(
+    pub fn insert_shards(
         &mut self,
         index_uid: &IndexUid,
         source_id: &SourceId,
         opened_shards: Vec<Shard>,
     ) {
         self.shard_table
-            .insert_newly_opened_shards(index_uid, source_id, opened_shards);
+            .insert_shards(index_uid, source_id, opened_shards);
     }
 
     /// Finds open shards for a given index and source and whose leaders are not in the set of
@@ -363,16 +375,16 @@ mod tests {
                 assert_eq!(request, ListIndexesMetadataRequest::all());
 
                 let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
-                let mut source_config = SourceConfig::ingest_v2_default();
+                let mut source_config = SourceConfig::ingest_v2();
                 source_config.enabled = true;
                 index_0.add_source(source_config.clone()).unwrap();
 
                 let mut index_1 = IndexMetadata::for_test("test-index-1", "ram:///test-index-1");
-                index_1.add_source(source_config.clone()).unwrap();
+                source_config.enabled = false;
+                index_1.add_source(source_config).unwrap();
 
                 let mut index_2 = IndexMetadata::for_test("test-index-2", "ram:///test-index-2");
-                source_config.enabled = false;
-                index_2.add_source(source_config.clone()).unwrap();
+                index_2.add_source(SourceConfig::cli()).unwrap();
 
                 let indexes = vec![index_0, index_1, index_2];
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(indexes).unwrap())
@@ -382,17 +394,11 @@ mod tests {
 
             assert_eq!(request.subrequests[0].index_uid, "test-index-0:0");
             assert_eq!(request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
-            assert_eq!(
-                request.subrequests[0].shard_state(),
-                ShardState::Unspecified
-            );
+            assert!(request.subrequests[0].shard_state.is_none());
 
             assert_eq!(request.subrequests[1].index_uid, "test-index-1:0");
             assert_eq!(request.subrequests[1].source_id, INGEST_V2_SOURCE_ID);
-            assert_eq!(
-                request.subrequests[1].shard_state(),
-                ShardState::Unspecified
-            );
+            assert!(request.subrequests[1].shard_state.is_none());
 
             let subresponses = vec![
                 metastore::ListShardsSubresponse {
@@ -417,25 +423,16 @@ mod tests {
             Ok(response)
         });
         let mut model = ControlPlaneModel::default();
-        let mut metastore_client = MetastoreServiceClient::from(mock_metastore);
+        let mut metastore = MetastoreServiceClient::from(mock_metastore);
         model
-            .load_from_metastore(&mut metastore_client, &progress)
+            .load_from_metastore(&mut metastore, &progress)
             .await
             .unwrap();
 
         assert_eq!(model.index_table.len(), 3);
-        assert_eq!(
-            model.index_uid("test-index-0").unwrap().as_str(),
-            "test-index-0:0"
-        );
-        assert_eq!(
-            model.index_uid("test-index-1").unwrap().as_str(),
-            "test-index-1:0"
-        );
-        assert_eq!(
-            model.index_uid("test-index-2").unwrap().as_str(),
-            "test-index-2:0"
-        );
+        assert_eq!(model.index_uid("test-index-0").unwrap(), "test-index-0:0");
+        assert_eq!(model.index_uid("test-index-1").unwrap(), "test-index-1:0");
+        assert_eq!(model.index_uid("test-index-2").unwrap(), "test-index-2:0");
 
         assert_eq!(model.shard_table.num_shards(), 1);
 
@@ -464,9 +461,72 @@ mod tests {
     }
 
     #[test]
+    fn test_control_plane_model_add_index() {
+        let mut model = ControlPlaneModel::default();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes");
+        let index_uid = index_metadata.index_uid.clone();
+        model.add_index(index_metadata.clone());
+
+        assert_eq!(model.index_table.len(), 1);
+        assert_eq!(model.index_table.get(&index_uid).unwrap(), &index_metadata);
+
+        assert_eq!(model.index_uid_table.len(), 1);
+        assert_eq!(model.index_uid("test-index").unwrap(), "test-index:0");
+    }
+
+    #[test]
+    fn test_control_plane_model_add_index_with_sources() {
+        let mut model = ControlPlaneModel::default();
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes");
+        index_metadata.add_source(SourceConfig::cli()).unwrap();
+        index_metadata
+            .add_source(SourceConfig::ingest_v2())
+            .unwrap();
+        let index_uid = index_metadata.index_uid.clone();
+        model.add_index(index_metadata.clone());
+
+        assert_eq!(model.index_table.len(), 1);
+        assert_eq!(model.index_table.get(&index_uid).unwrap(), &index_metadata);
+
+        assert_eq!(model.index_uid_table.len(), 1);
+        assert_eq!(model.index_uid("test-index").unwrap(), "test-index:0");
+
+        assert_eq!(model.shard_table.num_sources(), 1);
+
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
+        };
+        assert_eq!(
+            model.shard_table.list_shards(&source_uid).unwrap().count(),
+            0
+        );
+    }
+
+    #[test]
+    fn test_control_plane_model_delete_index() {
+        let mut model = ControlPlaneModel::default();
+
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes");
+        let index_uid = index_metadata.index_uid.clone();
+        model.delete_index(&index_uid);
+
+        index_metadata
+            .add_source(SourceConfig::ingest_v2())
+            .unwrap();
+        model.add_index(index_metadata);
+
+        model.delete_index(&index_uid);
+
+        assert!(model.index_table.is_empty());
+        assert!(model.index_uid_table.is_empty());
+        assert_eq!(model.shard_table.num_sources(), 0);
+    }
+
+    #[test]
     fn test_control_plane_model_toggle_source() {
         let mut model = ControlPlaneModel::default();
-        let index_metadata = IndexMetadata::for_test("test-index", "ram://");
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes");
         let index_uid = index_metadata.index_uid.clone();
         model.add_index(index_metadata);
         let source_config = SourceConfig::for_test("test-source", SourceParams::void());

@@ -21,18 +21,19 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use quickwit_proto::metastore::MetastoreResult;
+use quickwit_proto::types::IndexId;
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OnceCell};
 use tracing::error;
 
 use super::file_backed_index::FileBackedIndex;
-use super::store_operations::fetch_index;
+use super::store_operations::load_index;
 
 /// Lazy [`FileBackedIndex`]. It loads a `FileBackedIndex`
 /// on demand and optionally spawns a task to poll
 /// regularly the storage and update the index.
 pub(crate) struct LazyFileBackedIndex {
-    index_id: String,
+    index_id: IndexId,
     storage: Arc<dyn Storage>,
     polling_interval_opt: Option<Duration>,
     lazy_index: OnceCell<Arc<Mutex<FileBackedIndex>>>,
@@ -42,7 +43,7 @@ impl LazyFileBackedIndex {
     /// Create `LazyFileBackedIndex`.
     pub fn new(
         storage: Arc<dyn Storage>,
-        index_id: String,
+        index_id: IndexId,
         polling_interval_opt: Option<Duration>,
         file_backed_index: Option<FileBackedIndex>,
     ) -> Self {
@@ -91,7 +92,7 @@ async fn poll_index_metadata_once(
     if metadata_lock.flip_recently_modified_down() {
         return;
     }
-    let index_fetch_res = fetch_index(storage, index_id).await;
+    let index_fetch_res = load_index(storage, index_id).await;
     match index_fetch_res {
         Ok(index) => {
             *metadata_lock = index;
@@ -104,7 +105,7 @@ async fn poll_index_metadata_once(
 
 fn spawn_index_metadata_polling_task(
     storage: Arc<dyn Storage>,
-    index_id: String,
+    index_id: IndexId,
     metastore_weak: Weak<Mutex<FileBackedIndex>>,
     polling_interval: Duration,
 ) {
@@ -120,10 +121,10 @@ fn spawn_index_metadata_polling_task(
 
 async fn load_file_backed_index(
     storage: Arc<dyn Storage>,
-    index_id: String,
+    index_id: IndexId,
     polling_interval_opt: Option<Duration>,
 ) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
-    let index = fetch_index(&*storage, &index_id).await?;
+    let index = load_index(&*storage, &index_id).await?;
     let index_mutex = Arc::new(Mutex::new(index));
     if let Some(polling_interval) = polling_interval_opt {
         spawn_index_metadata_polling_task(

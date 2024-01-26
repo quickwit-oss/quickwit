@@ -33,7 +33,7 @@ use thiserror::Error;
 use warp::{Filter, Rejection};
 
 use crate::format::extract_format_from_qs;
-use crate::json_api_response::make_json_api_response;
+use crate::rest_api_response::into_rest_api_response;
 use crate::{with_arg, BodyFormat};
 
 #[derive(utoipa::OpenApi)]
@@ -93,7 +93,7 @@ fn ingest_handler(
     ingest_filter(config)
         .and(with_arg(ingest_service))
         .then(ingest)
-        .map(|result| make_json_api_response(result, BodyFormat::default()))
+        .map(|result| into_rest_api_response(result, BodyFormat::default()))
 }
 
 fn ingest_v2_filter(
@@ -118,7 +118,7 @@ fn ingest_v2_handler(
         .and(with_arg(ingest_router))
         .then(ingest_v2)
         .and(with_arg(BodyFormat::default()))
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 async fn ingest_v2(
@@ -230,7 +230,7 @@ pub fn tail_handler(
         .and(with_arg(ingest_service))
         .then(tail_endpoint)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {

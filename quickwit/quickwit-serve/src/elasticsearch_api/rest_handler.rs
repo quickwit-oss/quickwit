@@ -62,7 +62,7 @@ use super::model::{
 };
 use super::{make_elastic_api_response, TrackTotalHits};
 use crate::format::BodyFormat;
-use crate::json_api_response::{make_json_api_response, ApiError, JsonApiResponse};
+use crate::rest_api_response::{into_rest_api_response, RestApiError, RestApiResponse};
 use crate::{with_arg, BuildInfo};
 
 /// Elastic compatible cluster info handler.
@@ -95,13 +95,13 @@ pub fn es_compat_search_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elasticsearch_filter().then(|_params: SearchQueryParams| async move {
         // TODO
-        let api_error = ApiError {
+        let api_error = RestApiError {
             service_code: ServiceErrorCode::NotSupportedYet,
             message: "_elastic/_search is not supported yet. Please try the index search endpoint \
                       (_elastic/{index}/search)"
                 .to_string(),
         };
-        make_json_api_response::<(), _>(Err(api_error), BodyFormat::default())
+        into_rest_api_response::<(), _>(Err(api_error), BodyFormat::default())
     })
 }
 
@@ -188,7 +188,7 @@ pub fn es_compat_index_multi_search_handler(
                 Ok(_) => StatusCode::OK,
                 Err(err) => err.status,
             };
-            JsonApiResponse::new(&result, status_code, &BodyFormat::default())
+            RestApiResponse::new(&result, status_code, &BodyFormat::default())
         })
 }
 

@@ -37,7 +37,7 @@ use serialize::VersionedSourceConfig;
 use crate::{enable_ingest_v2, TestableForRegression};
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
-pub const CLI_INGEST_SOURCE_ID: &str = "_ingest-cli-source";
+pub const CLI_SOURCE_ID: &str = "_ingest-cli-source";
 
 /// Reserved source ID used for Quickwit ingest API.
 pub const INGEST_API_SOURCE_ID: &str = "_ingest-api-source";
@@ -46,11 +46,8 @@ pub const INGEST_API_SOURCE_ID: &str = "_ingest-api-source";
 /// (this is for ingest v2)
 pub const INGEST_V2_SOURCE_ID: &str = "_ingest-source";
 
-pub const RESERVED_SOURCE_IDS: &[&str] = &[
-    CLI_INGEST_SOURCE_ID,
-    INGEST_API_SOURCE_ID,
-    INGEST_V2_SOURCE_ID,
-];
+pub const RESERVED_SOURCE_IDS: &[&str] =
+    &[CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID];
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(into = "VersionedSourceConfig")]
@@ -125,8 +122,21 @@ impl SourceConfig {
         .expect("`SourceParams` should be JSON serializable")
     }
 
-    /// Creates an ingest source v2.
-    pub fn ingest_v2_default() -> Self {
+    /// Creates the default CLI source config. The CLI source ingests data from stdin.
+    pub fn cli() -> Self {
+        Self {
+            source_id: CLI_SOURCE_ID.to_string(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            desired_num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            enabled: true,
+            source_params: SourceParams::IngestCli,
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        }
+    }
+
+    /// Creates a native Quickwit ingest source. The ingest source ingests data from an ingester.
+    pub fn ingest_v2() -> Self {
         Self {
             source_id: INGEST_V2_SOURCE_ID.to_string(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
@@ -146,19 +156,6 @@ impl SourceConfig {
             desired_num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
             enabled: true,
             source_params: SourceParams::IngestApi,
-            transform_config: None,
-            input_format: SourceInputFormat::Json,
-        }
-    }
-
-    /// Creates the default cli-ingest source config.
-    pub fn cli_ingest_source() -> Self {
-        Self {
-            source_id: CLI_INGEST_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
-            desired_num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
-            enabled: true,
-            source_params: SourceParams::IngestCli,
             transform_config: None,
             input_format: SourceInputFormat::Json,
         }
@@ -199,7 +196,7 @@ impl TestableForRegression for SourceConfig {
         }
     }
 
-    fn test_equality(&self, other: &Self) {
+    fn assert_equality(&self, other: &Self) {
         assert_eq!(self, other);
     }
 }

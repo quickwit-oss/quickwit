@@ -1,0 +1,48 @@
+version: 0.7
+
+template_id: gh-archive
+
+index_id_patterns:
+  - gh-archive*
+
+description: Index config template for the GH Archive dataset (gharchive.org)
+
+priority: 0
+
+doc_mapping:
+  field_mappings:
+    - name: id
+      type: text
+      tokenizer: raw
+    - name: type
+      type: text
+      fast: true
+      tokenizer: raw
+    - name: public
+      type: bool
+      fast: true
+    - name: payload
+      type: json
+      tokenizer: default
+    - name: org
+      type: json
+      tokenizer: default
+    - name: repo
+      type: json
+      tokenizer: default
+    - name: actor
+      type: json
+      tokenizer: default
+    - name: other
+      type: json
+      tokenizer: default
+    - name: created_at
+      type: datetime
+      fast: true
+      input_formats:
+        - rfc3339
+      fast_precision: seconds
+  timestamp_field: created_at
+
+indexing_settings:
+  commit_timeout_secs: 10

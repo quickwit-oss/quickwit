@@ -440,7 +440,7 @@ impl IngestController {
             for open_shards_subresponse in open_shards_response.subresponses {
                 let index_uid: IndexUid = open_shards_subresponse.index_uid.clone().into();
                 let source_id = open_shards_subresponse.source_id.clone();
-                model.insert_newly_opened_shards(
+                model.insert_shards(
                     &index_uid,
                     &source_id,
                     open_shards_subresponse.opened_shards,
@@ -567,7 +567,7 @@ impl IngestController {
             let index_uid: IndexUid = open_shards_subresponse.index_uid.into();
             let source_id = open_shards_subresponse.source_id;
 
-            model.insert_newly_opened_shards(
+            model.insert_shards(
                 &index_uid,
                 &source_id,
                 open_shards_subresponse.opened_shards,
@@ -686,7 +686,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use quickwit_config::{SourceConfig, SourceParams, INGEST_V2_SOURCE_ID};
+    use quickwit_config::{SourceConfig, INGEST_V2_SOURCE_ID};
     use quickwit_ingest::{RateMibPerSec, ShardInfo};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
@@ -977,11 +977,12 @@ mod tests {
         );
 
         let mut model = ControlPlaneModel::default();
-
-        let source_config = SourceConfig::for_test(source_id, SourceParams::stdin());
-
         model.add_index(index_metadata_0.clone());
         model.add_index(index_metadata_1.clone());
+
+        let mut source_config = SourceConfig::ingest_v2();
+        source_config.source_id = source_id.to_string();
+
         model
             .add_source(&index_uid_0, source_config.clone())
             .unwrap();
@@ -1006,7 +1007,7 @@ mod tests {
             },
         ];
 
-        model.insert_newly_opened_shards(&index_uid_0, &source_id.into(), shards);
+        model.insert_shards(&index_uid_0, &source_id.into(), shards);
 
         let request = GetOrCreateOpenShardsRequest {
             subrequests: Vec::new(),
@@ -1117,7 +1118,7 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         }];
-        model.insert_newly_opened_shards(&index_uid, &source_id, shards);
+        model.insert_shards(&index_uid, &source_id, shards);
 
         let request = GetOrCreateOpenShardsRequest {
             subrequests: Vec::new(),
@@ -1185,7 +1186,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        model.insert_newly_opened_shards(&index_uid, &source_id, shards);
+        model.insert_shards(&index_uid, &source_id, shards);
 
         let request = GetOrCreateOpenShardsRequest {
             subrequests: Vec::new(),
@@ -1245,7 +1246,7 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         }];
-        model.insert_newly_opened_shards(&index_uid, &source_id, shards);
+        model.insert_shards(&index_uid, &source_id, shards);
         let shard_entries: Vec<ShardEntry> = model.all_shards().cloned().collect();
 
         assert_eq!(shard_entries.len(), 1);
@@ -1279,7 +1280,7 @@ mod tests {
             leader_id: "test-ingester".to_string(),
             ..Default::default()
         }];
-        model.insert_newly_opened_shards(&index_uid, &source_id, shards);
+        model.insert_shards(&index_uid, &source_id, shards);
 
         let shard_entries: Vec<ShardEntry> = model.all_shards().cloned().collect();
         assert_eq!(shard_entries.len(), 2);
@@ -1412,7 +1413,7 @@ mod tests {
             IndexMetadata::for_test(index_uid.index_id(), "ram://indexes/test-index:0");
         model.add_index(index_metadata);
 
-        let souce_config = SourceConfig::ingest_v2_default();
+        let souce_config = SourceConfig::ingest_v2();
         model.add_source(&index_uid, souce_config).unwrap();
 
         let progress = Progress::default();
@@ -1510,7 +1511,7 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         }];
-        model.insert_newly_opened_shards(&index_uid, &source_id, shards);
+        model.insert_shards(&index_uid, &source_id, shards);
 
         // Test ingester is unavailable.
         ingest_controller
@@ -1565,7 +1566,7 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         }];
-        model.insert_newly_opened_shards(&index_uid, &source_id, shards);
+        model.insert_shards(&index_uid, &source_id, shards);
 
         // Test rate limited.
         ingest_controller
@@ -1637,7 +1638,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        model.insert_newly_opened_shards(&index_uid, &source_id, shards);
+        model.insert_shards(&index_uid, &source_id, shards);
 
         let shard_infos = BTreeSet::from_iter([
             ShardInfo {
@@ -1719,7 +1720,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        model.insert_newly_opened_shards(&index_uid, &source_id, shards);
+        model.insert_shards(&index_uid, &source_id, shards);
 
         let mut ingester_mock1 = IngesterServiceClient::mock();
         let ingester_mock2 = IngesterServiceClient::mock();

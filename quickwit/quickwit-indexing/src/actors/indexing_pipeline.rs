@@ -650,7 +650,7 @@ mod tests {
                     let index_metadata =
                         IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
                     return Ok(
-                        IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap(),
+                        IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap(),
                     );
                 }
                 num_fails -= 1;
@@ -763,7 +763,7 @@ mod tests {
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         metastore
             .expect_last_delete_opstamp()
@@ -863,7 +863,7 @@ mod tests {
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         mock_metastore
             .expect_list_splits()
@@ -960,7 +960,7 @@ mod tests {
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         metastore
             .expect_last_delete_opstamp()
