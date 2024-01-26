@@ -67,6 +67,28 @@ expected:
             login: fulmicoton
         _index: "gharchive-1"
 ---
+endpoint: "gharchive-*,-gharchive-2/_search"
+params:
+  q: "*"
+expected:
+  hits:
+    total:
+      value: 2
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 2"
+---
+endpoint: "gharchive-*,-*-2/_search"
+params:
+  q: "*"
+expected:
+  hits:
+    total:
+      value: 2
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 2"
+---
 # It is valid to have a pattern that does not match
 # any index.
 endpoint: "invalidptn-*/_search"

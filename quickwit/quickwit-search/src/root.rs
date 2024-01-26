@@ -975,7 +975,7 @@ pub fn check_all_index_metadata_found(
     let mut index_ids: HashSet<&str> = index_id_patterns
         .iter()
         .map(|index_ptn| index_ptn.as_str())
-        .filter(|index_ptn| !index_ptn.contains('*'))
+        .filter(|index_ptn| !index_ptn.contains('*') && !index_ptn.starts_with('-'))
         .collect();
 
     if index_ids.is_empty() {

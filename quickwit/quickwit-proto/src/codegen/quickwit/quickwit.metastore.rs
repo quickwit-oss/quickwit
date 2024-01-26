@@ -20,6 +20,9 @@ pub struct CreateIndexResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadataRequest {
+    /// List of patterns an index should match or not match to get considered
+    /// An index must match at least one positive pattern (a pattern not starting
+    /// with a '-'), and no negative pattern (a pattern starting with a '-').
     #[prost(string, repeated, tag = "2")]
     pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }

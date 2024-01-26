@@ -693,8 +693,25 @@ impl MetastoreService for FileBackedMetastore {
         // 2) Get each index metadata. Note that each get will take a read lock on
         // `per_index_metastores`. Lock is released in 1) to let a concurrent task/thread to
         // take a write lock on `per_index_metastores`.
-        let index_matcher =
-            build_regex_set_from_patterns(request.index_id_patterns).map_err(|error| {
+        let mut positive_patterns = Vec::new();
+        let mut negative_patterns = Vec::new();
+        for pattern in request.index_id_patterns {
+            if let Some(negative_pattern) = pattern.strip_prefix('-') {
+                negative_patterns.push(negative_pattern.to_string());
+            } else {
+                positive_patterns.push(pattern);
+            }
+        }
+        let positive_index_matcher =
+            build_regex_set_from_patterns(positive_patterns).map_err(|error| {
+                MetastoreError::Internal {
+                    message: "failed to build RegexSet from index patterns`".to_string(),
+                    cause: error.to_string(),
+                }
+            })?;
+
+        let negative_index_matcher =
+            build_regex_set_from_patterns(negative_patterns).map_err(|error| {
                 MetastoreError::Internal {
                     message: "failed to build RegexSet from index patterns`".to_string(),
                     cause: error.to_string(),
@@ -709,7 +726,10 @@ impl MetastoreService for FileBackedMetastore {
                     IndexState::Alive(_) => Some(index_id),
                     _ => None,
                 })
-                .filter(|index_id| index_matcher.is_match(index_id))
+                .filter(|index_id| {
+                    positive_index_matcher.is_match(index_id)
+                        && !negative_index_matcher.is_match(index_id)
+                })
                 .cloned()
                 .collect()
         };
@@ -951,7 +971,7 @@ fn build_regex_set_from_patterns(patterns: Vec<String>) -> anyhow::Result<RegexS
 /// Converts the tokens into a valid regex.
 fn build_regex_exprs_from_pattern(index_pattern: &str) -> anyhow::Result<String> {
     // Note: consecutive '*' are not allowed in the pattern.
-    validate_index_id_pattern(index_pattern)?;
+    validate_index_id_pattern(index_pattern, false)?;
     let mut re: String = String::new();
     re.push('^');
     re.push_str(&index_pattern.split('*').map(regex::escape).join(".*"));
