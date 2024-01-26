@@ -219,12 +219,7 @@ impl Hash for InnerRoutingExpr {
         match self {
             InnerRoutingExpr::Field(field_name) => {
                 ExprType::Field.hash(hasher);
-                // this is to keep the same hash as before. we can simplify if we don't care about
-                // keeping that hash intact
-                hasher.write_u64(
-                    (field_name.len() - 1 + field_name.iter().map(|part| part.len()).sum::<usize>())
-                        as u64,
-                );
+                hasher.write_u64(field_name.len() as u64);
                 for (index, field) in field_name.iter().enumerate() {
                     if index != 0 {
                         hasher.write_u8(b'.');
@@ -647,14 +642,14 @@ mod tests {
         let routing_expr = RoutingExpr::new("tenant_id").unwrap();
         let ctx: serde_json::Map<String, JsonValue> =
             serde_json::from_str(r#"{"tenant_id": "happy-tenant", "app": "happy"}"#).unwrap();
-        assert_eq!(routing_expr.eval_hash(&ctx), 12428134591152806029);
+        assert_eq!(routing_expr.eval_hash(&ctx), 13914409176935416182);
     }
 
     #[test]
     fn test_routing_expr_missing_value_does_not_panic() {
         let routing_expr = RoutingExpr::new("tenant_id").unwrap();
         let ctx: serde_json::Map<String, JsonValue> = Default::default();
-        assert_eq!(routing_expr.eval_hash(&ctx), 9054185009885066538);
+        assert_eq!(routing_expr.eval_hash(&ctx), 12482849403534986143);
     }
 
     #[test]
