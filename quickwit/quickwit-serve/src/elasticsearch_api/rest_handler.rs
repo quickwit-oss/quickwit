@@ -46,17 +46,19 @@ use serde_json::json;
 use warp::{Filter, Rejection};
 
 use super::filter::{
-    elastic_cluster_info_filter, elastic_field_capabilities_filter, elastic_index_count_filter,
+    elastic_cat_indices_filter, elastic_cluster_info_filter, elastic_field_capabilities_filter,
+    elastic_index_cat_indices_filter, elastic_index_count_filter,
     elastic_index_field_capabilities_filter, elastic_index_search_filter,
     elastic_index_stats_filter, elastic_multi_search_filter, elastic_scroll_filter,
     elastic_stats_filter, elasticsearch_filter,
 };
 use super::model::{
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
-    ElasticsearchError, ElasticsearchStatsResponse, FieldCapabilityQueryParams,
-    FieldCapabilityRequestBody, FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams,
-    MultiSearchResponse, MultiSearchSingleResponse, ScrollQueryParams, SearchBody,
-    SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
+    CatIndexQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
+    ElasticsearchStatsResponse, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
+    FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
+    MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
+    SearchQueryParamsCount, StatsResponseEntry,
 };
 use super::{make_elastic_api_response, TrackTotalHits};
 use crate::format::BodyFormat;
@@ -115,7 +117,7 @@ pub fn es_compat_index_field_capabilities_handler(
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
-/// GET or POST _elastic/_stats
+/// GET _elastic/_stats
 pub fn es_compat_stats_handler(
     search_service: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -124,13 +126,33 @@ pub fn es_compat_stats_handler(
         .then(es_compat_stats)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
-/// GET or POST _elastic/{index}/_stats
+/// GET _elastic/{index}/_stats
 pub fn es_compat_index_stats_handler(
     search_service: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_index_stats_filter()
         .and(with_arg(search_service))
         .then(es_compat_index_stats)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+}
+
+/// GET _elastic/_cat/indices
+pub fn es_compat_cat_indices_handler(
+    search_service: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_cat_indices_filter()
+        .and(with_arg(search_service))
+        .then(es_compat_cat_indices)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+}
+
+/// GET _elastic/_cat/indices/{index}
+pub fn es_compat_index_cat_indices_handler(
+    search_service: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_index_cat_indices_filter()
+        .and(with_arg(search_service))
+        .then(es_compat_index_cat_indices)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
@@ -390,6 +412,50 @@ async fn es_compat_index_stats(
     Ok(search_response_rest)
 }
 
+async fn es_compat_cat_indices(
+    query_params: CatIndexQueryParams,
+    metastore: MetastoreServiceClient,
+) -> Result<Vec<serde_json::Value>, ElasticsearchError> {
+    es_compat_index_cat_indices(vec!["*".to_string()], query_params, metastore).await
+}
+
+async fn es_compat_index_cat_indices(
+    index_id_patterns: Vec<String>,
+    query_params: CatIndexQueryParams,
+    mut metastore: MetastoreServiceClient,
+) -> Result<Vec<serde_json::Value>, ElasticsearchError> {
+    query_params.validate()?;
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
+    // Index id to index uid mapping
+    let index_uid_to_index_id: HashMap<IndexUid, String> = indexes_metadata
+        .iter()
+        .map(|metadata| (metadata.index_uid.clone(), metadata.index_id().to_owned()))
+        .collect();
+
+    let index_uids = indexes_metadata
+        .into_iter()
+        .map(|index_metadata| index_metadata.index_uid)
+        .collect_vec();
+    // calling into the search module is not necessary, but reuses established patterns
+    let splits_metadata = list_all_splits(index_uids, &mut metastore).await?;
+
+    let search_response_rest: Vec<ElasticsearchCatIndexResponse> =
+        convert_to_es_cat_indices_response(index_uid_to_index_id, splits_metadata);
+
+    let search_response_rest = search_response_rest
+        .into_iter()
+        .map(|cat_index| cat_index.serialize_filtered(&query_params.h))
+        .collect::<Result<Vec<serde_json::Value>, serde_json::Error>>()
+        .map_err(|serde_errror| {
+            ElasticsearchError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to serialize cat indices response: {}", serde_errror),
+            )
+        })?;
+
+    Ok(search_response_rest)
+}
+
 async fn es_compat_index_field_capabilities(
     index_id_patterns: Vec<String>,
     search_params: FieldCapabilityQueryParams,
@@ -549,6 +615,32 @@ async fn es_scroll(
         convert_to_es_search_response(search_response, false);
     search_response_rest.took = start_instant.elapsed().as_millis() as u32;
     Ok(search_response_rest)
+}
+
+fn convert_to_es_cat_indices_response(
+    index_uid_to_index_id: HashMap<IndexUid, String>,
+    splits: Vec<SplitMetadata>,
+) -> Vec<ElasticsearchCatIndexResponse> {
+    let mut per_index: HashMap<String, ElasticsearchCatIndexResponse> = HashMap::new();
+
+    for split_metadata in splits {
+        let index_id = index_uid_to_index_id
+            .get(&split_metadata.index_uid)
+            .unwrap_or_else(|| {
+                panic!(
+                    "index_uid {} not found in index_uid_to_index_id",
+                    split_metadata.index_uid
+                )
+            });
+        let mut cat_index_entry: ElasticsearchCatIndexResponse = split_metadata.into();
+        cat_index_entry.index = index_id.to_owned();
+
+        let index_stats_entry = per_index.entry(index_id.to_owned()).or_default();
+        *index_stats_entry += cat_index_entry.clone();
+    }
+    let indices: Vec<ElasticsearchCatIndexResponse> = per_index.values().cloned().collect();
+
+    indices
 }
 
 fn convert_to_es_stats_response(

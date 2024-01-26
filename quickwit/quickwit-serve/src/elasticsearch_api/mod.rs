@@ -41,6 +41,7 @@ use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
 use self::rest_handler::{
+    es_compat_cat_indices_handler, es_compat_index_cat_indices_handler,
     es_compat_index_count_handler, es_compat_index_field_capabilities_handler,
     es_compat_index_stats_handler, es_compat_stats_handler,
 };
@@ -74,7 +75,9 @@ pub fn elastic_api_handlers(
         ))
         .or(es_compat_index_bulk_handler(ingest_service, ingest_router))
         .or(es_compat_index_stats_handler(metastore.clone()))
-        .or(es_compat_stats_handler(metastore))
+        .or(es_compat_stats_handler(metastore.clone()))
+        .or(es_compat_index_cat_indices_handler(metastore.clone()))
+        .or(es_compat_cat_indices_handler(metastore.clone()))
     // Register newly created handlers here.
 }
 
