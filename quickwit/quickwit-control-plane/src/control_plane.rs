@@ -165,7 +165,7 @@ impl ControlPlane {
     /// This method includes debouncing logic. Every call will be followed by a cooldown period.
     fn rebuild_plan_debounced(&mut self, ctx: &ActorContext<Self>) {
         self.rebuild_plan_debouncer
-            .self_send_with_cooldown::<_, RebuildPlan>(ctx);
+            .self_send_with_cooldown::<RebuildPlan>(ctx);
     }
 
     /// Deletes a set of shards from the metastore and the control plane model.
