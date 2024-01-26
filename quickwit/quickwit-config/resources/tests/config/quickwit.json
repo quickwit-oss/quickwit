@@ -48,7 +48,7 @@
         "split_store_max_num_bytes": "1T",
         "split_store_max_num_splits": 10000,
         "max_concurrent_split_uploads": 8,
-o
+        "max_merge_write_throughput": "100mb"
     },
     "ingest_api": {
         "replication_factor": 2
