@@ -27,7 +27,7 @@ use bytes::{BufMut, BytesMut};
 use futures::StreamExt;
 use mrecordlog::MultiRecordLog;
 use quickwit_common::retry::RetryParams;
-use quickwit_common::ServiceStream;
+use quickwit_common::{spawn_named_task, ServiceStream};
 use quickwit_proto::ingest::ingester::{
     fetch_message, FetchEof, FetchMessage, FetchPayload, IngesterService, OpenFetchStreamRequest,
 };
@@ -98,7 +98,7 @@ impl FetchStreamTask {
             batch_num_bytes,
         };
         let future = async move { fetch_task.run().await };
-        let fetch_task_handle: JoinHandle<()> = tokio::spawn(future);
+        let fetch_task_handle: JoinHandle<()> = spawn_named_task(future, "fetch_task");
         (fetch_stream, fetch_task_handle)
     }
 
@@ -308,7 +308,7 @@ impl MultiFetchStream {
             self.retry_params,
             self.fetch_message_tx.clone(),
         );
-        let fetch_task_handle = tokio::spawn(fetch_stream_future);
+        let fetch_task_handle = spawn_named_task(fetch_stream_future, "fetch_stream_future");
         self.fetch_task_handles.insert(queue_id, fetch_task_handle);
         Ok(())
     }

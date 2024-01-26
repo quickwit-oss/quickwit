@@ -52,7 +52,9 @@ pub use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
 use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
+use quickwit_proto::metastore::{
+    ListIndexesMetadataRequest, ListSplitsRequest, MetastoreService, MetastoreServiceClient,
+};
 use tantivy::schema::NamedFieldDocument;
 
 /// Refer to this as `crate::Result<T>`.
@@ -65,8 +67,8 @@ pub use find_trace_ids_collector::FindTraceIdsCollector;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_metastore::{
-    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
-    SplitState,
+    IndexMetadata, ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
+    MetastoreServiceStreamSplitsExt, SplitMetadata, SplitState,
 };
 use quickwit_proto::search::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_proto::types::IndexUid;
@@ -81,7 +83,10 @@ pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
-pub use crate::root::{jobs_to_leaf_requests, root_search, IndexMetasForLeafSearch, SearchJob};
+pub use crate::root::{
+    check_all_index_metadata_found, jobs_to_leaf_requests, root_search, IndexMetasForLeafSearch,
+    SearchJob,
+};
 pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
@@ -167,8 +172,16 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
     }
 }
 
+/// Get all splits of given index ids
+pub async fn list_all_splits(
+    index_uids: Vec<IndexUid>,
+    metastore: &mut MetastoreServiceClient,
+) -> crate::Result<Vec<SplitMetadata>> {
+    list_relevant_splits(index_uids, None, None, None, metastore).await
+}
+
 /// Extract the list of relevant splits for a given request.
-async fn list_relevant_splits(
+pub async fn list_relevant_splits(
     index_uids: Vec<IndexUid>,
     start_timestamp: Option<i64>,
     end_timestamp: Option<i64>,
@@ -194,6 +207,30 @@ async fn list_relevant_splits(
         .collect_splits_metadata()
         .await?;
     Ok(splits_metadata)
+}
+
+/// Resolve index patterns and returns IndexMetadata for found indices.
+/// Patterns follow the elastic search patterns.
+pub async fn resolve_index_patterns(
+    index_id_patterns: &[String],
+    metastore: &mut MetastoreServiceClient,
+) -> crate::Result<Vec<IndexMetadata>> {
+    let list_indexes_metadata_request = if index_id_patterns.is_empty() {
+        ListIndexesMetadataRequest::all()
+    } else {
+        ListIndexesMetadataRequest {
+            index_id_patterns: index_id_patterns.to_owned(),
+        }
+    };
+
+    // Get the index ids from the request
+    let indexes_metadata = metastore
+        .clone()
+        .list_indexes_metadata(list_indexes_metadata_request)
+        .await?
+        .deserialize_indexes_metadata()?;
+    check_all_index_metadata_found(&indexes_metadata, index_id_patterns)?;
+    Ok(indexes_metadata)
 }
 
 /// Converts a Tantivy `NamedFieldDocument` into a json string using the

@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -30,14 +30,17 @@ use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
 use quickwit_config::{validate_index_id_pattern, NodeConfig};
+use quickwit_metastore::*;
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
     CountHits, ListFieldsResponse, PartialHit, ScrollRequest, SearchResponse, SortByValue,
     SortDatetimeFormat,
 };
+use quickwit_proto::types::IndexUid;
 use quickwit_proto::ServiceErrorCode;
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
-use quickwit_search::{SearchError, SearchService};
+use quickwit_search::{list_all_splits, resolve_index_patterns, SearchError, SearchService};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use warp::{Filter, Rejection};
@@ -45,14 +48,15 @@ use warp::{Filter, Rejection};
 use super::filter::{
     elastic_cluster_info_filter, elastic_field_capabilities_filter, elastic_index_count_filter,
     elastic_index_field_capabilities_filter, elastic_index_search_filter,
-    elastic_multi_search_filter, elastic_scroll_filter, elasticsearch_filter,
+    elastic_index_stats_filter, elastic_multi_search_filter, elastic_scroll_filter,
+    elastic_stats_filter, elasticsearch_filter,
 };
 use super::model::{
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
-    ElasticsearchError, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
-    FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
-    MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
-    SearchQueryParamsCount,
+    ElasticsearchError, ElasticsearchStatsResponse, FieldCapabilityQueryParams,
+    FieldCapabilityRequestBody, FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams,
+    MultiSearchResponse, MultiSearchSingleResponse, ScrollQueryParams, SearchBody,
+    SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
 };
 use super::{make_elastic_api_response, TrackTotalHits};
 use crate::format::BodyFormat;
@@ -108,6 +112,25 @@ pub fn es_compat_index_field_capabilities_handler(
         .unify()
         .and(with_arg(search_service))
         .then(es_compat_index_field_capabilities)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+}
+
+/// GET or POST _elastic/_stats
+pub fn es_compat_stats_handler(
+    search_service: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_stats_filter()
+        .and(with_arg(search_service))
+        .then(es_compat_stats)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+}
+/// GET or POST _elastic/{index}/_stats
+pub fn es_compat_index_stats_handler(
+    search_service: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_index_stats_filter()
+        .and(with_arg(search_service))
+        .then(es_compat_index_stats)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
@@ -337,6 +360,36 @@ async fn es_compat_index_search(
     Ok(search_response_rest)
 }
 
+async fn es_compat_stats(
+    metastore: MetastoreServiceClient,
+) -> Result<ElasticsearchStatsResponse, ElasticsearchError> {
+    es_compat_index_stats(vec!["*".to_string()], metastore).await
+}
+
+async fn es_compat_index_stats(
+    index_id_patterns: Vec<String>,
+    mut metastore: MetastoreServiceClient,
+) -> Result<ElasticsearchStatsResponse, ElasticsearchError> {
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
+    // Index id to index uid mapping
+    let index_uid_to_index_id: HashMap<IndexUid, String> = indexes_metadata
+        .iter()
+        .map(|metadata| (metadata.index_uid.clone(), metadata.index_id().to_owned()))
+        .collect();
+
+    let index_uids = indexes_metadata
+        .into_iter()
+        .map(|index_metadata| index_metadata.index_uid)
+        .collect_vec();
+    // calling into the search module is not necessary, but reuses established patterns
+    let splits_metadata = list_all_splits(index_uids, &mut metastore).await?;
+
+    let search_response_rest: ElasticsearchStatsResponse =
+        convert_to_es_stats_response(index_uid_to_index_id, splits_metadata);
+
+    Ok(search_response_rest)
+}
+
 async fn es_compat_index_field_capabilities(
     index_id_patterns: Vec<String>,
     search_params: FieldCapabilityQueryParams,
@@ -496,6 +549,33 @@ async fn es_scroll(
         convert_to_es_search_response(search_response, false);
     search_response_rest.took = start_instant.elapsed().as_millis() as u32;
     Ok(search_response_rest)
+}
+
+fn convert_to_es_stats_response(
+    index_uid_to_index_id: HashMap<IndexUid, String>,
+    splits: Vec<SplitMetadata>,
+) -> ElasticsearchStatsResponse {
+    let mut _all = StatsResponseEntry::default();
+    let mut per_index: HashMap<String, StatsResponseEntry> = HashMap::new();
+
+    for split_metadata in splits {
+        let index_id = index_uid_to_index_id
+            .get(&split_metadata.index_uid)
+            .unwrap_or_else(|| {
+                panic!(
+                    "index_uid {} not found in index_uid_to_index_id",
+                    split_metadata.index_uid
+                )
+            });
+        let stats_entry: StatsResponseEntry = split_metadata.into();
+        _all += stats_entry.clone();
+        let index_stats_entry = per_index.entry(index_id.to_owned()).or_default();
+        *index_stats_entry += stats_entry.clone();
+    }
+    ElasticsearchStatsResponse {
+        _all,
+        indices: per_index,
+    }
 }
 
 fn convert_to_es_search_response(
