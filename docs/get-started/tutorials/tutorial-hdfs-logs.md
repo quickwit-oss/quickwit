@@ -3,13 +3,13 @@ title: Index a logging dataset locally
 description: Index log entries on a local machine.
 tags: [self-hosted, setup]
 icon_url: /img/quickwit-icon.svg
-sidebar_position: 1
+sidebar_position: 3
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-In this guide, we will index about 40 million log entries (13 GB decompressed) on a local machine. If you want to start a server with indexes on AWS S3 with several search nodes, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md).
+In this guide, we will index about 20 million log entries (7 GB decompressed) on a local machine. If you want to start a server with indexes on AWS S3 with several search nodes, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md).
 
 Here is an example of a log entry:
 ```json
@@ -84,7 +84,7 @@ The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning]
 Check out the [index config docs](../../configuration/index-config) for more details.
 
 ```yaml title="hdfs-logs-index.yaml"
-version: 0.6
+version: 0.7
 
 index_id: hdfs-logs
 

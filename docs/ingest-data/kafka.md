@@ -22,7 +22,7 @@ First, let's create a new index. Here is the index config and doc mapping corres
 #
 # Index config file for gh-archive dataset.
 #
-version: 0.6
+version: 0.7
 
 index_id: gh-archive
 
@@ -101,7 +101,7 @@ This tutorial assumes that the Kafka cluster is available locally on the default
 #
 # Kafka source config file.
 #
-version: 0.6
+version: 0.7
 source_id: kafka-source
 source_type: kafka
 max_num_pipelines_per_indexer: 1

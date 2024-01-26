@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -21,10 +21,10 @@
 // to Azurite (the emulated azure blob storage environment)
 // with default `loose` config is possible.
 
-#[cfg(feature = "testsuite")]
+#[cfg(feature = "integration-testsuite")]
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
+async fn azure_storage_test_suite() -> anyhow::Result<()> {
     use std::path::PathBuf;
 
     use anyhow::Context;

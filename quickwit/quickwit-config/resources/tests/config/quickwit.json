@@ -1,6 +1,6 @@
 # Comments are supported.
 {
-    "version": "0.6",
+    "version": "0.7",
     "cluster_id": "quickwit-cluster",
     "node_id": "my-unique-node-id",
     "enabled_services": [
@@ -9,7 +9,6 @@
     ],
     "listen_address": "0.0.0.0",
     "advertise_address": "172.0.0.12",
-    "rest_listen_port": 1111,
     "gossip_listen_port": 2222,
     "grpc_listen_port": 3333,
     "peer_seeds": [
@@ -19,6 +18,16 @@
     "data_dir": "/opt/quickwit/data",
     "metastore_uri": "postgres://username:password@host:port/db",
     "default_index_root_uri": "s3://quickwit-indexes",
+    "rest": {
+        "listen_port": 1111,
+        "extra_headers": {
+            "x-header-1": "header-value-1",
+            "x-header-2": "header-value-2"
+        }
+    },
+    "grpc": {
+        "max_message_size": "10 MB"
+    },
     "storage": {
         "azure": {
             "account": "quickwit-dev"
@@ -38,7 +47,8 @@
         "enable_otlp_endpoint": true,
         "split_store_max_num_bytes": "1T",
         "split_store_max_num_splits": 10000,
-        "max_concurrent_split_uploads": 8
+        "max_concurrent_split_uploads": 8,
+o
     },
     "ingest_api": {
         "replication_factor": 2

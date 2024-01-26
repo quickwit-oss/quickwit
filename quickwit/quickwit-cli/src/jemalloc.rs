@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -59,7 +59,7 @@ pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
 pub fn start_jemalloc_metrics_loop() {
     tokio::task::spawn(async {
         if let Err(jemalloc_metrics_err) = jemalloc_metrics_loop().await {
-            error!(err=?jemalloc_metrics_err, "Failed to gather metrics from jemalloc.");
+            error!(err=?jemalloc_metrics_err, "failed to gather metrics from jemalloc");
         }
     });
 }

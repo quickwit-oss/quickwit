@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -45,6 +45,7 @@ use crate::{
 /// with some metadata
 pub struct BundleStorage {
     storage: Arc<dyn Storage>,
+    /// The file path of the bundle in the storage.
     bundle_filepath: PathBuf,
     metadata: BundleStorageFileOffsets,
 }
@@ -344,6 +345,7 @@ mod tests {
 
         let buffer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
+            &[],
             &[5, 5, 5],
         )?
         .read_all()
@@ -385,6 +387,7 @@ mod tests {
 
         let buffer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
+            &[],
             &[1, 3, 3, 7],
         )?
         .read_all()
@@ -422,7 +425,7 @@ mod tests {
 
     #[tokio::test]
     async fn bundlestorage_test_empty() -> anyhow::Result<()> {
-        let buffer = SplitPayloadBuilder::get_split_payload(&[], &[])?
+        let buffer = SplitPayloadBuilder::get_split_payload(&[], &[], &[])?
             .read_all()
             .await?;
 

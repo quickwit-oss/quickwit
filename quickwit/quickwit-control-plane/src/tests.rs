@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,11 +20,10 @@
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use chitchat::transport::ChannelTransport;
 use fnv::FnvHashMap;
 use futures::{Stream, StreamExt};
 use quickwit_actors::{Inbox, Mailbox, Observe, Universe};
-use quickwit_cluster::{create_cluster_for_test, Cluster, ClusterChange};
+use quickwit_cluster::{create_cluster_for_test, ChannelTransport, Cluster, ClusterChange};
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::tower::{Change, Pool};
 use quickwit_config::service::QuickwitService;

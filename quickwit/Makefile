@@ -6,6 +6,8 @@ fmt:
 	@(rustup toolchain list | ( ! grep -q nightly && echo "Toolchain 'nightly' is not installed. Please install using 'rustup toolchain install nightly'.") ) || cargo +nightly fmt
 	@echo "Checking license headers"
 	@bash scripts/check_license_headers.sh
+	@echo "Checking log format"
+	@bash scripts/check_log_format.sh
 
 fix:
 	@echo "Running cargo clippy --fix"

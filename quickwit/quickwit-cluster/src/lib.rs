@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -24,10 +24,9 @@ mod cluster;
 mod member;
 mod node;
 
-#[cfg(any(test, feature = "testsuite"))]
 pub use chitchat::transport::ChannelTransport;
 use chitchat::transport::UdpTransport;
-use chitchat::FailureDetectorConfig;
+pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_proto::indexing::CpuCapacity;
@@ -36,7 +35,9 @@ use time::OffsetDateTime;
 
 pub use crate::change::ClusterChange;
 #[cfg(any(test, feature = "testsuite"))]
-pub use crate::cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test};
+pub use crate::cluster::{
+    create_cluster_for_test, create_cluster_for_test_with_id, grpc_addr_from_listen_addr_for_test,
+};
 pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 pub use crate::member::{ClusterMember, INDEXING_CPU_CAPACITY_KEY};
 pub use crate::node::ClusterNode;

@@ -19,20 +19,73 @@ A commented example is available here: [quickwit.yaml](https://github.com/quickw
 
 | Property | Description | Env variable | Default value |
 | --- | --- | --- | --- |
-| `version` | Config file version. `0.6` is the only available value with a retro compatibility on `0.5` and `0.4`. | | |
+| `version` | Config file version. `0.7` is the only available value with a retro compatibility on `0.5` and `0.4`. | | |
 | `cluster_id` | Unique identifier of the cluster the node will be joining. Clusters sharing the same network should use distinct cluster IDs.| `QW_CLUSTER_ID` | `quickwit-default-cluster` |
 | `node_id` | Unique identifier of the node. It must be distinct from the node IDs of its cluster peers. Defaults to the instance's short hostname if not set. | `QW_NODE_ID` | short hostname |
 | `enabled_services` | Enabled services (control_plane, indexer, janitor, metastore, searcher) | `QW_ENABLED_SERVICES` | all services |
 | `listen_address` | The IP address or hostname that Quickwit service binds to for starting REST and GRPC server and connecting this node to other nodes. By default, Quickwit binds itself to 127.0.0.1 (localhost). This default is not valid when trying to form a cluster. | `QW_LISTEN_ADDRESS` | `127.0.0.1` |
 | `advertise_address` | IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs. | `QW_ADVERTISE_ADDRESS` | `listen_address` |
-| `rest_listen_port` | The port which to listen for HTTP REST API. | `QW_REST_LISTEN_PORT` | `7280` |
-| `gossip_listen_port` | The port which to listen for the Gossip cluster membership service (UDP). | `QW_GOSSIP_LISTEN_PORT` | `rest_listen_port` |
-| `grpc_listen_port` | The port which to listen for the gRPC service.| `QW_GRPC_LISTEN_PORT` | `rest_listen_port + 1` |
+| `gossip_listen_port` | The port which to listen for the Gossip cluster membership service (UDP). | `QW_GOSSIP_LISTEN_PORT` | `rest.listen_port` |
+| `grpc_listen_port` | The port on which gRPC services listen for traffic. | `QW_GRPC_LISTEN_PORT` | `rest.listen_port + 1` |
 | `peer_seeds` | List of IP addresses or hostnames used to bootstrap the cluster and discover the complete set of nodes. This list may contain the current node address and does not need to be exhaustive. | `QW_PEER_SEEDS` | |
 | `data_dir` | Path to directory where data (tmp data, splits kept for caching purpose) is persisted. This is mostly used in indexing. | `QW_DATA_DIR` | `./qwdata` |
 | `metastore_uri` | Metastore URI. Can be a local directory or `s3://my-bucket/indexes` or `postgres://username:password@localhost:5432/metastore`. [Learn more about the metastore configuration](metastore-config.md). | `QW_METASTORE_URI` | `{data_dir}/indexes` |
 | `default_index_root_uri` | Default index root URI that defines the location where index data (splits) is stored. The index URI is built following the scheme: `{default_index_root_uri}/{index-id}` | `QW_DEFAULT_INDEX_ROOT_URI` | `{data_dir}/indexes` |
-| `rest_cors_allow_origins` | Configure the CORS origins which are allowed to access the API. [Read more](#configuring-cors-cross-origin-resource-sharing) | |
+| environment variable only | Log level of Quickwit. Can be a direct log level, or a comma separated list of `module_name=level` | `RUST_LOG` | `info` |
+
+## REST configuration
+
+This section contains the REST API configuration options.
+
+| Property | Description | Env variable | Default value |
+| --- | --- | --- | --- |
+| `listen_port` | The port on which the REST API listens for HTTP traffic. | `QW_REST_LISTEN_PORT` | `7280` |
+| `cors_allow_origins` | Configure the CORS origins which are allowed to access the API. [Read more](#configuring-cors-cross-origin-resource-sharing) | |
+| `extra_headers` | List of header names and values | | |
+
+### Configuring CORS (Cross-origin resource sharing)
+
+CORS (Cross-origin resource sharing) describes which address or origins can access the REST API from the browser.
+By default, sharing resources cross-origin is not allowed.
+
+A wildcard, single origin, or multiple origins can be specified as part of the `cors_allow_origins` parameter:
+
+
+Example of a REST configuration:
+
+```yaml
+rest:
+  listen_port: 1789
+  extra_headers:
+    x-header-1: header-value-1
+    x-header-2: header-value-2
+  cors_allow_origins: '*'
+
+#   cors_allow_origins: https://my-hdfs-logs.domain.com   # Optionally we can specify one domain
+#   cors_allow_origins:                                   # Or allow multiple origins
+#     - https://my-hdfs-logs.domain.com
+#     - https://my-hdfs.other-domain.com
+```
+
+## gRPC configuration
+
+This section contains the configuration options for gRPC services and clients used for internal communication between nodes.
+
+| Property | Description | Env variable | Default value |
+| --- | --- | --- | --- |
+| `max_message_size` | The maximum size (in bytes) of messages exchanged by internal gRPC clients and services. | | `20 MiB` |
+
+Example of a gRPC configuration:
+
+```yaml
+grpc:
+  max_message_size: 30 MiB
+```
+
+:::warning
+We advise changing the default value of 20 MiB only if you encounter the following error:
+`Error, message length too large: found 24732228 bytes, the limit is: 20971520 bytes.` In that case, increase `max_message_size` by increments of 10 MiB until the issue disappears. This is a temporary fix: the next version of Quickwit, 0.8, will rely exclusively on gRPC streaming endpoints and handle messages of any length.
+:::
 
 ## Storage configuration
 
@@ -122,7 +175,7 @@ indexer:
 | Property | Description | Default value |
 | --- | --- | --- |
 | `max_queue_memory_usage` | Maximum size in bytes of the in-memory Ingest queue. | `2GiB` |
-| `max_queue_disk_usage` | Maximum disk-space in bytes taken by the Ingest queue. This is typically higher than the max in-memory queue. | `4GiB` |
+| `max_queue_disk_usage` | Maximum disk-space in bytes taken by the Ingest queue. The minimum size is at least `256M` and be at least `max_queue_memory_usage`. | `4GiB` |
 
 Example:
 
@@ -140,11 +193,23 @@ This section contains the configuration options for a Searcher.
 | --- | --- | --- |
 | `aggregation_memory_limit` | Controls the maximum amount of memory that can be used for aggregations before aborting. This limit is per request and single leaf query (a leaf query is querying one or multiple splits concurrently). It is used to prevent excessive memory usage during the aggregation phase, which can lead to performance degradation or crashes. Since it is per request, concurrent requests can exceed the limit. | `500M`|
 | `aggregation_bucket_limit` | Determines the maximum number of buckets returned to the client. | `65000` |
-| `fast_field_cache_capacity` | Fast field cache capacity on a Searcher. If your filter by dates, run aggregations, range queries, or if you use the search stream API, or even for tracing, it might worth increasing this parameter. The [metrics](../reference/metrics.md) starting by `quickwit_cache_fastfields_cache` can help you make an informed choice when setting this value. | `1G` |
-| `split_footer_cache_capacity` | Split footer cache (it is essentially the hotcache) capacity on a Searcher.| `500M` |
-| `partial_request_cache_capacity` | Partial request cache capacity on a Searcher. Cache intermediate state for a request, possibly making subsequent requests faster. It can be disabled by setting the size to `0`. | `64M` |
+| `fast_field_cache_capacity` | Fast field in memory cache capacity on a Searcher. If your filter by dates, run aggregations, range queries, or if you use the search stream API, or even for tracing, it might worth increasing this parameter. The [metrics](../reference/metrics.md) starting by `quickwit_cache_fastfields_cache` can help you make an informed choice when setting this value. | `1G` |
+| `split_footer_cache_capacity` | Split footer in memory cache (it is essentially the hotcache) capacity on a Searcher.| `500M` |
+| `partial_request_cache_capacity` | Partial request in memory cache capacity on a Searcher. Cache intermediate state for a request, possibly making subsequent requests faster. It can be disabled by setting the size to `0`. | `64M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `max_num_concurrent_split_streams` | Maximum number of concurrent split stream requests running on a Searcher. | `100` |
+| `split_cache` | Searcher split cache configuration options defined in the section below. | |
+
+
+### Searcher split cache configuration
+
+This section contains the configuration options for the searcher split cache.
+
+| Property | Description | Default value |
+| `max_num_bytes` | Maximum size in bytes allowed in the split cache. | `1G` |
+| `max_num_splits` | Maximum number of splits allowed in the split cache.   | `10000` |
+| `num_concurrent_downloads` | Maximum number of concurrent download of splits. | `1` |
+
 
 Example:
 
@@ -153,6 +218,10 @@ searcher:
   fast_field_cache_capacity: 1G
   split_footer_cache_capacity: 500M
   partial_request_cache_capacity: 64M
+  split_cache:
+    max_num_bytes: 1G
+    max_num_splits: 10000
+    num_concurrent_downloads: 1
 ```
 
 ## Jaeger configuration
@@ -199,37 +268,21 @@ export QW_LISTEN_ADDRESS=0.0.0.0
 
 ```yaml
 # config.yaml
-version: 0.6
+version: 0.7
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: ${QW_LISTEN_ADDRESS}
-rest_listen_port: ${QW_LISTEN_PORT:-1111}
+rest:
+  listen_port: ${QW_LISTEN_PORT:-1111}
 ```
 
 Will be interpreted by Quickwit as:
 
 ```yaml
-version: 0.6
+version: 0.7
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: 0.0.0.0
-rest_listen_port: 1111
-```
-
-## Configuring CORS (Cross-origin resource sharing)
-
-CORS (Cross-origin resource sharing) describes which address or origins can access the REST API from the browser.
-By default, sharing resources cross-origin is not allowed.
-
-A wildcard, single origin, or multiple origins can be specified as part of the `rest_cors_allow_origins` parameter:
-
-```yaml
-version: 0.6
-index_id: hdfs
-
-rest_cors_allow_origins: '*'                                 # Allow all origins
-# rest_cors_allow_origins: https://my-hdfs-logs.domain.com   # Optionally we can specify one domain
-# rest_cors_allow_origins:                                   # Or allow multiple origins
-#   - https://my-hdfs-logs.domain.com
-#   - https://my-hdfs.other-domain.com
+rest:
+  listen_port: 1111
 ```

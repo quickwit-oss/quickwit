@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -49,20 +49,10 @@ use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, PublishLock};
-use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
-
-/// Number of bytes after which we cut a new batch.
-///
-/// We try to emit chewable batches for the indexer.
-/// One batch = one message to the indexer actor.
-///
-/// If batches are too large:
-/// - we might not be able to observe the state of the indexer for 5 seconds.
-/// - we will be needlessly occupying resident memory in the mailbox.
-/// - we will not have a precise control of the timeout before commit.
-///
-/// 5MB seems like a good one size fits all value.
-const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
+use crate::source::{
+    BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
+    BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
+};
 
 type GroupId = String;
 
@@ -333,7 +323,7 @@ impl KafkaSource {
                 )
             })?
             .clone();
-        let current_position = Position::from(offset);
+        let current_position = Position::offset(offset);
         let previous_position = self
             .state
             .current_positions
@@ -394,7 +384,7 @@ impl KafkaSource {
                         .expect("Kafka offset should be stored as i64");
                     Offset::Offset(offset + 1)
                 }
-                Position::Eof => {
+                Position::Eof(_) => {
                     panic!("position of a Kafka partition should never be EOF")
                 }
             };
@@ -486,7 +476,7 @@ impl Source for KafkaSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch = BatchBuilder::default();
-        let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
+        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
         loop {
@@ -520,7 +510,7 @@ impl Source for KafkaSource {
             ctx.send_message(doc_processor_mailbox, message).await?;
         }
         if self.should_exit() {
-            info!(topic = %self.topic, "Reached end of topic.");
+            info!(topic = %self.topic, "reached end of topic");
             ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
@@ -552,11 +542,11 @@ impl Source for KafkaSource {
     fn observable_state(&self) -> JsonValue {
         let assigned_partitions: Vec<&i32> =
             self.state.assigned_partitions.keys().sorted().collect();
-        let current_positions: Vec<(&i32, &str)> = self
+        let current_positions: Vec<(&i32, &Position)> = self
             .state
             .current_positions
             .iter()
-            .map(|(partition, position)| (partition, position.as_str()))
+            .map(|(partition, position)| (partition, position))
             .sorted()
             .collect();
         json!({
@@ -634,11 +624,11 @@ fn spawn_consumer_poll_loop(
                         .expect("The offset should be valid.");
                 }
                 if let Err(error) = consumer.commit(&tpl, CommitMode::Async) {
-                    warn!(error=?error, "Failed to commit offsets.");
+                    warn!(error=?error, "failed to commit offsets");
                 }
             }
         }
-        debug!("Exiting consumer poll loop.");
+        debug!("exiting consumer poll loop");
         consumer.unsubscribe();
     })
 }
@@ -648,7 +638,7 @@ fn previous_position_for_offset(offset: i64) -> Position {
     if offset == 0 {
         Position::Beginning
     } else {
-        Position::from(offset - 1)
+        Position::offset(offset - 1)
     }
 }
 
@@ -967,18 +957,18 @@ mod kafka_broker_tests {
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let mut source_delta = SourceCheckpointDelta::default();
-        for (partition_id, from_position, to_position) in partition_deltas {
+        for (partition_id, from_position, to_position) in partition_deltas.iter().copied() {
             source_delta
                 .record_partition_delta(
-                    (*partition_id).into(),
+                    partition_id.into(),
                     {
-                        if *from_position < 0 {
+                        if from_position < 0 {
                             Position::Beginning
                         } else {
-                            (*from_position).into()
+                            Position::offset(from_position as u64)
                         }
                     },
-                    (*to_position).into(),
+                    Position::offset(to_position as u64),
                 )
                 .unwrap();
         }
@@ -1054,7 +1044,7 @@ mod kafka_broker_tests {
         assert_eq!(batch.num_bytes, 0);
         assert_eq!(
             kafka_source.state.current_positions.get(&1).unwrap(),
-            &Position::from(0u64)
+            &Position::offset(0u64)
         );
         assert_eq!(kafka_source.state.num_bytes_processed, 7);
         assert_eq!(kafka_source.state.num_messages_processed, 1);
@@ -1076,7 +1066,7 @@ mod kafka_broker_tests {
         assert_eq!(batch.num_bytes, 8);
         assert_eq!(
             kafka_source.state.current_positions.get(&1).unwrap(),
-            &Position::from(1u64)
+            &Position::offset(1u64)
         );
         assert_eq!(kafka_source.state.num_bytes_processed, 15);
         assert_eq!(kafka_source.state.num_messages_processed, 2);
@@ -1098,7 +1088,7 @@ mod kafka_broker_tests {
         assert_eq!(batch.num_bytes, 16);
         assert_eq!(
             kafka_source.state.current_positions.get(&2).unwrap(),
-            &Position::from(42u64)
+            &Position::offset(42u64)
         );
         assert_eq!(kafka_source.state.num_bytes_processed, 23);
         assert_eq!(kafka_source.state.num_messages_processed, 3);
@@ -1106,10 +1096,14 @@ mod kafka_broker_tests {
 
         let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
         expected_checkpoint_delta
-            .record_partition_delta(partition_id_1, Position::Beginning, Position::from(1u64))
+            .record_partition_delta(partition_id_1, Position::Beginning, Position::offset(1u64))
             .unwrap();
         expected_checkpoint_delta
-            .record_partition_delta(partition_id_2, Position::from(41u64), Position::from(42u64))
+            .record_partition_delta(
+                partition_id_2,
+                Position::offset(41u64),
+                Position::offset(42u64),
+            )
             .unwrap();
         assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
 
@@ -1176,7 +1170,7 @@ mod kafka_broker_tests {
             kafka_source.state.assigned_partitions,
             expected_assigned_partitions
         );
-        let expected_current_positions = HashMap::from_iter([(2, Position::from(42u64))]);
+        let expected_current_positions = HashMap::from_iter([(2, Position::offset(42u64))]);
         assert_eq!(
             kafka_source.state.current_positions,
             expected_current_positions
@@ -1332,7 +1326,9 @@ mod kafka_broker_tests {
 
         let checkpoint: SourceCheckpoint = [(0u64, 1u64), (1u64, 2u64)]
             .into_iter()
-            .map(|(partition_id, offset)| (PartitionId::from(partition_id), Position::from(offset)))
+            .map(|(partition_id, offset)| {
+                (PartitionId::from(partition_id), Position::offset(offset))
+            })
             .collect();
         kafka_source.truncate(checkpoint).unwrap();
 
@@ -1475,7 +1471,7 @@ mod kafka_broker_tests {
                 expected_checkpoint_delta.record_partition_delta(
                     PartitionId::from(partition),
                     Position::Beginning,
-                    Position::from(2u64),
+                    Position::offset(2u64),
                 )?;
             }
             assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
@@ -1537,13 +1533,13 @@ mod kafka_broker_tests {
             let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
             expected_checkpoint_delta.record_partition_delta(
                 PartitionId::from(0u64),
-                Position::from(0u64),
-                Position::from(2u64),
+                Position::offset(0u64),
+                Position::offset(2u64),
             )?;
             expected_checkpoint_delta.record_partition_delta(
                 PartitionId::from(2u64),
                 Position::Beginning,
-                Position::from(2u64),
+                Position::offset(2u64),
             )?;
             assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta,);
 

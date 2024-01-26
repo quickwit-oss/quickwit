@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -91,11 +91,11 @@ impl RetentionPolicyExecutor {
         {
             Ok(metadatas) => metadatas,
             Err(error) => {
-                error!(error=?error, "Failed to list indexes from the metastore.");
+                error!(error=?error, "failed to list indexes from the metastore");
                 return;
             }
         };
-        debug!(index_ids=%index_metadatas.iter().map(|im| im.index_id()).join(", "), "Retention policy refresh.");
+        debug!(index_ids=%index_metadatas.iter().map(|im| im.index_id()).join(", "), "retention policy refresh");
 
         let deleted_indexes = compute_deleted_indexes(
             self.index_configs.keys().map(String::as_str),
@@ -104,7 +104,7 @@ impl RetentionPolicyExecutor {
                 .map(|index_metadata| index_metadata.index_id()),
         );
         if !deleted_indexes.is_empty() {
-            debug!(index_ids=%deleted_indexes.iter().join(", "), "Deleting indexes from cache.");
+            debug!(index_ids=%deleted_indexes.iter().join(", "), "deleting indexes from cache");
             for index_id in deleted_indexes {
                 self.index_configs.remove(&index_id);
             }
@@ -138,7 +138,7 @@ impl RetentionPolicyExecutor {
                 // Inserts & schedule the index's first retention policy execution.
                 self.index_configs
                     .insert(index_config.index_id.clone(), index_config);
-                ctx.schedule_self_msg(next_interval, message).await;
+                ctx.schedule_self_msg(next_interval, message);
             } else {
                 error!(index_id=%index_config.index_id, "Couldn't extract the index next schedule time.")
             }
@@ -177,7 +177,7 @@ impl Handler<Loop> for RetentionPolicyExecutor {
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         self.handle_refresh_loop(ctx).await;
-        ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
+        ctx.schedule_self_msg(RUN_INTERVAL, Loop);
         Ok(())
     }
 }
@@ -197,7 +197,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         let index_config = match self.index_configs.get(message.index_uid.index_id()) {
             Some(config) => config,
             None => {
-                debug!(index_id=%message.index_uid.index_id(), "The index might have been deleted.");
+                debug!(index_id=%message.index_uid.index_id(), "the index might have been deleted");
                 return Ok(());
             }
         };
@@ -223,13 +223,13 @@ impl Handler<Execute> for RetentionPolicyExecutor {
 
         if let Ok(next_interval) = retention_policy.duration_until_next_evaluation() {
             info!(index_id=?index_config.index_id, scheduled_in=?next_interval, "retention-policy-schedule-operation");
-            ctx.schedule_self_msg(next_interval, message).await;
+            ctx.schedule_self_msg(next_interval, message);
         } else {
             // Since we have failed to schedule next execution for this index,
             // we remove it from the cache for it to be retried next time it gets
             // added back by the RetentionPolicyExecutor cache refresh loop.
             self.index_configs.remove(message.index_uid.index_id());
-            error!(index_id=%message.index_uid.index_id(), "Couldn't extract the index next schedule interval.");
+            error!(index_id=%message.index_uid.index_id(), "couldn't extract the index next schedule interval");
         }
         Ok(())
     }
@@ -254,6 +254,7 @@ mod tests {
 
     use mockall::Sequence;
     use quickwit_actors::Universe;
+    use quickwit_common::ServiceStream;
     use quickwit_config::RetentionPolicy;
     use quickwit_metastore::{
         IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata,
@@ -349,7 +350,7 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(..)
-            .returning(|_| Ok(ListSplitsResponse::empty()));
+            .returning(|_| Ok(ServiceStream::empty()));
         mock_metastore
             .expect_list_indexes_metadata()
             .times(1)
@@ -472,7 +473,8 @@ mod tests {
                     "index-2" => Vec::new(),
                     unknown => panic!("Unknown index: `{unknown}`."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
             });
 
         mock_metastore

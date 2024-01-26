@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -209,11 +209,11 @@ impl Queues {
     }
 
     pub(crate) fn disk_usage(&self) -> usize {
-        self.record_log.on_disk_size()
+        self.record_log.disk_usage()
     }
 
     pub(crate) fn memory_usage(&self) -> usize {
-        self.record_log.in_memory_size()
+        self.record_log.memory_usage()
     }
 }
 

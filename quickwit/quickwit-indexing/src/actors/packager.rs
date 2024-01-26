@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -32,8 +32,11 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use quickwit_doc_mapper::NamedField;
-use tantivy::schema::FieldType;
-use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentMeta};
+use quickwit_proto::search::{
+    serialize_split_fields, ListFieldType, ListFields, ListFieldsEntryResponse,
+};
+use tantivy::schema::{FieldType, Type};
+use tantivy::{FieldMetadata, InvertedIndexReader, ReloadPolicy, SegmentMeta};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
 
@@ -131,7 +134,7 @@ impl Handler<IndexedSplitBatch> for Packager {
             .iter()
             .map(|split| split.split_id().to_string())
             .collect_vec();
-        info!(
+        debug!(
             split_ids=?split_ids,
             "start-packaging-splits"
         );
@@ -186,7 +189,6 @@ impl Handler<EmptySplit> for Packager {
     }
 }
 
-/// returns true iff merge is required to reach a state where
 fn list_split_files(
     segment_metas: &[SegmentMeta],
     scratch_directory: &TempDirectory,
@@ -276,7 +278,7 @@ fn create_packaged_split(
     tag_fields: &[NamedField],
     ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<PackagedSplit> {
-    info!(split_id = split.split_id(), "create-packaged-split");
+    debug!(split_id = split.split_id(), "create-packaged-split");
     let split_files = list_split_files(segment_metas, &split.split_scratch_directory)?;
 
     // Extracts tag values from inverted indexes only when a field cardinality is less
@@ -287,6 +289,9 @@ fn create_packaged_split(
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
+
+    let fields_metadata = split.index.fields_metadata()?;
+
     let mut tags = BTreeSet::default();
     for named_field in tag_fields {
         let inverted_indexes = index_reader
@@ -301,7 +306,7 @@ fn create_packaged_split(
                 append_to_tag_set(&named_field.name, &terms, &mut tags);
             }
             Err(tag_extraction_error) => {
-                warn!(err=?tag_extraction_error,  "No field values will be registered in the split metadata.");
+                warn!(err=?tag_extraction_error,  "no field values will be registered in the split metadata");
             }
         }
     }
@@ -313,7 +318,10 @@ fn create_packaged_split(
     build_hotcache(split.split_scratch_directory.path(), &mut hotcache_bytes)?;
     ctx.record_progress();
 
+    let serialized_split_fields = serialize_field_metadata(&fields_metadata);
+
     let packaged_split = PackagedSplit {
+        serialized_split_fields,
         split_attrs: split.split_attrs,
         split_scratch_directory: split.split_scratch_directory,
         tags,
@@ -321,6 +329,47 @@ fn create_packaged_split(
         hotcache_bytes,
     };
     Ok(packaged_split)
+}
+
+/// Serializes the Split fields.
+///
+/// `fields_metadata` has to be sorted.
+fn serialize_field_metadata(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
+    let fields = fields_metadata
+        .iter()
+        .map(field_metadata_to_list_field_serialized)
+        .collect::<Vec<_>>();
+
+    serialize_split_fields(ListFields { fields })
+}
+
+fn tantivy_type_to_list_field_type(typ: Type) -> ListFieldType {
+    match typ {
+        Type::Str => ListFieldType::Str,
+        Type::U64 => ListFieldType::U64,
+        Type::I64 => ListFieldType::I64,
+        Type::F64 => ListFieldType::F64,
+        Type::Bool => ListFieldType::Bool,
+        Type::Date => ListFieldType::Date,
+        Type::Facet => ListFieldType::Facet,
+        Type::Bytes => ListFieldType::Bytes,
+        Type::Json => ListFieldType::Json,
+        Type::IpAddr => ListFieldType::IpAddr,
+    }
+}
+
+fn field_metadata_to_list_field_serialized(
+    field_metadata: &FieldMetadata,
+) -> ListFieldsEntryResponse {
+    ListFieldsEntryResponse {
+        field_name: field_metadata.field_name.to_string(),
+        field_type: tantivy_type_to_list_field_type(field_metadata.typ) as i32,
+        searchable: field_metadata.indexed,
+        aggregatable: field_metadata.fast,
+        index_ids: vec![],
+        non_searchable_index_ids: vec![],
+        non_aggregatable_index_ids: vec![],
+    }
 }
 
 /// Reads u64 from stored term data.
@@ -338,14 +387,63 @@ mod tests {
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::search::{deserialize_split_fields, ListFieldsEntryResponse};
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use tantivy::directory::MmapDirectory;
-    use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
+    use tantivy::schema::{NumericOptions, Schema, Type, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, IndexBuilder, IndexSettings};
     use tracing::Span;
 
     use super::*;
     use crate::models::{PublishLock, SplitAttrs};
+
+    #[test]
+    fn serialize_field_metadata_test() {
+        let fields_metadata = vec![
+            FieldMetadata {
+                field_name: "test".to_string(),
+                typ: Type::Str,
+                indexed: true,
+                stored: true,
+                fast: true,
+            },
+            FieldMetadata {
+                field_name: "test2".to_string(),
+                typ: Type::Str,
+                indexed: true,
+                stored: false,
+                fast: false,
+            },
+            FieldMetadata {
+                field_name: "test3".to_string(),
+                typ: Type::U64,
+                indexed: true,
+                stored: false,
+                fast: true,
+            },
+        ];
+
+        let out = serialize_field_metadata(&fields_metadata);
+
+        let deserialized: Vec<ListFieldsEntryResponse> =
+            deserialize_split_fields(&mut &out[..]).unwrap().fields;
+
+        assert_eq!(fields_metadata.len(), deserialized.len());
+        assert_eq!(deserialized[0].field_name, "test");
+        assert_eq!(deserialized[0].field_type, ListFieldType::Str as i32);
+        assert!(deserialized[0].searchable);
+        assert!(deserialized[0].aggregatable);
+
+        assert_eq!(deserialized[1].field_name, "test2");
+        assert_eq!(deserialized[1].field_type, ListFieldType::Str as i32);
+        assert!(deserialized[1].searchable);
+        assert!(!deserialized[1].aggregatable);
+
+        assert_eq!(deserialized[2].field_name, "test3");
+        assert_eq!(deserialized[2].field_type, ListFieldType::U64 as i32);
+        assert!(deserialized[2].searchable);
+        assert!(deserialized[2].aggregatable);
+    }
 
     fn make_indexed_split_for_test(
         segment_timestamps: &[DateTime],
@@ -413,7 +511,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
 
         // TODO: In the future we would like that kind of segment flush to emit a new split,

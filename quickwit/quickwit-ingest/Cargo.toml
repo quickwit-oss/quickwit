@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-ingest"
-version = "0.6.3"
+version = "0.7.1"
 edition = "2021"
 license = "AGPL-3.0-or-later"                               # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit is a cost-efficient search engine."
@@ -9,8 +9,11 @@ description = "Quickwit is a cost-efficient search engine."
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
+bytesize = { workspace = true }
 dyn-clone = { workspace = true }
+fail = { workspace = true }
 flume = { workspace = true }
+fnv = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
@@ -30,12 +33,12 @@ ulid = {workspace = true }
 utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
+quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
-bytesize = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 rand = { workspace = true }
@@ -43,6 +46,7 @@ rand_distr = { workspace = true }
 tempfile = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
+quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 

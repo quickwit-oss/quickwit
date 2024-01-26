@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,15 +17,53 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::types::{queue_id, Position, QueueId};
+use crate::types::{queue_id, Position, QueueId, ShardId};
 
 include!("../codegen/quickwit/quickwit.ingest.ingester.rs");
 
 pub use ingester_service_grpc_server::IngesterServiceGrpcServer;
 
-impl FetchResponseV2 {
+impl FetchEof {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+}
+
+impl FetchMessage {
+    pub fn new_payload(payload: FetchPayload) -> Self {
+        assert!(
+            matches!(&payload.mrecord_batch, Some(batch) if !batch.mrecord_lengths.is_empty()),
+            "`mrecord_batch` must be set and non-empty"
+        );
+
+        Self {
+            message: Some(fetch_message::Message::Payload(payload)),
+        }
+    }
+
+    pub fn new_eof(eof: FetchEof) -> Self {
+        assert!(
+            matches!(eof.eof_position, Some(Position::Eof(_))),
+            "`eof_position` must be set"
+        );
+
+        Self {
+            message: Some(fetch_message::Message::Eof(eof)),
+        }
+    }
+}
+
+impl FetchPayload {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
     }
 
     pub fn num_mrecords(&self) -> usize {
@@ -35,31 +73,75 @@ impl FetchResponseV2 {
             0
         }
     }
+
+    pub fn from_position_exclusive(&self) -> &Position {
+        self.from_position_exclusive
+            .as_ref()
+            .expect("`from_position_exclusive` should be a required field")
+    }
+
+    pub fn to_position_inclusive(&self) -> &Position {
+        self.to_position_inclusive
+            .as_ref()
+            .expect("`to_position_inclusive` should be a required field")
+    }
+}
+
+impl FetchEof {
+    pub fn eof_position(&self) -> &Position {
+        self.eof_position
+            .as_ref()
+            .expect("`eof_position` should be a required field")
+    }
 }
 
 impl OpenFetchStreamRequest {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
     }
 
-    pub fn from_position_exclusive(&self) -> Position {
-        self.from_position_exclusive.clone().unwrap_or_default()
-    }
-
-    pub fn to_position_inclusive(&self) -> Position {
-        self.to_position_inclusive.clone().unwrap_or_default()
+    pub fn from_position_exclusive(&self) -> &Position {
+        self.from_position_exclusive
+            .as_ref()
+            .expect("`from_position_exclusive` should be a required field")
     }
 }
 
 impl PersistSubrequest {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
     }
 }
 
 impl PersistSuccess {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
+    }
+}
+
+impl PersistFailure {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
     }
 }
 
@@ -71,18 +153,17 @@ impl SynReplicationMessage {
         }
     }
 
-    pub fn into_replicate_request(self) -> Option<ReplicateRequest> {
-        match self.message {
-            Some(syn_replication_message::Message::ReplicateRequest(replicate_request)) => {
-                Some(replicate_request)
-            }
-            _ => None,
-        }
-    }
-
     pub fn new_open_request(open_request: OpenReplicationStreamRequest) -> Self {
         Self {
             message: Some(syn_replication_message::Message::OpenRequest(open_request)),
+        }
+    }
+
+    pub fn new_init_replica_request(init_replica_request: InitReplicaRequest) -> Self {
+        Self {
+            message: Some(syn_replication_message::Message::InitRequest(
+                init_replica_request,
+            )),
         }
     }
 
@@ -113,6 +194,14 @@ impl AckReplicationMessage {
         }
     }
 
+    pub fn new_init_replica_response(init_replica_response: InitReplicaResponse) -> Self {
+        Self {
+            message: Some(ack_replication_message::Message::InitResponse(
+                init_replica_response,
+            )),
+        }
+    }
+
     pub fn new_replicate_response(replicate_response: ReplicateResponse) -> Self {
         Self {
             message: Some(ack_replication_message::Message::ReplicateResponse(
@@ -123,33 +212,59 @@ impl AckReplicationMessage {
 }
 
 impl ReplicateSubrequest {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
     }
 
-    pub fn from_position_exclusive(&self) -> Position {
-        self.from_position_exclusive.clone().unwrap_or_default()
-    }
-
-    pub fn to_position_inclusive(&self) -> Position {
-        self.to_position_inclusive.clone().unwrap_or_default()
+    pub fn from_position_exclusive(&self) -> &Position {
+        self.from_position_exclusive
+            .as_ref()
+            .expect("`from_position_exclusive` should be a required field")
     }
 }
 
 impl ReplicateSuccess {
-    pub fn replication_position_inclusive(&self) -> Position {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
+    pub fn replication_position_inclusive(&self) -> &Position {
         self.replication_position_inclusive
-            .clone()
-            .unwrap_or_default()
+            .as_ref()
+            .expect("`replication_position_inclusive` should be a required field")
     }
 }
 
-impl TruncateSubrequest {
-    pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+impl ReplicateFailure {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+}
+
+impl TruncateShardsSubrequest {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
     }
 
-    pub fn to_position_inclusive(&self) -> Position {
-        self.to_position_inclusive.clone().unwrap_or_default()
+    pub fn queue_id(&self) -> QueueId {
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
+    }
+
+    pub fn truncate_up_to_position_inclusive(&self) -> &Position {
+        self.truncate_up_to_position_inclusive
+            .as_ref()
+            .expect("`truncate_up_to_position_inclusive` should be a required field")
     }
 }

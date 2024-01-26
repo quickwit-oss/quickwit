@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -54,7 +54,7 @@ const IndexesTable = ({ indexesMetadata }: Readonly<{indexesMetadata: IndexMetad
                 {indexMetadata.index_config.index_id}
               </TableCell>
               <TableCell align="left">{indexMetadata.index_config.index_uri}</TableCell>
-              <TableCell align="left">{ dayjs.unix(indexMetadata.create_timestamp).utc().format("YYYY/MM/DD HH:MM") }</TableCell>
+              <TableCell align="left">{ dayjs.unix(indexMetadata.create_timestamp).utc().format("YYYY/MM/DD HH:mm") }</TableCell>
               <TableCell align="left">{ indexMetadata.sources?.length || 'None'}</TableCell>
             </TableRow>
           ))}

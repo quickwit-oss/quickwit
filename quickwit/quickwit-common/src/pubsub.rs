@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -19,23 +19,33 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::marker::PhantomData;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use tokio::sync::Mutex as TokioMutex;
+use tracing::warn;
 
 use crate::type_map::TypeMap;
 
 pub trait Event: fmt::Debug + Clone + Send + Sync + 'static {}
 
 #[async_trait]
-pub trait EventSubscriber<E>: fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+pub trait EventSubscriber<E>: Send + Sync + 'static {
     async fn handle_event(&mut self, event: E);
 }
 
-dyn_clone::clone_trait_object!(<E> EventSubscriber<E>);
+#[async_trait]
+impl<E, F> EventSubscriber<E> for F
+where
+    E: Event,
+    F: Fn(E) + Send + Sync + 'static,
+{
+    async fn handle_event(&mut self, event: E) {
+        (self)(event);
+    }
+}
 
 type EventSubscriptions<E> = HashMap<usize, EventSubscription<E>>;
 
@@ -59,14 +69,18 @@ struct InnerEventBroker {
 }
 
 impl EventBroker {
-    /// Subscribes to an event type.
-    pub fn subscribe<E>(&self, subscriber: impl EventSubscriber<E>) -> EventSubscriptionHandle<E>
-    where E: Event {
+    // The point of this private method is to allow the public subscribe method to have only one
+    // generic argument and avoid the ugly `::<E, _>` syntax.
+    fn subscribe_aux<E, S>(&self, subscriber: S) -> EventSubscriptionHandle
+    where
+        E: Event,
+        S: EventSubscriber<E> + Send + Sync + 'static,
+    {
         let mut subscriptions = self
             .inner
             .subscriptions
             .lock()
-            .expect("the lock should not be poisoned");
+            .expect("lock should not be poisoned");
 
         if !subscriptions.contains::<EventSubscriptions<E>>() {
             subscriptions.insert::<EventSubscriptions<E>>(HashMap::new());
@@ -76,20 +90,37 @@ impl EventBroker {
             .subscription_sequence
             .fetch_add(1, Ordering::Relaxed);
 
+        let subscriber_name = std::any::type_name::<S>();
         let subscription = EventSubscription {
-            subscription_id,
-            subscriber: Box::new(subscriber),
+            subscriber_name,
+            subscriber: Arc::new(TokioMutex::new(Box::new(subscriber))),
         };
         let typed_subscriptions = subscriptions
             .get_mut::<EventSubscriptions<E>>()
-            .expect("The subscription map should exist.");
+            .expect("subscription map should exist");
         typed_subscriptions.insert(subscription_id, subscription);
 
         EventSubscriptionHandle {
             subscription_id,
             broker: Arc::downgrade(&self.inner),
-            _phantom: PhantomData,
+            drop_me: |subscription_id, broker| {
+                let mut subscriptions = broker
+                    .subscriptions
+                    .lock()
+                    .expect("lock should not be poisoned");
+                if let Some(typed_subscriptions) = subscriptions.get_mut::<EventSubscriptions<E>>()
+                {
+                    typed_subscriptions.remove(&subscription_id);
+                }
+            },
         }
+    }
+
+    /// Subscribes to an event type.
+    #[must_use]
+    pub fn subscribe<E>(&self, subscriber: impl EventSubscriber<E>) -> EventSubscriptionHandle
+    where E: Event {
+        self.subscribe_aux(subscriber)
     }
 
     /// Publishes an event.
@@ -99,52 +130,58 @@ impl EventBroker {
             .inner
             .subscriptions
             .lock()
-            .expect("the lock should not be poisoned");
+            .expect("lock should not be poisoned");
 
         if let Some(typed_subscriptions) = subscriptions.get::<EventSubscriptions<E>>() {
             for subscription in typed_subscriptions.values() {
                 let event = event.clone();
-                let mut subscriber = subscription.subscriber.clone();
-                tokio::spawn(tokio::time::timeout(Duration::from_secs(600), async move {
-                    subscriber.handle_event(event).await;
-                }));
+                let subscriber_name = subscription.subscriber_name;
+                let subscriber_clone = subscription.subscriber.clone();
+                let handle_event_fut = async move {
+                    if tokio::time::timeout(Duration::from_secs(1), async {
+                        subscriber_clone.lock().await.handle_event(event).await
+                    })
+                    .await
+                    .is_err()
+                    {
+                        let event_name = std::any::type_name::<E>();
+                        warn!("{}'s handler for {event_name} timed out", subscriber_name);
+                    }
+                };
+                tokio::spawn(handle_event_fut);
             }
         }
     }
 }
 
-#[derive(Debug)]
 struct EventSubscription<E> {
-    #[allow(dead_code)]
-    subscription_id: usize, // Used for the `Debug` implementation.
-    subscriber: Box<dyn EventSubscriber<E>>,
+    // We put that in the subscription in order to avoid having to take the lock
+    // to access it.
+    subscriber_name: &'static str,
+    subscriber: Arc<TokioMutex<Box<dyn EventSubscriber<E>>>>,
 }
 
-#[derive(Debug)]
-pub struct EventSubscriptionHandle<E: Event> {
+#[derive(Clone)]
+pub struct EventSubscriptionHandle {
     subscription_id: usize,
     broker: Weak<InnerEventBroker>,
-    _phantom: PhantomData<E>,
+    drop_me: fn(usize, &InnerEventBroker),
 }
 
-impl<E> EventSubscriptionHandle<E>
-where E: Event
-{
+impl EventSubscriptionHandle {
     pub fn cancel(self) {}
+
+    /// By default, dropping a subscription handle cancels the subscription.
+    /// `forever` consumes the handle and avoids cancelling the subscription on drop.
+    pub fn forever(mut self) {
+        self.broker = Weak::new();
+    }
 }
 
-impl<E> Drop for EventSubscriptionHandle<E>
-where E: Event
-{
+impl Drop for EventSubscriptionHandle {
     fn drop(&mut self) {
         if let Some(broker) = self.broker.upgrade() {
-            let mut subscriptions = broker
-                .subscriptions
-                .lock()
-                .expect("the lock should not be poisoned");
-            if let Some(typed_subscriptions) = subscriptions.get_mut::<EventSubscriptions<E>>() {
-                typed_subscriptions.remove(&self.subscription_id);
-            }
+            (self.drop_me)(self.subscription_id, &broker);
         }
     }
 }
@@ -188,7 +225,7 @@ mod tests {
         let event = MyEvent { value: 42 };
         event_broker.publish(event);
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+        tokio::time::sleep(Duration::from_millis(1)).await;
         assert_eq!(counter.load(Ordering::Relaxed), 42);
 
         subscription_handle.cancel();
@@ -196,7 +233,44 @@ mod tests {
         let event = MyEvent { value: 1337 };
         event_broker.publish(event);
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+        tokio::time::sleep(Duration::from_millis(1)).await;
         assert_eq!(counter.load(Ordering::Relaxed), 42);
+    }
+
+    #[tokio::test]
+    async fn test_event_broker_handle_drop() {
+        let event_broker = EventBroker::default();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        drop(event_broker.subscribe(move |event: MyEvent| {
+            tx.send(event.value).unwrap();
+        }));
+        event_broker.publish(MyEvent { value: 42 });
+        assert!(rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_event_broker_handle_cancel() {
+        let event_broker = EventBroker::default();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        event_broker
+            .subscribe(move |event: MyEvent| {
+                tx.send(event.value).unwrap();
+            })
+            .cancel();
+        event_broker.publish(MyEvent { value: 42 });
+        assert!(rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_event_broker_handle_forever() {
+        let event_broker = EventBroker::default();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        event_broker
+            .subscribe(move |event: MyEvent| {
+                tx.send(event.value).unwrap();
+            })
+            .forever();
+        event_broker.publish(MyEvent { value: 42 });
+        assert_eq!(rx.recv().await, Some(42));
     }
 }

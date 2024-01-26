@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -30,6 +30,7 @@ use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::pubsub::EventBroker;
+use quickwit_common::spawn_named_task;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, StageSplitsRequest};
@@ -40,7 +41,7 @@ use serde::Serialize;
 use tantivy::TrackedObject;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
-use tracing::{info, instrument, warn, Instrument, Span};
+use tracing::{debug, info, instrument, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
@@ -290,7 +291,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let kill_switch = ctx.kill_switch().clone();
         let split_ids = batch.split_ids();
         if kill_switch.is_dead() {
-            warn!(split_ids=?split_ids,"Kill switch was activated. Cancelling upload.");
+            warn!(split_ids=?split_ids,"kill switch was activated, cancelling upload");
             return Err(ActorExitStatus::Killed);
         }
         let metastore = self.metastore.clone();
@@ -299,9 +300,9 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let index_uid = batch.index_uid();
         let ctx_clone = ctx.clone();
         let merge_policy = self.merge_policy.clone();
-        info!(split_ids=?split_ids, "start-stage-and-store-splits");
+        debug!(split_ids=?split_ids, "start-stage-and-store-splits");
         let event_broker = self.event_broker.clone();
-        tokio::spawn(
+        spawn_named_task(
             async move {
                 fail_point!("uploader:intask:before");
 
@@ -311,13 +312,14 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 for packaged_split in batch.splits.iter() {
                     if batch.publish_lock.is_dead() {
                         // TODO: Remove the junk right away?
-                        info!("Splits' publish lock is dead.");
+                        info!("splits' publish lock is dead");
                         split_update_sender.discard()?;
                         return Ok(());
                     }
 
                     let split_streamer = SplitPayloadBuilder::get_split_payload(
                         &packaged_split.split_files,
+                        &packaged_split.serialized_split_fields,
                         &packaged_split.hotcache_bytes,
                     )?;
                     let split_metadata = create_split_metadata(
@@ -382,6 +384,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 Result::<(), anyhow::Error>::Ok(())
             }
             .instrument(Span::current()),
+            "upload_single_task"
         );
         fail_point!("uploader:intask:after");
         Ok(())
@@ -465,6 +468,7 @@ async fn upload_split(
 ) -> anyhow::Result<()> {
     let split_streamer = SplitPayloadBuilder::get_split_payload(
         &packaged_split.split_files,
+        &packaged_split.serialized_split_fields,
         &packaged_split.hotcache_bytes,
     )?;
 
@@ -490,6 +494,7 @@ mod tests {
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::metastore::EmptyResponse;
+    use quickwit_proto::types::PipelineUid;
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
     use tokio::sync::oneshot;
@@ -507,7 +512,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let (sequencer_mailbox, sequencer_inbox) =
             universe.create_test_mailbox::<Sequencer<Publisher>>();
@@ -560,6 +565,7 @@ mod tests {
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },
+                    serialized_split_fields: Vec::new(),
                     split_scratch_directory,
                     tags: Default::default(),
                     hotcache_bytes: Vec::new(),
@@ -618,7 +624,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let universe = Universe::new();
         let (sequencer_mailbox, sequencer_inbox) =
@@ -671,6 +677,7 @@ mod tests {
                 delete_opstamp: 0,
                 num_merge_ops: 0,
             },
+            serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_1,
             tags: Default::default(),
             split_files: Vec::new(),
@@ -694,6 +701,7 @@ mod tests {
                 delete_opstamp: 0,
                 num_merge_ops: 0,
             },
+            serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_2,
             tags: Default::default(),
             split_files: Vec::new(),
@@ -765,7 +773,7 @@ mod tests {
             index_uid: IndexUid::from("test-index-no-sequencer:11111111111111111111111111"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let universe = Universe::new();
         let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
@@ -811,6 +819,7 @@ mod tests {
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },
+                    serialized_split_fields: Vec::new(),
                     split_scratch_directory,
                     tags: Default::default(),
                     hotcache_bytes: Vec::new(),
@@ -912,7 +921,6 @@ mod tests {
         Ok(())
     }
 
-    #[derive(Clone)]
     struct ReportSplitListener {
         report_splits_tx: flume::Sender<ReportSplitsRequest>,
     }
@@ -946,7 +954,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
@@ -990,6 +998,7 @@ mod tests {
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },
+                    serialized_split_fields: Vec::new(),
                     split_scratch_directory,
                     tags: Default::default(),
                     hotcache_bytes: Vec::new(),

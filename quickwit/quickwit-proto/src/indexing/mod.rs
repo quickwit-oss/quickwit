@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -24,9 +24,11 @@ use std::{fmt, io};
 
 use anyhow::anyhow;
 use quickwit_actors::AskError;
+use quickwit_common::pubsub::Event;
+use serde::{Deserialize, Serialize};
 use thiserror;
 
-use crate::types::{IndexUid, SourceId};
+use crate::types::{IndexUid, PipelineUid, Position, ShardId, SourceId, SourceUid};
 use crate::{ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.indexing.rs");
@@ -35,15 +37,17 @@ pub type IndexingResult<T> = std::result::Result<T, IndexingError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum IndexingError {
-    #[error("indexing pipeline `{index_id}` for source `{source_id}` does not exist")]
-    MissingPipeline { index_id: String, source_id: String },
+    #[error("indexing pipeline `{pipeline_uid}` does not exist")]
+    MissingPipeline { pipeline_uid: PipelineUid },
+    #[error("indexing merge pipeline `{merge_pipeline_id}` does not exist")]
+    MissingMergePipeline { merge_pipeline_id: String },
     #[error(
-        "pipeline #{pipeline_ord} for index `{index_id}` and source `{source_id}` already exists"
+        "pipeline #{pipeline_uid} for index `{index_id}` and source `{source_id}` already exists"
     )]
     PipelineAlreadyExists {
         index_id: String,
         source_id: SourceId,
-        pipeline_ord: usize,
+        pipeline_uid: PipelineUid,
     },
     #[error("I/O error `{0}`")]
     Io(io::Error),
@@ -59,23 +63,25 @@ pub enum IndexingError {
     StorageResolverError(String),
     #[error("an internal error occurred: {0}")]
     Internal(String),
-    #[error("the ingest service is unavailable")]
+    #[error("indexing service is unavailable")]
     Unavailable,
 }
 
 impl From<IndexingError> for tonic::Status {
     fn from(error: IndexingError) -> Self {
         match error {
-            IndexingError::MissingPipeline {
-                index_id,
-                source_id,
-            } => tonic::Status::not_found(format!("missing pipeline {index_id}/{source_id}")),
+            IndexingError::MissingPipeline { pipeline_uid } => {
+                tonic::Status::not_found(format!("missing pipeline `{pipeline_uid}`"))
+            }
+            IndexingError::MissingMergePipeline { merge_pipeline_id } => {
+                tonic::Status::not_found(format!("missing merge pipeline `{merge_pipeline_id}`"))
+            }
             IndexingError::PipelineAlreadyExists {
                 index_id,
                 source_id,
-                pipeline_ord,
+                pipeline_uid,
             } => tonic::Status::already_exists(format!(
-                "pipeline {index_id}/{source_id} {pipeline_ord} already exists "
+                "pipeline {index_id}/{source_id} {pipeline_uid} already exists "
             )),
             IndexingError::Io(error) => tonic::Status::internal(error.to_string()),
             IndexingError::InvalidParams(error) => {
@@ -101,13 +107,12 @@ impl From<tonic::Status> for IndexingError {
                 IndexingError::InvalidParams(anyhow!(status.message().to_string()))
             }
             tonic::Code::NotFound => IndexingError::MissingPipeline {
-                index_id: "".to_string(),
-                source_id: "".to_string(),
+                pipeline_uid: PipelineUid::default(),
             },
             tonic::Code::AlreadyExists => IndexingError::PipelineAlreadyExists {
                 index_id: "".to_string(),
                 source_id: "".to_string(),
-                pipeline_ord: 0,
+                pipeline_uid: PipelineUid::default(),
             },
             tonic::Code::Unavailable => IndexingError::Unavailable,
             _ => IndexingError::InvalidParams(anyhow!(status.message().to_string())),
@@ -119,6 +124,7 @@ impl ServiceError for IndexingError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
             Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,
+            Self::MissingMergePipeline { .. } => ServiceErrorCode::NotFound,
             Self::PipelineAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             Self::InvalidParams(_) => ServiceErrorCode::BadRequest,
             Self::SpawnPipelinesError { .. } => ServiceErrorCode::Internal,
@@ -148,7 +154,7 @@ pub struct IndexingPipelineId {
     pub node_id: String,
     pub index_uid: IndexUid,
     pub source_id: SourceId,
-    pub pipeline_ord: usize,
+    pub pipeline_uid: PipelineUid,
 }
 
 impl Display for IndexingPipelineId {
@@ -174,40 +180,6 @@ impl Hash for IndexingTask {
         self.source_id.hash(state);
     }
 }
-
-impl TryFrom<&str> for IndexingTask {
-    type Error = anyhow::Error;
-
-    fn try_from(index_task_str: &str) -> anyhow::Result<IndexingTask> {
-        let mut iter = index_task_str.rsplit(':');
-        let source_id = iter.next().ok_or_else(|| {
-            anyhow!(
-                "invalid index task format, cannot find source_id in `{}`",
-                index_task_str
-            )
-        })?;
-        let part1 = iter.next().ok_or_else(|| {
-            anyhow!(
-                "invalid index task format, cannot find index_id in `{}`",
-                index_task_str
-            )
-        })?;
-        if let Some(part2) = iter.next() {
-            Ok(IndexingTask {
-                index_uid: format!("{part2}:{part1}"),
-                source_id: source_id.to_string(),
-                shard_ids: Vec::new(),
-            })
-        } else {
-            Ok(IndexingTask {
-                index_uid: part1.to_string(),
-                source_id: source_id.to_string(),
-                shard_ids: Vec::new(),
-            })
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 pub struct PipelineMetrics {
     pub cpu_millis: CpuCapacity,
@@ -353,6 +325,25 @@ impl From<CpuCapacity> for CpuCapacityForSerialization {
     }
 }
 
+/// Whenever a shard position update is detected (whether it is emit by an indexing pipeline local
+/// to the cluster or received via chitchat), the shard positions service publishes a
+/// `ShardPositionsUpdate` event through the cluster's `EventBroker`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShardPositionsUpdate {
+    pub source_uid: SourceUid,
+    // All of the shards known are listed here, regardless of whether they were updated or not.
+    pub shard_positions: Vec<(ShardId, Position)>,
+}
+
+impl Event for ShardPositionsUpdate {}
+
+impl IndexingTask {
+    pub fn pipeline_uid(&self) -> PipelineUid {
+        self.pipeline_uid
+            .expect("`pipeline_uid` should be a required field")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,42 +377,5 @@ mod tests {
         );
         assert_eq!(CpuCapacity::from_cpu_millis(2500).to_string(), "2500m");
         assert_eq!(serde_json::to_string(&mcpu(2500)).unwrap(), "\"2500m\"");
-    }
-
-    #[test]
-    fn test_indexing_task_serialization() {
-        let original = IndexingTask {
-            index_uid: "test-index:123456".to_string(),
-            source_id: "test-source".to_string(),
-            shard_ids: Vec::new(),
-        };
-
-        let serialized = original.to_string();
-        let deserialized: IndexingTask = serialized.as_str().try_into().unwrap();
-        assert_eq!(original, deserialized);
-    }
-
-    #[test]
-    fn test_indexing_task_serialization_bwc() {
-        assert_eq!(
-            IndexingTask::try_from("foo:bar").unwrap(),
-            IndexingTask {
-                index_uid: "foo".to_string(),
-                source_id: "bar".to_string(),
-                shard_ids: Vec::new(),
-            }
-        );
-    }
-
-    #[test]
-    fn test_indexing_task_serialization_errors() {
-        assert_eq!(
-            "invalid index task format, cannot find index_id in ``",
-            IndexingTask::try_from("").unwrap_err().to_string()
-        );
-        assert_eq!(
-            "invalid index task format, cannot find index_id in `foo`",
-            IndexingTask::try_from("foo").unwrap_err().to_string()
-        );
     }
 }

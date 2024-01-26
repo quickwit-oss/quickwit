@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -60,14 +60,13 @@ pub use observation::{Observation, ObservationType};
 use quickwit_common::KillSwitch;
 pub use spawn_builder::SpawnContext;
 use thiserror::Error;
-use tracing::info;
-use tracing::log::warn;
+use tracing::{info, warn};
 pub use universe::Universe;
 
 pub use self::actor_context::ActorContext;
 pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError, TrySendError};
-pub use self::mailbox::{Inbox, Mailbox};
+pub use self::mailbox::{Inbox, Mailbox, WeakMailbox};
 pub use self::registry::ActorObservation;
 pub use self::supervisor::{Supervisor, SupervisorMetrics, SupervisorState};
 
@@ -93,19 +92,19 @@ fn heartbeat_from_env_or_default() -> Duration {
     match std::env::var("QW_ACTOR_HEARTBEAT_SECS") {
         Ok(actor_hearbeat_secs_str) => {
             if let Ok(actor_hearbeat_secs) = actor_hearbeat_secs_str.parse::<NonZeroU64>() {
-                info!("Set the actor heartbeat to {actor_hearbeat_secs} seconds.");
+                info!("set the actor heartbeat to {actor_hearbeat_secs} seconds");
                 return Duration::from_secs(actor_hearbeat_secs.get());
             } else {
                 warn!(
-                    "Failed to parse `QW_ACTOR_HEARTBEAT_SECS={actor_hearbeat_secs_str}` in \
-                     seconds > 0, using default heartbeat (30 seconds)."
+                    "failed to parse `QW_ACTOR_HEARTBEAT_SECS={actor_hearbeat_secs_str}` in \
+                     seconds > 0, using default heartbeat (30 seconds)"
                 );
             };
         }
         Err(std::env::VarError::NotUnicode(os_str)) => {
             warn!(
-                "Failed to parse `QW_ACTOR_HEARTBEAT_SECS={os_str:?}` in a valid unicode string, \
-                 using default heartbeat (30 seconds)."
+                "failed to parse `QW_ACTOR_HEARTBEAT_SECS={os_str:?}` in a valid unicode string, \
+                 using default heartbeat (30 seconds)"
             );
         }
         Err(std::env::VarError::NotPresent) => {}

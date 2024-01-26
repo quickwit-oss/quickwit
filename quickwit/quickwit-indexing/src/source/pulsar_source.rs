@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -42,20 +42,8 @@ use tracing::{debug, info, warn};
 use crate::actors::DocProcessor;
 use crate::source::{
     BatchBuilder, Source, SourceActor, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
+    BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
 };
-
-/// Number of bytes after which we cut a new batch.
-///
-/// We try to emit chewable batches for the indexer.
-/// One batch = one message to the indexer actor.
-///
-/// If batches are too large:
-/// - we might not be able to observe the state of the indexer for 5 seconds.
-/// - we will be needlessly occupying resident memory in the mailbox.
-/// - we will not have a precise control of the timeout before commit.
-///
-/// 5MB seems like a good one size fits all value.
-const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
 
 type PulsarConsumer = Consumer<PulsarMessage, TokioExecutor>;
 
@@ -167,7 +155,7 @@ impl PulsarSource {
         batch: &mut BatchBuilder,
     ) -> anyhow::Result<()> {
         if doc.is_empty() {
-            warn!("Message received from queue was empty.");
+            warn!("message received from queue was empty");
             self.state.num_invalid_messages += 1;
             return Ok(());
         }
@@ -204,7 +192,7 @@ impl PulsarSource {
     }
 
     async fn try_ack_messages(&mut self, checkpoint: SourceCheckpoint) -> anyhow::Result<()> {
-        debug!(ckpt = ?checkpoint, "Truncating message queue.");
+        debug!(ckpt = ?checkpoint, "truncating message queue");
         for (partition, position) in checkpoint.iter() {
             if let Some(msg_id) = msg_id_from_position(&position) {
                 self.pulsar_consumer
@@ -225,7 +213,7 @@ impl Source for PulsarSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch = BatchBuilder::default();
-        let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
+        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
         loop {
@@ -323,7 +311,7 @@ async fn create_pulsar_consumer(
         .into_iter()
         .map(|id| id.to_string())
         .collect::<Vec<_>>();
-    info!(positions = ?current_positions, "Seeking to last checkpoint positions.");
+    info!(positions = ?current_positions, "seeking to last checkpoint positions");
     for (_, position) in current_positions {
         let seek_to = msg_id_from_position(&position);
 
@@ -339,8 +327,17 @@ async fn create_pulsar_consumer(
 fn msg_id_to_position(msg: &MessageIdData) -> Position {
     // The order of these fields are important as they affect the sorting
     // of the checkpoint positions.
-    // TODO: Confirm this layout is correct?
-    let id_str = format!(
+    //
+    // The key parts of the ID used for ordering are:
+    // - The ledger ID which is a sequentially increasing ID.
+    // - The entry ID the unique ID of the message within the ledger.
+    // - The batch position for the current chunk of messages.
+    //
+    // The remaining keys are not required for sorting but are required
+    // in order to re-construct the message ID in order to send back to pulsar.
+    // The ledger_id, entry_id and the batch_index form a unique composite key which will
+    // prevent the remaining parts of the ID from interfering with the sorting.
+    let position_str = format!(
         "{:0>20},{:0>20},{},{},{}",
         msg.ledger_id,
         msg.entry_id,
@@ -359,12 +356,14 @@ fn msg_id_to_position(msg: &MessageIdData) -> Position {
             .unwrap_or_default(),
     );
 
-    Position::from(id_str)
+    Position::from(position_str)
 }
 
-fn msg_id_from_position(pos: &Position) -> Option<MessageIdData> {
-    let id_str = pos.as_str();
-    let mut parts = id_str.split(',');
+fn msg_id_from_position(position: &Position) -> Option<MessageIdData> {
+    let Position::Offset(offset) = position else {
+        return None;
+    };
+    let mut parts = offset.as_str().split(',');
 
     let ledger_id = parts.next()?.parse::<u64>().ok()?;
     let entry_id = parts.next()?.parse::<u64>().ok()?;
@@ -463,7 +462,7 @@ mod pulsar_broker_tests {
         ($($partition:expr => $position:expr $(,)?)*) => {{
             let mut positions = BTreeMap::new();
             $(
-                positions.insert(PartitionId::from($partition), Position::from($position));
+                positions.insert(PartitionId::from($partition), Position::offset($position));
             )*
             positions
         }};
@@ -476,7 +475,7 @@ mod pulsar_broker_tests {
                 checkpoint.record_partition_delta(
                     PartitionId::from($partition),
                     Position::Beginning,
-                    Position::from($position),
+                    $position,
                 ).unwrap();
             )*
             checkpoint
@@ -759,7 +758,7 @@ mod pulsar_broker_tests {
 
         let position = msg_id_to_position(&populated_id);
         assert_eq!(
-            position.as_str(),
+            position.to_string(),
             format!("{:0>20},{:0>20},{:010},,{:010}", 1, 134, 3, 6)
         );
         let retrieved_id = msg_id_from_position(&position)
@@ -780,7 +779,7 @@ mod pulsar_broker_tests {
 
         let position = msg_id_to_position(&partitioned_id);
         assert_eq!(
-            position.as_str(),
+            position.to_string(),
             format!("{:0>20},{:0>20},{:010},{:010},{:010}", 1, 134, 3, 5, 6)
         );
         let retrieved_id = msg_id_from_position(&position)
@@ -801,7 +800,7 @@ mod pulsar_broker_tests {
 
         let position = msg_id_to_position(&sparse_id);
         assert_eq!(
-            position.as_str(),
+            position.to_string(),
             format!("{:0>20},{:0>20},,,{:010}", 1, 4, 0)
         );
         let retrieved_id = msg_id_from_position(&position)
@@ -847,7 +846,7 @@ mod pulsar_broker_tests {
         assert_eq!(batch.num_bytes, 0);
         assert!(batch.docs.is_empty());
 
-        let position = Position::from(1u64); // Used for testing simplicity.
+        let position = Position::offset(1u64); // Used for testing simplicity.
         let mut batch = BatchBuilder::default();
         let doc = Bytes::from_static(b"some-demo-data");
         pulsar_source
@@ -864,7 +863,7 @@ mod pulsar_broker_tests {
         assert_eq!(batch.num_bytes, 14);
         assert_eq!(batch.docs.len(), 1);
 
-        let position = Position::from(4u64); // Used for testing simplicity.
+        let position = Position::offset(4u64); // Used for testing simplicity.
         let mut batch = BatchBuilder::default();
         let doc = Bytes::from_static(b"some-demo-data-2");
         pulsar_source
@@ -884,8 +883,8 @@ mod pulsar_broker_tests {
         expected_checkpoint_delta
             .record_partition_delta(
                 PartitionId::from(topic.as_str()),
-                Position::from(1u64),
-                Position::from(4u64),
+                Position::offset(1u64),
+                Position::offset(4u64),
             )
             .unwrap();
         assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);

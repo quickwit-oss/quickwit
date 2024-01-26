@@ -1176,7 +1176,7 @@
   },
   "timepicker": {},
   "timezone": "utc",
-  "title": "Quickwit searchers",
+  "title": "Quickwit Searchers",
   "uid": "quickwit-searchers",
   "version": 39,
   "weekStart": ""

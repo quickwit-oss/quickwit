@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -58,7 +58,7 @@ pub struct IngestApiService {
 }
 
 impl fmt::Debug for IngestApiService {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("IngestApiService")
             .field("partition_id", &self.partition_id)
             .field("memory_limit", &self.memory_limit)
@@ -160,7 +160,7 @@ impl IngestApiService {
         let disk_usage = self.queues.disk_usage();
 
         if disk_usage > self.disk_limit {
-            info!("Ingestion rejected due to disk limit");
+            info!("ingestion rejected due to disk limit");
             return Err(IngestServiceError::RateLimited);
         }
 
@@ -169,7 +169,7 @@ impl IngestApiService {
             .reserve_capacity(request.cost() as usize)
             .is_err()
         {
-            info!("Ingest request rejected due to memory limit.");
+            info!("ingest request rejected due to memory limit");
             return Err(IngestServiceError::RateLimited);
         }
         let mut num_docs = 0usize;

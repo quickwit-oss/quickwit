@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,18 +17,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub mod file_backed_metastore;
+pub mod file_backed;
 pub(crate) mod index_metadata;
 #[cfg(feature = "postgres")]
-pub mod postgresql_metastore;
-#[cfg(feature = "postgres")]
-mod postgresql_model;
+pub mod postgres;
 
 pub mod control_plane_metastore;
 
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
+use futures::TryStreamExt;
 pub use index_metadata::IndexMetadata;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -39,7 +38,7 @@ use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, DeleteTask, IndexMetadataRequest,
     IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse,
     MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
-    PublishSplitsRequest, StageSplitsRequest,
+    MetastoreServiceStream, PublishSplitsRequest, StageSplitsRequest,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use time::OffsetDateTime;
@@ -47,14 +46,17 @@ use time::OffsetDateTime;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{Split, SplitMetadata, SplitState};
 
+/// Splits batch size returned by the stream splits API
+const STREAM_SPLITS_CHUNK_SIZE: usize = 100;
+
 static METASTORE_METRICS_LAYER: Lazy<PrometheusMetricsLayer<1>> =
-    Lazy::new(|| PrometheusMetricsLayer::new("metastore", ["request"]));
+    Lazy::new(|| PrometheusMetricsLayer::new("quickwit_metastore", ["request"]));
 
 pub(crate) fn instrument_metastore(
     metastore_impl: impl MetastoreService,
 ) -> MetastoreServiceClient {
     MetastoreServiceClient::tower()
-        .shared_layer(METASTORE_METRICS_LAYER.clone())
+        .stack_layer(METASTORE_METRICS_LAYER.clone())
         .build(metastore_impl)
 }
 
@@ -73,6 +75,49 @@ pub trait MetastoreServiceExt: MetastoreService {
 }
 
 impl MetastoreServiceExt for MetastoreServiceClient {}
+
+/// Helper trait to collect splits from a [`MetastoreServiceStream<ListSplitsResponse>`].
+#[async_trait]
+pub trait MetastoreServiceStreamSplitsExt {
+    /// Collects all splits from a [`MetastoreServiceStream<ListSplitsResponse>`].
+    async fn collect_splits(mut self) -> MetastoreResult<Vec<Split>>;
+
+    /// Collects all splits metadata from a [`MetastoreServiceStream<ListSplitsResponse>`].
+    async fn collect_splits_metadata(mut self) -> MetastoreResult<Vec<SplitMetadata>>;
+
+    /// Collects all splits IDs from a [`MetastoreServiceStream<ListSplitsResponse>`].
+    async fn collect_split_ids(mut self) -> MetastoreResult<Vec<SplitId>>;
+}
+
+#[async_trait]
+impl MetastoreServiceStreamSplitsExt for MetastoreServiceStream<ListSplitsResponse> {
+    async fn collect_splits(mut self) -> MetastoreResult<Vec<Split>> {
+        let mut all_splits = Vec::new();
+        while let Some(list_splits_response) = self.try_next().await? {
+            let splits = list_splits_response.deserialize_splits()?;
+            all_splits.extend(splits);
+        }
+        Ok(all_splits)
+    }
+
+    async fn collect_splits_metadata(mut self) -> MetastoreResult<Vec<SplitMetadata>> {
+        let mut all_splits_metadata = Vec::new();
+        while let Some(list_splits_response) = self.try_next().await? {
+            let splits_metadata = list_splits_response.deserialize_splits_metadata()?;
+            all_splits_metadata.extend(splits_metadata);
+        }
+        Ok(all_splits_metadata)
+    }
+
+    async fn collect_split_ids(mut self) -> MetastoreResult<Vec<SplitId>> {
+        let mut all_splits = Vec::new();
+        while let Some(list_splits_response) = self.try_next().await? {
+            let splits = list_splits_response.deserialize_split_ids()?;
+            all_splits.extend(splits);
+        }
+        Ok(all_splits)
+    }
+}
 
 /// Helper trait to build a [`CreateIndexRequest`] and deserialize its payload.
 pub trait CreateIndexRequestExt {

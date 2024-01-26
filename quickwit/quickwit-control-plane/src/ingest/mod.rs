@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -18,5 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 pub(crate) mod ingest_controller;
+mod wait_handle;
 
 pub use ingest_controller::IngestController;
+pub use wait_handle::WaitHandle;

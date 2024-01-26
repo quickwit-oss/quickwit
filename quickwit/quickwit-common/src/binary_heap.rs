@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -150,6 +150,10 @@ where
     /// Whether there are k element ready already.
     pub fn at_capacity(&self) -> bool {
         self.heap.len() >= self.k
+    }
+
+    pub fn max_len(&self) -> usize {
+        self.k
     }
 
     /// Try to add new entries, if they are better than the current worst.

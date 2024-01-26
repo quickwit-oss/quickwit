@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -18,19 +18,17 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
-use std::ops::Bound;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use futures::future::try_join_all;
-use itertools::{Either, Itertools};
 use quickwit_common::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
-    CountHits, LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, PartialHit,
-    SearchRequest, SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
+    CountHits, LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue,
+    SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_query::query_ast::QueryAst;
 use quickwit_query::tokenizers::TokenizerManager;
@@ -39,7 +37,7 @@ use quickwit_storage::{
 };
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
-use tantivy::schema::{Field, FieldType};
+use tantivy::schema::Field;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tracing::*;
 
@@ -83,18 +81,14 @@ async fn get_split_footer_from_cache_or_fetch(
     Ok(footer_data_opt)
 }
 
-/// Opens a `tantivy::Index` for the given split with several cache layers:
+/// Returns hotcache_bytes and the split directory (`BundleStorage`) with cache layer:
 /// - A split footer cache given by `SearcherContext.split_footer_cache`.
-/// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
-/// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
 #[instrument(skip_all, fields(split_footer_start=split_and_footer_offsets.split_footer_start, split_footer_end=split_and_footer_offsets.split_footer_end))]
-pub(crate) async fn open_index_with_caches(
+pub(crate) async fn open_split_bundle(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
-    tokenizer_manager: Option<&TokenizerManager>,
-    ephemeral_unbounded_cache: bool,
-) -> anyhow::Result<Index> {
+) -> anyhow::Result<(FileSlice, BundleStorage)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let footer_data = get_split_footer_from_cache_or_fetch(
         index_storage.clone(),
@@ -117,17 +111,38 @@ pub(crate) async fn open_index_with_caches(
         split_file,
         FileSlice::new(Arc::new(footer_data)),
     )?;
+
+    Ok((hotcache_bytes, bundle_storage))
+}
+
+/// Opens a `tantivy::Index` for the given split with several cache layers:
+/// - A split footer cache given by `SearcherContext.split_footer_cache`.
+/// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
+/// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
+#[instrument(skip_all, fields(split_footer_start=split_and_footer_offsets.split_footer_start, split_footer_end=split_and_footer_offsets.split_footer_end))]
+pub(crate) async fn open_index_with_caches(
+    searcher_context: &SearcherContext,
+    index_storage: Arc<dyn Storage>,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
+    tokenizer_manager: Option<&TokenizerManager>,
+    ephemeral_unbounded_cache: bool,
+) -> anyhow::Result<Index> {
+    let (hotcache_bytes, bundle_storage) =
+        open_split_bundle(searcher_context, index_storage, split_and_footer_offsets).await?;
+
     let bundle_storage_with_cache = wrap_storage_with_cache(
         searcher_context.fast_fields_cache.clone(),
         Arc::new(bundle_storage),
     );
     let directory = StorageDirectory::new(bundle_storage_with_cache);
+
     let hot_directory = if ephemeral_unbounded_cache {
         let caching_directory = CachingDirectory::new_unbounded(Arc::new(directory));
         HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
     } else {
         HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
     };
+
     let mut index = Index::open(hot_directory)?;
     if let Some(tokenizer_manager) = tokenizer_manager {
         index.set_tokenizers(tokenizer_manager.tantivy_manager().clone());
@@ -164,13 +179,14 @@ pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> any
         warm_up_term_ranges(searcher, &warmup_info.term_ranges_grouped_by_field)
             .instrument(debug_span!("warm_up_term_ranges"));
     let warm_up_term_dict_future =
-        warm_up_term_dict_fields(searcher, &warmup_info.term_dict_field_names)
+        warm_up_term_dict_fields(searcher, &warmup_info.term_dict_fields)
             .instrument(debug_span!("warm_up_term_dicts"));
     let warm_up_fastfields_future = warm_up_fastfields(searcher, &warmup_info.fast_field_names)
         .instrument(debug_span!("warm_up_fastfields"));
     let warm_up_fieldnorms_future = warm_up_fieldnorms(searcher, warmup_info.field_norms)
         .instrument(debug_span!("warm_up_fieldnorms"));
-    let warm_up_postings_future = warm_up_postings(searcher, &warmup_info.posting_field_names)
+    // TODO merge warm_up_postings into warm_up_term_dict_fields
+    let warm_up_postings_future = warm_up_postings(searcher, &warmup_info.term_dict_fields)
         .instrument(debug_span!("warm_up_postings"));
 
     tokio::try_join!(
@@ -187,27 +203,12 @@ pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> any
 
 async fn warm_up_term_dict_fields(
     searcher: &Searcher,
-    term_dict_field_names: &HashSet<String>,
+    term_dict_fields: &HashSet<Field>,
 ) -> anyhow::Result<()> {
-    let mut term_dict_fields = Vec::new();
-    for term_dict_field_name in term_dict_field_names.iter() {
-        let term_dict_field = searcher
-            .schema()
-            .get_field(term_dict_field_name)
-            .with_context(|| {
-                format!(
-                    "couldn't get field named `{term_dict_field_name}` from schema to warm up \
-                     term dicts"
-                )
-            })?;
-
-        term_dict_fields.push(term_dict_field);
-    }
-
     let mut warm_up_futures = Vec::new();
     for field in term_dict_fields {
         for segment_reader in searcher.segment_readers() {
-            let inverted_index = segment_reader.inverted_index(field)?.clone();
+            let inverted_index = segment_reader.inverted_index(*field)?.clone();
             warm_up_futures.push(async move {
                 let dict = inverted_index.terms();
                 dict.warm_up_dictionary().await
@@ -218,23 +219,11 @@ async fn warm_up_term_dict_fields(
     Ok(())
 }
 
-async fn warm_up_postings(
-    searcher: &Searcher,
-    field_names: &HashSet<String>,
-) -> anyhow::Result<()> {
-    let mut fields = Vec::new();
-    for field_name in field_names.iter() {
-        let field = searcher.schema().get_field(field_name).with_context(|| {
-            format!("couldn't get field named `{field_name}` from schema to warm up postings")
-        })?;
-
-        fields.push(field);
-    }
-
+async fn warm_up_postings(searcher: &Searcher, fields: &HashSet<Field>) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
     for field in fields {
         for segment_reader in searcher.segment_readers() {
-            let inverted_index = segment_reader.inverted_index(field)?.clone();
+            let inverted_index = segment_reader.inverted_index(*field)?.clone();
             warm_up_futures.push(async move { inverted_index.warm_postings_full(false).await });
         }
     }
@@ -381,6 +370,7 @@ async fn leaf_search_single_split(
 
     let collector_warmup_info = quickwit_collector.warmup_info();
     warmup_info.merge(collector_warmup_info);
+    warmup_info.simplify();
 
     warmup(&searcher, &warmup_info).await?;
     let span = info_span!("tantivy_search");
@@ -442,11 +432,27 @@ enum CanSplitDoBetter {
     SplitIdHigher(Option<String>),
     SplitTimestampHigher(Option<i64>),
     SplitTimestampLower(Option<i64>),
+    FindTraceIdsAggregation(Option<i64>),
 }
 
 impl CanSplitDoBetter {
     /// Create a CanSplitDoBetter from a SearchRequest
     fn from_request(request: &SearchRequest, timestamp_field_name: Option<&str>) -> Self {
+        if request.max_hits == 0 {
+            if let Some(aggregation) = &request.aggregation_request {
+                if let Ok(crate::QuickwitAggregations::FindTraceIdsAggregation(
+                    find_trace_aggregation,
+                )) = serde_json::from_str(aggregation)
+                {
+                    if Some(find_trace_aggregation.span_timestamp_field_name.as_str())
+                        == timestamp_field_name
+                    {
+                        return CanSplitDoBetter::FindTraceIdsAggregation(None);
+                    }
+                }
+            }
+        }
+
         if request.sort_fields.is_empty() {
             CanSplitDoBetter::SplitIdHigher(None)
         } else if let Some((sort_by, timestamp_field)) =
@@ -480,7 +486,8 @@ impl CanSplitDoBetter {
             CanSplitDoBetter::SplitIdHigher(_) => {
                 splits.sort_unstable_by(|a, b| b.split_id.cmp(&a.split_id))
             }
-            CanSplitDoBetter::SplitTimestampHigher(_) => {
+            CanSplitDoBetter::SplitTimestampHigher(_)
+            | CanSplitDoBetter::FindTraceIdsAggregation(_) => {
                 splits.sort_unstable_by_key(|split| std::cmp::Reverse(split.timestamp_end()))
             }
             CanSplitDoBetter::SplitTimestampLower(_) => {
@@ -495,11 +502,12 @@ impl CanSplitDoBetter {
     fn can_be_better(&self, split: &SplitIdAndFooterOffsets) -> bool {
         match self {
             CanSplitDoBetter::SplitIdHigher(Some(split_id)) => split.split_id >= *split_id,
-            CanSplitDoBetter::SplitTimestampHigher(Some(timestamp)) => {
-                split.timestamp_end() > *timestamp
+            CanSplitDoBetter::SplitTimestampHigher(Some(timestamp))
+            | CanSplitDoBetter::FindTraceIdsAggregation(Some(timestamp)) => {
+                split.timestamp_end() >= *timestamp
             }
             CanSplitDoBetter::SplitTimestampLower(Some(timestamp)) => {
-                split.timestamp_start() < *timestamp
+                split.timestamp_start() <= *timestamp
             }
             _ => true,
         }
@@ -512,7 +520,8 @@ impl CanSplitDoBetter {
         match self {
             CanSplitDoBetter::Uninformative => (),
             CanSplitDoBetter::SplitIdHigher(split_id) => *split_id = Some(hit.split_id.clone()),
-            CanSplitDoBetter::SplitTimestampHigher(timestamp) => {
+            CanSplitDoBetter::SplitTimestampHigher(timestamp)
+            | CanSplitDoBetter::FindTraceIdsAggregation(timestamp) => {
                 if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
                     // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
                     // sure we don't throw away something like 1.2s, so we should round up while
@@ -549,13 +558,14 @@ pub async fn leaf_search(
 ) -> Result<LeafSearchResponse, SearchError> {
     info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(&splits, 5));
 
-    // In the future this should become `request.aggregation_request.is_some() ||
-    // request.exact_count == true`
-    let run_all_splits =
-        request.aggregation_request.is_some() || request.count_hits() == CountHits::CountAll;
-
     let split_filter = CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
     split_filter.optimize_split_order(&mut splits);
+
+    // if client wants full count, or we are doing an aggregation, we want to run every splits.
+    // However if the aggregation is the tracing aggregation, we don't actually need all splits.
+    let run_all_splits = request.count_hits() == CountHits::CountAll
+        || (request.aggregation_request.is_some()
+            && !matches!(split_filter, CanSplitDoBetter::FindTraceIdsAggregation(_)));
 
     // Creates a collector which merges responses into one
     let merge_collector =
@@ -663,7 +673,15 @@ async fn leaf_search_single_split_wrapper(
 
     let mut locked_incremental_merge_collector = incremental_merge_collector.lock().unwrap();
     match leaf_search_single_split_res {
-        Ok(split_search_res) => locked_incremental_merge_collector.add_split(split_search_res),
+        Ok(split_search_res) => {
+            if let Err(err) = locked_incremental_merge_collector.add_split(split_search_res) {
+                locked_incremental_merge_collector.add_failed_split(SplitSearchError {
+                    split_id: split.split_id.clone(),
+                    error: format!("Error parsing aggregation result: {err}"),
+                    retryable_error: true,
+                });
+            }
+        }
         Err(err) => locked_incremental_merge_collector.add_failed_split(SplitSearchError {
             split_id: split.split_id.clone(),
             error: format!("{err}"),
@@ -671,190 +689,9 @@ async fn leaf_search_single_split_wrapper(
         }),
     }
     if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {
-        split_filter.lock().unwrap().record_new_worst_hit(last_hit);
+        split_filter
+            .lock()
+            .unwrap()
+            .record_new_worst_hit(last_hit.as_ref());
     }
-}
-
-/// Apply a leaf list terms on a single split.
-#[instrument(skip_all, fields(split_id = split.split_id))]
-async fn leaf_list_terms_single_split(
-    searcher_context: &SearcherContext,
-    search_request: &ListTermsRequest,
-    storage: Arc<dyn Storage>,
-    split: SplitIdAndFooterOffsets,
-) -> crate::Result<LeafListTermsResponse> {
-    let index = open_index_with_caches(searcher_context, storage, &split, None, true).await?;
-    let split_schema = index.schema();
-    let reader = index
-        .reader_builder()
-        .reload_policy(ReloadPolicy::Manual)
-        .try_into()?;
-    let searcher = reader.searcher();
-
-    let field = split_schema
-        .get_field(&search_request.field)
-        .with_context(|| {
-            format!(
-                "couldn't get field named {:?} from schema to list terms",
-                search_request.field
-            )
-        })?;
-
-    let field_type = split_schema.get_field_entry(field).field_type();
-    let start_term: Option<Term> = search_request
-        .start_key
-        .as_ref()
-        .map(|data| term_from_data(field, field_type, data));
-    let end_term: Option<Term> = search_request
-        .end_key
-        .as_ref()
-        .map(|data| term_from_data(field, field_type, data));
-
-    let mut segment_results = Vec::new();
-    for segment_reader in searcher.segment_readers() {
-        let inverted_index = segment_reader.inverted_index(field)?.clone();
-        let dict = inverted_index.terms();
-        dict.file_slice_for_range(
-            (
-                start_term
-                    .as_ref()
-                    .map(Term::serialized_value_bytes)
-                    .map(Bound::Included)
-                    .unwrap_or(Bound::Unbounded),
-                end_term
-                    .as_ref()
-                    .map(Term::serialized_value_bytes)
-                    .map(Bound::Excluded)
-                    .unwrap_or(Bound::Unbounded),
-            ),
-            search_request.max_hits,
-        )
-        .read_bytes_async()
-        .await
-        .with_context(|| "failed to load sstable range")?;
-
-        let mut range = dict.range();
-        if let Some(limit) = search_request.max_hits {
-            range = range.limit(limit);
-        }
-        if let Some(start_term) = &start_term {
-            range = range.ge(start_term.serialized_value_bytes())
-        }
-        if let Some(end_term) = &end_term {
-            range = range.lt(end_term.serialized_value_bytes())
-        }
-        let mut stream = range
-            .into_stream()
-            .with_context(|| "failed to create stream over sstable")?;
-        let mut segment_result: Vec<Vec<u8>> =
-            Vec::with_capacity(search_request.max_hits.unwrap_or(0) as usize);
-        while stream.advance() {
-            segment_result.push(term_to_data(field, field_type, stream.key()));
-        }
-        segment_results.push(segment_result);
-    }
-
-    let merged_iter = segment_results.into_iter().kmerge().dedup();
-    let merged_results: Vec<Vec<u8>> = if let Some(limit) = search_request.max_hits {
-        merged_iter.take(limit as usize).collect()
-    } else {
-        merged_iter.collect()
-    };
-
-    Ok(LeafListTermsResponse {
-        num_hits: merged_results.len() as u64,
-        terms: merged_results,
-        num_attempted_splits: 1,
-        failed_splits: Vec::new(),
-    })
-}
-
-fn term_from_data(field: Field, field_type: &FieldType, data: &[u8]) -> Term {
-    let mut term = Term::from_field_bool(field, false);
-    term.clear_with_type(field_type.value_type());
-    term.append_bytes(data);
-    term
-}
-
-fn term_to_data(field: Field, field_type: &FieldType, field_value: &[u8]) -> Vec<u8> {
-    let mut term = Term::from_field_bool(field, false);
-    term.clear_with_type(field_type.value_type());
-    term.append_bytes(field_value);
-    term.serialized_term().to_vec()
-}
-
-/// `leaf` step of list terms.
-#[instrument(skip_all, fields(index = ?request.index_id))]
-pub async fn leaf_list_terms(
-    searcher_context: Arc<SearcherContext>,
-    request: &ListTermsRequest,
-    index_storage: Arc<dyn Storage>,
-    splits: &[SplitIdAndFooterOffsets],
-) -> Result<LeafListTermsResponse, SearchError> {
-    info!(split_offsets = ?PrettySample::new(splits, 5));
-    let leaf_search_single_split_futures: Vec<_> = splits
-        .iter()
-        .map(|split| {
-            let index_storage_clone = index_storage.clone();
-            let searcher_context_clone = searcher_context.clone();
-            async move {
-                let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore.clone()
-                    .acquire_owned()
-                    .await
-                    .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
-                // TODO dedicated counter and timer?
-                crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
-                let timer = crate::SEARCH_METRICS
-                    .leaf_search_split_duration_secs
-                    .start_timer();
-                let leaf_search_single_split_res = leaf_list_terms_single_split(
-                    &searcher_context_clone,
-                    request,
-                    index_storage_clone,
-                    split.clone(),
-                )
-                .await;
-                timer.observe_duration();
-                leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
-            }
-        })
-        .collect();
-
-    let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
-
-    let (split_search_responses, errors): (Vec<LeafListTermsResponse>, Vec<(String, SearchError)>) =
-        split_search_results
-            .into_iter()
-            .partition_map(|split_search_res| match split_search_res {
-                Ok(split_search_resp) => Either::Left(split_search_resp),
-                Err(err) => Either::Right(err),
-            });
-
-    let merged_iter = split_search_responses
-        .into_iter()
-        .map(|leaf_search_response| leaf_search_response.terms)
-        .kmerge()
-        .dedup();
-    let terms: Vec<Vec<u8>> = if let Some(limit) = request.max_hits {
-        merged_iter.take(limit as usize).collect()
-    } else {
-        merged_iter.collect()
-    };
-
-    let failed_splits = errors
-        .into_iter()
-        .map(|(split_id, err)| SplitSearchError {
-            split_id,
-            error: err.to_string(),
-            retryable_error: true,
-        })
-        .collect();
-    let merged_search_response = LeafListTermsResponse {
-        num_hits: terms.len() as u64,
-        terms,
-        num_attempted_splits: splits.len() as u64,
-        failed_splits,
-    };
-
-    Ok(merged_search_response)
 }

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -39,13 +39,12 @@ use quickwit_proto::metastore::{
     DeleteTask, ListDeleteTasksRequest, MarkSplitsForDeletionRequest, MetastoreService,
     MetastoreServiceClient,
 };
+use quickwit_proto::types::PipelineUid;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
-use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
+use tantivy::directory::{Advice, DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::tokenizer::TokenizerManager;
-use tantivy::{
-    Advice, DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentId, SegmentReader,
-};
+use tantivy::{DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentId, SegmentReader};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
 
@@ -433,7 +432,7 @@ impl MergeExecutor {
         let index_pipeline_id = IndexingPipelineId {
             index_uid: split.index_uid,
             node_id: split.node_id.clone(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::new(),
             source_id: split.source_id.clone(),
         };
         let indexed_split = IndexedSplit {
@@ -561,7 +560,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::split_file;
     use quickwit_metastore::{
-        ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, StageSplitsRequestExt,
+        ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata, StageSplitsRequestExt,
     };
     use quickwit_proto::metastore::{
         DeleteQuery, ListSplitsRequest, PublishSplitsRequest, StageSplitsRequest,
@@ -593,7 +592,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         for split_id in 0..4 {
             let single_doc = std::iter::once(
@@ -607,7 +606,8 @@ mod tests {
             .list_splits(list_splits_request)
             .await
             .unwrap()
-            .deserialize_splits_metadata()
+            .collect_splits_metadata()
+            .await
             .unwrap();
         assert_eq!(split_metas.len(), 4);
         let merge_scratch_directory = TempDirectory::for_test();
@@ -717,7 +717,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
             node_id: "unknown".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
             source_id: "unknown".to_string(),
         };
         test_sandbox.add_documents(docs).await?;
@@ -730,17 +730,16 @@ mod tests {
                 query_ast: quickwit_query::query_ast::qast_json_helper(delete_query, &["body"]),
             })
             .await?;
-        let split = metastore
+        let splits = metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
-            .deserialize_splits()
-            .unwrap()
-            .into_iter()
-            .next()
+            .collect_splits()
+            .await
             .unwrap();
+
         // We want to test a delete on a split with num_merge_ops > 0.
-        let mut new_split_metadata = split.split_metadata.clone();
+        let mut new_split_metadata = splits[0].split_metadata.clone();
         new_split_metadata.split_id = new_split_id();
         new_split_metadata.num_merge_ops = 1;
         let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
@@ -752,7 +751,7 @@ mod tests {
         let publish_splits_request = PublishSplitsRequest {
             index_uid: index_uid.to_string(),
             staged_split_ids: vec![new_split_metadata.split_id.to_string()],
-            replaced_split_ids: vec![split.split_metadata.split_id.to_string()],
+            replaced_split_ids: vec![splits[0].split_metadata.split_id.to_string()],
             index_checkpoint_delta_json_opt: None,
             publish_token_opt: None,
         };
@@ -765,7 +764,7 @@ mod tests {
         let merge_scratch_directory = TempDirectory::for_test();
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits-")?;
-        let split_filename = split_file(split.split_metadata.split_id());
+        let split_filename = split_file(splits[0].split_metadata.split_id());
         let new_split_filename = split_file(new_split_metadata.split_id());
         let dest_filepath = downloaded_splits_directory.path().join(&new_split_filename);
         test_sandbox
@@ -847,7 +846,8 @@ mod tests {
                 .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
                 .await
                 .unwrap()
-                .deserialize_splits()
+                .collect_splits()
+                .await
                 .unwrap()
                 .into_iter()
                 .all(

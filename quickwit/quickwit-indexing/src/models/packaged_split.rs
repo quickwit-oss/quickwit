@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -31,6 +31,7 @@ use crate::merge_policy::MergeOperation;
 use crate::models::{PublishLock, SplitAttrs};
 
 pub struct PackagedSplit {
+    pub serialized_split_fields: Vec<u8>,
     pub split_attrs: SplitAttrs,
     pub split_scratch_directory: TempDirectory,
     pub tags: BTreeSet<String>,

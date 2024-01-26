@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -96,11 +96,11 @@ impl GarbageCollector {
             }) {
             Ok(metadatas) => metadatas,
             Err(error) => {
-                error!(error=?error, "Failed to list indexes from the metastore.");
+                error!(error=?error, "failed to list indexes from the metastore");
                 return;
             }
         };
-        info!(index_ids=%indexes.iter().map(|im| im.index_id()).join(", "), "Garbage collecting indexes.");
+        info!(index_ids=%indexes.iter().map(|im| im.index_id()).join(", "), "garbage collecting indexes");
 
         let mut gc_futures = stream::iter(indexes).map(|index| {
             let metastore = self.metastore.clone();
@@ -110,7 +110,7 @@ impl GarbageCollector {
             let storage = match storage_resolver.resolve(index_uri).await {
                 Ok(storage) => storage,
                 Err(error) => {
-                    error!(index=%index.index_id(), error=?error, "Failed to resolve the index storage Uri.");
+                    error!(index=%index.index_id(), error=?error, "failed to resolve the index storage Uri");
                     return None;
                 }
             };
@@ -140,7 +140,7 @@ impl GarbageCollector {
                 }
                 Err(error) => {
                     self.counters.num_failed_gc_run_on_index += 1;
-                    error!(index_id=%index_uid.index_id(), error=?error, "Failed to run garbage collection on index.");
+                    error!(index_id=%index_uid.index_id(), error=?error, "failed to run garbage collection on index");
                     continue;
                 }
             };
@@ -199,7 +199,7 @@ impl Handler<Loop> for GarbageCollector {
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         self.handle_inner(ctx).await;
-        ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
+        ctx.schedule_self_msg(RUN_INTERVAL, Loop);
         Ok(())
     }
 }
@@ -212,6 +212,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
+    use quickwit_common::ServiceStream;
     use quickwit_metastore::{
         IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata,
         SplitState,
@@ -292,7 +293,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -368,7 +370,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -443,7 +446,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -618,7 +622,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -693,7 +698,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()

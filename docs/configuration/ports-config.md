@@ -4,18 +4,18 @@ sidebar_position: 6
 ---
 
 When starting a quickwit search server, one important parameter that can be configured is
-the `rest_listen_port` (defaults to :7280).
+the `rest.listen_port` (defaults to :7280).
 
 Internally, Quickwit will, in fact, use three sockets. The ports of these three sockets
 cannot be configured independently at the moment.
-The ports used are computed relative to the `rest_listen_port` port, as follows.
+The ports used are computed relative to the `rest.listen_port` port, as follows.
 
 
 | Service                       | Port used                 | Protocol |  Default  |
 |-------------------------------|---------------------------|----------|-----------|
-| Http server with the rest api | `${rest_listen_port}`     |   TCP    | 7280      |
-| Cluster membership            | `${rest_listen_port}`     |   UDP    | 7280      |
-| GRPC service                  | `${rest_listen_port} + 1` |   TCP    | 7281      |
+| Http server with the rest api | `${rest.listen_port}`     |   TCP    | 7280      |
+| Cluster membership            | `${rest.listen_port}`     |   UDP    | 7280      |
+| GRPC service                  | `${rest.listen_port} + 1` |   TCP    | 7281      |
 
 It is not possible for the moment to configure these ports independently.
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -33,15 +33,18 @@ use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
+use crate::debugging_api::debugging_handler;
 use crate::delete_task_api::delete_task_api_handlers;
-use crate::elastic_search_api::elastic_api_handlers;
+use crate::elasticsearch_api::elastic_api_handlers;
 use crate::health_check_api::health_check_handlers;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
+use crate::jaeger_api::jaeger_api_handlers;
 use crate::json_api_response::{ApiError, JsonApiResponse};
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
+use crate::otlp_api::otlp_ingest_api_handlers;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
 use crate::{BodyFormat, BuildInfo, QuickwitServices, RuntimeInfo};
@@ -85,49 +88,26 @@ pub(crate) async fn start_rest_server(
     // `/metrics` route.
     let metrics_routes = warp::path("metrics").and(warp::get()).map(metrics_handler);
 
-    let ingest_router = quickwit_services.ingest_router_service.clone();
-    let ingest_service = quickwit_services.ingest_service.clone();
+    // `/debugging` route.
+    let control_plane_service = quickwit_services.control_plane_service.clone();
+    let debugging_routes = warp::path("debugging")
+        .and(warp::get())
+        .then(move || debugging_handler(control_plane_service.clone()));
 
     // `/api/v1/*` routes.
-    let api_v1_root_url = warp::path!("api" / "v1" / ..);
-    let api_v1_routes = cluster_handler(quickwit_services.cluster.clone())
-        .or(node_info_handler(
-            BuildInfo::get(),
-            RuntimeInfo::get(),
-            quickwit_services.node_config.clone(),
-        ))
-        .or(indexing_get_handler(
-            quickwit_services.indexing_service_opt.clone(),
-        ))
-        .or(search_get_handler(quickwit_services.search_service.clone()))
-        .or(search_post_handler(
-            quickwit_services.search_service.clone(),
-        ))
-        .or(search_stream_handler(
-            quickwit_services.search_service.clone(),
-        ))
-        .or(ingest_api_handlers(
-            ingest_router,
-            ingest_service.clone(),
-            quickwit_services.node_config.ingest_api_config.clone(),
-        ))
-        .or(index_management_handlers(
-            quickwit_services.index_manager.clone(),
-            quickwit_services.node_config.clone(),
-        ))
-        .or(delete_task_api_handlers(
-            quickwit_services.metastore_client.clone(),
-        ))
-        .or(elastic_api_handlers(
-            quickwit_services.node_config.clone(),
-            quickwit_services.search_service.clone(),
-            ingest_service.clone(),
-        ));
+    let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
-    let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
     let redirect_root_to_ui_route = warp::path::end()
         .and(warp::get())
         .map(|| redirect(http::Uri::from_static("/ui/search")));
+
+    let extra_headers = warp::reply::with::headers(
+        quickwit_services
+            .node_config
+            .rest_config
+            .extra_headers
+            .clone(),
+    );
 
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
@@ -136,14 +116,16 @@ pub(crate) async fn start_rest_server(
         .or(ui_handler())
         .or(health_check_routes)
         .or(metrics_routes)
+        .or(debugging_routes)
         .with(request_counter)
         .recover(recover_fn)
+        .with(extra_headers)
         .boxed();
 
     let warp_service = warp::service(rest_routes);
     let compression_predicate =
         DefaultPredicate::new().and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
-    let cors = build_cors(&quickwit_services.node_config.rest_cors_allow_origins);
+    let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
     let service = ServiceBuilder::new()
         .layer(
@@ -158,13 +140,73 @@ pub(crate) async fn start_rest_server(
         rest_listen_addr=?rest_listen_addr,
         "Starting REST server listening on {rest_listen_addr}."
     );
-    let serve_fut = hyper::Server::bind(&rest_listen_addr)
-        .serve(Shared::new(service))
-        .with_graceful_shutdown(shutdown_signal);
+
+    // `graceful_shutdown()` seems to be blocking in presence of existing connections.
+    // The following approach of dropping the serve supposedly is not bullet proof, but it seems to
+    // work in our unit test.
+    //
+    // See more of the discussion here:
+    // https://github.com/hyperium/hyper/issues/2386
+    let serve_fut = async move {
+        tokio::select! {
+             res = hyper::Server::bind(&rest_listen_addr).serve(Shared::new(service)) => { res }
+             _ = shutdown_signal => { Ok(()) }
+        }
+    };
 
     let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
     serve_res?;
     Ok(())
+}
+
+fn api_v1_routes(
+    quickwit_services: Arc<QuickwitServices>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    let api_v1_root_url = warp::path!("api" / "v1" / ..);
+    api_v1_root_url.and(
+        cluster_handler(quickwit_services.cluster.clone())
+            .or(node_info_handler(
+                BuildInfo::get(),
+                RuntimeInfo::get(),
+                quickwit_services.node_config.clone(),
+            ))
+            .or(indexing_get_handler(
+                quickwit_services.indexing_service_opt.clone(),
+            ))
+            .or(search_get_handler(quickwit_services.search_service.clone()))
+            .or(search_post_handler(
+                quickwit_services.search_service.clone(),
+            ))
+            .or(search_stream_handler(
+                quickwit_services.search_service.clone(),
+            ))
+            .or(ingest_api_handlers(
+                quickwit_services.ingest_router_service.clone(),
+                quickwit_services.ingest_service.clone(),
+                quickwit_services.node_config.ingest_api_config.clone(),
+            ))
+            .or(otlp_ingest_api_handlers(
+                quickwit_services.otlp_logs_service_opt.clone(),
+                quickwit_services.otlp_traces_service_opt.clone(),
+            ))
+            .or(index_management_handlers(
+                quickwit_services.index_manager.clone(),
+                quickwit_services.node_config.clone(),
+            ))
+            .or(delete_task_api_handlers(
+                quickwit_services.metastore_client.clone(),
+            ))
+            .or(jaeger_api_handlers(
+                quickwit_services.jaeger_service_opt.clone(),
+            ))
+            .or(elastic_api_handlers(
+                quickwit_services.node_config.clone(),
+                quickwit_services.search_service.clone(),
+                quickwit_services.ingest_service.clone(),
+                quickwit_services.ingest_router_service.clone(),
+                quickwit_services.metastore_client.clone(),
+            )),
+    )
 }
 
 /// This function returns a formatted error based on the given rejection reason.
@@ -299,10 +341,26 @@ mod tests {
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
+    use http::HeaderName;
     use hyper::{Request, Response, StatusCode};
+    use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
+    use quickwit_config::NodeConfig;
+    use quickwit_index_management::IndexService;
+    use quickwit_ingest::{IngestApiService, IngestServiceClient};
+    use quickwit_proto::control_plane::ControlPlaneServiceClient;
+    use quickwit_proto::ingest::router::IngestRouterServiceClient;
+    use quickwit_proto::metastore::MetastoreServiceClient;
+    use quickwit_search::MockSearchService;
+    use quickwit_storage::StorageResolver;
     use tower::Service;
 
     use super::*;
+
+    pub(crate) fn ingest_service_client() -> IngestServiceClient {
+        let universe = quickwit_actors::Universe::new();
+        let (ingest_service_mailbox, _) = universe.create_test_mailbox::<IngestApiService>();
+        IngestServiceClient::from_mailbox(ingest_service_mailbox)
+    }
 
     #[tokio::test]
     async fn test_cors() {
@@ -514,5 +572,84 @@ mod tests {
 
             Box::pin(fut)
         }
+    }
+
+    #[tokio::test]
+    async fn test_extra_headers() {
+        let mut node_config = NodeConfig::for_test();
+        node_config.rest_config.extra_headers.insert(
+            HeaderName::from_static("x-custom-header"),
+            HeaderValue::from_static("custom-value"),
+        );
+        node_config.rest_config.extra_headers.insert(
+            HeaderName::from_static("x-custom-header-2"),
+            HeaderValue::from_static("custom-value-2"),
+        );
+        let metastore_client = MetastoreServiceClient::from(MetastoreServiceClient::mock());
+        let index_service =
+            IndexService::new(metastore_client.clone(), StorageResolver::unconfigured());
+        let control_plane_service =
+            ControlPlaneServiceClient::from(ControlPlaneServiceClient::mock());
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
+        let quickwit_services = QuickwitServices {
+            _report_splits_subscription_handle_opt: None,
+            _local_shards_update_listener_handle_opt: None,
+            cluster,
+            control_plane_service,
+            indexing_service_opt: None,
+            index_manager: index_service,
+            ingest_service: ingest_service_client(),
+            ingester_service_opt: None,
+            ingest_router_service: IngestRouterServiceClient::from(
+                IngestRouterServiceClient::mock(),
+            ),
+            janitor_service_opt: None,
+            otlp_logs_service_opt: None,
+            otlp_traces_service_opt: None,
+            metastore_client,
+            metastore_server_opt: None,
+            node_config: Arc::new(node_config.clone()),
+            search_service: Arc::new(MockSearchService::new()),
+            jaeger_service_opt: None,
+        };
+
+        let handler = api_v1_routes(Arc::new(quickwit_services))
+            .recover(recover_fn)
+            .with(warp::reply::with::headers(
+                node_config.rest_config.extra_headers.clone(),
+            ));
+
+        let resp = warp::test::request()
+            .path("/api/v1/version")
+            .reply(&handler.clone())
+            .await;
+
+        assert_eq!(resp.status(), 200);
+        assert_eq!(
+            resp.headers().get("x-custom-header").unwrap(),
+            "custom-value"
+        );
+        assert_eq!(
+            resp.headers().get("x-custom-header-2").unwrap(),
+            "custom-value-2"
+        );
+
+        let resp_404 = warp::test::request()
+            .path("/api/v1/version404")
+            .reply(&handler)
+            .await;
+
+        assert_eq!(resp_404.status(), 404);
+        assert_eq!(
+            resp_404.headers().get("x-custom-header").unwrap(),
+            "custom-value"
+        );
+        assert_eq!(
+            resp_404.headers().get("x-custom-header-2").unwrap(),
+            "custom-value-2"
+        );
     }
 }

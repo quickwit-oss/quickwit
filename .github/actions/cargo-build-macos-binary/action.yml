@@ -42,7 +42,7 @@ runs:
           echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
       shell: bash
     - name: Build binary
-      run: cargo build --release --features release-macos-feature-vendored-set --target ${{ matrix.target }}
+      run: cargo build --release --features release-macos-feature-vendored-set --target ${{ matrix.target }} --bin quickwit
       shell: bash
       working-directory: ./quickwit
       env:

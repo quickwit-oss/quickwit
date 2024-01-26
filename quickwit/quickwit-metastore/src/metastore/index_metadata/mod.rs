@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -145,7 +145,7 @@ impl TestableForRegression for IndexMetadata {
         let delta = SourceCheckpointDelta::from_partition_delta(
             PartitionId::from(0i64),
             Position::Beginning,
-            Position::from(42u64),
+            Position::offset(42u64),
         )
         .unwrap();
         source_checkpoint.try_apply_delta(delta).unwrap();

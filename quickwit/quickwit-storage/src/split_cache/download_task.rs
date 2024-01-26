@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -42,7 +42,7 @@ pub(crate) fn delete_evicted_splits(root_path: &Path, splits_to_delete: &[Ulid])
         if let Err(_io_err) = std::fs::remove_file(&split_file_path) {
             // This is an pretty critical error. The split size is not tracked anymore at this
             // point.
-            error!(path=%split_file_path.display(), "Failed to remove split file from cache directory. This is critical as the file is now not taken in account in the cache size limits.");
+            error!(path=%split_file_path.display(), "failed to remove split file from cache directory. This is critical as the file is now not taken in account in the cache size limits");
         }
     }
 }

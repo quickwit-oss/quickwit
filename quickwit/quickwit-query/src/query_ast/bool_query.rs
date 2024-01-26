@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -32,7 +32,7 @@ use crate::InvalidQuery;
 /// Edge cases of BooleanQuery are not obvious,
 /// and different beahvior could be justified.
 ///
-/// Here we aligne ourselves with ElasticSearch.
+/// Here we aligne ourselves with Elasticsearch.
 /// A boolean query is to be interpreted like a filtering predicate
 /// over the set of documents.
 ///

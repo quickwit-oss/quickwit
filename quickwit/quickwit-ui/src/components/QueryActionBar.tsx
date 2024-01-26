@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -39,7 +39,17 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
         </Button>
       </Box>
       { shouldDisplayTimeRangeSelect && <TimeRangeSelect
-        { ...props } />
+          timeRange={{
+            startTimestamp:props.searchRequest.startTimestamp,
+            endTimestamp:props.searchRequest.endTimestamp
+          }}
+          onUpdate={
+            (timeRange)=>{
+              props.runSearch({...props.searchRequest, ...timeRange});
+            }
+          }
+          disabled={props.queryRunning || !props.searchRequest.indexId}
+       />
       }
     </Box>
   )

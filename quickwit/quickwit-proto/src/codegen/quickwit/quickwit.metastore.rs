@@ -20,6 +20,9 @@ pub struct CreateIndexResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadataRequest {
+    /// List of patterns an index should match or not match to get considered
+    /// An index must match at least one positive pattern (a pattern not starting
+    /// with a '-'), and no negative pattern (a pattern starting with a '-').
     #[prost(string, repeated, tag = "2")]
     pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -37,6 +40,10 @@ pub struct DeleteIndexRequest {
     #[prost(string, tag = "1")]
     pub index_uid: ::prost::alloc::string::String,
 }
+/// Request the metadata of an index.
+/// Either `index_uid` or `index_id` must be specified.
+///
+/// If both are supplied, `index_uid` is used.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -57,6 +64,9 @@ pub struct IndexMetadataResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsRequest {
+    /// Predicate used to filter splits.
+    /// The predicate is expressed as a JSON serialized
+    /// `ListSplitsQuery`.
     #[prost(string, tag = "1")]
     pub query_json: ::prost::alloc::string::String,
 }
@@ -64,6 +74,7 @@ pub struct ListSplitsRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsResponse {
+    /// TODO use repeated and encode splits json individually.
     #[prost(string, tag = "1")]
     pub splits_serialized_json: ::prost::alloc::string::String,
 }
@@ -255,12 +266,12 @@ pub struct OpenShardsSubrequest {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "4")]
+    #[prost(message, optional, tag = "4")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
+    #[prost(string, tag = "5")]
     pub leader_id: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "5")]
+    #[prost(string, optional, tag = "6")]
     pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(uint64, tag = "6")]
-    pub next_shard_id: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -281,8 +292,6 @@ pub struct OpenShardsSubresponse {
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "4")]
     pub opened_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
-    #[prost(uint64, tag = "5")]
-    pub next_shard_id: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -299,8 +308,8 @@ pub struct AcquireShardsSubrequest {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, repeated, tag = "3")]
-    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
     #[prost(string, tag = "4")]
     pub publish_token: ::prost::alloc::string::String,
 }
@@ -328,6 +337,7 @@ pub struct AcquireShardsSubresponse {
 pub struct DeleteShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub subrequests: ::prost::alloc::vec::Vec<DeleteShardsSubrequest>,
+    /// If false, only shards at EOF positions will be deleted.
     #[prost(bool, tag = "2")]
     pub force: bool,
 }
@@ -339,8 +349,8 @@ pub struct DeleteShardsSubrequest {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, repeated, tag = "3")]
-    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -381,8 +391,6 @@ pub struct ListShardsSubresponse {
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "3")]
     pub shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
-    #[prost(uint64, tag = "4")]
-    pub next_shard_id: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -563,15 +571,21 @@ impl PrometheusLabels<1> for ListShardsRequest {
         OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("list_shards")])
     }
 }
+pub type MetastoreServiceStream<T> = quickwit_common::ServiceStream<
+    crate::metastore::MetastoreResult<T>,
+>;
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
     /// Creates an index.
+    ///
+    /// This API creates a new index in the metastore.
+    /// An error will occur if an index that already exists in the storage is specified.
     async fn create_index(
         &mut self,
         request: CreateIndexRequest,
     ) -> crate::metastore::MetastoreResult<CreateIndexResponse>;
-    /// Gets an index metadata.
+    /// Returns the `IndexMetadata` of an index identified by its IndexID or its IndexUID.
     async fn index_metadata(
         &mut self,
         request: IndexMetadataRequest,
@@ -586,11 +600,11 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
         &mut self,
         request: DeleteIndexRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse>;
-    /// Gets splits from index.
+    /// Streams splits from index.
     async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
-    ) -> crate::metastore::MetastoreResult<ListSplitsResponse>;
+    ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>>;
     /// Stages several splits.
     async fn stage_splits(
         &mut self,
@@ -651,11 +665,17 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
         &mut self,
         request: ListDeleteTasksRequest,
     ) -> crate::metastore::MetastoreResult<ListDeleteTasksResponse>;
-    #[doc = "/ Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`."]
+    /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
     async fn list_stale_splits(
         &mut self,
         request: ListStaleSplitsRequest,
     ) -> crate::metastore::MetastoreResult<ListSplitsResponse>;
+    /// Shard API
+    ///
+    /// Note that for the file-backed metastore implementation, the requests are not processed atomically.
+    /// Indeed, each request comprises one or more subrequests that target different indexes and sources processed
+    /// independently. Responses list the requests that succeeded or failed in the fields `successes` and
+    /// `failures`.
     async fn open_shards(
         &mut self,
         request: OpenShardsRequest,
@@ -667,6 +687,8 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
         &mut self,
         request: AcquireShardsRequest,
     ) -> crate::metastore::MetastoreResult<AcquireShardsResponse>;
+    /// Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
+    /// If the shard did not exist to begin with, the operation is successful and does not return any error.
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
@@ -704,36 +726,44 @@ impl MetastoreServiceClient {
     }
     pub fn as_grpc_service(
         &self,
+        max_message_size: bytesize::ByteSize,
     ) -> metastore_service_grpc_server::MetastoreServiceGrpcServer<
         MetastoreServiceGrpcServerAdapter,
     > {
         let adapter = MetastoreServiceGrpcServerAdapter::new(self.clone());
         metastore_service_grpc_server::MetastoreServiceGrpcServer::new(adapter)
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024)
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
+        let client = metastore_service_grpc_client::MetastoreServiceGrpcClient::new(
+                channel,
+            )
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = MetastoreServiceGrpcClientAdapter::new(
-            metastore_service_grpc_client::MetastoreServiceGrpcClient::new(channel),
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)
     }
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> MetastoreServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let client = metastore_service_grpc_client::MetastoreServiceGrpcClient::new(
                 balance_channel,
             )
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024);
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = MetastoreServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
@@ -747,8 +777,8 @@ impl MetastoreServiceClient {
     {
         MetastoreServiceClient::new(MetastoreServiceMailbox::new(mailbox))
     }
-    pub fn tower() -> MetastoreServiceTowerBlockBuilder {
-        MetastoreServiceTowerBlockBuilder::default()
+    pub fn tower() -> MetastoreServiceTowerLayerStack {
+        MetastoreServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn mock() -> MockMetastoreService {
@@ -784,7 +814,7 @@ impl MetastoreService for MetastoreServiceClient {
     async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
-    ) -> crate::metastore::MetastoreResult<ListSplitsResponse> {
+    ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         self.inner.list_splits(request).await
     }
     async fn stage_splits(
@@ -932,7 +962,9 @@ pub mod metastore_service_mock {
         async fn list_splits(
             &mut self,
             request: super::ListSplitsRequest,
-        ) -> crate::metastore::MetastoreResult<super::ListSplitsResponse> {
+        ) -> crate::metastore::MetastoreResult<
+            MetastoreServiceStream<super::ListSplitsResponse>,
+        > {
             self.inner.lock().await.list_splits(request).await
         }
         async fn stage_splits(
@@ -1123,7 +1155,7 @@ impl tower::Service<DeleteIndexRequest> for Box<dyn MetastoreService> {
     }
 }
 impl tower::Service<ListSplitsRequest> for Box<dyn MetastoreService> {
-    type Response = ListSplitsResponse;
+    type Response = MetastoreServiceStream<ListSplitsResponse>;
     type Error = crate::metastore::MetastoreError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
@@ -1410,9 +1442,9 @@ impl tower::Service<ListShardsRequest> for Box<dyn MetastoreService> {
         Box::pin(fut)
     }
 }
-/// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
+/// A tower service stack is a set of tower services.
 #[derive(Debug)]
-struct MetastoreServiceTowerBlock {
+struct MetastoreServiceTowerServiceStack {
     inner: Box<dyn MetastoreService>,
     create_index_svc: quickwit_common::tower::BoxService<
         CreateIndexRequest,
@@ -1436,7 +1468,7 @@ struct MetastoreServiceTowerBlock {
     >,
     list_splits_svc: quickwit_common::tower::BoxService<
         ListSplitsRequest,
-        ListSplitsResponse,
+        MetastoreServiceStream<ListSplitsResponse>,
         crate::metastore::MetastoreError,
     >,
     stage_splits_svc: quickwit_common::tower::BoxService<
@@ -1525,7 +1557,7 @@ struct MetastoreServiceTowerBlock {
         crate::metastore::MetastoreError,
     >,
 }
-impl Clone for MetastoreServiceTowerBlock {
+impl Clone for MetastoreServiceTowerServiceStack {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -1557,7 +1589,7 @@ impl Clone for MetastoreServiceTowerBlock {
     }
 }
 #[async_trait::async_trait]
-impl MetastoreService for MetastoreServiceTowerBlock {
+impl MetastoreService for MetastoreServiceTowerServiceStack {
     async fn create_index(
         &mut self,
         request: CreateIndexRequest,
@@ -1585,7 +1617,7 @@ impl MetastoreService for MetastoreServiceTowerBlock {
     async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
-    ) -> crate::metastore::MetastoreResult<ListSplitsResponse> {
+    ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         self.list_splits_svc.ready().await?.call(request).await
     }
     async fn stage_splits(
@@ -1697,223 +1729,906 @@ impl MetastoreService for MetastoreServiceTowerBlock {
         self.inner.endpoints()
     }
 }
+type CreateIndexLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        CreateIndexRequest,
+        CreateIndexResponse,
+        crate::metastore::MetastoreError,
+    >,
+    CreateIndexRequest,
+    CreateIndexResponse,
+    crate::metastore::MetastoreError,
+>;
+type IndexMetadataLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        IndexMetadataRequest,
+        IndexMetadataResponse,
+        crate::metastore::MetastoreError,
+    >,
+    IndexMetadataRequest,
+    IndexMetadataResponse,
+    crate::metastore::MetastoreError,
+>;
+type ListIndexesMetadataLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ListIndexesMetadataRequest,
+        ListIndexesMetadataResponse,
+        crate::metastore::MetastoreError,
+    >,
+    ListIndexesMetadataRequest,
+    ListIndexesMetadataResponse,
+    crate::metastore::MetastoreError,
+>;
+type DeleteIndexLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        DeleteIndexRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    DeleteIndexRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
+type ListSplitsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ListSplitsRequest,
+        MetastoreServiceStream<ListSplitsResponse>,
+        crate::metastore::MetastoreError,
+    >,
+    ListSplitsRequest,
+    MetastoreServiceStream<ListSplitsResponse>,
+    crate::metastore::MetastoreError,
+>;
+type StageSplitsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        StageSplitsRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    StageSplitsRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
+type PublishSplitsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        PublishSplitsRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    PublishSplitsRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
+type MarkSplitsForDeletionLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        MarkSplitsForDeletionRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    MarkSplitsForDeletionRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
+type DeleteSplitsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        DeleteSplitsRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    DeleteSplitsRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
+type AddSourceLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        AddSourceRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    AddSourceRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
+type ToggleSourceLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ToggleSourceRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    ToggleSourceRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
+type DeleteSourceLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        DeleteSourceRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    DeleteSourceRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
+type ResetSourceCheckpointLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ResetSourceCheckpointRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    ResetSourceCheckpointRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
+type LastDeleteOpstampLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        LastDeleteOpstampRequest,
+        LastDeleteOpstampResponse,
+        crate::metastore::MetastoreError,
+    >,
+    LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse,
+    crate::metastore::MetastoreError,
+>;
+type CreateDeleteTaskLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        DeleteQuery,
+        DeleteTask,
+        crate::metastore::MetastoreError,
+    >,
+    DeleteQuery,
+    DeleteTask,
+    crate::metastore::MetastoreError,
+>;
+type UpdateSplitsDeleteOpstampLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        UpdateSplitsDeleteOpstampRequest,
+        UpdateSplitsDeleteOpstampResponse,
+        crate::metastore::MetastoreError,
+    >,
+    UpdateSplitsDeleteOpstampRequest,
+    UpdateSplitsDeleteOpstampResponse,
+    crate::metastore::MetastoreError,
+>;
+type ListDeleteTasksLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ListDeleteTasksRequest,
+        ListDeleteTasksResponse,
+        crate::metastore::MetastoreError,
+    >,
+    ListDeleteTasksRequest,
+    ListDeleteTasksResponse,
+    crate::metastore::MetastoreError,
+>;
+type ListStaleSplitsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ListStaleSplitsRequest,
+        ListSplitsResponse,
+        crate::metastore::MetastoreError,
+    >,
+    ListStaleSplitsRequest,
+    ListSplitsResponse,
+    crate::metastore::MetastoreError,
+>;
+type OpenShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        OpenShardsRequest,
+        OpenShardsResponse,
+        crate::metastore::MetastoreError,
+    >,
+    OpenShardsRequest,
+    OpenShardsResponse,
+    crate::metastore::MetastoreError,
+>;
+type AcquireShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        AcquireShardsRequest,
+        AcquireShardsResponse,
+        crate::metastore::MetastoreError,
+    >,
+    AcquireShardsRequest,
+    AcquireShardsResponse,
+    crate::metastore::MetastoreError,
+>;
+type DeleteShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        DeleteShardsRequest,
+        DeleteShardsResponse,
+        crate::metastore::MetastoreError,
+    >,
+    DeleteShardsRequest,
+    DeleteShardsResponse,
+    crate::metastore::MetastoreError,
+>;
+type ListShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ListShardsRequest,
+        ListShardsResponse,
+        crate::metastore::MetastoreError,
+    >,
+    ListShardsRequest,
+    ListShardsResponse,
+    crate::metastore::MetastoreError,
+>;
 #[derive(Debug, Default)]
-pub struct MetastoreServiceTowerBlockBuilder {
-    #[allow(clippy::type_complexity)]
-    create_index_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            CreateIndexRequest,
-            CreateIndexResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    index_metadata_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            IndexMetadataRequest,
-            IndexMetadataResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    list_indexes_metadata_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            ListIndexesMetadataRequest,
-            ListIndexesMetadataResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    delete_index_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            DeleteIndexRequest,
-            EmptyResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    list_splits_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            ListSplitsRequest,
-            ListSplitsResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    stage_splits_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            StageSplitsRequest,
-            EmptyResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    publish_splits_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            PublishSplitsRequest,
-            EmptyResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    mark_splits_for_deletion_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            MarkSplitsForDeletionRequest,
-            EmptyResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    delete_splits_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            DeleteSplitsRequest,
-            EmptyResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    add_source_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            AddSourceRequest,
-            EmptyResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    toggle_source_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            ToggleSourceRequest,
-            EmptyResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    delete_source_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            DeleteSourceRequest,
-            EmptyResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    reset_source_checkpoint_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            ResetSourceCheckpointRequest,
-            EmptyResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    last_delete_opstamp_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            LastDeleteOpstampRequest,
-            LastDeleteOpstampResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    create_delete_task_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            DeleteQuery,
-            DeleteTask,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    update_splits_delete_opstamp_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            UpdateSplitsDeleteOpstampRequest,
-            UpdateSplitsDeleteOpstampResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    list_delete_tasks_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            ListDeleteTasksRequest,
-            ListDeleteTasksResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    list_stale_splits_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            ListStaleSplitsRequest,
-            ListSplitsResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    open_shards_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            OpenShardsRequest,
-            OpenShardsResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    acquire_shards_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            AcquireShardsRequest,
-            AcquireShardsResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    delete_shards_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            DeleteShardsRequest,
-            DeleteShardsResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    list_shards_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            ListShardsRequest,
-            ListShardsResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
+pub struct MetastoreServiceTowerLayerStack {
+    create_index_layers: Vec<CreateIndexLayer>,
+    index_metadata_layers: Vec<IndexMetadataLayer>,
+    list_indexes_metadata_layers: Vec<ListIndexesMetadataLayer>,
+    delete_index_layers: Vec<DeleteIndexLayer>,
+    list_splits_layers: Vec<ListSplitsLayer>,
+    stage_splits_layers: Vec<StageSplitsLayer>,
+    publish_splits_layers: Vec<PublishSplitsLayer>,
+    mark_splits_for_deletion_layers: Vec<MarkSplitsForDeletionLayer>,
+    delete_splits_layers: Vec<DeleteSplitsLayer>,
+    add_source_layers: Vec<AddSourceLayer>,
+    toggle_source_layers: Vec<ToggleSourceLayer>,
+    delete_source_layers: Vec<DeleteSourceLayer>,
+    reset_source_checkpoint_layers: Vec<ResetSourceCheckpointLayer>,
+    last_delete_opstamp_layers: Vec<LastDeleteOpstampLayer>,
+    create_delete_task_layers: Vec<CreateDeleteTaskLayer>,
+    update_splits_delete_opstamp_layers: Vec<UpdateSplitsDeleteOpstampLayer>,
+    list_delete_tasks_layers: Vec<ListDeleteTasksLayer>,
+    list_stale_splits_layers: Vec<ListStaleSplitsLayer>,
+    open_shards_layers: Vec<OpenShardsLayer>,
+    acquire_shards_layers: Vec<AcquireShardsLayer>,
+    delete_shards_layers: Vec<DeleteShardsLayer>,
+    list_shards_layers: Vec<ListShardsLayer>,
 }
-impl MetastoreServiceTowerBlockBuilder {
-    pub fn shared_layer<L>(mut self, layer: L) -> Self
+impl MetastoreServiceTowerLayerStack {
+    pub fn stack_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Clone + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    CreateIndexRequest,
+                    CreateIndexResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                CreateIndexRequest,
+                CreateIndexResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                CreateIndexRequest,
+                Response = CreateIndexResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                CreateIndexRequest,
+                CreateIndexResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<CreateIndexRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    IndexMetadataRequest,
+                    IndexMetadataResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                IndexMetadataRequest,
+                IndexMetadataResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                IndexMetadataRequest,
+                Response = IndexMetadataResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                IndexMetadataRequest,
+                IndexMetadataResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<IndexMetadataRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListIndexesMetadataRequest,
+                    ListIndexesMetadataResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListIndexesMetadataRequest,
+                ListIndexesMetadataResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                ListIndexesMetadataRequest,
+                Response = ListIndexesMetadataResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListIndexesMetadataRequest,
+                ListIndexesMetadataResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            ListIndexesMetadataRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteIndexRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteIndexRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                DeleteIndexRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteIndexRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<DeleteIndexRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListSplitsRequest,
+                    MetastoreServiceStream<ListSplitsResponse>,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListSplitsRequest,
+                MetastoreServiceStream<ListSplitsResponse>,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                ListSplitsRequest,
+                Response = MetastoreServiceStream<ListSplitsResponse>,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListSplitsRequest,
+                MetastoreServiceStream<ListSplitsResponse>,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<ListSplitsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    StageSplitsRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                StageSplitsRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                StageSplitsRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                StageSplitsRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<StageSplitsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    PublishSplitsRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                PublishSplitsRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                PublishSplitsRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                PublishSplitsRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<PublishSplitsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    MarkSplitsForDeletionRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                MarkSplitsForDeletionRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                MarkSplitsForDeletionRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                MarkSplitsForDeletionRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            MarkSplitsForDeletionRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteSplitsRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteSplitsRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                DeleteSplitsRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteSplitsRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<DeleteSplitsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    AddSourceRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                AddSourceRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                AddSourceRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                AddSourceRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<AddSourceRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ToggleSourceRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ToggleSourceRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                ToggleSourceRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ToggleSourceRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<ToggleSourceRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteSourceRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteSourceRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                DeleteSourceRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteSourceRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<DeleteSourceRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ResetSourceCheckpointRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ResetSourceCheckpointRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                ResetSourceCheckpointRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ResetSourceCheckpointRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            ResetSourceCheckpointRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    LastDeleteOpstampRequest,
+                    LastDeleteOpstampResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                LastDeleteOpstampRequest,
+                LastDeleteOpstampResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                LastDeleteOpstampRequest,
+                Response = LastDeleteOpstampResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                LastDeleteOpstampRequest,
+                LastDeleteOpstampResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<LastDeleteOpstampRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteQuery,
+                    DeleteTask,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteQuery,
+                DeleteTask,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                DeleteQuery,
+                Response = DeleteTask,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteQuery,
+                DeleteTask,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<DeleteQuery>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    UpdateSplitsDeleteOpstampRequest,
+                    UpdateSplitsDeleteOpstampResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                UpdateSplitsDeleteOpstampRequest,
+                UpdateSplitsDeleteOpstampResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                UpdateSplitsDeleteOpstampRequest,
+                Response = UpdateSplitsDeleteOpstampResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                UpdateSplitsDeleteOpstampRequest,
+                UpdateSplitsDeleteOpstampResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            UpdateSplitsDeleteOpstampRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListDeleteTasksRequest,
+                    ListDeleteTasksResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListDeleteTasksRequest,
+                ListDeleteTasksResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                ListDeleteTasksRequest,
+                Response = ListDeleteTasksResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListDeleteTasksRequest,
+                ListDeleteTasksResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<ListDeleteTasksRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListStaleSplitsRequest,
+                    ListSplitsResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListStaleSplitsRequest,
+                ListSplitsResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                ListStaleSplitsRequest,
+                Response = ListSplitsResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListStaleSplitsRequest,
+                ListSplitsResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<ListStaleSplitsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    OpenShardsRequest,
+                    OpenShardsResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                OpenShardsRequest,
+                OpenShardsResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                OpenShardsRequest,
+                Response = OpenShardsResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                OpenShardsRequest,
+                OpenShardsResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<OpenShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    AcquireShardsRequest,
+                    AcquireShardsResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                AcquireShardsRequest,
+                AcquireShardsResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                AcquireShardsRequest,
+                Response = AcquireShardsResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                AcquireShardsRequest,
+                AcquireShardsResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<AcquireShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteShardsRequest,
+                    DeleteShardsResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteShardsRequest,
+                DeleteShardsResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                DeleteShardsRequest,
+                Response = DeleteShardsResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteShardsRequest,
+                DeleteShardsResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<DeleteShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListShardsRequest,
+                    ListShardsResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListShardsRequest,
+                ListShardsResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                ListShardsRequest,
+                Response = ListShardsResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListShardsRequest,
+                ListShardsResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<ListShardsRequest>>::Future: Send + 'static,
+    {
+        self.create_index_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.index_metadata_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.list_indexes_metadata_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.delete_index_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.list_splits_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.stage_splits_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.publish_splits_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.mark_splits_for_deletion_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.delete_splits_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.add_source_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.toggle_source_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.delete_source_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.reset_source_checkpoint_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.last_delete_opstamp_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.create_delete_task_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.update_splits_delete_opstamp_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.list_delete_tasks_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.list_stale_splits_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.open_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.acquire_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.delete_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.list_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self
+    }
+    pub fn stack_create_index_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    CreateIndexRequest,
+                    CreateIndexResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 CreateIndexRequest,
                 Response = CreateIndexResponse,
                 Error = crate::metastore::MetastoreError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<CreateIndexRequest>>::Future: Send + 'static,
+    {
+        self.create_index_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_index_metadata_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    IndexMetadataRequest,
+                    IndexMetadataResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 IndexMetadataRequest,
                 Response = IndexMetadataResponse,
                 Error = crate::metastore::MetastoreError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<IndexMetadataRequest>>::Future: Send + 'static,
+    {
+        self.index_metadata_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_list_indexes_metadata_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListIndexesMetadataRequest,
+                    ListIndexesMetadataResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 ListIndexesMetadataRequest,
                 Response = ListIndexesMetadataResponse,
@@ -1922,261 +2637,20 @@ impl MetastoreServiceTowerBlockBuilder {
         <L::Service as tower::Service<
             ListIndexesMetadataRequest,
         >>::Future: Send + 'static,
-        L::Service: tower::Service<
-                DeleteIndexRequest,
-                Response = EmptyResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<DeleteIndexRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                ListSplitsRequest,
-                Response = ListSplitsResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<ListSplitsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                StageSplitsRequest,
-                Response = EmptyResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<StageSplitsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                PublishSplitsRequest,
-                Response = EmptyResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<PublishSplitsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                MarkSplitsForDeletionRequest,
-                Response = EmptyResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            MarkSplitsForDeletionRequest,
-        >>::Future: Send + 'static,
-        L::Service: tower::Service<
-                DeleteSplitsRequest,
-                Response = EmptyResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<DeleteSplitsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                AddSourceRequest,
-                Response = EmptyResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<AddSourceRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                ToggleSourceRequest,
-                Response = EmptyResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<ToggleSourceRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                DeleteSourceRequest,
-                Response = EmptyResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<DeleteSourceRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                ResetSourceCheckpointRequest,
-                Response = EmptyResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            ResetSourceCheckpointRequest,
-        >>::Future: Send + 'static,
-        L::Service: tower::Service<
-                LastDeleteOpstampRequest,
-                Response = LastDeleteOpstampResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<LastDeleteOpstampRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                DeleteQuery,
-                Response = DeleteTask,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<DeleteQuery>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                UpdateSplitsDeleteOpstampRequest,
-                Response = UpdateSplitsDeleteOpstampResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            UpdateSplitsDeleteOpstampRequest,
-        >>::Future: Send + 'static,
-        L::Service: tower::Service<
-                ListDeleteTasksRequest,
-                Response = ListDeleteTasksResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<ListDeleteTasksRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                ListStaleSplitsRequest,
-                Response = ListSplitsResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<ListStaleSplitsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                OpenShardsRequest,
-                Response = OpenShardsResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<OpenShardsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                AcquireShardsRequest,
-                Response = AcquireShardsResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<AcquireShardsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                DeleteShardsRequest,
-                Response = DeleteShardsResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<DeleteShardsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                ListShardsRequest,
-                Response = ListShardsResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<ListShardsRequest>>::Future: Send + 'static,
     {
-        self
-            .create_index_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .index_metadata_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .list_indexes_metadata_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .delete_index_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .list_splits_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .stage_splits_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .publish_splits_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .mark_splits_for_deletion_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .delete_splits_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .add_source_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .toggle_source_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .delete_source_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .reset_source_checkpoint_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .last_delete_opstamp_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .create_delete_task_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .update_splits_delete_opstamp_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .list_delete_tasks_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .list_stale_splits_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .open_shards_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .acquire_shards_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .delete_shards_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self.list_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.list_indexes_metadata_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn create_index_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_delete_index_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                CreateIndexRequest,
-                Response = CreateIndexResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<CreateIndexRequest>>::Future: Send + 'static,
-    {
-        self.create_index_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn index_metadata_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                IndexMetadataRequest,
-                Response = IndexMetadataResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<IndexMetadataRequest>>::Future: Send + 'static,
-    {
-        self.index_metadata_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn list_indexes_metadata_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                ListIndexesMetadataRequest,
-                Response = ListIndexesMetadataResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            ListIndexesMetadataRequest,
-        >>::Future: Send + 'static,
-    {
-        self
-            .list_indexes_metadata_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
-        self
-    }
-    pub fn delete_index_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteIndexRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 DeleteIndexRequest,
                 Response = EmptyResponse,
@@ -2184,25 +2658,37 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<DeleteIndexRequest>>::Future: Send + 'static,
     {
-        self.delete_index_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.delete_index_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn list_splits_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_list_splits_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListSplitsRequest,
+                    MetastoreServiceStream<ListSplitsResponse>,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 ListSplitsRequest,
-                Response = ListSplitsResponse,
+                Response = MetastoreServiceStream<ListSplitsResponse>,
                 Error = crate::metastore::MetastoreError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<ListSplitsRequest>>::Future: Send + 'static,
     {
-        self.list_splits_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.list_splits_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn stage_splits_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_stage_splits_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    StageSplitsRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 StageSplitsRequest,
                 Response = EmptyResponse,
@@ -2210,12 +2696,18 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<StageSplitsRequest>>::Future: Send + 'static,
     {
-        self.stage_splits_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.stage_splits_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn publish_splits_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_publish_splits_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    PublishSplitsRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 PublishSplitsRequest,
                 Response = EmptyResponse,
@@ -2223,12 +2715,18 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<PublishSplitsRequest>>::Future: Send + 'static,
     {
-        self.publish_splits_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.publish_splits_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn mark_splits_for_deletion_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_mark_splits_for_deletion_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    MarkSplitsForDeletionRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 MarkSplitsForDeletionRequest,
                 Response = EmptyResponse,
@@ -2238,15 +2736,19 @@ impl MetastoreServiceTowerBlockBuilder {
             MarkSplitsForDeletionRequest,
         >>::Future: Send + 'static,
     {
-        self
-            .mark_splits_for_deletion_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.mark_splits_for_deletion_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn delete_splits_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_delete_splits_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteSplitsRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 DeleteSplitsRequest,
                 Response = EmptyResponse,
@@ -2254,12 +2756,18 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<DeleteSplitsRequest>>::Future: Send + 'static,
     {
-        self.delete_splits_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.delete_splits_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn add_source_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_add_source_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    AddSourceRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 AddSourceRequest,
                 Response = EmptyResponse,
@@ -2267,12 +2775,18 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<AddSourceRequest>>::Future: Send + 'static,
     {
-        self.add_source_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.add_source_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn toggle_source_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_toggle_source_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ToggleSourceRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 ToggleSourceRequest,
                 Response = EmptyResponse,
@@ -2280,12 +2794,18 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<ToggleSourceRequest>>::Future: Send + 'static,
     {
-        self.toggle_source_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.toggle_source_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn delete_source_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_delete_source_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteSourceRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 DeleteSourceRequest,
                 Response = EmptyResponse,
@@ -2293,12 +2813,18 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<DeleteSourceRequest>>::Future: Send + 'static,
     {
-        self.delete_source_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.delete_source_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn reset_source_checkpoint_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_reset_source_checkpoint_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ResetSourceCheckpointRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 ResetSourceCheckpointRequest,
                 Response = EmptyResponse,
@@ -2308,15 +2834,19 @@ impl MetastoreServiceTowerBlockBuilder {
             ResetSourceCheckpointRequest,
         >>::Future: Send + 'static,
     {
-        self
-            .reset_source_checkpoint_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.reset_source_checkpoint_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn last_delete_opstamp_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_last_delete_opstamp_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    LastDeleteOpstampRequest,
+                    LastDeleteOpstampResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 LastDeleteOpstampRequest,
                 Response = LastDeleteOpstampResponse,
@@ -2324,15 +2854,19 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<LastDeleteOpstampRequest>>::Future: Send + 'static,
     {
-        self
-            .last_delete_opstamp_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.last_delete_opstamp_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn create_delete_task_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_create_delete_task_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteQuery,
+                    DeleteTask,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 DeleteQuery,
                 Response = DeleteTask,
@@ -2340,15 +2874,19 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<DeleteQuery>>::Future: Send + 'static,
     {
-        self
-            .create_delete_task_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.create_delete_task_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn update_splits_delete_opstamp_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_update_splits_delete_opstamp_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    UpdateSplitsDeleteOpstampRequest,
+                    UpdateSplitsDeleteOpstampResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 UpdateSplitsDeleteOpstampRequest,
                 Response = UpdateSplitsDeleteOpstampResponse,
@@ -2358,15 +2896,19 @@ impl MetastoreServiceTowerBlockBuilder {
             UpdateSplitsDeleteOpstampRequest,
         >>::Future: Send + 'static,
     {
-        self
-            .update_splits_delete_opstamp_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.update_splits_delete_opstamp_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn list_delete_tasks_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_list_delete_tasks_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListDeleteTasksRequest,
+                    ListDeleteTasksResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 ListDeleteTasksRequest,
                 Response = ListDeleteTasksResponse,
@@ -2374,15 +2916,18 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<ListDeleteTasksRequest>>::Future: Send + 'static,
     {
-        self
-            .list_delete_tasks_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.list_delete_tasks_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn list_stale_splits_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_list_stale_splits_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListStaleSplitsRequest,
+                    ListSplitsResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 ListStaleSplitsRequest,
                 Response = ListSplitsResponse,
@@ -2390,15 +2935,18 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<ListStaleSplitsRequest>>::Future: Send + 'static,
     {
-        self
-            .list_stale_splits_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.list_stale_splits_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn open_shards_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_open_shards_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    OpenShardsRequest,
+                    OpenShardsResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 OpenShardsRequest,
                 Response = OpenShardsResponse,
@@ -2406,12 +2954,18 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<OpenShardsRequest>>::Future: Send + 'static,
     {
-        self.open_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.open_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn acquire_shards_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_acquire_shards_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    AcquireShardsRequest,
+                    AcquireShardsResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 AcquireShardsRequest,
                 Response = AcquireShardsResponse,
@@ -2419,12 +2973,18 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<AcquireShardsRequest>>::Future: Send + 'static,
     {
-        self.acquire_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.acquire_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn delete_shards_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_delete_shards_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteShardsRequest,
+                    DeleteShardsResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 DeleteShardsRequest,
                 Response = DeleteShardsResponse,
@@ -2432,12 +2992,18 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<DeleteShardsRequest>>::Future: Send + 'static,
     {
-        self.delete_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.delete_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn list_shards_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_list_shards_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListShardsRequest,
+                    ListShardsResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 ListShardsRequest,
                 Response = ListShardsResponse,
@@ -2445,7 +3011,7 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<ListShardsRequest>>::Future: Send + 'static,
     {
-        self.list_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.list_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> MetastoreServiceClient
@@ -2458,17 +3024,26 @@ impl MetastoreServiceTowerBlockBuilder {
         self,
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> MetastoreServiceClient {
         self.build_from_boxed(
-            Box::new(MetastoreServiceClient::from_channel(addr, channel)),
+            Box::new(
+                MetastoreServiceClient::from_channel(addr, channel, max_message_size),
+            ),
         )
     }
     pub fn build_from_balance_channel(
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> MetastoreServiceClient {
         self.build_from_boxed(
-            Box::new(MetastoreServiceClient::from_balance_channel(balance_channel)),
+            Box::new(
+                MetastoreServiceClient::from_balance_channel(
+                    balance_channel,
+                    max_message_size,
+                ),
+            ),
         )
     }
     pub fn build_from_mailbox<A>(
@@ -2485,126 +3060,183 @@ impl MetastoreServiceTowerBlockBuilder {
         self,
         boxed_instance: Box<dyn MetastoreService>,
     ) -> MetastoreServiceClient {
-        let create_index_svc = if let Some(layer) = self.create_index_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let index_metadata_svc = if let Some(layer) = self.index_metadata_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let list_indexes_metadata_svc = if let Some(layer)
-            = self.list_indexes_metadata_layer
-        {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let delete_index_svc = if let Some(layer) = self.delete_index_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let list_splits_svc = if let Some(layer) = self.list_splits_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let stage_splits_svc = if let Some(layer) = self.stage_splits_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let publish_splits_svc = if let Some(layer) = self.publish_splits_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let mark_splits_for_deletion_svc = if let Some(layer)
-            = self.mark_splits_for_deletion_layer
-        {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let delete_splits_svc = if let Some(layer) = self.delete_splits_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let add_source_svc = if let Some(layer) = self.add_source_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let toggle_source_svc = if let Some(layer) = self.toggle_source_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let delete_source_svc = if let Some(layer) = self.delete_source_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let reset_source_checkpoint_svc = if let Some(layer)
-            = self.reset_source_checkpoint_layer
-        {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let last_delete_opstamp_svc = if let Some(layer) = self.last_delete_opstamp_layer
-        {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let create_delete_task_svc = if let Some(layer) = self.create_delete_task_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let update_splits_delete_opstamp_svc = if let Some(layer)
-            = self.update_splits_delete_opstamp_layer
-        {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let list_delete_tasks_svc = if let Some(layer) = self.list_delete_tasks_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let list_stale_splits_svc = if let Some(layer) = self.list_stale_splits_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let open_shards_svc = if let Some(layer) = self.open_shards_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let acquire_shards_svc = if let Some(layer) = self.acquire_shards_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let delete_shards_svc = if let Some(layer) = self.delete_shards_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let list_shards_svc = if let Some(layer) = self.list_shards_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let tower_block = MetastoreServiceTowerBlock {
+        let create_index_svc = self
+            .create_index_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let index_metadata_svc = self
+            .index_metadata_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let list_indexes_metadata_svc = self
+            .list_indexes_metadata_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let delete_index_svc = self
+            .delete_index_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let list_splits_svc = self
+            .list_splits_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let stage_splits_svc = self
+            .stage_splits_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let publish_splits_svc = self
+            .publish_splits_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let mark_splits_for_deletion_svc = self
+            .mark_splits_for_deletion_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let delete_splits_svc = self
+            .delete_splits_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let add_source_svc = self
+            .add_source_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let toggle_source_svc = self
+            .toggle_source_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let delete_source_svc = self
+            .delete_source_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let reset_source_checkpoint_svc = self
+            .reset_source_checkpoint_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let last_delete_opstamp_svc = self
+            .last_delete_opstamp_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let create_delete_task_svc = self
+            .create_delete_task_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let update_splits_delete_opstamp_svc = self
+            .update_splits_delete_opstamp_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let list_delete_tasks_svc = self
+            .list_delete_tasks_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let list_stale_splits_svc = self
+            .list_stale_splits_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let open_shards_svc = self
+            .open_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let acquire_shards_svc = self
+            .acquire_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let delete_shards_svc = self
+            .delete_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let list_shards_svc = self
+            .list_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let tower_svc_stack = MetastoreServiceTowerServiceStack {
             inner: boxed_instance.clone(),
             create_index_svc,
             index_metadata_svc,
@@ -2629,7 +3261,7 @@ impl MetastoreServiceTowerBlockBuilder {
             delete_shards_svc,
             list_shards_svc,
         };
-        MetastoreServiceClient::new(tower_block)
+        MetastoreServiceClient::new(tower_svc_stack)
     }
 }
 #[derive(Debug, Clone)]
@@ -2733,9 +3365,12 @@ where
         >
         + tower::Service<
             ListSplitsRequest,
-            Response = ListSplitsResponse,
+            Response = MetastoreServiceStream<ListSplitsResponse>,
             Error = crate::metastore::MetastoreError,
-            Future = BoxFuture<ListSplitsResponse, crate::metastore::MetastoreError>,
+            Future = BoxFuture<
+                MetastoreServiceStream<ListSplitsResponse>,
+                crate::metastore::MetastoreError,
+            >,
         >
         + tower::Service<
             StageSplitsRequest,
@@ -2873,7 +3508,7 @@ where
     async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
-    ) -> crate::metastore::MetastoreResult<ListSplitsResponse> {
+    ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         self.call(request).await
     }
     async fn stage_splits(
@@ -3068,11 +3703,15 @@ where
     async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
-    ) -> crate::metastore::MetastoreResult<ListSplitsResponse> {
+    ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         self.inner
             .list_splits(request)
             .await
-            .map(|response| response.into_inner())
+            .map(|response| {
+                let streaming: tonic::Streaming<_> = response.into_inner();
+                let stream = quickwit_common::ServiceStream::from(streaming);
+                stream.map_err(|error| error.into())
+            })
             .map_err(|error| error.into())
     }
     async fn stage_splits(
@@ -3320,15 +3959,18 @@ for MetastoreServiceGrpcServerAdapter {
             .map(tonic::Response::new)
             .map_err(|error| error.into())
     }
+    type ListSplitsStream = quickwit_common::ServiceStream<
+        tonic::Result<ListSplitsResponse>,
+    >;
     async fn list_splits(
         &self,
         request: tonic::Request<ListSplitsRequest>,
-    ) -> Result<tonic::Response<ListSplitsResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<Self::ListSplitsStream>, tonic::Status> {
         self.inner
             .clone()
             .list_splits(request.into_inner())
             .await
-            .map(tonic::Response::new)
+            .map(|stream| tonic::Response::new(stream.map_err(|error| error.into())))
             .map_err(|error| error.into())
     }
     async fn stage_splits(
@@ -3524,6 +4166,52 @@ pub mod metastore_service_grpc_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    /// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
+    ///
+    /// I. Index and splits management.
+    ///
+    /// Quickwit needs a way to ensure that we can cleanup unused files,
+    /// and this process needs to be resilient to any fail-stop failures.
+    /// We rely on atomically transitioning the status of splits.
+    ///
+    /// The split state goes through the following life cycle:
+    /// 1. `Staged`
+    ///   - Start uploading the split files.
+    /// 2. `Published`
+    ///   - Uploading the split files is complete and the split is searchable.
+    /// 3. `MarkedForDeletion`
+    ///   - Mark the split for deletion.
+    ///
+    /// If a split has a file in the storage, it MUST be registered in the metastore,
+    /// and its state can be as follows:
+    /// - `Staged`: The split is almost ready. Some of its files may have been uploaded in the storage.
+    /// - `Published`: The split is ready and published.
+    /// - `MarkedForDeletion`: The split is marked for deletion.
+    ///
+    /// Before creating any file, we need to stage the split. If there is a failure, upon recovery, we
+    /// schedule for deletion all the staged splits. A client may not necessarily remove files from
+    /// storage right after marking it for deletion. A CLI client may delete files right away, but a
+    /// more serious deployment should probably only delete those files after a grace period so that the
+    /// running search queries can complete.
+    ///
+    /// II. Delete tasks management.
+    ///
+    /// A delete task is defined on a given index and by a search query. It can be
+    /// applied to all the splits of the index.
+    ///
+    /// Quickwit needs a way to track that a delete task has been applied to a split. This is ensured
+    /// by two mechanisms:
+    /// - On creation of a delete task, we give to the task a monotically increasing opstamp (uniqueness
+    ///   and monotonically increasing must be true at the index level).
+    /// - When a delete task is executed on a split, that is when the documents matched by the search
+    ///   query are removed from the splits, we update the split's `delete_opstamp` to the value of the
+    ///   task's opstamp. This marks the split as "up-to-date" regarding this delete task. If new delete
+    ///   tasks are added, we will know that we need to run these delete tasks on the splits as its
+    ///   `delete_optstamp` will be inferior to the `opstamp` of the new tasks.
+    ///
+    /// For splits created after a given delete task, Quickwit's indexing ensures that these splits
+    /// are created with a `delete_opstamp` equal the latest opstamp of the tasks of the
+    /// corresponding index.
     #[derive(Debug, Clone)]
     pub struct MetastoreServiceGrpcClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -3605,6 +4293,9 @@ pub mod metastore_service_grpc_client {
             self
         }
         /// Creates an index.
+        ///
+        /// This API creates a new index in the metastore.
+        /// An error will occur if an index that already exists in the storage is specified.
         pub async fn create_index(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateIndexRequest>,
@@ -3632,7 +4323,7 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Gets an index metadata.
+        /// Returns the `IndexMetadata` of an index identified by its IndexID or its IndexUID.
         pub async fn index_metadata(
             &mut self,
             request: impl tonic::IntoRequest<super::IndexMetadataRequest>,
@@ -3719,12 +4410,12 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Gets splits from index.
+        /// Streams splits from index.
         pub async fn list_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::ListSplitsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::ListSplitsResponse>,
+            tonic::Response<tonic::codec::Streaming<super::ListSplitsResponse>>,
             tonic::Status,
         > {
             self.inner
@@ -3745,7 +4436,7 @@ pub mod metastore_service_grpc_client {
                 .insert(
                     GrpcMethod::new("quickwit.metastore.MetastoreService", "ListSplits"),
                 );
-            self.inner.unary(req, path, codec).await
+            self.inner.server_streaming(req, path, codec).await
         }
         /// Stages several splits.
         pub async fn stage_splits(
@@ -4086,7 +4777,7 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// / Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
+        /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
         pub async fn list_stale_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::ListStaleSplitsRequest>,
@@ -4117,6 +4808,12 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Shard API
+        ///
+        /// Note that for the file-backed metastore implementation, the requests are not processed atomically.
+        /// Indeed, each request comprises one or more subrequests that target different indexes and sources processed
+        /// independently. Responses list the requests that succeeded or failed in the fields `successes` and
+        /// `failures`.
         pub async fn open_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::OpenShardsRequest>,
@@ -4177,6 +4874,8 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
+        /// If the shard did not exist to begin with, the operation is successful and does not return any error.
         pub async fn delete_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteShardsRequest>,
@@ -4244,6 +4943,9 @@ pub mod metastore_service_grpc_server {
     #[async_trait]
     pub trait MetastoreServiceGrpc: Send + Sync + 'static {
         /// Creates an index.
+        ///
+        /// This API creates a new index in the metastore.
+        /// An error will occur if an index that already exists in the storage is specified.
         async fn create_index(
             &self,
             request: tonic::Request<super::CreateIndexRequest>,
@@ -4251,7 +4953,7 @@ pub mod metastore_service_grpc_server {
             tonic::Response<super::CreateIndexResponse>,
             tonic::Status,
         >;
-        /// Gets an index metadata.
+        /// Returns the `IndexMetadata` of an index identified by its IndexID or its IndexUID.
         async fn index_metadata(
             &self,
             request: tonic::Request<super::IndexMetadataRequest>,
@@ -4272,14 +4974,17 @@ pub mod metastore_service_grpc_server {
             &self,
             request: tonic::Request<super::DeleteIndexRequest>,
         ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
-        /// Gets splits from index.
+        /// Server streaming response type for the ListSplits method.
+        type ListSplitsStream: futures_core::Stream<
+                Item = std::result::Result<super::ListSplitsResponse, tonic::Status>,
+            >
+            + Send
+            + 'static;
+        /// Streams splits from index.
         async fn list_splits(
             &self,
             request: tonic::Request<super::ListSplitsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListSplitsResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<Self::ListSplitsStream>, tonic::Status>;
         /// Stages several splits.
         async fn stage_splits(
             &self,
@@ -4349,7 +5054,7 @@ pub mod metastore_service_grpc_server {
             tonic::Response<super::ListDeleteTasksResponse>,
             tonic::Status,
         >;
-        /// / Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
+        /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
         async fn list_stale_splits(
             &self,
             request: tonic::Request<super::ListStaleSplitsRequest>,
@@ -4357,6 +5062,12 @@ pub mod metastore_service_grpc_server {
             tonic::Response<super::ListSplitsResponse>,
             tonic::Status,
         >;
+        /// Shard API
+        ///
+        /// Note that for the file-backed metastore implementation, the requests are not processed atomically.
+        /// Indeed, each request comprises one or more subrequests that target different indexes and sources processed
+        /// independently. Responses list the requests that succeeded or failed in the fields `successes` and
+        /// `failures`.
         async fn open_shards(
             &self,
             request: tonic::Request<super::OpenShardsRequest>,
@@ -4374,6 +5085,8 @@ pub mod metastore_service_grpc_server {
             tonic::Response<super::AcquireShardsResponse>,
             tonic::Status,
         >;
+        /// Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
+        /// If the shard did not exist to begin with, the operation is successful and does not return any error.
         async fn delete_shards(
             &self,
             request: tonic::Request<super::DeleteShardsRequest>,
@@ -4389,6 +5102,52 @@ pub mod metastore_service_grpc_server {
             tonic::Status,
         >;
     }
+    /// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
+    ///
+    /// I. Index and splits management.
+    ///
+    /// Quickwit needs a way to ensure that we can cleanup unused files,
+    /// and this process needs to be resilient to any fail-stop failures.
+    /// We rely on atomically transitioning the status of splits.
+    ///
+    /// The split state goes through the following life cycle:
+    /// 1. `Staged`
+    ///   - Start uploading the split files.
+    /// 2. `Published`
+    ///   - Uploading the split files is complete and the split is searchable.
+    /// 3. `MarkedForDeletion`
+    ///   - Mark the split for deletion.
+    ///
+    /// If a split has a file in the storage, it MUST be registered in the metastore,
+    /// and its state can be as follows:
+    /// - `Staged`: The split is almost ready. Some of its files may have been uploaded in the storage.
+    /// - `Published`: The split is ready and published.
+    /// - `MarkedForDeletion`: The split is marked for deletion.
+    ///
+    /// Before creating any file, we need to stage the split. If there is a failure, upon recovery, we
+    /// schedule for deletion all the staged splits. A client may not necessarily remove files from
+    /// storage right after marking it for deletion. A CLI client may delete files right away, but a
+    /// more serious deployment should probably only delete those files after a grace period so that the
+    /// running search queries can complete.
+    ///
+    /// II. Delete tasks management.
+    ///
+    /// A delete task is defined on a given index and by a search query. It can be
+    /// applied to all the splits of the index.
+    ///
+    /// Quickwit needs a way to track that a delete task has been applied to a split. This is ensured
+    /// by two mechanisms:
+    /// - On creation of a delete task, we give to the task a monotically increasing opstamp (uniqueness
+    ///   and monotonically increasing must be true at the index level).
+    /// - When a delete task is executed on a split, that is when the documents matched by the search
+    ///   query are removed from the splits, we update the split's `delete_opstamp` to the value of the
+    ///   task's opstamp. This marks the split as "up-to-date" regarding this delete task. If new delete
+    ///   tasks are added, we will know that we need to run these delete tasks on the splits as its
+    ///   `delete_optstamp` will be inferior to the `opstamp` of the new tasks.
+    ///
+    /// For splits created after a given delete task, Quickwit's indexing ensures that these splits
+    /// are created with a `delete_opstamp` equal the latest opstamp of the tasks of the
+    /// corresponding index.
     #[derive(Debug)]
     pub struct MetastoreServiceGrpcServer<T: MetastoreServiceGrpc> {
         inner: _Inner<T>,
@@ -4658,11 +5417,12 @@ pub mod metastore_service_grpc_server {
                     struct ListSplitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
-                    > tonic::server::UnaryService<super::ListSplitsRequest>
+                    > tonic::server::ServerStreamingService<super::ListSplitsRequest>
                     for ListSplitsSvc<T> {
                         type Response = super::ListSplitsResponse;
+                        type ResponseStream = T::ListSplitsStream;
                         type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
+                            tonic::Response<Self::ResponseStream>,
                             tonic::Status,
                         >;
                         fn call(
@@ -4692,7 +5452,7 @@ pub mod metastore_service_grpc_server {
                                 max_decoding_message_size,
                                 max_encoding_message_size,
                             );
-                        let res = grpc.unary(method, req).await;
+                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

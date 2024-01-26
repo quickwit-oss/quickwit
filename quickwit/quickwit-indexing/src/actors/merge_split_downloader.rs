@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -160,7 +160,7 @@ mod tests {
         let split_store = {
             let mut storage_builder = RamStorageBuilder::default();
             for split in &splits_to_merge {
-                let buffer = SplitPayloadBuilder::get_split_payload(&[], &[1, 2, 3])?
+                let buffer = SplitPayloadBuilder::get_split_payload(&[], &[], &[1, 2, 3])?
                     .read_all()
                     .await?;
                 storage_builder = storage_builder.put(&split_file(split.split_id()), &buffer);

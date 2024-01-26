@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -53,7 +53,7 @@ message IngestSuccess {
   uint32 subrequest_id = 1;
   string index_uid = 2;
   string source_id = 3;
-  uint64 shard_id = 4;
+  quickwit.ingest.ShardId shard_id = 4;
   // Replication position inclusive.
   quickwit.ingest.Position replication_position_inclusive = 5;
 }

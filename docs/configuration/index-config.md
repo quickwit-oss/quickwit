@@ -1,6 +1,7 @@
 ---
 title: Index configuration
 sidebar_position: 3
+toc_max_heading_level: 4
 ---
 
 This page describes how to configure an index.
@@ -20,7 +21,7 @@ The index configuration format is YAML. When a key is absent from the configurat
 Here is a complete example suited for the HDFS logs dataset:
 
 ```yaml
-version: 0.6 # File format version.
+version: 0.7 # File format version.
 
 index_id: "hdfs"
 
@@ -82,11 +83,11 @@ The file storage will not work when running quickwit in distributed mode. Instea
 
 ## Doc mapping
 
-The doc mapping defines how a document and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, datetime, bool, i64, u64, f64).
+The doc mapping defines how a document and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, bytes, datetime, bool, i64, u64, f64, ip, json).
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `field_mappings` | Collection of field mapping, each having its own data type (text, binary, datetime, bool, i64, u64, f64).   | `[]` |
+| `field_mappings` | Collection of field mapping, each having its own data type (text, binary, datetime, bool, i64, u64, f64, ip, json).   | `[]` |
 | `mode`        | Defines how quickwit should handle document fields that are not present in the `field_mappings`. In particular, the "dynamic" mode makes it possible to use quickwit in a schemaless manner. (See [mode](#mode)) | `dynamic`
 | `dynamic_mapping` | This parameter is only allowed when `mode` is set to `dynamic`. It then defines whether dynamically mapped fields should be indexed, stored, etc.  | (See [mode](#mode))
 | `tag_fields` | Collection of fields* already defined in `field_mappings` whose values will be stored as part of the `tags` metadata. [Learn more about tags](../overview/concepts/querying.md#tag-pruning). | `[]` |
@@ -101,7 +102,7 @@ The doc mapping defines how a document and the fields it contains are stored and
 ### Field types
 
 Each field[^1] has a type that indicates the kind of data it contains, such as integer on 64 bits or text.
-Quickwit supports the following raw types [`text`](#text-type), [`i64`](#numeric-types-i64-u64-and-f64-type), [`u64`](#numeric-types-i64-u64-and-f64-type), [`f64`](#numeric-types-i64-u64-and-f64-type), [`datetime`](#datetime-type), [`bool`](#bool-type), [`ip`](#ip-type), and [`bytes`](#bytes-type), and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
+Quickwit supports the following raw types [`text`](#text-type), [`i64`](#numeric-types-i64-u64-and-f64-type), [`u64`](#numeric-types-i64-u64-and-f64-type), [`f64`](#numeric-types-i64-u64-and-f64-type), [`datetime`](#datetime-type), [`bool`](#bool-type), [`ip`](#ip-type), [`bytes`](#bytes-type), and [`json`](#json-type), and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
 
 ### Raw types
 
@@ -135,7 +136,7 @@ fast:
 | `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |
 | `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids and the dictionary. The default behaviour for `true` is to store the original text unchanged. The normalizers on the fast field is seperately configured. It can be configured via `normalizer: lowercase`. ([See normalizers](#description-of-available-normalizers)) for a list of available normalizers. | `false` |
 
-#### **Description of available tokenizers**
+##### Description of available tokenizers
 
 | Tokenizer     | Description   |
 | ------------- | ------------- |
@@ -145,7 +146,7 @@ fast:
 | `chinese_compatible` |  Chop between each CJK character in addition to what `default` does. Should be used with `record: position` to be able to properly search |
 | `lowercase` |  Applies a lowercase transformation on the text. It does not tokenize the text. |
 
-#### **Description of available normalizers**
+##### Description of available normalizers
 
 | Normalizer     | Description   |
 | ------------- | ------------- |
@@ -320,6 +321,8 @@ type: bytes
 stored: true
 indexed: true
 fast: true
+input_format: hex
+output_foramt: hex
 ```
 
 **Parameters for bytes field**
@@ -330,6 +333,8 @@ fast: true
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`     | Whether value is stored in a fast field. Only on 1:1 cardinality, not supported on `array<bytes>` fields | `false` |
+| `input_format`   | Encoding used to represent input bytes, either `hex` or `base64` | `base64` |
+| `output_format`   |  Encoding used to represent bytes in search results, either `hex` or `base64` | `base64` |
 
 #### `json` type
 
@@ -387,13 +392,13 @@ If, in addition, `attributes` is set as a default search field, then `color:red`
 
 ### Composite types
 
-#### **array**
+#### array
 
 Quickwit supports arrays for all raw types except for `object` types.
 
 To declare an array type of `i64` in the index config, you just have to set the type to `array<i64>`.
 
-#### **object**
+#### object
 
 Quickwit supports nested objects as long as it does not contain arrays of objects.
 
@@ -421,7 +426,7 @@ The configuration of `dynamic` mode can be set via the `dynamic_mapping` paramet
 `dynamic_mapping` offers the same configuration options as when configuring a `json` field. It defaults to:
 
 ```yaml
-version: 0.6
+version: 0.7
 index_id: my-dynamic-index
 doc_mapping:
   mode: dynamic
@@ -441,7 +446,7 @@ the root of the JSON object.
 For instance, in a entirely schemaless settings, a minimal index configuration could be:
 
 ```yaml
-version: 0.6
+version: 0.7
 index_id: my-dynamic-index
 doc_mapping:
     # If you have a timestamp field, it is important to tell quickwit about it.
@@ -486,12 +491,13 @@ src.port:53 AND query_params.ctk:e42bb897d
 ### Field name validation rules
 
 Currently Quickwit only accepts field name that matches the following regular expression:
-`[a-zA-Z][_\.\-a-zA-Z0-9]*$`
+`^[@$_\-a-zA-Z][@$_\.\-a-zA-Z0-9]{0,254}$`
 
 In plain language:
 - it needs to have at least one character.
-- it should only contain latin letter `[a-zA-Z]` digits `[0-9]` or (`.`, `-`, `_`).
-- the first character needs to be a letter.
+- it can only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, `.`, hyphens `-`, underscores `_`, at `@` and dollar `$` signs.
+- it must not start with a dot or a digit.
+- it must be different from Quickwit's reserved field mapping names `_source`, `_dynamic`, `_field_presence`.
 
 :::caution
 For field names containing the `.` character, you will need to escape it when referencing them. Otherwise the `.` character will be interpreted as a JSON object property access. Because of this, it is recommended to avoid using field names containing the `.` character.
@@ -527,7 +533,7 @@ Quickwit's default merge policy is the `stable_log` merge policy
 with the following parameters:
 
 ```yaml
-version: 0.6
+version: 0.7
 index_id: "hdfs"
 # ...
 indexing_settings:
@@ -556,7 +562,7 @@ of the number of merge operation a split should undergo.
 
 
 ```yaml
-version: 0.6
+version: 0.7
 index_id: "hdfs"
 # ...
 indexing_settings:
@@ -585,7 +591,7 @@ This setting is not recommended. Merges are necessary to reduce the number of sp
 :::
 
 ```yaml
-version: 0.6
+version: 0.7
 index_id: "hdfs"
 indexing_settings:
     merge_policy:
@@ -613,7 +619,7 @@ explicitly in the schema, or may refer to a field captured by the dynamic mode. 
 This section describes how Quickwit manages data retention. In Quickwit, the retention policy manager drops data on a split basis as opposed to individually dropping documents. Splits are evaluated based on their `time_range` which is derived from the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings. Using this setting, the retention policy will delete a split when `now() - split.time_range.end >= retention_policy.period`
 
 ```yaml
-version: 0.6
+version: 0.7
 index_id: hdfs
 # ...
 retention:

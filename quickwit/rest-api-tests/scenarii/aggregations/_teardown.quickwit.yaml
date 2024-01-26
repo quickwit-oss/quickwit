@@ -1,3 +1,7 @@
 # # Delete index
 method: DELETE
 endpoint: indexes/aggregations
+---
+method: DELETE
+endpoint: indexes/empty_aggregations
+

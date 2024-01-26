@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -29,6 +29,14 @@ message Position {
   bytes position = 1;
 }
 
+// The corresponding Rust struct [`crate::types::ShardId`] is defined manually and
+// externally provided during code generation (see `build.rs`).
+//
+// Modify at your own risk.
+message ShardId {
+  bytes shard_id = 1;
+}
+
 enum CommitTypeV2 {
   COMMIT_TYPE_V2_UNSPECIFIED = 0;
   COMMIT_TYPE_V2_AUTO = 1;
@@ -55,7 +63,7 @@ enum ShardState {
   // The ingester hosting the shard is unavailable.
   SHARD_STATE_UNAVAILABLE = 2;
   // The shard is closed and cannot be written to.
-  // It can be safely deleted if the publish position is superior or equal to the replication position.
+  // It can be safely deleted if the publish position is superior or equal to `~eof`.
   SHARD_STATE_CLOSED = 3;
 }
 
@@ -63,7 +71,7 @@ message Shard {
   // Immutable fields
   string index_uid = 1;
   string source_id = 2;
-  uint64 shard_id = 3;
+  ShardId shard_id = 3;
   // The node ID of the ingester to which all the write requests for this shard should be sent to.
   string leader_id = 4;
   // The node ID of the ingester holding a copy of the data.
@@ -77,4 +85,11 @@ message Shard {
   // A publish token that ensures only one indexer works on a given shard at a time.
   // For instance, if an indexer goes rogue, eventually the control plane will detect it and assign the shard to another indexer, which will override the publish token.
   optional string publish_token = 10;
+}
+
+// A group of shards belonging to the same index and source.
+message ShardIds {
+  string index_uid = 1;
+  string source_id = 2;
+  repeated ShardId shard_ids = 3;
 }

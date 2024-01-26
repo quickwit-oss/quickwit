@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -35,3 +35,9 @@ pub const DELETION_GRACE_PERIOD: Duration = Duration::from_secs(60 * 32); // 32 
 /// In order to amortized search with scroll, we fetch more documents than are
 /// being requested.
 pub const SCROLL_BATCH_LEN: usize = 1_000;
+
+/// Prefix used in chitchat to broadcast the list of primary shards hosted by a leader.
+pub const INGESTER_PRIMARY_SHARDS_PREFIX: &str = "ingester.primary_shards:";
+
+/// File name for the encoded list of fields in the split
+pub const SPLIT_FIELDS_FILE_NAME: &str = "split_fields";

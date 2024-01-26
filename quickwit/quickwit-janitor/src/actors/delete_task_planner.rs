@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -196,7 +196,7 @@ impl DeleteTaskPlanner {
                 let delete_operation = MergeOperation::new_delete_and_merge_operation(
                     split_with_deletes.split_metadata,
                 );
-                info!(delete_operation=?delete_operation, "Planned delete operation.");
+                info!(delete_operation=?delete_operation, "planned delete operation");
                 let tracked_delete_operation = self
                     .ongoing_delete_operations_inventory
                     .track(delete_operation);
@@ -414,8 +414,7 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.handle(PlanDeleteOperations, ctx).await?;
-        ctx.schedule_self_msg(PLANNER_REFRESH_INTERVAL, PlanDeleteLoop)
-            .await;
+        ctx.schedule_self_msg(PLANNER_REFRESH_INTERVAL, PlanDeleteLoop);
         Ok(())
     }
 }
@@ -425,7 +424,10 @@ mod tests {
     use quickwit_config::build_doc_mapper;
     use quickwit_indexing::merge_policy::MergeOperation;
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::{IndexMetadataResponseExt, ListSplitsRequestExt, SplitMetadata};
+    use quickwit_metastore::{
+        IndexMetadataResponseExt, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt,
+        SplitMetadata,
+    };
     use quickwit_proto::metastore::{DeleteQuery, IndexMetadataRequest, ListSplitsRequest};
     use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{searcher_pool_for_test, MockSearchService};
@@ -479,7 +481,8 @@ mod tests {
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
-            .deserialize_splits_metadata()
+            .collect_splits_metadata()
+            .await
             .unwrap();
         assert_eq!(split_metas.len(), 3);
         let doc_mapper =
@@ -595,12 +598,13 @@ mod tests {
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
             .await
             .unwrap()
-            .deserialize_splits()
+            .collect_splits_metadata()
+            .await
             .unwrap();
-        assert_eq!(all_splits[0].split_metadata.delete_opstamp, 2);
-        assert_eq!(all_splits[1].split_metadata.delete_opstamp, 2);
+        assert_eq!(all_splits[0].delete_opstamp, 2);
+        assert_eq!(all_splits[1].delete_opstamp, 2);
         // The last split has not yet its delete opstamp updated.
-        assert_eq!(all_splits[2].split_metadata.delete_opstamp, 0);
+        assert_eq!(all_splits[2].delete_opstamp, 0);
         test_sandbox.assert_quit().await;
         Ok(())
     }

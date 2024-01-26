@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -34,6 +34,7 @@ use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_metastore::{MetastoreResolver, SplitState};
+use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_client::TraceServiceClient;
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{
     CommitType, QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL,
@@ -44,6 +45,7 @@ use reqwest::Url;
 use tempfile::TempDir;
 use tokio::sync::watch::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
+use tonic::transport::channel;
 use tracing::debug;
 
 /// Configuration of a node made of a [`NodeConfig`] and a
@@ -89,6 +91,7 @@ pub struct ClusterSandbox {
     pub node_configs: Vec<TestNodeConfig>,
     pub searcher_rest_client: QuickwitClient,
     pub indexer_rest_client: QuickwitClient,
+    pub trace_client: TraceServiceClient<tonic::transport::Channel>,
     _temp_dir: TempDir,
     join_handles: Vec<JoinHandle<Result<HashMap<String, ActorExitStatus>, anyhow::Error>>>,
     shutdown_trigger: ClusterShutdownTrigger,
@@ -104,7 +107,7 @@ fn transport_url(addr: SocketAddr) -> Url {
 #[macro_export]
 macro_rules! ingest_json {
     ($($json:tt)+) => {
-        quickwit_rest_client::models::IngestSource::Bytes(json!($($json)+).to_string().into())
+        quickwit_rest_client::models::IngestSource::Str(json!($($json)+).to_string())
     };
 }
 
@@ -124,7 +127,7 @@ pub(crate) async fn ingest_with_retry(
                     .ingest(index_id, ingest_source_clone, None, None, commit_type_clone)
                     .await
                 {
-                    debug!("Failed to index into {} due to error: {}", index_id, err);
+                    debug!(index=%index_id, err=%err, "failed to ingest");
                     false
                 } else {
                     true
@@ -185,20 +188,31 @@ impl ClusterSandbox {
             // is formed.
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+        let channel = channel::Endpoint::from_str(&format!(
+            "http://{}",
+            indexer_config.node_config.grpc_listen_addr
+        ))
+        .unwrap()
+        .connect_lazy();
         Ok(Self {
             node_configs,
             searcher_rest_client: QuickwitClientBuilder::new(transport_url(
-                searcher_config.node_config.rest_listen_addr,
+                searcher_config.node_config.rest_config.listen_addr,
             ))
             .build(),
             indexer_rest_client: QuickwitClientBuilder::new(transport_url(
-                indexer_config.node_config.rest_listen_addr,
+                indexer_config.node_config.rest_config.listen_addr,
             ))
             .build(),
+            trace_client: TraceServiceClient::new(channel),
             _temp_dir: temp_dir,
             join_handles,
             shutdown_trigger,
         })
+    }
+
+    pub fn enable_ingest_v2(&mut self) {
+        self.searcher_rest_client.enable_ingest_v2();
     }
 
     // Starts one node that runs all the services.
@@ -206,6 +220,20 @@ impl ClusterSandbox {
         let temp_dir = tempfile::tempdir()?;
         let services = QuickwitService::supported_services();
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[services]);
+        Self::start_cluster_with_configs(temp_dir, node_configs).await
+    }
+
+    pub async fn start_cluster_with_otlp_service(
+        nodes_services: &[HashSet<QuickwitService>],
+    ) -> anyhow::Result<Self> {
+        let temp_dir = tempfile::tempdir()?;
+        let mut node_configs = build_node_configs(temp_dir.path().to_path_buf(), nodes_services);
+        // Set OTLP endpoint for indexers.
+        for node_config in node_configs.iter_mut() {
+            if node_config.services.contains(&QuickwitService::Indexer) {
+                node_config.node_config.indexer_config.enable_otlp_endpoint = true;
+            }
+        }
         Self::start_cluster_with_configs(temp_dir, node_configs).await
     }
 
@@ -286,13 +314,13 @@ impl ClusterSandbox {
     pub async fn wait_for_splits(
         &self,
         index_id: &str,
-        split_states: Option<Vec<SplitState>>,
+        split_states_filter: Option<Vec<SplitState>>,
         required_splits_num: usize,
     ) -> anyhow::Result<()> {
         wait_until_predicate(
             || {
                 let splits_query_params = ListSplitsQueryParams {
-                    split_states: split_states.clone(),
+                    split_states: split_states_filter.clone(),
                     ..Default::default()
                 };
                 async move {
@@ -322,7 +350,7 @@ impl ClusterSandbox {
                 }
             },
             Duration::from_secs(10),
-            Duration::from_millis(100),
+            Duration::from_millis(500),
         )
         .await?;
         Ok(())
@@ -331,8 +359,6 @@ impl ClusterSandbox {
     pub async fn shutdown(self) -> Result<Vec<HashMap<String, ActorExitStatus>>, anyhow::Error> {
         // We need to drop rest clients first because reqwest can hold connections open
         // preventing rest server's graceful shutdown.
-        drop(self.searcher_rest_client);
-        drop(self.indexer_rest_client);
         self.shutdown_trigger.shutdown();
         let result = future::join_all(self.join_handles).await;
         let mut statuses = Vec::new();

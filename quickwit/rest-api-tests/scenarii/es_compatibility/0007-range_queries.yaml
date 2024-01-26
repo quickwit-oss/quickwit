@@ -159,3 +159,31 @@ expected:
     total:
       value: 86
       relation: "eq"
+---
+# Timestamp field with milliseconds precision 2015-02-01T00:00:00.001
+json:
+  query:
+    range:
+      created_at:
+        gte: "2015-02-01T00:00:00.001Z"
+        lt: "2015-02-01T00:00:00.002Z"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+# Timestamp field with range in microseconds.
+# Datetime will be truncated at milliseconds as
+# defined in the doc mapper.
+json:
+  query:
+    range:
+      created_at:
+        gte: "2015-02-01T00:00:00.001999Z"
+        lte: "2015-02-01T00:00:00.001999Z"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"

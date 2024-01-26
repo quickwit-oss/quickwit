@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -39,7 +39,7 @@ use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, PipelineUid};
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::Storage;
 use serde::Serialize;
@@ -191,22 +191,15 @@ impl DeleteTaskPipeline {
         let index_pipeline_id = IndexingPipelineId {
             index_uid: self.index_uid.clone(),
             node_id: "unknown".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
             source_id: "unknown".to_string(),
         };
-        let throughput_limit: f64 = index_config
-            .indexing_settings
-            .resources
-            .max_merge_write_throughput
-            .as_ref()
-            .map(|bytes_per_sec| bytes_per_sec.as_u64() as f64)
-            .unwrap_or(f64::INFINITY);
-        let delete_executor_io_controls = IoControls::default()
-            .set_throughput_limit(throughput_limit)
-            .set_index_and_component(self.index_uid.index_id(), "deleter");
+
+        let delete_executor_io_controls = IoControls::default().set_component("deleter");
+
         let split_download_io_controls = delete_executor_io_controls
             .clone()
-            .set_index_and_component(self.index_uid.index_id(), "split_downloader_delete");
+            .set_component("split_downloader_delete");
         let delete_executor = MergeExecutor::new(
             index_pipeline_id,
             self.metastore.clone(),
@@ -270,16 +263,15 @@ impl Handler<Observe> for DeleteTaskPipeline {
             handles.uploader.refresh_observe();
             handles.publisher.refresh_observe();
             self.state = DeleteTaskPipelineState {
-                delete_task_planner: handles.delete_task_planner.last_observation(),
-                downloader: handles.downloader.last_observation(),
-                delete_task_executor: handles.delete_task_executor.last_observation(),
-                packager: handles.packager.last_observation(),
-                uploader: handles.uploader.last_observation(),
-                publisher: handles.publisher.last_observation(),
+                delete_task_planner: handles.delete_task_planner.last_observation().clone(),
+                downloader: handles.downloader.last_observation().clone(),
+                delete_task_executor: handles.delete_task_executor.last_observation().clone(),
+                packager: handles.packager.last_observation().clone(),
+                uploader: handles.uploader.last_observation().clone(),
+                publisher: handles.publisher.last_observation().clone(),
             }
         }
-        ctx.schedule_self_msg(OBSERVE_PIPELINE_INTERVAL, Observe)
-            .await;
+        ctx.schedule_self_msg(OBSERVE_PIPELINE_INTERVAL, Observe);
         Ok(())
     }
 }
@@ -291,7 +283,7 @@ mod tests {
     use quickwit_common::pubsub::EventBroker;
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt, SplitState};
+    use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitState};
     use quickwit_proto::metastore::{DeleteQuery, ListSplitsRequest, MetastoreService};
     use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{
@@ -405,7 +397,7 @@ mod tests {
         // for the pipeline state to be updated.
         test_sandbox
             .universe()
-            .sleep(OBSERVE_PIPELINE_INTERVAL * 3)
+            .sleep(OBSERVE_PIPELINE_INTERVAL * 5)
             .await;
         let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
         assert_eq!(pipeline_state.delete_task_planner.metrics.num_errors, 1);
@@ -420,7 +412,8 @@ mod tests {
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
             .await
             .unwrap()
-            .deserialize_splits()
+            .collect_splits()
+            .await
             .unwrap();
         assert_eq!(splits.len(), 2);
         let published_split = splits

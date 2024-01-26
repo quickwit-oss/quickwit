@@ -1,7 +1,7 @@
 [![CI](https://github.com/quickwit-oss/quickwit/actions/workflows/ci.yml/badge.svg)](https://github.com/quickwit-oss/quickwit/actions?query=workflow%3ACI+branch%3Amain)
 [![codecov](https://codecov.io/gh/quickwit-oss/quickwit/branch/main/graph/badge.svg?token=06SRGAV5SS)](https://codecov.io/gh/quickwit-oss/quickwit)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
-[![License: AGPL V3](https://img.shields.io/badge/license-AGPL%20V3-blue)](LICENCE.md)
+[![License: AGPL V3](https://img.shields.io/badge/license-AGPL%20V3-blue)](LICENSE.md)
 [![Twitter Follow](https://img.shields.io/twitter/follow/Quickwit_Inc?color=%231DA1F2&logo=Twitter&style=plastic)](https://twitter.com/Quickwit_Inc)
 [![Discord](https://img.shields.io/discord/908281611840282624?logo=Discord&logoColor=%23FFFFFF&style=plastic)](https://discord.quickwit.io)
 <br/>
@@ -14,7 +14,7 @@
 </p>
 
 <h2 align="center">
-Sub-second search & analytics engine on cloud storage
+Cloud-native search engine for observability (logs, traces, and soon metrics!). An open-source alternative to Datadog, Elasticsearch,  Loki, and Tempo.
 </h2>
 
 <h4 align="center">
@@ -26,7 +26,19 @@ Sub-second search & analytics engine on cloud storage
 </h4>
 <br/>
 
-<b>We just released Quickwit 0.6! Read the [blog post](https://quickwit.io/blog/quickwit-0.6) to learn about the latest powerful features!</b>
+<b>We just released Quickwit 0.7! Read the [blog post](https://quickwit.io/blog/quickwit-0.7) to learn about the latest powerful features!</b>
+
+### **Quickwit is the fastest search engine on cloud storage. It's the perfect fit for observability use cases**
+
+- [Log management](https://quickwit.io/docs/log-management/overview)
+- [Distributed tracing](https://quickwit.io/docs/distributed-tracing/overview)
+- Metrics support is on the roadmap
+
+### 🚀 Quickstart
+
+- [Search and analytics on StackOverflow dataset](https://quickwit.io/docs/get-started/quickstart)
+- [Tracing analytics with Grafana](https://quickwit.io/docs/get-started/tutorials/trace-analytics-with-grafana)
+- [Tracing with Jaeger](https://quickwit.io/docs/get-started/tutorials/tutorial-jaeger)
 
 <br/>
 
@@ -35,24 +47,17 @@ Sub-second search & analytics engine on cloud storage
 
 <br/>
 
-### **Quickwit is the fastest search engine on cloud storage. It is a great fit for:**
-
-- [Log management](https://quickwit.io/docs/log-management/overview)
-- [Distributed traces](https://quickwit.io/docs/distributed-tracing/overview)
-- Any immutable data: conversational data (emails, texts, messaging platforms) & event-based analytics
-… and more!
-
 # 💡 Features
 
 - Full-text search and aggregation queries
-- Elasticsearch query language support
-- Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, …)
-- Decoupled compute and storage, stateless indexers & searchers
-- [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing
-- Schemaless analytics
-- [Grafana data source](https://github.com/quickwit-oss/quickwit-datasource)
+- Elasticsearch-compatible API, use Quickwit with any Elasticsearch or OpenSearch client
 - [Jaeger-native](https://quickwit.io/docs/distributed-tracing/plug-quickwit-to-jaeger)
 - OTEL-native for [logs](https://quickwit.io/docs/log-management/overview) and [traces](https://quickwit.io/docs/distributed-tracing/overview)
+- [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing
+- Schemaless analytics
+- Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, Google Cloud Storage, …)
+- Decoupled compute and storage, stateless indexers & searchers
+- [Grafana data source](https://github.com/quickwit-oss/quickwit-datasource)
 - Kubernetes ready - See our [helm-chart](https://quickwit.io/docs/deployment/kubernetes)
 - RESTful API
 
@@ -63,10 +68,6 @@ Sub-second search & analytics engine on cloud storage
 - Retention policies
 - Delete tasks (for GDPR use cases)
 - Distributed and highly available* engine that scales out in seconds (*HA indexing only with Kafka)
-
-# 🚀 Quickstart
-
-For a quick guide on how to install Quickwit, start a server, add documents to index, and search them - check out our [Quickstart](https://quickwit.io/docs/get-started/quickstart) guide.
 
 # 📑 Architecture overview
 
@@ -134,27 +135,22 @@ Our business model relies on our commercial license. There is no plan to become 
 
 # 🤝 Contribute and spread the word
 
-We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on [Discord](https://discord.quickwit.io)! Here is how you can help us build the future of log management:
+We are always thrilled to receive contributions: code, documentation, issues, or feedback. Here's how you can help us build the future of log management:
 
-- Have a look through GitHub issues labeled "Good first issue".
-- Read our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md).
-- Create a fork of Quickwit and submit your pull request!
+- Start by checking out the [GitHub issues labeled "Good first issue"](https://github.com/quickwit-oss/quickwit/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). These are a great place for newcomers to contribute.
+- Read our [Contributor Covenant Code of Conduct](./CODE_OF_CONDUCT.md) to understand our community standards.
+- [Create a fork of Quickwit](https://github.com/quickwit-oss/quickwit/fork) to have your own copy of the repository where you can make changes.
+- To understand how to contribute, read our [contributing guide](./CONTRIBUTING.md).
+- Set up your development environment following our [development setup guide](./CONTRIBUTING.md#development).
+- Once you've made your changes and tested them, you can contribute by [submitting a pull request](./CONTRIBUTING.md#submitting-a-pr).
 
-✨ And to thank you for your contributions, claim your swag by emailing us at hello at quickwit.io.
+✨ After your contributions are accepted, don't forget to claim your swag by emailing us at hello@quickwit.io. Thank you for contributing!
 
-# 💬 Community
+# 💬 Join Our Community
 
-We always welcome contributions: code, documentation, issues, feedback, or even say hello on [Discord](https://discord.quickwit.io)! Here is how you can help us build the next-gen search engine:
+We welcome everyone to our community! Whether you're contributing code or just saying hello, we'd love to hear from you. Here's how you can connect with us:
 
-- Have a look at the GitHub issues labeled "Good first issue".
-- Delve into [contributing guide](CONTRIBUTING.md).
-- Read our [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
-- Create a fork of Quickwit and submit your pull request!
-
-✨ Contributors can claim our swag by emailing us at hello at quickwit.io.
-
-[website]: https://quickwit.io/
-[youtube]: https://www.youtube.com/channel/UCvZVuRm2FiDq1_ul0mY85wA
-[twitter]: https://twitter.com/Quickwit_Inc
-[discord]: https://discord.quickwit.io
-[blogs]: https://quickwit.io/blog
+- Join the conversation on [Discord](https://discord.quickwit.io).
+- Follow us on [Twitter](https://twitter.com/Quickwit_Inc).
+- Check out our [website](https://quickwit.io/) and [blog](https://quickwit.io/blog) for the latest updates.
+- Watch our [YouTube](https://www.youtube.com/channel/UCvZVuRm2FiDq1_ul0mY85wA) channel for video content.

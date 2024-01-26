@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -82,7 +82,7 @@ fn position_from_offset(offset: usize) -> Position {
     if offset == 0 {
         return Position::Beginning;
     }
-    Position::from(offset - 1)
+    Position::offset(offset - 1)
 }
 
 #[async_trait]

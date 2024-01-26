@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -40,8 +40,10 @@ use quickwit_rest_client::models::Timeout;
 use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
 use quickwit_storage::{load_file, StorageResolver};
 use reqwest::Url;
-use tabled::object::Rows;
-use tabled::{Alignment, Header, Modify, Style, Table, Tabled};
+use tabled::settings::object::Rows;
+use tabled::settings::panel::Header;
+use tabled::settings::{Alignment, Modify, Style};
+use tabled::{Table, Tabled};
 use tracing::info;
 
 use crate::checklist::run_checklist;
@@ -129,34 +131,14 @@ impl ClientArgs {
         }
         if let Some(timeout) = self.timeout {
             builder = builder.timeout(timeout);
-        }
-        if self.ingest_v2 {
-            builder = builder.enable_ingest_v2();
-        }
-        builder.build()
-    }
-
-    pub fn search_client(self) -> QuickwitClient {
-        let mut builder = QuickwitClientBuilder::new(self.cluster_endpoint);
-        if let Some(connect_timeout) = self.connect_timeout {
-            builder = builder.connect_timeout(connect_timeout);
-        }
-        if let Some(timeout) = self.timeout {
             builder = builder.search_timeout(timeout);
-        }
-        builder.build()
-    }
-
-    pub fn ingest_client(self) -> QuickwitClient {
-        let mut builder = QuickwitClientBuilder::new(self.cluster_endpoint);
-        if let Some(connect_timeout) = self.connect_timeout {
-            builder = builder.connect_timeout(connect_timeout);
-        }
-        if let Some(timeout) = self.timeout {
             builder = builder.ingest_timeout(timeout);
         }
         if let Some(commit_timeout) = self.commit_timeout {
             builder = builder.commit_timeout(commit_timeout);
+        }
+        if self.ingest_v2 {
+            builder = builder.enable_ingest_v2();
         }
         builder.build()
     }
@@ -242,7 +224,7 @@ async fn load_node_config(config_uri: &Uri) -> anyhow::Result<NodeConfig> {
     let config = NodeConfig::load(config_format, config_content.as_slice())
         .await
         .with_context(|| format!("failed to parse node config `{config_uri}`"))?;
-    info!(config_uri=%config_uri, config=?config, "Loaded node config.");
+    info!(config_uri=%config_uri, config=?config, "loaded node config");
     Ok(config)
 }
 
@@ -317,11 +299,9 @@ pub fn make_table<T: Tabled>(
     rows: impl IntoIterator<Item = T>,
     transpose: bool,
 ) -> Table {
-    let table = if transpose {
-        let mut index_builder = Table::builder(rows).index();
-        index_builder.set_index(0);
-        index_builder.transpose();
-        index_builder.build()
+    let mut table = if transpose {
+        let index_builder = Table::builder(rows).index();
+        index_builder.column(0).transpose().build()
     } else {
         Table::builder(rows).build()
     };
@@ -329,8 +309,10 @@ pub fn make_table<T: Tabled>(
     table
         .with(Modify::new(Rows::new(1..)).with(Alignment::left()))
         .with(Style::ascii())
-        .with(Header(header))
-        .with(Modify::new(Rows::single(0)).with(Alignment::center()))
+        .with(Header::new(header))
+        .with(Modify::new(Rows::single(0)).with(Alignment::center()));
+
+    table
 }
 
 /// Prompts user for confirmation.
@@ -422,10 +404,10 @@ pub mod busy_detector {
 
         let suppressed = SUPPRESSED_DEBUG_COUNT.swap(0, Ordering::Relaxed);
         if suppressed == 0 {
-            debug!("Thread wasn't parked for {delta}µs, is the runtime too busy?");
+            debug!("thread wasn't parked for {delta}µs, is the runtime too busy?");
         } else {
             debug!(
-                "Thread wasn't parked for {delta}µs, is the runtime too busy? ({suppressed} \
+                "thread wasn't parked for {delta}µs, is the runtime too busy? ({suppressed} \
                  similar messages suppressed)"
             );
         }

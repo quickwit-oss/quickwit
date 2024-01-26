@@ -100,7 +100,7 @@
         "message"
       ]
     },
-    "version": "0.6"
+    "version": "0.7"
   },
   "index_uid": "my-index:",
   "sources": [
@@ -119,8 +119,8 @@
         "script": ".message = downcase(string!(.message))",
         "timezone": "UTC"
       },
-      "version": "0.6"
+      "version": "0.7"
     }
   ],
-  "version": "0.6"
+  "version": "0.7"
 }

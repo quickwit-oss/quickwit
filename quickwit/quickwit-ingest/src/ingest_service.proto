@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -88,6 +88,7 @@ message IngestResponse {
     uint64 num_docs_for_processing = 1;
 }
 
+// Fetch messages with position strictly after `start_after`.
 message FetchRequest {
     string index_id = 1;
     optional uint64 start_after = 2;

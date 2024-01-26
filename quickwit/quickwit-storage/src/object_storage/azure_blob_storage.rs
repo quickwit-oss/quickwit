@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -129,7 +129,7 @@ impl AzureBlobStorage {
     }
 
     /// Creates an emulated storage for testing.
-    #[cfg(feature = "testsuite")]
+    #[cfg(feature = "integration-testsuite")]
     pub fn new_emulated(container: &str) -> Self {
         use std::str::FromStr;
 

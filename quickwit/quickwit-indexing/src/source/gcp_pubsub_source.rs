@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -37,11 +37,10 @@ use serde_json::{json, Value as JsonValue};
 use tokio::time;
 use tracing::{debug, info, warn};
 
-use super::SourceActor;
+use super::{SourceActor, BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT};
 use crate::actors::DocProcessor;
 use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
 
-const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
 const DEFAULT_MAX_MESSAGES_PER_PULL: i32 = 1_000;
 
 pub struct GcpPubSubSourceFactory;
@@ -155,7 +154,7 @@ impl GcpPubSubSource {
     }
 
     fn should_exit(&self) -> bool {
-        self.backfill_mode_enabled && self.state.num_consecutive_empty_batches > 3
+        self.backfill_mode_enabled && self.state.num_consecutive_empty_batches > 5
     }
 }
 
@@ -168,7 +167,7 @@ impl Source for GcpPubSubSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch: BatchBuilder = BatchBuilder::default();
-        let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
+        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
         // TODO: ensure we ACK the message after being commit: at least once
         // TODO: ensure we increase_ack_deadline for the items
@@ -176,7 +175,7 @@ impl Source for GcpPubSubSource {
             tokio::select! {
                 resp = self.pull_message_batch(&mut batch) => {
                     if let Err(err) = resp {
-                        warn!("Failed to pull messages from subscription `{}`: {:?}", self.subscription_name, err);
+                        warn!("failed to pull messages from subscription `{}`: {:?}", self.subscription_name, err);
                     }
                     if batch.num_bytes >= BATCH_NUM_BYTES_LIMIT {
                         break;
@@ -197,7 +196,7 @@ impl Source for GcpPubSubSource {
 
         // TODO: need to wait for all the id to be ack for at_least_once
         if self.should_exit() {
-            info!(subscription=%self.subscription_name, "Reached end of subscription.");
+            info!(subscription=%self.subscription_name, "reached end of subscription");
             ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
@@ -439,7 +438,7 @@ mod gcp_pubsub_emulator_tests {
             "num_bytes_processed": 54,
             "num_messages_processed": 6,
             "num_invalid_messages": 0,
-            "num_consecutive_empty_batches": 4,
+            "num_consecutive_empty_batches": 6,
         });
         assert_eq!(exit_state, expected_exit_state);
     }

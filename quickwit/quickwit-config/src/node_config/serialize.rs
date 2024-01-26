@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -22,12 +22,14 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
+use http::HeaderMap;
 use quickwit_common::net::{find_private_ip, get_short_hostname, Host};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use super::{GrpcConfig, RestConfig};
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
@@ -52,7 +54,7 @@ fn default_node_id() -> ConfigValue<String, QW_NODE_ID> {
         Ok(short_hostname) => short_hostname,
         Err(error) => {
             let node_id = new_coolid("node");
-            warn!(error=?error, "Failed to determine hostname or hostname was invalid, falling back to random node ID `{}`.", node_id);
+            warn!(error=?error, "failed to determine hostname or hostname was invalid, falling back to random node ID `{}`", node_id);
             node_id
         }
     };
@@ -88,8 +90,8 @@ fn default_listen_address() -> ConfigValue<String, QW_LISTEN_ADDRESS> {
     ConfigValue::with_default(Host::default().to_string())
 }
 
-fn default_rest_listen_port() -> ConfigValue<u16, QW_REST_LISTEN_PORT> {
-    ConfigValue::with_default(7280)
+fn default_rest_listen_port() -> u16 {
+    7280
 }
 
 fn default_data_dir_uri() -> ConfigValue<Uri, QW_DATA_DIR> {
@@ -100,12 +102,12 @@ fn default_data_dir_uri() -> ConfigValue<Uri, QW_DATA_DIR> {
 fn default_advertise_host(listen_ip: &IpAddr) -> anyhow::Result<Host> {
     if listen_ip.is_unspecified() {
         if let Some((interface_name, private_ip)) = find_private_ip() {
-            info!(advertise_address=%private_ip, interface_name=%interface_name, "Using sniffed advertise address.");
+            info!(advertise_address=%private_ip, interface_name=%interface_name, "using sniffed advertise address");
             return Ok(Host::from(private_ip));
         }
         bail!("listen address `{listen_ip}` is unspecified and advertise address is not set");
     }
-    info!(advertise_address=%listen_ip, "Using listen address as advertise address.");
+    info!(advertise_address=%listen_ip, "using listen address as advertise address");
     Ok(Host::from(*listen_ip))
 }
 
@@ -140,17 +142,18 @@ pub async fn load_node_config_with_env(
 #[derive(Debug, Deserialize)]
 #[serde(tag = "version")]
 enum VersionedNodeConfig {
-    #[serde(rename = "0.6")]
+    #[serde(rename = "0.7")]
     // Retro compatibility.
+    #[serde(alias = "0.6")]
     #[serde(alias = "0.5")]
     #[serde(alias = "0.4")]
-    V0_6(NodeConfigBuilder),
+    V0_7(NodeConfigBuilder),
 }
 
 impl From<VersionedNodeConfig> for NodeConfigBuilder {
     fn from(versioned_node_config: VersionedNodeConfig) -> Self {
         match versioned_node_config {
-            VersionedNodeConfig::V0_6(node_config_builder) => node_config_builder,
+            VersionedNodeConfig::V0_7(node_config_builder) => node_config_builder,
         }
     }
 }
@@ -168,8 +171,8 @@ struct NodeConfigBuilder {
     #[serde(default = "default_listen_address")]
     listen_address: ConfigValue<String, QW_LISTEN_ADDRESS>,
     advertise_address: ConfigValue<String, QW_ADVERTISE_ADDRESS>,
-    #[serde(default = "default_rest_listen_port")]
-    rest_listen_port: ConfigValue<u16, QW_REST_LISTEN_PORT>,
+    // Deprecated, use `rest.listen_port` instead.
+    rest_listen_port: Option<u16>,
     gossip_listen_port: ConfigValue<u16, QW_GOSSIP_LISTEN_PORT>,
     grpc_listen_port: ConfigValue<u16, QW_GRPC_LISTEN_PORT>,
     #[serde(default)]
@@ -179,9 +182,12 @@ struct NodeConfigBuilder {
     data_dir_uri: ConfigValue<Uri, QW_DATA_DIR>,
     metastore_uri: ConfigValue<Uri, QW_METASTORE_URI>,
     default_index_root_uri: ConfigValue<Uri, QW_DEFAULT_INDEX_ROOT_URI>,
+    #[serde(rename = "rest")]
     #[serde(default)]
-    #[serde_as(deserialize_as = "serde_with::OneOrMany<_>")]
-    rest_cors_allow_origins: Vec<String>,
+    rest_config_builder: RestConfigBuilder,
+    #[serde(rename = "grpc")]
+    #[serde(default)]
+    grpc_config: GrpcConfig,
     #[serde(rename = "storage")]
     #[serde(default)]
     storage_configs: StorageConfigs,
@@ -219,19 +225,34 @@ impl NodeConfigBuilder {
         let listen_host = listen_address.parse::<Host>()?;
         let listen_ip = listen_host.resolve().await?;
 
-        let rest_listen_port = self.rest_listen_port.resolve(env_vars)?;
-        let rest_listen_addr = SocketAddr::new(listen_ip, rest_listen_port);
+        if let Some(rest_listen_port) = self.rest_listen_port {
+            if self.rest_config_builder.listen_port.is_some() {
+                bail!(
+                    "conflicting configuration values: please use only `rest.listen_port`, \
+                     `rest_listen_port` is deprecated and should not be used alongside \
+                     `rest.listen_port`. Update your configuration to use `rest.listen_port`."
+                );
+            }
+            warn!("`rest_listen_port` is deprecated, use `rest.listen_port` instead");
+            self.rest_config_builder.listen_port = Some(rest_listen_port);
+        }
+
+        let rest_config = self
+            .rest_config_builder
+            .build_and_validate(listen_ip, env_vars)?;
+
+        self.grpc_config.validate()?;
 
         let gossip_listen_port = self
             .gossip_listen_port
             .resolve_optional(env_vars)?
-            .unwrap_or(rest_listen_port);
+            .unwrap_or(rest_config.listen_addr.port());
         let gossip_listen_addr = SocketAddr::new(listen_ip, gossip_listen_port);
 
         let grpc_listen_port = self
             .grpc_listen_port
             .resolve_optional(env_vars)?
-            .unwrap_or(rest_listen_port + 1);
+            .unwrap_or(rest_config.listen_addr.port() + 1);
         let grpc_listen_addr = SocketAddr::new(listen_ip, grpc_listen_port);
 
         let advertise_address = self.advertise_address.resolve_optional(env_vars)?;
@@ -272,7 +293,6 @@ impl NodeConfigBuilder {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id: self.node_id.resolve(env_vars)?,
             enabled_services,
-            rest_listen_addr,
             gossip_listen_addr,
             grpc_listen_addr,
             gossip_advertise_addr,
@@ -281,7 +301,8 @@ impl NodeConfigBuilder {
             data_dir_path,
             metastore_uri,
             default_index_root_uri,
-            rest_cors_allow_origins: self.rest_cors_allow_origins,
+            rest_config,
+            grpc_config: self.grpc_config,
             metastore_configs: self.metastore_configs,
             storage_configs: self.storage_configs,
             indexer_config: self.indexer_config,
@@ -301,12 +322,12 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
 
     if node_config.cluster_id == DEFAULT_CLUSTER_ID {
         warn!(
-            "Cluster ID is not set, falling back to default value: `{}`.",
+            "cluster ID is not set, falling back to default value: `{}`",
             DEFAULT_CLUSTER_ID
         );
     }
     if node_config.peer_seeds.is_empty() {
-        warn!("Peer seed list is empty.");
+        warn!("peer seed list is empty");
     }
     Ok(())
 }
@@ -319,7 +340,7 @@ impl Default for NodeConfigBuilder {
             node_id: default_node_id(),
             enabled_services: default_enabled_services(),
             listen_address: default_listen_address(),
-            rest_listen_port: default_rest_listen_port(),
+            rest_listen_port: None,
             gossip_listen_port: ConfigValue::none(),
             grpc_listen_port: ConfigValue::none(),
             advertise_address: ConfigValue::none(),
@@ -327,7 +348,8 @@ impl Default for NodeConfigBuilder {
             data_dir_uri: default_data_dir_uri(),
             metastore_uri: ConfigValue::none(),
             default_index_root_uri: ConfigValue::none(),
-            rest_cors_allow_origins: Vec::new(),
+            rest_config_builder: RestConfigBuilder::default(),
+            grpc_config: GrpcConfig::default(),
             storage_configs: StorageConfigs::default(),
             metastore_configs: MetastoreConfigs::default(),
             indexer_config: IndexerConfig::default(),
@@ -338,10 +360,44 @@ impl Default for NodeConfigBuilder {
     }
 }
 
+#[serde_with::serde_as]
+#[derive(Debug, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
+struct RestConfigBuilder {
+    #[serde(default)]
+    listen_port: Option<u16>,
+    #[serde(default)]
+    #[serde_as(deserialize_as = "serde_with::OneOrMany<_>")]
+    pub cors_allow_origins: Vec<String>,
+    #[serde(with = "http_serde::header_map")]
+    #[serde(default)]
+    pub extra_headers: HeaderMap,
+}
+
+impl RestConfigBuilder {
+    fn build_and_validate(
+        self,
+        listen_ip: IpAddr,
+        env_vars: &HashMap<String, String>,
+    ) -> anyhow::Result<RestConfig> {
+        let listen_port_from_config_or_default =
+            self.listen_port.unwrap_or(default_rest_listen_port());
+        let listen_port = ConfigValue::<u16, QW_REST_LISTEN_PORT>::with_default(
+            listen_port_from_config_or_default,
+        )
+        .resolve(env_vars)?;
+        let rest_config = RestConfig {
+            listen_addr: SocketAddr::new(listen_ip, listen_port),
+            cors_allow_origins: self.cors_allow_origins,
+            extra_headers: self.extra_headers,
+        };
+        Ok(rest_config)
+    }
+}
+
 #[cfg(any(test, feature = "testsuite"))]
 pub fn node_config_for_test() -> NodeConfig {
     let enabled_services = QuickwitService::supported_services();
-
     let listen_address = Host::default();
     let rest_listen_port = quickwit_common::net::find_available_tcp_port()
         .expect("The OS should almost always find an available port.");
@@ -367,21 +423,25 @@ pub fn node_config_for_test() -> NodeConfig {
         .to_path_buf();
     let metastore_uri = default_metastore_uri(&data_dir_uri);
     let default_index_root_uri = default_index_root_uri(&data_dir_uri);
-
+    let rest_config = RestConfig {
+        listen_addr: rest_listen_addr,
+        cors_allow_origins: Vec::new(),
+        extra_headers: HeaderMap::new(),
+    };
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
         node_id: default_node_id().unwrap(),
         enabled_services,
         gossip_advertise_addr: gossip_listen_addr,
         grpc_advertise_addr: grpc_listen_addr,
-        rest_listen_addr,
         gossip_listen_addr,
         grpc_listen_addr,
         peer_seeds: Vec::new(),
         data_dir_path,
         metastore_uri,
         default_index_root_uri,
-        rest_cors_allow_origins: Vec::new(),
+        rest_config,
+        grpc_config: GrpcConfig::default(),
         storage_configs: StorageConfigs::default(),
         metastore_configs: MetastoreConfigs::default(),
         indexer_config: IndexerConfig::default(),
@@ -425,9 +485,19 @@ mod tests {
         assert!(config.is_service_enabled(QuickwitService::Metastore));
 
         assert_eq!(
-            config.rest_listen_addr,
+            config.rest_config.listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 1111)
         );
+        assert_eq!(
+            config.rest_config.extra_headers.get("x-header-1").unwrap(),
+            "header-value-1"
+        );
+        assert_eq!(
+            config.rest_config.extra_headers.get("x-header-2").unwrap(),
+            "header-value-2"
+        );
+        assert_eq!(config.grpc_config.max_message_size, ByteSize::mb(10));
+
         assert_eq!(
             config.gossip_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 2222)
@@ -486,6 +556,7 @@ mod tests {
                 max_concurrent_split_uploads: 8,
                 cpu_capacity: IndexerConfig::default_cpu_capacity(),
                 enable_cooperative_indexing: false,
+                max_merge_write_throughput: None,
             }
         );
         assert_eq!(
@@ -558,7 +629,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_node_config_default_values_minimal() {
-        let config_yaml = "version: 0.6";
+        let config_yaml = "version: 0.7";
         let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
@@ -573,7 +644,7 @@ mod tests {
             QuickwitService::supported_services()
         );
         assert_eq!(
-            config.rest_listen_addr,
+            config.rest_config.listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7280)
         );
         assert_eq!(
@@ -607,7 +678,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_node_config_env_var_override() {
-        let config_yaml = "version: 0.6";
+        let config_yaml = "version: 0.7";
         let mut env_vars = HashMap::new();
         env_vars.insert("QW_CLUSTER_ID".to_string(), "test-cluster".to_string());
         env_vars.insert("QW_NODE_ID".to_string(), "test-node".to_string());
@@ -649,7 +720,7 @@ mod tests {
             &[&QuickwitService::Indexer, &QuickwitService::Metastore]
         );
         assert_eq!(
-            config.rest_listen_addr,
+            config.rest_config.listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 12)), 1234)
         );
         assert_eq!(
@@ -689,7 +760,7 @@ mod tests {
     #[tokio::test]
     async fn test_quickwwit_config_default_values_storage() {
         let config_yaml = r#"
-            version: 0.6
+            version: 0.7
             node_id: "node-1"
             metastore_uri: postgres://username:password@host:port/db
         "#;
@@ -711,7 +782,7 @@ mod tests {
     #[tokio::test]
     async fn test_node_config_config_default_values_default_indexer_searcher_config() {
         let config_yaml = r#"
-            version: 0.6
+            version: 0.7
             metastore_uri: postgres://username:password@host:port/db
             data_dir: /opt/quickwit/data
         "#;
@@ -754,7 +825,6 @@ mod tests {
     async fn test_peer_socket_addrs() {
         {
             let node_config = NodeConfigBuilder {
-                rest_listen_port: ConfigValue::for_test(1789),
                 ..Default::default()
             }
             .build_and_validate(&HashMap::new())
@@ -764,7 +834,6 @@ mod tests {
         }
         {
             let node_config = NodeConfigBuilder {
-                rest_listen_port: ConfigValue::for_test(1789),
                 peer_seeds: ConfigValue::for_test(List(vec!["unresolvable-host".to_string()])),
                 ..Default::default()
             }
@@ -775,7 +844,10 @@ mod tests {
         }
         {
             let node_config = NodeConfigBuilder {
-                rest_listen_port: ConfigValue::for_test(1789),
+                rest_config_builder: RestConfigBuilder {
+                    listen_port: Some(1789),
+                    ..Default::default()
+                },
                 peer_seeds: ConfigValue::for_test(List(vec![
                     "unresolvable-host".to_string(),
                     "localhost".to_string(),
@@ -810,38 +882,76 @@ mod tests {
             .build_and_validate(&HashMap::new())
             .await
             .unwrap();
-            assert_eq!(node_config.rest_listen_addr.to_string(), "127.0.0.1:7280");
+            assert_eq!(
+                node_config.rest_config.listen_addr.to_string(),
+                "127.0.0.1:7280"
+            );
             assert_eq!(node_config.gossip_listen_addr.to_string(), "127.0.0.1:7280");
             assert_eq!(node_config.grpc_listen_addr.to_string(), "127.0.0.1:7281");
         }
         {
             let node_config = NodeConfigBuilder {
                 listen_address: default_listen_address(),
-                rest_listen_port: ConfigValue::for_test(1789),
+                rest_config_builder: RestConfigBuilder {
+                    listen_port: Some(1789),
+                    ..Default::default()
+                },
                 ..Default::default()
             }
             .build_and_validate(&HashMap::new())
             .await
             .unwrap();
-            assert_eq!(node_config.rest_listen_addr.to_string(), "127.0.0.1:1789");
+            assert_eq!(
+                node_config.rest_config.listen_addr.to_string(),
+                "127.0.0.1:1789"
+            );
             assert_eq!(node_config.gossip_listen_addr.to_string(), "127.0.0.1:1789");
             assert_eq!(node_config.grpc_listen_addr.to_string(), "127.0.0.1:1790");
         }
         {
             let node_config = NodeConfigBuilder {
                 listen_address: default_listen_address(),
-                rest_listen_port: ConfigValue::for_test(1789),
                 gossip_listen_port: ConfigValue::for_test(1889),
                 grpc_listen_port: ConfigValue::for_test(1989),
+                rest_config_builder: RestConfigBuilder {
+                    listen_port: Some(1789),
+                    ..Default::default()
+                },
                 ..Default::default()
             }
             .build_and_validate(&HashMap::new())
             .await
             .unwrap();
-            assert_eq!(node_config.rest_listen_addr.to_string(), "127.0.0.1:1789");
+            assert_eq!(
+                node_config.rest_config.listen_addr.to_string(),
+                "127.0.0.1:1789"
+            );
             assert_eq!(node_config.gossip_listen_addr.to_string(), "127.0.0.1:1889");
             assert_eq!(node_config.grpc_listen_addr.to_string(), "127.0.0.1:1989");
         }
+    }
+
+    #[tokio::test]
+    async fn test_rest_deprecated_listen_port_config() {
+        // This test should be removed once deprecated `rest_listen_port` field is removed.
+        let node_config = NodeConfigBuilder {
+            rest_listen_port: Some(1789),
+            listen_address: default_listen_address(),
+            rest_config_builder: RestConfigBuilder {
+                listen_port: None,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .build_and_validate(&HashMap::new())
+        .await
+        .unwrap();
+        assert_eq!(
+            node_config.rest_config.listen_addr.to_string(),
+            "127.0.0.1:1789"
+        );
+        assert_eq!(node_config.gossip_listen_addr.to_string(), "127.0.0.1:1789");
+        assert_eq!(node_config.grpc_listen_addr.to_string(), "127.0.0.1:1790");
     }
 
     #[tokio::test]
@@ -858,7 +968,7 @@ mod tests {
     async fn test_config_validates_uris() {
         {
             let config_yaml = r#"
-            version: 0.6
+            version: 0.7
             node_id: 1
             metastore_uri: ''
         "#;
@@ -872,7 +982,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-            version: 0.6
+            version: 0.7
             node_id: 1
             metastore_uri: postgres://username:password@host:port/db
             default_index_root_uri: ''
@@ -891,7 +1001,7 @@ mod tests {
     async fn test_node_config_data_dir_accepts_both_file_uris_and_file_paths() {
         {
             let config_yaml = r#"
-                version: 0.6
+                version: 0.7
                 data_dir: /opt/quickwit/data
             "#;
             let config = load_node_config_with_env(
@@ -905,7 +1015,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-                version: 0.6
+                version: 0.7
                 data_dir: file:///opt/quickwit/data
             "#;
             let config = load_node_config_with_env(
@@ -919,7 +1029,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-                version: 0.6
+                version: 0.7
                 data_dir: s3://indexes/foo
             "#;
             let error = load_node_config_with_env(
@@ -931,6 +1041,29 @@ mod tests {
             .unwrap_err();
             assert!(error.to_string().contains("data dir must be located"));
         }
+    }
+
+    #[tokio::test]
+    async fn test_config_invalid_when_both_listen_ports_params_are_configured() {
+        let config_yaml = r#"
+                version: 0.7
+                rest_listen_port: 1789
+                rest:
+                  listen_port: 1789
+            "#;
+        let config = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &HashMap::default(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            &config.to_string(),
+            "conflicting configuration values: please use only `rest.listen_port`, \
+             `rest_listen_port` is deprecated and should not be used alongside \
+             `rest.listen_port`. Update your configuration to use `rest.listen_port`."
+        );
     }
 
     #[test]
@@ -948,8 +1081,9 @@ mod tests {
     #[tokio::test]
     async fn test_rest_config_accepts_wildcard() {
         let rest_config_yaml = r#"
-            version: 0.6
-            rest_cors_allow_origins: '*'
+            version: 0.7
+            rest:
+              cors_allow_origins: '*'
         "#;
         let config = load_node_config_with_env(
             ConfigFormat::Yaml,
@@ -958,49 +1092,15 @@ mod tests {
         )
         .await
         .expect("Deserialize rest config");
-        assert_eq!(config.rest_cors_allow_origins, ["*"]);
+        assert_eq!(config.rest_config.cors_allow_origins, ["*"]);
     }
 
     #[tokio::test]
     async fn test_rest_config_accepts_single_origin() {
         let rest_config_yaml = r#"
-            version: 0.6
-            rest_cors_allow_origins: https://www.my-domain.com
-        "#;
-        let config = load_node_config_with_env(
-            ConfigFormat::Yaml,
-            rest_config_yaml.as_bytes(),
-            &Default::default(),
-        )
-        .await
-        .expect("Deserialize rest config");
-        assert_eq!(
-            config.rest_cors_allow_origins,
-            ["https://www.my-domain.com"]
-        );
-
-        let rest_config_yaml = r#"
-            version: 0.6
-            rest_cors_allow_origins: http://192.168.0.108:7280
-        "#;
-        let config = load_node_config_with_env(
-            ConfigFormat::Yaml,
-            rest_config_yaml.as_bytes(),
-            &Default::default(),
-        )
-        .await
-        .expect("Deserialize rest config");
-        assert_eq!(
-            config.rest_cors_allow_origins,
-            ["http://192.168.0.108:7280"]
-        );
-    }
-
-    #[tokio::test]
-    async fn test_rest_config_accepts_multi_origin() {
-        let rest_config_yaml = r#"
-            version: 0.6
-            rest_cors_allow_origins:
+            version: 0.7
+            rest:
+              cors_allow_origins:
                 - https://www.my-domain.com
         "#;
         let config = load_node_config_with_env(
@@ -1011,13 +1111,52 @@ mod tests {
         .await
         .expect("Deserialize rest config");
         assert_eq!(
-            config.rest_cors_allow_origins,
+            config.rest_config.cors_allow_origins,
             ["https://www.my-domain.com"]
         );
 
         let rest_config_yaml = r#"
-            version: 0.6
-            rest_cors_allow_origins:
+            version: 0.7
+            rest:
+              cors_allow_origins: http://192.168.0.108:7280
+        "#;
+        let config = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            rest_config_yaml.as_bytes(),
+            &Default::default(),
+        )
+        .await
+        .expect("Deserialize rest config");
+        assert_eq!(
+            config.rest_config.cors_allow_origins,
+            ["http://192.168.0.108:7280"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rest_config_accepts_multi_origin() {
+        let rest_config_yaml = r#"
+            version: 0.7
+            rest:
+              cors_allow_origins:
+                - https://www.my-domain.com
+        "#;
+        let config = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            rest_config_yaml.as_bytes(),
+            &Default::default(),
+        )
+        .await
+        .expect("Deserialize rest config");
+        assert_eq!(
+            config.rest_config.cors_allow_origins,
+            ["https://www.my-domain.com"]
+        );
+
+        let rest_config_yaml = r#"
+            version: 0.7
+            rest:
+              cors_allow_origins:
                 - https://www.my-domain.com
                 - https://www.my-other-domain.com
         "#;
@@ -1029,7 +1168,7 @@ mod tests {
         .await
         .expect("Deserialize rest config");
         assert_eq!(
-            config.rest_cors_allow_origins,
+            config.rest_config.cors_allow_origins,
             [
                 "https://www.my-domain.com",
                 "https://www.my-other-domain.com"
@@ -1037,8 +1176,9 @@ mod tests {
         );
 
         let rest_config_yaml = r#"
-            version: 0.6
-            rest_cors_allow_origins:
+            version: 0.7
+            rest:
+              rest_cors_allow_origins:
         "#;
         load_node_config_with_env(
             ConfigFormat::Yaml,
@@ -1049,8 +1189,9 @@ mod tests {
         .expect_err("Config should not allow empty origins.");
 
         let rest_config_yaml = r#"
-            version: 0.6
-            rest_cors_allow_origins:
+            version: 0.7
+            rest:
+              cors_allow_origins:
                 -
         "#;
         load_node_config_with_env(
@@ -1079,7 +1220,7 @@ mod tests {
         assert!(error_message.contains("either 1 or 2, got `3`"));
 
         let node_config_yaml = r#"
-            version: 0.6
+            version: 0.7
             ingest_api:
               replication_factor: 0
         "#;

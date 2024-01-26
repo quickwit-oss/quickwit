@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -23,7 +23,7 @@ use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use json_comments::StripComments;
-use once_cell::sync::OnceCell;
+use once_cell::sync::Lazy;
 use quickwit_common::net::is_valid_hostname;
 use quickwit_common::uri::Uri;
 use regex::Regex;
@@ -41,7 +41,7 @@ mod templating;
 
 // We export that one for backward compatibility.
 // See #2048
-use index_config::serialize::{IndexConfigV0_6, VersionedIndexConfig};
+use index_config::serialize::{IndexConfigV0_7, VersionedIndexConfig};
 pub use index_config::{
     build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig,
     IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
@@ -53,7 +53,7 @@ pub use source_config::{
     load_source_config_from_user_config, FileSourceParams, GcpPubSubSourceParams,
     KafkaSourceParams, KinesisSourceParams, PulsarSourceAuth, PulsarSourceParams, RegionOrEndpoint,
     SourceConfig, SourceInputFormat, SourceParams, TransformConfig, VecSourceParams,
-    VoidSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_SOURCE_ID,
+    VoidSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
 };
 use tracing::warn;
 
@@ -64,13 +64,13 @@ pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
 };
 pub use crate::node_config::{
-    IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig, SearcherConfig, SplitCacheLimits,
-    DEFAULT_QW_CONFIG_PATH,
+    enable_ingest_v2, IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig, SearcherConfig,
+    SplitCacheLimits, DEFAULT_QW_CONFIG_PATH,
 };
-use crate::source_config::serialize::{SourceConfigV0_6, VersionedSourceConfig};
+use crate::source_config::serialize::{SourceConfigV0_7, VersionedSourceConfig};
 pub use crate::storage_config::{
-    AzureStorageConfig, FileStorageConfig, RamStorageConfig, S3StorageConfig, StorageBackend,
-    StorageBackendFlavor, StorageConfig, StorageConfigs,
+    AzureStorageConfig, FileStorageConfig, GoogleCloudStorageConfig, RamStorageConfig,
+    S3StorageConfig, StorageBackend, StorageBackendFlavor, StorageConfig, StorageConfigs,
 };
 
 #[derive(utoipa::OpenApi)]
@@ -82,9 +82,9 @@ pub use crate::storage_config::{
     MergePolicyConfig,
     DocMapping,
     VersionedSourceConfig,
-    SourceConfigV0_6,
+    SourceConfigV0_7,
     VersionedIndexConfig,
-    IndexConfigV0_6,
+    IndexConfigV0_7,
     SourceInputFormat,
     SourceParams,
     FileSourceParams,
@@ -105,12 +105,10 @@ pub struct ConfigApiSchemas;
 
 /// Checks whether an identifier conforms to Quickwit object naming conventions.
 pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
-    static IDENTIFIER_REGEX: OnceCell<Regex> = OnceCell::new();
-
-    if IDENTIFIER_REGEX
-        .get_or_init(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_\.]{2,254}$").expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
-        .is_match(value)
-    {
+    static IDENTIFIER_REGEX: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_\.]{2,254}$").expect("regular expression should compile")
+    });
+    if IDENTIFIER_REGEX.is_match(value) {
         return Ok(());
     }
     bail!(
@@ -122,35 +120,42 @@ pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
 /// Checks whether an index ID pattern conforms to Quickwit conventions.
 /// Index ID patterns accept the same characters as identifiers AND accept `*`
 /// chars to allow for glob-like patterns.
-pub fn validate_index_id_pattern(pattern: &str) -> anyhow::Result<()> {
-    static IDENTIFIER_REGEX_WITH_GLOB_PATTERN: OnceCell<Regex> = OnceCell::new();
+pub fn validate_index_id_pattern(pattern: &str, allow_negative: bool) -> anyhow::Result<()> {
+    static IDENTIFIER_REGEX_WITH_GLOB_PATTERN: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$")
+            .expect("regular expression should compile")
+    });
+    static IDENTIFIER_REGEX_WITH_GLOB_PATTERN_NEGATIVE: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^-?[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$")
+            .expect("regular expression should compile")
+    });
 
-    if !IDENTIFIER_REGEX_WITH_GLOB_PATTERN
-        .get_or_init(|| Regex::new(r"^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$").expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
-        .is_match(pattern)
-    {
+    let regex = if allow_negative {
+        &IDENTIFIER_REGEX_WITH_GLOB_PATTERN_NEGATIVE
+    } else {
+        &IDENTIFIER_REGEX_WITH_GLOB_PATTERN
+    };
+
+    if !regex.is_match(pattern) {
         bail!(
-            "index ID pattern `{pattern}` is invalid. patterns must match the following regular \
+            "index ID pattern `{pattern}` is invalid: patterns must match the following regular \
              expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{{0,254}}$`"
         );
     }
-
     // Forbid multiple stars in the pattern to force the user making simpler patterns
     // as multiple stars does not bring any value.
     if pattern.contains("**") {
         bail!(
-            "index ID pattern `{pattern}` is invalid. patterns must not contain multiple \
+            "index ID pattern `{pattern}` is invalid: patterns must not contain multiple \
              consecutive `*`"
         );
     }
-
     // If there is no star in the pattern, we need at least 3 characters.
     if !pattern.contains('*') && pattern.len() < 3 {
         bail!(
-            "index ID pattern `{pattern}` is invalid. an index ID must have at least 3 characters"
+            "index ID pattern `{pattern}` is invalid: an index ID must have at least 3 characters"
         );
     }
-
     Ok(())
 }
 
@@ -199,7 +204,7 @@ impl ConfigFormat {
                     serde_json::from_reader(StripComments::new(payload))?;
                 let version_value = json_value.get_mut("version").context("missing version")?;
                 if let Some(version_number) = version_value.as_u64() {
-                    warn!("`version` is supposed to be a string.");
+                    warn!(version_value=?version_value, "`version` is supposed to be a string");
                     *version_value = JsonValue::String(version_number.to_string());
                 }
                 serde_json::from_value(json_value).context("failed to read JSON file")
@@ -211,7 +216,7 @@ impl ConfigFormat {
                     toml::from_str(payload_str).context("failed to read TOML file")?;
                 let version_value = toml_value.get_mut("version").context("missing version")?;
                 if let Some(version_number) = version_value.as_integer() {
-                    warn!("`version` is supposed to be a string.");
+                    warn!(version_value=?version_value, "`version` is supposed to be a string");
                     *version_value = toml::Value::String(version_number.to_string());
                     let reserialized = toml::to_string(version_value)
                         .context("failed to reserialize toml config")?;
@@ -275,14 +280,16 @@ mod tests {
 
     #[test]
     fn test_validate_index_id_pattern() {
-        validate_index_id_pattern("*").unwrap();
-        validate_index_id_pattern("abc.*").unwrap();
-        validate_index_id_pattern("ab").unwrap_err();
-        validate_index_id_pattern("").unwrap_err();
-        validate_index_id_pattern("**").unwrap_err();
-        assert!(validate_index_id_pattern("foo!")
+        validate_index_id_pattern("*", false).unwrap();
+        validate_index_id_pattern("abc.*", false).unwrap();
+        validate_index_id_pattern("ab", false).unwrap_err();
+        validate_index_id_pattern("", false).unwrap_err();
+        validate_index_id_pattern("**", false).unwrap_err();
+        assert!(validate_index_id_pattern("foo!", false)
             .unwrap_err()
             .to_string()
-            .contains("index ID pattern `foo!` is invalid."));
+            .contains("index ID pattern `foo!` is invalid:"));
+        validate_index_id_pattern("-abc", true).unwrap();
+        validate_index_id_pattern("-abc", false).unwrap_err();
     }
 }

@@ -29,6 +29,10 @@ exporters:
     endpoint: host.docker.internal:7281
     tls:
       insecure: true
+    # By default, traces are sent to the otel-traces-v0_7.
+    # You can customize the index ID By setting this header.
+    # headers:
+    #   qw-otel-traces-index: otel-traces-v0_7
 
 service:
   pipelines:

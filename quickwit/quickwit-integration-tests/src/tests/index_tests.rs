@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,12 +20,15 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use bytes::Bytes;
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_config::service::QuickwitService;
+use quickwit_config::ConfigFormat;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_janitor::actors::DELETE_SERVICE_TASK_DIR_NAME;
 use quickwit_metastore::SplitState;
+use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
+use quickwit_proto::opentelemetry::proto::trace::v1::{ResourceSpans, ScopeSpans, Span};
+use quickwit_rest_client::error::{ApiError, Error};
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
 use serde_json::json;
@@ -38,9 +41,9 @@ async fn test_restarting_standalone_server() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
     let index_id = "test-index-with-restarting";
-    let index_config = Bytes::from(format!(
+    let index_config = format!(
         r#"
-            version: 0.6
+            version: 0.7
             index_id: {}
             doc_mapping:
                 field_mappings:
@@ -54,17 +57,13 @@ async fn test_restarting_standalone_server() {
                     max_merge_factor: 3
             "#,
         index_id
-    ));
+    );
 
     // Create the index.
     sandbox
         .indexer_rest_client
         .indexes()
-        .create(
-            index_config.clone(),
-            quickwit_config::ConfigFormat::Yaml,
-            false,
-        )
+        .create(index_config.clone(), ConfigFormat::Yaml, false)
         .await
         .unwrap();
 
@@ -102,7 +101,7 @@ async fn test_restarting_standalone_server() {
     sandbox
         .indexer_rest_client
         .indexes()
-        .create(index_config, quickwit_config::ConfigFormat::Yaml, false)
+        .create(index_config, ConfigFormat::Yaml, false)
         .await
         .unwrap();
 
@@ -215,36 +214,124 @@ async fn test_restarting_standalone_server() {
     sandbox.shutdown().await.unwrap();
 }
 
+const TEST_INDEX_CONFIG: &str = r#"
+    version: 0.7
+    index_id: test_index
+    doc_mapping:
+      field_mappings:
+      - name: body
+        type: text
+    indexing_settings:
+      commit_timeout_secs: 1
+      merge_policy:
+        type: stable_log
+        merge_factor: 4
+        max_merge_factor: 4
+"#;
+
+#[tokio::test]
+async fn test_ingest_v2_index_not_found() {
+    // This tests checks what happens when we try to ingest into a non-existing index.
+    quickwit_common::setup_logging_for_tests();
+    let nodes_services = &[
+        HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Janitor]),
+        HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Janitor]),
+        HashSet::from_iter([
+            QuickwitService::ControlPlane,
+            QuickwitService::Metastore,
+            QuickwitService::Searcher,
+        ]),
+    ];
+    let mut sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services[..])
+        .await
+        .unwrap();
+    sandbox.enable_ingest_v2();
+    sandbox.wait_for_cluster_num_ready_nodes(3).await.unwrap();
+    let missing_index_err: Error = sandbox
+        .indexer_rest_client
+        .ingest(
+            "missing_index",
+            ingest_json!({"body": "doc1"}),
+            None,
+            None,
+            CommitType::WaitFor,
+        )
+        .await
+        .unwrap_err();
+    let Error::Api(ApiError { message, code }) = missing_index_err else {
+        panic!("Expected an API error.");
+    };
+    assert_eq!(code, 404u16);
+    let error_message = message.unwrap();
+    assert_eq!(error_message, "index `missing_index` not found");
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_ingest_v2_happy_path() {
+    // This tests checks our happy path for ingesting one doc.
+    quickwit_common::setup_logging_for_tests();
+    let nodes_services = &[
+        HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Janitor]),
+        HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Janitor]),
+        HashSet::from_iter([
+            QuickwitService::ControlPlane,
+            QuickwitService::Metastore,
+            QuickwitService::Searcher,
+        ]),
+    ];
+    let mut sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services[..])
+        .await
+        .unwrap();
+    sandbox.enable_ingest_v2();
+    sandbox.wait_for_cluster_num_ready_nodes(3).await.unwrap();
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(TEST_INDEX_CONFIG, ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+    sandbox
+        .indexer_rest_client
+        .sources("test_index")
+        .toggle("_ingest-source", true)
+        .await
+        .unwrap();
+    sandbox
+        .indexer_rest_client
+        .ingest(
+            "test_index",
+            ingest_json!({"body": "doc1"}),
+            None,
+            None,
+            CommitType::WaitFor,
+        )
+        .await
+        .unwrap();
+    let search_req = SearchRequestQueryString {
+        query: "*".to_string(),
+        ..Default::default()
+    };
+    let search_result = sandbox
+        .indexer_rest_client
+        .search("test_index", search_req)
+        .await
+        .unwrap();
+    assert_eq!(search_result.num_hits, 1);
+    sandbox.shutdown().await.unwrap();
+}
+
 #[tokio::test]
 async fn test_commit_modes() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
-    let index_id = "test_commit_modes_index";
+    let index_id = "test_index";
 
     // Create index
     sandbox
         .indexer_rest_client
         .indexes()
-        .create(
-            r#"
-            version: 0.6
-            index_id: test_commit_modes_index
-            doc_mapping:
-              field_mappings:
-              - name: body
-                type: text
-            indexing_settings:
-              commit_timeout_secs: 1
-              merge_policy:
-                type: stable_log
-                merge_factor: 4
-                max_merge_factor: 4
-
-            "#
-            .into(),
-            quickwit_config::ConfigFormat::Yaml,
-            false,
-        )
+        .create(TEST_INDEX_CONFIG, ConfigFormat::Yaml, false)
         .await
         .unwrap();
 
@@ -382,16 +469,15 @@ async fn test_very_large_index_name() {
         .create(
             format!(
                 r#"
-                version: 0.6
+                version: 0.7
                 index_id: {index_id}
                 doc_mapping:
                   field_mappings:
                     - name: body
                       type: text
                 "#,
-            )
-            .into(),
-            quickwit_config::ConfigFormat::Yaml,
+            ),
+            ConfigFormat::Yaml,
             false,
         )
         .await
@@ -438,16 +524,15 @@ async fn test_very_large_index_name() {
         .create(
             format!(
                 r#"
-                    version: 0.6
+                    version: 0.7
                     index_id: {oversized_index_id}
                     doc_mapping:
                       field_mappings:
                         - name: body
                           type: text
                     "#,
-            )
-            .into(),
-            quickwit_config::ConfigFormat::Yaml,
+            ),
+            ConfigFormat::Yaml,
             false,
         )
         .await
@@ -474,7 +559,7 @@ async fn test_shutdown() {
         .indexes()
         .create(
             r#"
-            version: 0.6
+            version: 0.7
             index_id: test_commit_modes_index
             doc_mapping:
               field_mappings:
@@ -482,9 +567,8 @@ async fn test_shutdown() {
                 type: text
             indexing_settings:
               commit_timeout_secs: 1
-            "#
-            .into(),
-            quickwit_config::ConfigFormat::Yaml,
+            "#,
+            ConfigFormat::Yaml,
             false,
         )
         .await
@@ -521,4 +605,82 @@ async fn test_shutdown() {
         .await
         .unwrap()
         .unwrap();
+}
+
+#[tokio::test]
+async fn test_ingest_traces_with_otlp_grpc_api() {
+    quickwit_common::setup_logging_for_tests();
+    let nodes_services = vec![
+        HashSet::from_iter([QuickwitService::Searcher]),
+        HashSet::from_iter([QuickwitService::Metastore]),
+        HashSet::from_iter([QuickwitService::Indexer]),
+        HashSet::from_iter([QuickwitService::ControlPlane]),
+        HashSet::from_iter([QuickwitService::Janitor]),
+    ];
+    let sandbox = ClusterSandbox::start_cluster_with_otlp_service(&nodes_services)
+        .await
+        .unwrap();
+    // Wait fo the pipelines to start (one for logs and one for traces)
+    sandbox.wait_for_indexing_pipelines(2).await.unwrap();
+
+    let scope_spans = vec![ScopeSpans {
+        spans: vec![
+            Span {
+                trace_id: vec![1; 16],
+                span_id: vec![2; 8],
+                start_time_unix_nano: 1_000_000_001,
+                end_time_unix_nano: 1_000_000_002,
+                ..Default::default()
+            },
+            Span {
+                trace_id: vec![3; 16],
+                span_id: vec![4; 8],
+                start_time_unix_nano: 2_000_000_001,
+                end_time_unix_nano: 2_000_000_002,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }];
+    let resource_spans = vec![ResourceSpans {
+        scope_spans,
+        ..Default::default()
+    }];
+    let request = ExportTraceServiceRequest { resource_spans };
+
+    // Send the spans on the default index.
+    {
+        let response = sandbox
+            .trace_client
+            .clone()
+            .export(request.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            response
+                .into_inner()
+                .partial_success
+                .unwrap()
+                .rejected_spans,
+            0
+        );
+    }
+
+    // Send the spans on a non existing index, should return an error.
+    {
+        let mut tonic_request = tonic::Request::new(request);
+        tonic_request.metadata_mut().insert(
+            "qw-otel-traces-index",
+            tonic::metadata::MetadataValue::try_from("non-existing-index").unwrap(),
+        );
+        let status = sandbox
+            .trace_client
+            .clone()
+            .export(tonic_request)
+            .await
+            .unwrap_err();
+        assert_eq!(status.code(), tonic::Code::NotFound);
+    }
+
+    sandbox.shutdown().await.unwrap();
 }

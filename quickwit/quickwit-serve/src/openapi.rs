@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -28,12 +28,14 @@ use utoipa::openapi::Tag;
 use utoipa::OpenApi;
 
 use crate::cluster_api::ClusterApi;
+use crate::debugging_api::DebugApi;
 use crate::delete_task_api::DeleteTaskApi;
-use crate::elastic_search_api::ElasticCompatibleApi;
+use crate::elasticsearch_api::ElasticCompatibleApi;
 use crate::health_check_api::HealthCheckApi;
 use crate::index_api::IndexApi;
 use crate::indexing_api::IndexingApi;
 use crate::ingest_api::{IngestApi, IngestApiSchemas};
+use crate::jaeger_api::JaegerApi;
 use crate::metrics_api::MetricsApi;
 use crate::node_info_handler::NodeInfoApi;
 use crate::search_api::SearchApi;
@@ -74,12 +76,15 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
         Tag::new("Node Info"),
         Tag::new("Indexing"),
         Tag::new("Splits"),
+        Tag::new("Jaeger"),
+        Tag::new("Debugging"),
     ];
     docs_base.tags = Some(tags);
 
     // Routing
     docs_base.merge_components_and_paths(HealthCheckApi::openapi().with_path_prefix("/health"));
     docs_base.merge_components_and_paths(MetricsApi::openapi().with_path_prefix("/metrics"));
+    docs_base.merge_components_and_paths(DebugApi::openapi().with_path_prefix("/debugging"));
     docs_base.merge_components_and_paths(ClusterApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(DeleteTaskApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(IndexApi::openapi().with_path_prefix("/api/v1"));
@@ -89,6 +94,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     docs_base
         .merge_components_and_paths(ElasticCompatibleApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(NodeInfoApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(JaegerApi::openapi().with_path_prefix("/api/v1"));
 
     // Schemas
     docs_base.merge_components_and_paths(MetastoreApiSchemas::openapi());

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -75,7 +75,7 @@ pub async fn start_indexing_service(
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
-    info!("Starting indexer service.");
+    info!("starting indexer service");
 
     // Spawn indexing service.
     let indexing_service = IndexingService::new(

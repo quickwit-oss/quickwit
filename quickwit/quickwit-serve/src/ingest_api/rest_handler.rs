@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,17 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-use quickwit_config::{IngestApiConfig, INGEST_SOURCE_ID};
+use bytes::{Buf, Bytes};
+use quickwit_config::{IngestApiConfig, INGEST_V2_SOURCE_ID};
 use quickwit_ingest::{
-    CommitType, DocBatchBuilder, FetchResponse, IngestRequest, IngestResponse, IngestService,
-    IngestServiceClient, IngestServiceError, TailRequest,
+    CommitType, DocBatchBuilder, DocBatchV2Builder, FetchResponse, IngestRequest, IngestResponse,
+    IngestService, IngestServiceClient, IngestServiceError, TailRequest,
 };
 use quickwit_proto::ingest::router::{
-    IngestRequestV2, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
-    IngestSubrequest,
+    IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
+    IngestRouterServiceClient, IngestSubrequest,
 };
-use quickwit_proto::ingest::{DocBatchV2, IngestV2Error};
 use quickwit_proto::types::IndexId;
 use serde::Deserialize;
 use thiserror::Error;
@@ -79,7 +78,7 @@ fn ingest_filter(
     warp::path!(String / "ingest")
         .and(warp::post())
         .and(warp::body::content_length_limit(
-            config.content_length_limit,
+            config.content_length_limit.as_u64(),
         ))
         .and(warp::body::bytes())
         .and(serde_qs::warp::query::<IngestOptions>(
@@ -103,7 +102,7 @@ fn ingest_v2_filter(
     warp::path!(String / "ingest-v2")
         .and(warp::post())
         .and(warp::body::content_length_limit(
-            config.content_length_limit,
+            config.content_length_limit.as_u64(),
         ))
         .and(warp::body::bytes())
         .and(serde_qs::warp::query::<IngestOptions>(
@@ -127,22 +126,24 @@ async fn ingest_v2(
     body: Bytes,
     ingest_options: IngestOptions,
     mut ingest_router: IngestRouterServiceClient,
-) -> Result<IngestResponseV2, IngestV2Error> {
-    let mut doc_buffer = BytesMut::new();
-    let mut doc_lengths = Vec::new();
+) -> Result<IngestResponse, IngestServiceError> {
+    let mut doc_batch_builder = DocBatchV2Builder::default();
 
-    for line in lines(&body) {
-        doc_lengths.push(line.len() as u32);
-        doc_buffer.put(line);
+    for doc in lines(&body) {
+        doc_batch_builder.add_doc(doc);
     }
-    let doc_batch = DocBatchV2 {
-        doc_buffer: doc_buffer.freeze(),
-        doc_lengths,
+    let doc_batch_opt = doc_batch_builder.build();
+
+    let Some(doc_batch) = doc_batch_opt else {
+        let response = IngestResponse::default();
+        return Ok(response);
     };
+    let num_docs = doc_batch.num_docs();
+
     let subrequest = IngestSubrequest {
         subrequest_id: 0,
         index_id,
-        source_id: INGEST_SOURCE_ID.to_string(),
+        source_id: INGEST_V2_SOURCE_ID.to_string(),
         doc_batch: Some(doc_batch),
     };
     let request = IngestRequestV2 {
@@ -150,7 +151,42 @@ async fn ingest_v2(
         subrequests: vec![subrequest],
     };
     let response = ingest_router.ingest(request).await?;
-    Ok(response)
+    convert_ingest_response_v2(response, num_docs)
+}
+
+fn convert_ingest_response_v2(
+    mut response: IngestResponseV2,
+    num_docs: usize,
+) -> Result<IngestResponse, IngestServiceError> {
+    let num_responses = response.successes.len() + response.failures.len();
+    if num_responses != 1 {
+        return Err(IngestServiceError::Internal(format!(
+            "Expected a single failure/success, got {}.",
+            num_responses
+        )));
+    }
+    if response.successes.pop().is_some() {
+        return Ok(IngestResponse {
+            num_docs_for_processing: num_docs as u64,
+        });
+    }
+    let ingest_failure = response.failures.pop().unwrap();
+    Err(match ingest_failure.reason() {
+        IngestFailureReason::Unspecified => {
+            IngestServiceError::Internal("Unknown reason".to_string())
+        }
+        IngestFailureReason::IndexNotFound => IngestServiceError::IndexNotFound {
+            index_id: ingest_failure.index_id,
+        },
+        IngestFailureReason::SourceNotFound => IngestServiceError::Internal(format!(
+            "Ingest v2 source not found for index {}",
+            ingest_failure.index_id
+        )),
+        IngestFailureReason::Internal => IngestServiceError::Internal("Internal error".to_string()),
+        IngestFailureReason::NoShardsAvailable => IngestServiceError::Unavailable,
+        IngestFailureReason::RateLimited => IngestServiceError::RateLimited,
+        IngestFailureReason::ResourceExhausted => IngestServiceError::RateLimited,
+    })
 }
 
 #[utoipa::path(
@@ -223,13 +259,20 @@ async fn tail_endpoint(
 
 pub(crate) fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
     body.split(|byte| byte == &b'\n')
-        .filter(|line| !line.is_empty())
+        .filter(|line| !is_empty_or_blank_line(line))
+}
+
+#[inline]
+fn is_empty_or_blank_line(line: &[u8]) -> bool {
+    line.is_empty() || line.iter().all(|ch| ch.is_ascii_whitespace())
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::str;
     use std::time::Duration;
 
+    use bytes::Bytes;
     use bytesize::ByteSize;
     use quickwit_actors::{Mailbox, Universe};
     use quickwit_config::IngestApiConfig;
@@ -241,6 +284,25 @@ pub(crate) mod tests {
     use quickwit_proto::ingest::router::IngestRouterServiceClient;
 
     use super::ingest_api_handlers;
+    use crate::ingest_api::lines;
+
+    #[test]
+    fn test_process_lines() {
+        let test_cases = [
+            // an empty line is inserted before the metadata action and the doc
+            (&b"\n{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n{\"id\": 1, \"message\": \"push\"}"[..], 2),
+            // a blank line is inserted before the metadata action and the doc
+            (&b"       \n{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n{\"id\": 1, \"message\": \"push\"}"[..], 2),
+            // an empty line is inserted after the metadata action and before the doc
+            (&b"{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n\n{\"id\": 1, \"message\": \"push\"}"[..], 2),
+            // a blank line is inserted after the metadata action and before the doc
+            (&b"{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n     \n{\"id\": 1, \"message\": \"push\"}"[..], 2),
+        ];
+
+        for &(input, expected_count) in &test_cases {
+            assert_eq!(lines(&Bytes::from(input)).count(), expected_count);
+        }
+    }
 
     pub(crate) async fn setup_ingest_service(
         queues: &[&str],
@@ -355,7 +417,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_ingest_api_return_413_if_above_content_limit() {
         let config = IngestApiConfig {
-            content_length_limit: 1,
+            content_length_limit: ByteSize(1),
             ..Default::default()
         };
         let (universe, _temp_dir, ingest_service, _) =

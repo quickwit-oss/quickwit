@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -43,8 +43,11 @@ pub use self::storage::Storage;
 
 mod bundle_storage;
 mod error;
+
 mod local_file_storage;
 mod object_storage;
+#[cfg(feature = "gcs")]
+mod opendal_storage;
 mod payload;
 mod prefix_storage;
 mod ram_storage;
@@ -71,6 +74,10 @@ pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
+#[cfg(all(feature = "gcs", feature = "integration-testsuite"))]
+pub use self::opendal_storage::new_emulated_google_cloud_storage;
+#[cfg(feature = "gcs")]
+pub use self::opendal_storage::GoogleCloudStorageFactory;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]
@@ -79,7 +86,7 @@ pub use self::storage::MockStorage;
 pub use self::storage_factory::MockStorageFactory;
 pub use self::storage_factory::{StorageFactory, UnsupportedStorage};
 pub use self::storage_resolver::StorageResolver;
-#[cfg(feature = "testsuite")]
+#[cfg(feature = "integration-testsuite")]
 pub use self::test_suite::{
     storage_test_multi_part_upload, storage_test_single_part_upload, storage_test_suite,
     test_write_and_bulk_delete,
@@ -105,7 +112,7 @@ pub async fn load_file(
     Ok(bytes)
 }
 
-#[cfg(any(test, feature = "testsuite"))]
+#[cfg(any(test, feature = "testsuite", feature = "integration-testsuite"))]
 mod for_test {
     use std::sync::Arc;
 
@@ -117,7 +124,7 @@ mod for_test {
     }
 }
 
-#[cfg(any(test, feature = "testsuite"))]
+#[cfg(any(test, feature = "testsuite", feature = "integration-testsuite"))]
 pub use for_test::storage_for_test;
 
 #[cfg(test)]
@@ -143,7 +150,7 @@ mod tests {
     }
 }
 
-#[cfg(any(test, feature = "testsuite"))]
+#[cfg(any(test, feature = "integration-testsuite"))]
 pub(crate) mod test_suite {
 
     use std::path::Path;
@@ -335,7 +342,7 @@ pub(crate) mod test_suite {
     }
 
     /// Generic single-part upload test.
-    #[cfg(feature = "testsuite")]
+    #[cfg(feature = "integration-testsuite")]
     pub async fn storage_test_single_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
         use std::ops::Range;
 
@@ -364,7 +371,7 @@ pub(crate) mod test_suite {
     }
 
     /// Generic multi-part upload test.
-    #[cfg(feature = "testsuite")]
+    #[cfg(feature = "integration-testsuite")]
     pub async fn storage_test_multi_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("hello_large.txt");
         let test_buffer = vec![0u8; 15_000_000];

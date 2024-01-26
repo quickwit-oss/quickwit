@@ -1,6 +1,7 @@
 name: Build and publish Docker images
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -78,7 +79,7 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v3
         with:
-          name: digests
+          name: digest
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -90,7 +91,7 @@ jobs:
       - name: Download digests
         uses: actions/download-artifact@v3
         with:
-          name: digests
+          name: digest
           path: /tmp/digests
 
       - name: Set up Docker Buildx

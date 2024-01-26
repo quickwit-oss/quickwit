@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -43,9 +43,10 @@ use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMes
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::kinesis::helpers::get_kinesis_client;
-use crate::source::{Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
-
-const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
+use crate::source::{
+    Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory, BATCH_NUM_BYTES_LIMIT,
+    EMIT_BATCHES_TIMEOUT,
+};
 
 type ShardId = String;
 
@@ -152,7 +153,7 @@ impl KinesisSource {
         let from_sequence_number_exclusive = match &position {
             Position::Beginning => None,
             Position::Offset(offset) => Some(offset.to_string()),
-            Position::Eof => panic!("position of a Kinesis shard should never be EOF"),
+            Position::Eof(_) => panic!("position of a Kinesis shard should never be EOF"),
         };
         let shard_consumer = ShardConsumer::new(
             self.stream_name.clone(),
@@ -215,7 +216,7 @@ impl Source for KinesisSource {
         let mut docs = Vec::new();
         let mut checkpoint_delta = SourceCheckpointDelta::default();
 
-        let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
+        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
         loop {
@@ -278,7 +279,7 @@ impl Source for KinesisSource {
                                     ).context("failed to record partition delta")?;
                                 }
                             }
-                            if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
+                            if batch_num_bytes >= BATCH_NUM_BYTES_LIMIT {
                                 break;
                             }
                         }
@@ -318,7 +319,7 @@ impl Source for KinesisSource {
             ctx.send_message(indexer_mailbox, batch).await?;
         }
         if self.state.shard_consumers.is_empty() {
-            info!(stream_name = %self.stream_name, "Reached end of stream.");
+            info!(stream_name = %self.stream_name, "reached end of stream");
             ctx.send_exit_with_success(indexer_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
@@ -330,13 +331,11 @@ impl Source for KinesisSource {
     }
 
     fn observable_state(&self) -> JsonValue {
-        let shard_consumer_positions: Vec<(&ShardId, &str)> = self
+        let shard_consumer_positions: Vec<(&ShardId, &Position)> = self
             .state
             .shard_consumers
             .iter()
-            .map(|(shard_id, shard_consumer_state)| {
-                (shard_id, shard_consumer_state.position.as_str())
-            })
+            .map(|(shard_id, shard_consumer_state)| (shard_id, &shard_consumer_state.position))
             .sorted()
             .collect();
         json!({

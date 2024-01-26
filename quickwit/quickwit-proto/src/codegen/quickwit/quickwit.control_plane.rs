@@ -5,7 +5,11 @@ pub struct GetOrCreateOpenShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub subrequests: ::prost::alloc::vec::Vec<GetOrCreateOpenShardsSubrequest>,
     #[prost(message, repeated, tag = "2")]
-    pub closed_shards: ::prost::alloc::vec::Vec<ClosedShards>,
+    pub closed_shards: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
+    /// The control plane should return shards that are not present on the supplied leaders.
+    ///
+    /// The control plane does not change the status of those leaders just from this signal.
+    /// It will check the status of its own ingester pool.
     #[prost(string, repeated, tag = "3")]
     pub unavailable_leaders: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -19,17 +23,6 @@ pub struct GetOrCreateOpenShardsSubrequest {
     pub index_id: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClosedShards {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, repeated, tag = "3")]
-    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -65,6 +58,37 @@ pub struct GetOrCreateOpenShardsFailure {
     pub source_id: ::prost::alloc::string::String,
     #[prost(enumeration = "GetOrCreateOpenShardsFailureReason", tag = "4")]
     pub reason: i32,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetDebugStateRequest {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetDebugStateResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub shard_table: ::prost::alloc::vec::Vec<ShardTableEntry>,
+    #[prost(message, repeated, tag = "2")]
+    pub physical_index_plan: ::prost::alloc::vec::Vec<PhysicalIndexingPlanEntry>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardTableEntry {
+    #[prost(string, tag = "1")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PhysicalIndexingPlanEntry {
+    #[prost(string, tag = "1")]
+    pub node_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub tasks: ::prost::alloc::vec::Vec<super::indexing::IndexingTask>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -147,6 +171,11 @@ pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sy
         &mut self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse>;
+    /// Return some innerstate of the control plane meant to assist debugging.
+    async fn get_debug_state(
+        &mut self,
+        request: GetDebugStateRequest,
+    ) -> crate::control_plane::ControlPlaneResult<GetDebugStateResponse>;
 }
 dyn_clone::clone_trait_object!(ControlPlaneService);
 #[cfg(any(test, feature = "testsuite"))]
@@ -174,38 +203,44 @@ impl ControlPlaneServiceClient {
     }
     pub fn as_grpc_service(
         &self,
+        max_message_size: bytesize::ByteSize,
     ) -> control_plane_service_grpc_server::ControlPlaneServiceGrpcServer<
         ControlPlaneServiceGrpcServerAdapter,
     > {
         let adapter = ControlPlaneServiceGrpcServerAdapter::new(self.clone());
         control_plane_service_grpc_server::ControlPlaneServiceGrpcServer::new(adapter)
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024)
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
-        let adapter = ControlPlaneServiceGrpcClientAdapter::new(
-            control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
+        let client = control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
                 channel,
-            ),
+            )
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
+        let adapter = ControlPlaneServiceGrpcClientAdapter::new(
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)
     }
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> ControlPlaneServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let client = control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
                 balance_channel,
             )
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024);
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = ControlPlaneServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
@@ -219,8 +254,8 @@ impl ControlPlaneServiceClient {
     {
         ControlPlaneServiceClient::new(ControlPlaneServiceMailbox::new(mailbox))
     }
-    pub fn tower() -> ControlPlaneServiceTowerBlockBuilder {
-        ControlPlaneServiceTowerBlockBuilder::default()
+    pub fn tower() -> ControlPlaneServiceTowerLayerStack {
+        ControlPlaneServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn mock() -> MockControlPlaneService {
@@ -266,6 +301,12 @@ impl ControlPlaneService for ControlPlaneServiceClient {
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
         self.inner.get_or_create_open_shards(request).await
+    }
+    async fn get_debug_state(
+        &mut self,
+        request: GetDebugStateRequest,
+    ) -> crate::control_plane::ControlPlaneResult<GetDebugStateResponse> {
+        self.inner.get_debug_state(request).await
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
@@ -324,6 +365,12 @@ pub mod control_plane_service_mock {
             super::GetOrCreateOpenShardsResponse,
         > {
             self.inner.lock().await.get_or_create_open_shards(request).await
+        }
+        async fn get_debug_state(
+            &mut self,
+            request: super::GetDebugStateRequest,
+        ) -> crate::control_plane::ControlPlaneResult<super::GetDebugStateResponse> {
+            self.inner.lock().await.get_debug_state(request).await
         }
     }
     impl From<MockControlPlaneService> for ControlPlaneServiceClient {
@@ -439,9 +486,25 @@ impl tower::Service<GetOrCreateOpenShardsRequest> for Box<dyn ControlPlaneServic
         Box::pin(fut)
     }
 }
-/// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
+impl tower::Service<GetDebugStateRequest> for Box<dyn ControlPlaneService> {
+    type Response = GetDebugStateResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: GetDebugStateRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.get_debug_state(request).await };
+        Box::pin(fut)
+    }
+}
+/// A tower service stack is a set of tower services.
 #[derive(Debug)]
-struct ControlPlaneServiceTowerBlock {
+struct ControlPlaneServiceTowerServiceStack {
     inner: Box<dyn ControlPlaneService>,
     create_index_svc: quickwit_common::tower::BoxService<
         super::metastore::CreateIndexRequest,
@@ -473,8 +536,13 @@ struct ControlPlaneServiceTowerBlock {
         GetOrCreateOpenShardsResponse,
         crate::control_plane::ControlPlaneError,
     >,
+    get_debug_state_svc: quickwit_common::tower::BoxService<
+        GetDebugStateRequest,
+        GetDebugStateResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
 }
-impl Clone for ControlPlaneServiceTowerBlock {
+impl Clone for ControlPlaneServiceTowerServiceStack {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -484,11 +552,12 @@ impl Clone for ControlPlaneServiceTowerBlock {
             toggle_source_svc: self.toggle_source_svc.clone(),
             delete_source_svc: self.delete_source_svc.clone(),
             get_or_create_open_shards_svc: self.get_or_create_open_shards_svc.clone(),
+            get_debug_state_svc: self.get_debug_state_svc.clone(),
         }
     }
 }
 #[async_trait::async_trait]
-impl ControlPlaneService for ControlPlaneServiceTowerBlock {
+impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
     async fn create_index(
         &mut self,
         request: super::metastore::CreateIndexRequest,
@@ -527,68 +596,309 @@ impl ControlPlaneService for ControlPlaneServiceTowerBlock {
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
         self.get_or_create_open_shards_svc.ready().await?.call(request).await
     }
+    async fn get_debug_state(
+        &mut self,
+        request: GetDebugStateRequest,
+    ) -> crate::control_plane::ControlPlaneResult<GetDebugStateResponse> {
+        self.get_debug_state_svc.ready().await?.call(request).await
+    }
 }
+type CreateIndexLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        super::metastore::CreateIndexRequest,
+        super::metastore::CreateIndexResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    super::metastore::CreateIndexRequest,
+    super::metastore::CreateIndexResponse,
+    crate::control_plane::ControlPlaneError,
+>;
+type DeleteIndexLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        super::metastore::DeleteIndexRequest,
+        super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    super::metastore::DeleteIndexRequest,
+    super::metastore::EmptyResponse,
+    crate::control_plane::ControlPlaneError,
+>;
+type AddSourceLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        super::metastore::AddSourceRequest,
+        super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    super::metastore::AddSourceRequest,
+    super::metastore::EmptyResponse,
+    crate::control_plane::ControlPlaneError,
+>;
+type ToggleSourceLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        super::metastore::ToggleSourceRequest,
+        super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    super::metastore::ToggleSourceRequest,
+    super::metastore::EmptyResponse,
+    crate::control_plane::ControlPlaneError,
+>;
+type DeleteSourceLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        super::metastore::DeleteSourceRequest,
+        super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    super::metastore::DeleteSourceRequest,
+    super::metastore::EmptyResponse,
+    crate::control_plane::ControlPlaneError,
+>;
+type GetOrCreateOpenShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        GetOrCreateOpenShardsRequest,
+        GetOrCreateOpenShardsResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    GetOrCreateOpenShardsRequest,
+    GetOrCreateOpenShardsResponse,
+    crate::control_plane::ControlPlaneError,
+>;
+type GetDebugStateLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        GetDebugStateRequest,
+        GetDebugStateResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    GetDebugStateRequest,
+    GetDebugStateResponse,
+    crate::control_plane::ControlPlaneError,
+>;
 #[derive(Debug, Default)]
-pub struct ControlPlaneServiceTowerBlockBuilder {
-    #[allow(clippy::type_complexity)]
-    create_index_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn ControlPlaneService>,
-            super::metastore::CreateIndexRequest,
-            super::metastore::CreateIndexResponse,
-            crate::control_plane::ControlPlaneError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    delete_index_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn ControlPlaneService>,
-            super::metastore::DeleteIndexRequest,
-            super::metastore::EmptyResponse,
-            crate::control_plane::ControlPlaneError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    add_source_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn ControlPlaneService>,
-            super::metastore::AddSourceRequest,
-            super::metastore::EmptyResponse,
-            crate::control_plane::ControlPlaneError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    toggle_source_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn ControlPlaneService>,
-            super::metastore::ToggleSourceRequest,
-            super::metastore::EmptyResponse,
-            crate::control_plane::ControlPlaneError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    delete_source_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn ControlPlaneService>,
-            super::metastore::DeleteSourceRequest,
-            super::metastore::EmptyResponse,
-            crate::control_plane::ControlPlaneError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    get_or_create_open_shards_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn ControlPlaneService>,
-            GetOrCreateOpenShardsRequest,
-            GetOrCreateOpenShardsResponse,
-            crate::control_plane::ControlPlaneError,
-        >,
-    >,
+pub struct ControlPlaneServiceTowerLayerStack {
+    create_index_layers: Vec<CreateIndexLayer>,
+    delete_index_layers: Vec<DeleteIndexLayer>,
+    add_source_layers: Vec<AddSourceLayer>,
+    toggle_source_layers: Vec<ToggleSourceLayer>,
+    delete_source_layers: Vec<DeleteSourceLayer>,
+    get_or_create_open_shards_layers: Vec<GetOrCreateOpenShardsLayer>,
+    get_debug_state_layers: Vec<GetDebugStateLayer>,
 }
-impl ControlPlaneServiceTowerBlockBuilder {
-    pub fn shared_layer<L>(mut self, layer: L) -> Self
+impl ControlPlaneServiceTowerLayerStack {
+    pub fn stack_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn ControlPlaneService>> + Clone + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::CreateIndexRequest,
+                    super::metastore::CreateIndexResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::CreateIndexRequest,
+                super::metastore::CreateIndexResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                super::metastore::CreateIndexRequest,
+                Response = super::metastore::CreateIndexResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::CreateIndexRequest,
+                super::metastore::CreateIndexResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<
+            super::metastore::CreateIndexRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::DeleteIndexRequest,
+                    super::metastore::EmptyResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::DeleteIndexRequest,
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                super::metastore::DeleteIndexRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::DeleteIndexRequest,
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<
+            super::metastore::DeleteIndexRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::AddSourceRequest,
+                    super::metastore::EmptyResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::AddSourceRequest,
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                super::metastore::AddSourceRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::AddSourceRequest,
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<
+            super::metastore::AddSourceRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::ToggleSourceRequest,
+                    super::metastore::EmptyResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::ToggleSourceRequest,
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                super::metastore::ToggleSourceRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::ToggleSourceRequest,
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<
+            super::metastore::ToggleSourceRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::DeleteSourceRequest,
+                    super::metastore::EmptyResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::DeleteSourceRequest,
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                super::metastore::DeleteSourceRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::DeleteSourceRequest,
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<
+            super::metastore::DeleteSourceRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetOrCreateOpenShardsRequest,
+                    GetOrCreateOpenShardsResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetOrCreateOpenShardsRequest,
+                GetOrCreateOpenShardsResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                GetOrCreateOpenShardsRequest,
+                Response = GetOrCreateOpenShardsResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetOrCreateOpenShardsRequest,
+                GetOrCreateOpenShardsResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<
+            GetOrCreateOpenShardsRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetDebugStateRequest,
+                    GetDebugStateResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetDebugStateRequest,
+                GetDebugStateResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                GetDebugStateRequest,
+                Response = GetDebugStateResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetDebugStateRequest,
+                GetDebugStateResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<GetDebugStateRequest>>::Future: Send + 'static,
+    {
+        self.create_index_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.delete_index_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.add_source_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.toggle_source_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.delete_source_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.get_or_create_open_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.get_debug_state_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self
+    }
+    pub fn stack_create_index_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::CreateIndexRequest,
+                    super::metastore::CreateIndexResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 super::metastore::CreateIndexRequest,
                 Response = super::metastore::CreateIndexResponse,
@@ -597,6 +907,19 @@ impl ControlPlaneServiceTowerBlockBuilder {
         <L::Service as tower::Service<
             super::metastore::CreateIndexRequest,
         >>::Future: Send + 'static,
+    {
+        self.create_index_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_delete_index_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::DeleteIndexRequest,
+                    super::metastore::EmptyResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 super::metastore::DeleteIndexRequest,
                 Response = super::metastore::EmptyResponse,
@@ -605,6 +928,19 @@ impl ControlPlaneServiceTowerBlockBuilder {
         <L::Service as tower::Service<
             super::metastore::DeleteIndexRequest,
         >>::Future: Send + 'static,
+    {
+        self.delete_index_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_add_source_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::AddSourceRequest,
+                    super::metastore::EmptyResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 super::metastore::AddSourceRequest,
                 Response = super::metastore::EmptyResponse,
@@ -613,6 +949,19 @@ impl ControlPlaneServiceTowerBlockBuilder {
         <L::Service as tower::Service<
             super::metastore::AddSourceRequest,
         >>::Future: Send + 'static,
+    {
+        self.add_source_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_toggle_source_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::ToggleSourceRequest,
+                    super::metastore::EmptyResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 super::metastore::ToggleSourceRequest,
                 Response = super::metastore::EmptyResponse,
@@ -621,6 +970,19 @@ impl ControlPlaneServiceTowerBlockBuilder {
         <L::Service as tower::Service<
             super::metastore::ToggleSourceRequest,
         >>::Future: Send + 'static,
+    {
+        self.toggle_source_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_delete_source_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::DeleteSourceRequest,
+                    super::metastore::EmptyResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 super::metastore::DeleteSourceRequest,
                 Response = super::metastore::EmptyResponse,
@@ -629,6 +991,19 @@ impl ControlPlaneServiceTowerBlockBuilder {
         <L::Service as tower::Service<
             super::metastore::DeleteSourceRequest,
         >>::Future: Send + 'static,
+    {
+        self.delete_source_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_get_or_create_open_shards_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetOrCreateOpenShardsRequest,
+                    GetOrCreateOpenShardsResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 GetOrCreateOpenShardsRequest,
                 Response = GetOrCreateOpenShardsResponse,
@@ -638,123 +1013,27 @@ impl ControlPlaneServiceTowerBlockBuilder {
             GetOrCreateOpenShardsRequest,
         >>::Future: Send + 'static,
     {
-        self
-            .create_index_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .delete_index_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .add_source_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .toggle_source_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .delete_source_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .get_or_create_open_shards_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.get_or_create_open_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn create_index_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_get_debug_state_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetDebugStateRequest,
+                    GetDebugStateResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
-                super::metastore::CreateIndexRequest,
-                Response = super::metastore::CreateIndexResponse,
+                GetDebugStateRequest,
+                Response = GetDebugStateResponse,
                 Error = crate::control_plane::ControlPlaneError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            super::metastore::CreateIndexRequest,
-        >>::Future: Send + 'static,
+        <L::Service as tower::Service<GetDebugStateRequest>>::Future: Send + 'static,
     {
-        self.create_index_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn delete_index_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                super::metastore::DeleteIndexRequest,
-                Response = super::metastore::EmptyResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            super::metastore::DeleteIndexRequest,
-        >>::Future: Send + 'static,
-    {
-        self.delete_index_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn add_source_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                super::metastore::AddSourceRequest,
-                Response = super::metastore::EmptyResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            super::metastore::AddSourceRequest,
-        >>::Future: Send + 'static,
-    {
-        self.add_source_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn toggle_source_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                super::metastore::ToggleSourceRequest,
-                Response = super::metastore::EmptyResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            super::metastore::ToggleSourceRequest,
-        >>::Future: Send + 'static,
-    {
-        self.toggle_source_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn delete_source_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                super::metastore::DeleteSourceRequest,
-                Response = super::metastore::EmptyResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            super::metastore::DeleteSourceRequest,
-        >>::Future: Send + 'static,
-    {
-        self.delete_source_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn get_or_create_open_shards_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                GetOrCreateOpenShardsRequest,
-                Response = GetOrCreateOpenShardsResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            GetOrCreateOpenShardsRequest,
-        >>::Future: Send + 'static,
-    {
-        self
-            .get_or_create_open_shards_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.get_debug_state_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> ControlPlaneServiceClient
@@ -767,17 +1046,26 @@ impl ControlPlaneServiceTowerBlockBuilder {
         self,
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> ControlPlaneServiceClient {
         self.build_from_boxed(
-            Box::new(ControlPlaneServiceClient::from_channel(addr, channel)),
+            Box::new(
+                ControlPlaneServiceClient::from_channel(addr, channel, max_message_size),
+            ),
         )
     }
     pub fn build_from_balance_channel(
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> ControlPlaneServiceClient {
         self.build_from_boxed(
-            Box::new(ControlPlaneServiceClient::from_balance_channel(balance_channel)),
+            Box::new(
+                ControlPlaneServiceClient::from_balance_channel(
+                    balance_channel,
+                    max_message_size,
+                ),
+            ),
         )
     }
     pub fn build_from_mailbox<A>(
@@ -794,39 +1082,63 @@ impl ControlPlaneServiceTowerBlockBuilder {
         self,
         boxed_instance: Box<dyn ControlPlaneService>,
     ) -> ControlPlaneServiceClient {
-        let create_index_svc = if let Some(layer) = self.create_index_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let delete_index_svc = if let Some(layer) = self.delete_index_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let add_source_svc = if let Some(layer) = self.add_source_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let toggle_source_svc = if let Some(layer) = self.toggle_source_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let delete_source_svc = if let Some(layer) = self.delete_source_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let get_or_create_open_shards_svc = if let Some(layer)
-            = self.get_or_create_open_shards_layer
-        {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let tower_block = ControlPlaneServiceTowerBlock {
+        let create_index_svc = self
+            .create_index_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let delete_index_svc = self
+            .delete_index_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let add_source_svc = self
+            .add_source_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let toggle_source_svc = self
+            .toggle_source_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let delete_source_svc = self
+            .delete_source_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let get_or_create_open_shards_svc = self
+            .get_or_create_open_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let get_debug_state_svc = self
+            .get_debug_state_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let tower_svc_stack = ControlPlaneServiceTowerServiceStack {
             inner: boxed_instance.clone(),
             create_index_svc,
             delete_index_svc,
@@ -834,8 +1146,9 @@ impl ControlPlaneServiceTowerBlockBuilder {
             toggle_source_svc,
             delete_source_svc,
             get_or_create_open_shards_svc,
+            get_debug_state_svc,
         };
-        ControlPlaneServiceClient::new(tower_block)
+        ControlPlaneServiceClient::new(tower_svc_stack)
     }
 }
 #[derive(Debug, Clone)]
@@ -963,6 +1276,15 @@ where
                 GetOrCreateOpenShardsResponse,
                 crate::control_plane::ControlPlaneError,
             >,
+        >
+        + tower::Service<
+            GetDebugStateRequest,
+            Response = GetDebugStateResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                GetDebugStateResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
         >,
 {
     async fn create_index(
@@ -1001,6 +1323,12 @@ where
         &mut self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
+        self.call(request).await
+    }
+    async fn get_debug_state(
+        &mut self,
+        request: GetDebugStateRequest,
+    ) -> crate::control_plane::ControlPlaneResult<GetDebugStateResponse> {
         self.call(request).await
     }
 }
@@ -1100,6 +1428,16 @@ where
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
     }
+    async fn get_debug_state(
+        &mut self,
+        request: GetDebugStateRequest,
+    ) -> crate::control_plane::ControlPlaneResult<GetDebugStateResponse> {
+        self.inner
+            .get_debug_state(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
 }
 #[derive(Debug)]
 pub struct ControlPlaneServiceGrpcServerAdapter {
@@ -1178,6 +1516,17 @@ for ControlPlaneServiceGrpcServerAdapter {
         self.inner
             .clone()
             .get_or_create_open_shards(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn get_debug_state(
+        &self,
+        request: tonic::Request<GetDebugStateRequest>,
+    ) -> Result<tonic::Response<GetDebugStateResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .get_debug_state(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(|error| error.into())
@@ -1461,6 +1810,37 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Return some innerstate of the control plane meant to assist debugging.
+        pub async fn get_debug_state(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetDebugStateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetDebugStateResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/GetDebugState",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "GetDebugState",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -1517,6 +1897,14 @@ pub mod control_plane_service_grpc_server {
             request: tonic::Request<super::GetOrCreateOpenShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetOrCreateOpenShardsResponse>,
+            tonic::Status,
+        >;
+        /// Return some innerstate of the control plane meant to assist debugging.
+        async fn get_debug_state(
+            &self,
+            request: tonic::Request<super::GetDebugStateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetDebugStateResponse>,
             tonic::Status,
         >;
     }
@@ -1876,6 +2264,52 @@ pub mod control_plane_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetOrCreateOpenShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/GetDebugState" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetDebugStateSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<super::GetDebugStateRequest>
+                    for GetDebugStateSvc<T> {
+                        type Response = super::GetDebugStateResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetDebugStateRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_debug_state(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetDebugStateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

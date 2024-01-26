@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -21,6 +21,8 @@ syntax = "proto3";
 
 package quickwit.indexing;
 
+import "quickwit/ingest.proto";
+
 service IndexingService {
   // Apply an indexing plan on the node.
   rpc ApplyIndexingPlan(ApplyIndexingPlanRequest) returns (ApplyIndexingPlanResponse);
@@ -30,13 +32,19 @@ message ApplyIndexingPlanRequest {
   repeated IndexingTask indexing_tasks = 1;
 }
 
+message PipelineUid {
+  bytes pipeline_uid = 1;
+}
+
 message IndexingTask {
   // The tasks's index UID.
   string index_uid = 1;
   // The task's source ID.
   string source_id = 2;
+  // pipeline id
+  PipelineUid pipeline_uid = 4;
   // The shards assigned to the indexer.
-  repeated uint64 shard_ids = 3;
+  repeated quickwit.ingest.ShardId shard_ids = 3;
 }
 
 message ApplyIndexingPlanResponse {}

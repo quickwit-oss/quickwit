@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -30,7 +30,7 @@ use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
-    ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitInfo, SplitState,
+    ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitInfo, SplitState,
 };
 use quickwit_proto::metastore::{
     DeleteSourceRequest, EntityKind, IndexMetadataRequest, ListIndexesMetadataRequest,
@@ -201,7 +201,8 @@ async fn describe_index(
     let splits = metastore
         .list_splits(list_splits_request)
         .await?
-        .deserialize_splits()?;
+        .collect_splits()
+        .await?;
     let published_splits: Vec<Split> = splits
         .into_iter()
         .filter(|split| split.split_state == SplitState::Published)
@@ -350,7 +351,8 @@ async fn list_splits(
     let splits = metastore
         .list_splits(list_splits_request)
         .await?
-        .deserialize_splits()?;
+        .collect_splits()
+        .await?;
     Ok(ListSplitsResponse {
         offset,
         size: splits.len(),
@@ -439,7 +441,6 @@ fn mark_splits_for_deletion_handler(
 async fn get_indexes_metadatas(
     mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<Vec<IndexMetadata>> {
-    info!("get-indexes-metadatas");
     metastore
         .list_indexes_metadata(ListIndexesMetadataRequest::all())
         .await
@@ -870,9 +871,10 @@ mod tests {
 
     use assert_json_diff::assert_json_include;
     use quickwit_common::uri::Uri;
+    use quickwit_common::ServiceStream;
     use quickwit_config::{SourceParams, VecSourceParams};
     use quickwit_indexing::{mock_split, MockSplitBuilder};
-    use quickwit_metastore::{metastore_for_test, IndexMetadata};
+    use quickwit_metastore::{metastore_for_test, IndexMetadata, ListSplitsResponseExt};
     use quickwit_proto::metastore::{
         EmptyResponse, IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsResponse,
         MetastoreServiceClient, SourceType,
@@ -959,7 +961,8 @@ mod tests {
                     let splits = vec![MockSplitBuilder::new("split_1")
                         .with_index_uid(&index_uid)
                         .build()];
-                    return Ok(ListSplitsResponse::try_from_splits(splits).unwrap());
+                    let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                    return Ok(ServiceStream::from(vec![Ok(splits)]));
                 }
                 Err(MetastoreError::Internal {
                     message: "".to_string(),
@@ -1039,7 +1042,8 @@ mod tests {
             })
             .return_once(move |_| {
                 let splits = vec![split_1, split_2];
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
 
         let index_service = IndexService::new(
@@ -1091,7 +1095,7 @@ mod tests {
                     && list_split_query.time_range.is_unbounded()
                     && list_split_query.create_timestamp.is_unbounded()
                 {
-                    return Ok(ListSplitsResponse::empty());
+                    return Ok(ServiceStream::empty());
                 }
                 Err(MetastoreError::Internal {
                     message: "".to_string(),
@@ -1225,7 +1229,8 @@ mod tests {
             )
         });
         mock_metastore.expect_list_splits().return_once(|_| {
-            Ok(ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap())
+            let splits = ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits)]))
         });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -1270,7 +1275,9 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .returning(|_| {
-                Ok(ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap())
+                let splits =
+                    ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             })
             .times(3);
         mock_metastore
@@ -1348,7 +1355,7 @@ mod tests {
                 .path("/indexes?overwrite=true")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.6", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -1358,7 +1365,7 @@ mod tests {
                 .path("/indexes?overwrite=true")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.6", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -1368,7 +1375,7 @@ mod tests {
                 .path("/indexes")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.6", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 400);
@@ -1387,7 +1394,7 @@ mod tests {
             .path("/indexes")
             .method("POST")
             .json(&true)
-            .body(r#"{"version": "0.6", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+            .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
@@ -1401,7 +1408,7 @@ mod tests {
         assert_json_include!(actual: resp_json, expected: expected_response_json);
 
         // Create source.
-        let source_config_body = r#"{"version": "0.6", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 10}}"#;
+        let source_config_body = r#"{"version": "0.7", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 10}}"#;
         let resp = warp::test::request()
             .path("/indexes/hdfs-logs/sources")
             .method("POST")
@@ -1506,7 +1513,7 @@ mod tests {
         let index_management_handler =
             super::index_management_handlers(index_service, Arc::new(node_config))
                 .recover(recover_fn);
-        let source_config_body = r#"{"version": "0.6", "source_id": "file-source", "source_type":
+        let source_config_body = r#"{"version": "0.7", "source_id": "file-source", "source_type":
     "file", "params": {"filepath": "FILEPATH"}}"#;
         let resp = warp::test::request()
             .path("/indexes/hdfs-logs/sources")
@@ -1534,7 +1541,7 @@ mod tests {
             .header("content-type", "application/yaml")
             .body(
                 r#"
-            version: 0.6
+            version: 0.7
             index_id: hdfs-logs
             doc_mapping:
               field_mappings:
@@ -1572,7 +1579,7 @@ mod tests {
             .header("content-type", "application/toml")
             .body(
                 r#"
-            version = "0.6"
+            version = "0.7"
             index_id = "hdfs-logs"
             [doc_mapping]
             field_mappings = [
@@ -1629,7 +1636,7 @@ mod tests {
             .method("POST")
             .json(&true)
             .body(
-                r#"{"version": "0.6", "index_id": "hdfs-log", "doc_mapping":
+                r#"{"version": "0.7", "index_id": "hdfs-log", "doc_mapping":
     {"field_mappings":[{"name": "timestamp", "type": "unknown", "fast": true, "indexed":
     true}]}}"#,
             )
@@ -1668,7 +1675,7 @@ mod tests {
                 .method("POST")
                 .json(&true)
                 .body(
-                    r#"{"version": "0.6", "source_id": "pulsar-source",
+                    r#"{"version": "0.7", "source_id": "pulsar-source",
     "desired_num_pipelines": 2, "source_type": "pulsar", "params": {"topics": ["my-topic"],
     "address": "pulsar://localhost:6650" }}"#,
                 )

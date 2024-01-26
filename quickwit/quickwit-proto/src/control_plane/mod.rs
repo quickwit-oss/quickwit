@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -35,6 +35,12 @@ pub enum ControlPlaneError {
     Metastore(#[from] MetastoreError),
     #[error("control plane is unavailable: {0}")]
     Unavailable(String),
+}
+
+impl ControlPlaneError {
+    pub fn label_value(&self) -> &'static str {
+        "error"
+    }
 }
 
 impl From<ControlPlaneError> for MetastoreError {

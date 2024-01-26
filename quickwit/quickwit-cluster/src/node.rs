@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -67,25 +67,19 @@ impl ClusterNode {
         enabled_services: &[&str],
         indexing_tasks: &[IndexingTask],
     ) -> Self {
-        use itertools::Itertools;
         use quickwit_common::tower::make_channel;
 
-        use crate::member::{ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX};
+        use crate::cluster::set_indexing_tasks_in_node_state;
+        use crate::member::{ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY};
 
         let gossip_advertise_addr = ([127, 0, 0, 1], port).into();
         let grpc_advertise_addr = ([127, 0, 0, 1], port + 1).into();
         let chitchat_id = ChitchatId::new(node_id.to_string(), 0, gossip_advertise_addr);
         let channel = make_channel(grpc_advertise_addr).await;
-        let mut node_state = NodeState::default();
+        let mut node_state = NodeState::for_test();
         node_state.set(ENABLED_SERVICES_KEY, enabled_services.join(","));
         node_state.set(GRPC_ADVERTISE_ADDR_KEY, grpc_advertise_addr.to_string());
-
-        for (indexing_task, indexing_tasks_group) in
-            indexing_tasks.iter().group_by(|&task| task).into_iter()
-        {
-            let key = format!("{INDEXING_TASK_PREFIX}{}", indexing_task);
-            node_state.set(key, indexing_tasks_group.count().to_string());
-        }
+        set_indexing_tasks_in_node_state(indexing_tasks, &mut node_state);
         Self::try_new(chitchat_id, &node_state, channel, is_self_node).unwrap()
     }
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -203,10 +203,9 @@ impl Handler<UpdatePipelines> for DeleteTaskService {
     ) -> Result<(), ActorExitStatus> {
         let result = self.update_pipeline_handles(ctx).await;
         if let Err(error) = result {
-            error!("Delete task pipelines update failed: {}", error);
+            error!(error=%error, "delete task pipelines update failed");
         }
-        ctx.schedule_self_msg(UPDATE_PIPELINES_INTERVAL, UpdatePipelines)
-            .await;
+        ctx.schedule_self_msg(UPDATE_PIPELINES_INTERVAL, UpdatePipelines);
         Ok(())
     }
 }

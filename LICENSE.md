@@ -1,8 +1,8 @@
-Copyright (C) 2023 Quickwit, Inc.
+Copyright (C) 2024 Quickwit, Inc.
 
 Quickwit is offered under the [GNU Affero General Public License v3.0](https://opensource.org/licenses/AGPL-3.0)
 and as commercial software.
-A copy of the AGPL license can be found in LICENSE_AGPLv3.0.txt
+A copy of the AGPL license can be found in [LICENSE_AGPLv3.0.txt](LICENSE_AGPLv3.0.txt)
 
 # Commercial Licensing
 For commercial licensing, contact us at hello@quickwit.io.

@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-proto"
-version = "0.6.3"
+version = "0.7.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -13,11 +13,12 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
+bytesize = { workspace = true }
 bytestring = { workspace = true }
 dyn-clone = { workspace = true }
+futures = { workspace = true, optional = true }
 http = { workspace = true }
 hyper = { workspace = true }
-futures = { workspace = true, optional = true }
 mockall = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
 prost = { workspace = true }
@@ -33,6 +34,7 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
+zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }

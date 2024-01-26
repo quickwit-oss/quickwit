@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -72,11 +72,13 @@ mod source_factory;
 mod vec_source;
 mod void_source;
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use bytesize::ByteSize;
 pub use file_source::{FileSource, FileSourceFactory};
 #[cfg(feature = "gcp-pubsub")]
 pub use gcp_pubsub_source::{GcpPubSubSource, GcpPubSubSourceFactory};
@@ -88,13 +90,14 @@ use once_cell::sync::OnceCell;
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
-use quickwit_proto::types::{IndexUid, ShardId};
+use quickwit_proto::types::{IndexUid, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
@@ -109,6 +112,21 @@ use crate::models::RawDocBatch;
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
+/// Number of bytes after which we cut a new batch.
+///
+/// We try to emit chewable batches for the indexer.
+/// One batch = one message to the indexer actor.
+///
+/// If batches are too large:
+/// - we might not be able to observe the state of the indexer for 5 seconds.
+/// - we will be needlessly occupying resident memory in the mailbox.
+/// - we will not have a precise control of the timeout before commit.
+///
+/// 5MB seems like a good one size fits all value.
+const BATCH_NUM_BYTES_LIMIT: u64 = ByteSize::mib(5).as_u64();
+
+const EMIT_BATCHES_TIMEOUT: Duration = Duration::from_millis(if cfg!(test) { 100 } else { 1_000 });
+
 /// Runtime configuration used during execution of a source actor.
 pub struct SourceRuntimeArgs {
     pub pipeline_id: IndexingPipelineId,
@@ -118,6 +136,7 @@ pub struct SourceRuntimeArgs {
     // Ingest API queues directory path.
     pub queues_dir_path: PathBuf,
     pub storage_resolver: StorageResolver,
+    pub event_broker: EventBroker,
 }
 
 impl SourceRuntimeArgs {
@@ -137,8 +156,8 @@ impl SourceRuntimeArgs {
         &self.pipeline_id.source_id
     }
 
-    pub fn pipeline_ord(&self) -> usize {
-        self.pipeline_id.pipeline_ord
+    pub fn pipeline_uid(&self) -> PipelineUid {
+        self.pipeline_id.pipeline_uid
     }
 
     #[cfg(test)]
@@ -153,15 +172,16 @@ impl SourceRuntimeArgs {
             node_id: "test-node".to_string(),
             index_uid,
             source_id: source_config.source_id.clone(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
-        Arc::new(Self {
+        Arc::new(SourceRuntimeArgs {
             pipeline_id,
             metastore,
             ingester_pool: IngesterPool::default(),
             queues_dir_path,
             source_config,
             storage_resolver: StorageResolver::for_test(),
+            event_broker: EventBroker::default(),
         })
     }
 }
@@ -219,7 +239,7 @@ pub trait Source: Send + 'static {
     /// plane.
     async fn assign_shards(
         &mut self,
-        _assignement: Assignment,
+        _shard_ids: BTreeSet<ShardId>,
         _doc_processor_mailbox: &Mailbox<DocProcessor>,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
@@ -280,7 +300,7 @@ struct Loop;
 
 #[derive(Debug)]
 pub struct Assignment {
-    pub shard_ids: Vec<ShardId>,
+    pub shard_ids: BTreeSet<ShardId>,
 }
 
 #[derive(Debug)]
@@ -337,7 +357,7 @@ impl Handler<Loop> for SourceActor {
             ctx.send_self_message(Loop).await?;
             return Ok(());
         }
-        ctx.schedule_self_msg(wait_for, Loop).await;
+        ctx.schedule_self_msg(wait_for, Loop);
         Ok(())
     }
 }
@@ -348,12 +368,12 @@ impl Handler<AssignShards> for SourceActor {
 
     async fn handle(
         &mut self,
-        message: AssignShards,
+        assign_shards_message: AssignShards,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        let AssignShards(assignment) = message;
+        let AssignShards(Assignment { shard_ids }) = assign_shards_message;
         self.source
-            .assign_shards(assignment, &self.doc_processor_mailbox, ctx)
+            .assign_shards(shard_ids, &self.doc_processor_mailbox, ctx)
             .await?;
         Ok(())
     }

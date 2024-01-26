@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -30,7 +30,7 @@ use crate::Cardinality;
 /// A `FieldMappingType` defines the type and indexing options
 /// of a mapping field.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum FieldMappingType {
+pub enum FieldMappingType {
     /// String mapping type configuration.
     Text(QuickwitTextOptions, Cardinality),
     /// Signed 64-bit integer mapping type configuration.
@@ -54,6 +54,7 @@ pub(crate) enum FieldMappingType {
 }
 
 impl FieldMappingType {
+    /// Returns the field mapping type name.
     pub fn quickwit_field_type(&self) -> QuickwitFieldType {
         let (primitive_type, cardinality) = match self {
             FieldMappingType::Text(_, cardinality) => (Type::Str, *cardinality),

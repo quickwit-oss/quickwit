@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -23,9 +23,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use chitchat::transport::ChannelTransport;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::create_cluster_for_test;
+use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
@@ -39,7 +38,7 @@ use quickwit_metastore::{
     CreateIndexRequestExt, MetastoreResolver, Split, SplitMetadata, SplitState,
 };
 use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, PipelineUid};
 use quickwit_storage::{Storage, StorageResolver};
 use serde_json::Value as JsonValue;
 
@@ -173,7 +172,7 @@ impl TestSandbox {
             .ask_for_res(SpawnPipeline {
                 index_id: self.index_uid.index_id().to_string(),
                 source_config,
-                pipeline_ord: 0,
+                pipeline_uid: PipelineUid::from_u128(0u128),
             })
             .await?;
         let pipeline_handle = self
@@ -282,7 +281,7 @@ pub fn mock_split_meta(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
+    use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt};
     use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
 
     use super::TestSandbox;
@@ -313,7 +312,8 @@ mod tests {
                     ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap(),
                 )
                 .await?
-                .deserialize_splits()?;
+                .collect_splits()
+                .await?;
             assert_eq!(splits.len(), 1);
             test_sandbox.add_documents(vec![
             serde_json::json!({"title": "Byzantine-Ottoman wars", "body": "...", "url": "http://biz-ottoman"}),
@@ -325,7 +325,8 @@ mod tests {
                     ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap(),
                 )
                 .await?
-                .deserialize_splits()?;
+                .collect_splits()
+                .await?;
             assert_eq!(splits.len(), 2);
         }
         test_sandbox.assert_quit().await;

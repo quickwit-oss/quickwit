@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -24,17 +24,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Instant;
 
-use async_trait::async_trait;
 use quickwit_common::metrics::IntCounter;
 use tokio::sync::oneshot;
 
 use crate::channel_with_priority::{Receiver, Sender, TrySendError};
 use crate::envelope::{wrap_in_envelope, Envelope};
 use crate::scheduler::SchedulerClient;
-use crate::{
-    Actor, ActorContext, ActorExitStatus, AskError, DeferableReplyHandler, Handler, QueueCapacity,
-    RecvError, SendError,
-};
+use crate::{Actor, AskError, Command, DeferableReplyHandler, QueueCapacity, RecvError, SendError};
 
 /// A mailbox is the object that makes it possible to send a message
 /// to an actor.
@@ -76,37 +72,8 @@ impl<A: Actor> Drop for Mailbox<A> {
             // This was the last mailbox.
             // `ref_count == 1` means that only the mailbox in the ActorContext
             // is remaining.
-            let _ = self.send_message_with_high_priority(LastMailbox);
+            let _ = self.send_message_with_high_priority(Command::Nudge);
         }
-    }
-}
-
-#[derive(Debug)]
-struct LastMailbox;
-
-#[async_trait]
-impl<A: Actor> Handler<LastMailbox> for A {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        _: LastMailbox,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        // Being the last mailbox does not necessarily mean that we
-        // want to stop the processing.
-        //
-        // There could be pending message in the queue that will
-        // spawn actors which will get a new copy of the mailbox
-        // etc.
-        //
-        // For that reason, the logic that really detects
-        // the last mailbox happens when all message have been drained.
-        //
-        // The `LastMailbox` message is just here to make sure the actor
-        // loop does not get stuck waiting for a message that does
-        // will never come.
-        Ok(())
     }
 }
 
@@ -382,11 +349,6 @@ impl<A: Actor> Inbox<A> {
         None
     }
 
-    #[allow(dead_code)] // temporary
-    pub(crate) fn try_recv_cmd_and_scheduled_msg_only(&self) -> Result<Envelope<A>, RecvError> {
-        self.rx.try_recv_high_priority_message()
-    }
-
     /// Destroys the inbox and returns the list of pending messages or commands
     /// in the low priority channel.
     ///
@@ -438,10 +400,20 @@ pub struct WeakMailbox<A: Actor> {
     ref_count: Weak<AtomicUsize>,
 }
 
+impl<A: Actor> Clone for WeakMailbox<A> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            ref_count: self.ref_count.clone(),
+        }
+    }
+}
+
 impl<A: Actor> WeakMailbox<A> {
     pub fn upgrade(&self) -> Option<Mailbox<A>> {
         let inner = self.inner.upgrade()?;
         let ref_count = self.ref_count.upgrade()?;
+        ref_count.fetch_add(1, Ordering::SeqCst);
         Some(Mailbox { inner, ref_count })
     }
 }
@@ -453,7 +425,7 @@ mod tests {
 
     use super::*;
     use crate::tests::{Ping, PingReceiverActor};
-    use crate::Universe;
+    use crate::{ActorContext, ActorExitStatus, Handler, Universe};
 
     #[tokio::test]
     async fn test_weak_mailbox_downgrade_upgrade() {
@@ -613,5 +585,18 @@ mod tests {
             mailbox.try_send_message(Ping).unwrap_err(),
             TrySendError::Disconnected
         ));
+    }
+
+    #[tokio::test]
+    async fn test_weak_mailbox_ref_count() {
+        let universe = Universe::with_accelerated_time();
+        let (mailbox, _inbox) = universe
+            .create_mailbox::<PingReceiverActor>("hello".to_string(), QueueCapacity::Bounded(1));
+        assert!(mailbox.is_last_mailbox());
+        let weak_mailbox = mailbox.downgrade();
+        let second_mailbox = weak_mailbox.upgrade().unwrap();
+        assert!(!mailbox.is_last_mailbox());
+        drop(second_mailbox);
+        assert!(mailbox.is_last_mailbox());
     }
 }

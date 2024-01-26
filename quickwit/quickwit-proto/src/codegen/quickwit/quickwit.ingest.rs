@@ -28,8 +28,8 @@ pub struct Shard {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "3")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     /// The node ID of the ingester to which all the write requests for this shard should be sent to.
     #[prost(string, tag = "4")]
     pub leader_id: ::prost::alloc::string::String,
@@ -50,6 +50,18 @@ pub struct Shard {
     #[prost(string, optional, tag = "10")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish_token: ::core::option::Option<::prost::alloc::string::String>,
+}
+/// A group of shards belonging to the same index and source.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardIds {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -96,7 +108,7 @@ pub enum ShardState {
     /// The ingester hosting the shard is unavailable.
     Unavailable = 2,
     /// The shard is closed and cannot be written to.
-    /// It can be safely deleted if the publish position is superior or equal to the replication position.
+    /// It can be safely deleted if the publish position is superior or equal to `~eof`.
     Closed = 3,
 }
 impl ShardState {

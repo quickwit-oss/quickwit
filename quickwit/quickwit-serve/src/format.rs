@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -44,10 +44,10 @@ impl BodyFormat {
     fn value_to_vec(&self, value: &impl serde::Serialize) -> Result<Vec<u8>, ()> {
         match &self {
             Self::Json => serde_json::to_vec(value).map_err(|_| {
-                tracing::error!("Error: the response serialization failed.");
+                tracing::error!("the response serialization failed");
             }),
             Self::PrettyJson => serde_json::to_vec_pretty(value).map_err(|_| {
-                tracing::error!("Error: the response serialization failed.");
+                tracing::error!("the response serialization failed");
             }),
         }
     }

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -51,7 +51,7 @@ pub async fn start_janitor_service(
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
 ) -> anyhow::Result<Mailbox<JanitorService>> {
-    info!("Starting janitor service.");
+    info!("starting janitor service");
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_resolver.clone());
     let (_, garbage_collector_handle) = universe.spawn_builder().spawn(garbage_collector);
 

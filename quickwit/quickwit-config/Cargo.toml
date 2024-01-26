@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-config"
-version = "0.6.3"
+version = "0.7.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial license, contact hello@quickwit.io
@@ -16,6 +16,8 @@ bytesize = { workspace = true }
 chrono = { workspace = true }
 cron = { workspace = true }
 enum-iterator = { workspace = true }
+http = { workspace = true }
+http-serde = { workspace = true }
 humantime = { workspace = true }
 itertools = { workspace = true }
 json_comments = { workspace = true }

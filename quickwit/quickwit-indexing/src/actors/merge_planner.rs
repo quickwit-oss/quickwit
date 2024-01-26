@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -41,8 +41,6 @@ use crate::MergePolicy;
 
 /// The merge planner decides when to start a merge task.
 pub struct MergePlanner {
-    pipeline_id: IndexingPipelineId,
-
     /// A young split is a split that has not reached maturity
     /// yet and can be candidate to merge operations.
     partitioned_young_splits: HashMap<u64, Vec<SplitMetadata>>,
@@ -196,7 +194,6 @@ impl MergePlanner {
             .filter(|split_metadata| belongs_to_pipeline(&pipeline_id, split_metadata))
             .collect();
         let mut merge_planner = MergePlanner {
-            pipeline_id,
             known_split_ids: Default::default(),
             partitioned_young_splits: Default::default(),
             merge_policy,
@@ -358,7 +355,7 @@ impl MergePlanner {
         // We run smaller merges in priority.
         merge_ops.sort_by_cached_key(|merge_op| Reverse(max_merge_ops(merge_op)));
         while let Some(merge_operation) = merge_ops.pop() {
-            info!(merge_operation=?merge_operation, "Planned merge operation.");
+            info!(merge_operation=?merge_operation, "planned merge operation");
             let tracked_merge_operation = self
                 .ongoing_merge_operations_inventory
                 .track(merge_operation);
@@ -436,18 +433,13 @@ impl Handler<RefreshMetrics> for MergePlanner {
         }
         INDEXER_METRICS
             .ongoing_merge_operations
-            .with_label_values([
-                self.pipeline_id.index_uid.index_id(),
-                self.pipeline_id.source_id.as_str(),
-            ])
             .set(self.ongoing_merge_operations_inventory.list().len() as i64);
         ctx.schedule_self_msg(
             *quickwit_actors::HEARTBEAT,
             RefreshMetrics {
                 incarnation_started_at: self.incarnation_started_at,
             },
-        )
-        .await;
+        );
         Ok(())
     }
 }
@@ -470,7 +462,7 @@ mod tests {
     use quickwit_config::IndexingSettings;
     use quickwit_metastore::{SplitMaturity, SplitMetadata};
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use tantivy::TrackedObject;
     use time::OffsetDateTime;
 
@@ -513,7 +505,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy = Arc::new(StableLogMergePolicy::new(
             StableLogMergePolicyConfig {
@@ -599,7 +591,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
@@ -651,7 +643,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
@@ -750,7 +742,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
@@ -828,7 +820,7 @@ mod tests {
             index_uid,
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
@@ -892,7 +884,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
@@ -972,7 +964,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -82,6 +82,10 @@ pub struct IndexerCounters {
     /// This value is used to trigger commit and for observation.
     pub num_docs_in_workbench: u64,
 
+    /// Number of ProcessDocBatch received by the indexer to
+    /// build this split.
+    pub num_doc_batches_in_workbench: u64,
+
     /// Metrics describing the load and indexing performance of the
     /// pipeline. This is only updated for cooperative indexers.
     pub pipeline_metrics_opt: Option<PipelineMetrics>,
@@ -121,7 +125,7 @@ impl IndexerState {
         let io_controls = IoControls::default()
             .set_progress(ctx.progress().clone())
             .set_kill_switch(ctx.kill_switch().clone())
-            .set_index_and_component(self.pipeline_id.index_uid.index_id(), "indexer");
+            .set_component("indexer");
 
         let indexed_split = IndexedSplitBuilder::new_in_dir(
             self.pipeline_id.clone(),
@@ -186,7 +190,7 @@ impl IndexerState {
         let batch_parent_span = info_span!(target: "quickwit-indexing", "index-doc-batches",
             index_id=%self.pipeline_id.index_uid.index_id(),
             source_id=%self.pipeline_id.source_id,
-            pipeline_ord=%self.pipeline_id.pipeline_ord,
+            pipeline_uid=%self.pipeline_id.pipeline_uid,
             workbench_id=%workbench_id,
         );
         let indexing_span = info_span!(parent: batch_parent_span.id(), "indexer");
@@ -254,8 +258,7 @@ impl IndexerState {
             ctx.schedule_self_msg(
                 self.indexing_settings.commit_timeout(),
                 commit_timeout_message,
-            )
-            .await;
+            );
             *indexing_workbench_opt = Some(indexing_workbench);
         }
         let current_indexing_workbench = indexing_workbench_opt.as_mut().context(
@@ -292,6 +295,7 @@ impl IndexerState {
             .extend(batch.checkpoint_delta)
             .context("batch delta does not follow indexer checkpoint")?;
         let mut memory_usage_delta: u64 = 0;
+        counters.num_doc_batches_in_workbench += 1;
         for doc in batch.docs {
             let ProcessedDoc {
                 doc,
@@ -413,8 +417,9 @@ impl Actor for Indexer {
         // Time to take a nap.
         let sleep_for = commit_timeout - elapsed;
 
-        ctx.schedule_self_msg(sleep_for, Command::Resume).await;
-        self.handle(Command::Pause, ctx).await?;
+        ctx.pause();
+        ctx.schedule_self_msg(sleep_for, Command::Resume);
+
         Ok(())
     }
 
@@ -652,7 +657,14 @@ impl Indexer {
         }
         let num_splits = splits.len() as u64;
         let split_ids = splits.iter().map(|split| split.split_id()).join(",");
-        info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-index-serializer");
+        info!(
+            index=self.indexer_state.pipeline_id.index_uid.as_str(),
+            source=self.indexer_state.pipeline_id.source_id.as_str(),
+            pipeline_uid=%self.indexer_state.pipeline_id.pipeline_uid,
+            commit_trigger=?commit_trigger,
+            num_batches=%self.counters.num_doc_batches_in_workbench,
+            split_ids=%split_ids,
+            num_docs=self.counters.num_docs_in_workbench, "send-to-index-serializer");
         ctx.send_message(
             &self.index_serializer_mailbox,
             IndexedSplitBatchBuilder {
@@ -666,6 +678,7 @@ impl Indexer {
         )
         .await?;
         self.counters.num_docs_in_workbench = 0;
+        self.counters.num_doc_batches_in_workbench = 0;
         self.counters.num_splits_emitted += num_splits;
         self.counters.num_split_batches_emitted += 1;
         Ok(())
@@ -682,7 +695,7 @@ mod tests {
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::metastore::{EmptyResponse, LastDeleteOpstampResponse};
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use tantivy::{doc, DateTime};
 
     use super::*;
@@ -724,7 +737,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
@@ -830,6 +843,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 1, //< the num docs in split counter has been reset.
+                num_doc_batches_in_workbench: 1, //< the num docs in split counter has been reset.
                 pipeline_metrics_opt: None,
             }
         );
@@ -861,7 +875,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
@@ -938,7 +952,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
@@ -1022,7 +1036,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
@@ -1065,16 +1079,29 @@ mod tests {
             })
             .await
             .unwrap();
-        universe.sleep(Duration::from_secs(3)).await;
-        let mut indexer_counters = indexer_handle.observe().await.state;
-        indexer_counters.pipeline_metrics_opt = None;
+        let mut indexer_counters: IndexerCounters = Default::default();
+        for _ in 0..100 {
+            // When a lot of unit tests are running concurrently we have a race condition here.
+            // It is very difficult to assess when drain will actually be called.
+            //
+            // Therefore we check that it happens "eventually".
+            universe.sleep(Duration::from_secs(1)).await;
+            tokio::task::yield_now().await;
+            indexer_counters = indexer_handle.observe().await.state;
+            indexer_counters.pipeline_metrics_opt = None;
+            // drain was called at least once.
+            if indexer_counters.num_splits_emitted > 0 {
+                break;
+            }
+        }
 
         assert_eq!(
-            indexer_counters,
-            IndexerCounters {
+            &indexer_counters,
+            &IndexerCounters {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0,
+                num_doc_batches_in_workbench: 0,
                 pipeline_metrics_opt: None,
             }
         );
@@ -1097,7 +1124,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let schema = doc_mapper.schema();
@@ -1148,6 +1175,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0,
+                num_doc_batches_in_workbench: 0,
                 pipeline_metrics_opt: None,
             }
         );
@@ -1176,7 +1204,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> = Arc::new(
             serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap(),
@@ -1237,6 +1265,7 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_docs_in_workbench: 2,
+                num_doc_batches_in_workbench: 1,
                 num_splits_emitted: 0,
                 num_split_batches_emitted: 0,
                 pipeline_metrics_opt: None,
@@ -1249,6 +1278,7 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_docs_in_workbench: 0,
+                num_doc_batches_in_workbench: 0,
                 num_splits_emitted: 2,
                 num_split_batches_emitted: 1,
                 pipeline_metrics_opt: None,
@@ -1274,7 +1304,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
@@ -1344,7 +1374,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
@@ -1416,7 +1446,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
@@ -1481,7 +1511,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
@@ -1542,7 +1572,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
@@ -1597,6 +1627,7 @@ mod tests {
                 num_splits_emitted: 0,
                 num_split_batches_emitted: 0,
                 num_docs_in_workbench: 0, //< the num docs in split counter has been reset.
+                num_doc_batches_in_workbench: 2, //< the num docs in split counter has been reset.
                 pipeline_metrics_opt: None,
             }
         );

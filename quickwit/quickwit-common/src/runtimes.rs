@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -120,7 +120,7 @@ impl RuntimeType {
             .get_or_init(|| {
                 #[cfg(any(test, feature = "testsuite"))]
                 {
-                    tracing::warn!("Starting Tokio actor runtimes for tests.");
+                    tracing::warn!("starting Tokio actor runtimes for tests");
                     start_runtimes(RuntimesConfig::light_for_tests())
                 }
                 #[cfg(not(any(test, feature = "testsuite")))]

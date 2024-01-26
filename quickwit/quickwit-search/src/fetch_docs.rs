@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -87,7 +87,7 @@ async fn fetch_docs_to_map(
             .iter()
             .map(|split| split.split_id.clone())
             .collect_vec();
-        error!(split_ids = ?split_ids, error = ?error, "Error when fetching docs in splits.");
+        error!(split_ids = ?split_ids, error = ?error, "error when fetching docs in splits");
         anyhow::anyhow!(
             "error when fetching docs for splits {:?}: {:?}",
             split_ids,

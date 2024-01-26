@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -26,13 +26,11 @@ use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
-use chitchat::transport::ChannelTransport;
-use chitchat::FailureDetectorConfig;
 use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use quickwit_actors::{ActorExitStatus, ActorHandle, Universe};
-use quickwit_cluster::{Cluster, ClusterMember};
+use quickwit_cluster::{ChannelTransport, Cluster, ClusterMember, FailureDetectorConfig};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
@@ -52,7 +50,7 @@ use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{CountHits, SearchResponse};
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{NodeId, PipelineUid};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_serve::{
     search_request_from_api_request, BodyFormat, SearchRequestQueryString, SortBy,
@@ -473,7 +471,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .ask_for_res(SpawnPipeline {
             index_id: args.index_id.clone(),
             source_config,
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         })
         .await?;
     let merge_pipeline_handle = indexing_server_mailbox
@@ -613,7 +611,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             },
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         })
         .await?;
     let pipeline_handle: ActorHandle<MergePipeline> = indexing_service_mailbox
@@ -630,12 +628,12 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         let observation = pipeline_handle.last_observation();
 
         if observation.num_ongoing_merges == 0 {
-            info!("Merge pipeline has no more ongoing merges, Exiting.");
+            info!("merge pipeline has no more ongoing merges, exiting");
             break;
         }
 
         if pipeline_handle.state().is_exit() {
-            info!("Merge pipeline has exited, Exiting.");
+            info!("merge pipeline has exited, exiting");
             break;
         }
     }

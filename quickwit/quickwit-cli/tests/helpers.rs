@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -41,7 +41,7 @@ use tracing::error;
 pub const PACKAGE_BIN_NAME: &str = "quickwit";
 
 const DEFAULT_INDEX_CONFIG: &str = r#"
-    version: 0.6
+    version: 0.7
 
     index_id: #index_id
     index_uri: #index_uri
@@ -81,10 +81,11 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
 "#;
 
 const DEFAULT_QUICKWIT_CONFIG: &str = r#"
-    version: 0.6
+    version: 0.7
     metastore_uri: #metastore_uri
     data_dir: #data_dir
-    rest_listen_port: #rest_listen_port
+    rest:
+        listen_port: #rest_listen_port
     grpc_listen_port: #grpc_listen_port
 "#;
 
@@ -158,7 +159,7 @@ impl TestEnv {
         };
         tokio::spawn(async move {
             if let Err(error) = run_command.execute().await {
-                error!(err=?error, "Failed to start a quickwit server.");
+                error!(err=?error, "failed to start a quickwit server");
             }
         });
         wait_for_server_ready(([127, 0, 0, 1], self.rest_listen_port).into()).await?;

@@ -9,7 +9,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.6"
+  version: "0.7"
   index_id: gharchive
   doc_mapping:
     index_field_presence: true
@@ -27,12 +27,14 @@ json:
         - name: created_at
           type: datetime
           fast: true
+          fast_precision: milliseconds
     dynamic_mapping:
       expand_dots: true
       tokenizer: default
       fast:
         normalizer: lowercase
       record: position
+sleep_after: 3
 ---
 # Ingest documents
 method: POST
@@ -42,3 +44,4 @@ params:
   refresh: "true"
 headers: {"Content-Type": "application/json"}
 body_from_file: gharchive-bulk.json.gz
+sleep_after: 3
