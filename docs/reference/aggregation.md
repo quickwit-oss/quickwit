@@ -29,6 +29,12 @@ fast: true
 
 See the [index configuration](../configuration/index-config.md) page for more details and examples.
 
+#### API Endpoint
+
+The endpoints for aggregations are the search endpoints:
+- Quickwit API: `api/v1/<index id>/search`
+- Elasticsearch API: `api/v1/_elastic/<index_id>/_search`.
+
 #### Format
 
 The aggregation request and result de/serialize into elasticsearch compatible JSON.
