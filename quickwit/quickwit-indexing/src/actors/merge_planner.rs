@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::channel_with_priority::TrySendError;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::indexing::IndexingPipelineId;
 use serde::Serialize;
@@ -34,7 +35,7 @@ use time::OffsetDateTime;
 use tracing::{info, warn};
 
 use crate::actors::MergeSplitDownloader;
-use crate::merge_policy::MergeOperation;
+use crate::merge_policy::{MergeOperation, MergeTask};
 use crate::metrics::INDEXER_METRICS;
 use crate::models::NewSplits;
 use crate::MergePolicy;
@@ -63,6 +64,7 @@ pub struct MergePlanner {
     known_split_ids: HashSet<String>,
 
     merge_policy: Arc<dyn MergePolicy>,
+    doc_mapper: Arc<dyn DocMapper>,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
 
     /// Inventory of ongoing merge operations. If everything goes well,
@@ -85,7 +87,7 @@ pub struct MergePlanner {
 impl Actor for MergePlanner {
     type ObservableState = MergePlannerState;
 
-    fn observable_state(&self) -> Self::ObservableState {
+    fn observable_state(&self) -> MergePlannerState {
         let ongoing_merge_operations = self
             .ongoing_merge_operations_inventory
             .list()
@@ -187,6 +189,7 @@ impl MergePlanner {
         pipeline_id: IndexingPipelineId,
         published_splits: Vec<SplitMetadata>,
         merge_policy: Arc<dyn MergePolicy>,
+        doc_mapper: Arc<dyn DocMapper>,
         merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> MergePlanner {
         let published_splits: Vec<SplitMetadata> = published_splits
@@ -197,6 +200,7 @@ impl MergePlanner {
             known_split_ids: Default::default(),
             partitioned_young_splits: Default::default(),
             merge_policy,
+            doc_mapper,
             merge_split_downloader_mailbox,
             ongoing_merge_operations_inventory: Inventory::default(),
             incarnation_started_at: Instant::now(),
@@ -338,6 +342,17 @@ impl MergePlanner {
             .sum()
     }
 
+    fn make_merge_task(&self, merge_operation: MergeOperation) -> MergeTask {
+        let tracked_merge_operation = self
+            .ongoing_merge_operations_inventory
+            .track(merge_operation);
+        MergeTask {
+            merge_operation: tracked_merge_operation,
+            merge_policy: self.merge_policy.clone(),
+            doc_mapper: self.doc_mapper.clone(),
+        }
+    }
+
     async fn send_merge_ops(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         // We do not want to simply schedule all available merge operations here.
         //
@@ -356,12 +371,10 @@ impl MergePlanner {
         merge_ops.sort_by_cached_key(|merge_op| Reverse(max_merge_ops(merge_op)));
         while let Some(merge_operation) = merge_ops.pop() {
             info!(merge_operation=?merge_operation, "planned merge operation");
-            let tracked_merge_operation = self
-                .ongoing_merge_operations_inventory
-                .track(merge_operation);
+            let merge_task = self.make_merge_task(merge_operation);
             if let Err(try_send_err) = self
                 .merge_split_downloader_mailbox
-                .try_send_message(tracked_merge_operation)
+                .try_send_message(merge_task)
             {
                 match try_send_err {
                     TrySendError::Disconnected => {
@@ -444,7 +457,7 @@ impl Handler<RefreshMetrics> for MergePlanner {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Serialize, Debug)]
 pub struct MergePlannerState {
     pub(crate) ongoing_merge_operations: Vec<MergeOperation>,
 }

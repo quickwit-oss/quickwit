@@ -250,7 +250,6 @@ impl MergePipeline {
         let merge_uploader = Uploader::new(
             UploaderType::MergeUploader,
             self.params.metastore.clone(),
-            self.params.merge_policy.clone(),
             self.params.split_store.clone(),
             merge_publisher_mailbox.into(),
             self.params.max_concurrent_split_uploads,
@@ -262,8 +261,7 @@ impl MergePipeline {
             .spawn(merge_uploader);
 
         // Merge Packager
-        let tag_fields = self.params.doc_mapper.tag_named_fields()?;
-        let merge_packager = Packager::new("MergePackager", tag_fields, merge_uploader_mailbox);
+        let merge_packager = Packager::new("MergePackager", merge_uploader_mailbox);
         let (merge_packager_mailbox, merge_packager_handler) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
@@ -311,6 +309,7 @@ impl MergePipeline {
             self.params.pipeline_id.clone(),
             published_splits_metadata,
             self.params.merge_policy.clone(),
+            self.params.doc_mapper.clone(),
             merge_split_downloader_mailbox,
         );
         let (_, merge_planner_handler) = ctx

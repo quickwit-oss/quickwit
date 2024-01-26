@@ -19,9 +19,11 @@
 
 use std::fmt;
 use std::path::Path;
+use std::sync::Arc;
 
 use quickwit_common::io::IoControls;
 use quickwit_common::temp_dir::TempDirectory;
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{IndexUid, PublishToken};
@@ -30,7 +32,7 @@ use tantivy::{IndexBuilder, TrackedObject};
 use tracing::{instrument, Span};
 
 use crate::controlled_directory::ControlledDirectory;
-use crate::merge_policy::MergeOperation;
+use crate::merge_policy::{MergeOperation, MergePolicy};
 use crate::models::{PublishLock, SplitAttrs};
 use crate::new_split_id;
 
@@ -39,6 +41,8 @@ pub struct IndexedSplitBuilder {
     pub index_writer: tantivy::SingleSegmentIndexWriter,
     pub split_scratch_directory: TempDirectory,
     pub controlled_directory_opt: Option<ControlledDirectory>,
+    pub merge_policy: Arc<dyn MergePolicy>,
+    pub doc_mapper: Arc<dyn DocMapper>,
 }
 
 pub struct IndexedSplit {
@@ -46,6 +50,8 @@ pub struct IndexedSplit {
     pub index: tantivy::Index,
     pub split_scratch_directory: TempDirectory,
     pub controlled_directory_opt: Option<ControlledDirectory>,
+    pub merge_policy: Arc<dyn MergePolicy>,
+    pub doc_mapper: Arc<dyn DocMapper>,
 }
 
 impl IndexedSplit {
@@ -82,6 +88,8 @@ impl IndexedSplitBuilder {
         partition_id: u64,
         last_delete_opstamp: u64,
         scratch_directory: TempDirectory,
+        merge_policy: Arc<dyn MergePolicy>,
+        doc_mapper: Arc<dyn DocMapper>,
         index_builder: IndexBuilder,
         io_controls: IoControls,
     ) -> anyhow::Result<Self> {
@@ -111,6 +119,8 @@ impl IndexedSplitBuilder {
                 delete_opstamp: last_delete_opstamp,
                 num_merge_ops: 0,
             },
+            merge_policy,
+            doc_mapper,
             index_writer,
             split_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
@@ -136,9 +146,11 @@ impl IndexedSplitBuilder {
         let index = self.index_writer.finalize()?;
         Ok(IndexedSplit {
             split_attrs: self.split_attrs,
+            merge_policy: self.merge_policy,
             index,
             split_scratch_directory: self.split_scratch_directory,
             controlled_directory_opt: self.controlled_directory_opt,
+            doc_mapper: self.doc_mapper,
         })
     }
 

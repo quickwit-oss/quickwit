@@ -67,20 +67,13 @@ use crate::models::{
 pub struct Packager {
     actor_name: &'static str,
     uploader_mailbox: Mailbox<Uploader>,
-    /// List of tag fields ([`Vec<NamedField>`]) defined in the index config.
-    tag_fields: Vec<NamedField>,
 }
 
 impl Packager {
-    pub fn new(
-        actor_name: &'static str,
-        tag_fields: Vec<NamedField>,
-        uploader_mailbox: Mailbox<Uploader>,
-    ) -> Packager {
+    pub fn new(actor_name: &'static str, uploader_mailbox: Mailbox<Uploader>) -> Packager {
         Packager {
             actor_name,
             uploader_mailbox,
-            tag_fields,
         }
     }
 
@@ -91,8 +84,8 @@ impl Packager {
     ) -> anyhow::Result<PackagedSplit> {
         let segment_metas = split.index.searchable_segment_metas()?;
         assert_eq!(segment_metas.len(), 1);
-        let packaged_split =
-            create_packaged_split(&segment_metas[..], split, &self.tag_fields, ctx)?;
+        let tag_fields = split.doc_mapper.tag_named_fields()?;
+        let packaged_split = create_packaged_split(&segment_metas[..], split, &tag_fields, ctx)?;
         Ok(packaged_split)
     }
 }
@@ -324,6 +317,7 @@ fn create_packaged_split(
         serialized_split_fields,
         split_attrs: split.split_attrs,
         split_scratch_directory: split.split_scratch_directory,
+        merge_policy: split.merge_policy,
         tags,
         split_files,
         hotcache_bytes,

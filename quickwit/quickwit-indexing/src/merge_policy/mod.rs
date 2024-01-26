@@ -29,9 +29,11 @@ use itertools::Itertools;
 pub use nop_merge_policy::NopMergePolicy;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::IndexingSettings;
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use serde::Serialize;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
+use tantivy::TrackedObject;
 use tracing::{info_span, Span};
 
 use crate::new_split_id;
@@ -45,6 +47,20 @@ pub enum MergeOperationType {
 impl fmt::Display for MergeOperationType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+
+pub struct MergeTask {
+    pub merge_operation: TrackedObject<MergeOperation>,
+    pub merge_policy: Arc<dyn MergePolicy>,
+    pub doc_mapper: Arc<dyn DocMapper>,
+}
+
+impl fmt::Debug for MergeTask {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("MergeTask")
+            .field("merge_operation", &self.merge_operation)
+            .finish()
     }
 }
 
@@ -62,7 +78,7 @@ impl MergeOperation {
         let merge_split_id = new_split_id();
         let split_ids = splits.iter().map(|split| split.split_id()).collect_vec();
         let merge_parent_span = info_span!("merge", merge_split_id=%merge_split_id, split_ids=?split_ids, typ=%MergeOperationType::Merge);
-        Self {
+        MergeOperation {
             merge_parent_span,
             merge_split_id,
             splits,
@@ -73,7 +89,7 @@ impl MergeOperation {
     pub fn new_delete_and_merge_operation(split: SplitMetadata) -> Self {
         let merge_split_id = new_split_id();
         let merge_parent_span = info_span!("delete", merge_split_id=%merge_split_id, split_ids=?split.split_id(), typ=%MergeOperationType::DeleteAndMerge);
-        Self {
+        MergeOperation {
             merge_parent_span,
             merge_split_id,
             splits: vec![split],

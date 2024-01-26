@@ -57,6 +57,7 @@ use tracing::{info, info_span, warn, Span};
 use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
+use crate::merge_policy::{merge_policy_from_settings, MergePolicy};
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
     NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock,
@@ -102,6 +103,8 @@ struct IndexerState {
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
+    merge_policy: Arc<dyn MergePolicy>,
+    doc_mapper: Arc<dyn DocMapper>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
 }
 
@@ -132,6 +135,8 @@ impl IndexerState {
             partition_id,
             last_delete_opstamp,
             self.indexing_directory.clone(),
+            self.merge_policy.clone(),
+            self.doc_mapper.clone(),
             index_builder,
             io_controls,
         )?;
@@ -536,6 +541,7 @@ impl Indexer {
             docstore_compress_dedicated_thread: true,
             ..Default::default()
         };
+        let merge_policy = merge_policy_from_settings(&indexing_settings);
         Self {
             indexer_state: IndexerState {
                 pipeline_id,
@@ -549,6 +555,8 @@ impl Indexer {
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
                 cooperative_indexing_permits,
+                merge_policy,
+                doc_mapper,
             },
             index_serializer_mailbox,
             indexing_workbench_opt: None,

@@ -25,6 +25,7 @@ mod indexing_service;
 mod merge_executor;
 mod merge_pipeline;
 mod merge_planner;
+mod merge_scheduler_service;
 mod merge_split_downloader;
 mod packager;
 mod publisher;
@@ -32,7 +33,6 @@ mod sequencer;
 mod uploader;
 #[cfg(feature = "vrl")]
 mod vrl_processing;
-mod global_merge_executor;
 
 pub use doc_processor::{DocProcessor, DocProcessorCounters};
 pub use index_serializer::IndexSerializer;

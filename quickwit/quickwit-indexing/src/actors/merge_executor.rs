@@ -50,7 +50,7 @@ use tracing::{debug, info, instrument, warn};
 
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
-use crate::merge_policy::MergeOperationType;
+use crate::merge_policy::{MergeOperationType, MergePolicy, MergeTask};
 use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
 
 #[derive(Clone)]
@@ -85,38 +85,46 @@ impl Actor for MergeExecutor {
 impl Handler<MergeScratch> for MergeExecutor {
     type Reply = ();
 
-    #[instrument(level = "info", name = "merge_executor", parent = merge_scratch.merge_operation.merge_parent_span.id(), skip_all)]
+    #[instrument(level = "info", name = "merge_executor", parent = merge_scratch.merge_task.merge_operation.merge_parent_span.id(), skip_all)]
     async fn handle(
         &mut self,
         merge_scratch: MergeScratch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let start = Instant::now();
-        let merge_op = merge_scratch.merge_operation;
-        let indexed_split_opt: Option<IndexedSplit> = match merge_op.operation_type {
+        let MergeTask {
+            merge_operation,
+            merge_policy,
+            doc_mapper,
+        } = merge_scratch.merge_task;
+        let indexed_split_opt: Option<IndexedSplit> = match merge_operation.operation_type {
             MergeOperationType::Merge => Some(
                 self.process_merge(
-                    merge_op.merge_split_id.clone(),
-                    merge_op.splits.clone(),
+                    merge_operation.merge_split_id.clone(),
+                    merge_operation.splits.clone(),
                     merge_scratch.tantivy_dirs,
                     merge_scratch.merge_scratch_directory,
+                    merge_policy,
+                    doc_mapper,
                     ctx,
                 )
                 .await?,
             ),
             MergeOperationType::DeleteAndMerge => {
                 assert_eq!(
-                    merge_op.splits.len(),
+                    merge_operation.splits.len(),
                     1,
                     "Delete tasks can be applied only on one split."
                 );
                 assert_eq!(merge_scratch.tantivy_dirs.len(), 1);
-                let split_with_docs_to_delete = merge_op.splits[0].clone();
+                let split_with_docs_to_delete = merge_operation.splits[0].clone();
                 self.process_delete_and_merge(
-                    merge_op.merge_split_id.clone(),
+                    merge_operation.merge_split_id.clone(),
                     split_with_docs_to_delete,
                     merge_scratch.tantivy_dirs,
                     merge_scratch.merge_scratch_directory,
+                    merge_policy,
+                    doc_mapper,
                     ctx,
                 )
                 .await?
@@ -126,7 +134,7 @@ impl Handler<MergeScratch> for MergeExecutor {
             info!(
                 merged_num_docs = %indexed_split.split_attrs.num_docs,
                 elapsed_secs = %start.elapsed().as_secs_f32(),
-                operation_type = %merge_op.operation_type,
+                operation_type = %merge_operation.operation_type,
                 "merge-operation-success"
             );
             ctx.send_message(
@@ -136,8 +144,8 @@ impl Handler<MergeScratch> for MergeExecutor {
                     checkpoint_delta_opt: Default::default(),
                     publish_lock: PublishLock::default(),
                     publish_token_opt: None,
-                    batch_parent_span: merge_op.merge_parent_span.clone(),
-                    merge_operation_opt: Some(merge_op),
+                    batch_parent_span: merge_operation.merge_parent_span.clone(),
+                    merge_operation_opt: Some(merge_operation),
                 },
             )
             .await?;
@@ -293,6 +301,8 @@ impl MergeExecutor {
         splits: Vec<SplitMetadata>,
         tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: TempDirectory,
+        merge_policy: Arc<dyn MergePolicy>,
+        doc_mapper: Arc<dyn DocMapper>,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<IndexedSplit> {
         let (union_index_meta, split_directories) = open_split_directories(
@@ -327,6 +337,8 @@ impl MergeExecutor {
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
+            merge_policy,
+            doc_mapper,
         })
     }
 
@@ -336,6 +348,8 @@ impl MergeExecutor {
         split: SplitMetadata,
         tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: TempDirectory,
+        merge_policy: Arc<dyn MergePolicy>,
+        doc_mapper: Arc<dyn DocMapper>,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<Option<IndexedSplit>> {
         let list_delete_tasks_request =
@@ -448,6 +462,8 @@ impl MergeExecutor {
                 num_merge_ops: split.num_merge_ops,
             },
             index: merged_index,
+            merge_policy,
+            doc_mapper,
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
         };

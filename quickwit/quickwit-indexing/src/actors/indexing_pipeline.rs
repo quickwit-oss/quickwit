@@ -359,7 +359,6 @@ impl IndexingPipeline {
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
             self.params.metastore.clone(),
-            self.params.merge_policy.clone(),
             self.params.split_store.clone(),
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             self.params.max_concurrent_split_uploads_index,
@@ -376,8 +375,7 @@ impl IndexingPipeline {
             .spawn(uploader);
 
         // Packager
-        let tag_fields = self.params.doc_mapper.tag_named_fields()?;
-        let packager = Packager::new("Packager", tag_fields, uploader_mailbox);
+        let packager = Packager::new("Packager", uploader_mailbox);
         let (packager_mailbox, packager_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())

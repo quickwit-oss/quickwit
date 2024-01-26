@@ -19,6 +19,7 @@
 
 use std::collections::BTreeSet;
 use std::fmt;
+use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_common::temp_dir::TempDirectory;
@@ -27,13 +28,14 @@ use quickwit_proto::types::{IndexUid, PublishToken, SplitId};
 use tantivy::TrackedObject;
 use tracing::Span;
 
-use crate::merge_policy::MergeOperation;
+use crate::merge_policy::{MergeOperation, MergePolicy};
 use crate::models::{PublishLock, SplitAttrs};
 
 pub struct PackagedSplit {
     pub serialized_split_fields: Vec<u8>,
     pub split_attrs: SplitAttrs,
     pub split_scratch_directory: TempDirectory,
+    pub merge_policy: Arc<dyn MergePolicy>,
     pub tags: BTreeSet<String>,
     pub split_files: Vec<std::path::PathBuf>,
     pub hotcache_bytes: Vec<u8>,

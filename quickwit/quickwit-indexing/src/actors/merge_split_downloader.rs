@@ -24,11 +24,11 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::io::IoControls;
 use quickwit_common::temp_dir::{self, TempDirectory};
 use quickwit_metastore::SplitMetadata;
-use tantivy::{Directory, TrackedObject};
+use tantivy::Directory;
 use tracing::{debug, info, instrument};
 
 use super::MergeExecutor;
-use crate::merge_policy::MergeOperation;
+use crate::merge_policy::MergeTask;
 use crate::models::MergeScratch;
 use crate::split_store::IndexingSplitStore;
 
@@ -54,17 +54,17 @@ impl Actor for MergeSplitDownloader {
 }
 
 #[async_trait]
-impl Handler<TrackedObject<MergeOperation>> for MergeSplitDownloader {
+impl Handler<MergeTask> for MergeSplitDownloader {
     type Reply = ();
 
     #[instrument(
         name = "merge_split_downloader",
-        parent = merge_operation.merge_parent_span.id(),
+        parent = merge_task.merge_operation.merge_parent_span.id(),
         skip_all,
     )]
     async fn handle(
         &mut self,
-        merge_operation: TrackedObject<MergeOperation>,
+        merge_task: MergeTask,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         let merge_scratch_directory = temp_dir::Builder::default()
@@ -78,13 +78,13 @@ impl Handler<TrackedObject<MergeOperation>> for MergeSplitDownloader {
             .map_err(|error| anyhow::anyhow!(error))?;
         let tantivy_dirs = self
             .download_splits(
-                merge_operation.splits_as_slice(),
+                merge_task.merge_operation.splits_as_slice(),
                 downloaded_splits_directory.path(),
                 ctx,
             )
             .await?;
         let msg = MergeScratch {
-            merge_operation,
+            merge_task,
             merge_scratch_directory,
             downloaded_splits_directory,
             tantivy_dirs,

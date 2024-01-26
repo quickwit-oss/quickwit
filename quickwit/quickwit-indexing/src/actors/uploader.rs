@@ -45,7 +45,7 @@ use tracing::{debug, info, instrument, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
-use crate::merge_policy::{MergeOperation, MergePolicy};
+use crate::merge_policy::MergeOperation;
 use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     create_split_metadata, EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
@@ -165,7 +165,6 @@ impl SplitsUpdateSender {
 pub struct Uploader {
     uploader_type: UploaderType,
     metastore: MetastoreServiceClient,
-    merge_policy: Arc<dyn MergePolicy>,
     split_store: IndexingSplitStore,
     split_update_mailbox: SplitsUpdateMailbox,
     max_concurrent_split_uploads: usize,
@@ -177,7 +176,6 @@ impl Uploader {
     pub fn new(
         uploader_type: UploaderType,
         metastore: MetastoreServiceClient,
-        merge_policy: Arc<dyn MergePolicy>,
         split_store: IndexingSplitStore,
         split_update_mailbox: SplitsUpdateMailbox,
         max_concurrent_split_uploads: usize,
@@ -186,7 +184,6 @@ impl Uploader {
         Uploader {
             uploader_type,
             metastore,
-            merge_policy,
             split_store,
             split_update_mailbox,
             max_concurrent_split_uploads,
@@ -299,8 +296,9 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let counters = self.counters.clone();
         let index_uid = batch.index_uid();
         let ctx_clone = ctx.clone();
-        let merge_policy = self.merge_policy.clone();
+
         debug!(split_ids=?split_ids, "start-stage-and-store-splits");
+
         let event_broker = self.event_broker.clone();
         spawn_named_task(
             async move {
@@ -309,7 +307,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 let mut split_metadata_list = Vec::with_capacity(batch.splits.len());
                 let mut report_splits: Vec<ReportSplit> = Vec::with_capacity(batch.splits.len());
 
-                for packaged_split in batch.splits.iter() {
+                for packaged_split in &batch.splits {
                     if batch.publish_lock.is_dead() {
                         // TODO: Remove the junk right away?
                         info!("splits' publish lock is dead");
@@ -323,7 +321,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                         &packaged_split.hotcache_bytes,
                     )?;
                     let split_metadata = create_split_metadata(
-                        &merge_policy,
+                        &packaged_split.merge_policy,
                         &packaged_split.split_attrs,
                         packaged_split.tags.clone(),
                         split_streamer.footer_range.start..split_streamer.footer_range.end,
@@ -863,7 +861,6 @@ mod tests {
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
             MetastoreServiceClient::from(mock_metastore),
-            default_merge_policy(),
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             4,

@@ -171,11 +171,9 @@ impl DeleteTaskPipeline {
             ctx.spawn_actor().supervise(publisher);
         let split_store =
             IndexingSplitStore::create_without_local_store_for_test(self.index_storage.clone());
-        let merge_policy = merge_policy_from_settings(&index_config.indexing_settings);
         let uploader = Uploader::new(
             UploaderType::DeleteUploader,
             self.metastore.clone(),
-            merge_policy,
             split_store.clone(),
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
             self.max_concurrent_split_uploads,
@@ -183,10 +181,7 @@ impl DeleteTaskPipeline {
         );
         let (uploader_mailbox, uploader_supervisor_handler) = ctx.spawn_actor().supervise(uploader);
 
-        let doc_mapper =
-            build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
-        let tag_fields = doc_mapper.tag_named_fields()?;
-        let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
+        let packager = Packager::new("MergePackager", uploader_mailbox);
         let (packager_mailbox, packager_supervisor_handler) = ctx.spawn_actor().supervise(packager);
         let index_pipeline_id = IndexingPipelineId {
             index_uid: self.index_uid.clone(),
@@ -200,6 +195,8 @@ impl DeleteTaskPipeline {
         let split_download_io_controls = delete_executor_io_controls
             .clone()
             .set_component("split_downloader_delete");
+        let doc_mapper =
+            build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
         let delete_executor = MergeExecutor::new(
             index_pipeline_id,
             self.metastore.clone(),
@@ -221,15 +218,16 @@ impl DeleteTaskPipeline {
         };
         let (downloader_mailbox, downloader_supervisor_handler) =
             ctx.spawn_actor().supervise(merge_split_downloader);
-        let doc_mapper_str = serde_json::to_string(&doc_mapper)?;
         let index_uri: &Uri = &index_config.index_uri;
+        let merge_policy = merge_policy_from_settings(&index_config.indexing_settings);
         let task_planner = DeleteTaskPlanner::new(
             self.index_uid.clone(),
             index_uri.clone(),
-            doc_mapper_str,
             self.metastore.clone(),
             self.search_job_placer.clone(),
             downloader_mailbox,
+            merge_policy,
+            doc_mapper,
         );
         let (_, task_planner_supervisor_handler) = ctx.spawn_actor().supervise(task_planner);
         self.handles = Some(DeletePipelineHandle {

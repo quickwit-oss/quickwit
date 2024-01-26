@@ -19,6 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -28,8 +29,9 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::extract_time_range;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
+use quickwit_doc_mapper::DocMapper;
 use quickwit_indexing::actors::MergeSplitDownloader;
-use quickwit_indexing::merge_policy::MergeOperation;
+use quickwit_indexing::merge_policy::{MergeOperation, MergePolicy, MergeTask};
 use quickwit_metastore::{split_tag_filter, split_time_range_filter, ListSplitsResponseExt, Split};
 use quickwit_proto::metastore::{
     DeleteTask, LastDeleteOpstampRequest, ListDeleteTasksRequest, ListStaleSplitsRequest,
@@ -79,10 +81,12 @@ const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 pub struct DeleteTaskPlanner {
     index_uid: IndexUid,
     index_uri: Uri,
-    doc_mapper_str: String,
     metastore: MetastoreServiceClient,
     search_job_placer: SearchJobPlacer,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
+    merge_policy: Arc<dyn MergePolicy>,
+    doc_mapper: Arc<dyn DocMapper>,
+    doc_mapper_str: String,
     /// Inventory of ongoing delete operations. If everything goes well,
     /// a merge operation is dropped after the publish of the split that underwent
     /// the delete operation.
@@ -123,18 +127,21 @@ impl DeleteTaskPlanner {
     pub fn new(
         index_uid: IndexUid,
         index_uri: Uri,
-        doc_mapper_str: String,
         metastore: MetastoreServiceClient,
         search_job_placer: SearchJobPlacer,
         merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
+        merge_policy: Arc<dyn MergePolicy>,
+        doc_mapper: Arc<dyn DocMapper>,
     ) -> Self {
         Self {
             index_uid,
             index_uri,
-            doc_mapper_str,
+            doc_mapper_str: serde_json::to_string(&*doc_mapper).unwrap(),
             metastore,
             search_job_placer,
             merge_split_downloader_mailbox,
+            merge_policy,
+            doc_mapper,
             ongoing_delete_operations_inventory: Inventory::new(),
         }
     }
@@ -200,11 +207,13 @@ impl DeleteTaskPlanner {
                 let tracked_delete_operation = self
                     .ongoing_delete_operations_inventory
                     .track(delete_operation);
-                ctx.send_message(
-                    &self.merge_split_downloader_mailbox,
-                    tracked_delete_operation,
-                )
-                .await?;
+                let merge_task = MergeTask {
+                    merge_operation: tracked_delete_operation,
+                    merge_policy: self.merge_policy.clone(),
+                    doc_mapper: self.doc_mapper.clone(),
+                };
+                ctx.send_message(&self.merge_split_downloader_mailbox, merge_task)
+                    .await?;
                 JANITOR_METRICS
                     .ongoing_num_delete_operations_total
                     .with_label_values([self.index_uid.index_id()])
