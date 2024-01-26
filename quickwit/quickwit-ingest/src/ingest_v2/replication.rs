@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::iter::once;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use bytesize::ByteSize;
@@ -69,6 +68,17 @@ impl ReplicationRequest {
                 init_replica_request.replication_seqno
             }
             ReplicationRequest::Replicate(replicate_request) => replicate_request.replication_seqno,
+        }
+    }
+
+    fn set_replication_seqno(&mut self, replication_seqno: ReplicationSeqNo) {
+        match self {
+            ReplicationRequest::Init(init_replica_request) => {
+                init_replica_request.replication_seqno = replication_seqno
+            }
+            ReplicationRequest::Replicate(replicate_request) => {
+                replicate_request.replication_seqno = replication_seqno
+            }
         }
     }
 
@@ -140,7 +150,6 @@ impl ReplicationStreamTask {
 
         ReplicationStreamTaskHandle {
             replication_request_tx,
-            replication_seqno_sequence: Default::default(),
             enqueue_syn_requests_join_handle,
             dequeue_ack_responses_join_handle,
         }
@@ -163,9 +172,13 @@ impl ReplicationStreamTask {
         // This loop enqueues SYN replication requests into the SYN replication stream and passes
         // the one-shot response sender to the "dequeue" loop via the sequencer channel.
         let enqueue_syn_requests_fut = async move {
-            while let Some((replication_request, oneshot_replication_response_tx)) =
+            let mut replication_seqno = ReplicationSeqNo::default();
+            while let Some((mut replication_request, oneshot_replication_response_tx)) =
                 self.replication_request_rx.recv().await
             {
+                replication_request.set_replication_seqno(replication_seqno);
+                replication_seqno += 1;
+
                 if response_sequencer_tx
                     .send((
                         replication_request.replication_seqno(),
@@ -254,7 +267,6 @@ impl ReplicationStreamTask {
 }
 
 pub(super) struct ReplicationStreamTaskHandle {
-    replication_seqno_sequence: AtomicU64,
     replication_request_tx: mpsc::Sender<OneShotReplicationRequest>,
     enqueue_syn_requests_join_handle: JoinHandle<()>,
     dequeue_ack_responses_join_handle: JoinHandle<()>,
@@ -264,12 +276,7 @@ impl ReplicationStreamTaskHandle {
     /// Returns a [`ReplicationClient`] that can be used to enqueue replication requests
     /// into the replication stream.
     pub fn replication_client(&self) -> ReplicationClient {
-        let replication_seqno = self
-            .replication_seqno_sequence
-            .fetch_add(1, Ordering::Relaxed);
-
         ReplicationClient {
-            replication_seqno,
             replication_request_tx: self.replication_request_tx.clone(),
         }
     }
@@ -306,7 +313,6 @@ impl ReplicationError {
 // DO NOT derive or implement `Clone` for this object.
 #[derive(Debug)]
 pub(super) struct ReplicationClient {
-    replication_seqno: u64,
     replication_request_tx: mpsc::Sender<OneShotReplicationRequest>,
 }
 
@@ -323,7 +329,7 @@ impl ReplicationClient {
     ) -> impl Future<Output = Result<InitReplicaResponse, ReplicationError>> + Send + 'static {
         let init_replica_request = InitReplicaRequest {
             replica_shard: Some(replica_shard),
-            replication_seqno: self.replication_seqno,
+            replication_seqno: 0, // replication number are generated further down
         };
         let replication_request = ReplicationRequest::Init(init_replica_request);
 
@@ -358,7 +364,7 @@ impl ReplicationClient {
             follower_id: follower_id.into(),
             subrequests,
             commit_type: commit_type as i32,
-            replication_seqno: self.replication_seqno,
+            replication_seqno: 0, // replication number are generated further down
         };
         let replication_request = ReplicationRequest::Replicate(replicate_request);
 
