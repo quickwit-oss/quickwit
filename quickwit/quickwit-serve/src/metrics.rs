@@ -50,7 +50,7 @@ impl Default for RestMetrics {
         RestMetrics {
             http_requests_total: new_counter_vec(
                 "http_requests_total",
-                "Total total number of HTTP requests handled (counter)",
+                "Total number of HTTP requests handled (counter)",
                 "quickwit",
                 ["method", "path", "status"],
             ),
