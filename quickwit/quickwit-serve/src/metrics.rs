@@ -54,7 +54,7 @@ impl Default for RestMetrics {
                 "quickwit",
                 ["method", "path", "status"],
             ),
-            http_requests_pending: new_gauge_vec(
+            http_requests_in_flight: new_gauge_vec(
                 "http_requests_pending",
                 "Number of currently in-flight requests (gauge)",
                 "quickwit",
