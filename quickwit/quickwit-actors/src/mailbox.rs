@@ -340,13 +340,19 @@ impl<A: Actor> Inbox<A> {
         self.rx.try_recv()
     }
 
-    pub async fn recv_typed_message<M: 'static>(&self) -> Option<M> {
-        while let Ok(mut envelope) = self.rx.recv().await {
-            if let Some(msg) = envelope.message_typed() {
-                return Some(msg);
+    pub async fn recv_typed_message<M: 'static>(&self) -> Result<M, RecvError> {
+        loop {
+            match self.rx.recv().await {
+                Ok(mut envelope) => {
+                    if let Some(msg) = envelope.message_typed() {
+                        return Ok(msg);
+                    }
+                }
+                Err(err) => {
+                    return Err(err);
+                }
             }
         }
-        None
     }
 
     /// Destroys the inbox and returns the list of pending messages or commands

@@ -251,7 +251,7 @@ mod tests {
                 }),
                 publish_lock: PublishLock::default(),
                 publish_token_opt: None,
-                merge_operation: None,
+                merge_task: None,
                 parent_span: tracing::Span::none(),
             })
             .await
@@ -322,7 +322,7 @@ mod tests {
                 }),
                 publish_lock: PublishLock::default(),
                 publish_token_opt: None,
-                merge_operation: None,
+                merge_task: None,
                 parent_span: tracing::Span::none(),
             })
             .await
@@ -386,7 +386,7 @@ mod tests {
             checkpoint_delta_opt: None,
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
-            merge_operation: None,
+            merge_task: None,
             parent_span: Span::none(),
         };
         assert!(publisher_mailbox
@@ -428,7 +428,7 @@ mod tests {
                 checkpoint_delta_opt: None,
                 publish_lock,
                 publish_token_opt: None,
-                merge_operation: None,
+                merge_task: None,
                 parent_span: Span::none(),
             })
             .await

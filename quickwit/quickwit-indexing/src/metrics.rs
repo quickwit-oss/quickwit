@@ -28,6 +28,8 @@ pub struct IndexerMetrics {
     pub backpressure_micros: IntCounterVec<1>,
     pub available_concurrent_upload_permits: IntGaugeVec<1>,
     pub ongoing_merge_operations: IntGauge,
+    pub pending_merge_operations: IntGauge,
+    pub pending_merge_bytes: IntGauge,
 }
 
 impl Default for IndexerMetrics {
@@ -63,6 +65,16 @@ impl Default for IndexerMetrics {
             ongoing_merge_operations: new_gauge(
                 "ongoing_merge_operations",
                 "Number of ongoing merge operations",
+                "quickwit_indexing",
+            ),
+            pending_merge_operations: new_gauge(
+                "pending_merge_operations",
+                "Number of pending merge operations",
+                "quickwit_indexing",
+            ),
+            pending_merge_bytes: new_gauge(
+                "pending_merge_bytes",
+                "Number of pending merge bytes",
                 "quickwit_indexing",
             ),
         }

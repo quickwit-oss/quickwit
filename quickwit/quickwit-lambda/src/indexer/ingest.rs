@@ -38,7 +38,7 @@ use quickwit_config::{
     SourceConfig, SourceInputFormat, SourceParams, TransformConfig, CLI_INGEST_SOURCE_ID,
 };
 use quickwit_index_management::{clear_cache_directory, IndexService};
-use quickwit_indexing::actors::{IndexingService, MergePipelineId};
+use quickwit_indexing::actors::{IndexingService, MergePipelineId, MergeSchedulerService};
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
@@ -197,6 +197,11 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         runtimes_config,
         &HashSet::from_iter([QuickwitService::Indexer]),
     )?;
+    let merge_scheduler_service = MergeSchedulerService::new(indexer_config.merge_concurrency.get());
+    let universe = Universe::new();
+    let (merge_scheduler_service_mailbox, _) = universe
+        .spawn_builder()
+        .spawn(merge_scheduler_service);
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
@@ -205,12 +210,12 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         cluster,
         metastore,
         None,
+        merge_scheduler_service_mailbox,
         IngesterPool::default(),
         storage_resolver,
         EventBroker::default(),
     )
     .await?;
-    let universe = Universe::new();
     let (indexing_server_mailbox, indexing_server_handle) =
         universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox

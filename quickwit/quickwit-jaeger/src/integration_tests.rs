@@ -27,6 +27,7 @@ use quickwit_cluster::{create_cluster_for_test, ChannelTransport, Cluster};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexerConfig, IngestApiConfig, JaegerConfig, SearcherConfig, SourceConfig};
+use quickwit_indexing::actors::MergeSchedulerService;
 use quickwit_indexing::models::SpawnPipeline;
 use quickwit_indexing::IndexingService;
 use quickwit_ingest::{
@@ -346,6 +347,7 @@ async fn indexer_for_test(
         cluster,
         metastore,
         Some(ingester_service),
+        universe.get_or_spawn_one::<MergeSchedulerService>(),
         ingester_pool,
         storage_resolver,
         EventBroker::default(),
