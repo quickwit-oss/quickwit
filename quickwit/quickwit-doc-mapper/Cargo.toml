@@ -52,3 +52,7 @@ testsuite = []
 [[bench]]
 name = "doc_to_json_bench"
 harness = false
+
+[[bench]]
+name = "routing_expression_bench"
+harness = false
