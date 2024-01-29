@@ -2215,8 +2215,8 @@ mod tests {
             .mrecordlog
             .assert_records_eq(&queue_id_01, .., &[]);
     }
-    #[tokio::test]
 
+    #[tokio::test]
     async fn test_ingester_open_replication_stream() {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default()
             .with_node_id("test-follower")
