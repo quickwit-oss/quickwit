@@ -37,9 +37,9 @@ pub struct RestMetrics {
     /// `http_requests_total` (labels: endpoint, method, status): the total number of HTTP requests
     /// handled (counter)
     pub http_requests_total: IntCounterVec<3>,
-    /// `http_requests_pending` (labels: endpoint, method): the number of currently in-flight
+    /// `http_requests_in_flight` (labels: endpoint, method): the number of currently in-flight
     /// requests (gauge)
-    pub http_requests_pending: IntGaugeVec<2>,
+    pub http_requests_in_flight: IntGaugeVec<2>,
     /// `http_requests_duration_seconds` (labels: endpoint, method, status): the request duration
     /// for all HTTP requests handled (histogram)
     pub http_requests_duration_seconds: HistogramVec<3>,
@@ -55,7 +55,7 @@ impl Default for RestMetrics {
                 ["method", "path", "status"],
             ),
             http_requests_in_flight: new_gauge_vec(
-                "http_requests_pending",
+                "http_requests_in_flight",
                 "Number of currently in-flight requests (gauge)",
                 "quickwit",
                 ["method", "path"],
@@ -118,7 +118,7 @@ impl<B, FailureClass> OnFailure<FailureClass> for RestMetricsRecorder<B> {
             <[&str; 2]>::try_from(labels_str).expect("Failed to convert to slice");
 
         SERVE_METRICS
-            .http_requests_pending
+            .http_requests_in_flight
             .with_label_values(method_and_path)
             .inc();
     }
@@ -152,7 +152,7 @@ impl<B, RB> OnResponse<RB> for RestMetricsRecorder<B> {
             .inc();
 
         SERVE_METRICS
-            .http_requests_pending
+            .http_requests_in_flight
             .with_label_values(method_and_path)
             .dec();
     }
