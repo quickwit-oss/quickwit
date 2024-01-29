@@ -143,6 +143,7 @@ impl AddAssign for ElasticsearchCatIndexResponse {
         self.uuid = rhs.uuid;
 
         self.health += rhs.health;
+        self.status += rhs.status;
         self.docs_count += rhs.docs_count;
         self.docs_deleted += rhs.docs_deleted;
         self.store_size += rhs.store_size;
@@ -219,7 +220,15 @@ impl AddAssign for Health {
 #[serde(rename_all = "lowercase")]
 pub enum Status {
     #[default]
-    Open,
+    Open = 1,
+}
+impl AddAssign for Status {
+    fn add_assign(&mut self, other: Self) {
+        *self = match std::cmp::max(*self as u8, other as u8) {
+            1 => Status::Open,
+            _ => Status::Open,
+        };
+    }
 }
 
 #[cfg(test)]
