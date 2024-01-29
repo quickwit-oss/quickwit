@@ -120,12 +120,23 @@ pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
 /// Checks whether an index ID pattern conforms to Quickwit conventions.
 /// Index ID patterns accept the same characters as identifiers AND accept `*`
 /// chars to allow for glob-like patterns.
-pub fn validate_index_id_pattern(pattern: &str) -> anyhow::Result<()> {
+pub fn validate_index_id_pattern(pattern: &str, allow_negative: bool) -> anyhow::Result<()> {
     static IDENTIFIER_REGEX_WITH_GLOB_PATTERN: Lazy<Regex> = Lazy::new(|| {
         Regex::new(r"^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$")
             .expect("regular expression should compile")
     });
-    if !IDENTIFIER_REGEX_WITH_GLOB_PATTERN.is_match(pattern) {
+    static IDENTIFIER_REGEX_WITH_GLOB_PATTERN_NEGATIVE: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^-?[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$")
+            .expect("regular expression should compile")
+    });
+
+    let regex = if allow_negative {
+        &IDENTIFIER_REGEX_WITH_GLOB_PATTERN_NEGATIVE
+    } else {
+        &IDENTIFIER_REGEX_WITH_GLOB_PATTERN
+    };
+
+    if !regex.is_match(pattern) {
         bail!(
             "index ID pattern `{pattern}` is invalid: patterns must match the following regular \
              expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{{0,254}}$`"
@@ -269,14 +280,16 @@ mod tests {
 
     #[test]
     fn test_validate_index_id_pattern() {
-        validate_index_id_pattern("*").unwrap();
-        validate_index_id_pattern("abc.*").unwrap();
-        validate_index_id_pattern("ab").unwrap_err();
-        validate_index_id_pattern("").unwrap_err();
-        validate_index_id_pattern("**").unwrap_err();
-        assert!(validate_index_id_pattern("foo!")
+        validate_index_id_pattern("*", false).unwrap();
+        validate_index_id_pattern("abc.*", false).unwrap();
+        validate_index_id_pattern("ab", false).unwrap_err();
+        validate_index_id_pattern("", false).unwrap_err();
+        validate_index_id_pattern("**", false).unwrap_err();
+        assert!(validate_index_id_pattern("foo!", false)
             .unwrap_err()
             .to_string()
             .contains("index ID pattern `foo!` is invalid:"));
+        validate_index_id_pattern("-abc", true).unwrap();
+        validate_index_id_pattern("-abc", false).unwrap_err();
     }
 }

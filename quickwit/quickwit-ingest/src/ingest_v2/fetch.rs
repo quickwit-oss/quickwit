@@ -25,8 +25,9 @@ use std::sync::Arc;
 
 use bytes::{BufMut, BytesMut};
 use futures::StreamExt;
+use mrecordlog::MultiRecordLog;
 use quickwit_common::retry::RetryParams;
-use quickwit_common::ServiceStream;
+use quickwit_common::{spawn_named_task, ServiceStream};
 use quickwit_proto::ingest::ingester::{
     fetch_message, FetchEof, FetchMessage, FetchPayload, IngesterService, OpenFetchStreamRequest,
 };
@@ -36,7 +37,6 @@ use tokio::sync::{mpsc, watch, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, warn};
 
-use super::ingester::IngesterState;
 use super::models::ShardStatus;
 use crate::{with_lock_metrics, ClientId, IngesterPool};
 
@@ -51,7 +51,7 @@ pub(super) struct FetchStreamTask {
     queue_id: QueueId,
     /// The position of the next record fetched.
     from_position_inclusive: u64,
-    state: Arc<RwLock<IngesterState>>,
+    mrecordlog: Arc<RwLock<MultiRecordLog>>,
     fetch_message_tx: mpsc::Sender<IngestV2Result<FetchMessage>>,
     /// This channel notifies the fetch task when new records are available. This way the fetch
     /// task does not need to grab the lock and poll the mrecordlog queue unnecessarily.
@@ -75,7 +75,7 @@ impl FetchStreamTask {
 
     pub fn spawn(
         open_fetch_stream_request: OpenFetchStreamRequest,
-        state: Arc<RwLock<IngesterState>>,
+        mrecordlog: Arc<RwLock<MultiRecordLog>>,
         shard_status_rx: watch::Receiver<ShardStatus>,
         batch_num_bytes: usize,
     ) -> (ServiceStream<IngestV2Result<FetchMessage>>, JoinHandle<()>) {
@@ -92,13 +92,13 @@ impl FetchStreamTask {
             index_uid: open_fetch_stream_request.index_uid.into(),
             source_id: open_fetch_stream_request.source_id,
             from_position_inclusive,
-            state,
+            mrecordlog,
             fetch_message_tx,
             shard_status_rx,
             batch_num_bytes,
         };
         let future = async move { fetch_task.run().await };
-        let fetch_task_handle: JoinHandle<()> = tokio::spawn(future);
+        let fetch_task_handle: JoinHandle<()> = spawn_named_task(future, "fetch_task");
         (fetch_stream, fetch_task_handle)
     }
 
@@ -126,11 +126,11 @@ impl FetchStreamTask {
             let mut mrecord_buffer = BytesMut::with_capacity(self.batch_num_bytes);
             let mut mrecord_lengths = Vec::new();
 
-            let state_guard = with_lock_metrics!(self.state.read().await, "fetch", "read");
+            let mrecordlog_guard =
+                with_lock_metrics!(self.mrecordlog.read().await, "fetch", "read");
 
-            let Ok(mrecords) = state_guard
-                .mrecordlog
-                .range(&self.queue_id, self.from_position_inclusive..)
+            let Ok(mrecords) =
+                mrecordlog_guard.range(&self.queue_id, self.from_position_inclusive..)
             else {
                 // The queue was dropped.
                 break;
@@ -144,7 +144,7 @@ impl FetchStreamTask {
                 mrecord_lengths.push(mrecord.len() as u32);
             }
             // Drop the lock while we send the message.
-            drop(state_guard);
+            drop(mrecordlog_guard);
 
             if !mrecord_lengths.is_empty() {
                 let from_position_exclusive = if self.from_position_inclusive == 0 {
@@ -308,7 +308,7 @@ impl MultiFetchStream {
             self.retry_params,
             self.fetch_message_tx.clone(),
         );
-        let fetch_task_handle = tokio::spawn(fetch_stream_future);
+        let fetch_task_handle = spawn_named_task(fetch_stream_future, "fetch_stream_future");
         self.fetch_task_handles.insert(queue_id, fetch_task_handle);
         Ok(())
     }
@@ -593,9 +593,7 @@ pub(super) mod tests {
 
     use bytes::Bytes;
     use mrecordlog::MultiRecordLog;
-    use quickwit_proto::ingest::ingester::{
-        IngesterServiceClient, IngesterStatus, ObservationMessage,
-    };
+    use quickwit_proto::ingest::ingester::IngesterServiceClient;
     use quickwit_proto::ingest::ShardState;
     use quickwit_proto::types::queue_id;
     use tokio::time::timeout;
@@ -620,7 +618,9 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fetch_task_happy_path() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let mrecordlog = Arc::new(RwLock::new(
+            MultiRecordLog::open(tempdir.path()).await.unwrap(),
+        ));
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -631,38 +631,23 @@ pub(super) mod tests {
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
         };
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_trackers: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
         let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
-            state.clone(),
+            mrecordlog.clone(),
             shard_status_rx,
             1024,
         );
         let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
-        let mut state_guard = state.write().await;
+        let mut mrecordlog_guard = mrecordlog.write().await;
 
-        state_guard
-            .mrecordlog
-            .create_queue(&queue_id)
-            .await
-            .unwrap();
-        state_guard
-            .mrecordlog
+        mrecordlog_guard.create_queue(&queue_id).await.unwrap();
+        mrecordlog_guard
             .append_record(&queue_id, None, MRecord::new_doc("test-doc-foo").encode())
             .await
             .unwrap();
-        drop(state_guard);
+        drop(mrecordlog_guard);
 
         let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
@@ -704,14 +689,13 @@ pub(super) mod tests {
             .await
             .unwrap_err();
 
-        let mut state_guard = state.write().await;
+        let mut mrecordlog_guard = mrecordlog.write().await;
 
-        state_guard
-            .mrecordlog
+        mrecordlog_guard
             .append_record(&queue_id, None, MRecord::new_doc("test-doc-bar").encode())
             .await
             .unwrap();
-        drop(state_guard);
+        drop(mrecordlog_guard);
 
         let shard_status = (ShardState::Open, Position::offset(1u64));
         shard_status_tx.send(shard_status.clone()).unwrap();
@@ -744,7 +728,7 @@ pub(super) mod tests {
             "\0\0test-doc-bar"
         );
 
-        let mut state_guard = state.write().await;
+        let mut mrecordlog_guard = mrecordlog.write().await;
 
         let mrecords = [
             MRecord::new_doc("test-doc-baz").encode(),
@@ -752,12 +736,11 @@ pub(super) mod tests {
         ]
         .into_iter();
 
-        state_guard
-            .mrecordlog
+        mrecordlog_guard
             .append_records(&queue_id, None, mrecords)
             .await
             .unwrap();
-        drop(state_guard);
+        drop(mrecordlog_guard);
 
         let shard_status = (ShardState::Open, Position::offset(3u64));
         shard_status_tx.send(shard_status).unwrap();
@@ -811,7 +794,9 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fetch_task_eof_at_beginning() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let mrecordlog = Arc::new(RwLock::new(
+            MultiRecordLog::open(tempdir.path()).await.unwrap(),
+        ));
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -822,33 +807,19 @@ pub(super) mod tests {
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
         };
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_trackers: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
         let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
-            state.clone(),
+            mrecordlog.clone(),
             shard_status_rx,
             1024,
         );
         let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
-        let mut state_guard = state.write().await;
+        let mut mrecordlog_guard = mrecordlog.write().await;
 
-        state_guard
-            .mrecordlog
-            .create_queue(&queue_id)
-            .await
-            .unwrap();
-        drop(state_guard);
+        mrecordlog_guard.create_queue(&queue_id).await.unwrap();
+        drop(mrecordlog_guard);
 
         timeout(Duration::from_millis(100), fetch_stream.next())
             .await
@@ -875,7 +846,9 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fetch_task_from_position_exclusive() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let mrecordlog = Arc::new(RwLock::new(
+            MultiRecordLog::open(tempdir.path()).await.unwrap(),
+        ));
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -886,46 +859,31 @@ pub(super) mod tests {
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::offset(0u64)),
         };
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_trackers: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
         let (mut fetch_stream, _fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
-            state.clone(),
+            mrecordlog.clone(),
             shard_status_rx,
             1024,
         );
         let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
-        let mut state_guard = state.write().await;
+        let mut mrecordlog_guard = mrecordlog.write().await;
 
-        state_guard
-            .mrecordlog
-            .create_queue(&queue_id)
-            .await
-            .unwrap();
-        drop(state_guard);
+        mrecordlog_guard.create_queue(&queue_id).await.unwrap();
+        drop(mrecordlog_guard);
 
         timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap_err();
 
-        let mut state_guard = state.write().await;
+        let mut mrecordlog_guard = mrecordlog.write().await;
 
-        state_guard
-            .mrecordlog
+        mrecordlog_guard
             .append_record(&queue_id, None, MRecord::new_doc("test-doc-foo").encode())
             .await
             .unwrap();
-        drop(state_guard);
+        drop(mrecordlog_guard);
 
         let shard_status = (ShardState::Open, Position::offset(0u64));
         shard_status_tx.send(shard_status).unwrap();
@@ -934,14 +892,13 @@ pub(super) mod tests {
             .await
             .unwrap_err();
 
-        let mut state_guard = state.write().await;
+        let mut mrecordlog_guard = mrecordlog.write().await;
 
-        state_guard
-            .mrecordlog
+        mrecordlog_guard
             .append_record(&queue_id, None, MRecord::new_doc("test-doc-bar").encode())
             .await
             .unwrap();
-        drop(state_guard);
+        drop(mrecordlog_guard);
 
         let shard_status = (ShardState::Open, Position::offset(1u64));
         shard_status_tx.send(shard_status).unwrap();
@@ -981,7 +938,9 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fetch_task_error() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let mrecordlog = Arc::new(RwLock::new(
+            MultiRecordLog::open(tempdir.path()).await.unwrap(),
+        ));
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -992,20 +951,10 @@ pub(super) mod tests {
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
         };
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_trackers: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
         let (_shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
         let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
-            state.clone(),
+            mrecordlog.clone(),
             shard_status_rx,
             1024,
         );
@@ -1022,7 +971,9 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fetch_task_batch_num_bytes() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let mrecordlog = Arc::new(RwLock::new(
+            MultiRecordLog::open(tempdir.path()).await.unwrap(),
+        ));
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -1033,32 +984,18 @@ pub(super) mod tests {
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
         };
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_trackers: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
         let (mut fetch_stream, _fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
-            state.clone(),
+            mrecordlog.clone(),
             shard_status_rx,
             30,
         );
         let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
-        let mut state_guard = state.write().await;
+        let mut mrecordlog_guard = mrecordlog.write().await;
 
-        state_guard
-            .mrecordlog
-            .create_queue(&queue_id)
-            .await
-            .unwrap();
+        mrecordlog_guard.create_queue(&queue_id).await.unwrap();
 
         let records = [
             Bytes::from_static(b"test-doc-foo"),
@@ -1067,12 +1004,11 @@ pub(super) mod tests {
         ]
         .into_iter();
 
-        state_guard
-            .mrecordlog
+        mrecordlog_guard
             .append_records(&queue_id, None, records)
             .await
             .unwrap();
-        drop(state_guard);
+        drop(mrecordlog_guard);
 
         let shard_status = (ShardState::Open, Position::offset(2u64));
         shard_status_tx.send(shard_status).unwrap();

@@ -192,3 +192,21 @@ expected:
       - doc_count: 3
         key: 100.0
 
+--- 
+# Test histogram empty result on empty index
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/empty_aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    metrics:
+      histogram:
+        field: response
+        interval: 50
+expected:
+  aggregations:
+    metrics:
+      buckets: []
+

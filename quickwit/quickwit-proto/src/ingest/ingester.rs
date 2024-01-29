@@ -227,12 +227,6 @@ impl ReplicateSubrequest {
             .as_ref()
             .expect("`from_position_exclusive` should be a required field")
     }
-
-    pub fn to_position_inclusive(&self) -> &Position {
-        self.to_position_inclusive
-            .as_ref()
-            .expect("`to_position_inclusive` should be a required field")
-    }
 }
 
 impl ReplicateSuccess {

@@ -294,11 +294,11 @@ impl DocProcessorCounters {
 
         crate::metrics::INDEXER_METRICS
             .processed_docs_total
-            .with_label_values([&self.index_id, &self.source_id, "valid"])
+            .with_label_values([&self.index_id, "valid"])
             .inc();
         crate::metrics::INDEXER_METRICS
             .processed_bytes
-            .with_label_values([&self.index_id, &self.source_id, "valid"])
+            .with_label_values([&self.index_id, "valid"])
             .inc_by(num_bytes);
     }
 
@@ -324,14 +324,14 @@ impl DocProcessorCounters {
         };
         crate::metrics::INDEXER_METRICS
             .processed_docs_total
-            .with_label_values([&self.index_id, &self.source_id, label])
+            .with_label_values([&self.index_id, label])
             .inc();
 
         self.num_bytes_total.fetch_add(num_bytes, Ordering::Relaxed);
 
         crate::metrics::INDEXER_METRICS
             .processed_bytes
-            .with_label_values([&self.index_id, &self.source_id, label])
+            .with_label_values([&self.index_id, label])
             .inc_by(num_bytes);
     }
 }

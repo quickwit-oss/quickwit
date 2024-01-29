@@ -62,6 +62,7 @@ use quickwit_cluster::{
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
 use quickwit_common::runtimes::RuntimesConfig;
+use quickwit_common::spawn_named_task;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
     EventListenerLayer, RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator,
@@ -119,6 +120,23 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 } else {
     Duration::from_secs(10)
 };
+
+const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_CONCURRENCY";
+const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
+
+fn get_metastore_client_max_concurrency() -> usize {
+    std::env::var(METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY).ok()
+        .and_then(|metastore_client_max_concurrency_str| {
+            if let Ok(metastore_client_max_concurrency) = metastore_client_max_concurrency_str.parse::<usize>() {
+                info!("overriding max concurrent metastore requests to {metastore_client_max_concurrency}");
+                Some(metastore_client_max_concurrency)
+            } else {
+                error!("failed to parse environment variable `{METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY}={metastore_client_max_concurrency_str}` variable");
+                None
+            }
+        })
+        .unwrap_or(DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY)
+}
 
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
@@ -329,6 +347,9 @@ pub async fn serve_quickwit(
             let retry_layer = RetryLayer::new(RetryPolicy::default());
             MetastoreServiceClient::tower()
                 .stack_layer(retry_layer)
+                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+                    get_metastore_client_max_concurrency(),
+                ))
                 .build(metastore_client)
         };
 
@@ -591,12 +612,16 @@ pub async fn serve_quickwit(
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
-    tokio::spawn(node_readiness_reporting_task(
-        cluster,
-        metastore_through_control_plane,
-        grpc_readiness_signal_rx,
-        rest_readiness_signal_rx,
-    ));
+    spawn_named_task(
+        node_readiness_reporting_task(
+            cluster,
+            metastore_through_control_plane,
+            grpc_readiness_signal_rx,
+            rest_readiness_signal_rx,
+        ),
+        "node_readiness_reporting",
+    );
+
     let shutdown_handle = tokio::spawn(async move {
         shutdown_signal.await;
 
@@ -613,8 +638,8 @@ pub async fn serve_quickwit(
         }
         actor_exit_statuses
     });
-    let grpc_join_handle = tokio::spawn(grpc_server);
-    let rest_join_handle = tokio::spawn(rest_server);
+    let grpc_join_handle = spawn_named_task(grpc_server, "grpc_server");
+    let rest_join_handle = spawn_named_task(rest_server, "rest_server");
 
     let (grpc_res, rest_res) = tokio::try_join!(grpc_join_handle, rest_join_handle)
         .expect("the tasks running the gRPC and REST servers should not panic or be cancelled");

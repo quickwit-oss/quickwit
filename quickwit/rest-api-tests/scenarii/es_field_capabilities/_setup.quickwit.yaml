@@ -54,6 +54,7 @@ json:
       - name: host
         type: ip
         fast: true
+sleep_after: 3
 ---
 # Ingest documents
 method: POST

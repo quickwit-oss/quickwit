@@ -556,6 +556,7 @@ mod tests {
                 max_concurrent_split_uploads: 8,
                 cpu_capacity: IndexerConfig::default_cpu_capacity(),
                 enable_cooperative_indexing: false,
+                max_merge_write_throughput: Some(ByteSize::mb(100)),
             }
         );
         assert_eq!(
@@ -813,11 +814,9 @@ mod tests {
             "QW_DATA_DIR".to_string(),
             data_dir_path.to_string_lossy().to_string(),
         );
-        assert!(
-            load_node_config_with_env(ConfigFormat::Toml, file_content.as_bytes(), &env_vars,)
-                .await
-                .is_ok()
-        );
+        load_node_config_with_env(ConfigFormat::Toml, file_content.as_bytes(), &env_vars)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

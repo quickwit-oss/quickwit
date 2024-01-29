@@ -33,8 +33,9 @@ use quickwit_actors::{
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
+use quickwit_common::io::Limiter;
 use quickwit_common::pubsub::EventBroker;
-use quickwit_common::temp_dir;
+use quickwit_common::{io, temp_dir};
 use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
@@ -128,6 +129,7 @@ pub struct IndexingService {
     max_concurrent_split_uploads: usize,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    merge_io_throughput_limiter_opt: Option<Limiter>,
     event_broker: EventBroker,
 }
 
@@ -160,6 +162,8 @@ impl IndexingService {
             indexer_config.split_store_max_num_splits,
             indexer_config.split_store_max_num_bytes,
         );
+        let merge_io_throughput_limiter_opt =
+            indexer_config.max_merge_write_throughput.map(io::limiter);
         let split_cache_dir_path = get_cache_directory_path(&data_dir_path);
         let local_split_store =
             LocalSplitStore::open(split_cache_dir_path, split_store_space_quota).await?;
@@ -185,6 +189,7 @@ impl IndexingService {
             counters: Default::default(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
             merge_pipeline_handles: HashMap::new(),
+            merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
         })
@@ -293,10 +298,7 @@ impl IndexingService {
             metastore: self.metastore.clone(),
             split_store: split_store.clone(),
             merge_policy: merge_policy.clone(),
-            merge_max_io_num_bytes_per_sec: index_config
-                .indexing_settings
-                .resources
-                .max_merge_write_throughput,
+            merge_io_throughput_limiter_opt: self.merge_io_throughput_limiter_opt.clone(),
             max_concurrent_split_uploads: self.max_concurrent_split_uploads,
             event_broker: self.event_broker.clone(),
         };
@@ -370,7 +372,7 @@ impl IndexingService {
         self.indexing_pipelines
             .retain(|pipeline_uid, pipeline_handle| {
                 match pipeline_handle.handle.state() {
-                    ActorState::Idle | ActorState::Paused | ActorState::Processing => true,
+                    ActorState::Paused | ActorState::Running => true,
                     ActorState::Success => {
                         info!(
                             pipeline_uid=%pipeline_uid,

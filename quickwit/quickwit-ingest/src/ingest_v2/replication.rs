@@ -18,8 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::iter::once;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use bytesize::ByteSize;
@@ -34,14 +32,14 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardState};
 use quickwit_proto::types::{NodeId, Position};
 use tokio::sync::mpsc::error::TryRecvError;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{error, warn};
 
-use super::ingester::IngesterState;
 use super::models::IngesterShard;
 use super::mrecord::MRecord;
 use super::mrecordlog_utils::check_enough_capacity;
+use super::state::IngesterState;
 use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::metrics::INGEST_METRICS;
 use crate::{estimate_size, with_request_metrics};
@@ -70,6 +68,17 @@ impl ReplicationRequest {
                 init_replica_request.replication_seqno
             }
             ReplicationRequest::Replicate(replicate_request) => replicate_request.replication_seqno,
+        }
+    }
+
+    fn set_replication_seqno(&mut self, replication_seqno: ReplicationSeqNo) {
+        match self {
+            ReplicationRequest::Init(init_replica_request) => {
+                init_replica_request.replication_seqno = replication_seqno
+            }
+            ReplicationRequest::Replicate(replicate_request) => {
+                replicate_request.replication_seqno = replication_seqno
+            }
         }
     }
 
@@ -141,7 +150,6 @@ impl ReplicationStreamTask {
 
         ReplicationStreamTaskHandle {
             replication_request_tx,
-            replication_seqno_sequence: Default::default(),
             enqueue_syn_requests_join_handle,
             dequeue_ack_responses_join_handle,
         }
@@ -164,9 +172,13 @@ impl ReplicationStreamTask {
         // This loop enqueues SYN replication requests into the SYN replication stream and passes
         // the one-shot response sender to the "dequeue" loop via the sequencer channel.
         let enqueue_syn_requests_fut = async move {
-            while let Some((replication_request, oneshot_replication_response_tx)) =
+            let mut replication_seqno = ReplicationSeqNo::default();
+            while let Some((mut replication_request, oneshot_replication_response_tx)) =
                 self.replication_request_rx.recv().await
             {
+                replication_request.set_replication_seqno(replication_seqno);
+                replication_seqno += 1;
+
                 if response_sequencer_tx
                     .send((
                         replication_request.replication_seqno(),
@@ -255,7 +267,6 @@ impl ReplicationStreamTask {
 }
 
 pub(super) struct ReplicationStreamTaskHandle {
-    replication_seqno_sequence: AtomicU64,
     replication_request_tx: mpsc::Sender<OneShotReplicationRequest>,
     enqueue_syn_requests_join_handle: JoinHandle<()>,
     dequeue_ack_responses_join_handle: JoinHandle<()>,
@@ -265,12 +276,7 @@ impl ReplicationStreamTaskHandle {
     /// Returns a [`ReplicationClient`] that can be used to enqueue replication requests
     /// into the replication stream.
     pub fn replication_client(&self) -> ReplicationClient {
-        let replication_seqno = self
-            .replication_seqno_sequence
-            .fetch_add(1, Ordering::Relaxed);
-
         ReplicationClient {
-            replication_seqno,
             replication_request_tx: self.replication_request_tx.clone(),
         }
     }
@@ -307,7 +313,6 @@ impl ReplicationError {
 // DO NOT derive or implement `Clone` for this object.
 #[derive(Debug)]
 pub(super) struct ReplicationClient {
-    replication_seqno: u64,
     replication_request_tx: mpsc::Sender<OneShotReplicationRequest>,
 }
 
@@ -324,7 +329,7 @@ impl ReplicationClient {
     ) -> impl Future<Output = Result<InitReplicaResponse, ReplicationError>> + Send + 'static {
         let init_replica_request = InitReplicaRequest {
             replica_shard: Some(replica_shard),
-            replication_seqno: self.replication_seqno,
+            replication_seqno: 0, // replication number are generated further down
         };
         let replication_request = ReplicationRequest::Init(init_replica_request);
 
@@ -359,7 +364,7 @@ impl ReplicationClient {
             follower_id: follower_id.into(),
             subrequests,
             commit_type: commit_type as i32,
-            replication_seqno: self.replication_seqno,
+            replication_seqno: 0, // replication number are generated further down
         };
         let replication_request = ReplicationRequest::Replicate(replicate_request);
 
@@ -409,7 +414,7 @@ impl ReplicationClient {
 pub(super) struct ReplicationTask {
     leader_id: NodeId,
     follower_id: NodeId,
-    state: Arc<RwLock<IngesterState>>,
+    state: IngesterState,
     syn_replication_stream: ServiceStream<SynReplicationMessage>,
     ack_replication_stream_tx: mpsc::UnboundedSender<IngestV2Result<AckReplicationMessage>>,
     current_replication_seqno: ReplicationSeqNo,
@@ -421,7 +426,7 @@ impl ReplicationTask {
     pub fn spawn(
         leader_id: NodeId,
         follower_id: NodeId,
-        state: Arc<RwLock<IngesterState>>,
+        state: IngesterState,
         syn_replication_stream: ServiceStream<SynReplicationMessage>,
         ack_replication_stream_tx: mpsc::UnboundedSender<IngestV2Result<AckReplicationMessage>>,
         disk_capacity: ByteSize,
@@ -463,7 +468,7 @@ impl ReplicationTask {
         };
         let queue_id = replica_shard.queue_id();
 
-        let mut state_guard = self.state.write().await;
+        let mut state_guard = self.state.lock_fully().await;
 
         state_guard
             .mrecordlog
@@ -516,7 +521,7 @@ impl ReplicationTask {
         let mut replicate_successes = Vec::with_capacity(replicate_request.subrequests.len());
         let mut replicate_failures = Vec::new();
 
-        let mut state_guard = self.state.write().await;
+        let mut state_guard = self.state.lock_fully().await;
 
         if state_guard.status != IngesterStatus::Ready {
             replicate_failures.reserve_exact(replicate_request.subrequests.len());
@@ -542,7 +547,6 @@ impl ReplicationTask {
         for subrequest in replicate_request.subrequests {
             let queue_id = subrequest.queue_id();
             let from_position_exclusive = subrequest.from_position_exclusive().clone();
-            let to_position_inclusive = subrequest.to_position_inclusive().clone();
 
             let Some(shard) = state_guard.shards.get(&queue_id) else {
                 let replicate_failure = ReplicateFailure {
@@ -653,12 +657,6 @@ impl ReplicationTask {
                 .replicated_num_docs_total
                 .inc_by(batch_num_docs);
 
-            if current_position_inclusive != to_position_inclusive {
-                return Err(IngestV2Error::Internal(format!(
-                    "bad replica position: expected {to_position_inclusive:?}, got \
-                     {current_position_inclusive:?}"
-                )));
-            }
             let replica_shard = state_guard
                 .shards
                 .get_mut(&queue_id)
@@ -738,7 +736,6 @@ impl Drop for ReplicationTaskHandle {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
 
     use mrecordlog::MultiRecordLog;
     use quickwit_proto::ingest::ingester::{
@@ -870,14 +867,21 @@ mod tests {
                 let replicate_successes = replicate_request
                     .subrequests
                     .iter()
-                    .map(|subrequest| ReplicateSuccess {
-                        subrequest_id: subrequest.subrequest_id,
-                        index_uid: subrequest.index_uid.clone(),
-                        source_id: subrequest.source_id.clone(),
-                        shard_id: subrequest.shard_id.clone(),
-                        replication_position_inclusive: Some(
-                            subrequest.to_position_inclusive().clone(),
-                        ),
+                    .map(|subrequest| {
+                        let batch_len = subrequest.doc_batch.as_ref().unwrap().num_docs();
+                        let replication_position_inclusive = subrequest
+                            .from_position_exclusive()
+                            .as_usize()
+                            .map_or(batch_len - 1, |pos| pos + batch_len);
+                        ReplicateSuccess {
+                            subrequest_id: subrequest.subrequest_id,
+                            index_uid: subrequest.index_uid.clone(),
+                            source_id: subrequest.source_id.clone(),
+                            shard_id: subrequest.shard_id.clone(),
+                            replication_position_inclusive: Some(Position::offset(
+                                replication_position_inclusive,
+                            )),
+                        }
                     })
                     .collect::<Vec<_>>();
 
@@ -905,7 +909,6 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                 from_position_exclusive: Some(Position::Beginning),
-                to_position_inclusive: Some(Position::offset(0u64)),
             },
             ReplicateSubrequest {
                 subrequest_id: 1,
@@ -914,7 +917,6 @@ mod tests {
                 shard_id: Some(ShardId::from(2)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
                 from_position_exclusive: Some(Position::Beginning),
-                to_position_inclusive: Some(Position::offset(1u64)),
             },
             ReplicateSubrequest {
                 subrequest_id: 2,
@@ -923,7 +925,6 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-qux", "test-doc-tux"])),
                 from_position_exclusive: Some(Position::offset(0u64)),
-                to_position_inclusive: Some(Position::offset(2u64)),
             },
         ];
         let replicate_response = replication_stream_task_handle
@@ -1014,15 +1015,7 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
         let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_trackers: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
+        let state = IngesterState::new(mrecordlog, observation_tx);
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1110,7 +1103,7 @@ mod tests {
         let init_replica_response = into_init_replica_response(ack_replication_message);
         assert_eq!(init_replica_response.replication_seqno, 2);
 
-        let state_guard = state.read().await;
+        let state_guard = state.lock_fully().await;
 
         let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
 
@@ -1152,7 +1145,6 @@ mod tests {
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                     from_position_exclusive: Some(Position::Beginning),
-                    to_position_inclusive: Some(Position::offset(0u64)),
                 },
                 ReplicateSubrequest {
                     subrequest_id: 1,
@@ -1161,7 +1153,6 @@ mod tests {
                     shard_id: Some(ShardId::from(2)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
                     from_position_exclusive: Some(Position::Beginning),
-                    to_position_inclusive: Some(Position::offset(1u64)),
                 },
                 ReplicateSubrequest {
                     subrequest_id: 2,
@@ -1170,7 +1161,6 @@ mod tests {
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-qux", "test-doc-tux"])),
                     from_position_exclusive: Some(Position::Beginning),
-                    to_position_inclusive: Some(Position::offset(1u64)),
                 },
             ],
             replication_seqno: 3,
@@ -1216,7 +1206,7 @@ mod tests {
             Position::offset(1u64)
         );
 
-        let state_guard = state.read().await;
+        let state_guard = state.lock_fully().await;
 
         state_guard
             .mrecordlog
@@ -1246,7 +1236,6 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-moo"])),
                 from_position_exclusive: Some(Position::offset(0u64)),
-                to_position_inclusive: Some(Position::offset(1u64)),
             }],
             replication_seqno: 4,
         };
@@ -1273,7 +1262,7 @@ mod tests {
             Position::offset(1u64)
         );
 
-        let state_guard = state.read().await;
+        let state_guard = state.lock_fully().await;
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_01,
@@ -1289,15 +1278,7 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
         let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_trackers: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
+        let state = IngesterState::new(mrecordlog, observation_tx);
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1324,7 +1305,7 @@ mod tests {
             Position::Beginning,
         );
         state
-            .write()
+            .lock_fully()
             .await
             .shards
             .insert(queue_id_01.clone(), replica_shard);
@@ -1340,7 +1321,6 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                 from_position_exclusive: Position::offset(0u64).into(),
-                to_position_inclusive: Some(Position::offset(1u64)),
             }],
             replication_seqno: 0,
         };
@@ -1374,15 +1354,7 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
         let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_trackers: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
+        let state = IngesterState::new(mrecordlog, observation_tx);
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1409,7 +1381,7 @@ mod tests {
             Position::Beginning,
         );
         state
-            .write()
+            .lock_fully()
             .await
             .shards
             .insert(queue_id_01.clone(), replica_shard);
@@ -1425,7 +1397,6 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                 from_position_exclusive: Some(Position::Beginning),
-                to_position_inclusive: Some(Position::offset(0u64)),
             }],
             replication_seqno: 0,
         };

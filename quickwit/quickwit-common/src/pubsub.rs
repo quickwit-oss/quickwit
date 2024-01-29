@@ -69,10 +69,13 @@ struct InnerEventBroker {
 }
 
 impl EventBroker {
-    /// Subscribes to an event type.
-    #[must_use]
-    pub fn subscribe<E>(&self, subscriber: impl EventSubscriber<E>) -> EventSubscriptionHandle
-    where E: Event {
+    // The point of this private method is to allow the public subscribe method to have only one
+    // generic argument and avoid the ugly `::<E, _>` syntax.
+    fn subscribe_aux<E, S>(&self, subscriber: S) -> EventSubscriptionHandle
+    where
+        E: Event,
+        S: EventSubscriber<E> + Send + Sync + 'static,
+    {
         let mut subscriptions = self
             .inner
             .subscriptions
@@ -87,7 +90,9 @@ impl EventBroker {
             .subscription_sequence
             .fetch_add(1, Ordering::Relaxed);
 
+        let subscriber_name = std::any::type_name::<S>();
         let subscription = EventSubscription {
+            subscriber_name,
             subscriber: Arc::new(TokioMutex::new(Box::new(subscriber))),
         };
         let typed_subscriptions = subscriptions
@@ -111,6 +116,13 @@ impl EventBroker {
         }
     }
 
+    /// Subscribes to an event type.
+    #[must_use]
+    pub fn subscribe<E>(&self, subscriber: impl EventSubscriber<E>) -> EventSubscriptionHandle
+    where E: Event {
+        self.subscribe_aux(subscriber)
+    }
+
     /// Publishes an event.
     pub fn publish<E>(&self, event: E)
     where E: Event {
@@ -123,6 +135,7 @@ impl EventBroker {
         if let Some(typed_subscriptions) = subscriptions.get::<EventSubscriptions<E>>() {
             for subscription in typed_subscriptions.values() {
                 let event = event.clone();
+                let subscriber_name = subscription.subscriber_name;
                 let subscriber_clone = subscription.subscriber.clone();
                 let handle_event_fut = async move {
                     if tokio::time::timeout(Duration::from_secs(1), async {
@@ -131,7 +144,8 @@ impl EventBroker {
                     .await
                     .is_err()
                     {
-                        warn!("`{}` event handler timed out", std::any::type_name::<E>());
+                        let event_name = std::any::type_name::<E>();
+                        warn!("{}'s handler for {event_name} timed out", subscriber_name);
                     }
                 };
                 tokio::spawn(handle_event_fut);
@@ -141,6 +155,9 @@ impl EventBroker {
 }
 
 struct EventSubscription<E> {
+    // We put that in the subscription in order to avoid having to take the lock
+    // to access it.
+    subscriber_name: &'static str,
     subscriber: Arc<TokioMutex<Box<dyn EventSubscriber<E>>>>,
 }
 
