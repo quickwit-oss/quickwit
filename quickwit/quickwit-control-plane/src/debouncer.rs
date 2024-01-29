@@ -117,9 +117,10 @@ impl Debouncer {
             .schedule_event(callback, self.cooldown_period);
     }
 
-    pub fn self_send_with_cooldown<A, M>(&self, ctx: &ActorContext<A>)
-    where
-        A: Actor + Handler<M> + DeferableReplyHandler<M>,
+    pub fn self_send_with_cooldown<M>(
+        &self,
+        ctx: &ActorContext<impl Actor + Handler<M> + DeferableReplyHandler<M>>,
+    ) where
         M: Default + std::fmt::Debug + Send + Sync + 'static,
     {
         let cooldown_state = self.accept_transition(Transition::Emit);
@@ -194,7 +195,7 @@ mod tests {
             _message: DebouncedIncrement,
             ctx: &ActorContext<Self>,
         ) -> Result<Self::Reply, ActorExitStatus> {
-            self.debouncer.self_send_with_cooldown::<_, Increment>(ctx);
+            self.debouncer.self_send_with_cooldown::<Increment>(ctx);
             Ok(())
         }
     }

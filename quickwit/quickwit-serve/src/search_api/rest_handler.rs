@@ -76,7 +76,7 @@ pub(crate) async fn extract_index_id_patterns(
     let mut index_id_patterns = Vec::new();
 
     for index_id_pattern in percent_decoded_comma_separated_index_id_patterns.split(',') {
-        validate_index_id_pattern(index_id_pattern)
+        validate_index_id_pattern(index_id_pattern, true)
             .map_err(|error| crate::rest::InvalidArgument(error.to_string()))?;
         index_id_patterns.push(index_id_pattern.to_string());
     }
