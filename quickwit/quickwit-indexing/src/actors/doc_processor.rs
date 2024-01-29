@@ -39,6 +39,7 @@ use thiserror::Error;
 use tokio::runtime::Handle;
 use tracing::warn;
 
+use super::log_rate_limiter::LogRateLimiter;
 #[cfg(feature = "vrl")]
 use super::vrl_processing::*;
 use crate::actors::Indexer;
@@ -345,6 +346,7 @@ pub struct DocProcessor {
     #[cfg(feature = "vrl")]
     transform_opt: Option<VrlProgram>,
     input_format: SourceInputFormat,
+    rate_limiter: LogRateLimiter,
 }
 
 impl DocProcessor {
@@ -371,6 +373,7 @@ impl DocProcessor {
                 .map(VrlProgram::try_from_transform_config)
                 .transpose()?,
             input_format,
+            rate_limiter: LogRateLimiter::new(20),
         };
         Ok(doc_processor)
     }
@@ -413,12 +416,14 @@ impl DocProcessor {
                     processed_docs.push(processed_doc);
                 }
                 Err(error) => {
-                    warn!(
-                        index_id = self.counters.index_id,
-                        source_id = self.counters.source_id,
-                        "{}",
-                        error
-                    );
+                    if self.rate_limiter.should_log() {
+                        warn!(
+                            index_id = self.counters.index_id,
+                            source_id = self.counters.source_id,
+                            "{}",
+                            error
+                        );
+                    }
                     self.counters.record_error(error, num_bytes as u64);
                 }
             }

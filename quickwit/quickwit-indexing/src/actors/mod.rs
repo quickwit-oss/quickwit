@@ -22,6 +22,7 @@ mod index_serializer;
 mod indexer;
 mod indexing_pipeline;
 mod indexing_service;
+mod log_rate_limiter;
 mod merge_executor;
 mod merge_pipeline;
 mod merge_planner;
