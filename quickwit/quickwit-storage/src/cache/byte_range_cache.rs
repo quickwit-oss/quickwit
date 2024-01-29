@@ -376,10 +376,11 @@ mod tests {
     use std::ops::Range;
     use std::path::Path;
 
+    use once_cell::sync::Lazy;
     use proptest::prelude::*;
 
     use super::ByteRangeCache;
-    use crate::metrics::CACHE_METRICS_FOR_TESTS;
+    use crate::metrics::{CacheMetrics, CACHE_METRICS_FOR_TESTS};
     use crate::OwnedBytes;
 
     #[derive(Debug)]
@@ -485,7 +486,12 @@ mod tests {
 
     #[test]
     fn test_byte_range_cache_doesnt_merge_unnecessarily() {
-        let cache = ByteRangeCache::with_infinite_capacity(&CACHE_METRICS_FOR_TESTS);
+        // we need to get a 'static ref to metrics, and want a dedicated metrics because we assert
+        // on it
+        pub static METRICS: Lazy<CacheMetrics> =
+            Lazy::new(|| CacheMetrics::for_component("byterange_cache_test"));
+
+        let cache = ByteRangeCache::with_infinite_capacity(&METRICS);
 
         let key: std::path::PathBuf = "key".into();
 
