@@ -416,12 +416,13 @@ impl DocProcessor {
                     processed_docs.push(processed_doc);
                 }
                 Err(error) => {
-                    if self.rate_limiter.should_log() {
+                    let error_str = error.to_string();
+                    if self.rate_limiter.should_log(&error_str) {
                         warn!(
                             index_id = self.counters.index_id,
                             source_id = self.counters.source_id,
                             "{}",
-                            error
+                            error_str
                         );
                     }
                     self.counters.record_error(error, num_bytes as u64);
