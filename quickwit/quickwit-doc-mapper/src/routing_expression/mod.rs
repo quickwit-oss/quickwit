@@ -70,26 +70,34 @@ fn hash_json_val<H: Hasher>(json_val: &JsonValue, hasher: &mut H) {
     }
 }
 
-fn extract_value<'a>(data: &'a JsonValue, keys: &[String]) -> Option<&'a JsonValue> {
-    match keys {
-        [key, rest @ ..] => {
-            if let JsonValue::Object(obj) = data {
-                if let Some(value) = obj.get(key) {
-                    extract_value(value, rest)
-                } else {
-                    None
-                }
-            } else {
-                None
+fn find_value<'a>(mut root: &'a JsonValue, keys: &[String]) -> Option<&'a JsonValue> {
+    for key in keys {
+        match root {
+            JsonValue::Object(obj) => {
+                root = obj.get(key)?;
             }
+            _ => return None,
         }
-        [] => Some(data), // No more keys, return the current value
+    }
+    Some(root)
+}
+
+fn find_value_in_map<'a>(
+    obj: &'a serde_json::Map<String, JsonValue>,
+    keys: &[String],
+) -> Option<&'a JsonValue> {
+    // we can't have an empty path and this is used only for the root map, so there is no risk of
+    // out of bound
+    if let Some(value) = obj.get(&keys[0]) {
+        find_value(value, &keys[1..])
+    } else {
+        None
     }
 }
 
 impl RoutingExprContext for serde_json::Map<String, JsonValue> {
     fn hash_attribute<H: Hasher>(&self, attr_name: &[String], hasher: &mut H) {
-        if let Some(json_val) = extract_value(&JsonValue::Object(self.clone()), attr_name) {
+        if let Some(json_val) = find_value_in_map(self, attr_name) {
             hasher.write_u8(1u8);
             hash_json_val(json_val, hasher);
         } else {
@@ -593,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_value_with_escaped_dot() {
+    fn test_find_value_with_escaped_dot() {
         let ctx = serde_json::from_str(r#"{"tenant.id": "happy", "app": "happy"}"#).unwrap();
         let keys: Vec<_> = expression_dsl::parse_keys("tenant\\.id")
             .unwrap()
@@ -601,12 +609,12 @@ mod tests {
             .map(Cow::into_owned)
             .collect();
         assert_eq!(keys, vec![String::from("tenant.id")]);
-        let value = extract_value(&ctx, &keys).unwrap();
+        let value = find_value(&ctx, &keys).unwrap();
         assert_eq!(value, &JsonValue::String(String::from("happy")));
     }
 
     #[test]
-    fn test_extract_value_with_nested_keys() {
+    fn test_find_value_with_nested_keys() {
         let ctx = serde_json::from_str(
             r#"{"tenant_id": "happy", "app": {"name": "happy", "id": "123"}}"#,
         )
@@ -617,7 +625,7 @@ mod tests {
             .map(Cow::into_owned)
             .collect();
         assert_eq!(keys, vec!["app", "id"]);
-        let value = extract_value(&ctx, &keys).unwrap();
+        let value = find_value(&ctx, &keys).unwrap();
         assert_eq!(value, &JsonValue::String(String::from("123")));
     }
     // This unit test is here to ensure that the routing expr hash depends on
