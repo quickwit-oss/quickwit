@@ -340,6 +340,7 @@ impl<A: Actor> Inbox<A> {
         self.rx.try_recv()
     }
 
+    #[cfg(any(test, feature = "testsuite"))]
     pub async fn recv_typed_message<M: 'static>(&self) -> Result<M, RecvError> {
         loop {
             match self.rx.recv().await {

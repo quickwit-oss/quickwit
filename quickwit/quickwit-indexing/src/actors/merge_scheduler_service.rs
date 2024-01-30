@@ -56,7 +56,7 @@ impl Drop for MergePermit {
             .send_message_with_high_priority(PermitReleased)
             .is_err()
         {
-            error!("schedule merge service is dead");
+            error!("merge scheduler service is dead");
         }
     }
 }
@@ -108,15 +108,15 @@ impl Ord for ScheduledMerge {
     }
 }
 
-/// The merge scheduler service is in charge of keeping track of all scheduled merge operation,
-/// and schedule them in the best possible order, and respecting the `merge_concurrency` limit.
+/// The merge scheduler service is in charge of keeping track of all scheduled merge operations,
+/// and schedule them in the best possible order, respecting the `merge_concurrency` limit.
 ///
-/// This actor is not supervised, and should stay as simple as possible.
+/// This actor is not supervised and should stay as simple as possible.
 /// In particular,
 /// - the `ScheduleMerge` handler should reply in microseconds.
 /// - the task should never be dropped before reaching its `split_downloader_mailbox` destination
 /// as it would break the consistency of `MergePlanner` with the metastore (ie: several splits will
-/// never) be merged.
+/// never be merged).
 pub struct MergeSchedulerService {
     merge_semaphore: Arc<Semaphore>,
     merge_concurrency: usize,
@@ -144,8 +144,8 @@ impl MergeSchedulerService {
     }
 
     fn schedule_pending_merges(&mut self, ctx: &ActorContext<Self>) {
-        // We schedule as many pending merge as we can,
-        // until there are no permit available or no merge to schedule.
+        // We schedule as many pending merges as we can,
+        // until there are no permits available or merges to schedule.
         loop {
             let merge_semaphore = self.merge_semaphore.clone();
             let Some(next_merge) = self.pending_merge_queue.peek_mut() else {
@@ -227,7 +227,6 @@ fn score_merge_operation(merge_operation: &MergeOperation) -> u64 {
     // We will remove splits.len() and add 1 merge splits.
     let delta_num_splits = (merge_operation.splits.len() - 1) as u64;
     // We use integer arithmetic to avoid `f64 are not ordered` silliness.
-    dbg!(delta_num_splits, total_num_bytes);
     (delta_num_splits << 48)
         .checked_div(total_num_bytes)
         .unwrap_or(1u64)

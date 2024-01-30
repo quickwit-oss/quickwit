@@ -147,10 +147,8 @@ impl Handler<NewSplits> for MergePlanner {
 
 impl MergePlanner {
     pub fn queue_capacity() -> QueueCapacity {
-        // The query planner handler will block until merge operation are scheduled.
-        //
-        // This queue capacity amounts to the number of "non-running" but merge operations
-        // we are willing to have at the same time.
+        // We cannot have a Queue capacity of 0 here because `try_send_self`
+        // would never succeed.
         QueueCapacity::Bounded(1)
     }
 

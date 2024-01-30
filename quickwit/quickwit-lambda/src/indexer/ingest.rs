@@ -197,11 +197,11 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         runtimes_config,
         &HashSet::from_iter([QuickwitService::Indexer]),
     )?;
-    let merge_scheduler_service = MergeSchedulerService::new(indexer_config.merge_concurrency.get());
+    let merge_scheduler_service =
+        MergeSchedulerService::new(indexer_config.merge_concurrency.get());
     let universe = Universe::new();
-    let (merge_scheduler_service_mailbox, _) = universe
-        .spawn_builder()
-        .spawn(merge_scheduler_service);
+    let (merge_scheduler_service_mailbox, _) =
+        universe.spawn_builder().spawn(merge_scheduler_service);
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
