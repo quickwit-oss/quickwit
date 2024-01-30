@@ -38,7 +38,7 @@ pub struct MergePermit {
 }
 
 impl MergePermit {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> MergePermit {
         MergePermit {
             _semaphore_permit: None,
