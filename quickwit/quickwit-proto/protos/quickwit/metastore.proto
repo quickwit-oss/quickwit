@@ -160,6 +160,25 @@ service MetastoreService {
   rpc DeleteShards(DeleteShardsRequest) returns (DeleteShardsResponse);
 
   rpc ListShards(ListShardsRequest) returns (ListShardsResponse);
+
+  // Index Template API
+  //
+  // Index templates are used to create indexes with a predefined configuration.
+
+  // Creates an index template.
+  rpc CreateIndexTemplate(CreateIndexTemplateRequest) returns (EmptyResponse);
+
+  // Fetches an index template.
+  rpc GetIndexTemplate(GetIndexTemplateRequest) returns (GetIndexTemplateResponse);
+
+  // Finds matching index templates.
+  rpc FindIndexTemplateMatches(FindIndexTemplateMatchesRequest) returns (FindIndexTemplateMatchesResponse);
+
+  // Returns all the index templates.
+  rpc ListIndexTemplates(ListIndexTemplatesRequest) returns (ListIndexTemplatesResponse);
+
+  // Deletes index templates.
+  rpc DeleteIndexTemplates(DeleteIndexTemplatesRequest) returns (EmptyResponse);
 }
 
 message EmptyResponse {
@@ -167,10 +186,12 @@ message EmptyResponse {
 
 message CreateIndexRequest {
   string index_config_json = 2;
+  repeated string source_configs_json = 3;
 }
 
 message CreateIndexResponse {
   string index_uid = 1;
+  string index_metadata_json = 2;
 }
 
 message ListIndexesMetadataRequest {
@@ -396,4 +417,46 @@ message ListShardsSubresponse {
   string index_uid = 1;
   string source_id = 2;
   repeated quickwit.ingest.Shard shards = 3;
+}
+
+//
+// Index Template API
+//
+
+message CreateIndexTemplateRequest {
+  string index_template_json = 1;
+  bool overwrite = 2;
+}
+
+message GetIndexTemplateRequest {
+  string template_id = 1;
+}
+
+message GetIndexTemplateResponse {
+  string index_template_json = 1;
+}
+
+message FindIndexTemplateMatchesRequest {
+  repeated string index_ids = 1;
+}
+
+message FindIndexTemplateMatchesResponse {
+  repeated IndexTemplateMatch matches = 1;
+}
+
+message IndexTemplateMatch {
+  string index_id = 1;
+  string template_id = 2;
+  string index_template_json = 3;
+}
+
+message ListIndexTemplatesRequest {
+}
+
+message ListIndexTemplatesResponse {
+  repeated string index_templates_json = 1;
+}
+
+message DeleteIndexTemplatesRequest {
+  repeated string template_ids = 1;
 }

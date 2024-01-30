@@ -21,6 +21,7 @@ once_cell = { workspace = true }
 ouroboros = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
+regex-syntax = { workspace = true }
 sea-query = { workspace = true, optional = true }
 sea-query-binder = { workspace = true, optional = true }
 serde = { workspace = true }
@@ -50,6 +51,7 @@ futures = { workspace = true }
 md5 = { workspace = true }
 mockall = { workspace = true }
 rand = { workspace = true }
+serial_test = "3.0.0"
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 

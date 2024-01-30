@@ -36,6 +36,7 @@ pub(crate) mod list_splits;
 pub(crate) mod shard;
 pub(crate) mod source;
 pub(crate) mod split;
+pub(crate) mod template;
 
 use crate::metastore::MetastoreServiceStreamSplitsExt;
 use crate::{ListSplitsRequestExt, MetastoreServiceExt, Split};
@@ -186,9 +187,15 @@ macro_rules! metastore_test_suite {
             }
 
             #[tokio::test]
-            async fn test_metastore_create_index_with_maximum_length() {
+            async fn test_metastore_create_index_with_sources() {
                 let _ = tracing_subscriber::fmt::try_init();
-                $crate::tests::index::test_metastore_create_index_with_maximum_length::<
+                $crate::tests::index::test_metastore_create_index_with_sources::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_create_index_enforces_index_id_maximum_length() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::index::test_metastore_create_index_enforces_index_id_maximum_length::<
                     $metastore_type,
                 >()
                 .await;
@@ -395,6 +402,38 @@ macro_rules! metastore_test_suite {
             #[tokio::test]
             async fn test_metastore_apply_checkpoint_delta_v2_multi_shards() {
                 $crate::tests::shard::test_metastore_apply_checkpoint_delta_v2_multi_shards::<$metastore_type>().await;
+            }
+
+            /// Index Template API tests
+
+            #[tokio::test]
+            #[serial_test::serial]
+            async fn test_metastore_create_index_template() {
+                $crate::tests::template::test_metastore_create_index_template::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::serial]
+            async fn test_metastore_get_index_template() {
+                $crate::tests::template::test_metastore_get_index_template::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::serial]
+            async fn test_metastore_find_index_template_matches() {
+                $crate::tests::template::test_metastore_find_index_template_matches::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::serial]
+            async fn test_metastore_list_index_templates() {
+                $crate::tests::template::test_metastore_list_index_templates::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::serial]
+            async fn test_metastore_delete_index_templates() {
+                $crate::tests::template::test_metastore_delete_index_templates::<$metastore_type>().await;
             }
         }
     };

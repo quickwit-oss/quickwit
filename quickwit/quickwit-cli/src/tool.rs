@@ -37,7 +37,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
-    VecSourceParams, CLI_INGEST_SOURCE_ID,
+    VecSourceParams, CLI_SOURCE_ID,
 };
 use quickwit_index_management::{clear_cache_directory, IndexService};
 use quickwit_indexing::actors::{
@@ -421,7 +421,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .vrl_script
         .map(|vrl_script| TransformConfig::new(vrl_script, None));
     let source_config = SourceConfig {
-        source_id: CLI_INGEST_SOURCE_ID.to_string(),
+        source_id: CLI_SOURCE_ID.to_string(),
         max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 is always non-zero."),
         desired_num_pipelines: NonZeroUsize::new(1).expect("1 is always non-zero."),
         enabled: true,

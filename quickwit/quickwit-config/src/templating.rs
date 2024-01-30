@@ -26,12 +26,12 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use tracing::debug;
 
-// Matches ${value} if value is in format of:
-// ENV_VAR or ENV_VAR:DEFAULT
+// Matches `${value}` if value is formatted as:
+// `ENV_VAR` or `ENV_VAR:DEFAULT`
 // Ignores whitespaces in curly braces
 static TEMPLATE_ENV_VAR_CAPTURE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"\$\{\s*([A-Za-z0-9_]+)\s*(?::\-\s*([\S]+)\s*)?}")
-        .expect("The regular expression should compile.")
+        .expect("regular expression should compile")
 });
 
 pub fn render_config(config_content: &[u8]) -> Result<String> {
@@ -40,31 +40,31 @@ pub fn render_config(config_content: &[u8]) -> Result<String> {
 
     let mut values = HashMap::new();
 
-    for (line_no, line_res) in config_content.lines().enumerate() {
-        let line = line_res?;
+    for (line_no, line_result) in config_content.lines().enumerate() {
+        let line = line_result?;
 
         for captures in TEMPLATE_ENV_VAR_CAPTURE.captures_iter(&line) {
             let env_var_key = captures
                 .get(1)
-                .expect("Captures should always have at least one match.")
+                .expect("captures should always have at least one match")
                 .as_str();
             let substitution_value = {
                 if line.trim_start().starts_with('#') {
                     debug!(
                         env_var_name=%env_var_key,
-                        "Config file line #{line_no} is commented out, skipping."
+                        "config file line #{line_no} is commented out, skipping"
                     );
                     // This line is commented out, return the line as is.
                     captures
                         .get(0)
-                        .expect("The 0th capture should aways be set.")
+                        .expect("0th capture should aways be set")
                         .as_str()
                         .to_string()
                 } else if let Ok(env_var_value) = std::env::var(env_var_key) {
                     debug!(
                         env_var_name=%env_var_key,
                         env_var_value=%env_var_value,
-                        "Environment variable is set, substituting with environment variable value."
+                        "environment variable is set, substituting with environment variable value"
                     );
                     env_var_value
                 } else if let Some(default_match) = captures.get(2) {
@@ -72,7 +72,7 @@ pub fn render_config(config_content: &[u8]) -> Result<String> {
                     debug!(
                         env_var_name=%env_var_key,
                         default_value=%default_value,
-                        "Environment variable is not set, substituting with default value."
+                        "environment variable is not set, substituting with default value"
                     );
                     default_value
                 } else {

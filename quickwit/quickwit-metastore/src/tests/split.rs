@@ -78,7 +78,7 @@ pub async fn test_metastore_publish_splits_empty_splits_array_is_allowed<
     {
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -199,7 +199,7 @@ pub async fn test_metastore_publish_splits<
     // Publish a non-existent split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -226,7 +226,7 @@ pub async fn test_metastore_publish_splits<
     // Publish a staged split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -234,11 +234,9 @@ pub async fn test_metastore_publish_splits<
             .index_uid
             .into();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_1.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -257,7 +255,7 @@ pub async fn test_metastore_publish_splits<
     // Publish a published split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -265,11 +263,9 @@ pub async fn test_metastore_publish_splits<
             .index_uid
             .into();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_1.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -310,7 +306,7 @@ pub async fn test_metastore_publish_splits<
     // Publish a non-staged split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -318,11 +314,9 @@ pub async fn test_metastore_publish_splits<
             .index_uid
             .into();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_1.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -375,7 +369,7 @@ pub async fn test_metastore_publish_splits<
     // Publish a staged split and non-existent split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -383,11 +377,9 @@ pub async fn test_metastore_publish_splits<
             .index_uid
             .into();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_1.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -415,7 +407,7 @@ pub async fn test_metastore_publish_splits<
     // Publish a published split and non-existent split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -423,11 +415,9 @@ pub async fn test_metastore_publish_splits<
             .index_uid
             .into();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_1.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -470,7 +460,7 @@ pub async fn test_metastore_publish_splits<
     // Publish a non-staged split and non-existent split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -478,11 +468,9 @@ pub async fn test_metastore_publish_splits<
             .index_uid
             .into();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_1.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -532,7 +520,7 @@ pub async fn test_metastore_publish_splits<
     // Publish staged splits on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -540,18 +528,14 @@ pub async fn test_metastore_publish_splits<
             .index_uid
             .into();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_1.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_2.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_2)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -575,7 +559,7 @@ pub async fn test_metastore_publish_splits<
     // Publish a staged split and published split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -585,7 +569,7 @@ pub async fn test_metastore_publish_splits<
 
         let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
             index_uid.clone(),
-            vec![split_metadata_1.clone(), split_metadata_2.clone()],
+            [split_metadata_1.clone(), split_metadata_2.clone()],
         )
         .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
@@ -633,7 +617,7 @@ pub async fn test_metastore_publish_splits<
     // Publish published splits on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -643,7 +627,7 @@ pub async fn test_metastore_publish_splits<
 
         let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
             index_uid.clone(),
-            vec![split_metadata_1.clone(), split_metadata_2.clone()],
+            [split_metadata_1.clone(), split_metadata_2.clone()],
         )
         .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
@@ -697,8 +681,7 @@ pub async fn test_metastore_publish_splits_concurrency<
     let index_id = append_random_suffix("test-publish-concurrency");
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
 
     let index_uid: IndexUid = metastore
         .create_index(create_index_request)
@@ -725,11 +708,9 @@ pub async fn test_metastore_publish_splits_concurrency<
                     index_uid: index_uid.clone(),
                     ..Default::default()
                 };
-                let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-                    index_uid.clone(),
-                    split_metadata.clone(),
-                )
-                .unwrap();
+                let stage_splits_request =
+                    StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
+                        .unwrap();
                 metastore_clone
                     .stage_splits(stage_splits_request)
                     .await
@@ -838,7 +819,7 @@ pub async fn test_metastore_replace_splits<
     // Replace a non-existent split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -868,7 +849,7 @@ pub async fn test_metastore_replace_splits<
     // Replace a publish split with a non existing split
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -876,11 +857,9 @@ pub async fn test_metastore_replace_splits<
             .index_uid
             .into();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_1.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -915,7 +894,7 @@ pub async fn test_metastore_replace_splits<
     // Replace a publish split with a deleted split
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -925,7 +904,7 @@ pub async fn test_metastore_replace_splits<
 
         let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
             index_uid.clone(),
-            vec![split_metadata_1.clone(), split_metadata_2.clone()],
+            [split_metadata_1.clone(), split_metadata_2.clone()],
         )
         .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
@@ -972,7 +951,7 @@ pub async fn test_metastore_replace_splits<
     // Replace a publish split with mixed splits
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -980,11 +959,9 @@ pub async fn test_metastore_replace_splits<
             .index_uid
             .into();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_1.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -997,11 +974,9 @@ pub async fn test_metastore_replace_splits<
             .await
             .unwrap();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_2.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_2)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -1025,7 +1000,7 @@ pub async fn test_metastore_replace_splits<
     // Replace a deleted split with a new split
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -1033,11 +1008,9 @@ pub async fn test_metastore_replace_splits<
             .index_uid
             .into();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_1.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -1057,11 +1030,9 @@ pub async fn test_metastore_replace_splits<
             .await
             .unwrap();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_2.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_2)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -1084,7 +1055,7 @@ pub async fn test_metastore_replace_splits<
     // Replace a publish split with staged splits
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -1092,11 +1063,9 @@ pub async fn test_metastore_replace_splits<
             .index_uid
             .into();
 
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            split_metadata_1.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let publish_splits_request = PublishSplitsRequest {
@@ -1111,7 +1080,7 @@ pub async fn test_metastore_replace_splits<
 
         let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
             index_uid.clone(),
-            vec![split_metadata_2.clone(), split_metadata_3.clone()],
+            [split_metadata_2.clone(), split_metadata_3.clone()],
         )
         .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
@@ -1142,8 +1111,7 @@ pub async fn test_metastore_mark_splits_for_deletion<
     let index_id = append_random_suffix("test-mark-splits-for-deletion");
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
 
     let index_uid: IndexUid = metastore
         .create_index(create_index_request)
@@ -1178,8 +1146,7 @@ pub async fn test_metastore_mark_splits_for_deletion<
         ..Default::default()
     };
     let stage_splits_request =
-        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata_1.clone())
-            .unwrap();
+        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1).unwrap();
     metastore.stage_splits(stage_splits_request).await.unwrap();
 
     let split_id_2 = format!("{index_id}--split-2");
@@ -1190,8 +1157,7 @@ pub async fn test_metastore_mark_splits_for_deletion<
         ..Default::default()
     };
     let stage_splits_request =
-        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata_2.clone())
-            .unwrap();
+        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_2).unwrap();
     metastore.stage_splits(stage_splits_request).await.unwrap();
     let publish_splits_request = PublishSplitsRequest {
         index_uid: index_uid.clone().to_string(),
@@ -1211,8 +1177,7 @@ pub async fn test_metastore_mark_splits_for_deletion<
         ..Default::default()
     };
     let stage_splits_request =
-        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata_3.clone())
-            .unwrap();
+        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_3).unwrap();
     metastore.stage_splits(stage_splits_request).await.unwrap();
     let publish_splits_request = PublishSplitsRequest {
         index_uid: index_uid.clone().to_string(),
@@ -1235,7 +1200,7 @@ pub async fn test_metastore_mark_splits_for_deletion<
         .unwrap();
 
     let list_splits_request = ListSplitsRequest::try_from_list_splits_query(
-        ListSplitsQuery::for_index(index_uid.clone())
+        &ListSplitsQuery::for_index(index_uid.clone())
             .with_split_state(SplitState::MarkedForDeletion),
     )
     .unwrap();
@@ -1271,7 +1236,7 @@ pub async fn test_metastore_mark_splits_for_deletion<
         .unwrap();
 
     let list_splits_request = ListSplitsRequest::try_from_list_splits_query(
-        ListSplitsQuery::for_index(index_uid.clone())
+        &ListSplitsQuery::for_index(index_uid.clone())
             .with_split_state(SplitState::MarkedForDeletion),
     )
     .unwrap();
@@ -1306,8 +1271,7 @@ pub async fn test_metastore_delete_splits<MetastoreToTest: MetastoreServiceExt +
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
     let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
@@ -1361,8 +1325,7 @@ pub async fn test_metastore_delete_splits<MetastoreToTest: MetastoreServiceExt +
         ..Default::default()
     };
     let stage_splits_request =
-        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata_1.clone())
-            .unwrap();
+        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_1).unwrap();
     metastore.stage_splits(stage_splits_request).await.unwrap();
     let publish_splits_request = PublishSplitsRequest {
         index_uid: index_uid.clone().to_string(),
@@ -1381,8 +1344,7 @@ pub async fn test_metastore_delete_splits<MetastoreToTest: MetastoreServiceExt +
         ..Default::default()
     };
     let stage_splits_request =
-        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata_2.clone())
-            .unwrap();
+        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata_2).unwrap();
     metastore.stage_splits(stage_splits_request).await.unwrap();
 
     let delete_splits_request = DeleteSplitsRequest {
@@ -1474,8 +1436,7 @@ pub async fn test_metastore_split_update_timestamp<
     };
 
     // Create an index
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
     let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
@@ -1485,11 +1446,9 @@ pub async fn test_metastore_split_update_timestamp<
 
     // wait for 1s, stage split & check `update_timestamp`
     sleep(Duration::from_secs(1)).await;
-    let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
-        index_uid.clone(),
-        vec![split_metadata.clone()],
-    )
-    .unwrap();
+    let stage_splits_request =
+        StageSplitsRequest::try_from_splits_metadata(index_uid.clone(), [split_metadata.clone()])
+            .unwrap();
     metastore.stage_splits(stage_splits_request).await.unwrap();
 
     sleep(Duration::from_secs(1)).await;
@@ -1587,7 +1546,7 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
     // Stage a splits on a non-existent index
     let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
         IndexUid::new_with_random_ulid("index-not-found"),
-        vec![split_metadata_1.clone()],
+        [split_metadata_1.clone()],
     )
     .unwrap();
     let error = metastore
@@ -1599,8 +1558,7 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
         MetastoreError::NotFound(EntityKind::Index { .. })
     ));
 
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
     let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
@@ -1611,14 +1569,14 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
     // Stage a split on an index
     let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
         index_uid.clone(),
-        vec![split_metadata_1.clone(), split_metadata_2.clone()],
+        [split_metadata_1.clone(), split_metadata_2.clone()],
     )
     .unwrap();
     metastore.stage_splits(stage_splits_request).await.unwrap();
 
     let query = ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
     let splits = metastore
-        .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+        .list_splits(ListSplitsRequest::try_from_list_splits_query(&query).unwrap())
         .await
         .unwrap()
         .collect_splits()
@@ -1628,11 +1586,9 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
     assert_eq!(split_ids, &[&split_id_1, &split_id_2]);
 
     // Stage a existent-staged-split on an index
-    let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
-        index_uid.clone(),
-        vec![split_metadata_1.clone()],
-    )
-    .unwrap();
+    let stage_splits_request =
+        StageSplitsRequest::try_from_splits_metadata(index_uid.clone(), [split_metadata_1.clone()])
+            .unwrap();
     metastore
         .stage_splits(stage_splits_request)
         .await
@@ -1647,11 +1603,9 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
         .publish_splits(publish_splits_request)
         .await
         .unwrap();
-    let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
-        index_uid.clone(),
-        vec![split_metadata_1.clone()],
-    )
-    .unwrap();
+    let stage_splits_request =
+        StageSplitsRequest::try_from_splits_metadata(index_uid.clone(), [split_metadata_1.clone()])
+            .unwrap();
     let error = metastore
         .stage_splits(stage_splits_request)
         .await
@@ -1670,11 +1624,9 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
         .mark_splits_for_deletion(mark_splits_for_deletion_request)
         .await
         .unwrap();
-    let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
-        index_uid.clone(),
-        vec![split_metadata_2.clone()],
-    )
-    .unwrap();
+    let stage_splits_request =
+        StageSplitsRequest::try_from_splits_metadata(index_uid.clone(), [split_metadata_2.clone()])
+            .unwrap();
     let error = metastore
         .stage_splits(stage_splits_request)
         .await
@@ -1746,7 +1698,7 @@ pub async fn test_metastore_update_splits_delete_opstamp<
     {
         info!("update splits delete opstamp on an index");
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -1756,11 +1708,7 @@ pub async fn test_metastore_update_splits_delete_opstamp<
 
         let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
             index_uid.clone(),
-            vec![
-                split_metadata_1.clone(),
-                split_metadata_2.clone(),
-                split_metadata_3.clone(),
-            ],
+            [split_metadata_1, split_metadata_2, split_metadata_3],
         )
         .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();

@@ -929,7 +929,8 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -938,10 +939,11 @@ mod tests {
             .into();
         let create_source_request = AddSourceRequest::try_from_source_config(
             index_uid.clone(),
-            SourceConfig::ingest_api_default(),
+            &SourceConfig::ingest_api_default(),
         )
         .unwrap();
         metastore.add_source(create_source_request).await.unwrap();
+
         let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
         let (indexing_service, indexing_service_handle) =
@@ -1030,7 +1032,8 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         metastore.create_index(create_index_request).await.unwrap();
 
         let universe = Universe::new();
@@ -1085,7 +1088,8 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -1094,7 +1098,7 @@ mod tests {
             .into();
         let add_source_request = AddSourceRequest::try_from_source_config(
             index_uid.clone(),
-            SourceConfig::ingest_api_default(),
+            &SourceConfig::ingest_api_default(),
         )
         .unwrap();
         metastore.add_source(add_source_request).await.unwrap();
@@ -1119,8 +1123,7 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         let add_source_request =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), source_config_1.clone())
-                .unwrap();
+            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config_1).unwrap();
         metastore.add_source(add_source_request).await.unwrap();
         let metadata = metastore
             .index_metadata(IndexMetadataRequest::for_index_id(index_id.clone()))
@@ -1170,8 +1173,7 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         let add_source_request_2 =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), source_config_2.clone())
-                .unwrap();
+            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config_2).unwrap();
         metastore.add_source(add_source_request_2).await.unwrap();
 
         let indexing_tasks = vec![
@@ -1327,7 +1329,8 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -1335,8 +1338,7 @@ mod tests {
             .index_uid
             .into();
         let add_source_request =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), source_config.clone())
-                .unwrap();
+            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();
         metastore.add_source(add_source_request).await.unwrap();
 
         // Test `IndexingService::new`.
@@ -1473,7 +1475,7 @@ mod tests {
                 Ok(list_indexes_metadatas_response)
             });
         metastore.expect_index_metadata().returning(move |_| {
-            Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
+            Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
         metastore
             .expect_list_splits()
@@ -1527,7 +1529,8 @@ mod tests {
             .await
             .unwrap();
         let mut metastore = metastore_for_test();
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await

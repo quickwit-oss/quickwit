@@ -73,6 +73,11 @@ pub enum EntityKind {
         /// Split IDs.
         split_ids: Vec<SplitId>,
     },
+    /// An index template.
+    IndexTemplate {
+        /// Index template ID.
+        template_id: String,
+    },
 }
 
 impl fmt::Display for EntityKind {
@@ -91,6 +96,9 @@ impl fmt::Display for EntityKind {
             } => write!(f, "source `{index_id}/{source_id}`"),
             EntityKind::Split { split_id } => write!(f, "split `{split_id}`"),
             EntityKind::Splits { split_ids } => write!(f, "splits `{}`", split_ids.join(", ")),
+            EntityKind::IndexTemplate { template_id } => {
+                write!(f, "index template `{}`", template_id)
+            }
         }
     }
 }
@@ -276,9 +284,18 @@ impl ListDeleteTasksRequest {
 }
 
 pub mod serde_utils {
+    use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
+    use serde_json::Value as JsonValue;
 
     use super::{MetastoreError, MetastoreResult};
+
+    pub fn from_json_bytes<'de, T: Deserialize<'de>>(value_bytes: &'de [u8]) -> MetastoreResult<T> {
+        serde_json::from_slice(value_bytes).map_err(|error| MetastoreError::JsonDeserializeError {
+            struct_name: std::any::type_name::<T>().to_string(),
+            message: error.to_string(),
+        })
+    }
 
     pub fn from_json_str<'de, T: Deserialize<'de>>(value_str: &'de str) -> MetastoreResult<T> {
         serde_json::from_str(value_str).map_err(|error| MetastoreError::JsonDeserializeError {
@@ -287,8 +304,29 @@ pub mod serde_utils {
         })
     }
 
+    pub fn from_json_value<T: DeserializeOwned>(value: JsonValue) -> MetastoreResult<T> {
+        serde_json::from_value(value).map_err(|error| MetastoreError::JsonDeserializeError {
+            struct_name: std::any::type_name::<T>().to_string(),
+            message: error.to_string(),
+        })
+    }
+
     pub fn to_json_str<T: Serialize>(value: &T) -> Result<String, MetastoreError> {
         serde_json::to_string(value).map_err(|error| MetastoreError::JsonSerializeError {
+            struct_name: std::any::type_name::<T>().to_string(),
+            message: error.to_string(),
+        })
+    }
+
+    pub fn to_json_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, MetastoreError> {
+        serde_json::to_vec(value).map_err(|error| MetastoreError::JsonSerializeError {
+            struct_name: std::any::type_name::<T>().to_string(),
+            message: error.to_string(),
+        })
+    }
+
+    pub fn to_json_bytes_pretty<T: Serialize>(value: &T) -> Result<Vec<u8>, MetastoreError> {
+        serde_json::to_vec_pretty(value).map_err(|error| MetastoreError::JsonSerializeError {
             struct_name: std::any::type_name::<T>().to_string(),
             message: error.to_string(),
         })

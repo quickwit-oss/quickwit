@@ -101,7 +101,7 @@ impl TestSandbox {
         let mut metastore = metastore_resolver
             .resolve(&Uri::for_test(METASTORE_URI))
             .await?;
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config.clone())?;
+        let create_index_request = CreateIndexRequest::try_from_index_config(&index_config)?;
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await?

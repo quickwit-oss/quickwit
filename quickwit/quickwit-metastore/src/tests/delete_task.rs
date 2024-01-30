@@ -37,8 +37,7 @@ pub async fn test_metastore_create_delete_task<
     let index_id = append_random_suffix("add-delete-task");
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
     let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
@@ -108,13 +107,13 @@ pub async fn test_metastore_last_delete_opstamp<
     let index_uri_2 = format!("ram:///indexes/{index_id_2}");
     let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
     let index_uid_1: IndexUid = metastore
-        .create_index(CreateIndexRequest::try_from_index_config(index_config_1.clone()).unwrap())
+        .create_index(CreateIndexRequest::try_from_index_config(&index_config_1).unwrap())
         .await
         .unwrap()
         .index_uid
         .into();
     let index_uid_2: IndexUid = metastore
-        .create_index(CreateIndexRequest::try_from_index_config(index_config_2.clone()).unwrap())
+        .create_index(CreateIndexRequest::try_from_index_config(&index_config_2).unwrap())
         .await
         .unwrap()
         .index_uid
@@ -183,8 +182,7 @@ pub async fn test_metastore_delete_index_with_tasks<
     let index_id = append_random_suffix("delete-delete-tasks");
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
     let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
@@ -225,13 +223,13 @@ pub async fn test_metastore_list_delete_tasks<
     let index_uri_2 = format!("ram:///indexes/{index_id_2}");
     let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
     let index_uid_1: IndexUid = metastore
-        .create_index(CreateIndexRequest::try_from_index_config(index_config_1.clone()).unwrap())
+        .create_index(CreateIndexRequest::try_from_index_config(&index_config_1).unwrap())
         .await
         .unwrap()
         .index_uid
         .into();
     let index_uid_2: IndexUid = metastore
-        .create_index(CreateIndexRequest::try_from_index_config(index_config_2.clone()).unwrap())
+        .create_index(CreateIndexRequest::try_from_index_config(&index_config_2).unwrap())
         .await
         .unwrap()
         .index_uid

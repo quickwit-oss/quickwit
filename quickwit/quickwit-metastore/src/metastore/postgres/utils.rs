@@ -31,7 +31,7 @@ use tracing::error;
 use tracing::log::LevelFilter;
 
 use super::model::{Splits, ToTimestampFunc};
-use super::tags_filter_expression_helper;
+use super::tags::generate_sql_condition;
 use crate::metastore::FilterRange;
 use crate::{ListSplitsQuery, SplitMaturity, SplitMetadata};
 
@@ -108,8 +108,8 @@ pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplits
         );
     };
 
-    if let Some(tags) = query.tags.as_ref() {
-        sql.cond_where(tags_filter_expression_helper(tags));
+    if let Some(tags) = &query.tags {
+        sql.cond_where(generate_sql_condition(tags));
     };
 
     match query.time_range.start {

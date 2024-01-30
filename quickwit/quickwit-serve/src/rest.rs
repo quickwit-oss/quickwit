@@ -41,11 +41,12 @@ use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
-use crate::json_api_response::{ApiError, JsonApiResponse};
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
+use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
+use crate::template_api::index_template_api_handlers;
 use crate::ui_handler::ui_handler;
 use crate::{BodyFormat, BuildInfo, QuickwitServices, RuntimeInfo};
 
@@ -205,6 +206,9 @@ fn api_v1_routes(
                 quickwit_services.ingest_service.clone(),
                 quickwit_services.ingest_router_service.clone(),
                 quickwit_services.metastore_client.clone(),
+            ))
+            .or(index_template_api_handlers(
+                quickwit_services.metastore_client.clone(),
             )),
     )
 }
@@ -223,85 +227,85 @@ fn api_v1_routes(
 pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
     let err = get_status_with_error(rejection);
     let status_code = err.service_code.to_http_status_code();
-    Ok(JsonApiResponse::new::<(), _>(
+    Ok(RestApiResponse::new::<(), _>(
         &Err(err),
         status_code,
         &BodyFormat::default(),
     ))
 }
 
-fn get_status_with_error(rejection: Rejection) -> ApiError {
-    if let Some(error) = rejection.find::<crate::index_api::UnsupportedContentType>() {
-        ApiError {
+fn get_status_with_error(rejection: Rejection) -> RestApiError {
+    if let Some(error) = rejection.find::<crate::format::UnsupportedMediaType>() {
+        RestApiError {
             service_code: ServiceErrorCode::UnsupportedMediaType,
             message: error.to_string(),
         }
     } else if rejection.is_not_found() {
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::NotFound,
             message: "Route not found".to_string(),
         }
     } else if let Some(error) = rejection.find::<serde_qs::Error>() {
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<InvalidJsonRequest>() {
         // Happens when the request body could not be deserialized correctly.
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::BadRequest,
             message: error.0.to_string(),
         }
     } else if let Some(error) = rejection.find::<InvalidArgument>() {
         // Happens when the url path or request body contains invalid argument(s).
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::BadRequest,
             message: error.0.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::filters::body::BodyDeserializeError>() {
         // Happens when the request body could not be deserialized correctly.
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::UnsupportedMediaType>() {
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::UnsupportedMediaType,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::InvalidQuery>() {
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::LengthRequired>() {
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::MissingHeader>() {
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::InvalidHeader>() {
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::MethodNotAllowed>() {
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::MethodNotAllowed,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::PayloadTooLarge>() {
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else {
         error!("REST server error: {:?}", rejection);
-        ApiError {
+        RestApiError {
             service_code: ServiceErrorCode::Internal,
             message: "internal server error".to_string(),
         }

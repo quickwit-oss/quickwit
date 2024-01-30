@@ -99,21 +99,6 @@ impl Default for ShardTableEntry {
 }
 
 impl ShardTableEntry {
-    pub fn from_shards(shards: Vec<Shard>) -> Self {
-        let shard_entries = shards
-            .into_iter()
-            .filter(|shard| {
-                let shard_state = shard.shard_state();
-                shard_state == ShardState::Open || shard_state == ShardState::Closed
-            })
-            .map(|shard| (shard.shard_id().clone(), shard.into()))
-            .collect();
-        Self {
-            shard_entries,
-            ..Default::default()
-        }
-    }
-
     fn is_empty(&self) -> bool {
         self.shard_entries.is_empty()
     }
@@ -137,7 +122,7 @@ fn remove_shard_from_ingesters_internal(
     shard: &Shard,
     ingester_shards: &mut FnvHashMap<NodeId, FnvHashMap<SourceUid, BTreeSet<ShardId>>>,
 ) {
-    for node in shard.ingester_nodes() {
+    for node in shard.ingesters() {
         let ingester_shards = ingester_shards
             .get_mut(&node)
             .expect("shard table reached inconsistent state");
@@ -181,7 +166,7 @@ impl ShardTable {
             for (shard_id, shard_entry) in &shard_table_entry.shard_entries {
                 debug_assert_eq!(shard_id, shard_entry.shard.shard_id());
                 debug_assert_eq!(source_uid.index_uid.as_str(), &shard_entry.shard.index_uid);
-                for node in shard_entry.shard.ingester_nodes() {
+                for node in shard_entry.shard.ingesters() {
                     shard_sets_in_shard_table.insert((node, source_uid, shard_id));
                 }
             }
@@ -218,6 +203,10 @@ impl ShardTable {
             .iter()
             .filter(move |(source_uid, _)| source_uid.index_uid == *index_uid)
             .flat_map(|(_, shard_table_entry)| shard_table_entry.shard_entries.values())
+    }
+
+    pub fn num_sources(&self) -> usize {
+        self.table_entries.len()
     }
 
     pub fn num_shards(&self) -> usize {
@@ -295,8 +284,8 @@ impl ShardTable {
             .map(|table_entry| table_entry.shard_entries.values())
     }
 
-    /// Updates the shard table.
-    pub fn insert_newly_opened_shards(
+    /// Inserts the shards into the shard table.
+    pub fn insert_shards(
         &mut self,
         index_uid: &IndexUid,
         source_id: &SourceId,
@@ -317,7 +306,7 @@ impl ShardTable {
             }
         }
         for shard in &opened_shards {
-            for node in shard.ingester_nodes() {
+            for node in shard.ingesters() {
                 let ingester_shards = self.ingester_shards.entry(node).or_default();
                 let shard_ids = ingester_shards.entry(source_uid.clone()).or_default();
                 shard_ids.insert(shard.shard_id().clone());
@@ -462,22 +451,6 @@ impl ShardTable {
         self.check_invariant();
     }
 
-    /// Set the shards for a given source.
-    /// This function panics if an entry was previously associated to the source uid.
-    pub(crate) fn initialize_source_shards(&mut self, source_uid: SourceUid, shards: Vec<Shard>) {
-        for shard in &shards {
-            for node in shard.ingester_nodes() {
-                let ingester_shards = self.ingester_shards.entry(node).or_default();
-                let shard_ids = ingester_shards.entry(source_uid.clone()).or_default();
-                shard_ids.insert(shard.shard_id().clone());
-            }
-        }
-        let table_entry = ShardTableEntry::from_shards(shards);
-        let previous_entry = self.table_entries.insert(source_uid, table_entry);
-        assert!(previous_entry.is_none());
-        self.check_invariant();
-    }
-
     pub fn acquire_scaling_permits(
         &mut self,
         source_uid: &SourceUid,
@@ -615,7 +588,7 @@ mod tests {
             shard_state: ShardState::Closed as i32,
             ..Default::default()
         };
-        shard_table.insert_newly_opened_shards(&index_uid, &source_id, vec![shard_01]);
+        shard_table.insert_shards(&index_uid, &source_id, vec![shard_01]);
 
         let shards = shard_table.list_shards(&source_uid).unwrap();
         assert_eq!(shards.count(), 1);
@@ -636,7 +609,7 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        shard_table.insert_newly_opened_shards(&index_uid_0, &source_id, vec![shard_01.clone()]);
+        shard_table.insert_shards(&index_uid_0, &source_id, vec![shard_01.clone()]);
 
         assert_eq!(shard_table.table_entries.len(), 1);
 
@@ -667,7 +640,7 @@ mod tests {
             ..Default::default()
         };
 
-        shard_table.insert_newly_opened_shards(
+        shard_table.insert_shards(
             &index_uid_0,
             &source_id,
             vec![shard_01.clone(), shard_02.clone()],
@@ -733,7 +706,7 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        shard_table.insert_newly_opened_shards(
+        shard_table.insert_shards(
             &index_uid,
             &source_id,
             vec![shard_01, shard_02, shard_03.clone(), shard_04.clone()],
@@ -789,7 +762,7 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        shard_table.insert_newly_opened_shards(
+        shard_table.insert_shards(
             &index_uid,
             &source_id,
             vec![shard_01, shard_02, shard_03, shard_04],
@@ -889,8 +862,8 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        shard_table.insert_newly_opened_shards(&index_uid_0, &source_id, vec![shard_01, shard_02]);
-        shard_table.insert_newly_opened_shards(&index_uid_1, &source_id, vec![shard_11]);
+        shard_table.insert_shards(&index_uid_0, &source_id, vec![shard_01, shard_02]);
+        shard_table.insert_shards(&index_uid_1, &source_id, vec![shard_11]);
 
         let source_uid_0 = SourceUid {
             index_uid: index_uid_0,
@@ -939,12 +912,8 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        shard_table.insert_newly_opened_shards(
-            &index_uid_0,
-            &source_id,
-            vec![shard_01.clone(), shard_02],
-        );
-        shard_table.insert_newly_opened_shards(&index_uid_1, &source_id, vec![shard_11]);
+        shard_table.insert_shards(&index_uid_0, &source_id, vec![shard_01.clone(), shard_02]);
+        shard_table.insert_shards(&index_uid_1, &source_id, vec![shard_11]);
 
         let source_uid_0 = SourceUid {
             index_uid: index_uid_0.clone(),

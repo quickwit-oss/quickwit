@@ -284,7 +284,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
         }
     }
 
-    fn test_equality(&self, other: &Self) {
+    fn assert_equality(&self, other: &Self) {
         assert_eq!(self, other);
     }
 }

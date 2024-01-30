@@ -24,14 +24,14 @@ use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
-    AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
+    AddSourceRequestExt, CreateIndexResponseExt, IndexMetadata, IndexMetadataResponseExt,
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitInfo,
     SplitMetadata, SplitState,
 };
 use quickwit_proto::metastore::{
-    AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataRequest,
-    ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreService,
-    MetastoreServiceClient, ResetSourceCheckpointRequest,
+    serde_utils, AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, EntityKind,
+    IndexMetadataRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -120,34 +120,22 @@ impl IndexService {
                 }
             }
         }
-
         let mut metastore = self.metastore.clone();
 
-        // Add default ingest-api & cli-ingest sources config.
-        let index_id = index_config.index_id.clone();
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config)?;
+        let index_config_json = serde_utils::to_json_str(&index_config)?;
+
+        // Add default sources.
+        let source_configs_json = vec![
+            serde_utils::to_json_str(&SourceConfig::ingest_api_default())?,
+            serde_utils::to_json_str(&SourceConfig::ingest_v2())?,
+            serde_utils::to_json_str(&SourceConfig::cli())?,
+        ];
+        let create_index_request = CreateIndexRequest {
+            index_config_json,
+            source_configs_json,
+        };
         let create_index_response = metastore.create_index(create_index_request).await?;
-        let index_uid: IndexUid = create_index_response.index_uid.into();
-        let add_ingest_api_source_request = AddSourceRequest::try_from_source_config(
-            index_uid.clone(),
-            SourceConfig::ingest_api_default(),
-        )?;
-        metastore.add_source(add_ingest_api_source_request).await?;
-        let add_ingest_source_request = AddSourceRequest::try_from_source_config(
-            index_uid.clone(),
-            SourceConfig::ingest_v2_default(),
-        )?;
-        metastore.add_source(add_ingest_source_request).await?;
-        let add_ingest_cli_source_request = AddSourceRequest::try_from_source_config(
-            index_uid.clone(),
-            SourceConfig::cli_ingest_source(),
-        )?;
-        metastore.add_source(add_ingest_cli_source_request).await?;
-        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id);
-        let index_metadata = metastore
-            .index_metadata(index_metadata_request)
-            .await?
-            .deserialize_index_metadata()?;
+        let index_metadata = create_index_response.deserialize_index_metadata()?;
         Ok(index_metadata)
     }
 
@@ -188,7 +176,7 @@ impl IndexService {
         // Schedule staged and published splits for deletion.
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_split_states([SplitState::Staged, SplitState::Published]);
-        let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
+        let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
         let split_ids: Vec<SplitId> = self
             .metastore
             .list_splits(list_splits_request)
@@ -204,7 +192,7 @@ impl IndexService {
         // Select splits to delete
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_split_state(SplitState::MarkedForDeletion);
-        let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
+        let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
         let splits_metadata_to_delete: Vec<SplitMetadata> = self
             .metastore
             .list_splits(list_splits_request)
@@ -329,8 +317,8 @@ impl IndexService {
         Ok(())
     }
 
-    /// Creates a source config for index `index_id`.
-    pub async fn create_source(
+    /// Adds a source to an index identified by its UID.
+    pub async fn add_source(
         &mut self,
         index_uid: IndexUid,
         source_config: SourceConfig,
@@ -339,14 +327,14 @@ impl IndexService {
         // This is a bit redundant, as SourceConfig deserialization also checks
         // that the identifier is valid. However it authorizes the special
         // private names internal to quickwit, so we do an extra check.
-        validate_identifier("Source ID", &source_id).map_err(|_| {
+        validate_identifier("source", &source_id).map_err(|_| {
             IndexServiceError::InvalidIdentifier(format!("invalid source ID: `{source_id}`"))
         })?;
         check_source_connectivity(&self.storage_resolver, &source_config)
             .await
             .map_err(IndexServiceError::InvalidConfig)?;
         let add_source_request =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), source_config.clone())?;
+            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config)?;
         self.metastore.add_source(add_source_request).await?;
         info!(
             "source `{}` successfully created for index `{}`",
@@ -420,7 +408,7 @@ pub async fn validate_storage_uri(
 mod tests {
 
     use quickwit_common::uri::Uri;
-    use quickwit_config::IndexConfig;
+    use quickwit_config::{IndexConfig, CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID};
     use quickwit_metastore::{
         metastore_for_test, MetastoreServiceExt, SplitMetadata, StageSplitsRequestExt,
     };
@@ -443,6 +431,12 @@ mod tests {
             .unwrap();
         assert_eq!(index_metadata_0.index_id(), index_id);
         assert_eq!(index_metadata_0.index_uri(), &index_uri);
+
+        assert_eq!(index_metadata_0.sources.len(), 3);
+        assert!(index_metadata_0.sources.contains_key(CLI_SOURCE_ID));
+        assert!(index_metadata_0.sources.contains_key(INGEST_API_SOURCE_ID));
+        assert!(index_metadata_0.sources.contains_key(INGEST_V2_SOURCE_ID));
+
         assert!(metastore
             .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await

@@ -118,7 +118,7 @@ impl fmt::Debug for IndexingScheduler {
 fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
     let mut sources = Vec::new();
 
-    for (source_uid, source_config) in model.get_source_configs() {
+    for (source_uid, source_config) in model.source_configs() {
         if !source_config.enabled {
             continue;
         }
@@ -757,7 +757,7 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        model.insert_newly_opened_shards(&index_uid, &"ingest_v2".to_string(), vec![shard]);
+        model.insert_shards(&index_uid, &"ingest_v2".to_string(), vec![shard]);
         let shards: Vec<SourceToSchedule> = get_sources_to_schedule(&model);
         assert_eq!(shards.len(), 3);
     }

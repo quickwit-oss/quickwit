@@ -25,7 +25,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{ensure, Context};
 use bytesize::ByteSize;
 use chrono::Utc;
 use cron::Schedule;
@@ -225,24 +225,17 @@ pub struct RetentionPolicy {
     /// Duration of time for which the splits should be retained, expressed in a human-friendly way
     /// (`1 hour`, `3 days`, `a week`, ...).
     #[serde(rename = "period")]
-    retention_period: String,
+    pub retention_period: String,
 
     /// Defines the frequency at which the retention policy is evaluated and applied, expressed in
     /// a human-friendly way (`hourly`, `daily`, ...) or as a cron expression (`0 0 * * * *`,
     /// `0 0 0 * * *`).
     #[serde(default = "RetentionPolicy::default_schedule")]
     #[serde(rename = "schedule")]
-    evaluation_schedule: String,
+    pub evaluation_schedule: String,
 }
 
 impl RetentionPolicy {
-    pub fn new(retention_period: String, evaluation_schedule: String) -> Self {
-        Self {
-            retention_period,
-            evaluation_schedule,
-        }
-    }
-
     fn default_schedule() -> String {
         "hourly".to_string()
     }
@@ -279,7 +272,7 @@ impl RetentionPolicy {
         Ok(duration)
     }
 
-    fn validate(&self) -> anyhow::Result<()> {
+    pub(super) fn validate(&self) -> anyhow::Result<()> {
         self.retention_period()?;
         self.evaluation_schedule()?;
         Ok(())
@@ -310,7 +303,7 @@ pub struct IndexConfig {
     pub doc_mapping: DocMapping,
     pub indexing_settings: IndexingSettings,
     pub search_settings: SearchSettings,
-    pub retention_policy: Option<RetentionPolicy>,
+    pub retention_policy_opt: Option<RetentionPolicy>,
 }
 
 impl IndexConfig {
@@ -395,7 +388,7 @@ impl IndexConfig {
             doc_mapping,
             indexing_settings,
             search_settings,
-            retention_policy: Default::default(),
+            retention_policy_opt: Default::default(),
         }
     }
 }
@@ -462,10 +455,10 @@ impl TestableForRegression for IndexConfig {
             timestamp_field: Some("timestamp".to_string()),
             tokenizers: vec![tokenizer],
         };
-        let retention_policy = Some(RetentionPolicy::new(
-            "90 days".to_string(),
-            "daily".to_string(),
-        ));
+        let retention_policy = Some(RetentionPolicy {
+            retention_period: "90 days".to_string(),
+            evaluation_schedule: "daily".to_string(),
+        });
         let stable_log_config = StableLogMergePolicyConfig {
             merge_factor: 9,
             max_merge_factor: 11,
@@ -491,12 +484,12 @@ impl TestableForRegression for IndexConfig {
             index_uri: Uri::for_test("s3://quickwit-indexes/my-index"),
             doc_mapping,
             indexing_settings,
-            retention_policy,
+            retention_policy_opt: retention_policy,
             search_settings,
         }
     }
 
-    fn test_equality(&self, other: &Self) {
+    fn assert_equality(&self, other: &Self) {
         assert_eq!(self.index_id, other.index_id);
         assert_eq!(self.index_uri, other.index_uri);
         assert_eq!(
@@ -540,6 +533,33 @@ pub fn build_doc_mapper(
         tokenizers: doc_mapping.tokenizers.clone(),
     };
     Ok(Arc::new(builder.try_build()?))
+}
+
+/// Validates the objects that make up an index configuration. This is a "free" function as opposed
+/// to a method on `IndexConfig` so we can reuse it for validating index templates.
+pub(super) fn validate_index_config(
+    doc_mapping: &DocMapping,
+    indexing_settings: &IndexingSettings,
+    search_settings: &SearchSettings,
+    retention_policy_opt: &Option<RetentionPolicy>,
+) -> anyhow::Result<()> {
+    // Note: this needs a deep refactoring to separate the doc mapping configuration,
+    // and doc mapper implementations.
+    // TODO see if we should store the byproducton the IndexConfig.
+    build_doc_mapper(doc_mapping, search_settings)?;
+
+    indexing_settings.merge_policy.validate()?;
+    indexing_settings.resources.validate()?;
+
+    if let Some(retention_policy) = retention_policy_opt {
+        retention_policy.validate()?;
+
+        ensure!(
+            doc_mapping.timestamp_field.is_some(),
+            "retention policy requires a timestamp field, but indexing settings do not declare one"
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -595,7 +615,7 @@ mod tests {
             evaluation_schedule: "daily".to_string(),
         };
         assert_eq!(
-            index_config.retention_policy.unwrap(),
+            index_config.retention_policy_opt.unwrap(),
             expected_retention_policy
         );
         assert!(index_config.doc_mapping.store_source);
