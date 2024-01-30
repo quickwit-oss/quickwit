@@ -77,8 +77,8 @@ use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
-    GetMemoryCapacity, IngestApiService, IngestRequest, IngestRouter, IngestServiceClient,
-    Ingester, IngesterPool, LocalShardsUpdate,
+    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
+    LocalShardsUpdate,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{start_janitor_service, JanitorService};
@@ -387,16 +387,12 @@ pub async fn serve_quickwit(
     let ingest_service = start_ingest_client_if_needed(&node_config, &universe, &cluster).await?;
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
-        let ingest_api_service: Mailbox<IngestApiService> = universe
-            .get_one()
-            .context("Ingest API Service should have been started.")?;
         let indexing_service = start_indexing_service(
             &universe,
             &node_config,
             runtimes_config.num_threads_blocking,
             cluster.clone(),
             metastore_through_control_plane.clone(),
-            ingest_api_service.clone(),
             ingester_pool.clone(),
             storage_resolver.clone(),
             event_broker.clone(),

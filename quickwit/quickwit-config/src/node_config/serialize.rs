@@ -455,7 +455,7 @@ pub fn node_config_for_test() -> NodeConfig {
 mod tests {
     use std::env;
     use std::net::Ipv4Addr;
-    use std::num::NonZeroU64;
+    use std::num::{NonZeroU64, NonZeroUsize};
     use std::path::Path;
 
     use bytesize::ByteSize;
@@ -554,6 +554,7 @@ mod tests {
                 split_store_max_num_bytes: ByteSize::tb(1),
                 split_store_max_num_splits: 10_000,
                 max_concurrent_split_uploads: 8,
+                merge_concurrency: NonZeroUsize::new(2).unwrap(),
                 cpu_capacity: IndexerConfig::default_cpu_capacity(),
                 enable_cooperative_indexing: false,
                 max_merge_write_throughput: Some(ByteSize::mb(100)),

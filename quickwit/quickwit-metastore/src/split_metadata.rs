@@ -133,8 +133,9 @@ pub struct SplitMetadata {
     /// this split.
     pub num_merge_ops: usize,
 }
+
 impl fmt::Debug for SplitMetadata {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut debug_struct = f.debug_struct("SplitMetadata");
         debug_struct.field("split_id", &self.split_id);
         debug_struct.field("index_uid", &self.index_uid);
@@ -219,8 +220,8 @@ impl SplitMetadata {
 
     #[cfg(any(test, feature = "testsuite"))]
     /// Returns an instance of `SplitMetadata` for testing.
-    pub fn for_test(split_id: String) -> Self {
-        Self {
+    pub fn for_test(split_id: String) -> SplitMetadata {
+        SplitMetadata {
             split_id,
             ..Default::default()
         }

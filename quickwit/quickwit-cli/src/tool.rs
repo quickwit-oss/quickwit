@@ -29,7 +29,7 @@ use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
-use quickwit_actors::{ActorExitStatus, ActorHandle, Universe};
+use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, Universe};
 use quickwit_cluster::{ChannelTransport, Cluster, ClusterMember, FailureDetectorConfig};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
@@ -40,7 +40,9 @@ use quickwit_config::{
     VecSourceParams, CLI_INGEST_SOURCE_ID,
 };
 use quickwit_index_management::{clear_cache_directory, IndexService};
-use quickwit_indexing::actors::{IndexingService, MergePipeline, MergePipelineId};
+use quickwit_indexing::actors::{
+    IndexingService, MergePipeline, MergePipelineId, MergeSchedulerService,
+};
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
@@ -451,6 +453,8 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         runtimes_config,
         &HashSet::from_iter([QuickwitService::Indexer]),
     )?;
+    let universe = Universe::new();
+    let merge_scheduler_service_mailbox = universe.get_or_spawn_one();
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
@@ -459,12 +463,12 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         cluster,
         metastore,
         None,
+        merge_scheduler_service_mailbox,
         IngesterPool::default(),
         storage_resolver,
         EventBroker::default(),
     )
     .await?;
-    let universe = Universe::new();
     let (indexing_server_mailbox, indexing_server_handle) =
         universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
@@ -580,10 +584,9 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         runtimes_config,
         &HashSet::from_iter([QuickwitService::Indexer]),
     )?;
+    let indexer_config = IndexerConfig::default();
     let universe = Universe::new();
-    let indexer_config = IndexerConfig {
-        ..Default::default()
-    };
+    let merge_scheduler_service: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
@@ -592,6 +595,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         cluster,
         metastore,
         None,
+        merge_scheduler_service,
         IngesterPool::default(),
         storage_resolver,
         EventBroker::default(),

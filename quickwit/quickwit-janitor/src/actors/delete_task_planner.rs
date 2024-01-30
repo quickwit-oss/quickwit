@@ -28,7 +28,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::extract_time_range;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
-use quickwit_indexing::actors::MergeSplitDownloader;
+use quickwit_indexing::actors::{schedule_merge, MergeSchedulerService, MergeSplitDownloader};
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_metastore::{split_tag_filter, split_time_range_filter, ListSplitsResponseExt, Split};
 use quickwit_proto::metastore::{
@@ -83,6 +83,7 @@ pub struct DeleteTaskPlanner {
     metastore: MetastoreServiceClient,
     search_job_placer: SearchJobPlacer,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
+    merge_scheduler_service: Mailbox<MergeSchedulerService>,
     /// Inventory of ongoing delete operations. If everything goes well,
     /// a merge operation is dropped after the publish of the split that underwent
     /// the delete operation.
@@ -127,6 +128,7 @@ impl DeleteTaskPlanner {
         metastore: MetastoreServiceClient,
         search_job_placer: SearchJobPlacer,
         merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
+        merge_scheduler_service: Mailbox<MergeSchedulerService>,
     ) -> Self {
         Self {
             index_uid,
@@ -135,6 +137,7 @@ impl DeleteTaskPlanner {
             metastore,
             search_job_placer,
             merge_split_downloader_mailbox,
+            merge_scheduler_service,
             ongoing_delete_operations_inventory: Inventory::new(),
         }
     }
@@ -200,9 +203,10 @@ impl DeleteTaskPlanner {
                 let tracked_delete_operation = self
                     .ongoing_delete_operations_inventory
                     .track(delete_operation);
-                ctx.send_message(
-                    &self.merge_split_downloader_mailbox,
+                schedule_merge(
+                    &self.merge_scheduler_service,
                     tracked_delete_operation,
+                    self.merge_split_downloader_mailbox.clone(),
                 )
                 .await?;
                 JANITOR_METRICS
@@ -422,7 +426,7 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
 #[cfg(test)]
 mod tests {
     use quickwit_config::build_doc_mapper;
-    use quickwit_indexing::merge_policy::MergeOperation;
+    use quickwit_indexing::merge_policy::MergeTask;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::{
         IndexMetadataResponseExt, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt,
@@ -431,7 +435,6 @@ mod tests {
     use quickwit_proto::metastore::{DeleteQuery, IndexMetadataRequest, ListSplitsRequest};
     use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{searcher_pool_for_test, MockSearchService};
-    use tantivy::TrackedObject;
 
     use super::*;
 
@@ -458,6 +461,7 @@ mod tests {
             &["body"],
         )
         .await?;
+        let universe = test_sandbox.universe();
         let docs = [
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "info", "ts": 0 }),
@@ -537,12 +541,14 @@ mod tests {
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1000", mock_search_service)]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let (downloader_mailbox, downloader_inbox) = test_sandbox.universe().create_test_mailbox();
+        let (merge_split_downloader_mailbox, _) = universe.create_test_mailbox();
         let delete_planner_executor = DeleteTaskPlanner::new(
             index_uid.clone(),
             index_config.index_uri.clone(),
             doc_mapper_str,
             metastore.clone(),
             search_job_placer,
+            merge_split_downloader_mailbox,
             downloader_mailbox,
         );
         let (delete_planner_mailbox, delete_planner_handle) = test_sandbox
@@ -550,8 +556,7 @@ mod tests {
             .spawn_builder()
             .spawn(delete_planner_executor);
         delete_planner_handle.process_pending_and_observe().await;
-        let downloader_msgs: Vec<TrackedObject<MergeOperation>> =
-            downloader_inbox.drain_for_test_typed();
+        let downloader_msgs: Vec<MergeTask> = downloader_inbox.drain_for_test_typed();
         assert_eq!(downloader_msgs.len(), 1);
         // The last split will undergo a delete operation.
         assert_eq!(
@@ -585,8 +590,7 @@ mod tests {
             .ask(PlanDeleteOperations)
             .await
             .unwrap();
-        let downloader_last_msgs =
-            downloader_inbox.drain_for_test_typed::<TrackedObject<MergeOperation>>();
+        let downloader_last_msgs = downloader_inbox.drain_for_test_typed::<MergeTask>();
         assert_eq!(downloader_last_msgs.len(), 1);
         assert_eq!(
             downloader_last_msgs[0].splits[0].split_id(),
