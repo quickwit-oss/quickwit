@@ -24,8 +24,8 @@ use warp::reject::LengthRequired;
 use warp::{Filter, Rejection};
 
 use super::model::{
-    FieldCapabilityQueryParams, FieldCapabilityRequestBody, MultiSearchQueryParams,
-    SearchQueryParamsCount,
+    CatIndexQueryParams, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
+    MultiSearchQueryParams, SearchQueryParamsCount,
 };
 use crate::elasticsearch_api::model::{
     ElasticBulkOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
@@ -177,12 +177,29 @@ pub(crate) fn elastic_index_stats_filter(
 ) -> impl Filter<Extract = (Vec<String>,), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_stats")
         .and_then(extract_index_id_patterns)
-        .and(warp::get().or(warp::post()).unify())
+        .and(warp::get())
 }
 
 #[utoipa::path(get, tag = "Search", path = "/_stats")]
 pub(crate) fn elastic_stats_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_stats").and(warp::get())
+}
+
+#[utoipa::path(get, tag = "Search", path = "/_cat/indices/{index}")]
+pub(crate) fn elastic_index_cat_indices_filter(
+) -> impl Filter<Extract = (Vec<String>, CatIndexQueryParams), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_cat" / "indices" / String)
+        .and_then(extract_index_id_patterns)
+        .and(warp::get())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+}
+
+#[utoipa::path(get, tag = "Search", path = "/_cat/indices")]
+pub(crate) fn elastic_cat_indices_filter(
+) -> impl Filter<Extract = (CatIndexQueryParams,), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_cat" / "indices")
+        .and(warp::get())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
 #[utoipa::path(get, tag = "Search", path = "/{index}/_search")]

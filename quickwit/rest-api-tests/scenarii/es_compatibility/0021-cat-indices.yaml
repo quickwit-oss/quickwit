@@ -1,0 +1,89 @@
+method: [GET]
+engines:
+  - quickwit
+endpoint: "_cat/indices?format=json"
+expected:
+- dataset.size: 222.8kb
+  docs.count: '100'
+  docs.deleted: '0'
+  health: green
+  index: gharchive
+  pri: '1'
+  pri.store.size: 271.8kb
+  rep: '1'
+  status: open
+  store.size: 271.8kb
+  #uuid: gharchive:01HN2SDANHDN6WFAFNH7BBMQ8C
+---
+method: [GET]
+engines:
+  - quickwit
+endpoint: "_cat/indices/gharchive?format=json"
+expected:
+- dataset.size: 222.8kb
+  docs.count: '100'
+  docs.deleted: '0'
+  health: green
+  index: gharchive
+  pri: '1'
+  pri.store.size: 271.8kb
+  rep: '1'
+  status: open
+  store.size: 271.8kb
+  #uuid: gharchive:01HN2SDANHDN6WFAFNH7BBMQ8C
+---
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "_cat/indices/gharchive?format=json&h=docs.count,index"
+expected:
+- docs.count: '100'
+  index: gharchive
+--- # Wildcard test
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "_cat/indices/gharc*?format=json&h=docs.count,index"
+expected:
+- docs.count: '100'
+  index: gharchive
+--- # health green test
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "_cat/indices/gharchive?format=json&health=green"
+expected:
+- docs.count: '100'
+  index: gharchive
+--- # health red test
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "_cat/indices/gharchive?format=json&health=red"
+expected: []
+---
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "_cat/indices/gharchive" # missing format=json
+status_code: 400
+---
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "_cat/indices/gharchive?format=json&v=true" # invalid h=true
+status_code: 400
+---
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "_cat/indices/gharchive?format=json&b=b" # unsupported bytes parameter
+status_code: 400
+

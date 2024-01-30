@@ -1244,12 +1244,12 @@ dependencies = [
 [[package]]
 name = "chitchat"
 version = "0.8.0"
-source = "git+https://github.com/quickwit-oss/chitchat.git?rev=a3e3f8b#a3e3f8bd483b489e4da1ca953175b417e4949f90"
+source = "git+https://github.com/quickwit-oss/chitchat.git?rev=5d7ff34#5d7ff34a314bb40e0763bb0c8762366b8aeccd04"
 dependencies = [
  "anyhow",
  "async-trait",
  "bytes",
- "itertools 0.10.5",
+ "itertools 0.12.0",
  "rand 0.8.5",
  "serde",
  "tokio",
