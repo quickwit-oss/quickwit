@@ -898,6 +898,7 @@ mod tests {
             merge_policy: default_merge_policy(),
             max_concurrent_split_uploads: 2,
             merge_io_throughput_limiter_opt: None,
+            merge_scheduler_service: universe.get_or_spawn_one(),
             event_broker: Default::default(),
         };
         let merge_pipeline = MergePipeline::new(merge_pipeline_params, universe.spawn_ctx());

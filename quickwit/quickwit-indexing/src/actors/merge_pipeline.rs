@@ -40,6 +40,7 @@ use quickwit_proto::metastore::{
 use time::OffsetDateTime;
 use tracing::{debug, error, info, instrument};
 
+use super::MergeSchedulerService;
 use crate::actors::indexing_pipeline::wait_duration_before_retry;
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
@@ -228,7 +229,6 @@ impl MergePipeline {
         let published_splits_metadata = ctx
             .protect_future(published_splits_stream.collect_splits_metadata())
             .await?;
-
         info!(
             num_splits = published_splits_metadata.len(),
             "loaded list of published splits"
@@ -244,6 +244,11 @@ impl MergePipeline {
         let (merge_publisher_mailbox, merge_publisher_handler) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
+            .set_backpressure_micros_counter(
+                crate::metrics::INDEXER_METRICS
+                    .backpressure_micros
+                    .with_label_values(["merge_publisher"]),
+            )
             .spawn(merge_publisher);
 
         // Merge uploader
@@ -288,6 +293,11 @@ impl MergePipeline {
         let (merge_executor_mailbox, merge_executor_handler) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
+            .set_backpressure_micros_counter(
+                crate::metrics::INDEXER_METRICS
+                    .backpressure_micros
+                    .with_label_values(["merge_executor"]),
+            )
             .spawn(merge_executor);
 
         let merge_split_downloader = MergeSplitDownloader {
@@ -302,7 +312,7 @@ impl MergePipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values(["MergeSplitDownloader"]),
+                    .with_label_values(["merge_split_downloader"]),
             )
             .spawn(merge_split_downloader);
 
@@ -312,6 +322,7 @@ impl MergePipeline {
             published_splits_metadata,
             self.params.merge_policy.clone(),
             merge_split_downloader_mailbox,
+            self.params.merge_scheduler_service.clone(),
         );
         let (_, merge_planner_handler) = ctx
             .spawn_actor()
@@ -357,6 +368,9 @@ impl MergePipeline {
         handles.merge_planner.refresh_observe();
         handles.merge_uploader.refresh_observe();
         handles.merge_publisher.refresh_observe();
+        let num_ongoing_merges = crate::metrics::INDEXER_METRICS
+            .ongoing_merge_operations
+            .get();
         self.statistics = self
             .previous_generations_statistics
             .clone()
@@ -366,13 +380,7 @@ impl MergePipeline {
             )
             .set_generation(self.statistics.generation)
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts)
-            .set_ongoing_merges(
-                handles
-                    .merge_planner
-                    .last_observation()
-                    .ongoing_merge_operations
-                    .len(),
-            );
+            .set_ongoing_merges(usize::try_from(num_ongoing_merges).unwrap_or(0));
     }
 
     async fn perform_health_check(
@@ -455,6 +463,7 @@ pub struct MergePipelineParams {
     pub doc_mapper: Arc<dyn DocMapper>,
     pub indexing_directory: TempDirectory,
     pub metastore: MetastoreServiceClient,
+    pub merge_scheduler_service: Mailbox<MergeSchedulerService>,
     pub split_store: IndexingSplitStore,
     pub merge_policy: Arc<dyn MergePolicy>,
     pub max_concurrent_split_uploads: usize, //< TODO share with the indexing pipeline.
@@ -515,6 +524,7 @@ mod tests {
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             indexing_directory: TempDirectory::for_test(),
             metastore: MetastoreServiceClient::from(metastore),
+            merge_scheduler_service: universe.get_or_spawn_one(),
             split_store,
             merge_policy: default_merge_policy(),
             max_concurrent_split_uploads: 2,

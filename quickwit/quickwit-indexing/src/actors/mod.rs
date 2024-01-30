@@ -25,6 +25,7 @@ mod indexing_service;
 mod merge_executor;
 mod merge_pipeline;
 mod merge_planner;
+mod merge_scheduler_service;
 mod merge_split_downloader;
 mod packager;
 mod publisher;
@@ -43,6 +44,7 @@ pub use indexing_service::{
 pub use merge_executor::{combine_partition_ids, merge_split_attrs, MergeExecutor};
 pub use merge_pipeline::MergePipeline;
 pub use merge_planner::MergePlanner;
+pub use merge_scheduler_service::{schedule_merge, MergePermit, MergeSchedulerService};
 pub use merge_split_downloader::MergeSplitDownloader;
 pub use packager::Packager;
 pub use publisher::{Publisher, PublisherCounters, PublisherType};

@@ -26,11 +26,11 @@ use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{IndexUid, PublishToken};
 use tantivy::directory::MmapDirectory;
-use tantivy::{IndexBuilder, TrackedObject};
+use tantivy::IndexBuilder;
 use tracing::{instrument, Span};
 
 use crate::controlled_directory::ControlledDirectory;
-use crate::merge_policy::MergeOperation;
+use crate::merge_policy::MergeTask;
 use crate::models::{PublishLock, SplitAttrs};
 use crate::new_split_id;
 
@@ -157,11 +157,11 @@ pub struct IndexedSplitBatch {
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
     pub publish_token_opt: Option<PublishToken>,
-    /// A [`MergeOperation`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
+    /// A [`MergeTask`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
     /// in the `MergePipeline` or `DeleteTaskPipeline`.
     /// See planners docs to understand the usage.
     /// If `None`, the split batch was built in the `IndexingPipeline`.
-    pub merge_operation_opt: Option<TrackedObject<MergeOperation>>,
+    pub merge_task_opt: Option<MergeTask>,
     pub batch_parent_span: Span,
 }
 

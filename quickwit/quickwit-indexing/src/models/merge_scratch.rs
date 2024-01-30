@@ -18,15 +18,15 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_common::temp_dir::TempDirectory;
-use tantivy::{Directory, TrackedObject};
+use tantivy::Directory;
 
-use crate::merge_policy::MergeOperation;
+use crate::merge_policy::MergeTask;
 
 #[derive(Debug)]
 pub struct MergeScratch {
-    /// A [`MergeOperation`] tracked by either the `MergePlannner` or the `DeleteTaksPlanner`
+    /// A [`MergeTask`] tracked by either the `MergePlannner` or the `DeleteTaksPlanner`
     /// See planners docs to understand the usage.
-    pub merge_operation: TrackedObject<MergeOperation>,
+    pub merge_task: MergeTask,
     /// Scratch directory for computing the merge.
     pub merge_scratch_directory: TempDirectory,
     pub downloaded_splits_directory: TempDirectory,
