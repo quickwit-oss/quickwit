@@ -25,7 +25,7 @@ use quickwit_storage::{Storage, StorageError, StorageErrorKind};
 use crate::metastore::file_backed::file_backed_index::FileBackedIndex;
 
 /// Index metastore file managed by [`FileBackedMetastore`](crate::FileBackedMetastore).
-const METASTORE_FILE_NAME: &str = "metastore.json";
+pub(super) const METASTORE_FILE_NAME: &str = "metastore.json";
 
 /// Path to the metadata file from the given index ID.
 pub(super) fn metastore_filepath(index_id: &str) -> PathBuf {
