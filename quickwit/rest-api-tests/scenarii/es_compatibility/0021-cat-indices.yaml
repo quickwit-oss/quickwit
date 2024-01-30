@@ -40,6 +40,31 @@ endpoint: "_cat/indices/gharchive?format=json&h=docs.count,index"
 expected:
 - docs.count: '100'
   index: gharchive
+--- # Wildcard test
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "_cat/indices/gharc*?format=json&h=docs.count,index"
+expected:
+- docs.count: '100'
+  index: gharchive
+--- # health green test
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "_cat/indices/gharchive?format=json&health=green"
+expected:
+- docs.count: '100'
+  index: gharchive
+--- # health red test
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "_cat/indices/gharchive?format=json&health=red"
+expected: []
 ---
 method: [GET]
 engines:

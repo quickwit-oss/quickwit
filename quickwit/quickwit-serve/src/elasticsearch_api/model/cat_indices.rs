@@ -97,7 +97,7 @@ impl CatIndexQueryParams {
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ElasticsearchCatIndexResponse {
-    health: Health,
+    pub health: Health,
     status: Status,
     pub index: String,
     uuid: String,
@@ -198,7 +198,7 @@ fn format_byte_size(bytes: u64) -> String {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Health {
     #[default]

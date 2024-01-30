@@ -444,6 +444,13 @@ async fn es_compat_index_cat_indices(
 
     let search_response_rest = search_response_rest
         .into_iter()
+        .filter(|resp| {
+            if let Some(health) = query_params.health {
+                resp.health == health
+            } else {
+                true
+            }
+        })
         .map(|cat_index| cat_index.serialize_filtered(&query_params.h))
         .collect::<Result<Vec<serde_json::Value>, serde_json::Error>>()
         .map_err(|serde_errror| {
