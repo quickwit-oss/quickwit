@@ -197,7 +197,6 @@ impl ControlPlane {
             .await
             .context("failed to delete shards in metastore")?;
         self.model.delete_shards(source_uid, shards);
-        self.rebuild_plan_debounced(ctx);
         Ok(())
     }
 
@@ -279,6 +278,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
         }
         self.delete_shards(&shard_positions_update.source_uid, &shard_ids_to_close, ctx)
             .await?;
+        self.rebuild_plan_debounced(ctx);
         Ok(())
     }
 }
@@ -377,8 +377,6 @@ impl Handler<CreateIndexRequest> for ControlPlane {
             IndexMetadata::new_with_index_uid(index_uid.clone(), index_config);
 
         self.model.add_index(index_metadata);
-
-        self.rebuild_plan_debounced(ctx);
 
         let response = CreateIndexResponse {
             index_uid: index_uid.into(),
