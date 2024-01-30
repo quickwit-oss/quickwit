@@ -33,7 +33,7 @@ use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::{NodeId, ShardId};
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
@@ -318,7 +318,7 @@ impl IndexingScheduler {
                         .apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks })
                         .await
                     {
-                        error!(indexer_node_id=%indexer.0, err=?error, "error occurred when applying indexing plan to indexer");
+                        warn!(error=%error, node_id=indexer.0, "failed to apply indexing plan to indexer");
                     }
                 }
             });
