@@ -42,6 +42,7 @@ use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
 use crate::json_api_response::{ApiError, JsonApiResponse};
+use crate::metrics::make_rest_metrics_layer;
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
@@ -70,9 +71,6 @@ pub(crate) async fn start_rest_server(
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
-    let request_counter = warp::log::custom(|_| {
-        crate::SERVE_METRICS.http_requests_total.inc();
-    });
     // Docs routes
     let api_doc = warp::path("openapi.json")
         .and(warp::get())
@@ -117,7 +115,6 @@ pub(crate) async fn start_rest_server(
         .or(health_check_routes)
         .or(metrics_routes)
         .or(debugging_routes)
-        .with(request_counter)
         .recover(recover_fn)
         .with(extra_headers)
         .boxed();
@@ -128,6 +125,7 @@ pub(crate) async fn start_rest_server(
     let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
     let service = ServiceBuilder::new()
+        .layer(make_rest_metrics_layer::<hyper::Body>())
         .layer(
             CompressionLayer::new()
                 .gzip(true)

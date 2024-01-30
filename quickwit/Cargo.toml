@@ -210,7 +210,7 @@ tower = { version = "0.4.13", features = [
   "retry",
   "util",
 ] }
-tower-http = { version = "0.4.0", features = ["compression-gzip", "cors"] }
+tower-http = { version = "0.4.0", features = ["compression-gzip", "cors", "trace"] }
 tracing = "0.1.37"
 tracing-opentelemetry = "0.20.0"
 tracing-subscriber = { version = "0.3.16", features = [
