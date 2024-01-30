@@ -57,7 +57,7 @@ pub struct MergeTask {
 }
 
 impl MergeTask {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testsuite"))]
     pub fn from_merge_operation_for_test(merge_operation: MergeOperation) -> MergeTask {
         let inventory = tantivy::Inventory::default();
         let tracked_merge_operation = inventory.track(merge_operation);
