@@ -488,7 +488,7 @@ mod tests {
     fn test_byte_range_cache_doesnt_merge_unnecessarily() {
         // we need to get a 'static ref to metrics, and want a dedicated metrics because we assert
         // on it
-        pub static METRICS: Lazy<CacheMetrics> =
+        static METRICS: Lazy<CacheMetrics> =
             Lazy::new(|| CacheMetrics::for_component("byterange_cache_test"));
 
         let cache = ByteRangeCache::with_infinite_capacity(&METRICS);
