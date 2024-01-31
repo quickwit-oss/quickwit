@@ -1033,7 +1033,7 @@ impl IngesterService for Ingester {
                     .into_iter()
                     .map(move |shard_id| {
                         queue_id(
-                            &retain_shards_for_source.index_uid,
+                            &retain_shards_for_source.index_uid.clone().into(),
                             &retain_shards_for_source.source_id,
                             &shard_id,
                         )
@@ -1113,7 +1113,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
         let source_id = shard_positions_update.source_uid.source_id;
 
         for (shard_id, shard_position) in shard_positions_update.shard_positions {
-            let queue_id = queue_id(index_uid.as_str(), &source_id, &shard_id);
+            let queue_id = queue_id(&index_uid, &source_id, &shard_id);
 
             if shard_position.is_eof() {
                 state_guard.delete_shard(&queue_id).await;

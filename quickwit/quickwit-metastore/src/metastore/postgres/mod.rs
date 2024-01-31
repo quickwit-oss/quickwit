@@ -151,7 +151,7 @@ where
         FOR UPDATE
         "#,
     )
-    .bind(index_uid.as_str())
+    .bind(index_uid.to_string())
     .fetch_optional(executor)
     .await
     .map_err(|error| MetastoreError::Db {
@@ -200,7 +200,7 @@ async fn try_apply_delta_v2(
         FOR UPDATE
         "#,
     )
-    .bind(index_uid.as_str())
+    .bind(index_uid.to_string())
     .bind(source_id)
     .bind(shard_ids)
     .fetch_all(tx.as_mut())
@@ -254,7 +254,7 @@ async fn try_apply_delta_v2(
                 AND shards.shard_id = new_positions.shard_id
             "#,
     )
-    .bind(index_uid.as_str())
+    .bind(index_uid.to_string())
     .bind(source_id)
     .bind(shard_ids)
     .bind(new_positions)
@@ -321,7 +321,7 @@ where
         "#,
     )
     .bind(index_metadata_json)
-    .bind(index_uid.as_str())
+    .bind(index_uid.to_string())
     .execute(tx.as_mut())
     .await?;
     if update_index_res.rows_affected() == 0 {
@@ -400,7 +400,7 @@ impl MetastoreService for PostgresqlMetastore {
     ) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid.into();
         let delete_result = sqlx::query("DELETE FROM indexes WHERE index_uid = $1")
-            .bind(index_uid.as_str())
+            .bind(index_uid.to_string())
             .execute(&self.connection_pool)
             .await?;
         // FIXME: This is not idempotent.
@@ -496,7 +496,7 @@ impl MetastoreService for PostgresqlMetastore {
                 .bind(delete_opstamps)
                 .bind(maturity_timestamps)
                 .bind(SplitState::Staged.as_str())
-                .bind(index_uid.as_str())
+                .bind(index_uid.to_string())
                 .fetch_all(tx.as_mut())
                 .await
                 .map_err(|sqlx_error| convert_sqlx_err(index_uid.index_id(), sqlx_error))?;
@@ -652,7 +652,7 @@ impl MetastoreService for PostgresqlMetastore {
                 not_marked_split_ids,
             ): (i64, i64, Vec<String>, Vec<String>, Vec<String>) =
                 sqlx::query_as(PUBLISH_SPLITS_QUERY)
-                    .bind(index_uid.as_str())
+                    .bind(index_uid.to_string())
                     .bind(index_metadata_json)
                     .bind(staged_split_ids)
                     .bind(replaced_split_ids)
@@ -782,7 +782,7 @@ impl MetastoreService for PostgresqlMetastore {
         "#;
         let (num_found_splits, num_marked_splits, not_found_split_ids): (i64, i64, Vec<String>) =
             sqlx::query_as(MARK_SPLITS_FOR_DELETION_QUERY)
-                .bind(index_uid.as_str())
+                .bind(index_uid.to_string())
                 .bind(split_ids.clone())
                 .fetch_one(&self.connection_pool)
                 .await
@@ -865,7 +865,7 @@ impl MetastoreService for PostgresqlMetastore {
             Vec<String>,
             Vec<String>,
         ) = sqlx::query_as(DELETE_SPLITS_QUERY)
-            .bind(index_uid.as_str())
+            .bind(index_uid.to_string())
             .bind(split_ids)
             .fetch_one(&self.connection_pool)
             .await
@@ -985,7 +985,7 @@ impl MetastoreService for PostgresqlMetastore {
                         AND source_id = $2
                 "#,
             )
-            .bind(index_uid.as_str())
+            .bind(index_uid.to_string())
             .bind(source_id)
             .execute(tx.as_mut())
             .await?;
@@ -1097,7 +1097,7 @@ impl MetastoreService for PostgresqlMetastore {
         "#,
         )
         .bind(request.delete_opstamp as i64)
-        .bind(index_uid.as_str())
+        .bind(index_uid.to_string())
         .bind(split_ids)
         .execute(&self.connection_pool)
         .await?;
@@ -1130,7 +1130,7 @@ impl MetastoreService for PostgresqlMetastore {
                     AND opstamp > $2
                 "#,
         )
-        .bind(index_uid.as_str())
+        .bind(index_uid.to_string())
         .bind(request.opstamp_start as i64)
         .fetch_all(&self.connection_pool)
         .await?;
@@ -1163,7 +1163,7 @@ impl MetastoreService for PostgresqlMetastore {
                 LIMIT $4
             "#,
         )
-        .bind(index_uid.as_str())
+        .bind(index_uid.to_string())
         .bind(request.delete_opstamp as i64)
         .bind(SplitState::Published.as_str())
         .bind(request.num_splits as i64)
@@ -1523,7 +1523,7 @@ mod tests {
 
             for shard in shards {
                 sqlx::query(INSERT_SHARD_QUERY)
-                    .bind(index_uid.as_str())
+                    .bind(index_uid.to_string())
                     .bind(source_id)
                     .bind(shard.shard_id().as_str())
                     .bind(shard.shard_state().as_json_str_name())
@@ -1547,7 +1547,7 @@ mod tests {
                     AND source_id = $2
                 "#,
             )
-            .bind(index_uid.as_str())
+            .bind(index_uid.to_string())
             .bind(source_id.as_str())
             .fetch_all(&self.connection_pool)
             .await

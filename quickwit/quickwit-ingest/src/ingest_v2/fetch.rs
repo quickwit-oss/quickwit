@@ -280,7 +280,7 @@ impl MultiFetchStream {
         shard_id: ShardId,
         from_position_exclusive: Position,
     ) -> IngestV2Result<()> {
-        let queue_id = queue_id(index_uid.as_str(), &source_id, &shard_id);
+        let queue_id = queue_id(&index_uid, &source_id, &shard_id);
         let entry = self.fetch_task_handles.entry(queue_id.clone());
 
         if let Entry::Occupied(_) = entry {
@@ -319,7 +319,8 @@ impl MultiFetchStream {
         source_id: &str,
         shard_id: ShardId,
     ) -> IngestV2Result<()> {
-        let queue_id = queue_id(index_uid, source_id, &shard_id);
+        // TODO change prototype to accept typed values
+        let queue_id = queue_id(&index_uid.to_string().into(), source_id, &shard_id);
 
         if let Some(fetch_stream_handle) = self.fetch_task_handles.remove(&queue_id) {
             fetch_stream_handle.abort();

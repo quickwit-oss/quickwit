@@ -98,14 +98,14 @@ impl Shards {
 
     fn get_shard(&self, shard_id: &ShardId) -> MetastoreResult<&Shard> {
         self.shards.get(shard_id).ok_or_else(|| {
-            let queue_id = queue_id(self.index_uid.as_str(), &self.source_id, shard_id);
+            let queue_id = queue_id(&self.index_uid, &self.source_id, shard_id);
             MetastoreError::NotFound(EntityKind::Shard { queue_id })
         })
     }
 
     fn get_shard_mut(&mut self, shard_id: &ShardId) -> MetastoreResult<&mut Shard> {
         self.shards.get_mut(shard_id).ok_or_else(|| {
-            let queue_id = queue_id(self.index_uid.as_str(), &self.source_id, shard_id);
+            let queue_id = queue_id(&self.index_uid, &self.source_id, shard_id);
             MetastoreError::NotFound(EntityKind::Shard { queue_id })
         })
     }
@@ -321,12 +321,12 @@ mod tests {
         else {
             panic!("Expected `MutationOccured::Yes`");
         };
-        assert_eq!(subresponse.index_uid, index_uid.as_str());
+        assert_eq!(subresponse.index_uid, index_uid);
         assert_eq!(subresponse.source_id, source_id);
         assert_eq!(subresponse.opened_shards.len(), 1);
 
         let shard = &subresponse.opened_shards[0];
-        assert_eq!(shard.index_uid, index_uid.as_str());
+        assert_eq!(shard.index_uid, index_uid);
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id(), ShardId::from(1));
         assert_eq!(shard.shard_state(), ShardState::Open);
@@ -355,12 +355,12 @@ mod tests {
         let MutationOccurred::Yes(subresponse) = shards.open_shards(subrequest).unwrap() else {
             panic!("Expected `MutationOccured::No`");
         };
-        assert_eq!(subresponse.index_uid, index_uid.as_str());
+        assert_eq!(subresponse.index_uid, index_uid);
         assert_eq!(subresponse.source_id, source_id);
         assert_eq!(subresponse.opened_shards.len(), 1);
 
         let shard = &subresponse.opened_shards[0];
-        assert_eq!(shard.index_uid, index_uid.as_str());
+        assert_eq!(shard.index_uid, index_uid);
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id(), ShardId::from(2));
         assert_eq!(shard.shard_state(), ShardState::Open);
@@ -383,7 +383,7 @@ mod tests {
             shard_state: None,
         };
         let subresponse = shards.list_shards(subrequest).unwrap();
-        assert_eq!(subresponse.index_uid, index_uid.as_str());
+        assert_eq!(subresponse.index_uid, index_uid);
         assert_eq!(subresponse.source_id, source_id);
         assert_eq!(subresponse.shards.len(), 0);
 

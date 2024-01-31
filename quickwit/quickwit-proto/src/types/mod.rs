@@ -24,7 +24,7 @@ use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::str::FromStr;
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 pub use ulid::Ulid;
 
@@ -50,7 +50,7 @@ pub type PublishToken = String;
 /// Uniquely identifies a shard and its underlying mrecordlog queue.
 pub type QueueId = String; // <index_uid>/<source_id>/<shard_id>
 
-pub fn queue_id(index_uid: &str, source_id: &str, shard_id: &ShardId) -> QueueId {
+pub fn queue_id(index_uid: &IndexUid, source_id: &str, shard_id: &ShardId) -> QueueId {
     format!("{index_uid}/{source_id}/{shard_id}")
 }
 
@@ -69,8 +69,8 @@ pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
 /// Index identifiers that uniquely identify not only the index, but also
 /// its incarnation allowing to distinguish between deleted and recreated indexes.
 /// It is represented as a string in index_id:incarnation_id format.
-#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub struct IndexUid(String);
+#[derive(Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
+pub struct IndexUid(String, Ulid);
 
 // It is super lame, but for backward compatibility reasons we accept having a missing ulid part.
 // TODO DEPRECATED ME and remove
@@ -86,9 +86,16 @@ impl<'de> Deserialize<'de> for IndexUid {
     }
 }
 
+impl Serialize for IndexUid {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 impl fmt::Display for IndexUid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}:{}", self.0, self.1)
     }
 }
 
@@ -101,44 +108,46 @@ impl IndexUid {
 
     /// TODO: Remove when Trinity lands their refactor for #3943.
     pub fn new_2(index_id: impl Into<String>, incarnation_id: impl Into<Ulid>) -> Self {
-        Self(format!("{}:{}", index_id.into(), incarnation_id.into()))
+        Self(index_id.into(), incarnation_id.into())
     }
 
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
+    // pub fn as_str(&self) -> &str {
+    // &self.0
+    // }
 
     pub fn from_parts(index_id: &str, incarnation_id: impl Display) -> Self {
         assert!(!index_id.contains(':'), "index ID may not contain `:`");
-        Self(format!("{index_id}:{incarnation_id}"))
+        let incarnation_id = incarnation_id.to_string();
+        let ulid = if incarnation_id.is_empty() {
+            Ulid::nil()
+        } else {
+            Ulid::from_string(&incarnation_id).unwrap()
+        };
+        Self(index_id.to_string(), ulid)
     }
 
     pub fn index_id(&self) -> &str {
-        self.0.split(':').next().unwrap()
+        &self.0
     }
 
-    pub fn incarnation_id(&self) -> &str {
-        if let Some(incarnation_id) = self.0.split(':').nth(1) {
-            incarnation_id
-        } else {
-            ""
-        }
+    pub fn incarnation_id(&self) -> &Ulid {
+        &self.1
     }
 
     pub fn parse(index_uid_str: impl ToString) -> Result<IndexUid, InvalidIndexUid> {
         let index_uid_str = index_uid_str.to_string();
-        let count_colon = index_uid_str
-            .as_bytes()
-            .iter()
-            .copied()
-            .filter(|c| *c == b':')
-            .count();
-        if count_colon != 1 {
+        let Some((index_id, ulid)) = index_uid_str.split_once(':') else {
             return Err(InvalidIndexUid {
                 invalid_index_uid_str: index_uid_str,
             });
-        }
-        Ok(IndexUid(index_uid_str))
+        };
+        let Ok(ulid) = Ulid::from_string(ulid) else {
+            return Err(InvalidIndexUid {
+                invalid_index_uid_str: index_uid_str,
+            });
+        };
+
+        Ok(IndexUid(index_id.to_string(), ulid))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -148,7 +157,7 @@ impl IndexUid {
 
 impl From<IndexUid> for String {
     fn from(val: IndexUid) -> Self {
-        val.0
+        val.to_string()
     }
 }
 
@@ -159,41 +168,33 @@ pub struct InvalidIndexUid {
 }
 
 impl From<&str> for IndexUid {
-    fn from(index_uid: &str) -> Self {
-        IndexUid::from(index_uid.to_string())
+    fn from(_index_uid: &str) -> Self {
+        todo!()
     }
 }
 
 // TODO remove me and only keep `TryFrom` implementation.
 impl From<String> for IndexUid {
-    fn from(index_uid: String) -> IndexUid {
-        match IndexUid::parse(index_uid) {
-            Ok(index_uid) => index_uid,
-            Err(invalid_index_uid) => {
-                panic!(
-                    "invalid index UID {}",
-                    invalid_index_uid.invalid_index_uid_str
-                );
-            }
-        }
+    fn from(_index_uid: String) -> IndexUid {
+        todo!()
     }
 }
 
 impl PartialEq<&str> for IndexUid {
-    fn eq(&self, other: &&str) -> bool {
-        self.0 == *other
+    fn eq(&self, _other: &&str) -> bool {
+        todo!()
     }
 }
 
 impl PartialEq<String> for IndexUid {
-    fn eq(&self, other: &String) -> bool {
-        self.0 == *other
+    fn eq(&self, _other: &String) -> bool {
+        todo!()
     }
 }
 
 impl PartialEq<IndexUid> for String {
-    fn eq(&self, other: &IndexUid) -> bool {
-        *self == other.0
+    fn eq(&self, _other: &IndexUid) -> bool {
+        todo!()
     }
 }
 

@@ -274,7 +274,7 @@ impl IndexingService {
         let pipeline_uid_str = pipeline_id.pipeline_uid.to_string();
         let indexing_directory = temp_dir::Builder::default()
             .join(pipeline_id.index_uid.index_id())
-            .join(pipeline_id.index_uid.incarnation_id())
+            .join(&pipeline_id.index_uid.incarnation_id().to_string())
             .join(&pipeline_id.source_id)
             .join(&pipeline_uid_str)
             .tempdir_in(&self.indexing_root_directory)

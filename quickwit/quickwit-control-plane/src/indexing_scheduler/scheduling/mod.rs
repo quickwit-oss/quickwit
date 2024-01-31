@@ -306,7 +306,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node(
         let source_pipelines: Vec<&IndexingTask> = previous_tasks
             .iter()
             .filter(|task| {
-                task.index_uid == source.source_uid.index_uid.as_str()
+                task.index_uid == source.source_uid.index_uid
                     && task.source_id == source.source_uid.source_id
             })
             .collect();
@@ -381,7 +381,7 @@ fn convert_scheduling_solution_to_physical_plan(
             let mut num_shards_for_indexer_source: u32 =
                 indexer_assignments[indexer_ord].num_shards(source_ord);
             for indexing_task in indexing_tasks {
-                if indexing_task.index_uid == source.source_uid.index_uid.as_str()
+                if indexing_task.index_uid == source.source_uid.index_uid
                     && indexing_task.source_id == source.source_uid.source_id
                 {
                     indexing_task.shard_ids.retain(|shard_id| {
@@ -459,7 +459,7 @@ fn add_shard_to_indexer(
     let indexing_task_opt = indexer_tasks
         .iter_mut()
         .filter(|indexing_task| {
-            indexing_task.index_uid == source_uid.index_uid.as_str()
+            indexing_task.index_uid == source_uid.index_uid
                 && indexing_task.source_id == source_uid.source_id
         })
         .filter(|task| task.shard_ids.len() < max_shard_per_pipeline.get() as usize)

@@ -439,7 +439,7 @@ impl IngestSource {
         }
 
         warn!(
-            index_uid = self.client_id.source_uid.index_uid.as_str(),
+            index_uid =% self.client_id.source_uid.index_uid,
             pipeline_uid = self.client_id.pipeline_uid,
             "resetting pipeline"
         );
