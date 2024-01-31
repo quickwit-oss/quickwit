@@ -5601,6 +5601,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "siphasher",
  "tempfile",
  "thiserror",
  "tokio",
