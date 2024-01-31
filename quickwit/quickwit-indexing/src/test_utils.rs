@@ -101,7 +101,7 @@ impl TestSandbox {
         let mut metastore = metastore_resolver
             .resolve(&Uri::for_test(METASTORE_URI))
             .await?;
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config.clone())?;
+        let create_index_request = CreateIndexRequest::try_from_index_config(&index_config)?;
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await?
@@ -109,6 +109,7 @@ impl TestSandbox {
             .into();
         let storage = storage_resolver.resolve(&index_uri).await?;
         let universe = Universe::with_accelerated_time();
+        let merge_scheduler_mailbox = universe.get_or_spawn_one();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
         let ingest_api_service =
             init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default()).await?;
@@ -120,6 +121,7 @@ impl TestSandbox {
             cluster,
             metastore.clone(),
             Some(ingest_api_service),
+            merge_scheduler_mailbox,
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),

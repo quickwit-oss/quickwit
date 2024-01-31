@@ -29,6 +29,8 @@ use tracing::warn;
 
 use crate::type_map::TypeMap;
 
+const EVENT_SUBSCRIPTION_CALLBACK_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub trait Event: fmt::Debug + Clone + Send + Sync + 'static {}
 
 #[async_trait]
@@ -138,14 +140,14 @@ impl EventBroker {
                 let subscriber_name = subscription.subscriber_name;
                 let subscriber_clone = subscription.subscriber.clone();
                 let handle_event_fut = async move {
-                    if tokio::time::timeout(Duration::from_secs(1), async {
+                    if tokio::time::timeout(EVENT_SUBSCRIPTION_CALLBACK_TIMEOUT, async {
                         subscriber_clone.lock().await.handle_event(event).await
                     })
                     .await
                     .is_err()
                     {
                         let event_name = std::any::type_name::<E>();
-                        warn!("{}'s handler for {event_name} timed out", subscriber_name);
+                        warn!("{subscriber_name}'s handler for {event_name} timed out");
                     }
                 };
                 tokio::spawn(handle_event_fut);

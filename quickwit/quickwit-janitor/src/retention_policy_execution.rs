@@ -55,7 +55,7 @@ pub async fn run_execute_retention_policy(
         .with_split_state(SplitState::Published)
         .with_time_range_end_lte(max_retention_timestamp);
 
-    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
+    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
     let (expired_splits, ignored_splits): (Vec<SplitMetadata>, Vec<SplitMetadata>) = ctx
         .protect_future(metastore.list_splits(list_splits_request))
         .await?

@@ -200,7 +200,7 @@ pub async fn list_relevant_splits(
     if let Some(tags_filter) = tags_filter_opt {
         query = query.with_tags_filter(tags_filter);
     }
-    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
+    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
     let splits_metadata: Vec<SplitMetadata> = metastore
         .list_splits(list_splits_request)
         .await?

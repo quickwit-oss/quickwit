@@ -24,10 +24,13 @@ use quickwit_common::uri::Uri;
 use quickwit_proto::control_plane::{ControlPlaneService, ControlPlaneServiceClient};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
-    CreateIndexResponse, DeleteIndexRequest, DeleteQuery, DeleteShardsRequest,
-    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
-    IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest,
-    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
+    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
+    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
+    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetIndexTemplateRequest,
+    GetIndexTemplateResponse, IndexMetadataRequest, IndexMetadataResponse,
+    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
+    ListDeleteTasksResponse, ListIndexTemplatesRequest, ListIndexTemplatesResponse,
     ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
     MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
@@ -235,5 +238,42 @@ impl MetastoreService for ControlPlaneMetastore {
         request: DeleteShardsRequest,
     ) -> MetastoreResult<DeleteShardsResponse> {
         self.metastore.delete_shards(request).await
+    }
+
+    // Index Template API
+
+    async fn create_index_template(
+        &mut self,
+        request: CreateIndexTemplateRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.metastore.create_index_template(request).await
+    }
+
+    async fn get_index_template(
+        &mut self,
+        request: GetIndexTemplateRequest,
+    ) -> MetastoreResult<GetIndexTemplateResponse> {
+        self.metastore.get_index_template(request).await
+    }
+
+    async fn find_index_template_matches(
+        &mut self,
+        request: FindIndexTemplateMatchesRequest,
+    ) -> MetastoreResult<FindIndexTemplateMatchesResponse> {
+        self.metastore.find_index_template_matches(request).await
+    }
+
+    async fn list_index_templates(
+        &mut self,
+        request: ListIndexTemplatesRequest,
+    ) -> MetastoreResult<ListIndexTemplatesResponse> {
+        self.metastore.list_index_templates(request).await
+    }
+
+    async fn delete_index_templates(
+        &mut self,
+        request: DeleteIndexTemplatesRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.metastore.delete_index_templates(request).await
     }
 }

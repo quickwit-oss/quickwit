@@ -57,7 +57,7 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
-use super::MergePlanner;
+use super::{MergePlanner, MergeSchedulerService};
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
@@ -121,6 +121,7 @@ pub struct IndexingService {
     cluster: Cluster,
     metastore: MetastoreServiceClient,
     ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
+    merge_scheduler_service: Mailbox<MergeSchedulerService>,
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,
     indexing_pipelines: HashMap<PipelineUid, PipelineHandle>,
@@ -154,6 +155,7 @@ impl IndexingService {
         cluster: Cluster,
         metastore: MetastoreServiceClient,
         ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
+        merge_scheduler_service: Mailbox<MergeSchedulerService>,
         ingester_pool: IngesterPool,
         storage_resolver: StorageResolver,
         event_broker: EventBroker,
@@ -182,6 +184,7 @@ impl IndexingService {
             cluster,
             metastore,
             ingest_api_service_opt,
+            merge_scheduler_service,
             ingester_pool,
             storage_resolver,
             local_split_store: Arc::new(local_split_store),
@@ -297,6 +300,7 @@ impl IndexingService {
             indexing_directory: indexing_directory.clone(),
             metastore: self.metastore.clone(),
             split_store: split_store.clone(),
+            merge_scheduler_service: self.merge_scheduler_service.clone(),
             merge_policy: merge_policy.clone(),
             merge_io_throughput_limiter_opt: self.merge_io_throughput_limiter_opt.clone(),
             max_concurrent_split_uploads: self.max_concurrent_split_uploads,
@@ -893,6 +897,7 @@ mod tests {
             init_ingest_api(universe, &queues_dir_path, &IngestApiConfig::default())
                 .await
                 .unwrap();
+        let merge_scheduler_mailbox: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path.to_path_buf(),
@@ -901,6 +906,7 @@ mod tests {
             cluster,
             metastore,
             Some(ingest_api_service),
+            merge_scheduler_mailbox,
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
@@ -923,7 +929,8 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -932,10 +939,11 @@ mod tests {
             .into();
         let create_source_request = AddSourceRequest::try_from_source_config(
             index_uid.clone(),
-            SourceConfig::ingest_api_default(),
+            &SourceConfig::ingest_api_default(),
         )
         .unwrap();
         metastore.add_source(create_source_request).await.unwrap();
+
         let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
         let (indexing_service, indexing_service_handle) =
@@ -1024,7 +1032,8 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         metastore.create_index(create_index_request).await.unwrap();
 
         let universe = Universe::new();
@@ -1079,7 +1088,8 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -1088,7 +1098,7 @@ mod tests {
             .into();
         let add_source_request = AddSourceRequest::try_from_source_config(
             index_uid.clone(),
-            SourceConfig::ingest_api_default(),
+            &SourceConfig::ingest_api_default(),
         )
         .unwrap();
         metastore.add_source(add_source_request).await.unwrap();
@@ -1113,8 +1123,7 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         let add_source_request =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), source_config_1.clone())
-                .unwrap();
+            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config_1).unwrap();
         metastore.add_source(add_source_request).await.unwrap();
         let metadata = metastore
             .index_metadata(IndexMetadataRequest::for_index_id(index_id.clone()))
@@ -1164,8 +1173,7 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         let add_source_request_2 =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), source_config_2.clone())
-                .unwrap();
+            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config_2).unwrap();
         metastore.add_source(add_source_request_2).await.unwrap();
 
         let indexing_tasks = vec![
@@ -1321,7 +1329,8 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -1329,8 +1338,7 @@ mod tests {
             .index_uid
             .into();
         let add_source_request =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), source_config.clone())
-                .unwrap();
+            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();
         metastore.add_source(add_source_request).await.unwrap();
 
         // Test `IndexingService::new`.
@@ -1345,6 +1353,7 @@ mod tests {
             init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
                 .await
                 .unwrap();
+        let merge_scheduler_service = universe.get_or_spawn_one();
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
@@ -1353,6 +1362,7 @@ mod tests {
             cluster.clone(),
             metastore.clone(),
             Some(ingest_api_service),
+            merge_scheduler_service,
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
@@ -1465,7 +1475,7 @@ mod tests {
                 Ok(list_indexes_metadatas_response)
             });
         metastore.expect_index_metadata().returning(move |_| {
-            Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
+            Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
         metastore
             .expect_list_splits()
@@ -1519,7 +1529,8 @@ mod tests {
             .await
             .unwrap();
         let mut metastore = metastore_for_test();
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -1548,6 +1559,7 @@ mod tests {
         let indexer_config = IndexerConfig::for_test().unwrap();
         let num_blocking_threads = 1;
         let storage_resolver = StorageResolver::unconfigured();
+        let merge_scheduler_service: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
         let mut indexing_server = IndexingService::new(
             "test-ingest-api-gc-node".to_string(),
             data_dir_path,
@@ -1556,6 +1568,7 @@ mod tests {
             cluster.clone(),
             metastore.clone(),
             Some(ingest_api_service.clone()),
+            merge_scheduler_service,
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),

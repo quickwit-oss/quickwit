@@ -34,7 +34,7 @@ use serde::{self, Serialize};
 use tracing::error;
 use warp::{Filter, Rejection};
 
-use crate::json_api_response::make_json_api_response;
+use crate::rest_api_response::into_rest_api_response;
 use crate::{require, with_arg, BodyFormat};
 
 #[derive(utoipa::OpenApi)]
@@ -67,7 +67,7 @@ pub(crate) fn otlp_default_logs_handler(
             otlp_ingest_logs(otlp_logs_service, OTEL_LOGS_INDEX_ID.to_string(), body).await
         })
         .and(with_arg(BodyFormat::default()))
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 pub(crate) fn otlp_logs_handler(
@@ -83,7 +83,7 @@ pub(crate) fn otlp_logs_handler(
         .and(warp::body::bytes())
         .then(otlp_ingest_logs)
         .and(with_arg(BodyFormat::default()))
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 pub(crate) fn otlp_default_traces_handler(
@@ -101,7 +101,7 @@ pub(crate) fn otlp_default_traces_handler(
             otlp_ingest_traces(otlp_traces_service, OTEL_TRACES_INDEX_ID.to_string(), body).await
         })
         .and(with_arg(BodyFormat::default()))
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 pub(crate) fn otlp_ingest_traces_handler(
@@ -117,7 +117,7 @@ pub(crate) fn otlp_ingest_traces_handler(
         .and(warp::body::bytes())
         .then(otlp_ingest_traces)
         .and(with_arg(BodyFormat::default()))
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[derive(Debug, Clone, thiserror::Error, Serialize)]

@@ -650,7 +650,7 @@ mod tests {
                     let index_metadata =
                         IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
                     return Ok(
-                        IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap(),
+                        IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap(),
                     );
                 }
                 num_fails -= 1;
@@ -763,7 +763,7 @@ mod tests {
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         metastore
             .expect_last_delete_opstamp()
@@ -863,7 +863,7 @@ mod tests {
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         mock_metastore
             .expect_list_splits()
@@ -898,6 +898,7 @@ mod tests {
             merge_policy: default_merge_policy(),
             max_concurrent_split_uploads: 2,
             merge_io_throughput_limiter_opt: None,
+            merge_scheduler_service: universe.get_or_spawn_one(),
             event_broker: Default::default(),
         };
         let merge_pipeline = MergePipeline::new(merge_pipeline_params, universe.spawn_ctx());
@@ -959,7 +960,7 @@ mod tests {
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         metastore
             .expect_last_delete_opstamp()

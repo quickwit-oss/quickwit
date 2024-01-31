@@ -122,8 +122,8 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
         FileBackedIndex::new(index_metadata, splits, per_source_shards, delete_tasks)
     }
 
-    fn test_equality(&self, other: &Self) {
-        self.metadata().test_equality(other.metadata());
+    fn assert_equality(&self, other: &Self) {
+        self.metadata().assert_equality(other.metadata());
         assert_eq!(self.splits, other.splits);
         assert_eq!(self.per_source_shards, other.per_source_shards);
         assert_eq!(self.delete_tasks, other.delete_tasks);
@@ -132,10 +132,19 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
 
 impl From<IndexMetadata> for FileBackedIndex {
     fn from(index_metadata: IndexMetadata) -> Self {
+        let per_source_shards = index_metadata
+            .sources
+            .keys()
+            .map(|source_id| {
+                let shards = Shards::empty(index_metadata.index_uid.clone(), source_id.clone());
+                (source_id.clone(), shards)
+            })
+            .collect();
+
         Self {
             metadata: index_metadata,
             splits: Default::default(),
-            per_source_shards: Default::default(),
+            per_source_shards,
             delete_tasks: Default::default(),
             stamper: Default::default(),
             recently_modified: false,

@@ -129,7 +129,7 @@ impl MetastoreResolver {
             builder = builder.register(
                 UnsupportedMetastore::new(
                     MetastoreBackend::PostgreSQL,
-                    "Quickwit was compiled without the `postgres` feature.",
+                    "Quickwit was compiled without the `postgres` feature",
                 ),
                 PostgresMetastoreConfig::default().into(),
             );

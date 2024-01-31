@@ -67,14 +67,17 @@ deploy-mock-data: package check-env
 
 # address https://github.com/aws/aws-cdk/issues/20060
 before-destroy:
+	mkdir -p cdk.out
 	touch $(INDEXER_PACKAGE_PATH)
 	touch $(SEARCHER_PACKAGE_PATH)
 
 destroy-hdfs: before-destroy
-	cdk destroy -a cdk/app.py HdfsStack
+	python -c 'from cdk import cli; cli.empty_hdfs_bucket()'
+	cdk destroy  --force -a cdk/app.py HdfsStack
 
 destroy-mock-data: before-destroy
-	cdk destroy -a cdk/app.py MockDataStack
+	python -c 'from cdk import cli; cli.empty_mock_data_buckets()'
+	cdk destroy  --force -a cdk/app.py MockDataStack
 
 clean:
 	rm -rf cdk.out

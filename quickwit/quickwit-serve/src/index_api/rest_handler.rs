@@ -20,11 +20,10 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use hyper::header::CONTENT_TYPE;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     load_source_config_from_user_config, ConfigFormat, NodeConfig, SourceConfig, SourceParams,
-    CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
+    CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
@@ -40,12 +39,11 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::IndexUid;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use tracing::info;
 use warp::{Filter, Rejection};
 
-use crate::format::extract_format_from_qs;
-use crate::json_api_response::make_json_api_response;
+use crate::format::{extract_config_format, extract_format_from_qs};
+use crate::rest_api_response::into_rest_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
 use crate::with_arg;
 
@@ -97,33 +95,6 @@ fn json_body<T: DeserializeOwned + Send>(
     warp::body::content_length_limit(1024 * 1024).and(warp::body::json())
 }
 
-#[derive(Debug, Error)]
-#[error(
-    "unsupported content-type header. choices are application/json, application/toml and \
-     application/yaml"
-)]
-pub struct UnsupportedContentType;
-impl warp::reject::Reject for UnsupportedContentType {}
-
-pub fn config_format_filter() -> impl Filter<Extract = (ConfigFormat,), Error = Rejection> + Copy {
-    warp::filters::header::optional::<mime_guess::Mime>(CONTENT_TYPE.as_str()).and_then(
-        |mime_opt: Option<mime_guess::Mime>| {
-            if let Some(mime) = mime_opt {
-                let config_format = match mime.subtype().as_str() {
-                    "json" => ConfigFormat::Json,
-                    "yaml" => ConfigFormat::Yaml,
-                    "toml" => ConfigFormat::Toml,
-                    _ => {
-                        return futures::future::err(warp::reject::custom(UnsupportedContentType));
-                    }
-                };
-                return futures::future::ok(config_format);
-            }
-            futures::future::ok(ConfigFormat::Json)
-        },
-    )
-}
-
 fn get_index_metadata_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -132,7 +103,7 @@ fn get_index_metadata_handler(
         .and(with_arg(metastore))
         .then(get_index_metadata)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 async fn get_index_metadata(
@@ -156,7 +127,7 @@ fn get_indexes_metadatas_handler(
         .and(with_arg(metastore))
         .then(get_indexes_metadatas)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 /// Describes an index with its main information and statistics.
@@ -197,7 +168,7 @@ async fn describe_index(
         .await?
         .deserialize_index_metadata()?;
     let query = ListSplitsQuery::for_index(index_metadata.index_uid.clone());
-    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
+    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
     let splits = metastore
         .list_splits(list_splits_request)
         .await?
@@ -252,7 +223,7 @@ fn describe_index_handler(
         .and(with_arg(metastore))
         .then(describe_index)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 /// This struct represents the QueryString passed to
@@ -347,7 +318,7 @@ async fn list_splits(
     if let Some(end_created_timestamp) = list_split_query.end_create_timestamp {
         query = query.with_create_timestamp_lt(end_created_timestamp);
     }
-    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
+    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
     let splits = metastore
         .list_splits(list_splits_request)
         .await?
@@ -369,7 +340,7 @@ fn list_splits_handler(
         .and(with_arg(metastore))
         .then(list_splits)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -425,7 +396,7 @@ fn mark_splits_for_deletion_handler(
         .and(with_arg(metastore))
         .then(mark_splits_for_deletion)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[utoipa::path(
@@ -461,14 +432,14 @@ fn create_index_handler(
     warp::path!("indexes")
         .and(warp::post())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
-        .and(config_format_filter())
+        .and(extract_config_format())
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::filters::body::bytes())
         .and(with_arg(index_service))
         .and(with_arg(node_config))
         .then(create_index)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[utoipa::path(
@@ -512,7 +483,7 @@ fn clear_index_handler(
         .and(with_arg(index_service))
         .then(clear_index)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[utoipa::path(
@@ -552,7 +523,7 @@ fn delete_index_handler(
         .and(with_arg(index_service))
         .then(delete_index)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[utoipa::path(
@@ -585,13 +556,13 @@ fn create_source_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String / "sources")
         .and(warp::post())
-        .and(config_format_filter())
+        .and(extract_config_format())
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::filters::body::bytes())
         .and(with_arg(index_service))
         .then(create_source)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[utoipa::path(
@@ -632,7 +603,7 @@ async fn create_source(
         .deserialize_index_metadata()?
         .index_uid;
     info!(index_id = %index_id, source_id = %source_config.source_id, "create-source");
-    index_service.create_source(index_uid, source_config).await
+    index_service.add_source(index_uid, source_config).await
 }
 
 fn get_source_handler(
@@ -643,7 +614,7 @@ fn get_source_handler(
         .and(with_arg(metastore))
         .then(get_source)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 async fn get_source(
@@ -676,7 +647,7 @@ fn reset_source_checkpoint_handler(
         .and(with_arg(metastore))
         .then(reset_source_checkpoint)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[utoipa::path(
@@ -723,7 +694,7 @@ fn toggle_source_handler(
         .and(with_arg(metastore))
         .then(toggle_source)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -759,7 +730,7 @@ async fn toggle_source(
         .await?
         .deserialize_index_metadata()?
         .index_uid;
-    if [CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID].contains(&source_id.as_str()) {
+    if [CLI_SOURCE_ID, INGEST_API_SOURCE_ID].contains(&source_id.as_str()) {
         return Err(IndexServiceError::OperationNotAllowed(format!(
             "source `{source_id}` is managed by Quickwit, you cannot enable or disable a source \
              managed by Quickwit"
@@ -782,7 +753,7 @@ fn delete_source_handler(
         .and(with_arg(metastore))
         .then(delete_source)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[utoipa::path(
@@ -810,7 +781,7 @@ async fn delete_source(
         .await?
         .deserialize_index_metadata()?
         .index_uid;
-    if [INGEST_API_SOURCE_ID, CLI_INGEST_SOURCE_ID].contains(&source_id.as_str()) {
+    if [INGEST_API_SOURCE_ID, CLI_SOURCE_ID].contains(&source_id.as_str()) {
         return Err(IndexServiceError::OperationNotAllowed(format!(
             "source `{source_id}` is managed by Quickwit, you cannot delete a source managed by \
              Quickwit"
@@ -844,7 +815,7 @@ fn analyze_request_handler() -> impl Filter<Extract = (impl warp::Reply,), Error
     analyze_request_filter()
         .then(analyze_request)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 /// Analyzes text with given tokenizer config and returns the list of tokens.
@@ -890,7 +861,7 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore.expect_index_metadata().return_once(|_| {
             Ok(
-                IndexMetadataResponse::try_from_index_metadata(IndexMetadata::for_test(
+                IndexMetadataResponse::try_from_index_metadata(&IndexMetadata::for_test(
                     "test-index",
                     "ram:///indexes/test-index",
                 ))
@@ -944,7 +915,7 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(move |_| {
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             })
             .times(2);
         metastore
@@ -1021,7 +992,7 @@ mod tests {
         mock_metastore
             .expect_index_metadata()
             .return_once(move |_| {
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         let split_1 = MockSplitBuilder::new("split_1")
             .with_index_uid(&index_uid)
@@ -1085,7 +1056,7 @@ mod tests {
         mock_metastore
             .expect_index_metadata()
             .return_once(move |_| {
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         mock_metastore.expect_list_splits().return_once(
             move |list_split_request: ListSplitsRequest| {
@@ -1124,7 +1095,7 @@ mod tests {
             .expect_index_metadata()
             .returning(|_| {
                 Ok(
-                    IndexMetadataResponse::try_from_index_metadata(IndexMetadata::for_test(
+                    IndexMetadataResponse::try_from_index_metadata(&IndexMetadata::for_test(
                         "quickwit-demo-index",
                         "ram:///indexes/quickwit-demo-index",
                     ))
@@ -1221,7 +1192,7 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore.expect_index_metadata().return_once(|_| {
             Ok(
-                IndexMetadataResponse::try_from_index_metadata(IndexMetadata::for_test(
+                IndexMetadataResponse::try_from_index_metadata(&IndexMetadata::for_test(
                     "quickwit-demo-index",
                     "file:///path/to/index/quickwit-demo-index",
                 ))
@@ -1264,7 +1235,7 @@ mod tests {
             .expect_index_metadata()
             .returning(|_| {
                 Ok(
-                    IndexMetadataResponse::try_from_index_metadata(IndexMetadata::for_test(
+                    IndexMetadataResponse::try_from_index_metadata(&IndexMetadata::for_test(
                         "quickwit-demo-index",
                         "file:///path/to/index/quickwit-demo-index",
                     ))
@@ -1471,7 +1442,7 @@ mod tests {
         assert_eq!(resp.status(), 405);
 
         let resp = warp::test::request()
-            .path(format!("/indexes/hdfs-logs/sources/{CLI_INGEST_SOURCE_ID}").as_str())
+            .path(format!("/indexes/hdfs-logs/sources/{CLI_SOURCE_ID}").as_str())
             .method("DELETE")
             .body(source_config_body)
             .reply(&index_management_handler)
@@ -1695,7 +1666,7 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore.expect_index_metadata().return_once(|_| {
             Ok(
-                IndexMetadataResponse::try_from_index_metadata(IndexMetadata::for_test(
+                IndexMetadataResponse::try_from_index_metadata(&IndexMetadata::for_test(
                     "quickwit-demo-index",
                     "file:///path/to/index/quickwit-demo-index",
                 ))
@@ -1739,7 +1710,7 @@ mod tests {
             .expect_index_metadata()
             .returning(|_| {
                 Ok(
-                    IndexMetadataResponse::try_from_index_metadata(IndexMetadata::for_test(
+                    IndexMetadataResponse::try_from_index_metadata(&IndexMetadata::for_test(
                         "quickwit-demo-index",
                         "file:///path/to/index/quickwit-demo-index",
                     ))
@@ -1794,7 +1765,7 @@ mod tests {
             .expect_index_metadata()
             .returning(|_| {
                 Ok(
-                    IndexMetadataResponse::try_from_index_metadata(IndexMetadata::for_test(
+                    IndexMetadataResponse::try_from_index_metadata(&IndexMetadata::for_test(
                         "quickwit-demo-index",
                         "file:///path/to/index/quickwit-demo-index",
                     ))
@@ -1859,7 +1830,7 @@ mod tests {
         assert_eq!(resp.status(), 405);
 
         let resp = warp::test::request()
-            .path(format!("/indexes/hdfs-logs/sources/{CLI_INGEST_SOURCE_ID}/toggle").as_str())
+            .path(format!("/indexes/hdfs-logs/sources/{CLI_SOURCE_ID}/toggle").as_str())
             .method("PUT")
             .body(r#"{"enable": true}"#)
             .reply(&index_management_handler)
@@ -1873,7 +1844,7 @@ mod tests {
         let mut metastore = MetastoreServiceClient::mock();
         metastore.expect_index_metadata().return_once(|_| {
             Ok(
-                IndexMetadataResponse::try_from_index_metadata(IndexMetadata::for_test(
+                IndexMetadataResponse::try_from_index_metadata(&IndexMetadata::for_test(
                     "test-index",
                     "ram:///indexes/test-index",
                 ))

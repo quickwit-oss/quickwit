@@ -1567,7 +1567,7 @@ mod tests {
             doc_mapping,
             indexing_settings,
             search_settings,
-            retention_policy: Default::default(),
+            retention_policy_opt: Default::default(),
         })
     }
 
@@ -1739,7 +1739,7 @@ mod tests {
             doc_mapping,
             indexing_settings,
             search_settings,
-            retention_policy: Default::default(),
+            retention_policy_opt: Default::default(),
         })
     }
 

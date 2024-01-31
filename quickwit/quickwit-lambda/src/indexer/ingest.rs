@@ -35,10 +35,10 @@ use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     load_index_config_from_user_config, ConfigFormat, IndexConfig, IndexerConfig, NodeConfig,
-    SourceConfig, SourceInputFormat, SourceParams, TransformConfig, CLI_INGEST_SOURCE_ID,
+    SourceConfig, SourceInputFormat, SourceParams, TransformConfig, CLI_SOURCE_ID,
 };
 use quickwit_index_management::{clear_cache_directory, IndexService};
-use quickwit_indexing::actors::{IndexingService, MergePipelineId};
+use quickwit_indexing::actors::{IndexingService, MergePipelineId, MergeSchedulerService};
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
@@ -130,7 +130,7 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         .vrl_script
         .map(|vrl_script| TransformConfig::new(vrl_script, None));
     let source_config = SourceConfig {
-        source_id: CLI_INGEST_SOURCE_ID.to_string(),
+        source_id: CLI_SOURCE_ID.to_string(),
         max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 is always non-zero."),
         desired_num_pipelines: NonZeroUsize::new(1).expect("1 is always non-zero."),
         enabled: true,
@@ -168,7 +168,7 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
             );
         }
         metastore
-            .create_index(CreateIndexRequest::try_from_index_config(index_config)?)
+            .create_index(CreateIndexRequest::try_from_index_config(&index_config)?)
             .await?;
         debug!("index created");
     } else if args.overwrite {
@@ -197,6 +197,11 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         runtimes_config,
         &HashSet::from_iter([QuickwitService::Indexer]),
     )?;
+    let merge_scheduler_service =
+        MergeSchedulerService::new(indexer_config.merge_concurrency.get());
+    let universe = Universe::new();
+    let (merge_scheduler_service_mailbox, _) =
+        universe.spawn_builder().spawn(merge_scheduler_service);
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
@@ -205,12 +210,12 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         cluster,
         metastore,
         None,
+        merge_scheduler_service_mailbox,
         IngesterPool::default(),
         storage_resolver,
         EventBroker::default(),
     )
     .await?;
-    let universe = Universe::new();
     let (indexing_server_mailbox, indexing_server_handle) =
         universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox

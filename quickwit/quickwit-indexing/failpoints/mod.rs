@@ -46,7 +46,7 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_common::split_file;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_indexing::actors::MergeExecutor;
-use quickwit_indexing::merge_policy::MergeOperation;
+use quickwit_indexing::merge_policy::{MergeOperation, MergeTask};
 use quickwit_indexing::models::MergeScratch;
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
 use quickwit_metastore::{
@@ -57,7 +57,7 @@ use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
 use quickwit_proto::types::{IndexUid, PipelineUid};
 use serde_json::Value as JsonValue;
-use tantivy::{Directory, Inventory};
+use tantivy::Directory;
 
 #[tokio::test]
 async fn test_failpoint_no_failure() -> anyhow::Result<()> {
@@ -188,7 +188,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
     test_index_builder.add_documents(batch_2).await?;
     let query = ListSplitsQuery::for_index(test_index_builder.index_uid())
         .with_split_state(SplitState::Published);
-    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query).unwrap();
+    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query).unwrap();
     let mut splits = test_index_builder
         .metastore()
         .list_splits(list_splits_request)
@@ -290,11 +290,10 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
 
         tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap());
     }
-    let merge_ops_inventory = Inventory::new();
-    let merge_operation =
-        merge_ops_inventory.track(MergeOperation::new_merge_operation(split_metadatas));
+    let merge_operation = MergeOperation::new_merge_operation(split_metadatas);
+    let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
     let merge_scratch = MergeScratch {
-        merge_operation,
+        merge_task,
         merge_scratch_directory,
         downloaded_splits_directory,
         tantivy_dirs,

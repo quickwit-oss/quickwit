@@ -14,7 +14,7 @@ json:
 status_code: 400
 expected:
   message:
-    $expect: "\"Unknown default search field: `regular_field`\" in val"
+    $expect: "\"unknown default search field `regular_field`\" in val"
 ---
 # should fail because default search field targets the root
 # of a json field.
@@ -34,7 +34,7 @@ json:
 status_code: 400
 expected:
   message:
-    $expect: "\"Unknown default search field: `inner_json`\" in val"
+    $expect: "\"unknown default search field `inner_json`\" in val"
 ---
 # should fail because dynamic field is not indexed.
 method: POST

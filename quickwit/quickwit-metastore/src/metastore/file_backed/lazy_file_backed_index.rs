@@ -20,19 +20,20 @@
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use quickwit_proto::metastore::MetastoreResult;
+use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
+use quickwit_proto::types::IndexId;
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OnceCell};
 use tracing::error;
 
 use super::file_backed_index::FileBackedIndex;
-use super::store_operations::fetch_index;
+use super::store_operations::{load_index, METASTORE_FILE_NAME};
 
 /// Lazy [`FileBackedIndex`]. It loads a `FileBackedIndex`
 /// on demand and optionally spawns a task to poll
 /// regularly the storage and update the index.
 pub(crate) struct LazyFileBackedIndex {
-    index_id: String,
+    index_id: IndexId,
     storage: Arc<dyn Storage>,
     polling_interval_opt: Option<Duration>,
     lazy_index: OnceCell<Arc<Mutex<FileBackedIndex>>>,
@@ -42,7 +43,7 @@ impl LazyFileBackedIndex {
     /// Create `LazyFileBackedIndex`.
     pub fn new(
         storage: Arc<dyn Storage>,
-        index_id: String,
+        index_id: IndexId,
         polling_interval_opt: Option<Duration>,
         file_backed_index: Option<FileBackedIndex>,
     ) -> Self {
@@ -85,32 +86,44 @@ impl LazyFileBackedIndex {
 async fn poll_index_metadata_once(
     storage: &dyn Storage,
     index_id: &str,
-    metadata_mutex: &Mutex<FileBackedIndex>,
+    index_mutex: &Mutex<FileBackedIndex>,
 ) {
-    let mut metadata_lock = metadata_mutex.lock().await;
-    if metadata_lock.flip_recently_modified_down() {
+    let mut locked_index = index_mutex.lock().await;
+    if locked_index.flip_recently_modified_down() {
         return;
     }
-    let index_fetch_res = fetch_index(storage, index_id).await;
-    match index_fetch_res {
+    let load_index_result = load_index(storage, index_id).await;
+
+    match load_index_result {
         Ok(index) => {
-            *metadata_lock = index;
+            *locked_index = index;
         }
-        Err(fetch_error) => {
-            error!(error=?fetch_error, "fetch-metadata-error");
+        Err(MetastoreError::NotFound(EntityKind::Index { .. })) => {
+            // The index has been deleted by the file-backed metastore holding a reference to this
+            // index. When it removes an index, it does so without holding the lock on the target
+            // index. As a result, the associated polling task may run for one
+            // more iteration before exiting and `load_index` returns a `NotFound` error.
+        }
+        Err(metastore_error) => {
+            error!(
+                error=%metastore_error,
+                "failed to load index metadata from metastore file located at `{}/{index_id}/{METASTORE_FILE_NAME}`",
+                storage.uri()
+            );
         }
     }
 }
 
 fn spawn_index_metadata_polling_task(
     storage: Arc<dyn Storage>,
-    index_id: String,
+    index_id: IndexId,
     metastore_weak: Weak<Mutex<FileBackedIndex>>,
     polling_interval: Duration,
 ) {
     tokio::task::spawn(async move {
         let mut interval = tokio::time::interval(polling_interval);
         interval.tick().await; //< this is to prevent fetch right after the first population of the data.
+
         while let Some(metadata_mutex) = metastore_weak.upgrade() {
             interval.tick().await;
             poll_index_metadata_once(&*storage, &index_id, &metadata_mutex).await;
@@ -120,10 +133,10 @@ fn spawn_index_metadata_polling_task(
 
 async fn load_file_backed_index(
     storage: Arc<dyn Storage>,
-    index_id: String,
+    index_id: IndexId,
     polling_interval_opt: Option<Duration>,
 ) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
-    let index = fetch_index(&*storage, &index_id).await?;
+    let index = load_index(&*storage, &index_id).await?;
     let index_mutex = Arc::new(Mutex::new(index));
     if let Some(polling_interval) = polling_interval_opt {
         spawn_index_metadata_polling_task(

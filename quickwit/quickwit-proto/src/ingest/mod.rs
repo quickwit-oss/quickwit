@@ -108,7 +108,7 @@ impl ServiceError for IngestV2Error {
 
 impl Shard {
     /// List of nodes that are storing the shard (the leader, and optionally the follower).
-    pub fn ingester_nodes(&self) -> impl Iterator<Item = NodeId> + '_ {
+    pub fn ingesters(&self) -> impl Iterator<Item = NodeId> + '_ {
         [Some(&self.leader_id), self.follower_id.as_ref()]
             .into_iter()
             .flatten()

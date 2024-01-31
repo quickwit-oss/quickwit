@@ -308,7 +308,7 @@ impl MultiFetchStream {
             self.retry_params,
             self.fetch_message_tx.clone(),
         );
-        let fetch_task_handle = spawn_named_task(fetch_stream_future, "fetch_stream_future");
+        let fetch_task_handle = spawn_named_task(fetch_stream_future, "fetch_stream");
         self.fetch_task_handles.insert(queue_id, fetch_task_handle);
         Ok(())
     }

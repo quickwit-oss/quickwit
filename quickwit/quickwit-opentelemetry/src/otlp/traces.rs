@@ -926,7 +926,8 @@ mod tests {
         let mut metastore = metastore_for_test();
         let index_config =
             OtlpGrpcTracesService::index_config(&Uri::for_test("ram:///indexes")).unwrap();
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         metastore.create_index(create_index_request).await.unwrap();
     }
 
