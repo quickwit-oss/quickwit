@@ -35,8 +35,9 @@ use quickwit_doc_mapper::NamedField;
 use quickwit_proto::search::{
     serialize_split_fields, ListFieldType, ListFields, ListFieldsEntryResponse,
 };
+use tantivy::index::FieldMetadata;
 use tantivy::schema::{FieldType, Type};
-use tantivy::{FieldMetadata, InvertedIndexReader, ReloadPolicy, SegmentMeta};
+use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentMeta};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
 

@@ -616,6 +616,7 @@ impl Collector for QuickwitCollector {
                     AggregationSegmentCollector::from_agg_req_and_reader(
                         aggs,
                         segment_reader,
+                        segment_ord,
                         &self.aggregation_limits,
                     )?,
                 ),
