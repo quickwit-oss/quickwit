@@ -19,7 +19,7 @@
 
 #[macro_export]
 macro_rules! rate_limited_tracing {
-    ($log_fn:ident, limit=$limit:literal, $($args:tt)*) => {{
+    ($log_fn:ident, limit_per_min=$limit:literal, $($args:tt)*) => {{
         use ::std::sync::atomic::{AtomicU32, Ordering};
         use ::std::sync::Mutex;
         use ::std::time::{Instant, Duration};
@@ -62,32 +62,32 @@ macro_rules! rate_limited_tracing {
 
 #[macro_export]
 macro_rules! rate_limited_trace {
-    (limit=$limit:literal, $($args:tt)*) => {
-        $crate::rate_limited_tracing::rate_limited_tracing!(trace, limit=$limit, $($args)*)
+    ($unit:ident=$limit:literal, $($args:tt)*) => {
+        $crate::rate_limited_tracing::rate_limited_tracing!(trace, $unit=$limit, $($args)*)
     };
 }
 #[macro_export]
 macro_rules! rate_limited_debug {
-    (limit=$limit:literal, $($args:tt)*) => {
-        $crate::rate_limited_tracing::rate_limited_tracing!(debug, limit=$limit, $($args)*)
+    ($unit:ident=$limit:literal, $($args:tt)*) => {
+        $crate::rate_limited_tracing::rate_limited_tracing!(debug, $unit=$limit, $($args)*)
     };
 }
 #[macro_export]
 macro_rules! rate_limited_info {
-    (limit=$limit:literal, $($args:tt)*) => {
-        $crate::rate_limited_tracing::rate_limited_tracing!(info, limit=$limit, $($args)*)
+    ($unit:ident=$limit:literal, $($args:tt)*) => {
+        $crate::rate_limited_tracing::rate_limited_tracing!(info, $unit=$limit, $($args)*)
     };
 }
 #[macro_export]
 macro_rules! rate_limited_warn {
-    (limit=$limit:literal, $($args:tt)*) => {
-        $crate::rate_limited_tracing::rate_limited_tracing!(warn, limit=$limit, $($args)*)
+    ($unit:ident=$limit:literal, $($args:tt)*) => {
+        $crate::rate_limited_tracing::rate_limited_tracing!(warn, $unit=$limit, $($args)*)
     };
 }
 #[macro_export]
 macro_rules! rate_limited_error {
-    (limit=$limit:literal, $($args:tt)*) => {
-        $crate::rate_limited_tracing::rate_limited_tracing!(error, limit=$limit, $($args)*)
+    ($unit:literal=$limit:literal, $($args:tt)*) => {
+        $crate::rate_limited_tracing::rate_limited_tracing!(error, $unit=$limit, $($args)*)
     };
 }
 

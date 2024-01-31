@@ -414,7 +414,7 @@ impl DocProcessor {
                 }
                 Err(error) => {
                     rate_limited_warn!(
-                        limit = 5,
+                        limit_per_min = 5,
                         index_id = self.counters.index_id,
                         source_id = self.counters.source_id,
                         "{}",
