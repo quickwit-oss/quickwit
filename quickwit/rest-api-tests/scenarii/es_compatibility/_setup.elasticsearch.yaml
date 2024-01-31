@@ -3,6 +3,20 @@ method: DELETE
 endpoint: gharchive
 status_code: null
 ---
+# empty index
+method: PUT
+endpoint: empty_index
+json: {
+  "mappings": {
+    "properties": {
+      "created_at": {
+        "type": "date",
+        "store": true
+      }
+    }
+  }
+}
+---
 # Create index
 method: PUT
 endpoint: gharchive

@@ -426,21 +426,23 @@ async fn es_compat_index_cat_indices(
 ) -> Result<Vec<serde_json::Value>, ElasticsearchError> {
     query_params.validate()?;
     let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
-    // Index id to index uid mapping
-    let index_uid_to_index_id: HashMap<IndexUid, String> = indexes_metadata
+    let mut index_id_to_resp: HashMap<IndexUid, ElasticsearchCatIndexResponse> = indexes_metadata
         .iter()
-        .map(|metadata| (metadata.index_uid.clone(), metadata.index_id().to_owned()))
+        .map(|metadata| (metadata.index_uid.to_owned(), metadata.clone().into()))
         .collect();
 
-    let index_uids = indexes_metadata
-        .into_iter()
-        .map(|index_metadata| index_metadata.index_uid)
-        .collect_vec();
-    // calling into the search module is not necessary, but reuses established patterns
-    let splits_metadata = list_all_splits(index_uids, &mut metastore).await?;
+    let splits_metadata = {
+        let index_uids = indexes_metadata
+            .into_iter()
+            .map(|index_metadata| index_metadata.index_uid)
+            .collect_vec();
+
+        // calling into the search module is not necessary, but reuses established patterns
+        list_all_splits(index_uids, &mut metastore).await?
+    };
 
     let search_response_rest: Vec<ElasticsearchCatIndexResponse> =
-        convert_to_es_cat_indices_response(index_uid_to_index_id, splits_metadata);
+        convert_to_es_cat_indices_response(&mut index_id_to_resp, splits_metadata);
 
     let search_response_rest = search_response_rest
         .into_iter()
@@ -625,27 +627,24 @@ async fn es_scroll(
 }
 
 fn convert_to_es_cat_indices_response(
-    index_uid_to_index_id: HashMap<IndexUid, String>,
+    index_id_to_resp: &mut HashMap<IndexUid, ElasticsearchCatIndexResponse>,
     splits: Vec<SplitMetadata>,
 ) -> Vec<ElasticsearchCatIndexResponse> {
-    let mut per_index: HashMap<String, ElasticsearchCatIndexResponse> = HashMap::new();
-
     for split_metadata in splits {
-        let index_id = index_uid_to_index_id
-            .get(&split_metadata.index_uid)
+        let index_stats_entry = index_id_to_resp
+            .get_mut(&split_metadata.index_uid)
             .unwrap_or_else(|| {
                 panic!(
-                    "index_uid {} not found in index_uid_to_index_id",
+                    "index_id {} not found in index_id_to_resp",
                     split_metadata.index_uid
                 )
             });
-        let mut cat_index_entry: ElasticsearchCatIndexResponse = split_metadata.into();
-        cat_index_entry.index = index_id.to_owned();
-
-        let index_stats_entry = per_index.entry(index_id.to_owned()).or_default();
+        let cat_index_entry: ElasticsearchCatIndexResponse = split_metadata.into();
         *index_stats_entry += cat_index_entry.clone();
     }
-    let indices: Vec<ElasticsearchCatIndexResponse> = per_index.values().cloned().collect();
+    let mut indices: Vec<ElasticsearchCatIndexResponse> =
+        index_id_to_resp.values().cloned().collect();
+    indices.sort_by(|a, b| a.index.cmp(&b.index));
 
     indices
 }

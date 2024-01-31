@@ -1,3 +1,6 @@
 # Delete possibly remaining index
 method: DELETE
 endpoint: gharchive
+---
+method: DELETE
+endpoint: empty_index
