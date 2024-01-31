@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use std::ops::AddAssign;
 
 use hyper::StatusCode;
-use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::{IndexMetadata, SplitMetadata};
 use serde::{Deserialize, Serialize, Serializer};
 
 use super::ElasticsearchError;
@@ -135,13 +135,6 @@ impl ElasticsearchCatIndexResponse {
 }
 impl AddAssign for ElasticsearchCatIndexResponse {
     fn add_assign(&mut self, rhs: Self) {
-        // pri and rep are always 1, so we can just overwrite them
-        self.pri = rhs.pri;
-        self.rep = rhs.rep;
-        // Set index, since this may be a default entry
-        self.index = rhs.index;
-        self.uuid = rhs.uuid;
-
         self.health += rhs.health;
         self.status += rhs.status;
         self.docs_count += rhs.docs_count;
@@ -149,6 +142,18 @@ impl AddAssign for ElasticsearchCatIndexResponse {
         self.store_size += rhs.store_size;
         self.pri_store_size += rhs.pri_store_size;
         self.dataset_size += rhs.dataset_size;
+    }
+}
+
+impl From<IndexMetadata> for ElasticsearchCatIndexResponse {
+    fn from(index_metadata: IndexMetadata) -> Self {
+        ElasticsearchCatIndexResponse {
+            uuid: index_metadata.index_uid.to_string(),
+            index: index_metadata.index_config.index_id.to_string(),
+            pri: "1".to_string(),
+            rep: "1".to_string(),
+            ..Default::default()
+        }
     }
 }
 

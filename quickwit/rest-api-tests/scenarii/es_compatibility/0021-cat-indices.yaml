@@ -3,6 +3,8 @@ engines:
   - quickwit
 endpoint: "_cat/indices?format=json"
 expected:
+- index: empty_index
+  docs.count: '0'
 - dataset.size: 222.8kb
   docs.count: '100'
   docs.deleted: '0'
@@ -14,6 +16,10 @@ expected:
   status: open
   store.size: 271.8kb
   #uuid: gharchive:01HN2SDANHDN6WFAFNH7BBMQ8C
+- index: otel-logs-v0_7
+  docs.count: '0'
+- index: otel-traces-v0_7
+  docs.count: '0'
 ---
 method: [GET]
 engines:
