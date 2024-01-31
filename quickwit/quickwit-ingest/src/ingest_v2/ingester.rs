@@ -34,7 +34,7 @@ use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::Pool;
-use quickwit_common::ServiceStream;
+use quickwit_common::{rate_limited_warn, ServiceStream};
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, DecommissionRequest,
@@ -484,7 +484,8 @@ impl Ingester {
                 ) {
                     Ok(_usage) => (),
                     Err(error) => {
-                        warn!(
+                        rate_limited_warn!(
+                            limit_per_min = 10,
                             "failed to persist records to ingester `{}`: {error}",
                             self.self_node_id
                         );
