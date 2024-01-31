@@ -94,6 +94,6 @@ macro_rules! rate_limited_error {
 #[doc(hidden)]
 pub use rate_limited_tracing;
 pub use {
-    rate_limited_debug as debug, rate_limited_error as error, rate_limited_info as info,
-    rate_limited_trace as trace, rate_limited_warn as warn,
+    rate_limited_debug, rate_limited_error, rate_limited_info, rate_limited_trace,
+    rate_limited_warn,
 };
