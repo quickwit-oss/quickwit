@@ -236,17 +236,17 @@ whichlang = { git = "https://github.com/quickwit-oss/whichlang", rev = "fe406416
 wiremock = "0.5"
 zstd = "0.13.0"
 
-aws-config = "0.55.0"
-aws-credential-types = { version = "0.55.0", features = [
+aws-config = "1.1.4"
+aws-credential-types = { version = "1.1.4", features = [
   "hardcoded-credentials",
 ] }
-aws-sdk-kinesis = "0.28.0"
-aws-sdk-s3 = "0.28.0"
-aws-smithy-async = "0.55.0"
+aws-sdk-kinesis = "1.12.0"
+aws-sdk-s3 = "1.14.0"
+aws-smithy-async = "1.1.4"
 aws-smithy-client = "0.55.0"
 aws-smithy-http = "0.55.0"
-aws-smithy-types = "0.55.0"
-aws-types = "0.55.0"
+aws-smithy-types = "1.1.4"
+aws-types = "1.1.4"
 
 azure_core = { version = "0.13.0", features = ["enable_reqwest_rustls"] }
 azure_storage = { version = "0.13.0", default-features = false, features = [
