@@ -44,11 +44,6 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
-    _field_presence:
-      long:
-        metadata_field: false
-        searchable: true
-        aggregatable: false
     response:
       long:
         metadata_field: false
