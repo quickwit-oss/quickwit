@@ -393,7 +393,8 @@ async fn es_compat_index_stats(
     mut metastore: MetastoreServiceClient,
 ) -> Result<ElasticsearchStatsResponse, ElasticsearchError> {
     let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
-    // Index id to index uid mapping
+
+    // Index uid to index id mapping
     let index_uid_to_index_id: HashMap<IndexUid, String> = indexes_metadata
         .iter()
         .map(|metadata| (metadata.index_uid.clone(), metadata.index_id().to_owned()))
@@ -631,7 +632,7 @@ fn convert_to_es_cat_indices_response(
     splits: Vec<SplitMetadata>,
 ) -> Vec<ElasticsearchCatIndexResponse> {
     for split_metadata in splits {
-        let index_stats_entry = index_id_to_resp
+        let resp_entry = index_id_to_resp
             .get_mut(&split_metadata.index_uid)
             .unwrap_or_else(|| {
                 panic!(
@@ -640,7 +641,7 @@ fn convert_to_es_cat_indices_response(
                 )
             });
         let cat_index_entry: ElasticsearchCatIndexResponse = split_metadata.into();
-        *index_stats_entry += cat_index_entry.clone();
+        *resp_entry += cat_index_entry.clone();
     }
     let mut indices: Vec<ElasticsearchCatIndexResponse> =
         index_id_to_resp.values().cloned().collect();
@@ -653,8 +654,11 @@ fn convert_to_es_stats_response(
     index_uid_to_index_id: HashMap<IndexUid, String>,
     splits: Vec<SplitMetadata>,
 ) -> ElasticsearchStatsResponse {
+    let mut indices: HashMap<String, StatsResponseEntry> = index_uid_to_index_id
+        .values()
+        .map(|index_id| (index_id.to_owned(), StatsResponseEntry::default()))
+        .collect();
     let mut _all = StatsResponseEntry::default();
-    let mut per_index: HashMap<String, StatsResponseEntry> = HashMap::new();
 
     for split_metadata in splits {
         let index_id = index_uid_to_index_id
@@ -665,15 +669,17 @@ fn convert_to_es_stats_response(
                     split_metadata.index_uid
                 )
             });
+        let resp_entry = indices.get_mut(index_id).unwrap_or_else(|| {
+            panic!(
+                "index_id {} not found in index_id_to_resp",
+                split_metadata.index_uid
+            )
+        });
         let stats_entry: StatsResponseEntry = split_metadata.into();
+        *resp_entry += stats_entry.clone();
         _all += stats_entry.clone();
-        let index_stats_entry = per_index.entry(index_id.to_owned()).or_default();
-        *index_stats_entry += stats_entry.clone();
     }
-    ElasticsearchStatsResponse {
-        _all,
-        indices: per_index,
-    }
+    ElasticsearchStatsResponse { _all, indices }
 }
 
 fn convert_to_es_search_response(
