@@ -5609,6 +5609,7 @@ dependencies = [
  "pin-project",
  "pnet",
  "prometheus",
+ "proptest",
  "quickwit-macros",
  "rand 0.8.5",
  "regex",
