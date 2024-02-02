@@ -178,8 +178,8 @@ impl ControlPlane {
         ctx: &ActorContext<ControlPlane>,
     ) -> anyhow::Result<()> {
         let delete_shards_subrequest = DeleteShardsSubrequest {
-            index_uid: source_uid.index_uid.to_string(),
-            source_id: source_uid.source_id.to_string(),
+            index_uid: Some(source_uid.index_uid.clone()),
+            source_id: source_uid.source_id.clone(),
             shard_ids: shards.to_vec(),
         };
         let delete_shards_request = DeleteShardsRequest {
@@ -369,7 +369,7 @@ impl Handler<CreateIndexRequest> for ControlPlane {
             }
         };
         let index_uid: IndexUid = match self.metastore.create_index(request).await {
-            Ok(response) => response.index_uid.into(),
+            Ok(response) => response.index_uid().clone(),
             Err(metastore_error) => return convert_metastore_error(metastore_error),
         };
 
@@ -399,7 +399,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         request: DeleteIndexRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let index_uid: IndexUid = request.index_uid.clone().into();
+        let index_uid: IndexUid = request.index_uid().clone();
 
         if let Err(metastore_error) = self.metastore.delete_index(request).await {
             return convert_metastore_error(metastore_error);
@@ -436,7 +436,7 @@ impl Handler<AddSourceRequest> for ControlPlane {
         request: AddSourceRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let index_uid: IndexUid = request.index_uid.clone().into();
+        let index_uid: IndexUid = request.index_uid().clone();
         let source_config: SourceConfig =
             match metastore_serde_utils::from_json_str(&request.source_config_json) {
                 Ok(source_config) => source_config,
@@ -472,7 +472,7 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         request: ToggleSourceRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let index_uid: IndexUid = request.index_uid.clone().into();
+        let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
         let enable = request.enable;
 
@@ -501,7 +501,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
         request: DeleteSourceRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<ControlPlaneResult<EmptyResponse>, ActorExitStatus> {
-        let index_uid: IndexUid = request.index_uid.clone().into();
+        let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
 
         let source_uid = SourceUid {

@@ -88,8 +88,8 @@ impl FetchStreamTask {
         let mut fetch_task = Self {
             shard_id: open_fetch_stream_request.shard_id().clone(),
             queue_id: open_fetch_stream_request.queue_id(),
+            index_uid: open_fetch_stream_request.index_uid().clone(),
             client_id: open_fetch_stream_request.client_id,
-            index_uid: open_fetch_stream_request.index_uid.into(),
             source_id: open_fetch_stream_request.source_id,
             from_position_inclusive,
             mrecordlog,

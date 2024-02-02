@@ -202,7 +202,7 @@ impl IngestRouter {
 
         for success in response.successes {
             state_guard.routing_table.replace_shards(
-                success.index_uid,
+                success.index_uid().clone(),
                 success.source_id,
                 success.open_shards,
             );
@@ -233,7 +233,7 @@ impl IngestRouter {
 
                         if persist_failure.reason() == PersistFailureReason::ShardClosed {
                             let shard_id = persist_failure.shard_id().clone();
-                            let index_uid: IndexUid = persist_failure.index_uid.into();
+                            let index_uid: IndexUid = persist_failure.index_uid().clone();
                             let source_id: SourceId = persist_failure.source_id;
                             closed_shards
                                 .entry((index_uid, source_id))
@@ -241,7 +241,7 @@ impl IngestRouter {
                                 .push(shard_id);
                         } else if persist_failure.reason() == PersistFailureReason::ShardNotFound {
                             let shard_id = persist_failure.shard_id().clone();
-                            let index_uid: IndexUid = persist_failure.index_uid.into();
+                            let index_uid: IndexUid = persist_failure.index_uid().clone();
                             let source_id: SourceId = persist_failure.source_id;
                             deleted_shards
                                 .entry((index_uid, source_id))

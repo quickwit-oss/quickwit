@@ -214,11 +214,7 @@ impl Shard {
     }
 
     pub fn queue_id(&self) -> super::types::QueueId {
-        queue_id(
-            &self.index_uid.clone().into(),
-            &self.source_id,
-            self.shard_id(),
-        )
+        queue_id(self.index_uid(), &self.source_id, self.shard_id())
     }
 
     pub fn publish_position_inclusive(&self) -> &Position {
@@ -265,7 +261,7 @@ impl ShardIds {
     pub fn queue_ids(&self) -> impl Iterator<Item = QueueId> + '_ {
         self.shard_ids
             .iter()
-            .map(|shard_id| queue_id(&self.index_uid.clone().into(), &self.source_id, shard_id))
+            .map(|shard_id| queue_id(self.index_uid(), &self.source_id, shard_id))
     }
 }
 

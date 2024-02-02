@@ -724,7 +724,7 @@ mod tests {
         let mut metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 start_timestamp: None,
                 end_timestamp: None,
                 query_ast: quickwit_query::query_ast::qast_json_helper(delete_query, &["body"]),
@@ -749,7 +749,7 @@ mod tests {
         .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
         let publish_splits_request = PublishSplitsRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             staged_split_ids: vec![new_split_metadata.split_id.to_string()],
             replaced_split_ids: vec![splits[0].split_metadata.split_id.to_string()],
             index_checkpoint_delta_json_opt: None,

@@ -157,7 +157,7 @@ pub async fn post_delete_request(
         JanitorError::Internal("failed to serialized delete query ast".to_string())
     })?;
     let delete_query = DeleteQuery {
-        index_uid: index_uid.to_string(),
+        index_uid: Some(index_uid),
         start_timestamp: delete_request.start_timestamp,
         end_timestamp: delete_request.end_timestamp,
         query_ast: query_ast_json,

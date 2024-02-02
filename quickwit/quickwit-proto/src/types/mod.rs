@@ -24,6 +24,7 @@ use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::str::FromStr;
 
+use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 pub use ulid::Ulid;
@@ -70,7 +71,31 @@ pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
 /// its incarnation allowing to distinguish between deleted and recreated indexes.
 /// It is represented as a string in index_id:incarnation_id format.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub struct IndexUid(String, Ulid);
+pub struct IndexUid {
+    index_id: String,
+    incarnation_id: Ulid,
+}
+
+impl FromStr for IndexUid {
+    type Err = InvalidIndexUid;
+
+    fn from_str(index_uid_str: &str) -> Result<Self, Self::Err> {
+        let Some((index_id, ulid)) = index_uid_str.split_once(':') else {
+            return Err(InvalidIndexUid {
+                invalid_index_uid_str: index_uid_str.to_string(),
+            });
+        };
+        let Ok(incarnation_id) = Ulid::from_string(ulid) else {
+            return Err(InvalidIndexUid {
+                invalid_index_uid_str: index_uid_str.to_string(),
+            });
+        };
+        Ok(IndexUid {
+            index_id: index_id.to_string(),
+            incarnation_id,
+        })
+    }
+}
 
 // It is super lame, but for backward compatibility reasons we accept having a missing ulid part.
 // TODO DEPRECATED ME and remove
@@ -81,7 +106,7 @@ impl<'de> Deserialize<'de> for IndexUid {
         if !index_uid_str.contains(':') {
             return Ok(IndexUid::from_parts(&index_uid_str, ""));
         }
-        let index_uid = IndexUid::from(index_uid_str);
+        let index_uid = IndexUid::from_str(&index_uid_str).map_err(D::Error::custom)?;
         Ok(index_uid)
     }
 }
@@ -93,9 +118,95 @@ impl Serialize for IndexUid {
     }
 }
 
+impl ::prost::Message for IndexUid {
+    fn encode_raw<B>(&self, buf: &mut B)
+    where B: ::prost::bytes::BufMut {
+        if !self.index_id.is_empty() {
+            ::prost::encoding::string::encode(1u32, &self.index_id, buf);
+        }
+        let (ulid_high, ulid_low): (u64, u64) = self.incarnation_id.into();
+
+        if ulid_high != 0u64 {
+            ::prost::encoding::uint64::encode(2u32, &ulid_high, buf);
+        }
+        if ulid_low != 0u64 {
+            ::prost::encoding::uint64::encode(3u32, &ulid_low, buf);
+        }
+    }
+
+    fn merge_field<B>(
+        &mut self,
+        tag: u32,
+        wire_type: ::prost::encoding::WireType,
+        buf: &mut B,
+        ctx: ::prost::encoding::DecodeContext,
+    ) -> ::core::result::Result<(), ::prost::DecodeError>
+    where
+        B: ::prost::bytes::Buf,
+    {
+        const STRUCT_NAME: &str = "IndexUid";
+
+        match tag {
+            1u32 => {
+                let value = &mut self.index_id;
+                ::prost::encoding::string::merge(wire_type, value, buf, ctx).map_err(|mut error| {
+                    error.push(STRUCT_NAME, "index_id");
+                    error
+                })
+            }
+            2u32 => {
+                let (mut ulid_high, ulid_low) = self.incarnation_id.into();
+                ::prost::encoding::uint64::merge(wire_type, &mut ulid_high, buf, ctx).map_err(
+                    |mut error| {
+                        error.push(STRUCT_NAME, "incarnation_id_high");
+                        error
+                    },
+                )?;
+                self.incarnation_id = (ulid_high, ulid_low).into();
+                Ok(())
+            }
+            3u32 => {
+                let (ulid_high, mut ulid_low) = self.incarnation_id.into();
+                ::prost::encoding::uint64::merge(wire_type, &mut ulid_low, buf, ctx).map_err(
+                    |mut error| {
+                        error.push(STRUCT_NAME, "incarnation_id_low");
+                        error
+                    },
+                )?;
+                self.incarnation_id = (ulid_high, ulid_low).into();
+                Ok(())
+            }
+            _ => ::prost::encoding::skip_field(wire_type, tag, buf, ctx),
+        }
+    }
+
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        let mut len = 0;
+
+        if !self.index_id.is_empty() {
+            len += ::prost::encoding::string::encoded_len(1u32, &self.index_id);
+        }
+        let (ulid_high, ulid_low): (u64, u64) = self.incarnation_id.into();
+
+        if ulid_high != 0u64 {
+            len += ::prost::encoding::uint64::encoded_len(2u32, &ulid_high);
+        }
+        if ulid_low != 0u64 {
+            len += ::prost::encoding::uint64::encoded_len(3u32, &ulid_low);
+        }
+        len
+    }
+
+    fn clear(&mut self) {
+        self.index_id.clear();
+        self.incarnation_id = Ulid::nil();
+    }
+}
+
 impl fmt::Display for IndexUid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}", self.0, self.1)
+        write!(f, "{}:{}", self.index_id, self.incarnation_id)
     }
 }
 
@@ -108,50 +219,36 @@ impl IndexUid {
 
     /// TODO: Remove when Trinity lands their refactor for #3943.
     pub fn new_2(index_id: impl Into<String>, incarnation_id: impl Into<Ulid>) -> Self {
-        Self(index_id.into(), incarnation_id.into())
+        IndexUid {
+            index_id: index_id.into(),
+            incarnation_id: incarnation_id.into(),
+        }
     }
-
-    // pub fn as_str(&self) -> &str {
-    // &self.0
-    // }
 
     pub fn from_parts(index_id: &str, incarnation_id: impl Display) -> Self {
         assert!(!index_id.contains(':'), "index ID may not contain `:`");
         let incarnation_id = incarnation_id.to_string();
-        let ulid = if incarnation_id.is_empty() {
+        let incarnation_id = if incarnation_id.is_empty() {
             Ulid::nil()
         } else {
             Ulid::from_string(&incarnation_id).unwrap()
         };
-        Self(index_id.to_string(), ulid)
+        IndexUid {
+            index_id: index_id.to_string(),
+            incarnation_id,
+        }
     }
 
     pub fn index_id(&self) -> &str {
-        &self.0
+        &self.index_id
     }
 
     pub fn incarnation_id(&self) -> &Ulid {
-        &self.1
-    }
-
-    pub fn parse(index_uid_str: impl ToString) -> Result<IndexUid, InvalidIndexUid> {
-        let index_uid_str = index_uid_str.to_string();
-        let Some((index_id, ulid)) = index_uid_str.split_once(':') else {
-            return Err(InvalidIndexUid {
-                invalid_index_uid_str: index_uid_str,
-            });
-        };
-        let Ok(ulid) = Ulid::from_string(ulid) else {
-            return Err(InvalidIndexUid {
-                invalid_index_uid_str: index_uid_str,
-            });
-        };
-
-        Ok(IndexUid(index_id.to_string(), ulid))
+        &self.incarnation_id
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.index_id.is_empty()
     }
 }
 
@@ -408,7 +505,11 @@ mod tests {
     #[test]
     fn test_queue_id() {
         assert_eq!(
-            queue_id("test-index:0", "test-source", &ShardId::from(1u64)),
+            queue_id(
+                &"test-index:0".parse().unwrap(),
+                "test-source",
+                &ShardId::from(1u64)
+            ),
             "test-index:0/test-source/00000000000000000001"
         );
     }

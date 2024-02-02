@@ -389,16 +389,16 @@ impl MetastoreService for PostgresqlMetastore {
         .await
         .map_err(|sqlx_error| convert_sqlx_err(index_metadata.index_id(), sqlx_error))?;
         Ok(CreateIndexResponse {
-            index_uid: index_metadata.index_uid.to_string(),
+            index_uid: Some(index_metadata.index_uid),
         })
     }
 
-    #[instrument(skip_all, fields(index_id=request.index_uid))]
+    #[instrument(skip_all, fields(index_id=%request.index_uid()))]
     async fn delete_index(
         &mut self,
         request: DeleteIndexRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid = request.index_uid();
         let delete_result = sqlx::query("DELETE FROM indexes WHERE index_uid = $1")
             .bind(index_uid.to_string())
             .execute(&self.connection_pool)
@@ -422,7 +422,7 @@ impl MetastoreService for PostgresqlMetastore {
         request: StageSplitsRequest,
     ) -> MetastoreResult<EmptyResponse> {
         let split_metadata_list = request.deserialize_splits_metadata()?;
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid = request.index_uid();
         let mut split_ids = Vec::with_capacity(split_metadata_list.len());
         let mut time_range_start_list = Vec::with_capacity(split_metadata_list.len());
         let mut time_range_end_list = Vec::with_capacity(split_metadata_list.len());
@@ -527,7 +527,7 @@ impl MetastoreService for PostgresqlMetastore {
     ) -> MetastoreResult<EmptyResponse> {
         let checkpoint_delta_opt: Option<IndexCheckpointDelta> =
             request.deserialize_index_checkpoint()?;
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid = request.index_uid().clone();
         let staged_split_ids = request.staged_split_ids;
         let replaced_split_ids = request.replaced_split_ids;
 
@@ -743,8 +743,8 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: MarkSplitsForDeletionRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
-        let split_ids = request.split_ids;
+        let index_uid = request.index_uid();
+        let split_ids = &request.split_ids;
         const MARK_SPLITS_FOR_DELETION_QUERY: &str = r#"
             -- Select the splits to update, regardless of their state.
             -- The left join make it possible to identify the splits that do not exist.
@@ -819,8 +819,8 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: DeleteSplitsRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
-        let split_ids = request.split_ids;
+        let index_uid = request.index_uid();
+        let split_ids = &request.split_ids;
         const DELETE_SPLITS_QUERY: &str = r#"
             -- Select the splits to delete, regardless of their state.
             -- The left join make it possible to identify the splits that do not exist.
@@ -909,8 +909,7 @@ impl MetastoreService for PostgresqlMetastore {
         request: IndexMetadataRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
         let response = if let Some(index_uid) = &request.index_uid {
-            let index_uid: IndexUid = index_uid.to_string().into();
-            index_opt_for_uid(&self.connection_pool, index_uid).await?
+            index_opt_for_uid(&self.connection_pool, index_uid.clone()).await?
         } else if let Some(index_id) = &request.index_id {
             index_opt(&self.connection_pool, index_id).await?
         } else {
@@ -933,7 +932,7 @@ impl MetastoreService for PostgresqlMetastore {
     #[instrument(skip(self))]
     async fn add_source(&mut self, request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
         let source_config = request.deserialize_source_config()?;
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid = request.index_uid().clone();
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata::<MetastoreError, _>(
                 tx,
@@ -954,7 +953,7 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: ToggleSourceRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid = request.index_uid().clone();
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_uid, |index_metadata| {
                 index_metadata.toggle_source(&request.source_id, request.enable)
@@ -970,7 +969,7 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: DeleteSourceRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid = request.index_uid();
         let source_id = request.source_id.clone();
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_uid.clone(), |index_metadata| {
@@ -999,7 +998,7 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: ResetSourceCheckpointRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid = request.index_uid().clone();
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_uid, |index_metadata| {
                 Ok::<_, MetastoreError>(index_metadata.checkpoint.reset_source(&request.source_id))
@@ -1023,7 +1022,7 @@ impl MetastoreService for PostgresqlMetastore {
             WHERE index_uid = $1
         "#,
         )
-        .bind(request.index_uid)
+        .bind(request.index_uid().to_string())
         .fetch_one(&self.connection_pool)
         .await
         .map_err(|error| MetastoreError::Db {
@@ -1052,13 +1051,13 @@ impl MetastoreService for PostgresqlMetastore {
                 RETURNING create_timestamp, opstamp
             "#,
             )
-            .bind(delete_query.index_uid.to_string())
+            .bind(delete_query.index_uid().to_string())
             .bind(&delete_query_json)
             .fetch_one(&self.connection_pool)
             .await
             .map_err(|error| {
                 convert_sqlx_err(
-                    IndexUid::from(delete_query.index_uid.to_string()).index_id(),
+                    IndexUid::from(delete_query.index_uid().to_string()).index_id(),
                     error,
                 )
             })?;
@@ -1076,8 +1075,8 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: UpdateSplitsDeleteOpstampRequest,
     ) -> MetastoreResult<UpdateSplitsDeleteOpstampResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
-        let split_ids = request.split_ids;
+        let index_uid = request.index_uid();
+        let split_ids = &request.split_ids;
         if split_ids.is_empty() {
             return Ok(UpdateSplitsDeleteOpstampResponse {});
         }
@@ -1121,7 +1120,7 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: ListDeleteTasksRequest,
     ) -> MetastoreResult<ListDeleteTasksResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid = request.index_uid();
         let pg_delete_tasks: Vec<PgDeleteTask> = sqlx::query_as::<_, PgDeleteTask>(
             r#"
                 SELECT * FROM delete_tasks
@@ -1149,7 +1148,7 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: ListStaleSplitsRequest,
     ) -> MetastoreResult<ListSplitsResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid = request.index_uid();
         let stale_pg_splits: Vec<PgSplit> = sqlx::query_as::<_, PgSplit>(
             r#"
                 SELECT *
@@ -1212,7 +1211,7 @@ impl MetastoreService for PostgresqlMetastore {
                 .map(|shard_id| shard_id.as_str())
                 .collect();
             let pg_shards: Vec<PgShard> = sqlx::query_as(ACQUIRE_SHARDS_QUERY)
-                .bind(&subrequest.index_uid)
+                .bind(subrequest.index_uid().to_string())
                 .bind(&subrequest.source_id)
                 .bind(shard_ids)
                 .bind(subrequest.publish_token)
@@ -1249,7 +1248,7 @@ impl MetastoreService for PostgresqlMetastore {
                 ShardState::Unavailable => Some("unavailable"),
             };
             let pg_shards: Vec<PgShard> = sqlx::query_as(LIST_SHARDS_QUERY)
-                .bind(&subrequest.index_uid)
+                .bind(subrequest.index_uid().to_string())
                 .bind(&subrequest.source_id)
                 .bind(shard_state)
                 .fetch_all(&self.connection_pool)
@@ -1283,7 +1282,7 @@ impl MetastoreService for PostgresqlMetastore {
                 .collect();
 
             sqlx::query(DELETE_SHARDS_QUERY)
-                .bind(&subrequest.index_uid)
+                .bind(subrequest.index_uid().to_string())
                 .bind(&subrequest.source_id)
                 .bind(shard_ids)
                 .bind(request.force)
@@ -1301,7 +1300,7 @@ async fn open_or_fetch_shard<'e>(
     const OPEN_SHARDS_QUERY: &str = include_str!("queries/open_shard.sql");
 
     let pg_shard_opt: Option<PgShard> = sqlx::query_as(OPEN_SHARDS_QUERY)
-        .bind(&subrequest.index_uid)
+        .bind(subrequest.index_uid().to_string())
         .bind(&subrequest.source_id)
         .bind(subrequest.shard_id().as_str())
         .bind(&subrequest.leader_id)
@@ -1312,7 +1311,7 @@ async fn open_or_fetch_shard<'e>(
     if let Some(pg_shard) = pg_shard_opt {
         let shard: Shard = pg_shard.into();
         info!(
-            index_id=%shard.index_uid,
+            index_id=%shard.index_uid(),
             source_id=%shard.source_id,
             shard_id=%shard.shard_id(),
             leader_id=%shard.leader_id,
@@ -1324,7 +1323,7 @@ async fn open_or_fetch_shard<'e>(
     const FETCH_SHARD_QUERY: &str = include_str!("queries/fetch_shard.sql");
 
     let pg_shard_opt: Option<PgShard> = sqlx::query_as(FETCH_SHARD_QUERY)
-        .bind(&subrequest.index_uid)
+        .bind(subrequest.index_uid().to_string())
         .bind(&subrequest.source_id)
         .bind(subrequest.shard_id().as_str())
         .fetch_optional(executor)
@@ -1334,7 +1333,8 @@ async fn open_or_fetch_shard<'e>(
         return Ok(pg_shard.into());
     }
     Err(MetastoreError::NotFound(EntityKind::Source {
-        index_id: subrequest.index_uid.clone(),
+        // TODO XXX confirm this is correct
+        index_id: subrequest.index_uid().index_id().to_string(),
         source_id: subrequest.source_id.clone(),
     }))
 }

@@ -467,11 +467,12 @@ pub(crate) fn set_indexing_tasks_in_node_state(
 
 fn indexing_task_to_chitchat_kv(indexing_task: &IndexingTask) -> (String, String) {
     let IndexingTask {
-        index_uid,
+        index_uid: _,
         source_id,
         shard_ids,
         pipeline_uid: _,
     } = indexing_task;
+    let index_uid = indexing_task.index_uid();
     let key = format!("{INDEXING_TASK_PREFIX}{}", indexing_task.pipeline_uid());
     let shard_ids_str = shard_ids.iter().sorted().join(",");
     let value = format!("{index_uid}:{source_id}:{shard_ids_str}");
@@ -491,9 +492,10 @@ fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> 
     let pipeline_uid = PipelineUid::from_str(pipeline_uid_str).ok()?;
     let (source_uid, shards_str) = value.rsplit_once(':')?;
     let (index_uid, source_id) = source_uid.rsplit_once(':')?;
+    let index_uid = index_uid.parse().ok()?;
     let shard_ids = parse_shard_ids_str(shards_str);
     Some(IndexingTask {
-        index_uid: index_uid.to_string(),
+        index_uid: Some(index_uid),
         source_id: source_id.to_string(),
         pipeline_uid: Some(pipeline_uid),
         shard_ids,

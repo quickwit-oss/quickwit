@@ -206,7 +206,7 @@ impl IndexerState {
             };
 
         let last_delete_opstamp_request = LastDeleteOpstampRequest {
-            index_uid: self.pipeline_id.index_uid.to_string(),
+            index_uid: Some(self.pipeline_id.index_uid.clone()),
         };
         let last_delete_opstamp_response = ctx
             .protect_future(
@@ -755,7 +755,7 @@ mod tests {
             .expect_last_delete_opstamp()
             .times(2)
             .returning(move |delete_opstamp_request| {
-                assert_eq!(delete_opstamp_request.index_uid, index_uid.to_string());
+                assert_eq!(delete_opstamp_request.index_uid(), &index_uid);
                 Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         metastore.expect_publish_splits().never();
@@ -891,7 +891,7 @@ mod tests {
             .expect_last_delete_opstamp()
             .times(1..=2)
             .returning(move |last_delete_opstamp_request| {
-                assert_eq!(last_delete_opstamp_request.index_uid, index_uid.to_string());
+                assert_eq!(last_delete_opstamp_request.index_uid(), &index_uid);
                 Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         metastore.expect_publish_splits().never();

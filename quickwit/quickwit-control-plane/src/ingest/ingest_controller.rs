@@ -146,7 +146,7 @@ impl IngestController {
         let mut retain_shards_req = RetainShardsRequest::default();
         for (source_uid, shard_ids) in &*model.list_shards_for_node(ingester) {
             let shards_for_source = RetainShardsForSource {
-                index_uid: source_uid.index_uid.to_string(),
+                index_uid: Some(source_uid.index_uid.clone()),
                 source_id: source_uid.source_id.clone(),
                 shard_ids: shard_ids.iter().cloned().collect(),
             };
@@ -270,7 +270,7 @@ impl IngestController {
 
     fn handle_closed_shards(&self, closed_shards: Vec<ShardIds>, model: &mut ControlPlaneModel) {
         for closed_shard in closed_shards {
-            let index_uid: IndexUid = closed_shard.index_uid.into();
+            let index_uid: IndexUid = closed_shard.index_uid().clone();
             let source_id = closed_shard.source_id;
 
             let source_uid = SourceUid {
@@ -438,7 +438,7 @@ impl IngestController {
             let _ = self.init_shards(&open_shards_response, progress).await;
 
             for open_shards_subresponse in open_shards_response.subresponses {
-                let index_uid: IndexUid = open_shards_subresponse.index_uid.clone().into();
+                let index_uid: IndexUid = open_shards_subresponse.index_uid().clone();
                 let source_id = open_shards_subresponse.source_id.clone();
                 model.insert_newly_opened_shards(
                     &index_uid,
@@ -564,7 +564,7 @@ impl IngestController {
             return;
         }
         for open_shards_subresponse in open_shards_response.subresponses {
-            let index_uid: IndexUid = open_shards_subresponse.index_uid.into();
+            let index_uid = open_shards_subresponse.index_uid().clone();
             let source_id = open_shards_subresponse.source_id;
 
             model.insert_newly_opened_shards(

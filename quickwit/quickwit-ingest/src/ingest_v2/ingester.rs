@@ -48,7 +48,7 @@ use quickwit_proto::ingest::ingester::{
     TruncateShardsResponse,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardState};
-use quickwit_proto::types::{queue_id, NodeId, Position, QueueId, SourceId};
+use quickwit_proto::types::{queue_id, IndexUid, NodeId, Position, QueueId, SourceId};
 use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
 
@@ -249,7 +249,7 @@ impl Ingester {
     ) -> IngestV2Result<()> {
         let queue_id = shard.queue_id();
         info!(
-            index_uid = shard.index_uid,
+            index_uid = %shard.index_uid(),
             source = shard.source_id,
             shard = %shard.shard_id(),
             "init primary shard"
@@ -456,6 +456,7 @@ impl Ingester {
                 let follower_id_opt = shard.follower_id_opt().cloned();
                 let from_position_exclusive = shard.replication_position_inclusive.clone();
 
+                let index_uid = subrequest.index_uid().clone();
                 let doc_batch = match subrequest.doc_batch {
                     Some(doc_batch) if !doc_batch.is_empty() => doc_batch,
                     _ => {
@@ -540,7 +541,7 @@ impl Ingester {
                     local_persist_subrequests.push(LocalPersistSubrequest {
                         queue_id,
                         subrequest_id: subrequest.subrequest_id,
-                        index_uid: subrequest.index_uid,
+                        index_uid,
                         source_id: subrequest.source_id,
                         shard_id: subrequest.shard_id,
                         doc_batch,
@@ -594,7 +595,7 @@ impl Ingester {
                     let local_persist_subrequest = LocalPersistSubrequest {
                         queue_id,
                         subrequest_id: replicate_success.subrequest_id,
-                        index_uid: replicate_success.index_uid,
+                        index_uid: replicate_success.index_uid().clone(),
                         source_id: replicate_success.source_id,
                         shard_id: replicate_success.shard_id,
                         doc_batch,
@@ -663,7 +664,7 @@ impl Ingester {
                         };
                         let persist_failure = PersistFailure {
                             subrequest_id: subrequest.subrequest_id,
-                            index_uid: subrequest.index_uid,
+                            index_uid: Some(subrequest.index_uid),
                             source_id: subrequest.source_id,
                             shard_id: subrequest.shard_id,
                             reason: reason as i32,
@@ -695,7 +696,7 @@ impl Ingester {
 
                 let persist_success = PersistSuccess {
                     subrequest_id: subrequest.subrequest_id,
-                    index_uid: subrequest.index_uid,
+                    index_uid: Some(subrequest.index_uid),
                     source_id: subrequest.source_id,
                     shard_id: subrequest.shard_id,
                     replication_position_inclusive: Some(current_position_inclusive),
@@ -1028,15 +1029,12 @@ impl IngesterService for Ingester {
             .retain_shards_for_sources
             .into_iter()
             .flat_map(|retain_shards_for_source: RetainShardsForSource| {
+                let index_uid = retain_shards_for_source.index_uid().clone();
                 retain_shards_for_source
                     .shard_ids
                     .into_iter()
                     .map(move |shard_id| {
-                        queue_id(
-                            &retain_shards_for_source.index_uid.clone().into(),
-                            &retain_shards_for_source.source_id,
-                            &shard_id,
-                        )
+                        queue_id(&index_uid, &retain_shards_for_source.source_id, &shard_id)
                     })
             })
             .collect();
@@ -1159,7 +1157,7 @@ pub async fn wait_for_ingester_decommission(ingester_opt: Option<IngesterService
 struct LocalPersistSubrequest {
     queue_id: QueueId,
     subrequest_id: u32,
-    index_uid: String,
+    index_uid: IndexUid,
     source_id: SourceId,
     shard_id: Option<quickwit_proto::types::ShardId>,
     doc_batch: quickwit_proto::ingest::DocBatchV2,

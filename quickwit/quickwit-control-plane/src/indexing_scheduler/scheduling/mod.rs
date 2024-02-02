@@ -24,7 +24,7 @@ use std::num::NonZeroU32;
 
 use fnv::{FnvHashMap, FnvHashSet};
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
-use quickwit_proto::types::{IndexUid, PipelineUid, ShardId, SourceUid};
+use quickwit_proto::types::{PipelineUid, ShardId, SourceUid};
 use scheduling_logic_model::{IndexerOrd, SourceOrd};
 use tracing::{error, warn};
 
@@ -128,7 +128,7 @@ fn convert_physical_plan_to_solution(
             let indexer_assignment = &mut solution.indexer_assignments[indexer_ord];
             for indexing_task in indexing_tasks {
                 let source_uid = SourceUid {
-                    index_uid: IndexUid::from(indexing_task.index_uid.clone()),
+                    index_uid: indexing_task.index_uid().clone(),
                     source_id: indexing_task.source_id.clone(),
                 };
                 if let Some((source_ord, source)) = id_to_ord_map.source(&source_uid) {
@@ -262,7 +262,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
                 .collect();
             indexing_tasks.resize_with(remaining_num_shards_to_schedule_on_node as usize, || {
                 IndexingTask {
-                    index_uid: source.source_uid.index_uid.to_string(),
+                    index_uid: Some(source.source_uid.index_uid.clone()),
                     source_id: source.source_uid.source_id.clone(),
                     pipeline_uid: Some(PipelineUid::new()),
                     shard_ids: Vec::new(),
@@ -278,7 +278,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
             } else {
                 // The source is new, we need to create a new task.
                 vec![IndexingTask {
-                    index_uid: source.source_uid.index_uid.to_string(),
+                    index_uid: Some(source.source_uid.index_uid.clone()),
                     source_id: source.source_uid.source_id.clone(),
                     pipeline_uid: Some(PipelineUid::new()),
                     shard_ids: Vec::new(),
@@ -306,7 +306,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node(
         let source_pipelines: Vec<&IndexingTask> = previous_tasks
             .iter()
             .filter(|task| {
-                task.index_uid == source.source_uid.index_uid
+                task.index_uid() == &source.source_uid.index_uid
                     && task.source_id == source.source_uid.source_id
             })
             .collect();
@@ -381,7 +381,7 @@ fn convert_scheduling_solution_to_physical_plan(
             let mut num_shards_for_indexer_source: u32 =
                 indexer_assignments[indexer_ord].num_shards(source_ord);
             for indexing_task in indexing_tasks {
-                if indexing_task.index_uid == source.source_uid.index_uid
+                if indexing_task.index_uid() == &source.source_uid.index_uid
                     && indexing_task.source_id == source.source_uid.source_id
                 {
                     indexing_task.shard_ids.retain(|shard_id| {
@@ -459,7 +459,7 @@ fn add_shard_to_indexer(
     let indexing_task_opt = indexer_tasks
         .iter_mut()
         .filter(|indexing_task| {
-            indexing_task.index_uid == source_uid.index_uid
+            indexing_task.index_uid() == &source_uid.index_uid
                 && indexing_task.source_id == source_uid.source_id
         })
         .filter(|task| task.shard_ids.len() < max_shard_per_pipeline.get() as usize)
@@ -471,7 +471,7 @@ fn add_shard_to_indexer(
         // We haven't found any pipeline with remaining room.
         // It is time to create a new pipeline.
         indexer_tasks.push(IndexingTask {
-            index_uid: source_uid.index_uid.to_string(),
+            index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.clone(),
             pipeline_uid: Some(PipelineUid::new()),
             shard_ids: vec![missing_shard],

@@ -180,7 +180,7 @@ impl ShardTable {
         for (source_uid, shard_table_entry) in &self.table_entries {
             for (shard_id, shard_entry) in &shard_table_entry.shard_entries {
                 debug_assert_eq!(shard_id, shard_entry.shard.shard_id());
-                debug_assert_eq!(source_uid.index_uid, shard_entry.shard.index_uid);
+                debug_assert_eq!(&source_uid.index_uid, shard_entry.shard.index_uid());
                 for node in shard_entry.shard.ingester_nodes() {
                     shard_sets_in_shard_table.insert((node, source_uid, shard_id));
                 }
@@ -307,10 +307,12 @@ impl ShardTable {
             source_id: source_id.clone(),
         };
         for shard in &opened_shards {
-            if shard.index_uid != source_uid.index_uid || shard.source_id != source_uid.source_id {
+            if shard.index_uid() != &source_uid.index_uid || shard.source_id != source_uid.source_id
+            {
                 panic!(
                     "shard source UID `{}/{}` does not match source UID `{source_uid}`",
-                    shard.index_uid, shard.source_id,
+                    shard.index_uid(),
+                    shard.source_id,
                 );
             }
         }

@@ -666,7 +666,10 @@ mod tests {
         metastore
             .expect_stage_splits()
             .withf(|stage_splits_request| -> bool {
-                stage_splits_request.index_uid == "test-index:11111111111111111111111111"
+                stage_splits_request.index_uid()
+                    == &"test-index:11111111111111111111111111"
+                        .parse::<IndexUid>()
+                        .unwrap()
             })
             .returning(|_| Ok(EmptyResponse {}));
         metastore
@@ -676,7 +679,10 @@ mod tests {
                     .deserialize_index_checkpoint()
                     .unwrap()
                     .unwrap();
-                publish_splits_request.index_uid == "test-index:11111111111111111111111111"
+                publish_splits_request.index_uid()
+                    == &"test-index:11111111111111111111111111"
+                        .parse::<IndexUid>()
+                        .unwrap()
                     && checkpoint_delta.source_id == "test-source"
                     && publish_splits_request.staged_split_ids.len() == 1
                     && publish_splits_request.replaced_split_ids.is_empty()
@@ -686,7 +692,7 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
         let node_id = "test-node";
         let pipeline_id = IndexingPipelineId {
-            index_uid: "test-index:11111111111111111111111111".to_string().into(),
+            index_uid: "test-index:11111111111111111111111111".parse().unwrap(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_uid: PipelineUid::from_u128(0u128),
@@ -759,13 +765,19 @@ mod tests {
         metastore
             .expect_last_delete_opstamp()
             .withf(|last_delete_opstamp| {
-                last_delete_opstamp.index_uid == "test-index:11111111111111111111111111"
+                last_delete_opstamp.index_uid()
+                    == &"test-index:11111111111111111111111111"
+                        .parse::<IndexUid>()
+                        .unwrap()
             })
             .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
         metastore
             .expect_stage_splits()
             .withf(|stage_splits_request| {
-                stage_splits_request.index_uid == "test-index:11111111111111111111111111"
+                stage_splits_request.index_uid()
+                    == &"test-index:11111111111111111111111111"
+                        .parse::<IndexUid>()
+                        .unwrap()
             })
             .returning(|_| Ok(EmptyResponse {}));
         metastore
@@ -775,7 +787,10 @@ mod tests {
                     .deserialize_index_checkpoint()
                     .unwrap()
                     .unwrap();
-                publish_splits_request.index_uid == "test-index:11111111111111111111111111"
+                publish_splits_request.index_uid()
+                    == &"test-index:11111111111111111111111111"
+                        .parse::<IndexUid>()
+                        .unwrap()
                     && publish_splits_request.staged_split_ids.len() == 1
                     && publish_splits_request.replaced_split_ids.is_empty()
                     && checkpoint_delta.source_id == "test-source"
@@ -946,7 +961,10 @@ mod tests {
         metastore
             .expect_last_delete_opstamp()
             .withf(|last_delete_opstamp| {
-                last_delete_opstamp.index_uid == "test-index:11111111111111111111111111"
+                last_delete_opstamp.index_uid()
+                    == &"test-index:11111111111111111111111111"
+                        .parse::<IndexUid>()
+                        .unwrap()
             })
             .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
         metastore
@@ -960,7 +978,10 @@ mod tests {
                     .deserialize_index_checkpoint()
                     .unwrap()
                     .unwrap();
-                publish_splits_request.index_uid == "test-index:11111111111111111111111111"
+                publish_splits_request.index_uid()
+                    == &"test-index:11111111111111111111111111"
+                        .parse::<IndexUid>()
+                        .unwrap()
                     && publish_splits_request.staged_split_ids.is_empty()
                     && publish_splits_request.replaced_split_ids.is_empty()
                     && checkpoint_delta.source_id == "test-source"

@@ -310,7 +310,7 @@ pub async fn delete_splits_from_storage_and_metastore(
             .map(|split_info| split_info.split_id.to_string())
             .collect();
         let delete_splits_request = DeleteSplitsRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             split_ids: split_ids.clone(),
         };
         let metastore_result =

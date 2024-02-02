@@ -127,7 +127,7 @@ impl IndexService {
         let index_id = index_config.index_id.clone();
         let create_index_request = CreateIndexRequest::try_from_index_config(index_config)?;
         let create_index_response = metastore.create_index(create_index_request).await?;
-        let index_uid: IndexUid = create_index_response.index_uid.into();
+        let index_uid: IndexUid = create_index_response.index_uid().clone();
         let add_ingest_api_source_request = AddSourceRequest::try_from_source_config(
             index_uid.clone(),
             SourceConfig::ingest_api_default(),
@@ -221,7 +221,7 @@ impl IndexService {
         )
         .await?;
         let delete_index_request = DeleteIndexRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid),
         };
         self.metastore.delete_index(delete_index_request).await?;
 
@@ -319,7 +319,7 @@ impl IndexService {
         }
         for source_id in index_metadata.sources.keys() {
             let reset_source_checkpoint_request = ResetSourceCheckpointRequest {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: source_id.to_string(),
             };
             self.metastore

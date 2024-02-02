@@ -498,7 +498,7 @@ impl IndexingService {
             })
             .flat_map(|indexing_task| {
                 let pipeline_uid = indexing_task.pipeline_uid();
-                let index_uid = IndexUid::parse(indexing_task.index_uid.clone()).ok()?;
+                let index_uid = indexing_task.index_uid().clone();
                 Some(IndexingPipelineId {
                     node_id: self.node_id.clone(),
                     index_uid,
@@ -659,7 +659,7 @@ impl IndexingService {
             .indexing_pipelines
             .values()
             .map(|handle| IndexingTask {
-                index_uid: handle.indexing_pipeline_id.index_uid.to_string(),
+                index_uid: Some(handle.indexing_pipeline_id.index_uid.clone()),
                 source_id: handle.indexing_pipeline_id.source_id.clone(),
                 pipeline_uid: Some(handle.indexing_pipeline_id.pipeline_uid),
                 shard_ids: handle
@@ -928,8 +928,8 @@ mod tests {
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
         let create_source_request = AddSourceRequest::try_from_source_config(
             index_uid.clone(),
             SourceConfig::ingest_api_default(),
@@ -1084,8 +1084,8 @@ mod tests {
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
         let add_source_request = AddSourceRequest::try_from_source_config(
             index_uid.clone(),
             SourceConfig::ingest_api_default(),
@@ -1124,13 +1124,13 @@ mod tests {
             .unwrap();
         let indexing_tasks = vec![
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::from_u128(0u128)),
             },
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::from_u128(1u128)),
@@ -1170,25 +1170,25 @@ mod tests {
 
         let indexing_tasks = vec![
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: Some(metadata.index_uid.clone()),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::from_u128(3u128)),
             },
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::from_u128(1u128)),
             },
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::from_u128(2u128)),
             },
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: Some(metadata.index_uid.clone()),
                 source_id: source_config_2.source_id.clone(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::from_u128(4u128)),
@@ -1228,19 +1228,19 @@ mod tests {
         );
         let indexing_tasks = vec![
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: Some(metadata.index_uid.clone()),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::from_u128(3u128)),
             },
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::from_u128(1u128)),
             },
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: Some(metadata.index_uid.clone()),
                 source_id: source_config_2.source_id.clone(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::from_u128(4u128)),
@@ -1281,7 +1281,7 @@ mod tests {
         // Delete index and apply empty plan
         metastore
             .delete_index(DeleteIndexRequest {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
             })
             .await
             .unwrap();
@@ -1326,8 +1326,8 @@ mod tests {
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
         let add_source_request =
             AddSourceRequest::try_from_source_config(index_uid.clone(), source_config.clone())
                 .unwrap();
@@ -1524,8 +1524,8 @@ mod tests {
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
 
         // Setup ingest api objects
         let universe = Universe::with_accelerated_time();
@@ -1568,7 +1568,7 @@ mod tests {
 
         metastore
             .delete_index(DeleteIndexRequest {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
             })
             .await
             .unwrap();

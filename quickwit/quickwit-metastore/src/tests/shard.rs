@@ -64,7 +64,7 @@ impl TestIndex {
         let create_index_request =
             CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
         let create_index_response = metastore.create_index(create_index_request).await.unwrap();
-        let index_uid: IndexUid = create_index_response.index_uid.into();
+        let index_uid: IndexUid = create_index_response.index_uid().clone();
 
         let add_source_request =
             AddSourceRequest::try_from_source_config(index_uid.clone(), source_config.clone())
@@ -146,12 +146,12 @@ pub async fn test_metastore_open_shards<
     assert_eq!(open_shards_response.subresponses.len(), 1);
 
     let subresponse = &open_shards_response.subresponses[0];
-    assert_eq!(subresponse.index_uid, test_index.index_uid);
+    assert_eq!(subresponse.index_uid(), &test_index.index_uid);
     assert_eq!(subresponse.source_id, test_index.source_id);
     assert_eq!(subresponse.opened_shards.len(), 1);
 
     let shard = &subresponse.opened_shards[0];
-    assert_eq!(shard.index_uid, test_index.index_uid);
+    assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(1));
     assert_eq!(shard.shard_state(), ShardState::Open);
@@ -175,12 +175,12 @@ pub async fn test_metastore_open_shards<
     assert_eq!(open_shards_response.subresponses.len(), 1);
 
     let subresponse = &open_shards_response.subresponses[0];
-    assert_eq!(subresponse.index_uid, test_index.index_uid);
+    assert_eq!(subresponse.index_uid(), &test_index.index_uid);
     assert_eq!(subresponse.source_id, test_index.source_id);
     assert_eq!(subresponse.opened_shards.len(), 1);
 
     let shard = &subresponse.opened_shards[0];
-    assert_eq!(shard.index_uid, test_index.index_uid);
+    assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(1));
     assert_eq!(shard.shard_state(), ShardState::Open);
@@ -266,7 +266,7 @@ pub async fn test_metastore_acquire_shards<
     assert_eq!(acquire_shards_response.subresponses.len(), 1);
 
     let mut subresponses = acquire_shards_response.subresponses;
-    assert_eq!(subresponses[0].index_uid, test_index.index_uid);
+    assert_eq!(subresponses[0].index_uid(), &test_index.index_uid);
     assert_eq!(subresponses[0].source_id, test_index.source_id);
     assert_eq!(subresponses[0].acquired_shards.len(), 3);
 
@@ -275,7 +275,7 @@ pub async fn test_metastore_acquire_shards<
         .sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
 
     let shard = &subresponses[0].acquired_shards[0];
-    assert_eq!(shard.index_uid, test_index.index_uid);
+    assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(1));
     assert_eq!(shard.shard_state(), ShardState::Closed);
@@ -285,7 +285,7 @@ pub async fn test_metastore_acquire_shards<
     assert_eq!(shard.publish_token(), "test-publish-token-foo");
 
     let shard = &subresponses[0].acquired_shards[1];
-    assert_eq!(shard.index_uid, test_index.index_uid);
+    assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(2));
     assert_eq!(shard.shard_state(), ShardState::Open);
@@ -295,7 +295,7 @@ pub async fn test_metastore_acquire_shards<
     assert_eq!(shard.publish_token(), "test-publish-token-foo");
 
     let shard = &subresponses[0].acquired_shards[2];
-    assert_eq!(shard.index_uid, test_index.index_uid);
+    assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(3));
     assert_eq!(shard.shard_state(), ShardState::Open);
@@ -357,7 +357,7 @@ pub async fn test_metastore_list_shards<
     assert_eq!(list_shards_response.subresponses.len(), 1);
 
     let mut subresponses = list_shards_response.subresponses;
-    assert_eq!(subresponses[0].index_uid, test_index.index_uid);
+    assert_eq!(subresponses[0].index_uid(), &test_index.index_uid);
     assert_eq!(subresponses[0].source_id, test_index.source_id);
     assert_eq!(subresponses[0].shards.len(), 2);
 
@@ -366,7 +366,7 @@ pub async fn test_metastore_list_shards<
         .sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
 
     let shard = &subresponses[0].shards[0];
-    assert_eq!(shard.index_uid, test_index.index_uid);
+    assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(1));
     assert_eq!(shard.shard_state(), ShardState::Open);
@@ -376,7 +376,7 @@ pub async fn test_metastore_list_shards<
     assert_eq!(shard.publish_token(), "test-publish-token-foo");
 
     let shard = &subresponses[0].shards[1];
-    assert_eq!(shard.index_uid, test_index.index_uid);
+    assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(2));
     assert_eq!(shard.shard_state(), ShardState::Closed);

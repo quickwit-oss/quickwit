@@ -41,7 +41,7 @@ impl From<Shard> for RoutingEntry {
         let shard_id = shard.shard_id().clone();
         let shard_state = shard.shard_state();
         Self {
-            index_uid: shard.index_uid.into(),
+            index_uid: shard.index_uid().clone(),
             source_id: shard.source_id,
             shard_id,
             shard_state,

@@ -165,7 +165,7 @@ impl Display for IndexingPipelineId {
 
 impl Display for IndexingTask {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}:{}", self.index_uid, &self.source_id)
+        write!(f, "{}:{}", self.index_uid(), &self.source_id)
     }
 }
 

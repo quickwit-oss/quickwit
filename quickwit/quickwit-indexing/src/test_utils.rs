@@ -105,8 +105,8 @@ impl TestSandbox {
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await?
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
         let storage = storage_resolver.resolve(&index_uri).await?;
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);

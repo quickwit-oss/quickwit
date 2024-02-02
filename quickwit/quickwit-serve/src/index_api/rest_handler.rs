@@ -705,7 +705,7 @@ async fn reset_source_checkpoint(
         .index_uid;
     info!(index_id = %index_id, source_id = %source_id, "reset-checkpoint");
     let reset_source_checkpoint_request = ResetSourceCheckpointRequest {
-        index_uid: index_uid.to_string(),
+        index_uid: Some(index_uid),
         source_id: source_id.clone(),
     };
     metastore
@@ -766,7 +766,7 @@ async fn toggle_source(
         )));
     }
     let toggle_source_request = ToggleSourceRequest {
-        index_uid: index_uid.to_string(),
+        index_uid: Some(index_uid),
         source_id: source_id.clone(),
         enable: toggle_source.enable,
     };
@@ -817,7 +817,7 @@ async fn delete_source(
         )));
     }
     let delete_source_request = DeleteSourceRequest {
-        index_uid: index_uid.to_string(),
+        index_uid: Some(index_uid),
         source_id: source_id.clone(),
     };
     metastore.delete_source(delete_source_request).await?;

@@ -19,33 +19,10 @@
 
 syntax = "proto3";
 
-package quickwit.indexing;
+package quickwit.common;
 
-import "quickwit/common.proto";
-import "quickwit/ingest.proto";
-
-service IndexingService {
-  // Apply an indexing plan on the node.
-  rpc ApplyIndexingPlan(ApplyIndexingPlanRequest) returns (ApplyIndexingPlanResponse);
+message IndexUid {
+  string index_id = 1;
+  uint64 incarnation_id_high = 2;
+  uint64 incarnation_id_low = 3;
 }
-
-message ApplyIndexingPlanRequest {
-  repeated IndexingTask indexing_tasks = 1;
-}
-
-message PipelineUid {
-  bytes pipeline_uid = 1;
-}
-
-message IndexingTask {
-  // The tasks's index UID.
-  quickwit.common.IndexUid index_uid = 1;
-  // The task's source ID.
-  string source_id = 2;
-  // pipeline id
-  PipelineUid pipeline_uid = 4;
-  // The shards assigned to the indexer.
-  repeated quickwit.ingest.ShardId shard_ids = 3;
-}
-
-message ApplyIndexingPlanResponse {}

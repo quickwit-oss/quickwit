@@ -39,14 +39,13 @@ pub async fn test_metastore_create_delete_task<
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
     let create_index_request =
         CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid: IndexUid = metastore
+    let index_uid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid;
     let delete_query = DeleteQuery {
-        index_uid: index_uid.clone().into(),
+        index_uid: index_uid.clone(),
         query_ast: qast_json_helper("my_field:my_value", &[]),
         start_timestamp: Some(1),
         end_timestamp: Some(2),
@@ -55,7 +54,7 @@ pub async fn test_metastore_create_delete_task<
     // Create a delete task on non-existing index.
     let error = metastore
         .create_delete_task(DeleteQuery {
-            index_uid: IndexUid::new_with_random_ulid("does-not-exist").to_string(),
+            index_uid: Some(IndexUid::new_with_random_ulid("does-not-exist")),
             ..delete_query.clone()
         })
         .await
@@ -68,7 +67,7 @@ pub async fn test_metastore_create_delete_task<
     // Create a delete task on an index with wrong incarnation_id
     let error = metastore
         .create_delete_task(DeleteQuery {
-            index_uid: IndexUid::from_parts(&index_id, "12345").to_string(),
+            index_uid: Some(IndexUid::from_parts(&index_id, "12345")),
             ..delete_query.clone()
         })
         .await
@@ -94,7 +93,7 @@ pub async fn test_metastore_create_delete_task<
         .unwrap();
     assert!(delete_task_2.opstamp > delete_task_1.opstamp);
 
-    cleanup_index(&mut metastore, index_uid).await;
+    cleanup_index(&mut metastore, index_uid.unwrap()).await;
 }
 
 pub async fn test_metastore_last_delete_opstamp<
@@ -107,27 +106,25 @@ pub async fn test_metastore_last_delete_opstamp<
     let index_id_2 = append_random_suffix("test-last-delete-opstamp-2");
     let index_uri_2 = format!("ram:///indexes/{index_id_2}");
     let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
-    let index_uid_1: IndexUid = metastore
+    let index_uid_1 = metastore
         .create_index(CreateIndexRequest::try_from_index_config(index_config_1.clone()).unwrap())
         .await
         .unwrap()
-        .index_uid
-        .into();
-    let index_uid_2: IndexUid = metastore
+        .index_uid;
+    let index_uid_2 = metastore
         .create_index(CreateIndexRequest::try_from_index_config(index_config_2.clone()).unwrap())
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid;
 
     let delete_query_index_1 = DeleteQuery {
-        index_uid: index_uid_1.to_string(),
+        index_uid: index_uid_1.clone(),
         query_ast: qast_json_helper("my_field:my_value", &[]),
         start_timestamp: Some(1),
         end_timestamp: Some(2),
     };
     let delete_query_index_2 = DeleteQuery {
-        index_uid: index_uid_2.to_string(),
+        index_uid: index_uid_2.clone(),
         query_ast: qast_json_helper("my_field:my_value", &[]),
         start_timestamp: Some(1),
         end_timestamp: Some(2),
@@ -135,7 +132,7 @@ pub async fn test_metastore_last_delete_opstamp<
 
     let last_opstamp_index_1_with_no_task = metastore
         .last_delete_opstamp(LastDeleteOpstampRequest {
-            index_uid: index_uid_1.to_string(),
+            index_uid: index_uid_1.clone(),
         })
         .await
         .unwrap()
@@ -158,22 +155,22 @@ pub async fn test_metastore_last_delete_opstamp<
 
     let last_opstamp_index_1 = metastore
         .last_delete_opstamp(LastDeleteOpstampRequest {
-            index_uid: index_uid_1.to_string(),
+            index_uid: index_uid_1.clone(),
         })
         .await
         .unwrap()
         .last_delete_opstamp;
     let last_opstamp_index_2 = metastore
         .last_delete_opstamp(LastDeleteOpstampRequest {
-            index_uid: index_uid_2.to_string(),
+            index_uid: index_uid_2.clone(),
         })
         .await
         .unwrap()
         .last_delete_opstamp;
     assert_eq!(last_opstamp_index_1, delete_task_2.opstamp);
     assert_eq!(last_opstamp_index_2, delete_task_3.opstamp);
-    cleanup_index(&mut metastore, index_uid_1).await;
-    cleanup_index(&mut metastore, index_uid_2).await;
+    cleanup_index(&mut metastore, index_uid_1.unwrap()).await;
+    cleanup_index(&mut metastore, index_uid_2.unwrap()).await;
 }
 
 pub async fn test_metastore_delete_index_with_tasks<
@@ -185,14 +182,13 @@ pub async fn test_metastore_delete_index_with_tasks<
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
     let create_index_request =
         CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid: IndexUid = metastore
+    let index_uid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid;
     let delete_query = DeleteQuery {
-        index_uid: index_uid.clone().into(),
+        index_uid: index_uid.clone(),
         query_ast: qast_json_helper("my_field:my_value", &[]),
         start_timestamp: Some(1),
         end_timestamp: Some(2),
@@ -207,9 +203,7 @@ pub async fn test_metastore_delete_index_with_tasks<
         .unwrap();
 
     metastore
-        .delete_index(DeleteIndexRequest {
-            index_uid: index_uid.clone().into(),
-        })
+        .delete_index(DeleteIndexRequest { index_uid })
         .await
         .unwrap();
 }
@@ -224,26 +218,24 @@ pub async fn test_metastore_list_delete_tasks<
     let index_id_2 = append_random_suffix("test-list-delete-tasks-2");
     let index_uri_2 = format!("ram:///indexes/{index_id_2}");
     let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
-    let index_uid_1: IndexUid = metastore
+    let index_uid_1 = metastore
         .create_index(CreateIndexRequest::try_from_index_config(index_config_1.clone()).unwrap())
         .await
         .unwrap()
-        .index_uid
-        .into();
-    let index_uid_2: IndexUid = metastore
+        .index_uid;
+    let index_uid_2 = metastore
         .create_index(CreateIndexRequest::try_from_index_config(index_config_2.clone()).unwrap())
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid;
     let delete_query_index_1 = DeleteQuery {
-        index_uid: index_uid_1.to_string(),
+        index_uid: index_uid_1.clone(),
         query_ast: qast_json_helper("my_field:my_value", &[]),
         start_timestamp: Some(1),
         end_timestamp: Some(2),
     };
     let delete_query_index_2 = DeleteQuery {
-        index_uid: index_uid_2.to_string(),
+        index_uid: index_uid_2.clone(),
         query_ast: qast_json_helper("my_field:my_value", &[]),
         start_timestamp: Some(1),
         end_timestamp: Some(2),
@@ -264,7 +256,7 @@ pub async fn test_metastore_list_delete_tasks<
         .unwrap();
 
     let all_index_id_1_delete_tasks = metastore
-        .list_delete_tasks(ListDeleteTasksRequest::new(index_uid_1.clone(), 0))
+        .list_delete_tasks(ListDeleteTasksRequest::new(index_uid_1.clone().unwrap(), 0))
         .await
         .unwrap()
         .delete_tasks;
@@ -272,7 +264,7 @@ pub async fn test_metastore_list_delete_tasks<
 
     let recent_index_id_1_delete_tasks = metastore
         .list_delete_tasks(ListDeleteTasksRequest::new(
-            index_uid_1.clone(),
+            index_uid_1.clone().unwrap(),
             delete_task_1.opstamp,
         ))
         .await
@@ -283,6 +275,6 @@ pub async fn test_metastore_list_delete_tasks<
         recent_index_id_1_delete_tasks[0].opstamp,
         delete_task_2.opstamp
     );
-    cleanup_index(&mut metastore, index_uid_1).await;
-    cleanup_index(&mut metastore, index_uid_2).await;
+    cleanup_index(&mut metastore, index_uid_1.unwrap()).await;
+    cleanup_index(&mut metastore, index_uid_2.unwrap()).await;
 }

@@ -495,8 +495,8 @@ mod pulsar_broker_tests {
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
 
         if partition_deltas.is_empty() {
             return index_uid;
@@ -522,7 +522,7 @@ mod pulsar_broker_tests {
             source_delta,
         };
         let publish_splits_request = PublishSplitsRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             staged_split_ids: vec![split_id.clone()],
             replaced_split_ids: Vec::new(),
             index_checkpoint_delta_json_opt: Some(

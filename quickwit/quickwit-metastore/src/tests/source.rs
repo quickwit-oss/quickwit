@@ -45,12 +45,12 @@ pub async fn test_metastore_add_source<MetastoreToTest: MetastoreServiceExt + De
 
     let create_index_request =
         CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid: IndexUid = metastore
+    let index_uid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     let source_id = format!("{index_id}--source");
 
@@ -148,12 +148,12 @@ pub async fn test_metastore_toggle_source<MetastoreToTest: MetastoreServiceExt +
 
     let create_index_request =
         CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid: IndexUid = metastore
+    let index_uid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     let source_id = format!("{index_id}--source");
     let source = SourceConfig {
@@ -237,12 +237,12 @@ pub async fn test_metastore_delete_source<MetastoreToTest: MetastoreServiceExt +
 
     let create_index_request =
         CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid: IndexUid = metastore
+    let index_uid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
     assert!(matches!(
         metastore
             .add_source(
@@ -306,7 +306,7 @@ pub async fn test_metastore_delete_source<MetastoreToTest: MetastoreServiceExt +
     assert!(matches!(
         metastore
             .delete_source(DeleteSourceRequest {
-                index_uid: IndexUid::new_with_random_ulid("index-not-found").to_string(),
+                index_uid: Some(IndexUid::new_with_random_ulid("index-not-found")),
                 source_id: source_id.to_string()
             })
             .await
@@ -316,7 +316,7 @@ pub async fn test_metastore_delete_source<MetastoreToTest: MetastoreServiceExt +
     assert!(matches!(
         metastore
             .delete_source(DeleteSourceRequest {
-                index_uid: IndexUid::new_with_random_ulid(&index_id).to_string(),
+                index_uid: Some(IndexUid::new_with_random_ulid(&index_id)),
                 source_id: source_id.to_string()
             })
             .await
@@ -338,12 +338,12 @@ pub async fn test_metastore_reset_checkpoint<
 
     let create_index_request =
         CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid: IndexUid = metastore
+    let index_uid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     let source_ids: Vec<String> = (0..2).map(|i| format!("{index_id}--source-{i}")).collect();
     let split_ids: Vec<String> = (0..2).map(|i| format!("{index_id}--split-{i}")).collect();
@@ -375,7 +375,7 @@ pub async fn test_metastore_reset_checkpoint<
             StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
         let publish_splits_request = PublishSplitsRequest {
-            index_uid: index_uid.clone().to_string(),
+            index_uid: Some(index_uid.clone()),
             staged_split_ids: vec![split_id.clone()],
             ..Default::default()
         };
@@ -420,7 +420,7 @@ pub async fn test_metastore_reset_checkpoint<
     assert!(matches!(
         metastore
             .reset_source_checkpoint(ResetSourceCheckpointRequest {
-                index_uid: IndexUid::new_with_random_ulid("index-not-found").to_string(),
+                index_uid: Some(IndexUid::new_with_random_ulid("index-not-found")),
                 source_id: source_ids[1].clone(),
             })
             .await
@@ -431,7 +431,7 @@ pub async fn test_metastore_reset_checkpoint<
     assert!(matches!(
         metastore
             .reset_source_checkpoint(ResetSourceCheckpointRequest {
-                index_uid: IndexUid::new_with_random_ulid(&index_id).to_string(),
+                index_uid: Some(IndexUid::new_with_random_ulid(&index_id)),
                 source_id: source_ids[1].to_string(),
             })
             .await

@@ -30,7 +30,7 @@ use quickwit_common::Progress;
 use quickwit_config::SourceConfig;
 use quickwit_ingest::ShardInfos;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
-use quickwit_proto::control_plane::{ControlPlaneError, ControlPlaneResult};
+use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::metastore::{
     self, EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, ListShardsSubresponse,
@@ -129,11 +129,7 @@ impl ControlPlaneModel {
                     shards,
                 } = list_shards_subresponse;
                 let source_uid = SourceUid {
-                    index_uid: IndexUid::parse(&index_uid).map_err(|invalid_index_uri| {
-                        ControlPlaneError::Internal(format!(
-                            "invalid index uid received from the metastore: {invalid_index_uri:?}"
-                        ))
-                    })?,
+                    index_uid: index_uid.unwrap(),
                     source_id,
                 };
                 self.shard_table

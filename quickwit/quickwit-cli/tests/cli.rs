@@ -820,7 +820,7 @@ async fn test_garbage_collect_index_cli() {
         .unwrap();
     metastore
         .delete_splits(DeleteSplitsRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             split_ids: splits_metadata
                 .into_iter()
                 .map(|split_metadata| split_metadata.split_id)
