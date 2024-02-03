@@ -47,3 +47,4 @@ named_tasks = ["tokio/tracing"]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 quickwit-macros = { workspace = true }
+proptest = { workspace = true }
