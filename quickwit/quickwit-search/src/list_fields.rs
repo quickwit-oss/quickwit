@@ -262,7 +262,9 @@ pub async fn leaf_list_fields(
                 }
                 entry
             })
-            .filter(|field| matches_any_pattern(&field.field_name, field_patterns));
+            .filter(|field| matches_any_pattern(&field.field_name, field_patterns))
+            // remove internal fields
+            .filter(|field| field.field_name != "_field_presence");
         iter_per_split.push(list_fields_iter);
     }
     let fields = merge_leaf_list_fields(iter_per_split)?;
