@@ -488,7 +488,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakRouterState {
         };
         let mut deleted_shard_ids: Vec<ShardId> = Vec::new();
 
-        for (shard_id, shard_position) in shard_positions_update.shard_positions {
+        for (shard_id, shard_position) in shard_positions_update.updated_shard_positions {
             if shard_position.is_eof() {
                 deleted_shard_ids.push(shard_id);
             }
@@ -1514,7 +1514,7 @@ mod tests {
                 index_uid: "test-index-0:0".into(),
                 source_id: "test-source".to_string(),
             },
-            shard_positions: vec![(ShardId::from(1), Position::eof(0u64))],
+            updated_shard_positions: vec![(ShardId::from(1), Position::eof(0u64))],
         };
         event_broker.publish(shard_positions_update);
 
