@@ -367,7 +367,7 @@ mod tests {
         assert_eq!(num_changes, 0);
 
         let previous_snapshot = LocalShardsSnapshot::default();
-        let index_uid = IndexUid::parse("test-index:0").unwrap();
+        let index_uid = IndexUid::parse("test-index:00000000000000000000000000").unwrap();
         let current_snapshot = LocalShardsSnapshot {
             per_source_shard_infos: vec![(
                 SourceUid {
@@ -483,7 +483,7 @@ mod tests {
 
         let mut state_guard = state.lock_partially().await;
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let shard =
             IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
@@ -524,18 +524,24 @@ mod tests {
     #[test]
     fn test_make_key() {
         let source_uid = SourceUid {
-            index_uid: "test-index:0".parse().unwrap(),
+            index_uid: "test-index:00000000000000000000000000".parse().unwrap(),
             source_id: "test-source".to_string(),
         };
         let key = make_key(&source_uid);
-        assert_eq!(key, "ingester.primary_shards:test-index:0:test-source");
+        assert_eq!(
+            key,
+            "ingester.primary_shards:test-index:00000000000000000000000000:test-source"
+        );
     }
 
     #[test]
     fn test_parse_key() {
-        let key = "test-index:0:test-source";
+        let key = "test-index:00000000000000000000000000:test-source";
         let source_uid = parse_key(key).unwrap();
-        assert_eq!(&source_uid.index_uid.to_string(), "test-index:0");
+        assert_eq!(
+            &source_uid.index_uid.to_string(),
+            "test-index:00000000000000000000000000"
+        );
         assert_eq!(source_uid.source_id, "test-source".to_string());
     }
 
@@ -549,7 +555,7 @@ mod tests {
 
         let local_shards_update_counter = Arc::new(AtomicUsize::new(0));
         let local_shards_update_counter_clone = local_shards_update_counter.clone();
-        let index_uid = IndexUid::parse("test-index:0").unwrap();
+        let index_uid = IndexUid::parse("test-index:00000000000000000000000000").unwrap();
 
         let index_uid_clone = index_uid.clone();
         event_broker

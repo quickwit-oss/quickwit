@@ -1305,7 +1305,7 @@ mod tests {
         let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
         let mut state_guard = ingester.state.lock_fully().await;
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         state_guard
             .mrecordlog
@@ -1384,7 +1384,7 @@ mod tests {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let mut state_guard = ingester.state.lock_fully().await;
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
 
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let shard =
@@ -1447,8 +1447,8 @@ mod tests {
     async fn test_ingester_persist() {
         let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
-        let index_uid2: IndexUid = "test-index:1".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid2: IndexUid = "test-index:00000000000000000000000001".parse().unwrap();
         let init_shards_request = InitShardsRequest {
             shards: vec![
                 Shard {
@@ -1552,7 +1552,7 @@ mod tests {
     async fn test_ingester_persist_empty() {
         let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let persist_request = PersistRequest {
             leader_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Force as i32,
@@ -1614,7 +1614,7 @@ mod tests {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
         let mut state_guard = ingester.state.lock_fully().await;
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let solo_shard =
             IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
@@ -1669,7 +1669,7 @@ mod tests {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
         let mut state_guard = ingester.state.lock_fully().await;
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let solo_shard =
             IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
@@ -1734,8 +1734,8 @@ mod tests {
             IngesterServiceClient::new(follower.clone()),
         );
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
-        let index_uid2: IndexUid = "test-index:1".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid2: IndexUid = "test-index:00000000000000000000000001".parse().unwrap();
 
         let init_shards_request = InitShardsRequest {
             shards: vec![
@@ -1920,8 +1920,8 @@ mod tests {
             .ingester_pool
             .insert(follower_ctx.node_id.clone(), follower_grpc_client);
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
-        let index_uid2: IndexUid = "test-index:1".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid2: IndexUid = "test-index:00000000000000000000000001".parse().unwrap();
 
         let init_shards_request = InitShardsRequest {
             shards: vec![
@@ -2048,7 +2048,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingester_persist_shard_closed() {
         let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let solo_shard =
             IngesterShard::new_solo(ShardState::Closed, Position::Beginning, Position::Beginning);
@@ -2104,7 +2104,7 @@ mod tests {
 
         let mut state_guard = ingester.state.lock_fully().await;
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let primary_shard = Shard {
             index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
@@ -2171,7 +2171,7 @@ mod tests {
 
         let mut state_guard = ingester.state.lock_fully().await;
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let primary_shard = Shard {
             index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
@@ -2269,7 +2269,7 @@ mod tests {
     async fn test_ingester_open_fetch_stream() {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: "test-client".to_string(),
             index_uid: Some(index_uid.clone()),
@@ -2381,7 +2381,7 @@ mod tests {
     async fn test_ingester_truncate_shards() {
         let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let shard_01 = Shard {
             index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
@@ -2457,7 +2457,7 @@ mod tests {
                     truncate_up_to_position_inclusive: Some(Position::eof(0u64)),
                 },
                 TruncateShardsSubrequest {
-                    index_uid: Some("test-index:1337".parse().unwrap()),
+                    index_uid: Some("test-index:00000000000000000000001337".parse().unwrap()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1337)),
                     truncate_up_to_position_inclusive: Some(Position::offset(1337u64)),
@@ -2492,7 +2492,7 @@ mod tests {
     async fn test_ingester_truncate_shards_deletes_dangling_shards() {
         let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
         let mut state_guard = ingester.state.lock_fully().await;
@@ -2531,7 +2531,7 @@ mod tests {
     async fn test_ingester_retain_shards() {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let shard_17 = Shard {
             index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
@@ -2598,7 +2598,7 @@ mod tests {
     async fn test_ingester_close_shards() {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let shard = Shard {
             index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
@@ -2711,7 +2711,7 @@ mod tests {
 
         state_guard.status = IngesterStatus::Decommissioning;
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
         state_guard.shards.insert(
@@ -2742,7 +2742,7 @@ mod tests {
         let event_broker = EventBroker::default();
         ingester.subscribe(&event_broker);
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let shard_01 = Shard {
             index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),

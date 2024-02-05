@@ -1102,7 +1102,7 @@ mod tests {
 
         let new_indexing_task = IndexingTask {
             pipeline_uid: Some(PipelineUid::from_u128(0u128)),
-            index_uid: Some("test-index:0".parse().unwrap()),
+            index_uid: Some("test-index:00000000000000000000000000".parse().unwrap()),
             source_id: "test-source".to_string(),
             shard_ids: Vec::new(),
         };

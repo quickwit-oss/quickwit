@@ -80,15 +80,15 @@ impl FromStr for IndexUid {
     type Err = InvalidIndexUid;
 
     fn from_str(index_uid_str: &str) -> Result<Self, Self::Err> {
-        let Some((index_id, ulid)) = index_uid_str.split_once(':') else {
-            return Err(InvalidIndexUid {
-                invalid_index_uid_str: index_uid_str.to_string(),
-            });
-        };
-        let Ok(incarnation_id) = Ulid::from_string(ulid) else {
-            return Err(InvalidIndexUid {
-                invalid_index_uid_str: index_uid_str.to_string(),
-            });
+        let (index_id, incarnation_id) = match index_uid_str.split_once(':') {
+            Some((index_id, "")) => (index_id, Ulid::nil()), // TODO reject
+            Some((index_id, ulid)) => {
+                let ulid = Ulid::from_string(ulid).map_err(|_| InvalidIndexUid {
+                    invalid_index_uid_str: index_uid_str.to_string(),
+                })?;
+                (index_id, ulid)
+            }
+            None => (index_uid_str, Ulid::nil()), // TODO reject
         };
         Ok(IndexUid {
             index_id: index_id.to_string(),
@@ -482,25 +482,30 @@ mod tests {
     fn test_queue_id() {
         assert_eq!(
             queue_id(
-                &"test-index:0".parse().unwrap(),
+                &"test-index:00000000000000000000000000".parse().unwrap(),
                 "test-source",
                 &ShardId::from(1u64)
             ),
-            "test-index:0/test-source/00000000000000000001"
+            "test-index:00000000000000000000000000/test-source/00000000000000000001"
         );
     }
 
     #[test]
     fn test_split_queue_id() {
-        let splits = split_queue_id("test-index:0");
+        let splits = split_queue_id("test-index:00000000000000000000000000");
         assert!(splits.is_none());
 
-        let splits = split_queue_id("test-index:0/test-source");
+        let splits = split_queue_id("test-index:00000000000000000000000000/test-source");
         assert!(splits.is_none());
 
-        let (index_uid, source_id, shard_id) =
-            split_queue_id("test-index:0/test-source/00000000000000000001").unwrap();
-        assert_eq!(&index_uid.to_string(), "test-index:0");
+        let (index_uid, source_id, shard_id) = split_queue_id(
+            "test-index:00000000000000000000000000/test-source/00000000000000000001",
+        )
+        .unwrap();
+        assert_eq!(
+            &index_uid.to_string(),
+            "test-index:00000000000000000000000000"
+        );
         assert_eq!(source_id, "test-source");
         assert_eq!(shard_id, ShardId::from(1u64));
     }

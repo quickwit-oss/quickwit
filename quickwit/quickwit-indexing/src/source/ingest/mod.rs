@@ -705,7 +705,7 @@ mod tests {
             pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let publish_token = "indexer/test-node/test-index:0/test-source/\
+        let publish_token = "indexer/test-node/test-index:00000000000000000000000000/test-source/\
                              00000000000000000000000000/00000000000000000000000000";
 
         let mut mock_metastore = MetastoreServiceClient::mock();
@@ -837,7 +837,8 @@ mod tests {
                 sequence_tx_clone1.send(1).unwrap();
                 assert_eq!(
                     request.client_id,
-                    "indexer/test-node/test-index:0/test-source/00000000000000000000000000"
+                    "indexer/test-node/test-index:00000000000000000000000000/test-source/\
+                     00000000000000000000000000"
                 );
                 assert_eq!(request.index_uid(), &ref_index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
@@ -858,7 +859,8 @@ mod tests {
                 sequence_tx_clone2.send(2).unwrap();
                 assert_eq!(
                     request.client_id,
-                    "indexer/test-node/test-index:0/test-source/00000000000000000000000000"
+                    "indexer/test-node/test-index:00000000000000000000000000/test-source/\
+                     00000000000000000000000000"
                 );
                 assert_eq!(request.index_uid(), &ref_index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
@@ -879,7 +881,8 @@ mod tests {
                 sequence_tx_clone3.send(3).unwrap();
                 assert_eq!(
                     request.client_id,
-                    "indexer/test-node/test-index:0/test-source/00000000000000000000000000"
+                    "indexer/test-node/test-index:00000000000000000000000000/test-source/\
+                     00000000000000000000000000"
                 );
                 assert_eq!(request.index_uid(), &ref_index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
@@ -1085,7 +1088,7 @@ mod tests {
             pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let publish_token = "indexer/test-node/test-index:0/test-source/\
+        let publish_token = "indexer/test-node/test-index:00000000000000000000000000/test-source/\
                              00000000000000000000000000/00000000000000000000000000";
 
         let mut mock_metastore = MetastoreServiceClient::mock();
@@ -1235,7 +1238,7 @@ mod tests {
             pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let publish_token = "indexer/test-node/test-index:0/test-source/\
+        let publish_token = "indexer/test-node/test-index:00000000000000000000000000/test-source/\
                              00000000000000000000000000/00000000000000000000000000";
 
         let mut mock_metastore = MetastoreServiceClient::mock();
@@ -1291,7 +1294,8 @@ mod tests {
             .returning(move |request| {
                 assert_eq!(
                     request.client_id,
-                    "indexer/test-node/test-index:0/test-source/00000000000000000000000000"
+                    "indexer/test-node/test-index:00000000000000000000000000/test-source/\
+                     00000000000000000000000000"
                 );
                 assert_eq!(request.index_uid(), &ref_index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
@@ -1574,7 +1578,7 @@ mod tests {
             pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let publish_token = "indexer/test-node/test-index:0/test-source/\
+        let publish_token = "indexer/test-node/test-index:00000000000000000000000000/test-source/\
                              00000000000000000000000000/00000000000000000000000000";
 
         let mut mock_metastore = MetastoreServiceClient::mock();

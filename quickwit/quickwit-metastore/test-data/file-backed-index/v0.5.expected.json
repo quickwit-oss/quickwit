@@ -3,7 +3,7 @@
     {
       "create_timestamp": 0,
       "delete_query": {
-        "index_uid": "index",
+        "index_uid": "index:00000000000000000000000000",
         "query_ast": "Harry Potter"
       },
       "opstamp": 10
@@ -113,7 +113,7 @@
       },
       "version": "0.7"
     },
-    "index_uid": "my-index:",
+    "index_uid": "my-index:00000000000000000000000000",
     "sources": [
       {
         "desired_num_pipelines": 2,
@@ -143,7 +143,7 @@
         "end": 2000,
         "start": 1000
       },
-      "index_uid": "my-index:",
+      "index_uid": "my-index:00000000000000000000000000",
       "maturity": {
         "type": "mature"
       },

@@ -488,7 +488,7 @@ mod tests {
         );
         assert_eq!(table_entry.len(), 0);
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let shards = vec![
             Shard {
                 index_uid: Some(index_uid.clone()),

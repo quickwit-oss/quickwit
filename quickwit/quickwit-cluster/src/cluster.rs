@@ -1095,11 +1095,11 @@ mod tests {
             let mut chitchat_guard = chitchat_handle.lock().await;
             chitchat_guard.self_node_state().set(
                 format!("{INDEXING_TASK_PREFIX}01BX5ZZKBKACTAV9WEVGEMMVS0"),
-                "my_index:uid:my_source:1,3".to_string(),
+                "my_index:00000000000000000000000000:my_source:1,3".to_string(),
             );
             chitchat_guard.self_node_state().set(
                 format!("{INDEXING_TASK_PREFIX}01BX5ZZKBKACTAV9WEVGEMMVS1"),
-                "my_index-uid-my_source:3,5".to_string(),
+                "my_index-00000000000000000000000000-my_source:3,5".to_string(),
             );
         }
         node.wait_for_ready_members(|members| members.len() == 1, Duration::from_secs(5))
@@ -1209,7 +1209,7 @@ mod tests {
     #[test]
     fn test_serialize_indexing_tasks() {
         let mut node_state = NodeState::for_test();
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         test_serialize_indexing_tasks_aux(&[], &mut node_state);
         test_serialize_indexing_tasks_aux(
             &[IndexingTask {
@@ -1258,7 +1258,7 @@ mod tests {
                 },
                 IndexingTask {
                     pipeline_uid: Some(PipelineUid::from_u128(2u128)),
-                    index_uid: Some("test-index2:0".parse().unwrap()),
+                    index_uid: Some("test-index2:00000000000000000000000000".parse().unwrap()),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![ShardId::from(3), ShardId::from(4)],
                 },
@@ -1306,14 +1306,18 @@ mod tests {
         );
         let task = super::chitchat_kv_to_indexing_task(
             "indexer.task:01BX5ZZKBKACTAV9WEVGEMMVS0",
-            "my_index:0:my_source:00000000000000000001,00000000000000000003",
+            "my_index:00000000000000000000000000:my_source:00000000000000000001,\
+             00000000000000000003",
         )
         .unwrap();
         assert_eq!(
             task.pipeline_uid(),
             PipelineUid::from_str("01BX5ZZKBKACTAV9WEVGEMMVS0").unwrap()
         );
-        assert_eq!(&task.index_uid().to_string(), "my_index:0");
+        assert_eq!(
+            &task.index_uid().to_string(),
+            "my_index:00000000000000000000000000"
+        );
         assert_eq!(&task.source_id, "my_source");
         assert_eq!(&task.shard_ids, &[ShardId::from(1), ShardId::from(3)]);
     }

@@ -365,9 +365,9 @@ mod tests {
         let progress = Progress::default();
 
         let mut mock_metastore = MetastoreServiceClient::mock();
-        let index_uid = IndexUid::parse("test-index-0:0").unwrap();
-        let index_uid2 = IndexUid::parse("test-index-1:0").unwrap();
-        let index_uid3 = IndexUid::parse("test-index-2:0").unwrap();
+        let index_uid = IndexUid::parse("test-index-0:00000000000000000000000000").unwrap();
+        let index_uid2 = IndexUid::parse("test-index-1:00000000000000000000000000").unwrap();
+        let index_uid3 = IndexUid::parse("test-index-2:00000000000000000000000000").unwrap();
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(|request| {

@@ -831,7 +831,7 @@ mod tests {
         };
         tokio::spawn(dummy_replication_task_future);
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let replica_shard = Shard {
             index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
@@ -902,8 +902,8 @@ mod tests {
         };
         tokio::spawn(dummy_replication_task_future);
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
-        let index_uid2: IndexUid = "test-index:1".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid2: IndexUid = "test-index:00000000000000000000000001".parse().unwrap();
 
         let subrequests = vec![
             ReplicateSubrequest {
@@ -1038,8 +1038,8 @@ mod tests {
             memory_capacity,
         );
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
-        let index_uid2: IndexUid = "test-index:1".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid2: IndexUid = "test-index:00000000000000000000000001".parse().unwrap();
 
         // Init shard 01.
         let init_replica_request = InitReplicaRequest {
@@ -1304,7 +1304,7 @@ mod tests {
             memory_capacity,
         );
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let replica_shard = IngesterShard::new_replica(
             leader_id,
@@ -1381,7 +1381,7 @@ mod tests {
             memory_capacity,
         );
 
-        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let replica_shard = IngesterShard::new_replica(
             leader_id,

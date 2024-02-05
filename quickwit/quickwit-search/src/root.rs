@@ -80,7 +80,7 @@ impl SearchJob {
     #[cfg(test)]
     pub fn for_test(split_id: &str, cost: usize) -> SearchJob {
         SearchJob {
-            index_uid: IndexUid::parse("test-index:0").unwrap(),
+            index_uid: IndexUid::parse("test-index:00000000000000000000000000").unwrap(),
             cost,
             offsets: SplitIdAndFooterOffsets {
                 split_id: split_id.to_string(),
@@ -3537,7 +3537,7 @@ mod tests {
             search_response.unwrap_err().to_string(),
             "invalid aggregation request: unknown variant `termss`, expected one of `range`, \
              `histogram`, `date_histogram`, `terms`, `avg`, `value_count`, `max`, `min`, `stats`, \
-             `sum`, `percentiles` at line 18 column 13"
+             `sum`, `percentiles`, `top_hits` at line 18 column 13"
         );
         Ok(())
     }

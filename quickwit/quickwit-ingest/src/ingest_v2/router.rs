@@ -552,7 +552,7 @@ mod tests {
 
         let mut state_guard = router.state.write().await;
 
-        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index-0:00000000000000000000000000".parse().unwrap();
         state_guard.routing_table.table.insert(
             ("test-index-0".into(), "test-source".into()),
             RoutingTableEntry {
@@ -614,7 +614,7 @@ mod tests {
         assert_eq!(
             get_or_create_open_shard_request.closed_shards[0],
             ShardIds {
-                index_uid: Some("test-index-0:0".parse().unwrap()),
+                index_uid: Some("test-index-0:00000000000000000000000000".parse().unwrap()),
                 source_id: "test-source".to_string(),
                 shard_ids: vec![ShardId::from(1)],
             }
@@ -675,8 +675,8 @@ mod tests {
     async fn test_router_populate_routing_table() {
         let self_node_id = "test-router".into();
 
-        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
-        let index_uid2: IndexUid = "test-index-1:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index-0:00000000000000000000000000".parse().unwrap();
+        let index_uid2: IndexUid = "test-index-1:00000000000000000000000000".parse().unwrap();
         let mut control_plane_mock = ControlPlaneServiceClient::mock();
         control_plane_mock
             .expect_get_or_create_open_shards()
@@ -882,7 +882,7 @@ mod tests {
         }];
         let mut workbench = IngestWorkbench::new(ingest_subrequests, 2);
         let persist_futures = FuturesUnordered::new();
-        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index-0:00000000000000000000000000".parse().unwrap();
 
         persist_futures.push(async move {
             let persist_summary = PersistRequestSummary {
@@ -933,7 +933,7 @@ mod tests {
         }];
         let mut workbench = IngestWorkbench::new(ingest_subrequests, 2);
         let persist_futures = FuturesUnordered::new();
-        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index-0:00000000000000000000000000".parse().unwrap();
 
         persist_futures.push(async move {
             let persist_summary = PersistRequestSummary {
@@ -976,7 +976,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
         );
-        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index-0:00000000000000000000000000".parse().unwrap();
         let mut state_guard = router.state.write().await;
         state_guard.routing_table.replace_shards(
             index_uid.clone(),
@@ -1146,8 +1146,8 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
         );
-        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
-        let index_uid2: IndexUid = "test-index-1:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index-0:00000000000000000000000000".parse().unwrap();
+        let index_uid2: IndexUid = "test-index-1:00000000000000000000000000".parse().unwrap();
         let mut state_guard = router.state.write().await;
         state_guard.routing_table.replace_shards(
             index_uid.clone(),
@@ -1361,7 +1361,7 @@ mod tests {
             replication_factor,
         );
         let mut state_guard = router.state.write().await;
-        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index-0:00000000000000000000000000".parse().unwrap();
         state_guard.routing_table.replace_shards(
             index_uid.clone(),
             "test-source",
@@ -1469,7 +1469,7 @@ mod tests {
         );
         let event_broker = EventBroker::default();
         router.subscribe(&event_broker);
-        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
+        let index_uid: IndexUid = "test-index-0:00000000000000000000000000".parse().unwrap();
 
         let mut state_guard = router.state.write().await;
         state_guard.routing_table.replace_shards(
