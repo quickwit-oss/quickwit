@@ -26,7 +26,7 @@
 //  - delete_index
 
 use quickwit_common::rand::append_random_suffix;
-use quickwit_config::IndexConfig;
+use quickwit_config::{IndexConfig, SourceConfig, CLI_SOURCE_ID, INGEST_V2_SOURCE_ID};
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataRequest,
     ListIndexesMetadataRequest, MetastoreError, MetastoreService, StageSplitsRequest,
@@ -49,8 +49,7 @@ pub async fn test_metastore_create_index<
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
     let index_uid = metastore
         .create_index(create_index_request.clone())
         .await
@@ -78,7 +77,51 @@ pub async fn test_metastore_create_index<
     cleanup_index(&mut metastore, index_uid.unwrap()).await;
 }
 
-pub async fn test_metastore_create_index_with_maximum_length<
+pub async fn test_metastore_create_index_with_sources<
+    MetastoreToTest: MetastoreService + MetastoreServiceExt + DefaultForTest,
+>() {
+    let mut metastore = MetastoreToTest::default_for_test().await;
+
+    let index_id = append_random_suffix("test-create-index-with-sources");
+    let index_uri = format!("ram:///indexes/{index_id}");
+    let index_config = IndexConfig::for_test(&index_id, &index_uri);
+    let index_config_json = serde_json::to_string(&index_config).unwrap();
+
+    let source_configs_json = vec![
+        serde_json::to_string(&SourceConfig::cli()).unwrap(),
+        serde_json::to_string(&SourceConfig::ingest_v2()).unwrap(),
+    ];
+    let create_index_request = CreateIndexRequest {
+        index_config_json,
+        source_configs_json,
+    };
+    let index_uid: IndexUid = metastore
+        .create_index(create_index_request.clone())
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
+
+    assert!(metastore.index_exists(&index_id).await.unwrap());
+
+    let index_metadata = metastore
+        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .await
+        .unwrap()
+        .deserialize_index_metadata()
+        .unwrap();
+
+    assert_eq!(index_metadata.index_id(), index_id);
+    assert_eq!(index_metadata.index_uri(), &index_uri);
+
+    assert_eq!(index_metadata.sources.len(), 2);
+    assert!(index_metadata.sources.contains_key(CLI_SOURCE_ID));
+    assert!(index_metadata.sources.contains_key(INGEST_V2_SOURCE_ID));
+
+    cleanup_index(&mut metastore, index_uid).await;
+}
+
+pub async fn test_metastore_create_index_enforces_index_id_maximum_length<
     MetastoreToTest: MetastoreService + MetastoreServiceExt + DefaultForTest,
 >() {
     let mut metastore = MetastoreToTest::default_for_test().await;
@@ -89,17 +132,17 @@ pub async fn test_metastore_create_index_with_maximum_length<
 
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid = metastore
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid;
+        .index_uid()
+        .clone();
 
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
-    cleanup_index(&mut metastore, index_uid.unwrap()).await;
+    cleanup_index(&mut metastore, index_uid).await;
 }
 
 pub async fn test_metastore_index_exists<
@@ -110,8 +153,7 @@ pub async fn test_metastore_index_exists<
     let index_id = append_random_suffix("test-index-exists");
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
 
     assert!(!metastore.index_exists(&index_id).await.unwrap());
 
@@ -144,13 +186,13 @@ pub async fn test_metastore_index_metadata<
         MetastoreError::NotFound(EntityKind::Index { .. })
     ));
 
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid = metastore
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid;
+        .index_uid()
+        .clone();
 
     let index_metadata = metastore
         .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
@@ -162,7 +204,7 @@ pub async fn test_metastore_index_metadata<
     assert_eq!(index_metadata.index_id(), index_id);
     assert_eq!(index_metadata.index_uri(), &index_uri);
 
-    cleanup_index(&mut metastore, index_uid.unwrap()).await;
+    cleanup_index(&mut metastore, index_uid).await;
 }
 
 pub async fn test_metastore_list_all_indexes<
@@ -190,12 +232,12 @@ pub async fn test_metastore_list_all_indexes<
     assert_eq!(indexes_count, 0);
 
     let index_uid_1 = metastore
-        .create_index(CreateIndexRequest::try_from_index_config(index_config_1).unwrap())
+        .create_index(CreateIndexRequest::try_from_index_config(&index_config_1).unwrap())
         .await
         .unwrap()
         .index_uid;
     let index_uid_2 = metastore
-        .create_index(CreateIndexRequest::try_from_index_config(index_config_2).unwrap())
+        .create_index(CreateIndexRequest::try_from_index_config(&index_config_2).unwrap())
         .await
         .unwrap()
         .index_uid;
@@ -249,22 +291,22 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreServiceExt + 
     assert_eq!(indexes_count, 0);
 
     let index_uid_1 = metastore
-        .create_index(CreateIndexRequest::try_from_index_config(index_config_1).unwrap())
+        .create_index(CreateIndexRequest::try_from_index_config(&index_config_1).unwrap())
         .await
         .unwrap()
         .index_uid;
     let index_uid_2 = metastore
-        .create_index(CreateIndexRequest::try_from_index_config(index_config_2).unwrap())
+        .create_index(CreateIndexRequest::try_from_index_config(&index_config_2).unwrap())
         .await
         .unwrap()
         .index_uid;
     let index_uid_3 = metastore
-        .create_index(CreateIndexRequest::try_from_index_config(index_config_3).unwrap())
+        .create_index(CreateIndexRequest::try_from_index_config(&index_config_3).unwrap())
         .await
         .unwrap()
         .index_uid;
     let index_uid_4 = metastore
-        .create_index(CreateIndexRequest::try_from_index_config(index_config_4).unwrap())
+        .create_index(CreateIndexRequest::try_from_index_config(&index_config_4).unwrap())
         .await
         .unwrap()
         .index_uid;
@@ -317,9 +359,8 @@ pub async fn test_metastore_delete_index<
         MetastoreError::NotFound(EntityKind::Index { .. })
     ));
 
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid = metastore
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
@@ -342,8 +383,8 @@ pub async fn test_metastore_delete_index<
         ..Default::default()
     };
 
-    let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
-    let index_uid = metastore
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
@@ -351,7 +392,7 @@ pub async fn test_metastore_delete_index<
         .unwrap();
 
     let stage_splits_request =
-        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
+        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata).unwrap();
     metastore.stage_splits(stage_splits_request).await.unwrap();
 
     // TODO: We should not be able to delete an index that has remaining splits, at least not as

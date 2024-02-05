@@ -488,9 +488,10 @@ mod tests {
         );
         assert_eq!(table_entry.len(), 0);
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let shards = vec![
             Shard {
-                index_uid: "test-index:0".into(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(3)),
                 shard_state: ShardState::Open as i32,
@@ -498,7 +499,7 @@ mod tests {
                 ..Default::default()
             },
             Shard {
-                index_uid: "test-index:0".into(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
@@ -506,7 +507,7 @@ mod tests {
                 ..Default::default()
             },
             Shard {
-                index_uid: "test-index:0".into(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(2)),
                 shard_state: ShardState::Open as i32,
@@ -514,7 +515,7 @@ mod tests {
                 ..Default::default()
             },
             Shard {
-                index_uid: "test-index:0".into(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
@@ -522,7 +523,7 @@ mod tests {
                 ..Default::default()
             },
             Shard {
-                index_uid: "test-index:0".into(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(4)),
                 shard_state: ShardState::Closed as i32,

@@ -38,14 +38,13 @@ use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use quickwit_proto::types::{IndexUid, PublishToken};
 use quickwit_storage::SplitPayloadBuilder;
 use serde::Serialize;
-use tantivy::TrackedObject;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
 use tracing::{debug, info, instrument, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
-use crate::merge_policy::{MergeOperation, MergePolicy};
+use crate::merge_policy::{MergePolicy, MergeTask};
 use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     create_split_metadata, EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
@@ -373,7 +372,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     batch.checkpoint_delta_opt,
                     batch.publish_lock,
                     batch.publish_token_opt,
-                    batch.merge_operation_opt,
+                    batch.merge_task_opt,
                     batch.batch_parent_span,
                 );
 
@@ -416,7 +415,7 @@ impl Handler<EmptySplit> for Uploader {
             checkpoint_delta_opt: Some(empty_split.checkpoint_delta),
             publish_lock: empty_split.publish_lock,
             publish_token_opt: empty_split.publish_token_opt,
-            merge_operation: None,
+            merge_task: None,
             parent_span: empty_split.batch_parent_span,
         };
 
@@ -431,7 +430,7 @@ fn make_publish_operation(
     checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     publish_lock: PublishLock,
     publish_token_opt: Option<PublishToken>,
-    merge_operation: Option<TrackedObject<MergeOperation>>,
+    merge_task: Option<MergeTask>,
     parent_span: Span,
 ) -> SplitsUpdate {
     assert!(!packaged_splits_and_metadatas.is_empty());
@@ -449,7 +448,7 @@ fn make_publish_operation(
         checkpoint_delta_opt,
         publish_lock,
         publish_token_opt,
-        merge_operation,
+        merge_task,
         parent_span,
     }
 }

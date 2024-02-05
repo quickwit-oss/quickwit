@@ -22,6 +22,7 @@
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_config::NodeConfig;
+use quickwit_indexing::actors::MergeSchedulerService;
 use quickwit_metastore::SplitInfo;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::SearchJobPlacer;
@@ -64,6 +65,7 @@ pub async fn start_janitor_service(
         storage_resolver,
         config.data_dir_path.clone(),
         config.indexer_config.max_concurrent_split_uploads,
+        universe.get_or_spawn_one::<MergeSchedulerService>(),
         event_broker,
     )
     .await?;

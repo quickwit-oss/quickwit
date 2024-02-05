@@ -153,13 +153,6 @@ impl TypedSourceFactory for FileSourceFactory {
             let (dir_uri, file_name) = dir_and_filename(filepath)?;
             let storage = ctx.storage_resolver.resolve(&dir_uri).await?;
             let file_size = storage.file_num_bytes(file_name).await?.try_into().unwrap();
-            if offset > file_size {
-                return Err(anyhow::anyhow!(
-                    "offset {} can't be greater than the file size {}",
-                    offset,
-                    file_size
-                ));
-            }
             // If it's a gzip file, we can't seek to a specific offset, we need to start from the
             // beginning of the file, decompress and skip the first `offset` bytes.
             if filepath.extension() == Some(OsStr::new("gz")) {

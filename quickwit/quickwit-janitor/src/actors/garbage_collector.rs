@@ -244,6 +244,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_garbage_collect_calls_dependencies_appropriately() {
+        let index_uid = IndexUid::parse("test-index:11111111111111111111111111").unwrap();
         let mut mock_storage = MockStorage::default();
         mock_storage
             .expect_bulk_delete()
@@ -262,15 +263,13 @@ mod tests {
             });
 
         let mut mock_metastore = MetastoreServiceClient::mock();
+        let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_list_splits()
             .times(2)
-            .returning(|list_splits_request| {
+            .returning(move |list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
-                assert_eq!(
-                    query.index_uids[0].to_string(),
-                    "test-index:11111111111111111111111111"
-                );
+                assert_eq!(query.index_uids[0], index_uid_clone,);
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -296,25 +295,24 @@ mod tests {
                 let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
                 Ok(ServiceStream::from(vec![Ok(splits)]))
             });
+        let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(1)
-            .returning(|mark_splits_for_deletion_request| {
+            .returning(move |mark_splits_for_deletion_request| {
                 assert_eq!(
-                    mark_splits_for_deletion_request.index_uid,
-                    "test-index:11111111111111111111111111"
+                    mark_splits_for_deletion_request.index_uid(),
+                    &index_uid_clone
                 );
                 assert_eq!(mark_splits_for_deletion_request.split_ids, vec!["a"]);
                 Ok(EmptyResponse {})
             });
+        let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_delete_splits()
             .times(1)
-            .returning(|delete_splits_request| {
-                assert_eq!(
-                    delete_splits_request.index_uid,
-                    "test-index:11111111111111111111111111"
-                );
+            .returning(move |delete_splits_request| {
+                assert_eq!(delete_splits_request.index_uid(), &index_uid_clone);
                 let split_ids = HashSet::<&str>::from_iter(
                     delete_splits_request
                         .split_ids
@@ -328,7 +326,7 @@ mod tests {
             });
 
         let result = run_garbage_collect(
-            "test-index:11111111111111111111111111".to_string().into(),
+            index_uid,
             Arc::new(mock_storage),
             MetastoreServiceClient::from(mock_metastore),
             STAGED_GRACE_PERIOD,
@@ -377,7 +375,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(1)
             .returning(|mark_splits_for_deletion_request| {
-                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid.clone().into();
+                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid().clone();
                 assert_eq!(index_uid.index_id(), "test-index");
                 assert_eq!(mark_splits_for_deletion_request.split_ids, vec!["a"]);
                 Ok(EmptyResponse {})
@@ -386,7 +384,7 @@ mod tests {
             .expect_delete_splits()
             .times(1)
             .returning(|delete_splits_request| {
-                let index_uid: IndexUid = delete_splits_request.index_uid.clone().into();
+                let index_uid: IndexUid = delete_splits_request.index_uid().clone();
                 assert_eq!(index_uid.index_id(), "test-index");
 
                 let split_ids = HashSet::<&str>::from_iter(
@@ -453,7 +451,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(3)
             .returning(|mark_splits_for_deletion_request| {
-                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid.clone().into();
+                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid().clone();
                 assert_eq!(index_uid.index_id(), "test-index");
                 assert_eq!(mark_splits_for_deletion_request.split_ids, vec!["a"]);
                 Ok(EmptyResponse {})
@@ -462,7 +460,7 @@ mod tests {
             .expect_delete_splits()
             .times(3)
             .returning(|delete_splits_request| {
-                let index_uid: IndexUid = delete_splits_request.index_uid.clone().into();
+                let index_uid: IndexUid = delete_splits_request.index_uid().clone();
                 assert_eq!(index_uid.index_id(), "test-index");
 
                 let split_ids = HashSet::<&str>::from_iter(
@@ -629,7 +627,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .once()
             .returning(|mark_splits_for_deletion_request| {
-                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid.clone().into();
+                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid().clone();
                 assert!(["test-index-1", "test-index-2"].contains(&index_uid.index_id()));
                 assert_eq!(mark_splits_for_deletion_request.split_ids, vec!["a"]);
                 Ok(EmptyResponse {})
@@ -705,7 +703,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(2)
             .returning(|mark_splits_for_deletion_request| {
-                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid.clone().into();
+                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid().clone();
                 assert!(["test-index-1", "test-index-2"].contains(&index_uid.index_id()));
                 assert_eq!(mark_splits_for_deletion_request.split_ids, vec!["a"]);
                 Ok(EmptyResponse {})
@@ -714,7 +712,7 @@ mod tests {
             .expect_delete_splits()
             .times(2)
             .returning(|delete_splits_request| {
-                let index_uid: IndexUid = delete_splits_request.index_uid.clone().into();
+                let index_uid: IndexUid = delete_splits_request.index_uid().clone();
                 let split_ids = HashSet::<&str>::from_iter(
                     delete_splits_request
                         .split_ids

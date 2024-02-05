@@ -23,7 +23,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Supervisor, SupervisorState,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, Supervisor,
+    SupervisorState,
 };
 use quickwit_common::io::IoControls;
 use quickwit_common::pubsub::EventBroker;
@@ -31,8 +32,8 @@ use quickwit_common::temp_dir::{self};
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_indexing::actors::{
-    MergeExecutor, MergeSplitDownloader, Packager, Publisher, PublisherCounters, Uploader,
-    UploaderCounters, UploaderType,
+    MergeExecutor, MergeSchedulerService, MergeSplitDownloader, Packager, Publisher,
+    PublisherCounters, Uploader, UploaderCounters, UploaderType,
 };
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
@@ -86,6 +87,7 @@ pub struct DeleteTaskPipeline {
     handles: Option<DeletePipelineHandle>,
     max_concurrent_split_uploads: usize,
     state: DeleteTaskPipelineState,
+    merge_scheduler_service: Mailbox<MergeSchedulerService>,
     event_broker: EventBroker,
 }
 
@@ -127,6 +129,7 @@ impl Actor for DeleteTaskPipeline {
 }
 
 impl DeleteTaskPipeline {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         index_uid: IndexUid,
         metastore: MetastoreServiceClient,
@@ -134,6 +137,7 @@ impl DeleteTaskPipeline {
         index_storage: Arc<dyn Storage>,
         delete_service_task_dir: PathBuf,
         max_concurrent_split_uploads: usize,
+        merge_scheduler_service: Mailbox<MergeSchedulerService>,
         event_broker: EventBroker,
     ) -> Self {
         Self {
@@ -145,6 +149,7 @@ impl DeleteTaskPipeline {
             handles: Default::default(),
             max_concurrent_split_uploads,
             state: DeleteTaskPipelineState::default(),
+            merge_scheduler_service,
             event_broker,
         }
     }
@@ -230,6 +235,7 @@ impl DeleteTaskPipeline {
             self.metastore.clone(),
             self.search_job_placer.clone(),
             downloader_mailbox,
+            self.merge_scheduler_service.clone(),
         );
         let (_, task_planner_supervisor_handler) = ctx.spawn_actor().supervise(task_planner);
         self.handles = Some(DeletePipelineHandle {
@@ -279,9 +285,10 @@ impl Handler<Observe> for DeleteTaskPipeline {
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
-    use quickwit_actors::Handler;
+    use quickwit_actors::{Handler, Universe};
     use quickwit_common::pubsub::EventBroker;
     use quickwit_common::temp_dir::TempDirectory;
+    use quickwit_indexing::actors::MergeSchedulerService;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitState};
     use quickwit_proto::metastore::{DeleteQuery, ListSplitsRequest, MetastoreService};
@@ -336,6 +343,8 @@ mod tests {
         )
         .await
         .unwrap();
+        let universe: &Universe = test_sandbox.universe();
+        let merge_scheduler_service = universe.get_or_spawn_one::<MergeSchedulerService>();
         let index_uid = test_sandbox.index_uid();
         let docs = vec![
             serde_json::json!({"body": "info", "ts": 0 }),
@@ -346,7 +355,7 @@ mod tests {
         let mut metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 start_timestamp: None,
                 end_timestamp: None,
                 query_ast: quickwit_query::query_ast::qast_json_helper("body:delete", &[]),
@@ -386,19 +395,16 @@ mod tests {
             test_sandbox.storage(),
             delete_service_task_dir.path().into(),
             4,
+            merge_scheduler_service,
             EventBroker::default(),
         );
 
-        let (pipeline_mailbox, pipeline_handler) =
-            test_sandbox.universe().spawn_builder().spawn(pipeline);
+        let (pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         // Ensure that the message sent by initialize method is processed.
         let _ = pipeline_handler.process_pending_and_observe().await.state;
         // Pipeline will first fail and we need to wait a OBSERVE_PIPELINE_INTERVAL * some number
         // for the pipeline state to be updated.
-        test_sandbox
-            .universe()
-            .sleep(OBSERVE_PIPELINE_INTERVAL * 5)
-            .await;
+        universe.sleep(OBSERVE_PIPELINE_INTERVAL * 5).await;
         let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
         assert_eq!(pipeline_state.delete_task_planner.metrics.num_errors, 1);
         assert_eq!(pipeline_state.downloader.metrics.num_errors, 0);
@@ -440,6 +446,8 @@ mod tests {
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
             .await
             .unwrap();
+        let universe: &Universe = test_sandbox.universe();
+        let merge_scheduler_mailbox = universe.get_or_spawn_one::<MergeSchedulerService>();
         let metastore = test_sandbox.metastore();
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
@@ -468,16 +476,13 @@ mod tests {
             test_sandbox.storage(),
             delete_service_task_dir.path().into(),
             4,
+            merge_scheduler_mailbox,
             EventBroker::default(),
         );
 
-        let (_pipeline_mailbox, pipeline_handler) =
-            test_sandbox.universe().spawn_builder().spawn(pipeline);
+        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         pipeline_handler.quit().await;
-        let observations = test_sandbox
-            .universe()
-            .observe(OBSERVE_PIPELINE_INTERVAL)
-            .await;
+        let observations = universe.observe(OBSERVE_PIPELINE_INTERVAL).await;
         assert!(observations.into_iter().all(
             |observation| observation.type_name != std::any::type_name::<DeleteTaskPipeline>()
         ));

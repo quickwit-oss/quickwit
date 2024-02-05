@@ -33,7 +33,7 @@ use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::{NodeId, ShardId};
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
@@ -118,7 +118,7 @@ impl fmt::Debug for IndexingScheduler {
 fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
     let mut sources = Vec::new();
 
-    for (source_uid, source_config) in model.get_source_configs() {
+    for (source_uid, source_config) in model.source_configs() {
         if !source_config.enabled {
             continue;
         }
@@ -318,7 +318,7 @@ impl IndexingScheduler {
                         .apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks })
                         .await
                     {
-                        error!(indexer_node_id=%indexer.0, err=?error, "error occurred when applying indexing plan to indexer");
+                        warn!(error=%error, node_id=indexer.0, "failed to apply indexing plan to indexer");
                     }
                 }
             });
@@ -501,6 +501,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_indexing_plans_diff() {
+        let index_uid = IndexUid::parse("index-1:11111111111111111111111111").unwrap();
+        let index_uid2 = IndexUid::parse("index-2:11111111111111111111111111").unwrap();
         {
             let running_plan = FnvHashMap::default();
             let desired_plan = FnvHashMap::default();
@@ -512,19 +514,19 @@ mod tests {
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(10u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1b = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(11u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(20u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
             };
@@ -544,13 +546,13 @@ mod tests {
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(1u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(2u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
             };
@@ -576,13 +578,13 @@ mod tests {
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(1u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(2u128)),
-                index_uid: "index-2:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid2.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
             };
@@ -616,19 +618,19 @@ mod tests {
             let mut desired_plan = FnvHashMap::default();
             let task_1a = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(10u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1b = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(11u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1c = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(12u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
@@ -751,13 +753,13 @@ mod tests {
             )
             .unwrap();
         let shard = Shard {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "ingest_v2".to_string(),
             shard_id: Some(ShardId::from(17)),
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        model.insert_newly_opened_shards(&index_uid, &"ingest_v2".to_string(), vec![shard]);
+        model.insert_shards(&index_uid, &"ingest_v2".to_string(), vec![shard]);
         let shards: Vec<SourceToSchedule> = get_sources_to_schedule(&model);
         assert_eq!(shards.len(), 3);
     }

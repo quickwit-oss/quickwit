@@ -23,10 +23,9 @@ use itertools::Itertools;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::types::{IndexUid, PublishToken};
-use tantivy::TrackedObject;
 use tracing::Span;
 
-use crate::merge_policy::MergeOperation;
+use crate::merge_policy::MergeTask;
 use crate::models::PublishLock;
 
 pub struct SplitsUpdate {
@@ -36,11 +35,11 @@ pub struct SplitsUpdate {
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
     pub publish_token_opt: Option<PublishToken>,
-    /// A [`MergeOperation`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
+    /// A [`MergeTask`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
     /// in the `MergePipeline` or `DeleteTaskPipeline`.
     /// See planners docs to understand the usage.
     /// If `None`, the split batch was built in the `IndexingPipeline`.
-    pub merge_operation: Option<TrackedObject<MergeOperation>>,
+    pub merge_task: Option<MergeTask>,
     pub parent_span: Span,
 }
 

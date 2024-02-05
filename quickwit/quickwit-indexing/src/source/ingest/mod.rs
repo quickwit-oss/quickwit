@@ -304,7 +304,6 @@ impl IngestSource {
             self.client_id.source_uid.clone(),
             truncate_up_to_positions.clone(),
         );
-
         // Let's record all shards that have reached Eof as complete.
         for (shard, truncate_up_to_position_inclusive) in &truncate_up_to_positions {
             if truncate_up_to_position_inclusive.is_eof() {
@@ -313,12 +312,11 @@ impl IngestSource {
                 }
             }
         }
-
         // We publish the event to the event broker.
         self.event_broker.publish(shard_positions_update);
 
         // Finally, we push the information to ingesters in a best effort manner.
-        // If the request fail, we just log an error.
+        // If the request fails, we just log an error.
         let mut per_ingester_truncate_subrequests: FnvHashMap<
             &NodeId,
             Vec<TruncateShardsSubrequest>,

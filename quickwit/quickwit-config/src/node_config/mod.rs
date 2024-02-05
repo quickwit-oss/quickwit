@@ -96,6 +96,10 @@ pub struct IndexerConfig {
     /// does not starve indexing itself (as it is a latency sensitive operation).
     #[serde(default)]
     pub max_merge_write_throughput: Option<ByteSize>,
+    /// Maximum number of merge or delete operation that can be executed concurrently.
+    /// (defaults to num_cpu / 2).
+    #[serde(default = "IndexerConfig::default_merge_concurrency")]
+    pub merge_concurrency: NonZeroUsize,
     /// Enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry
     /// Protocol (OTLP).
     #[serde(default = "IndexerConfig::default_enable_otlp_endpoint")]
@@ -134,6 +138,10 @@ impl IndexerConfig {
         1_000
     }
 
+    pub fn default_merge_concurrency() -> NonZeroUsize {
+        NonZeroUsize::new(num_cpus::get() / 2).unwrap_or(NonZeroUsize::new(1).unwrap())
+    }
+
     fn default_cpu_capacity() -> CpuCapacity {
         CpuCapacity::one_cpu_thread() * (num_cpus::get() as u32)
     }
@@ -149,6 +157,7 @@ impl IndexerConfig {
             max_concurrent_split_uploads: 4,
             cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
             max_merge_write_throughput: None,
+            merge_concurrency: NonZeroUsize::new(3).unwrap(),
         };
         Ok(indexer_config)
     }
@@ -163,6 +172,7 @@ impl Default for IndexerConfig {
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             cpu_capacity: Self::default_cpu_capacity(),
+            merge_concurrency: Self::default_merge_concurrency(),
             max_merge_write_throughput: None,
         }
     }
@@ -474,6 +484,23 @@ mod tests {
                     .as_str()
                     .unwrap(),
                 "1500m"
+            );
+        }
+        {
+            let indexer_config: IndexerConfig =
+                serde_yaml::from_str(r#"merge_concurrency: 5"#).unwrap();
+            assert_eq!(
+                indexer_config.merge_concurrency,
+                NonZeroUsize::new(5).unwrap()
+            );
+            let indexer_config_json = serde_json::to_value(&indexer_config).unwrap();
+            assert_eq!(
+                indexer_config_json
+                    .get("merge_concurrency")
+                    .unwrap()
+                    .as_u64()
+                    .unwrap(),
+                5
             );
         }
         {

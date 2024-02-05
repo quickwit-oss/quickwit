@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![allow(dead_code)]
+
 use std::convert::TryInto;
 use std::str::FromStr;
 
@@ -30,7 +32,7 @@ use crate::{IndexMetadata, Split, SplitMetadata, SplitState};
 
 /// A model structure for handling index metadata in a database.
 #[derive(sqlx::FromRow)]
-pub struct PgIndex {
+pub(super) struct PgIndex {
     /// Index UID. The index UID identifies the index when querying the metastore from the
     /// application.
     #[sqlx(try_from = "String")]
@@ -82,7 +84,7 @@ pub enum Splits {
     DeleteOpstamp,
 }
 
-pub struct ToTimestampFunc;
+pub(super) struct ToTimestampFunc;
 
 impl Iden for ToTimestampFunc {
     fn unquoted(&self, s: &mut dyn Write) {
@@ -92,7 +94,7 @@ impl Iden for ToTimestampFunc {
 
 /// A model structure for handling split metadata in a database.
 #[derive(sqlx::FromRow)]
-pub struct PgSplit {
+pub(super) struct PgSplit {
     /// Split ID.
     pub split_id: String,
     /// The state of the split. With `update_timestamp`, this is the only mutable attribute of the
@@ -173,7 +175,7 @@ impl TryInto<Split> for PgSplit {
 
 /// A model structure for handling split metadata in a database.
 #[derive(sqlx::FromRow)]
-pub struct PgDeleteTask {
+pub(super) struct PgDeleteTask {
     /// Create timestamp.
     pub create_timestamp: sqlx::types::time::PrimitiveDateTime,
     /// Monotonic increasing unique opstamp.
@@ -213,8 +215,7 @@ impl TryInto<DeleteTask> for PgDeleteTask {
 }
 
 #[derive(Iden, Clone, Copy)]
-#[allow(dead_code)]
-pub enum Shards {
+pub(super) enum Shards {
     Table,
     IndexUid,
     SourceId,
@@ -228,7 +229,7 @@ pub enum Shards {
 
 #[derive(sqlx::Type, PartialEq, Debug)]
 #[sqlx(type_name = "SHARD_STATE", rename_all = "snake_case")]
-pub enum PgShardState {
+pub(super) enum PgShardState {
     Unspecified,
     Open,
     Unavailable,
@@ -247,7 +248,7 @@ impl From<PgShardState> for ShardState {
 }
 
 #[derive(sqlx::FromRow, Debug)]
-pub struct PgShard {
+pub(super) struct PgShard {
     #[sqlx(try_from = "String")]
     pub index_uid: IndexUid,
     #[sqlx(try_from = "String")]
@@ -274,4 +275,9 @@ impl From<PgShard> for Shard {
             publish_token: pg_shard.publish_token,
         }
     }
+}
+
+#[derive(sqlx::FromRow, Debug)]
+pub(super) struct PgIndexTemplate {
+    pub index_template_json: String,
 }

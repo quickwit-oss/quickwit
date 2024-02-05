@@ -29,7 +29,6 @@ mod index_api;
 mod indexing_api;
 mod ingest_api;
 mod jaeger_api;
-mod json_api_response;
 mod metrics;
 mod metrics_api;
 mod node_info_handler;
@@ -37,8 +36,10 @@ mod openapi;
 mod otlp_api;
 mod rate_modulator;
 mod rest;
+mod rest_api_response;
 mod search_api;
 pub(crate) mod simple_list;
+mod template_api;
 mod ui_handler;
 
 use std::collections::{HashMap, HashSet};
@@ -67,8 +68,9 @@ use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
     EventListenerLayer, RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator,
 };
+use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::NodeConfig;
+use quickwit_config::{ClusterConfig, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -77,8 +79,8 @@ use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
-    GetMemoryCapacity, IngestApiService, IngestRequest, IngestRouter, IngestServiceClient,
-    Ingester, IngesterPool, LocalShardsUpdate,
+    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
+    LocalShardsUpdate,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{start_janitor_service, JanitorService};
@@ -270,6 +272,7 @@ async fn start_control_plane_if_needed(
             indexer_pool.clone(),
             ingester_pool.clone(),
             metastore_client.clone(),
+            node_config.default_index_root_uri.clone(),
             replication_factor,
         )
         .await?;
@@ -387,16 +390,12 @@ pub async fn serve_quickwit(
     let ingest_service = start_ingest_client_if_needed(&node_config, &universe, &cluster).await?;
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
-        let ingest_api_service: Mailbox<IngestApiService> = universe
-            .get_one()
-            .context("Ingest API Service should have been started.")?;
         let indexing_service = start_indexing_service(
             &universe,
             &node_config,
             runtimes_config.num_threads_blocking,
             cluster.clone(),
             metastore_through_control_plane.clone(),
-            ingest_api_service.clone(),
             ingester_pool.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
@@ -800,16 +799,22 @@ async fn setup_control_plane(
     indexer_pool: IndexerPool,
     ingester_pool: IngesterPool,
     metastore: MetastoreServiceClient,
+    default_index_root_uri: Uri,
     replication_factor: usize,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
+    let cluster_config = ClusterConfig {
+        cluster_id,
+        auto_create_indexes: true,
+        default_index_root_uri,
+        replication_factor,
+    };
     let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
         universe,
-        cluster_id,
+        cluster_config,
         self_node_id,
         indexer_pool,
         ingester_pool,
         metastore,
-        replication_factor,
     );
     let subscriber = ControlPlaneEventSubscriber::new(control_plane_mailbox.downgrade());
 
@@ -1097,7 +1102,7 @@ mod tests {
 
         let new_indexing_task = IndexingTask {
             pipeline_uid: Some(PipelineUid::from_u128(0u128)),
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some("test-index:0".parse().unwrap()),
             source_id: "test-source".to_string(),
             shard_ids: Vec::new(),
         };

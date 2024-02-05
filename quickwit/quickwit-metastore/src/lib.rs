@@ -48,7 +48,7 @@ pub(crate) use metastore::index_metadata::serialize::{IndexMetadataV0_7, Version
 #[cfg(feature = "postgres")]
 pub use metastore::postgres::PostgresqlMetastore;
 pub use metastore::{
-    file_backed, AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata,
+    file_backed, AddSourceRequestExt, CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadata,
     IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
     ListSplitsRequestExt, ListSplitsResponseExt, MetastoreServiceExt,
     MetastoreServiceStreamSplitsExt, PublishSplitsRequestExt, StageSplitsRequestExt,

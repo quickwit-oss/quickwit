@@ -2,3 +2,8 @@
 method: DELETE
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/gharchive
+---
+# Delete index
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/empty_index

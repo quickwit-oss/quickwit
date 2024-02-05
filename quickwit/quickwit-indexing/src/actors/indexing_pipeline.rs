@@ -636,7 +636,8 @@ mod tests {
 
     async fn test_indexing_pipeline_num_fails_before_success(
         mut num_fails: usize,
-    ) -> anyhow::Result<bool> {
+        test_file: &str,
+    ) -> anyhow::Result<()> {
         let universe = Universe::new();
         let mut metastore = MetastoreServiceClient::mock();
         metastore
@@ -649,7 +650,7 @@ mod tests {
                     let index_metadata =
                         IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
                     return Ok(
-                        IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap(),
+                        IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap(),
                     );
                 }
                 num_fails -= 1;
@@ -702,7 +703,7 @@ mod tests {
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
-            source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
+            source_params: SourceParams::file(PathBuf::from(test_file)),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
@@ -734,23 +735,31 @@ mod tests {
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1 + num_fails);
-        Ok(pipeline_exit_status.is_success())
+        assert!(pipeline_exit_status.is_success());
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_indexing_pipeline_retry_0() -> anyhow::Result<()> {
-        test_indexing_pipeline_num_fails_before_success(0).await?;
-        Ok(())
+        test_indexing_pipeline_num_fails_before_success(0, "data/test_corpus.json").await
     }
 
     #[tokio::test]
     async fn test_indexing_pipeline_retry_1() -> anyhow::Result<()> {
-        test_indexing_pipeline_num_fails_before_success(1).await?;
-        Ok(())
+        test_indexing_pipeline_num_fails_before_success(1, "data/test_corpus.json").await
     }
 
     #[tokio::test]
-    async fn test_indexing_pipeline_simple() -> anyhow::Result<()> {
+    async fn test_indexing_pipeline_retry_0_gz() -> anyhow::Result<()> {
+        test_indexing_pipeline_num_fails_before_success(0, "data/test_corpus.json.gz").await
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_retry_1_gz() -> anyhow::Result<()> {
+        test_indexing_pipeline_num_fails_before_success(1, "data/test_corpus.json.gz").await
+    }
+
+    async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {
         let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
@@ -760,7 +769,7 @@ mod tests {
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         metastore
             .expect_last_delete_opstamp()
@@ -811,7 +820,7 @@ mod tests {
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
-            source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
+            source_params: SourceParams::file(PathBuf::from(test_file)),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
@@ -849,6 +858,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_indexing_pipeline_simple() -> anyhow::Result<()> {
+        indexing_pipeline_simple("data/test_corpus.json").await
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_simple_gz() -> anyhow::Result<()> {
+        indexing_pipeline_simple("data/test_corpus.json.gz").await
+    }
+
+    #[tokio::test]
     async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
@@ -859,7 +878,7 @@ mod tests {
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         mock_metastore
             .expect_list_splits()
@@ -894,6 +913,7 @@ mod tests {
             merge_policy: default_merge_policy(),
             max_concurrent_split_uploads: 2,
             merge_io_throughput_limiter_opt: None,
+            merge_scheduler_service: universe.get_or_spawn_one(),
             event_broker: Default::default(),
         };
         let merge_pipeline = MergePipeline::new(merge_pipeline_params, universe.spawn_ctx());
@@ -945,8 +965,7 @@ mod tests {
         panic!("Pipeline was apparently not restarted.");
     }
 
-    #[tokio::test]
-    async fn test_indexing_pipeline_all_failures_handling() -> anyhow::Result<()> {
+    async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
         let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
@@ -956,7 +975,7 @@ mod tests {
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         metastore
             .expect_last_delete_opstamp()
@@ -1002,7 +1021,7 @@ mod tests {
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
-            source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
+            source_params: SourceParams::file(PathBuf::from(test_file)),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
@@ -1060,5 +1079,15 @@ mod tests {
         );
         universe.assert_quit().await;
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_all_failures_handling() -> anyhow::Result<()> {
+        indexing_pipeline_all_failures_handling("data/test_corpus.json").await
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_all_failures_handling_gz() -> anyhow::Result<()> {
+        indexing_pipeline_all_failures_handling("data/test_corpus.json.gz").await
     }
 }

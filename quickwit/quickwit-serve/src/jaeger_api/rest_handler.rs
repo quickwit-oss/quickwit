@@ -39,7 +39,7 @@ use crate::jaeger_api::model::{
     JaegerError, JaegerResponseBody, JaegerSpan, JaegerTrace, TracesSearchQueryParams,
     DEFAULT_NUMBER_OF_TRACES,
 };
-use crate::json_api_response::JsonApiResponse;
+use crate::rest_api_response::RestApiResponse;
 use crate::search_api::extract_index_id_patterns;
 use crate::{require, BodyFormat};
 
@@ -326,12 +326,12 @@ async fn jaeger_get_trace_by_id(
 fn make_jaeger_api_response<T: serde::Serialize>(
     jaeger_result: Result<T, JaegerError>,
     format: BodyFormat,
-) -> JsonApiResponse {
+) -> RestApiResponse {
     let status_code = match &jaeger_result {
         Ok(_) => StatusCode::OK,
         Err(err) => err.status,
     };
-    JsonApiResponse::new(&jaeger_result, status_code, &format)
+    RestApiResponse::new(&jaeger_result, status_code, &format)
 }
 
 #[cfg(test)]

@@ -34,7 +34,7 @@ use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::Pool;
-use quickwit_common::ServiceStream;
+use quickwit_common::{rate_limited_warn, ServiceStream};
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, DecommissionRequest,
@@ -485,7 +485,8 @@ impl Ingester {
                 ) {
                     Ok(_usage) => (),
                     Err(error) => {
-                        warn!(
+                        rate_limited_warn!(
+                            limit_per_min = 10,
                             "failed to persist records to ingester `{}`: {error}",
                             self.self_node_id
                         );
@@ -1304,7 +1305,8 @@ mod tests {
         let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
         let mut state_guard = ingester.state.lock_fully().await;
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         state_guard
             .mrecordlog
             .create_queue(&queue_id_01)
@@ -1325,7 +1327,7 @@ mod tests {
             .await
             .unwrap();
 
-        let queue_id_02 = queue_id("test-index:0", "test-source", &ShardId::from(2));
+        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
         state_guard
             .mrecordlog
             .create_queue(&queue_id_02)
@@ -1350,7 +1352,7 @@ mod tests {
             .await
             .unwrap();
 
-        let queue_id_03 = queue_id("test-index:0", "test-source", &ShardId::from(3));
+        let queue_id_03 = queue_id(&index_uid, "test-source", &ShardId::from(3));
         state_guard
             .mrecordlog
             .create_queue(&queue_id_03)
@@ -1382,8 +1384,9 @@ mod tests {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let mut state_guard = ingester.state.lock_fully().await;
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let shard =
             IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
         state_guard.shards.insert(queue_id_01.clone(), shard);
@@ -1400,7 +1403,7 @@ mod tests {
 
         let key = format!(
             "{INGESTER_PRIMARY_SHARDS_PREFIX}{}:{}",
-            "test-index:0", "test-source"
+            index_uid, "test-source"
         );
         let value = ingester_ctx.cluster.get_self_key_value(&key).await.unwrap();
 
@@ -1444,10 +1447,12 @@ mod tests {
     async fn test_ingester_persist() {
         let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid2: IndexUid = "test-index:1".parse().unwrap();
         let init_shards_request = InitShardsRequest {
             shards: vec![
                 Shard {
-                    index_uid: "test-index:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     shard_state: ShardState::Open as i32,
@@ -1455,7 +1460,7 @@ mod tests {
                     ..Default::default()
                 },
                 Shard {
-                    index_uid: "test-index:1".to_string(),
+                    index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     shard_state: ShardState::Open as i32,
@@ -1472,14 +1477,14 @@ mod tests {
             subrequests: vec![
                 PersistSubrequest {
                     subrequest_id: 0,
-                    index_uid: "test-index:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
                     subrequest_id: 1,
-                    index_uid: "test-index:1".to_string(),
+                    index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-110", "test-doc-111"])),
@@ -1493,7 +1498,7 @@ mod tests {
 
         let persist_success_0 = &persist_response.successes[0];
         assert_eq!(persist_success_0.subrequest_id, 0);
-        assert_eq!(persist_success_0.index_uid, "test-index:0");
+        assert_eq!(persist_success_0.index_uid(), &index_uid);
         assert_eq!(persist_success_0.source_id, "test-source");
         assert_eq!(persist_success_0.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1503,7 +1508,7 @@ mod tests {
 
         let persist_success_1 = &persist_response.successes[1];
         assert_eq!(persist_success_1.subrequest_id, 1);
-        assert_eq!(persist_success_1.index_uid, "test-index:1");
+        assert_eq!(persist_success_1.index_uid(), &index_uid2);
         assert_eq!(persist_success_1.source_id, "test-source");
         assert_eq!(persist_success_1.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1514,7 +1519,7 @@ mod tests {
         let state_guard = ingester.state.lock_fully().await;
         assert_eq!(state_guard.shards.len(), 2);
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let solo_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
         solo_shard_01.assert_is_solo();
         solo_shard_01.assert_is_open();
@@ -1526,7 +1531,7 @@ mod tests {
             &[(0, "\0\0test-doc-010"), (1, "\0\x01")],
         );
 
-        let queue_id_11 = queue_id("test-index:1", "test-source", &ShardId::from(1));
+        let queue_id_11 = queue_id(&index_uid2, "test-source", &ShardId::from(1));
         let solo_shard_11 = state_guard.shards.get(&queue_id_11).unwrap();
         solo_shard_11.assert_is_solo();
         solo_shard_11.assert_is_open();
@@ -1547,6 +1552,7 @@ mod tests {
     async fn test_ingester_persist_empty() {
         let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let persist_request = PersistRequest {
             leader_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Force as i32,
@@ -1562,7 +1568,7 @@ mod tests {
             commit_type: CommitTypeV2::Force as i32,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: None,
@@ -1571,7 +1577,7 @@ mod tests {
 
         let init_shards_request = InitShardsRequest {
             shards: vec![Shard {
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
@@ -1588,7 +1594,7 @@ mod tests {
 
         let persist_success = &persist_response.successes[0];
         assert_eq!(persist_success.subrequest_id, 0);
-        assert_eq!(persist_success.index_uid, "test-index:0");
+        assert_eq!(persist_success.index_uid(), &index_uid);
         assert_eq!(persist_success.source_id, "test-source");
         assert_eq!(persist_success.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1608,7 +1614,8 @@ mod tests {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
         let mut state_guard = ingester.state.lock_fully().await;
-        let queue_id = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let solo_shard =
             IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
         state_guard.shards.insert(queue_id.clone(), solo_shard);
@@ -1632,7 +1639,7 @@ mod tests {
             commit_type: CommitTypeV2::Force as i32,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
@@ -1645,7 +1652,7 @@ mod tests {
 
         let persist_failure = &persist_response.failures[0];
         assert_eq!(persist_failure.subrequest_id, 0);
-        assert_eq!(persist_failure.index_uid, "test-index:0");
+        assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
         assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(persist_failure.reason(), PersistFailureReason::ShardClosed,);
@@ -1662,7 +1669,8 @@ mod tests {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
         let mut state_guard = ingester.state.lock_fully().await;
-        let queue_id = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let solo_shard =
             IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
         state_guard.shards.insert(queue_id.clone(), solo_shard);
@@ -1680,7 +1688,7 @@ mod tests {
             commit_type: CommitTypeV2::Force as i32,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
@@ -1693,7 +1701,7 @@ mod tests {
 
         let persist_failure = &persist_response.failures[0];
         assert_eq!(persist_failure.subrequest_id, 0);
-        assert_eq!(persist_failure.index_uid, "test-index:0");
+        assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
         assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1726,10 +1734,13 @@ mod tests {
             IngesterServiceClient::new(follower.clone()),
         );
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid2: IndexUid = "test-index:1".parse().unwrap();
+
         let init_shards_request = InitShardsRequest {
             shards: vec![
                 Shard {
-                    index_uid: "test-index:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     shard_state: ShardState::Open as i32,
@@ -1738,7 +1749,7 @@ mod tests {
                     ..Default::default()
                 },
                 Shard {
-                    index_uid: "test-index:1".to_string(),
+                    index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     shard_state: ShardState::Open as i32,
@@ -1756,14 +1767,14 @@ mod tests {
             subrequests: vec![
                 PersistSubrequest {
                     subrequest_id: 0,
-                    index_uid: "test-index:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
                     subrequest_id: 1,
-                    index_uid: "test-index:1".to_string(),
+                    index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-110", "test-doc-111"])),
@@ -1777,7 +1788,7 @@ mod tests {
 
         let persist_success_0 = &persist_response.successes[0];
         assert_eq!(persist_success_0.subrequest_id, 0);
-        assert_eq!(persist_success_0.index_uid, "test-index:0");
+        assert_eq!(persist_success_0.index_uid(), &index_uid);
         assert_eq!(persist_success_0.source_id, "test-source");
         assert_eq!(persist_success_0.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1787,7 +1798,7 @@ mod tests {
 
         let persist_success_1 = &persist_response.successes[1];
         assert_eq!(persist_success_1.subrequest_id, 1);
-        assert_eq!(persist_success_1.index_uid, "test-index:1");
+        assert_eq!(persist_success_1.index_uid(), &index_uid2);
         assert_eq!(persist_success_1.source_id, "test-source");
         assert_eq!(persist_success_1.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1798,7 +1809,7 @@ mod tests {
         let leader_state_guard = leader.state.lock_fully().await;
         assert_eq!(leader_state_guard.shards.len(), 2);
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let primary_shard_01 = leader_state_guard.shards.get(&queue_id_01).unwrap();
         primary_shard_01.assert_is_primary();
         primary_shard_01.assert_is_open();
@@ -1810,7 +1821,7 @@ mod tests {
             &[(0, "\0\0test-doc-010"), (1, "\0\x01")],
         );
 
-        let queue_id_11 = queue_id("test-index:1", "test-source", &ShardId::from(1));
+        let queue_id_11 = queue_id(&index_uid2, "test-source", &ShardId::from(1));
         let primary_shard_11 = leader_state_guard.shards.get(&queue_id_11).unwrap();
         primary_shard_11.assert_is_primary();
         primary_shard_11.assert_is_open();
@@ -1909,10 +1920,13 @@ mod tests {
             .ingester_pool
             .insert(follower_ctx.node_id.clone(), follower_grpc_client);
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid2: IndexUid = "test-index:1".parse().unwrap();
+
         let init_shards_request = InitShardsRequest {
             shards: vec![
                 Shard {
-                    index_uid: "test-index:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     shard_state: ShardState::Open as i32,
@@ -1921,7 +1935,7 @@ mod tests {
                     ..Default::default()
                 },
                 Shard {
-                    index_uid: "test-index:1".to_string(),
+                    index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     shard_state: ShardState::Open as i32,
@@ -1939,14 +1953,14 @@ mod tests {
             subrequests: vec![
                 PersistSubrequest {
                     subrequest_id: 0,
-                    index_uid: "test-index:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
                     subrequest_id: 1,
-                    index_uid: "test-index:1".to_string(),
+                    index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-110", "test-doc-111"])),
@@ -1960,7 +1974,7 @@ mod tests {
 
         let persist_success_0 = &persist_response.successes[0];
         assert_eq!(persist_success_0.subrequest_id, 0);
-        assert_eq!(persist_success_0.index_uid, "test-index:0");
+        assert_eq!(persist_success_0.index_uid(), &index_uid);
         assert_eq!(persist_success_0.source_id, "test-source");
         assert_eq!(persist_success_0.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1970,7 +1984,7 @@ mod tests {
 
         let persist_success_1 = &persist_response.successes[1];
         assert_eq!(persist_success_1.subrequest_id, 1);
-        assert_eq!(persist_success_1.index_uid, "test-index:1");
+        assert_eq!(persist_success_1.index_uid(), &index_uid2);
         assert_eq!(persist_success_1.source_id, "test-source");
         assert_eq!(persist_success_1.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1981,7 +1995,7 @@ mod tests {
         let leader_state_guard = leader.state.lock_fully().await;
         assert_eq!(leader_state_guard.shards.len(), 2);
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let primary_shard_01 = leader_state_guard.shards.get(&queue_id_01).unwrap();
         primary_shard_01.assert_is_primary();
         primary_shard_01.assert_is_open();
@@ -1993,7 +2007,7 @@ mod tests {
             &[(0, "\0\0test-doc-010")],
         );
 
-        let queue_id_11 = queue_id("test-index:1", "test-source", &ShardId::from(1));
+        let queue_id_11 = queue_id(&index_uid2, "test-source", &ShardId::from(1));
         let primary_shard_11 = leader_state_guard.shards.get(&queue_id_11).unwrap();
         primary_shard_11.assert_is_primary();
         primary_shard_11.assert_is_open();
@@ -2034,7 +2048,8 @@ mod tests {
     #[tokio::test]
     async fn test_ingester_persist_shard_closed() {
         let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let solo_shard =
             IngesterShard::new_solo(ShardState::Closed, Position::Beginning, Position::Beginning);
         ingester
@@ -2049,7 +2064,7 @@ mod tests {
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
@@ -2062,7 +2077,7 @@ mod tests {
 
         let persist_failure = &persist_response.failures[0];
         assert_eq!(persist_failure.subrequest_id, 0);
-        assert_eq!(persist_failure.index_uid, "test-index:0");
+        assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
         assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(persist_failure.reason(), PersistFailureReason::ShardClosed);
@@ -2089,8 +2104,9 @@ mod tests {
 
         let mut state_guard = ingester.state.lock_fully().await;
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let primary_shard = Shard {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
@@ -2113,7 +2129,7 @@ mod tests {
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
@@ -2126,7 +2142,7 @@ mod tests {
 
         let persist_failure = &persist_response.failures[0];
         assert_eq!(persist_failure.subrequest_id, 0);
-        assert_eq!(persist_failure.index_uid, "test-index:0");
+        assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
         assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(persist_failure.reason(), PersistFailureReason::RateLimited);
@@ -2134,7 +2150,7 @@ mod tests {
         let state_guard = ingester.state.lock_fully().await;
         assert_eq!(state_guard.shards.len(), 1);
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
         let solo_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
         solo_shard_01.assert_is_solo();
@@ -2155,8 +2171,9 @@ mod tests {
 
         let mut state_guard = ingester.state.lock_fully().await;
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let primary_shard = Shard {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
@@ -2179,7 +2196,7 @@ mod tests {
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
@@ -2192,7 +2209,7 @@ mod tests {
 
         let persist_failure = &persist_response.failures[0];
         assert_eq!(persist_failure.subrequest_id, 0);
-        assert_eq!(persist_failure.index_uid, "test-index:0");
+        assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
         assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -2203,7 +2220,7 @@ mod tests {
         let state_guard = ingester.state.lock_fully().await;
         assert_eq!(state_guard.shards.len(), 1);
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let solo_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
         solo_shard_01.assert_is_solo();
         solo_shard_01.assert_is_open();
@@ -2252,9 +2269,10 @@ mod tests {
     async fn test_ingester_open_fetch_stream() {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: "test-client".to_string(),
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(1337)),
             from_position_exclusive: Some(Position::Beginning),
@@ -2268,13 +2286,13 @@ mod tests {
         );
 
         let shard = Shard {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        let queue_id = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
         let mut state_guard = ingester.state.lock_fully().await;
 
@@ -2295,7 +2313,7 @@ mod tests {
 
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: "test-client".to_string(),
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
@@ -2363,23 +2381,24 @@ mod tests {
     async fn test_ingester_truncate_shards() {
         let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let shard_01 = Shard {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
         let shard_02 = Shard {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(2)),
             shard_state: ShardState::Closed as i32,
             ..Default::default()
         };
-        let queue_id_02 = queue_id("test-index:0", "test-source", &ShardId::from(2));
+        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
 
         let mut state_guard = ingester.state.lock_fully().await;
 
@@ -2426,19 +2445,19 @@ mod tests {
             ingester_id: ingester_ctx.node_id.to_string(),
             subrequests: vec![
                 TruncateShardsSubrequest {
-                    index_uid: "test-index:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     truncate_up_to_position_inclusive: Some(Position::offset(0u64)),
                 },
                 TruncateShardsSubrequest {
-                    index_uid: "test-index:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(2)),
                     truncate_up_to_position_inclusive: Some(Position::eof(0u64)),
                 },
                 TruncateShardsSubrequest {
-                    index_uid: "test-index:1337".to_string(),
+                    index_uid: Some("test-index:1337".parse().unwrap()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1337)),
                     truncate_up_to_position_inclusive: Some(Position::offset(1337u64)),
@@ -2473,7 +2492,8 @@ mod tests {
     async fn test_ingester_truncate_shards_deletes_dangling_shards() {
         let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
-        let queue_id = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
         let mut state_guard = ingester.state.lock_fully().await;
         let solo_shard =
@@ -2491,7 +2511,7 @@ mod tests {
         let truncate_shards_request = TruncateShardsRequest {
             ingester_id: ingester_ctx.node_id.to_string(),
             subrequests: vec![TruncateShardsSubrequest {
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 truncate_up_to_position_inclusive: Some(Position::offset(0u64)),
@@ -2511,8 +2531,9 @@ mod tests {
     async fn test_ingester_retain_shards() {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let shard_17 = Shard {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(17)),
             shard_state: ShardState::Open as i32,
@@ -2520,14 +2541,14 @@ mod tests {
         };
 
         let shard_18 = Shard {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(18)),
             shard_state: ShardState::Closed as i32,
             ..Default::default()
         };
         let queue_id_17 = queue_id(
-            &shard_17.index_uid,
+            shard_17.index_uid(),
             &shard_17.source_id,
             shard_17.shard_id(),
         );
@@ -2559,7 +2580,7 @@ mod tests {
 
         let retain_shard_request = RetainShardsRequest {
             retain_shards_for_sources: vec![RetainShardsForSource {
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_ids: vec![ShardId::from(17u64)],
             }],
@@ -2577,15 +2598,16 @@ mod tests {
     async fn test_ingester_close_shards() {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let shard = Shard {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             publish_position_inclusive: Some(Position::Beginning),
             ..Default::default()
         };
-        let queue_id = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
         let mut state_guard = ingester.state.lock_fully().await;
         ingester
@@ -2596,7 +2618,7 @@ mod tests {
 
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: "test-client".to_string(),
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
@@ -2608,7 +2630,7 @@ mod tests {
 
         let close_shards_request = CloseShardsRequest {
             shards: vec![ShardIds {
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_ids: vec![ShardId::from(1), ShardId::from(1337)],
             }],
@@ -2689,7 +2711,8 @@ mod tests {
 
         state_guard.status = IngesterStatus::Decommissioning;
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
         state_guard.shards.insert(
             queue_id_01.clone(),
@@ -2719,23 +2742,24 @@ mod tests {
         let event_broker = EventBroker::default();
         ingester.subscribe(&event_broker);
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let shard_01 = Shard {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
         let shard_02 = Shard {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(2)),
             shard_state: ShardState::Closed as i32,
             ..Default::default()
         };
-        let queue_id_02 = queue_id("test-index:0", "test-source", &ShardId::from(2));
+        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
 
         let mut state_guard = ingester.state.lock_fully().await;
 
@@ -2780,7 +2804,7 @@ mod tests {
 
         let shard_position_update = ShardPositionsUpdate {
             source_uid: SourceUid {
-                index_uid: "test-index:0".into(),
+                index_uid: index_uid.clone(),
                 source_id: "test-source".to_string(),
             },
             shard_positions: vec![

@@ -742,7 +742,7 @@ mod tests {
         ObservationMessage, ReplicateSubrequest, ReplicateSuccess,
     };
     use quickwit_proto::ingest::{DocBatchV2, Shard};
-    use quickwit_proto::types::{queue_id, ShardId};
+    use quickwit_proto::types::{queue_id, IndexUid, ShardId};
     use tokio::sync::watch;
 
     use super::*;
@@ -831,8 +831,9 @@ mod tests {
         };
         tokio::spawn(dummy_replication_task_future);
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let replica_shard = Shard {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
@@ -901,10 +902,13 @@ mod tests {
         };
         tokio::spawn(dummy_replication_task_future);
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid2: IndexUid = "test-index:1".parse().unwrap();
+
         let subrequests = vec![
             ReplicateSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
@@ -912,7 +916,7 @@ mod tests {
             },
             ReplicateSubrequest {
                 subrequest_id: 1,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(2)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
@@ -920,7 +924,7 @@ mod tests {
             },
             ReplicateSubrequest {
                 subrequest_id: 2,
-                index_uid: "test-index:1".to_string(),
+                index_uid: Some(index_uid2.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-qux", "test-doc-tux"])),
@@ -943,7 +947,7 @@ mod tests {
         assert_eq!(replicate_response.replication_seqno, 0);
 
         let replicate_success_0 = &replicate_response.successes[0];
-        assert_eq!(replicate_success_0.index_uid, "test-index:0");
+        assert_eq!(replicate_success_0.index_uid(), &index_uid);
         assert_eq!(replicate_success_0.source_id, "test-source");
         assert_eq!(replicate_success_0.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -952,7 +956,7 @@ mod tests {
         );
 
         let replicate_success_1 = &replicate_response.successes[1];
-        assert_eq!(replicate_success_1.index_uid, "test-index:0");
+        assert_eq!(replicate_success_1.index_uid(), &index_uid);
         assert_eq!(replicate_success_1.source_id, "test-source");
         assert_eq!(replicate_success_1.shard_id(), ShardId::from(2));
         assert_eq!(
@@ -961,7 +965,7 @@ mod tests {
         );
 
         let replicate_success_2 = &replicate_response.successes[2];
-        assert_eq!(replicate_success_2.index_uid, "test-index:1");
+        assert_eq!(replicate_success_2.index_uid(), &index_uid2);
         assert_eq!(replicate_success_2.source_id, "test-source");
         assert_eq!(replicate_success_2.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1034,10 +1038,13 @@ mod tests {
             memory_capacity,
         );
 
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let index_uid2: IndexUid = "test-index:1".parse().unwrap();
+
         // Init shard 01.
         let init_replica_request = InitReplicaRequest {
             replica_shard: Some(Shard {
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
@@ -1060,7 +1067,7 @@ mod tests {
         // Init shard 02.
         let init_replica_request = InitReplicaRequest {
             replica_shard: Some(Shard {
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(2)),
                 shard_state: ShardState::Open as i32,
@@ -1083,7 +1090,7 @@ mod tests {
         // Init shard 11.
         let init_replica_request = InitReplicaRequest {
             replica_shard: Some(Shard {
-                index_uid: "test-index:1".to_string(),
+                index_uid: Some(index_uid2.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
@@ -1105,7 +1112,7 @@ mod tests {
 
         let state_guard = state.lock_fully().await;
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
         let replica_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
         replica_shard_01.assert_is_replica();
@@ -1115,7 +1122,7 @@ mod tests {
 
         assert!(state_guard.mrecordlog.queue_exists(&queue_id_01));
 
-        let queue_id_02 = queue_id("test-index:0", "test-source", &ShardId::from(2));
+        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
 
         let replica_shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
         replica_shard_02.assert_is_replica();
@@ -1123,7 +1130,7 @@ mod tests {
         replica_shard_02.assert_replication_position(Position::Beginning);
         replica_shard_02.assert_truncation_position(Position::Beginning);
 
-        let queue_id_11 = queue_id("test-index:1", "test-source", &ShardId::from(1));
+        let queue_id_11 = queue_id(&index_uid2, "test-source", &ShardId::from(1));
 
         let replica_shard_11 = state_guard.shards.get(&queue_id_11).unwrap();
         replica_shard_11.assert_is_replica();
@@ -1140,7 +1147,7 @@ mod tests {
             subrequests: vec![
                 ReplicateSubrequest {
                     subrequest_id: 0,
-                    index_uid: "test-index:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
@@ -1148,7 +1155,7 @@ mod tests {
                 },
                 ReplicateSubrequest {
                     subrequest_id: 1,
-                    index_uid: "test-index:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(2)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
@@ -1156,7 +1163,7 @@ mod tests {
                 },
                 ReplicateSubrequest {
                     subrequest_id: 2,
-                    index_uid: "test-index:1".to_string(),
+                    index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-qux", "test-doc-tux"])),
@@ -1180,7 +1187,7 @@ mod tests {
         assert_eq!(replicate_response.replication_seqno, 3);
 
         let replicate_success_0 = &replicate_response.successes[0];
-        assert_eq!(replicate_success_0.index_uid, "test-index:0");
+        assert_eq!(replicate_success_0.index_uid(), &index_uid);
         assert_eq!(replicate_success_0.source_id, "test-source");
         assert_eq!(replicate_success_0.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1189,7 +1196,7 @@ mod tests {
         );
 
         let replicate_success_1 = &replicate_response.successes[1];
-        assert_eq!(replicate_success_1.index_uid, "test-index:0");
+        assert_eq!(replicate_success_1.index_uid(), &index_uid);
         assert_eq!(replicate_success_1.source_id, "test-source");
         assert_eq!(replicate_success_1.shard_id(), ShardId::from(2));
         assert_eq!(
@@ -1198,7 +1205,7 @@ mod tests {
         );
 
         let replicate_success_2 = &replicate_response.successes[2];
-        assert_eq!(replicate_success_2.index_uid, "test-index:1");
+        assert_eq!(replicate_success_2.index_uid(), &index_uid2);
         assert_eq!(replicate_success_2.source_id, "test-source");
         assert_eq!(replicate_success_2.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1231,7 +1238,7 @@ mod tests {
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![ReplicateSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-moo"])),
@@ -1254,7 +1261,7 @@ mod tests {
         assert_eq!(replicate_response.replication_seqno, 4);
 
         let replicate_success_0 = &replicate_response.successes[0];
-        assert_eq!(replicate_success_0.index_uid, "test-index:0");
+        assert_eq!(replicate_success_0.index_uid(), &index_uid);
         assert_eq!(replicate_success_0.source_id, "test-source");
         assert_eq!(replicate_success_0.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1297,7 +1304,8 @@ mod tests {
             memory_capacity,
         );
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let replica_shard = IngesterShard::new_replica(
             leader_id,
             ShardState::Closed,
@@ -1316,7 +1324,7 @@ mod tests {
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![ReplicateSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
@@ -1338,7 +1346,7 @@ mod tests {
         assert_eq!(replicate_response.failures.len(), 1);
 
         let replicate_failure = &replicate_response.failures[0];
-        assert_eq!(replicate_failure.index_uid, "test-index:0");
+        assert_eq!(replicate_failure.index_uid(), &index_uid);
         assert_eq!(replicate_failure.source_id, "test-source");
         assert_eq!(replicate_failure.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1373,7 +1381,8 @@ mod tests {
             memory_capacity,
         );
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let replica_shard = IngesterShard::new_replica(
             leader_id,
             ShardState::Open,
@@ -1392,7 +1401,7 @@ mod tests {
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![ReplicateSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
@@ -1414,7 +1423,7 @@ mod tests {
         assert_eq!(replicate_response.failures.len(), 1);
 
         let replicate_failure_0 = &replicate_response.failures[0];
-        assert_eq!(replicate_failure_0.index_uid, "test-index:0");
+        assert_eq!(replicate_failure_0.index_uid(), &index_uid);
         assert_eq!(replicate_failure_0.source_id, "test-source");
         assert_eq!(replicate_failure_0.shard_id(), ShardId::from(1));
         assert_eq!(

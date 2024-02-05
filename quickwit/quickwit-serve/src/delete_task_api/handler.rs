@@ -31,7 +31,7 @@ use serde::Deserialize;
 use warp::{Filter, Rejection};
 
 use crate::format::extract_format_from_qs;
-use crate::json_api_response::make_json_api_response;
+use crate::rest_api_response::into_rest_api_response;
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
@@ -72,7 +72,7 @@ pub fn get_delete_tasks_handler(
         .and(with_arg(metastore))
         .then(get_delete_tasks)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[utoipa::path(
@@ -120,7 +120,7 @@ pub fn post_delete_tasks_handler(
         .and(with_arg(metastore))
         .then(post_delete_request)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[utoipa::path(
@@ -217,10 +217,7 @@ mod tests {
         let created_delete_task: DeleteTask = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(created_delete_task.opstamp, 1);
         let created_delete_query = created_delete_task.delete_query.unwrap();
-        assert_eq!(
-            created_delete_query.index_uid,
-            test_sandbox.index_uid().to_string()
-        );
+        assert_eq!(created_delete_query.index_uid(), &test_sandbox.index_uid());
         assert_eq!(
             created_delete_query.query_ast,
             r#"{"type":"full_text","field":"body","text":"myterm","params":{"mode":{"type":"phrase_fallback_to_intersection"}}}"#

@@ -85,7 +85,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore.expect_index_metadata().returning(move |_| {
-            Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
+            Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
         metastore.expect_list_splits().returning(move |_| {
             let splits = vec![

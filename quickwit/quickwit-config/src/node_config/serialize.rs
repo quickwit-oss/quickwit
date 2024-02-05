@@ -317,17 +317,14 @@ impl NodeConfigBuilder {
 }
 
 fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
-    validate_identifier("Cluster ID", &node_config.cluster_id)?;
+    validate_identifier("cluster", &node_config.cluster_id)?;
     validate_node_id(&node_config.node_id)?;
 
     if node_config.cluster_id == DEFAULT_CLUSTER_ID {
-        warn!(
-            "cluster ID is not set, falling back to default value: `{}`",
-            DEFAULT_CLUSTER_ID
-        );
+        warn!("cluster ID is not set, falling back to default value `{DEFAULT_CLUSTER_ID}`",);
     }
     if node_config.peer_seeds.is_empty() {
-        warn!("peer seed list is empty");
+        warn!("peer seeds are empty");
     }
     Ok(())
 }
@@ -455,7 +452,7 @@ pub fn node_config_for_test() -> NodeConfig {
 mod tests {
     use std::env;
     use std::net::Ipv4Addr;
-    use std::num::NonZeroU64;
+    use std::num::{NonZeroU64, NonZeroUsize};
     use std::path::Path;
 
     use bytesize::ByteSize;
@@ -466,7 +463,7 @@ mod tests {
 
     fn get_config_filepath(config_filename: &str) -> String {
         format!(
-            "{}/resources/tests/config/{}",
+            "{}/resources/tests/node_config/{}",
             env!("CARGO_MANIFEST_DIR"),
             config_filename
         )
@@ -554,6 +551,7 @@ mod tests {
                 split_store_max_num_bytes: ByteSize::tb(1),
                 split_store_max_num_splits: 10_000,
                 max_concurrent_split_uploads: 8,
+                merge_concurrency: NonZeroUsize::new(2).unwrap(),
                 cpu_capacity: IndexerConfig::default_cpu_capacity(),
                 enable_cooperative_indexing: false,
                 max_merge_write_throughput: Some(ByteSize::mb(100)),

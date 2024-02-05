@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::file_backed::file_backed_index::FileBackedIndex;
+use crate::file_backed::manifest::Manifest;
 use crate::{IndexMetadata, SplitMetadata};
 
 /// In order to avoid confusion, we need to make sure that the
@@ -76,7 +77,7 @@ where T: TestableForRegression + std::fmt::Debug {
     let expected: T = deserialize_json_file(Path::new(&expected_path))?;
     println!("---\nTest equality of {:?}", expected);
     println!("---\nwith {:?}", deserialized);
-    deserialized.test_equality(&expected);
+    deserialized.assert_equality(&expected);
     Ok(())
 }
 
@@ -218,4 +219,9 @@ fn test_index_metadata_backward_compatibility() {
 #[test]
 fn test_file_backed_index_backward_compatibility() {
     test_json_backward_compatibility_helper::<FileBackedIndex>("file-backed-index").unwrap();
+}
+
+#[test]
+fn test_file_backed_metastore_manifest_backward_compatibility() {
+    test_json_backward_compatibility_helper::<Manifest>("manifest").unwrap();
 }

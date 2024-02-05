@@ -62,13 +62,12 @@ impl TestIndex {
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let create_index_response = metastore.create_index(create_index_request).await.unwrap();
         let index_uid: IndexUid = create_index_response.index_uid().clone();
 
         let add_source_request =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), source_config.clone())
-                .unwrap();
+            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();
         metastore.add_source(add_source_request).await.unwrap();
 
         Self {
@@ -86,7 +85,7 @@ pub async fn test_metastore_open_shards<
     let test_index = TestIndex::create_index_with_source(
         &mut metastore,
         "test-open-shards",
-        SourceConfig::ingest_v2_default(),
+        SourceConfig::ingest_v2(),
     )
     .await;
 
@@ -200,7 +199,7 @@ pub async fn test_metastore_acquire_shards<
     let test_index = TestIndex::create_index_with_source(
         &mut metastore,
         "test-acquire-shards",
-        SourceConfig::ingest_v2_default(),
+        SourceConfig::ingest_v2(),
     )
     .await;
 
@@ -315,7 +314,7 @@ pub async fn test_metastore_list_shards<
     let test_index = TestIndex::create_index_with_source(
         &mut metastore,
         "test-list-shards",
-        SourceConfig::ingest_v2_default(),
+        SourceConfig::ingest_v2(),
     )
     .await;
 
@@ -422,7 +421,7 @@ pub async fn test_metastore_delete_shards<
     let test_index = TestIndex::create_index_with_source(
         &mut metastore,
         "test-delete-shards",
-        SourceConfig::ingest_v2_default(),
+        SourceConfig::ingest_v2(),
     )
     .await;
 
@@ -514,7 +513,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
     let test_index = TestIndex::create_index_with_source(
         &mut metastore,
         "test-delete-shards",
-        SourceConfig::ingest_v2_default(),
+        SourceConfig::ingest_v2(),
     )
     .await;
 
@@ -657,7 +656,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
     let test_index = TestIndex::create_index_with_source(
         &mut metastore,
         "test-delete-shards",
-        SourceConfig::ingest_v2_default(),
+        SourceConfig::ingest_v2(),
     )
     .await;
 

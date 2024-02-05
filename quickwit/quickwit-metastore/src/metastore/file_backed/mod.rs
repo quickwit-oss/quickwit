@@ -23,11 +23,17 @@
 
 pub mod file_backed_index;
 mod file_backed_metastore_factory;
+mod index_id_matcher;
+mod index_template_matcher;
 mod lazy_file_backed_index;
+pub(crate) mod manifest;
+mod state;
 mod store_operations;
 
 use core::fmt;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -35,33 +41,36 @@ use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_common::ServiceStream;
-use quickwit_config::validate_index_id_pattern;
+use quickwit_config::IndexTemplate;
 use quickwit_proto::metastore::{
-    AcquireShardsRequest, AcquireShardsResponse, AcquireShardsSubrequest, AddSourceRequest,
-    CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteQuery, DeleteShardsRequest,
+    serde_utils, AcquireShardsRequest, AcquireShardsResponse, AcquireShardsSubrequest,
+    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, CreateIndexTemplateRequest,
+    DeleteIndexRequest, DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteShardsSubrequest, DeleteSourceRequest, DeleteSplitsRequest,
-    DeleteTask, EmptyResponse, EntityKind, IndexMetadataRequest, IndexMetadataResponse,
-    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
-    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
-    MetastoreService, MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse,
-    OpenShardsSubrequest, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
-    ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    DeleteTask, EmptyResponse, EntityKind, FindIndexTemplateMatchesRequest,
+    FindIndexTemplateMatchesResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
+    IndexMetadataRequest, IndexMetadataResponse, IndexTemplateMatch, LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
+    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
+    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardsRequest,
+    OpenShardsResponse, OpenShardsSubrequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    UpdateSplitsDeleteOpstampResponse,
 };
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
-use regex::RegexSet;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
 use self::file_backed_index::FileBackedIndex;
 pub use self::file_backed_metastore_factory::FileBackedMetastoreFactory;
+use self::index_id_matcher::IndexIdMatcher;
 use self::lazy_file_backed_index::LazyFileBackedIndex;
-use self::store_operations::{
-    check_indexes_states_exist, delete_index, fetch_index, fetch_or_init_indexes_states,
-    index_exists, put_index, put_indexes_states,
-};
+use self::manifest::{load_or_create_manifest, save_manifest, MANIFEST_FILE_NAME};
+use self::state::MetastoreState;
+use self::store_operations::{delete_index, index_exists, load_index, put_index};
 use super::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadataResponseExt,
     ListIndexesMetadataResponseExt, ListSplitsRequestExt, ListSplitsResponseExt,
@@ -70,13 +79,13 @@ use super::{
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{IndexMetadata, ListSplitsQuery, MetastoreServiceExt, Split, SplitState};
 
-/// State of an index tracked by the metastore.
-pub(crate) enum IndexState {
-    /// Index is being created but its metadata has not been created on the storage yet.
+/// Status of an index tracked by the metastore.
+pub(crate) enum LazyIndexStatus {
+    /// The index is being created but its metadata have yet to be written on the storage.
     Creating,
-    /// Index is alive.
-    Alive(LazyFileBackedIndex),
-    /// Index is being deleted and but its index metadata file has not yet been deleted on the
+    /// The index is created and available.
+    Active(LazyFileBackedIndex),
+    /// The index is being deleted and but its index metadata file has not yet been removed from
     /// storage.
     Deleting,
 }
@@ -97,21 +106,23 @@ impl From<bool> for MutationOccurred<()> {
     }
 }
 
-/// Metastore that stores all of the metadata associated to each index
+/// A metastore implementation that stores all the metadata associated to each index
 /// into as many files and stores a map of indexes
-/// (index_id, index_state) in a dedicated file `indexes_states.json`.
-/// An `IndexState` describes the lifecycle of an index: `Creating` and
-/// `Deleting` are transitioning states that indicates that index is not
-/// yet available. On the contrary, `Alive` state indicates the index is ready
-/// to be retrieved / updated.
-/// Transitioning states are useful to track partial creating/deleting
-/// happening when error(s) occur during index creation and deletion:
-/// - `Creating` indicates that the metastore updated the `indexes_states.json` file with this state
-///   but not yet the index metadata file;
-/// - `Deleting` indicates that the metastore updated the `indexes_states.json` file with this state
-///   but the index metadata file is not yet deleted.
+/// (index_id, index_status) in a dedicated file `manifest.json`.
 ///
-/// !!! Important note: the indexes map `indexes_states.json` does not
+/// A [`LazyIndexStatus`] describes the lifecycle of an index: [`LazyIndexStatus::Creating`] and
+/// [`LazyIndexStatus::Deleting`] are transitioning states that indicates that the index is not
+/// yet available. On the contrary, the [`LazyIndexStatus::Active`] status indicates the index is
+/// ready to be fetched and updated.
+///
+/// Transitioning states are useful to track inconsistencies between the in-memory and on-disk data
+/// structures when error(s) occurr during index creations and deletions:
+/// - `Creating` indicates that the metastore updated the manifest file with this state but not yet
+///   the index metadata file;
+/// - `Deleting` indicates that the metastore updated the manifest file with this state but the
+///   index metadata file is not yet deleted.
+///
+/// !!! Important note: the indexes map manifest does not
 /// guarantee exhaustivity: an index metadata file can be on the storage
 /// but not present in the states map. As the map is incomplete, the metastore
 /// does not rely on it to check index existence, this leads to following
@@ -131,15 +142,15 @@ impl From<bool> for MutationOccurred<()> {
 ///   cautious and ensure that your readers are really readers.
 #[derive(Clone)]
 pub struct FileBackedMetastore {
+    state: Arc<RwLock<MetastoreState>>,
     storage: Arc<dyn Storage>,
-    per_index_metastores: Arc<RwLock<HashMap<String, IndexState>>>,
     polling_interval_opt: Option<Duration>,
 }
 
 impl fmt::Debug for FileBackedMetastore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FileBackedMetastore")
-            .field("storage_uri", &self.storage.uri())
+            .field("storage_uri", self.storage.uri())
             .field("polling_interval_opt", &self.polling_interval_opt)
             .finish()
     }
@@ -150,8 +161,8 @@ impl FileBackedMetastore {
     #[doc(hidden)]
     pub fn for_test(storage: Arc<dyn Storage>) -> Self {
         Self {
+            state: Default::default(),
             storage,
-            per_index_metastores: Default::default(),
             polling_interval_opt: None,
         }
     }
@@ -168,20 +179,21 @@ impl FileBackedMetastore {
         self.storage.clone()
     }
 
-    /// Creates a [`FileBackedMetastore`] for a specified storage.
-    /// Indexes states are immediately fetched from the storage.
+    /// Creates a [`FileBackedMetastore`] for a specified storage, immediately loading the manifest
+    /// file.
     pub async fn try_new(
         storage: Arc<dyn Storage>,
         polling_interval_opt: Option<Duration>,
     ) -> MetastoreResult<Self> {
-        let indexes_map =
-            fetch_or_init_indexes_states(storage.clone(), polling_interval_opt).await?;
-        let per_index_metastores = Arc::new(RwLock::new(indexes_map));
-        Ok(Self {
+        let manifest = load_or_create_manifest(&*storage).await?;
+        let state =
+            MetastoreState::try_from_manifest(storage.clone(), manifest, polling_interval_opt)?;
+        let metastore = Self {
+            state: Arc::new(RwLock::new(state)),
             storage,
-            per_index_metastores,
             polling_interval_opt,
-        })
+        };
+        Ok(metastore)
     }
 
     async fn mutate<T>(
@@ -197,6 +209,7 @@ impl FileBackedMetastore {
             }));
         }
         let mut index = locked_index.clone();
+
         let value = match mutate_fn(&mut index)? {
             MutationOccurred::Yes(value) => value,
             MutationOccurred::No(value) => {
@@ -204,23 +217,24 @@ impl FileBackedMetastore {
             }
         };
         locked_index.set_recently_modified();
+
         let put_result = put_index(&*self.storage, &index).await;
         match put_result {
             Ok(()) => {
                 *locked_index = index;
                 Ok(value)
             }
-            Err(err) => {
+            Err(error) => {
                 // For some of the error type here, we cannot know for sure
                 // whether the content was written or not.
                 //
                 // Just to be sure, let's discard the cache.
-                let mut per_index_metastores_wlock = self.per_index_metastores.write().await;
+                let mut state_wlock_guard = self.state.write().await;
 
                 // At this point, we hold both locks.
-                per_index_metastores_wlock.insert(
+                state_wlock_guard.indexes.insert(
                     index_id.to_string(),
-                    IndexState::Alive(LazyFileBackedIndex::new(
+                    LazyIndexStatus::Active(LazyFileBackedIndex::new(
                         self.storage.clone(),
                         index_id.to_string(),
                         self.polling_interval_opt,
@@ -228,8 +242,7 @@ impl FileBackedMetastore {
                     )),
                 );
                 locked_index.discarded = true;
-
-                Err(err)
+                Err(error)
             }
         }
     }
@@ -253,19 +266,20 @@ impl FileBackedMetastore {
         view(&locked_index)
     }
 
-    /// Returns a valid metadataset that is locked.
+    /// Returns a valid locked index.
     ///
-    /// This function guarantees that the metadataset has not been
+    /// This function guarantees that it has not been
     /// marked as discarded.
     async fn get_locked_index(
         &self,
         index_id: &str,
     ) -> MetastoreResult<OwnedMutexGuard<FileBackedIndex>> {
         loop {
-            let index_mutex = self.index(index_id).await?;
-            let index_lock = index_mutex.lock_owned().await;
-            if !index_lock.discarded {
-                return Ok(index_lock);
+            let index = self.index(index_id).await?;
+            let locked_index = index.lock_owned().await;
+
+            if !locked_index.discarded {
+                return Ok(locked_index);
             }
         }
     }
@@ -282,8 +296,8 @@ impl FileBackedMetastore {
         {
             // Happy path!
             // If the object is already in our cache then we just return a copy
-            let per_index_metastores_r = self.per_index_metastores.read().await;
-            if let Some(index_state) = per_index_metastores_r.get(index_id) {
+            let inner_rlock_guard = self.state.read().await;
+            if let Some(index_state) = inner_rlock_guard.indexes.get(index_id) {
                 return get_index_mutex(index_id, index_state).await;
             }
         }
@@ -293,15 +307,15 @@ impl FileBackedMetastore {
         // If there is an error here, note we do not return right away.
         // That's because we want to observe the property that after one success
         // all subsequent calls will succeed.
-        let index_result = fetch_index(&*self.storage, index_id).await;
+        let index_result = load_index(&*self.storage, index_id).await;
 
         // Here we retake the lock, still no io ongoing.
-        let mut per_index_metastores_wlock = self.per_index_metastores.write().await;
+        let mut state_wlock_guard = self.state.write().await;
 
         // At this point, some other client might have added another instance of the Metadataet in
         // the map. We want to avoid two copies to exist in the application, so we keep only
         // one.
-        if let Some(index_state) = per_index_metastores_wlock.get(index_id) {
+        if let Some(index_state) = state_wlock_guard.indexes.get(index_id) {
             return get_index_mutex(index_id, index_state).await;
         }
 
@@ -315,7 +329,9 @@ impl FileBackedMetastore {
             Some(index),
         );
         let index_mutex = lazy_index.get().await?;
-        per_index_metastores_wlock.insert(index_id.to_string(), IndexState::Alive(lazy_index));
+        state_wlock_guard
+            .indexes
+            .insert(index_id.to_string(), LazyIndexStatus::Active(lazy_index));
         Ok(index_mutex)
     }
 
@@ -351,7 +367,8 @@ impl FileBackedMetastore {
 #[async_trait]
 impl MetastoreService for FileBackedMetastore {
     async fn check_connectivity(&mut self) -> anyhow::Result<()> {
-        check_indexes_states_exist(self.storage.clone()).await
+        self.storage.exists(Path::new(MANIFEST_FILE_NAME)).await?;
+        Ok(())
     }
 
     fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
@@ -365,64 +382,77 @@ impl MetastoreService for FileBackedMetastore {
         request: CreateIndexRequest,
     ) -> MetastoreResult<CreateIndexResponse> {
         let index_config = request.deserialize_index_config()?;
-        let index_id = index_config.index_id.clone();
+        let source_configs = request.deserialize_source_configs()?;
 
-        // We pick the outer lock here, so that we enter a critical section.
-        let mut per_index_metastores_wlock = self.per_index_metastores.write().await;
+        let mut index_metadata = IndexMetadata::new(index_config);
+
+        for source_config in source_configs {
+            index_metadata.add_source(source_config)?;
+        }
+        let index_uid = index_metadata.index_uid.clone();
+        let index_id = index_uid.index_id().to_string();
+
+        let index_metadata_json = serde_utils::to_json_str(&index_metadata)?;
+        let index = FileBackedIndex::from(index_metadata);
+
+        let mut state_wlock_guard = self.state.write().await;
 
         // Checking if index already exists is a bit tedious:
-        // - first we check the index state: if it's `Alive`, return `IndexAlreadyExists` error, and
-        //   if it's `Creating` or `Deleting`, it's ok to override them as these are transitioning
-        //   states.
-        // - if the index is not in the indexes states map, we still need to check the storage as we
+        // - first we check the index state: if it's `Active`, return `IndexAlreadyExists` error,
+        //   and if it's `Creating` or `Deleting`, it's ok to override them as these are
+        //   transitioning states.
+        // - if the index is not in the index states map, we still need to check the storage as we
         //   don't want to override an existing metadata file.
-        if let Some(index_state) = per_index_metastores_wlock.get(&index_id) {
-            if let IndexState::Alive(_) = index_state {
+        if let Some(index_status) = state_wlock_guard.indexes.get(&index_id) {
+            if let LazyIndexStatus::Active(_) = index_status {
                 return Err(MetastoreError::AlreadyExists(EntityKind::Index {
-                    index_id: index_id.clone(),
+                    index_id,
                 }));
             }
         } else if index_exists(&*self.storage, &index_id).await? {
             return Err(MetastoreError::Internal {
                 message: format!("index {index_id} cannot be created"),
                 cause: format!(
-                    "index {index_id} is not present in the `indexes_states.json` file but its \
-                     file `{index_id}/metastore.json` is on the storage"
+                    "index {index_id} is not present in the manifest file but its file \
+                     `{index_id}/metastore.json` is on the storage"
                 ),
             });
         }
+        // Set state to `Creating` and rollback on metastore error.
+        state_wlock_guard
+            .indexes
+            .insert(index_id.clone(), LazyIndexStatus::Creating);
 
-        // Set state to Creating` and rollback on metastore error.
-        per_index_metastores_wlock.insert(index_id.clone(), IndexState::Creating);
-        if let Err(error) = put_indexes_states(&*self.storage, &per_index_metastores_wlock).await {
-            per_index_metastores_wlock.remove(&index_id);
+        let manifest = state_wlock_guard.as_manifest();
+
+        if let Err(error) = save_manifest(&*self.storage, &manifest).await {
+            state_wlock_guard.indexes.remove(&index_id);
             return Err(error);
         }
-
-        // Put index metadata on storage.
-        let index_metadata = IndexMetadata::new(index_config);
-        let index_uid = index_metadata.index_uid.clone();
-        let index = FileBackedIndex::from(index_metadata);
         put_index(&*self.storage, &index).await?;
 
-        per_index_metastores_wlock.insert(
+        state_wlock_guard.indexes.insert(
             index_id.clone(),
-            IndexState::Alive(LazyFileBackedIndex::new(
+            LazyIndexStatus::Active(LazyFileBackedIndex::new(
                 self.storage.clone(),
                 index_id.clone(),
                 self.polling_interval_opt,
                 Some(index),
             )),
         );
+        // Set state to `Active` and rollback on metastore error.
+        let manifest = state_wlock_guard.as_manifest();
 
-        // Set state to `Alive` and rollback on metastore error.
-        let put_res = put_indexes_states(&*self.storage, &per_index_metastores_wlock).await;
-        if put_res.is_err() {
-            per_index_metastores_wlock.insert(index_id.clone(), IndexState::Creating);
+        if let Err(error) = save_manifest(&*self.storage, &manifest).await {
+            state_wlock_guard
+                .indexes
+                .insert(index_id.clone(), LazyIndexStatus::Creating);
+            return Err(error);
         }
-        put_res?;
+
         let response = CreateIndexResponse {
             index_uid: index_uid.into(),
+            index_metadata_json,
         };
         Ok(response)
     }
@@ -432,49 +462,53 @@ impl MetastoreService for FileBackedMetastore {
         request: DeleteIndexRequest,
     ) -> MetastoreResult<EmptyResponse> {
         // We pick the outer lock here, so that we enter a critical section.
-        let mut per_index_metastores_wlock = self.per_index_metastores.write().await;
+        let mut state_wlock_guard = self.state.write().await;
 
         let index_id = request.index_uid().index_id();
         // If index is neither in `per_index_metastores_wlock` nor on the storage, it does not
         // exist.
-        if !per_index_metastores_wlock.contains_key(index_id)
+        if !state_wlock_guard.indexes.contains_key(index_id)
             && !index_exists(&*self.storage, index_id).await?
         {
             return Err(MetastoreError::NotFound(EntityKind::Index {
                 index_id: index_id.to_string(),
             }));
         }
-
         // Set state to `Deleting` and keep the previous state in memory in case we need to insert
         // if an error occurs.
-        let index_state_opt =
-            per_index_metastores_wlock.insert(index_id.to_string(), IndexState::Deleting);
+        let index_state_opt = state_wlock_guard
+            .indexes
+            .insert(index_id.to_string(), LazyIndexStatus::Deleting);
+        let manifest = state_wlock_guard.as_manifest();
         // On a put error, reinsert the previous state if any.
-        if let Err(error) = put_indexes_states(&*self.storage, &per_index_metastores_wlock).await {
+        if let Err(error) = save_manifest(&*self.storage, &manifest).await {
             if let Some(index_state) = index_state_opt {
-                per_index_metastores_wlock.insert(index_id.to_string(), index_state);
+                state_wlock_guard
+                    .indexes
+                    .insert(index_id.to_string(), index_state);
             } else {
-                per_index_metastores_wlock.remove(index_id);
+                state_wlock_guard.indexes.remove(index_id);
             }
             return Err(error);
         }
 
-        let delete_res = delete_index(&*self.storage, index_id).await;
+        let delete_result = delete_index(&*self.storage, index_id).await;
 
-        match &delete_res {
-            Ok(()) |
-            // If the index file does not exist, we still need to return an error,
-            // but it makes sense to ensure that the index state is removed.
-            Err(MetastoreError::NotFound(EntityKind::Index { .. })) => {
-                per_index_metastores_wlock.remove(index_id);
-                if let Err(error) = put_indexes_states(&*self.storage, &per_index_metastores_wlock).await {
-                    per_index_metastores_wlock.insert(index_id.to_string(), IndexState::Deleting);
-                    return Err(error);
-                }
-            },
-            _ => {}
+        if matches!(
+            &delete_result,
+            Ok(()) | Err(MetastoreError::NotFound(EntityKind::Index { .. }))
+        ) {
+            state_wlock_guard.indexes.remove(index_id);
+            let manifest = state_wlock_guard.as_manifest();
+
+            if let Err(error) = save_manifest(&*self.storage, &manifest).await {
+                state_wlock_guard
+                    .indexes
+                    .insert(index_id.to_string(), LazyIndexStatus::Deleting);
+                return Err(error);
+            }
         }
-        delete_res.map(|_| EmptyResponse {})
+        delete_result.map(|_| EmptyResponse {})
     }
 
     /// -------------------------------------------------------------------------------
@@ -658,7 +692,8 @@ impl MetastoreService for FileBackedMetastore {
             .retain_mature(OffsetDateTime::now_utc())
             .sort_by_staleness()
             .with_limit(request.num_splits as usize);
-        let list_splits_request = ListSplitsRequest::try_from_list_splits_query(list_splits_query)?;
+        let list_splits_request =
+            ListSplitsRequest::try_from_list_splits_query(&list_splits_query)?;
         let splits = self.inner_list_splits(list_splits_request).await?;
         ListSplitsResponse::try_from_splits(splits)
     }
@@ -678,7 +713,7 @@ impl MetastoreService for FileBackedMetastore {
                 }));
             }
         }
-        let response = IndexMetadataResponse::try_from_index_metadata(index_metadata)?;
+        let response = IndexMetadataResponse::try_from_index_metadata(&index_metadata)?;
         Ok(response)
     }
 
@@ -691,46 +726,20 @@ impl MetastoreService for FileBackedMetastore {
         // 2) Get each index metadata. Note that each get will take a read lock on
         // `per_index_metastores`. Lock is released in 1) to let a concurrent task/thread to
         // take a write lock on `per_index_metastores`.
-        let mut positive_patterns = Vec::new();
-        let mut negative_patterns = Vec::new();
-        for pattern in request.index_id_patterns {
-            if let Some(negative_pattern) = pattern.strip_prefix('-') {
-                negative_patterns.push(negative_pattern.to_string());
-            } else {
-                positive_patterns.push(pattern);
-            }
-        }
-        let positive_index_matcher =
-            build_regex_set_from_patterns(positive_patterns).map_err(|error| {
-                MetastoreError::Internal {
-                    message: "failed to build RegexSet from index patterns`".to_string(),
-                    cause: error.to_string(),
-                }
-            })?;
+        let index_id_matcher =
+            IndexIdMatcher::try_from_index_id_patterns(&request.index_id_patterns)?;
+        let inner_rlock_guard = self.state.read().await;
+        let index_ids: Vec<IndexId> = inner_rlock_guard
+            .indexes
+            .iter()
+            .filter_map(|(index_id, index_state)| match index_state {
+                LazyIndexStatus::Active(_) if index_id_matcher.is_match(index_id) => Some(index_id),
+                _ => None,
+            })
+            .cloned()
+            .collect();
+        drop(inner_rlock_guard);
 
-        let negative_index_matcher =
-            build_regex_set_from_patterns(negative_patterns).map_err(|error| {
-                MetastoreError::Internal {
-                    message: "failed to build RegexSet from index patterns`".to_string(),
-                    cause: error.to_string(),
-                }
-            })?;
-
-        let index_ids: Vec<String> = {
-            let per_index_metastores_rlock = self.per_index_metastores.read().await;
-            per_index_metastores_rlock
-                .iter()
-                .filter_map(|(index_id, index_state)| match index_state {
-                    IndexState::Alive(_) => Some(index_id),
-                    _ => None,
-                })
-                .filter(|index_id| {
-                    positive_index_matcher.is_match(index_id)
-                        && !negative_index_matcher.is_match(index_id)
-                })
-                .cloned()
-                .collect()
-        };
         let metastore = self.clone();
         let indexes_metadata: Vec<IndexMetadata> = try_join_all(
             index_ids
@@ -897,23 +906,182 @@ impl MetastoreService for FileBackedMetastore {
         let response = ListDeleteTasksResponse { delete_tasks };
         Ok(response)
     }
+
+    // Index Template API
+
+    async fn create_index_template(
+        &mut self,
+        request: CreateIndexTemplateRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let index_template: IndexTemplate =
+            serde_utils::from_json_str(&request.index_template_json)?;
+        let template_id = index_template.template_id.clone();
+
+        let mut state_wlock_guard = self.state.write().await;
+
+        let evicted_template_opt = match state_wlock_guard.templates.entry(template_id.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(index_template.clone());
+                None
+            }
+            Entry::Occupied(mut entry) if request.overwrite => {
+                let evicted_template = entry.insert(index_template.clone());
+                Some(evicted_template)
+            }
+            Entry::Occupied(_) => {
+                return Err(MetastoreError::AlreadyExists(EntityKind::IndexTemplate {
+                    template_id,
+                }));
+            }
+        };
+        if let Err(error) = state_wlock_guard.template_matcher.insert(&index_template) {
+            if let Some(evicted_template) = evicted_template_opt {
+                state_wlock_guard
+                    .templates
+                    .insert(evicted_template.template_id.clone(), evicted_template);
+            } else {
+                state_wlock_guard.templates.remove(&template_id);
+            }
+            return Err(error);
+        }
+        let manifest = state_wlock_guard.as_manifest();
+        let save_result = save_manifest(&*self.storage, &manifest).await;
+
+        // Rollback on error.
+        if let Err(error) = save_result {
+            if let Some(evicted_template) = evicted_template_opt {
+                state_wlock_guard
+                    .template_matcher
+                    .insert(&evicted_template)
+                    .expect("evicted template should be valid");
+                state_wlock_guard
+                    .templates
+                    .insert(evicted_template.template_id.clone(), evicted_template);
+            } else {
+                state_wlock_guard.templates.remove(&template_id);
+                state_wlock_guard.template_matcher.remove(&template_id);
+            }
+            return Err(error);
+        }
+        Ok(EmptyResponse {})
+    }
+
+    async fn get_index_template(
+        &mut self,
+        request: GetIndexTemplateRequest,
+    ) -> MetastoreResult<GetIndexTemplateResponse> {
+        let inner_rlock_guard = self.state.read().await;
+        let index_template = inner_rlock_guard
+            .templates
+            .get(&request.template_id)
+            .ok_or({
+                MetastoreError::NotFound(EntityKind::IndexTemplate {
+                    template_id: request.template_id,
+                })
+            })?;
+        let index_template_json = serde_utils::to_json_str(index_template)?;
+        let response = GetIndexTemplateResponse {
+            index_template_json,
+        };
+        Ok(response)
+    }
+
+    async fn find_index_template_matches(
+        &mut self,
+        request: FindIndexTemplateMatchesRequest,
+    ) -> MetastoreResult<FindIndexTemplateMatchesResponse> {
+        let inner_rlock_guard = self.state.read().await;
+
+        let mut matches = Vec::new();
+
+        for index_id in request.index_ids {
+            if let Some(template_id) = inner_rlock_guard
+                .template_matcher
+                .find_match(&index_id)
+                .clone()
+            {
+                let index_template = inner_rlock_guard
+                    .templates
+                    .get(&template_id)
+                    .expect("template should exist");
+                let index_template_json = serde_utils::to_json_str(index_template)?;
+                let index_template_match = IndexTemplateMatch {
+                    index_id,
+                    template_id,
+                    index_template_json,
+                };
+                matches.push(index_template_match);
+            };
+        }
+        let response = FindIndexTemplateMatchesResponse { matches };
+        Ok(response)
+    }
+
+    async fn list_index_templates(
+        &mut self,
+        _request: ListIndexTemplatesRequest,
+    ) -> MetastoreResult<ListIndexTemplatesResponse> {
+        let inner_rlock_guard = self.state.read().await;
+
+        let index_templates_json: Vec<String> = inner_rlock_guard
+            .templates
+            .values()
+            .map(serde_utils::to_json_str)
+            .collect::<MetastoreResult<_>>()?;
+        let response = ListIndexTemplatesResponse {
+            index_templates_json,
+        };
+        Ok(response)
+    }
+
+    async fn delete_index_templates(
+        &mut self,
+        request: DeleteIndexTemplatesRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let mut evicted_templates = Vec::with_capacity(request.template_ids.len());
+        let mut state_wlock_guard = self.state.write().await;
+
+        for template_id in &request.template_ids {
+            if let Some(evicted_template) = state_wlock_guard.templates.remove(template_id) {
+                evicted_templates.push(evicted_template);
+                state_wlock_guard.template_matcher.remove(template_id);
+            }
+        }
+        let manifest = state_wlock_guard.as_manifest();
+        let save_result = save_manifest(&*self.storage, &manifest).await;
+
+        // Rollback on error.
+        if let Err(error) = save_result {
+            for evicted_template in evicted_templates {
+                state_wlock_guard
+                    .template_matcher
+                    .insert(&evicted_template)
+                    .expect("evicted template should be valid");
+                state_wlock_guard
+                    .templates
+                    .insert(evicted_template.template_id.clone(), evicted_template);
+            }
+            return Err(error);
+        }
+        Ok(EmptyResponse {})
+    }
 }
 
 impl MetastoreServiceExt for FileBackedMetastore {}
 
 async fn get_index_mutex(
     index_id: &str,
-    index_state: &IndexState,
+    lazy_index_status: &LazyIndexStatus,
 ) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
-    match index_state {
-        IndexState::Alive(lazy_index) => lazy_index.get().await,
-        IndexState::Creating => Err(MetastoreError::Internal {
+    match lazy_index_status {
+        LazyIndexStatus::Active(lazy_index) => lazy_index.get().await,
+        LazyIndexStatus::Creating => Err(MetastoreError::Internal {
             message: format!("index `{index_id}` cannot be retrieved"),
             cause: "index `{index_id}` is in transitioning state `creating` and this should not \
                     happened. either recreate or delete it"
                 .to_string(),
         }),
-        IndexState::Deleting => Err(MetastoreError::Internal {
+        LazyIndexStatus::Deleting => Err(MetastoreError::Internal {
             message: format!("index `{index_id}` cannot be retrieved"),
             cause: "index `{index_id}` is in transitioning state `deleting` and this should not \
                     happened. try to delete it again"
@@ -924,7 +1092,7 @@ async fn get_index_mutex(
 
 async fn get_index_metadata(
     mut metastore: FileBackedMetastore,
-    index_id: String,
+    index_id: IndexId,
 ) -> MetastoreResult<Option<IndexMetadata>> {
     let request = IndexMetadataRequest::for_index_id(index_id);
     let index_metadata_result = metastore
@@ -947,34 +1115,6 @@ async fn get_index_metadata(
     }
 }
 
-/// Returns a [`RegexSet`] built from the following rules:
-/// - If the given pattern does not contain a `*` char, it matches the exact pattern.
-/// - If the given pattern contains one or more `*`, it matches the regex built from a regex where
-///   `*` is replaced by `.*`. All other regular expression meta characters are escaped.
-fn build_regex_set_from_patterns(patterns: Vec<String>) -> anyhow::Result<RegexSet> {
-    // If there is a match all pattern, no need to go further.
-    if patterns.iter().any(|pattern| pattern == "*") {
-        return Ok(RegexSet::new([".*".to_string()]).expect("regex compilation shouldn't fail"));
-    }
-    let regexes: Vec<String> = patterns
-        .iter()
-        .map(|index_pattern| build_regex_exprs_from_pattern(index_pattern))
-        .try_collect()?;
-    let regex_set = RegexSet::new(regexes)?;
-    Ok(regex_set)
-}
-
-/// Converts the tokens into a valid regex.
-fn build_regex_exprs_from_pattern(index_pattern: &str) -> anyhow::Result<String> {
-    // Note: consecutive '*' are not allowed in the pattern.
-    validate_index_id_pattern(index_pattern, false)?;
-    let mut re: String = String::new();
-    re.push('^');
-    re.push_str(&index_pattern.split('*').map(regex::escape).join(".*"));
-    re.push('$');
-    Ok(re)
-}
-
 #[cfg(test)]
 #[async_trait]
 impl crate::tests::DefaultForTest for FileBackedMetastore {
@@ -988,13 +1128,13 @@ impl crate::tests::DefaultForTest for FileBackedMetastore {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+
     use std::ops::RangeInclusive;
     use std::path::Path;
     use std::sync::Arc;
 
     use futures::executor::block_on;
-    use quickwit_common::uri::Protocol;
+    use quickwit_common::uri::{Protocol, Uri};
     use quickwit_config::IndexConfig;
     use quickwit_proto::ingest::Shard;
     use quickwit_proto::metastore::{DeleteQuery, MetastoreError};
@@ -1002,13 +1142,11 @@ mod tests {
     use quickwit_query::query_ast::qast_helper;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
     use rand::Rng;
+    use tests::manifest::{IndexStatus, Manifest};
     use time::OffsetDateTime;
     use tokio::time::Duration;
 
-    use super::lazy_file_backed_index::LazyFileBackedIndex;
-    use super::store_operations::{
-        fetch_or_init_indexes_states, meta_path, put_index_given_index_id, put_indexes_states,
-    };
+    use super::store_operations::{metastore_filepath, put_index_given_index_id};
     use super::*;
     use crate::metastore::MetastoreServiceStreamSplitsExt;
     use crate::tests::shard::ReadWriteShardsForTest;
@@ -1057,13 +1195,13 @@ mod tests {
         let ram_storage_clone = ram_storage.clone();
         mock_storage // remove this if we end up changing the semantics of create.
             .expect_exists()
-            .times(2)
+            .times(3)
             .returning(|_| Ok(false));
         mock_storage
             .expect_put()
             .times(1)
             .returning(move |path, put_payload| {
-                assert!(path == Path::new("indexes_states.json"));
+                assert!(path == Path::new("manifest.json"));
                 block_on(ram_storage_clone.put(path, put_payload))
             });
         let mut metastore = FileBackedMetastore::try_new(Arc::new(mock_storage), None)
@@ -1080,7 +1218,8 @@ mod tests {
         assert!(!metastore.index_exists(index_id).await.unwrap());
 
         let index_config = IndexConfig::for_test(index_id, "ram:///indexes/test-index");
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         metastore.create_index(create_index_request).await.unwrap();
 
         assert!(metastore.index_exists(index_id).await.unwrap());
@@ -1094,7 +1233,7 @@ mod tests {
         let index_id = "test-index";
         let index_config = IndexConfig::for_test(index_id, "ram:///indexes/test-index");
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -1152,7 +1291,7 @@ mod tests {
             .times(4)
             .returning(move |path, put_payload| {
                 assert!(
-                    path == Path::new("indexes_states.json") || path == meta_path("test-index")
+                    path == Path::new("manifest.json") || path == metastore_filepath("test-index")
                 );
                 block_on(ram_storage_clone.put(path, put_payload))
             });
@@ -1167,7 +1306,8 @@ mod tests {
         let mut metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
 
         let index_config = IndexConfig::for_test("test-index", "ram:///indexes/test-index");
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -1186,7 +1326,8 @@ mod tests {
             ..Default::default()
         };
         let stage_splits_request =
-            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         // publish split fails
@@ -1200,9 +1341,10 @@ mod tests {
             .await
             .unwrap_err();
 
-        let query =
+        let list_splits_query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Published);
-        let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query).unwrap();
+        let list_splits_request =
+            ListSplitsRequest::try_from_list_splits_query(&list_splits_query).unwrap();
         let splits = metastore
             .list_splits(list_splits_request)
             .await
@@ -1215,7 +1357,7 @@ mod tests {
         let list_splits_query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
         let list_splits_request =
-            ListSplitsRequest::try_from_list_splits_query(list_splits_query).unwrap();
+            ListSplitsRequest::try_from_list_splits_query(&list_splits_query).unwrap();
         let splits = metastore
             .list_splits(list_splits_request)
             .await
@@ -1234,22 +1376,14 @@ mod tests {
         let index_metadata =
             IndexMetadata::for_test("my-inconsistent-index", "ram:///indexes/test-index");
 
-        // Put inconsistent index and states into storage.
+        // Put inconsistent index and manifest into storage.
         let index = FileBackedIndex::from(index_metadata);
         put_index_given_index_id(&*storage, &index, index_id).await?;
-        let mut indexes_states = HashMap::new();
-        indexes_states.insert(
-            index_id.to_string(),
-            IndexState::Alive(LazyFileBackedIndex::new(
-                storage.clone(),
-                index_id.to_string(),
-                None,
-                None,
-            )),
-        );
-        put_indexes_states(&*storage, &indexes_states)
-            .await
-            .unwrap();
+        let mut manifest = Manifest::default();
+        manifest
+            .indexes
+            .insert(index_id.to_string(), IndexStatus::Active);
+        save_manifest(&*storage, &manifest).await.unwrap();
 
         let metastore = FileBackedMetastore::try_new(storage.clone(), None)
             .await
@@ -1270,7 +1404,8 @@ mod tests {
         let mut metastore = FileBackedMetastore::default_for_test().await;
 
         let index_config = IndexConfig::for_test("test-index", "ram:///indexes/test-index");
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let create_index_response = metastore.create_index(create_index_request).await.unwrap();
         let index_uid: IndexUid = create_index_response.index_uid().clone();
 
@@ -1292,7 +1427,8 @@ mod tests {
             ..Default::default()
         };
         let stage_splits_request =
-            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await?;
 
         let splits = metastore
@@ -1319,7 +1455,8 @@ mod tests {
             .unwrap();
 
         let index_config = IndexConfig::for_test("test-index", "ram:///indexes/test-index");
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let create_index_response = metastore_write
             .create_index(create_index_request)
             .await
@@ -1353,7 +1490,8 @@ mod tests {
             ..Default::default()
         };
         let stage_splits_request =
-            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
+                .unwrap();
         metastore_write.stage_splits(stage_splits_request).await?;
 
         let splits = metastore_read
@@ -1387,7 +1525,8 @@ mod tests {
         let mut metastore = FileBackedMetastore::default_for_test().await;
 
         let index_config = IndexConfig::for_test("test-index", "ram:///indexes/test-index");
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let create_index_response = metastore.create_index(create_index_request).await.unwrap();
         let index_uid: IndexUid = create_index_response.index_uid().clone();
 
@@ -1413,7 +1552,7 @@ mod tests {
                     // stage split
                     let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
                         index_uid.clone(),
-                        split_metadata,
+                        &split_metadata,
                     )
                     .unwrap();
                     metastore.stage_splits(stage_splits_request).await.unwrap();
@@ -1441,7 +1580,7 @@ mod tests {
         let list_splits_query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Published);
         let list_splits_request =
-            ListSplitsRequest::try_from_list_splits_query(list_splits_query).unwrap();
+            ListSplitsRequest::try_from_list_splits_query(&list_splits_query).unwrap();
         let splits = metastore
             .list_splits(list_splits_request)
             .await
@@ -1463,7 +1602,7 @@ mod tests {
             let index_config =
                 IndexConfig::for_test(index_uid.index_id(), "ram:///indexes/test-index");
             let create_index_request =
-                CreateIndexRequest::try_from_index_config(index_config).unwrap();
+                CreateIndexRequest::try_from_index_config(&index_config).unwrap();
             let index_uid: IndexUid = metastore
                 .create_index(create_index_request)
                 .await
@@ -1511,12 +1650,15 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_id = "test-index";
 
+        mock_storage
+            .expect_uri()
+            .return_const(Uri::for_test("ram:///indexes"));
         mock_storage.expect_exists().returning(|_| Ok(false));
         mock_storage
             .expect_put()
             .times(1)
             .returning(move |path, _| {
-                assert!(path == Path::new("indexes_states.json"));
+                assert!(path == Path::new("manifest.json"));
                 Err(StorageErrorKind::Io
                     .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
             });
@@ -1524,11 +1666,13 @@ mod tests {
             .expect_get_all()
             .times(1)
             .returning(move |path| block_on(ram_storage.get_all(path)));
+
         let mut metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
         let index_config = IndexConfig::for_test(index_id, "ram:///indexes/test-index");
 
         // Create index.
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let metastore_error = metastore
             .create_index(create_index_request)
             .await
@@ -1562,9 +1706,9 @@ mod tests {
             .times(4)
             .returning(move |path, put_payload| {
                 assert!(
-                    path == Path::new("indexes_states.json") || path == meta_path("test-index")
+                    path == Path::new("manifest.json") || path == metastore_filepath("test-index")
                 );
-                if path == Path::new("indexes_states.json") {
+                if path == Path::new("manifest.json") {
                     return block_on(ram_storage_clone.put(path, put_payload));
                 }
                 Err(StorageErrorKind::Io
@@ -1578,7 +1722,8 @@ mod tests {
         let index_config = IndexConfig::for_test(index_id, "ram:///indexes/test-index");
 
         // Create index
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let metastore_error = metastore
             .create_index(create_index_request)
             .await
@@ -1591,14 +1736,12 @@ mod tests {
             created_index_error,
             MetastoreError::Internal { .. }
         ));
-        // Check index state is in `Creating` in the states file.
-        let index_states =
-            fetch_or_init_indexes_states(Arc::new(ram_storage_clone_2.clone()), None)
-                .await
-                .unwrap();
+        // Check index state is in `Creating` in the manifest file.
+        let storage = Arc::new(ram_storage_clone_2.clone());
+        let manifest = load_or_create_manifest(&*storage).await.unwrap();
         assert!(matches!(
-            *index_states.get(index_id).unwrap(),
-            IndexState::Creating
+            *manifest.indexes.get(index_id).unwrap(),
+            IndexStatus::Creating
         ));
         // Let's delete the index to clean states.
         let delete_request = DeleteIndexRequest {
@@ -1609,10 +1752,8 @@ mod tests {
             deleted_index_error,
             MetastoreError::NotFound { .. }
         ));
-        let index_states = fetch_or_init_indexes_states(Arc::new(ram_storage_clone_2), None)
-            .await
-            .unwrap();
-        assert!(index_states.get(index_id).is_none());
+        let manifest = load_or_create_manifest(&*storage).await.unwrap();
+        assert!(!manifest.indexes.contains_key(index_id));
         // Now we can expect an `IndexDoesNotExist` error.
         let created_index_error = metastore.get_index(index_uid).await.unwrap_err();
         assert!(matches!(
@@ -1629,6 +1770,10 @@ mod tests {
         let ram_storage_clone = ram_storage.clone();
         let index_id = "test-index";
         let mut indexes_json_valid_put = 1;
+
+        mock_storage
+            .expect_uri()
+            .return_const(Uri::for_test("ram:///indexes"));
         mock_storage // remove this if we end up changing the semantics of create.
             .expect_exists()
             .returning(|_| Ok(false));
@@ -1637,9 +1782,9 @@ mod tests {
             .times(3)
             .returning(move |path, put_payload| {
                 assert!(
-                    path == Path::new("indexes_states.json") || path == meta_path("test-index")
+                    path == Path::new("manifest.json") || path == metastore_filepath("test-index")
                 );
-                if path == Path::new("indexes_states.json") {
+                if path == Path::new("manifest.json") {
                     if indexes_json_valid_put == 0 {
                         return Err(StorageErrorKind::Io.with_error(anyhow::anyhow!(
                             "oops. perhaps there are some network problems"
@@ -1654,7 +1799,7 @@ mod tests {
 
         // Create index
         let metastore_error = metastore
-            .create_index(CreateIndexRequest::try_from_index_config(index_config).unwrap())
+            .create_index(CreateIndexRequest::try_from_index_config(&index_config).unwrap())
             .await
             .unwrap_err();
         assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
@@ -1684,6 +1829,9 @@ mod tests {
             .await
             .unwrap();
 
+        mock_storage
+            .expect_uri()
+            .return_const(Uri::for_test("ram:///indexes"));
         mock_storage // remove this if we end up changing the semantics of create.
             .expect_exists()
             .returning(|_| Ok(true));
@@ -1731,6 +1879,9 @@ mod tests {
             .await
             .unwrap();
         let mut indexes_json_valid_put = 1;
+        mock_storage
+            .expect_uri()
+            .return_const(Uri::for_test("ram:///indexes"));
         mock_storage // remove this if we end up changing the semantics of create.
             .expect_exists()
             .returning(|_| Ok(true));
@@ -1741,8 +1892,8 @@ mod tests {
             .expect_put()
             .times(2)
             .returning(move |path, put_payload| {
-                assert!(path == Path::new("indexes_states.json"));
-                if path == Path::new("indexes_states.json") {
+                assert!(path == Path::new("manifest.json"));
+                if path == Path::new("manifest.json") {
                     if indexes_json_valid_put == 0 {
                         return Err(StorageErrorKind::Io.with_error(anyhow::anyhow!(
                             "oops. perhaps there are some network problems"
@@ -1783,23 +1934,19 @@ mod tests {
             "ram:///indexes/test-index--unregistered",
         );
 
-        // Put indexes states into storage.
+        // Put index states into storage.
         let ram_storage = Arc::new(RamStorage::default());
-        let mut indexes_states = HashMap::new();
-        indexes_states.insert(index_id_creating.to_string(), IndexState::Creating);
-        indexes_states.insert(
-            index_id_alive.to_string(),
-            IndexState::Alive(LazyFileBackedIndex::new(
-                ram_storage.clone(),
-                index_id_alive.to_string(),
-                None,
-                None,
-            )),
-        );
-        indexes_states.insert(index_id_deleting.to_string(), IndexState::Deleting);
-        put_indexes_states(&*ram_storage, &indexes_states)
-            .await
-            .unwrap();
+        let mut manifest = Manifest::default();
+        manifest
+            .indexes
+            .insert(index_id_creating.to_string(), IndexStatus::Creating);
+        manifest
+            .indexes
+            .insert(index_id_alive.to_string(), IndexStatus::Active);
+        manifest
+            .indexes
+            .insert(index_id_deleting.to_string(), IndexStatus::Deleting);
+        save_manifest(&*ram_storage, &manifest).await.unwrap();
 
         let index_alive = FileBackedIndex::from(index_metadata_alive);
         let index_alive_unregistered = FileBackedIndex::from(index_metadata_unregistered);
@@ -1827,7 +1974,7 @@ mod tests {
             .unwrap();
         assert_eq!(indexes_metadata.len(), 1);
 
-        // Fetch the index metadata not registered in indexes states json.
+        // Fetch the index metadata not registered in index states json.
         metastore
             .get_index(index_uid_unregistered.clone())
             .await
@@ -1875,7 +2022,8 @@ mod tests {
             index_id,
             "ram:///indexes/test-index-increasing-stamps-by-index",
         );
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let create_index_response = metastore.create_index(create_index_request).await.unwrap();
         let index_uid = create_index_response.index_uid;
 
@@ -1913,7 +2061,8 @@ mod tests {
             index_id_2,
             "ram:///indexes/test-index-increasing-stamps-by-index-2",
         );
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let create_index_response = metastore.create_index(create_index_request).await.unwrap();
         let index_uid = create_index_response.index_uid;
 
@@ -1927,60 +2076,123 @@ mod tests {
         assert_eq!(delete_task_4.opstamp, 1);
     }
 
-    #[test]
-    fn test_build_regexes_from_pattern() {
-        assert_eq!(build_regex_exprs_from_pattern("*").unwrap(), r"^.*$",);
-        assert_eq!(
-            build_regex_exprs_from_pattern("index-1").unwrap(),
-            r"^index\-1$",
-        );
-        assert_eq!(
-            build_regex_exprs_from_pattern("*-index-*-1").unwrap(),
-            r"^.*\-index\-.*\-1$",
-        );
-        assert_eq!(
-            build_regex_exprs_from_pattern("INDEX.2*-1").unwrap(),
-            r"^INDEX\.2.*\-1$",
-        );
-        // Tests with invalid pattern.
-        assert_eq!(
-            &build_regex_exprs_from_pattern("index-**-1")
-                .unwrap_err()
-                .to_string(),
-            "index ID pattern `index-**-1` is invalid: patterns must not contain multiple \
-             consecutive `*`",
-        );
-        assert!(build_regex_exprs_from_pattern("-index-1").is_err());
+    #[tokio::test]
+    async fn test_create_index_template_rollback() {
+        let mut mock_storage = MockStorage::default();
+
+        mock_storage
+            .expect_uri()
+            .return_const(Uri::for_test("ram:///indexes"));
+
+        mock_storage
+            .expect_put()
+            .once()
+            .returning(|path, _payload| {
+                assert_eq!(path, Path::new(MANIFEST_FILE_NAME));
+                Ok(())
+            });
+
+        mock_storage
+            .expect_put()
+            .once()
+            .returning(|path, _payload| {
+                assert_eq!(path, Path::new(MANIFEST_FILE_NAME));
+                let io_error = StorageErrorKind::Io.with_error(anyhow::anyhow!("IO error"));
+                Err(io_error)
+            });
+
+        let mut metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
+
+        let index_template = IndexTemplate::for_test("test-template", &["test-index-foo*"], 100);
+        let index_template_json = serde_json::to_string(&index_template).unwrap();
+        let create_index_template_request = CreateIndexTemplateRequest {
+            index_template_json,
+            overwrite: false,
+        };
+        metastore
+            .create_index_template(create_index_template_request)
+            .await
+            .unwrap();
+        {
+            let state = metastore.state.read().await;
+            assert_eq!(state.templates.len(), 1);
+            state.template_matcher.find_match("test-index-foo").unwrap();
+        }
+        let index_template = IndexTemplate::for_test("test-template", &["test-index-bar*"], 100);
+        let index_template_json = serde_json::to_string(&index_template).unwrap();
+        let create_index_template_request = CreateIndexTemplateRequest {
+            index_template_json,
+            overwrite: true,
+        };
+        metastore
+            .create_index_template(create_index_template_request)
+            .await
+            .unwrap_err();
+        {
+            let state = metastore.state.read().await;
+            assert_eq!(state.templates.len(), 1);
+            state.template_matcher.find_match("test-index-foo").unwrap();
+        }
     }
 
-    #[test]
-    fn test_index_ids_patterns_matcher() {
-        {
-            let matcher = build_regex_set_from_patterns(vec![
-                "index-1".to_string(),
-                "index-2".to_string(),
-                "*-index-pattern-1-*".to_string(),
-                "*.index.pattern.*.2-*".to_string(),
-            ])
+    #[tokio::test]
+    async fn test_delete_index_templates_rollback() {
+        let mut mock_storage = MockStorage::default();
+
+        mock_storage
+            .expect_uri()
+            .return_const(Uri::for_test("ram:///indexes"));
+
+        mock_storage
+            .expect_put()
+            .once()
+            .returning(|path, _payload| {
+                assert_eq!(path, Path::new(MANIFEST_FILE_NAME));
+                Ok(())
+            });
+
+        mock_storage
+            .expect_put()
+            .once()
+            .returning(|path, _payload| {
+                assert_eq!(path, Path::new(MANIFEST_FILE_NAME));
+                let io_error = StorageErrorKind::Io.with_error(anyhow::anyhow!("IO error"));
+                Err(io_error)
+            });
+
+        let mut metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
+
+        let index_template = IndexTemplate::for_test("test-template", &["test-index-foo*"], 100);
+        let index_template_json = serde_json::to_string(&index_template).unwrap();
+        let create_index_template_request = CreateIndexTemplateRequest {
+            index_template_json,
+            overwrite: false,
+        };
+        metastore
+            .create_index_template(create_index_template_request)
+            .await
             .unwrap();
-
-            assert!(matcher.is_match("index-1"));
-            assert!(matcher.is_match("index-2"));
-            assert!(matcher.is_match("abc-index-pattern-1-1"));
-            assert!(matcher.is_match("def-index-pattern-1-2"));
-            assert!(matcher.is_match("ghi.index.pattern.1.2-1"));
-            assert!(matcher.is_match("jkl.index.pattern.1.2-bignumber"));
-            assert!(!matcher.is_match("index-3"));
-            assert!(!matcher.is_match("index.pattern.1.2-1"));
-        }
         {
-            let matcher =
-                build_regex_set_from_patterns(vec!["index-1".to_string(), "*".to_string()])
-                    .unwrap();
+            let state = metastore.state.read().await;
+            assert_eq!(state.templates.len(), 1);
+            state.template_matcher.find_match("test-index-foo").unwrap();
+        }
+        let delete_index_templates_request = DeleteIndexTemplatesRequest {
+            template_ids: vec![index_template.template_id],
+        };
+        metastore
+            .delete_index_templates(delete_index_templates_request)
+            .await
+            .unwrap_err();
+        {
+            let state = metastore.state.read().await;
+            assert_eq!(state.templates.len(), 1);
+            state.template_matcher.find_match("test-index-foo").unwrap();
 
-            assert!(matcher.is_match("index-1"));
-            assert!(matcher.is_match("index-2"));
-            assert!(matcher.is_match("abc-index-pattern-1-1"));
+            assert!(state
+                .template_matcher
+                .find_match("test-index-bar")
+                .is_none());
         }
     }
 }

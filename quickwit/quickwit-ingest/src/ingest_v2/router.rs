@@ -552,21 +552,22 @@ mod tests {
 
         let mut state_guard = router.state.write().await;
 
+        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
         state_guard.routing_table.table.insert(
             ("test-index-0".into(), "test-source".into()),
             RoutingTableEntry {
-                index_uid: "test-index-0:0".into(),
+                index_uid: index_uid.clone(),
                 source_id: "test-source".to_string(),
                 local_shards: vec![
                     RoutingEntry {
-                        index_uid: "test-index-0:0".into(),
+                        index_uid: index_uid.clone(),
                         source_id: "test-source".to_string(),
                         shard_id: ShardId::from(1),
                         shard_state: ShardState::Closed,
                         leader_id: "test-ingester-0".into(),
                     },
                     RoutingEntry {
-                        index_uid: "test-index-0:0".into(),
+                        index_uid: index_uid.clone(),
                         source_id: "test-source".to_string(),
                         shard_id: ShardId::from(2),
                         shard_state: ShardState::Open,
@@ -613,7 +614,7 @@ mod tests {
         assert_eq!(
             get_or_create_open_shard_request.closed_shards[0],
             ShardIds {
-                index_uid: "test-index-0:0".into(),
+                index_uid: Some("test-index-0:0".parse().unwrap()),
                 source_id: "test-source".to_string(),
                 shard_ids: vec![ShardId::from(1)],
             }
@@ -674,11 +675,13 @@ mod tests {
     async fn test_router_populate_routing_table() {
         let self_node_id = "test-router".into();
 
+        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
+        let index_uid2: IndexUid = "test-index-1:0".parse().unwrap();
         let mut control_plane_mock = ControlPlaneServiceClient::mock();
         control_plane_mock
             .expect_get_or_create_open_shards()
             .once()
-            .returning(|request| {
+            .returning(move |request| {
                 assert_eq!(request.subrequests.len(), 4);
 
                 let subrequest_0 = &request.subrequests[0];
@@ -701,10 +704,10 @@ mod tests {
                     successes: vec![
                         GetOrCreateOpenShardsSuccess {
                             subrequest_id: 0,
-                            index_uid: "test-index-0:0".to_string(),
+                            index_uid: Some(index_uid.clone()),
                             source_id: "test-source".to_string(),
                             open_shards: vec![Shard {
-                                index_uid: "test-index-0:0".to_string(),
+                                index_uid: Some(index_uid.clone()),
                                 source_id: "test-source".to_string(),
                                 shard_id: Some(ShardId::from(1)),
                                 shard_state: ShardState::Open as i32,
@@ -713,18 +716,18 @@ mod tests {
                         },
                         GetOrCreateOpenShardsSuccess {
                             subrequest_id: 1,
-                            index_uid: "test-index-1:0".to_string(),
+                            index_uid: Some(index_uid2.clone()),
                             source_id: "test-source".to_string(),
                             open_shards: vec![
                                 Shard {
-                                    index_uid: "test-index-1:0".to_string(),
+                                    index_uid: Some(index_uid2.clone()),
                                     source_id: "test-source".to_string(),
                                     shard_id: Some(ShardId::from(1)),
                                     shard_state: ShardState::Open as i32,
                                     ..Default::default()
                                 },
                                 Shard {
-                                    index_uid: "test-index-1:0".to_string(),
+                                    index_uid: Some(index_uid2.clone()),
                                     source_id: "test-source".to_string(),
                                     shard_id: Some(ShardId::from(2)),
                                     shard_state: ShardState::Open as i32,
@@ -879,8 +882,9 @@ mod tests {
         }];
         let mut workbench = IngestWorkbench::new(ingest_subrequests, 2);
         let persist_futures = FuturesUnordered::new();
+        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
 
-        persist_futures.push(async {
+        persist_futures.push(async move {
             let persist_summary = PersistRequestSummary {
                 leader_id: "test-ingester-0".into(),
                 subrequest_ids: vec![0],
@@ -889,7 +893,7 @@ mod tests {
                 leader_id: "test-ingester-0".to_string(),
                 successes: vec![PersistSuccess {
                     subrequest_id: 0,
-                    index_uid: "test-index-0:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     ..Default::default()
@@ -929,8 +933,9 @@ mod tests {
         }];
         let mut workbench = IngestWorkbench::new(ingest_subrequests, 2);
         let persist_futures = FuturesUnordered::new();
+        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
 
-        persist_futures.push(async {
+        persist_futures.push(async move {
             let persist_summary = PersistRequestSummary {
                 leader_id: "test-ingester-0".into(),
                 subrequest_ids: vec![0],
@@ -940,7 +945,7 @@ mod tests {
                 successes: Vec::new(),
                 failures: vec![PersistFailure {
                     subrequest_id: 0,
-                    index_uid: "test-index-0:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     reason: PersistFailureReason::RateLimited as i32,
@@ -971,20 +976,21 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
         );
+        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
         let mut state_guard = router.state.write().await;
         state_guard.routing_table.replace_shards(
             "test-index-0:0",
             "test-source",
             vec![
                 Shard {
-                    index_uid: "test-index-0:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     shard_id: Some(ShardId::from(1)),
                     shard_state: ShardState::Open as i32,
                     leader_id: "test-ingester-0".to_string(),
                     ..Default::default()
                 },
                 Shard {
-                    index_uid: "test-index-0:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     shard_id: Some(ShardId::from(2)),
                     shard_state: ShardState::Open as i32,
                     leader_id: "test-ingester-0".to_string(),
@@ -1008,14 +1014,14 @@ mod tests {
                 failures: vec![
                     PersistFailure {
                         subrequest_id: 0,
-                        index_uid: "test-index-0:0".to_string(),
+                        index_uid: Some(index_uid.clone()),
                         source_id: "test-source".to_string(),
                         shard_id: Some(ShardId::from(1)),
                         reason: PersistFailureReason::ShardNotFound as i32,
                     },
                     PersistFailure {
                         subrequest_id: 1,
-                        index_uid: "test-index-0:0".to_string(),
+                        index_uid: Some(index_uid.clone()),
                         source_id: "test-source".to_string(),
                         shard_id: Some(ShardId::from(2)),
                         reason: PersistFailureReason::ShardClosed as i32,
@@ -1140,12 +1146,14 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
         );
+        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
+        let index_uid2: IndexUid = "test-index-1:0".parse().unwrap();
         let mut state_guard = router.state.write().await;
         state_guard.routing_table.replace_shards(
             "test-index-0:0",
             "test-source",
             vec![Shard {
-                index_uid: "test-index-0:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
@@ -1158,7 +1166,7 @@ mod tests {
             "test-source",
             vec![
                 Shard {
-                    index_uid: "test-index-1:0".to_string(),
+                    index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     shard_state: ShardState::Open as i32,
@@ -1167,7 +1175,7 @@ mod tests {
                     ..Default::default()
                 },
                 Shard {
-                    index_uid: "test-index-1:0".to_string(),
+                    index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(2)),
                     shard_state: ShardState::Open as i32,
@@ -1180,17 +1188,19 @@ mod tests {
         drop(state_guard);
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
+        let index_uid_clone = index_uid.clone();
+        let index_uid2_clone = index_uid2.clone();
         ingester_mock_0
             .expect_persist()
             .once()
-            .returning(|request| {
+            .returning(move |request| {
                 assert_eq!(request.leader_id, "test-ingester-0");
                 assert_eq!(request.subrequests.len(), 2);
                 assert_eq!(request.commit_type(), CommitTypeV2::Auto);
 
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.subrequest_id, 0);
-                assert_eq!(subrequest.index_uid, "test-index-0:0");
+                assert_eq!(subrequest.index_uid(), &index_uid_clone);
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id(), ShardId::from(1));
                 assert_eq!(
@@ -1200,7 +1210,7 @@ mod tests {
 
                 let subrequest = &request.subrequests[1];
                 assert_eq!(subrequest.subrequest_id, 1);
-                assert_eq!(subrequest.index_uid, "test-index-1:0");
+                assert_eq!(subrequest.index_uid(), &index_uid2_clone);
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id(), ShardId::from(1));
                 assert_eq!(
@@ -1213,14 +1223,14 @@ mod tests {
                     successes: vec![
                         PersistSuccess {
                             subrequest_id: 0,
-                            index_uid: "test-index-0:0".to_string(),
+                            index_uid: Some(index_uid_clone.clone()),
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(1)),
                             replication_position_inclusive: Some(Position::offset(1u64)),
                         },
                         PersistSuccess {
                             subrequest_id: 1,
-                            index_uid: "test-index-1:0".to_string(),
+                            index_uid: Some(index_uid2_clone.clone()),
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(1)),
                             replication_position_inclusive: Some(Position::offset(0u64)),
@@ -1233,14 +1243,14 @@ mod tests {
         ingester_mock_0
             .expect_persist()
             .once()
-            .returning(|request| {
+            .returning(move |request| {
                 assert_eq!(request.leader_id, "test-ingester-0");
                 assert_eq!(request.subrequests.len(), 1);
                 assert_eq!(request.commit_type(), CommitTypeV2::Auto);
 
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.subrequest_id, 0);
-                assert_eq!(subrequest.index_uid, "test-index-0:0");
+                assert_eq!(subrequest.index_uid(), &index_uid);
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id(), ShardId::from(1));
                 assert_eq!(
@@ -1252,7 +1262,7 @@ mod tests {
                     leader_id: request.leader_id,
                     successes: vec![PersistSuccess {
                         subrequest_id: 0,
-                        index_uid: "test-index-0:0".to_string(),
+                        index_uid: Some(index_uid.clone()),
                         source_id: "test-source".to_string(),
                         shard_id: Some(ShardId::from(1)),
                         replication_position_inclusive: Some(Position::offset(3u64)),
@@ -1268,14 +1278,14 @@ mod tests {
         ingester_mock_1
             .expect_persist()
             .once()
-            .returning(|request| {
+            .returning(move |request| {
                 assert_eq!(request.leader_id, "test-ingester-1");
                 assert_eq!(request.subrequests.len(), 1);
                 assert_eq!(request.commit_type(), CommitTypeV2::Auto);
 
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.subrequest_id, 1);
-                assert_eq!(subrequest.index_uid, "test-index-1:0");
+                assert_eq!(subrequest.index_uid(), &index_uid2);
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id(), ShardId::from(2));
                 assert_eq!(
@@ -1287,7 +1297,7 @@ mod tests {
                     leader_id: request.leader_id,
                     successes: vec![PersistSuccess {
                         subrequest_id: 1,
-                        index_uid: "test-index-1:0".to_string(),
+                        index_uid: Some(index_uid2.clone()),
                         source_id: "test-source".to_string(),
                         shard_id: Some(ShardId::from(2)),
                         replication_position_inclusive: Some(Position::offset(0u64)),
@@ -1351,11 +1361,12 @@ mod tests {
             replication_factor,
         );
         let mut state_guard = router.state.write().await;
+        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
         state_guard.routing_table.replace_shards(
             "test-index-0:0",
             "test-source",
             vec![Shard {
-                index_uid: "test-index-0:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
@@ -1366,17 +1377,18 @@ mod tests {
         drop(state_guard);
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
+        let index_uid_clone = index_uid.clone();
         ingester_mock_0
             .expect_persist()
             .once()
-            .returning(|request| {
+            .returning(move |request| {
                 assert_eq!(request.leader_id, "test-ingester-0");
                 assert_eq!(request.subrequests.len(), 1);
                 assert_eq!(request.commit_type(), CommitTypeV2::Auto);
 
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.subrequest_id, 0);
-                assert_eq!(subrequest.index_uid, "test-index-0:0");
+                assert_eq!(subrequest.index_uid(), &index_uid_clone);
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id(), ShardId::from(1));
                 assert_eq!(
@@ -1389,7 +1401,7 @@ mod tests {
                     successes: Vec::new(),
                     failures: vec![PersistFailure {
                         subrequest_id: 0,
-                        index_uid: "test-index-0:0".to_string(),
+                        index_uid: Some(index_uid_clone.clone()),
                         source_id: "test-source".to_string(),
                         shard_id: Some(ShardId::from(1)),
                         reason: PersistFailureReason::RateLimited as i32,
@@ -1400,14 +1412,14 @@ mod tests {
         ingester_mock_0
             .expect_persist()
             .once()
-            .returning(|request| {
+            .returning(move |request| {
                 assert_eq!(request.leader_id, "test-ingester-0");
                 assert_eq!(request.subrequests.len(), 1);
                 assert_eq!(request.commit_type(), CommitTypeV2::Auto);
 
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.subrequest_id, 0);
-                assert_eq!(subrequest.index_uid, "test-index-0:0");
+                assert_eq!(subrequest.index_uid(), &index_uid);
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id(), ShardId::from(1));
                 assert_eq!(
@@ -1419,7 +1431,7 @@ mod tests {
                     leader_id: request.leader_id,
                     successes: vec![PersistSuccess {
                         subrequest_id: 0,
-                        index_uid: "test-index-0:0".to_string(),
+                        index_uid: Some(index_uid.clone()),
                         source_id: "test-source".to_string(),
                         shard_id: Some(ShardId::from(1)),
                         replication_position_inclusive: Some(Position::offset(0u64)),
@@ -1457,13 +1469,14 @@ mod tests {
         );
         let event_broker = EventBroker::default();
         router.subscribe(&event_broker);
+        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
 
         let mut state_guard = router.state.write().await;
         state_guard.routing_table.replace_shards(
             "test-index-0:0",
             "test-source",
             vec![Shard {
-                index_uid: "test-index-0:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
                 leader_id: "test-ingester".to_string(),
@@ -1475,7 +1488,7 @@ mod tests {
         let local_shards_update = LocalShardsUpdate {
             leader_id: "test-ingester".into(),
             source_uid: SourceUid {
-                index_uid: "test-index-0:0".into(),
+                index_uid: index_uid.clone(),
                 source_id: "test-source".to_string(),
             },
             shard_infos: BTreeSet::from_iter([
@@ -1511,7 +1524,7 @@ mod tests {
 
         let shard_positions_update = ShardPositionsUpdate {
             source_uid: SourceUid {
-                index_uid: "test-index-0:0".into(),
+                index_uid: index_uid.clone(),
                 source_id: "test-source".to_string(),
             },
             shard_positions: vec![(ShardId::from(1), Position::eof(0u64))],

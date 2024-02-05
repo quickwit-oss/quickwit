@@ -48,7 +48,7 @@ pub async fn debugging_handler(
     let debug_info = control_plane_service_client
         .get_debug_state(GetDebugStateRequest {})
         .await;
-    crate::json_api_response::JsonApiResponse::new(
+    crate::rest_api_response::RestApiResponse::new(
         &debug_info,
         // TODO error code on error
         hyper::StatusCode::OK,

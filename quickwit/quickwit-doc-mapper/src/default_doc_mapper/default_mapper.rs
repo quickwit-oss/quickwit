@@ -220,7 +220,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             let (default_search_field, _json_path) = schema
                 .find_field_with_default(default_search_field_name, dynamic_field)
                 .with_context(|| {
-                    format!("Unknown default search field: `{default_search_field_name}`")
+                    format!("unknown default search field `{default_search_field_name}`")
                 })?;
             if !schema.get_field_entry(default_search_field).is_indexed() {
                 bail!("default search field `{default_search_field_name}` is not indexed",);
@@ -824,10 +824,7 @@ mod tests {
         let error = result.unwrap_err();
         assert_eq!(
             error,
-            DocParsingError::ValueError(
-                "body".to_owned(),
-                "expected JSON string, got `1`".to_owned()
-            )
+            DocParsingError::ValueError("body".to_owned(), "expected string, got `1`".to_owned())
         );
         Ok(())
     }

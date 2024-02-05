@@ -108,7 +108,7 @@ pub async fn root_list_terms(
             )
         })
         .collect();
-    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
+    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
     let split_metadatas: Vec<SplitMetadata> = metastore
         .clone()
         .list_splits(list_splits_request)

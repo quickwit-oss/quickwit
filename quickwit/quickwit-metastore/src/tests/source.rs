@@ -43,9 +43,8 @@ pub async fn test_metastore_add_source<MetastoreToTest: MetastoreServiceExt + De
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid = metastore
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
@@ -77,7 +76,7 @@ pub async fn test_metastore_add_source<MetastoreToTest: MetastoreServiceExt + De
     );
 
     let add_source_request =
-        AddSourceRequest::try_from_source_config(index_uid.clone(), source.clone()).unwrap();
+        AddSourceRequest::try_from_source_config(index_uid.clone(), &source).unwrap();
     metastore.add_source(add_source_request).await.unwrap();
 
     let index_metadata = metastore
@@ -103,8 +102,7 @@ pub async fn test_metastore_add_source<MetastoreToTest: MetastoreServiceExt + De
     assert!(matches!(
         metastore
             .add_source(
-                AddSourceRequest::try_from_source_config(index_uid.clone(), source.clone())
-                    .unwrap()
+                AddSourceRequest::try_from_source_config(index_uid.clone(), &source).unwrap()
             )
             .await
             .unwrap_err(),
@@ -115,7 +113,7 @@ pub async fn test_metastore_add_source<MetastoreToTest: MetastoreServiceExt + De
             .add_source(
                 AddSourceRequest::try_from_source_config(
                     IndexUid::new_with_random_ulid("index-not-found"),
-                    source.clone()
+                    &source
                 )
                 .unwrap()
             )
@@ -128,7 +126,7 @@ pub async fn test_metastore_add_source<MetastoreToTest: MetastoreServiceExt + De
             .add_source(
                 AddSourceRequest::try_from_source_config(
                     IndexUid::new_with_random_ulid(&index_id),
-                    source
+                    &source
                 )
                 .unwrap()
             )
@@ -146,9 +144,8 @@ pub async fn test_metastore_toggle_source<MetastoreToTest: MetastoreServiceExt +
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid = metastore
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
@@ -166,7 +163,7 @@ pub async fn test_metastore_toggle_source<MetastoreToTest: MetastoreServiceExt +
         input_format: SourceInputFormat::Json,
     };
     let add_source_request =
-        AddSourceRequest::try_from_source_config(index_uid.clone(), source.clone()).unwrap();
+        AddSourceRequest::try_from_source_config(index_uid.clone(), &source).unwrap();
     metastore.add_source(add_source_request).await.unwrap();
     let index_metadata = metastore
         .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
@@ -235,9 +232,8 @@ pub async fn test_metastore_delete_source<MetastoreToTest: MetastoreServiceExt +
 
     let index_config = IndexConfig::for_test(&index_id, index_uri.as_str());
 
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid = metastore
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
@@ -248,7 +244,7 @@ pub async fn test_metastore_delete_source<MetastoreToTest: MetastoreServiceExt +
             .add_source(
                 AddSourceRequest::try_from_source_config(
                     IndexUid::new_with_random_ulid("index-not-found"),
-                    source.clone()
+                    &source
                 )
                 .unwrap()
             )
@@ -261,7 +257,7 @@ pub async fn test_metastore_delete_source<MetastoreToTest: MetastoreServiceExt +
             .add_source(
                 AddSourceRequest::try_from_source_config(
                     IndexUid::new_with_random_ulid(&index_id),
-                    source.clone()
+                    &source
                 )
                 .unwrap()
             )
@@ -271,9 +267,7 @@ pub async fn test_metastore_delete_source<MetastoreToTest: MetastoreServiceExt +
     ));
 
     metastore
-        .add_source(
-            AddSourceRequest::try_from_source_config(index_uid.clone(), source.clone()).unwrap(),
-        )
+        .add_source(AddSourceRequest::try_from_source_config(index_uid.clone(), &source).unwrap())
         .await
         .unwrap();
     metastore
@@ -336,9 +330,8 @@ pub async fn test_metastore_reset_checkpoint<
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
-    let index_uid = metastore
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
@@ -360,8 +353,7 @@ pub async fn test_metastore_reset_checkpoint<
         };
         metastore
             .add_source(
-                AddSourceRequest::try_from_source_config(index_uid.clone(), source.clone())
-                    .unwrap(),
+                AddSourceRequest::try_from_source_config(index_uid.clone(), &source).unwrap(),
             )
             .await
             .unwrap();
@@ -372,7 +364,8 @@ pub async fn test_metastore_reset_checkpoint<
             ..Default::default()
         };
         let stage_splits_request =
-            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
         let publish_splits_request = PublishSplitsRequest {
             index_uid: Some(index_uid.clone()),

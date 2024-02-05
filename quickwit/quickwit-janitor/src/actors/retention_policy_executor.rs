@@ -114,7 +114,7 @@ impl RetentionPolicyExecutor {
             let index_uid = index_metadata.index_uid.clone();
             let index_config = index_metadata.into_index_config();
             // We only care about indexes with a retention policy configured.
-            let retention_policy = match &index_config.retention_policy {
+            let retention_policy = match &index_config.retention_policy_opt {
                 Some(policy) => policy,
                 None => {
                     // Remove the index from the cache if it exist.
@@ -203,7 +203,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         };
 
         let retention_policy = index_config
-            .retention_policy
+            .retention_policy_opt
             .as_ref()
             .expect("Expected index to have retention policy configure.");
 
@@ -281,7 +281,7 @@ mod tests {
             let indexes_set: HashSet<_> = self
                 .index_configs
                 .values()
-                .map(|im| (&im.index_id, &im.retention_policy))
+                .map(|im| (&im.index_id, &im.retention_policy_opt))
                 .collect();
 
             let expected_indexes: Vec<IndexConfig> = make_indexes(&message.0)
@@ -290,7 +290,7 @@ mod tests {
                 .collect();
             let expected_indexes_set: HashSet<_> = expected_indexes
                 .iter()
-                .map(|im| (&im.index_id, &im.retention_policy))
+                .map(|im| (&im.index_id, &im.retention_policy_opt))
                 .collect();
             assert_eq!(
                 indexes_set, expected_indexes_set,
@@ -300,15 +300,15 @@ mod tests {
         }
     }
 
-    const SCHEDULE_EXPR: &str = "hourly";
+    const EVALUATION_SCHEDULE: &str = "hourly";
 
     fn make_index(index_id: &str, retention_period_opt: Option<&str>) -> IndexConfig {
         let mut index = IndexConfig::for_test(index_id, &format!("ram://indexes/{index_id}"));
         if let Some(retention_period) = retention_period_opt {
-            index.retention_policy = Some(RetentionPolicy::new(
-                retention_period.to_string(),
-                SCHEDULE_EXPR.to_string(),
-            ))
+            index.retention_policy_opt = Some(RetentionPolicy {
+                retention_period: retention_period.to_string(),
+                evaluation_schedule: EVALUATION_SCHEDULE.to_string(),
+            })
         }
         index
     }
@@ -338,7 +338,11 @@ mod tests {
     // Uses the retention policy scheduler to calculate
     // how much time to advance for the execution to take place.
     fn shift_time_by() -> Duration {
-        let scheduler = RetentionPolicy::new("".to_string(), SCHEDULE_EXPR.to_string());
+        let scheduler = RetentionPolicy {
+            retention_period: "".to_string(),
+            evaluation_schedule: EVALUATION_SCHEDULE.to_string(),
+        };
+
         scheduler.duration_until_next_evaluation().unwrap() + Duration::from_secs(1)
     }
 
@@ -481,7 +485,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(1..=3)
             .returning(|mark_splits_for_deletion_request| {
-                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid.clone().into();
+                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid().clone();
                 assert_eq!(index_uid.index_id(), "index-1");
                 assert_eq!(
                     mark_splits_for_deletion_request.split_ids,

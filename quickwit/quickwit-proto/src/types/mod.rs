@@ -239,6 +239,10 @@ impl IndexUid {
         }
     }
 
+    pub fn parse(string: &str) -> Result<Self, InvalidIndexUid> {
+        string.parse()
+    }
+
     pub fn index_id(&self) -> &str {
         &self.index_id
     }

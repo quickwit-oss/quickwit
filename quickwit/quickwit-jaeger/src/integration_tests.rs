@@ -27,6 +27,7 @@ use quickwit_cluster::{create_cluster_for_test, ChannelTransport, Cluster};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexerConfig, IngestApiConfig, JaegerConfig, SearcherConfig, SourceConfig};
+use quickwit_indexing::actors::MergeSchedulerService;
 use quickwit_indexing::models::SpawnPipeline;
 use quickwit_indexing::IndexingService;
 use quickwit_ingest::{
@@ -346,6 +347,7 @@ async fn indexer_for_test(
         cluster,
         metastore,
         Some(ingester_service),
+        universe.get_or_spawn_one::<MergeSchedulerService>(),
         ingester_pool,
         storage_resolver,
         EventBroker::default(),
@@ -395,16 +397,16 @@ async fn setup_traces_index(
         .unwrap();
     let index_config = OtlpGrpcTracesService::index_config(&index_root_uri).unwrap();
     let index_id = index_config.index_id.clone();
-    let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
     let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
     let source_config = SourceConfig::ingest_api_default();
     let add_source_request =
-        AddSourceRequest::try_from_source_config(index_uid.clone(), source_config.clone()).unwrap();
+        AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();
     metastore.add_source(add_source_request).await.unwrap();
 
     let create_queue_request = CreateQueueRequest {

@@ -308,7 +308,7 @@ impl MultiFetchStream {
             self.retry_params,
             self.fetch_message_tx.clone(),
         );
-        let fetch_task_handle = spawn_named_task(fetch_stream_future, "fetch_stream_future");
+        let fetch_task_handle = spawn_named_task(fetch_stream_future, "fetch_stream");
         self.fetch_task_handles.insert(queue_id, fetch_task_handle);
         Ok(())
     }
@@ -623,11 +623,11 @@ pub(super) mod tests {
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
         ));
         let client_id = "test-client".to_string();
-        let index_uid = "test-index:0".to_string();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id = "test-source".to_string();
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
-            index_uid: index_uid.clone(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
@@ -657,7 +657,7 @@ pub(super) mod tests {
             .unwrap();
         let fetch_payload = into_fetch_payload(fetch_message);
 
-        assert_eq!(fetch_payload.index_uid, "test-index:0");
+        assert_eq!(fetch_payload.index_uid(), &index_uid);
         assert_eq!(fetch_payload.source_id, "test-source");
         assert_eq!(fetch_payload.shard_id(), ShardId::from(1));
         assert_eq!(fetch_payload.from_position_exclusive(), Position::Beginning);
@@ -784,7 +784,7 @@ pub(super) mod tests {
             .unwrap();
         let fetch_eof = into_fetch_eof(fetch_message);
 
-        assert_eq!(fetch_eof.index_uid, "test-index:0");
+        assert_eq!(fetch_eof.index_uid(), &index_uid);
         assert_eq!(fetch_eof.source_id, "test-source");
         assert_eq!(fetch_eof.shard_id(), ShardId::from(1));
         assert_eq!(fetch_eof.eof_position, Some(Position::eof(3u64)));
@@ -799,11 +799,11 @@ pub(super) mod tests {
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
         ));
         let client_id = "test-client".to_string();
-        let index_uid = "test-index:0".to_string();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id = "test-source".to_string();
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
-            index_uid: index_uid.clone(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
@@ -836,7 +836,7 @@ pub(super) mod tests {
             .unwrap();
         let fetch_eof = into_fetch_eof(fetch_message);
 
-        assert_eq!(fetch_eof.index_uid, "test-index:0");
+        assert_eq!(fetch_eof.index_uid(), &index_uid);
         assert_eq!(fetch_eof.source_id, "test-source");
         assert_eq!(fetch_eof.shard_id(), ShardId::from(1));
         assert_eq!(fetch_eof.eof_position, Some(Position::Beginning.as_eof()));
@@ -851,11 +851,11 @@ pub(super) mod tests {
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
         ));
         let client_id = "test-client".to_string();
-        let index_uid = "test-index:0".to_string();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id = "test-source".to_string();
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
-            index_uid: index_uid.clone(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::offset(0u64)),
@@ -911,7 +911,7 @@ pub(super) mod tests {
             .unwrap();
         let fetch_payload = into_fetch_payload(fetch_message);
 
-        assert_eq!(fetch_payload.index_uid, "test-index:0");
+        assert_eq!(fetch_payload.index_uid(), &index_uid);
         assert_eq!(fetch_payload.source_id, "test-source");
         assert_eq!(fetch_payload.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -943,11 +943,11 @@ pub(super) mod tests {
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
         ));
         let client_id = "test-client".to_string();
-        let index_uid = "test-index:0".to_string();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id = "test-source".to_string();
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
-            index_uid: index_uid.clone(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
@@ -976,11 +976,11 @@ pub(super) mod tests {
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
         ));
         let client_id = "test-client".to_string();
-        let index_uid = "test-index:0".to_string();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id = "test-source".to_string();
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
-            index_uid: index_uid.clone(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
@@ -1084,7 +1084,7 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fault_tolerant_fetch_stream_ingester_unavailable_failover() {
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id: SourceId = "test-source".into();
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
@@ -1096,11 +1096,12 @@ pub(super) mod tests {
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
 
         let mut ingester_mock_1 = IngesterServiceClient::mock();
+        let index_uid_clone = index_uid.clone();
         ingester_mock_1
             .expect_open_fetch_stream()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.index_uid(), &index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
@@ -1112,7 +1113,7 @@ pub(super) mod tests {
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
         let fetch_payload = FetchPayload {
-            index_uid: "test-index:0".into(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".into(),
             shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
@@ -1123,7 +1124,7 @@ pub(super) mod tests {
         service_stream_tx_1.send(Ok(fetch_message)).unwrap();
 
         let fetch_eof = FetchEof {
-            index_uid: "test-index:0".into(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".into(),
             shard_id: Some(ShardId::from(1)),
             eof_position: Some(Position::eof(1u64)),
@@ -1177,7 +1178,7 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fault_tolerant_fetch_stream_open_fetch_stream_error_failover() {
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id: SourceId = "test-source".into();
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
@@ -1189,11 +1190,12 @@ pub(super) mod tests {
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
+        let index_uid_clone = index_uid.clone();
         ingester_mock_0
             .expect_open_fetch_stream()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.index_uid(), &index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
@@ -1205,11 +1207,12 @@ pub(super) mod tests {
         let ingester_0: IngesterServiceClient = ingester_mock_0.into();
 
         let mut ingester_mock_1 = IngesterServiceClient::mock();
+        let index_uid_clone = index_uid.clone();
         ingester_mock_1
             .expect_open_fetch_stream()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.index_uid(), &index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
@@ -1222,7 +1225,7 @@ pub(super) mod tests {
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
         let fetch_payload = FetchPayload {
-            index_uid: "test-index:0".into(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".into(),
             shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
@@ -1233,7 +1236,7 @@ pub(super) mod tests {
         service_stream_tx_1.send(Ok(fetch_message)).unwrap();
 
         let fetch_eof = FetchEof {
-            index_uid: "test-index:0".into(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".into(),
             shard_id: Some(ShardId::from(1)),
             eof_position: Some(Position::eof(1u64)),
@@ -1287,7 +1290,7 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fault_tolerant_fetch_stream_error_failover() {
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id: SourceId = "test-source".into();
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
@@ -1300,11 +1303,12 @@ pub(super) mod tests {
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
+        let index_uid_clone = index_uid.clone();
         ingester_mock_0
             .expect_open_fetch_stream()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.index_uid(), &index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
@@ -1314,11 +1318,12 @@ pub(super) mod tests {
         let ingester_0: IngesterServiceClient = ingester_mock_0.into();
 
         let mut ingester_mock_1 = IngesterServiceClient::mock();
+        let index_uid_clone = index_uid.clone();
         ingester_mock_1
             .expect_open_fetch_stream()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.index_uid(), &index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(1u64));
@@ -1331,7 +1336,7 @@ pub(super) mod tests {
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
         let fetch_payload = FetchPayload {
-            index_uid: "test-index:0".into(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".into(),
             shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
@@ -1345,7 +1350,7 @@ pub(super) mod tests {
         service_stream_tx_0.send(Err(ingest_error)).unwrap();
 
         let fetch_eof = FetchEof {
-            index_uid: "test-index:0".into(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".into(),
             shard_id: Some(ShardId::from(1)),
             eof_position: Some(Position::eof(1u64)),
@@ -1399,7 +1404,7 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fault_tolerant_fetch_stream_shard_not_found() {
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id: SourceId = "test-source".into();
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
@@ -1410,11 +1415,12 @@ pub(super) mod tests {
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
+        let index_uid_clone = index_uid.clone();
         ingester_mock_0
             .expect_open_fetch_stream()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.index_uid(), &index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
@@ -1454,7 +1460,7 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_retrying_fetch_stream() {
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id: SourceId = "test-source".into();
         let shard_id = ShardId::from(1);
         let from_position_exclusive = Position::offset(0u64);
@@ -1470,12 +1476,13 @@ pub(super) mod tests {
         retry_params.max_attempts = 3;
 
         let mut ingester_mock = IngesterServiceClient::mock();
+        let index_uid_clone = index_uid.clone();
         ingester_mock
             .expect_open_fetch_stream()
             .once()
-            .returning(|request| {
+            .returning(move |request| {
                 assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.index_uid(), &index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
@@ -1484,24 +1491,26 @@ pub(super) mod tests {
                     "open fetch stream error".to_string(),
                 ))
             });
+        let index_uid_clone = index_uid.clone();
         ingester_mock
             .expect_open_fetch_stream()
             .once()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.index_uid(), &index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Ok(service_stream_1)
             });
+        let index_uid_clone = index_uid.clone();
         ingester_mock
             .expect_open_fetch_stream()
             .once()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.index_uid(), &index_uid_clone);
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(1u64));
@@ -1513,7 +1522,7 @@ pub(super) mod tests {
         ingester_pool.insert("test-ingester".into(), ingester);
 
         let fetch_payload = FetchPayload {
-            index_uid: "test-index:0".into(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".into(),
             shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
@@ -1527,7 +1536,7 @@ pub(super) mod tests {
         service_stream_tx_1.send(Err(ingest_error)).unwrap();
 
         let fetch_payload = FetchPayload {
-            index_uid: "test-index:0".into(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".into(),
             shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-bar"]),

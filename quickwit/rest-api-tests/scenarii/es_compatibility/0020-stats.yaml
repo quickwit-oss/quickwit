@@ -81,5 +81,14 @@ expected:
           count: 1
         docs:
           count: 100
+    empty_index:
+      primaries:
+        docs:
+          count: 0
+      total:
+        segments:
+          count: 0
+        docs:
+          count: 0
 
 

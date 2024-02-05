@@ -47,6 +47,7 @@ use default_doc_mapper::{
 pub use doc_mapper::{DocMapper, JsonObject, NamedField, TermRange, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
 use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
+pub use routing_expression::RoutingExpr;
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";

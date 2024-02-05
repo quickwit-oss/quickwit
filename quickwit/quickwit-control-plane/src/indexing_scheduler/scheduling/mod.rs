@@ -730,7 +730,7 @@ mod tests {
         let mut plan = Vec::new();
         for (pipeline_uid, shard_ids) in shards {
             plan.push(IndexingTask {
-                index_uid: source_uid.index_uid.to_string(),
+                index_uid: Some(source_uid.index_uid.clone()),
                 source_id: source_uid.source_id.clone(),
                 pipeline_uid: Some(*pipeline_uid),
                 shard_ids: shard_ids.to_vec(),
@@ -1013,13 +1013,13 @@ mod tests {
             source_id: "testsource".to_string(),
         };
         let previous_task1 = IndexingTask {
-            index_uid: source_uid.index_uid.to_string(),
+            index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.to_string(),
             pipeline_uid: Some(PipelineUid::new()),
             shard_ids: vec![ShardId::from(1), ShardId::from(4), ShardId::from(5)],
         };
         let previous_task2 = IndexingTask {
-            index_uid: source_uid.index_uid.to_string(),
+            index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.to_string(),
             pipeline_uid: Some(PipelineUid::new()),
             shard_ids: vec![
@@ -1049,9 +1049,9 @@ mod tests {
                 &sharded_source,
             );
             assert_eq!(tasks.len(), 2);
-            assert_eq!(tasks[0].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[0].index_uid(), &source_uid.index_uid);
             assert_eq!(tasks[0].shard_ids, [ShardId::from(1), ShardId::from(4)]);
-            assert_eq!(tasks[1].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[1].index_uid(), &source_uid.index_uid);
             assert_eq!(tasks[1].shard_ids, [ShardId::from(6)]);
         }
         {
@@ -1074,7 +1074,7 @@ mod tests {
                 &sharded_source,
             );
             assert_eq!(tasks.len(), 1);
-            assert_eq!(tasks[0].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[0].index_uid(), &source_uid.index_uid);
             assert_eq!(tasks[0].shard_ids, [ShardId::from(1), ShardId::from(4)]);
         }
     }
@@ -1087,14 +1087,14 @@ mod tests {
         };
         let pipeline_uid1 = PipelineUid::new();
         let previous_task1 = IndexingTask {
-            index_uid: source_uid.index_uid.to_string(),
+            index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.to_string(),
             pipeline_uid: Some(pipeline_uid1),
             shard_ids: Vec::new(),
         };
         let pipeline_uid2 = PipelineUid::new();
         let previous_task2 = IndexingTask {
-            index_uid: source_uid.index_uid.to_string(),
+            index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.to_string(),
             pipeline_uid: Some(pipeline_uid2),
             shard_ids: Vec::new(),
@@ -1113,7 +1113,7 @@ mod tests {
                 &sharded_source,
             );
             assert_eq!(tasks.len(), 1);
-            assert_eq!(tasks[0].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[0].index_uid(), &source_uid.index_uid);
             assert!(tasks[0].shard_ids.is_empty());
             assert_eq!(tasks[0].pipeline_uid.as_ref().unwrap(), &pipeline_uid1);
         }
@@ -1146,10 +1146,10 @@ mod tests {
                 &sharded_source,
             );
             assert_eq!(tasks.len(), 2);
-            assert_eq!(tasks[0].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[0].index_uid(), &source_uid.index_uid);
             assert!(tasks[0].shard_ids.is_empty());
             assert_eq!(tasks[0].pipeline_uid.as_ref().unwrap(), &pipeline_uid1);
-            assert_eq!(tasks[1].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[1].index_uid(), &source_uid.index_uid);
             assert!(tasks[1].shard_ids.is_empty());
             assert_eq!(tasks[1].pipeline_uid.as_ref().unwrap(), &pipeline_uid2);
         }
@@ -1167,10 +1167,10 @@ mod tests {
                 &sharded_source,
             );
             assert_eq!(tasks.len(), 2);
-            assert_eq!(tasks[0].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[0].index_uid(), &source_uid.index_uid);
             assert!(tasks[0].shard_ids.is_empty());
             assert_eq!(tasks[0].pipeline_uid.as_ref().unwrap(), &pipeline_uid1);
-            assert_eq!(tasks[1].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[1].index_uid(), &source_uid.index_uid);
             assert!(tasks[1].shard_ids.is_empty());
             assert_ne!(tasks[1].pipeline_uid.as_ref().unwrap(), &pipeline_uid1);
         }

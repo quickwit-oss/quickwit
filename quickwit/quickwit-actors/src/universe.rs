@@ -89,6 +89,16 @@ impl Universe {
         self.spawn_ctx.registry.get_one::<A>()
     }
 
+    pub fn get_or_spawn_one<A: Actor + Default>(&self) -> Mailbox<A> {
+        if let Some(actor_mailbox) = self.spawn_ctx.registry.get_one::<A>() {
+            actor_mailbox
+        } else {
+            let actor_default = A::default();
+            let (mailbox, _handler) = self.spawn_builder().spawn(actor_default);
+            mailbox
+        }
+    }
+
     pub async fn observe(&self, timeout: Duration) -> Vec<ActorObservation> {
         self.spawn_ctx.registry.observe(timeout).await
     }

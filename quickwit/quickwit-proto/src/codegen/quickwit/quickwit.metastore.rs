@@ -8,6 +8,8 @@ pub struct EmptyResponse {}
 pub struct CreateIndexRequest {
     #[prost(string, tag = "2")]
     pub index_config_json: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "3")]
+    pub source_configs_json: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -15,6 +17,8 @@ pub struct CreateIndexRequest {
 pub struct CreateIndexResponse {
     #[prost(message, optional, tag = "1")]
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "2")]
+    pub index_metadata_json: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -393,6 +397,72 @@ pub struct ListShardsSubresponse {
     pub shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateIndexTemplateRequest {
+    #[prost(string, tag = "1")]
+    pub index_template_json: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub overwrite: bool,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIndexTemplateRequest {
+    #[prost(string, tag = "1")]
+    pub template_id: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIndexTemplateResponse {
+    #[prost(string, tag = "1")]
+    pub index_template_json: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FindIndexTemplateMatchesRequest {
+    #[prost(string, repeated, tag = "1")]
+    pub index_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FindIndexTemplateMatchesResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub matches: ::prost::alloc::vec::Vec<IndexTemplateMatch>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexTemplateMatch {
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub template_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub index_template_json: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListIndexTemplatesRequest {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListIndexTemplatesResponse {
+    #[prost(string, repeated, tag = "1")]
+    pub index_templates_json: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteIndexTemplatesRequest {
+    #[prost(string, repeated, tag = "1")]
+    pub template_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -571,6 +641,35 @@ impl PrometheusLabels<1> for ListShardsRequest {
         OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("list_shards")])
     }
 }
+impl PrometheusLabels<1> for CreateIndexTemplateRequest {
+    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
+        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("create_index_template")])
+    }
+}
+impl PrometheusLabels<1> for GetIndexTemplateRequest {
+    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
+        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("get_index_template")])
+    }
+}
+impl PrometheusLabels<1> for FindIndexTemplateMatchesRequest {
+    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
+        OwnedPrometheusLabels::new([
+            std::borrow::Cow::Borrowed("find_index_template_matches"),
+        ])
+    }
+}
+impl PrometheusLabels<1> for ListIndexTemplatesRequest {
+    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
+        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("list_index_templates")])
+    }
+}
+impl PrometheusLabels<1> for DeleteIndexTemplatesRequest {
+    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
+        OwnedPrometheusLabels::new([
+            std::borrow::Cow::Borrowed("delete_index_templates"),
+        ])
+    }
+}
 pub type MetastoreServiceStream<T> = quickwit_common::ServiceStream<
     crate::metastore::MetastoreResult<T>,
 >;
@@ -697,6 +796,31 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
         &mut self,
         request: ListShardsRequest,
     ) -> crate::metastore::MetastoreResult<ListShardsResponse>;
+    /// Creates an index template.
+    async fn create_index_template(
+        &mut self,
+        request: CreateIndexTemplateRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse>;
+    /// Fetches an index template.
+    async fn get_index_template(
+        &mut self,
+        request: GetIndexTemplateRequest,
+    ) -> crate::metastore::MetastoreResult<GetIndexTemplateResponse>;
+    /// Finds matching index templates.
+    async fn find_index_template_matches(
+        &mut self,
+        request: FindIndexTemplateMatchesRequest,
+    ) -> crate::metastore::MetastoreResult<FindIndexTemplateMatchesResponse>;
+    /// Returns all the index templates.
+    async fn list_index_templates(
+        &mut self,
+        request: ListIndexTemplatesRequest,
+    ) -> crate::metastore::MetastoreResult<ListIndexTemplatesResponse>;
+    /// Deletes index templates.
+    async fn delete_index_templates(
+        &mut self,
+        request: DeleteIndexTemplatesRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse>;
     async fn check_connectivity(&mut self) -> anyhow::Result<()>;
     fn endpoints(&self) -> Vec<quickwit_common::uri::Uri>;
 }
@@ -919,6 +1043,36 @@ impl MetastoreService for MetastoreServiceClient {
     ) -> crate::metastore::MetastoreResult<ListShardsResponse> {
         self.inner.list_shards(request).await
     }
+    async fn create_index_template(
+        &mut self,
+        request: CreateIndexTemplateRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.inner.create_index_template(request).await
+    }
+    async fn get_index_template(
+        &mut self,
+        request: GetIndexTemplateRequest,
+    ) -> crate::metastore::MetastoreResult<GetIndexTemplateResponse> {
+        self.inner.get_index_template(request).await
+    }
+    async fn find_index_template_matches(
+        &mut self,
+        request: FindIndexTemplateMatchesRequest,
+    ) -> crate::metastore::MetastoreResult<FindIndexTemplateMatchesResponse> {
+        self.inner.find_index_template_matches(request).await
+    }
+    async fn list_index_templates(
+        &mut self,
+        request: ListIndexTemplatesRequest,
+    ) -> crate::metastore::MetastoreResult<ListIndexTemplatesResponse> {
+        self.inner.list_index_templates(request).await
+    }
+    async fn delete_index_templates(
+        &mut self,
+        request: DeleteIndexTemplatesRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.inner.delete_index_templates(request).await
+    }
     async fn check_connectivity(&mut self) -> anyhow::Result<()> {
         self.inner.check_connectivity().await
     }
@@ -1070,6 +1224,36 @@ pub mod metastore_service_mock {
             request: super::ListShardsRequest,
         ) -> crate::metastore::MetastoreResult<super::ListShardsResponse> {
             self.inner.lock().await.list_shards(request).await
+        }
+        async fn create_index_template(
+            &mut self,
+            request: super::CreateIndexTemplateRequest,
+        ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
+            self.inner.lock().await.create_index_template(request).await
+        }
+        async fn get_index_template(
+            &mut self,
+            request: super::GetIndexTemplateRequest,
+        ) -> crate::metastore::MetastoreResult<super::GetIndexTemplateResponse> {
+            self.inner.lock().await.get_index_template(request).await
+        }
+        async fn find_index_template_matches(
+            &mut self,
+            request: super::FindIndexTemplateMatchesRequest,
+        ) -> crate::metastore::MetastoreResult<super::FindIndexTemplateMatchesResponse> {
+            self.inner.lock().await.find_index_template_matches(request).await
+        }
+        async fn list_index_templates(
+            &mut self,
+            request: super::ListIndexTemplatesRequest,
+        ) -> crate::metastore::MetastoreResult<super::ListIndexTemplatesResponse> {
+            self.inner.lock().await.list_index_templates(request).await
+        }
+        async fn delete_index_templates(
+            &mut self,
+            request: super::DeleteIndexTemplatesRequest,
+        ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
+            self.inner.lock().await.delete_index_templates(request).await
         }
         async fn check_connectivity(&mut self) -> anyhow::Result<()> {
             self.inner.lock().await.check_connectivity().await
@@ -1442,6 +1626,86 @@ impl tower::Service<ListShardsRequest> for Box<dyn MetastoreService> {
         Box::pin(fut)
     }
 }
+impl tower::Service<CreateIndexTemplateRequest> for Box<dyn MetastoreService> {
+    type Response = EmptyResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: CreateIndexTemplateRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.create_index_template(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<GetIndexTemplateRequest> for Box<dyn MetastoreService> {
+    type Response = GetIndexTemplateResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: GetIndexTemplateRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.get_index_template(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<FindIndexTemplateMatchesRequest> for Box<dyn MetastoreService> {
+    type Response = FindIndexTemplateMatchesResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: FindIndexTemplateMatchesRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.find_index_template_matches(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<ListIndexTemplatesRequest> for Box<dyn MetastoreService> {
+    type Response = ListIndexTemplatesResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: ListIndexTemplatesRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.list_index_templates(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<DeleteIndexTemplatesRequest> for Box<dyn MetastoreService> {
+    type Response = EmptyResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: DeleteIndexTemplatesRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.delete_index_templates(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct MetastoreServiceTowerServiceStack {
@@ -1556,6 +1820,31 @@ struct MetastoreServiceTowerServiceStack {
         ListShardsResponse,
         crate::metastore::MetastoreError,
     >,
+    create_index_template_svc: quickwit_common::tower::BoxService<
+        CreateIndexTemplateRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    get_index_template_svc: quickwit_common::tower::BoxService<
+        GetIndexTemplateRequest,
+        GetIndexTemplateResponse,
+        crate::metastore::MetastoreError,
+    >,
+    find_index_template_matches_svc: quickwit_common::tower::BoxService<
+        FindIndexTemplateMatchesRequest,
+        FindIndexTemplateMatchesResponse,
+        crate::metastore::MetastoreError,
+    >,
+    list_index_templates_svc: quickwit_common::tower::BoxService<
+        ListIndexTemplatesRequest,
+        ListIndexTemplatesResponse,
+        crate::metastore::MetastoreError,
+    >,
+    delete_index_templates_svc: quickwit_common::tower::BoxService<
+        DeleteIndexTemplatesRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
 }
 impl Clone for MetastoreServiceTowerServiceStack {
     fn clone(&self) -> Self {
@@ -1585,6 +1874,13 @@ impl Clone for MetastoreServiceTowerServiceStack {
             acquire_shards_svc: self.acquire_shards_svc.clone(),
             delete_shards_svc: self.delete_shards_svc.clone(),
             list_shards_svc: self.list_shards_svc.clone(),
+            create_index_template_svc: self.create_index_template_svc.clone(),
+            get_index_template_svc: self.get_index_template_svc.clone(),
+            find_index_template_matches_svc: self
+                .find_index_template_matches_svc
+                .clone(),
+            list_index_templates_svc: self.list_index_templates_svc.clone(),
+            delete_index_templates_svc: self.delete_index_templates_svc.clone(),
         }
     }
 }
@@ -1721,6 +2017,36 @@ impl MetastoreService for MetastoreServiceTowerServiceStack {
         request: ListShardsRequest,
     ) -> crate::metastore::MetastoreResult<ListShardsResponse> {
         self.list_shards_svc.ready().await?.call(request).await
+    }
+    async fn create_index_template(
+        &mut self,
+        request: CreateIndexTemplateRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.create_index_template_svc.ready().await?.call(request).await
+    }
+    async fn get_index_template(
+        &mut self,
+        request: GetIndexTemplateRequest,
+    ) -> crate::metastore::MetastoreResult<GetIndexTemplateResponse> {
+        self.get_index_template_svc.ready().await?.call(request).await
+    }
+    async fn find_index_template_matches(
+        &mut self,
+        request: FindIndexTemplateMatchesRequest,
+    ) -> crate::metastore::MetastoreResult<FindIndexTemplateMatchesResponse> {
+        self.find_index_template_matches_svc.ready().await?.call(request).await
+    }
+    async fn list_index_templates(
+        &mut self,
+        request: ListIndexTemplatesRequest,
+    ) -> crate::metastore::MetastoreResult<ListIndexTemplatesResponse> {
+        self.list_index_templates_svc.ready().await?.call(request).await
+    }
+    async fn delete_index_templates(
+        &mut self,
+        request: DeleteIndexTemplatesRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.delete_index_templates_svc.ready().await?.call(request).await
     }
     async fn check_connectivity(&mut self) -> anyhow::Result<()> {
         self.inner.check_connectivity().await
@@ -1949,6 +2275,56 @@ type ListShardsLayer = quickwit_common::tower::BoxLayer<
     ListShardsResponse,
     crate::metastore::MetastoreError,
 >;
+type CreateIndexTemplateLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        CreateIndexTemplateRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    CreateIndexTemplateRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
+type GetIndexTemplateLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        GetIndexTemplateRequest,
+        GetIndexTemplateResponse,
+        crate::metastore::MetastoreError,
+    >,
+    GetIndexTemplateRequest,
+    GetIndexTemplateResponse,
+    crate::metastore::MetastoreError,
+>;
+type FindIndexTemplateMatchesLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        FindIndexTemplateMatchesRequest,
+        FindIndexTemplateMatchesResponse,
+        crate::metastore::MetastoreError,
+    >,
+    FindIndexTemplateMatchesRequest,
+    FindIndexTemplateMatchesResponse,
+    crate::metastore::MetastoreError,
+>;
+type ListIndexTemplatesLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ListIndexTemplatesRequest,
+        ListIndexTemplatesResponse,
+        crate::metastore::MetastoreError,
+    >,
+    ListIndexTemplatesRequest,
+    ListIndexTemplatesResponse,
+    crate::metastore::MetastoreError,
+>;
+type DeleteIndexTemplatesLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        DeleteIndexTemplatesRequest,
+        EmptyResponse,
+        crate::metastore::MetastoreError,
+    >,
+    DeleteIndexTemplatesRequest,
+    EmptyResponse,
+    crate::metastore::MetastoreError,
+>;
 #[derive(Debug, Default)]
 pub struct MetastoreServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
@@ -1973,6 +2349,11 @@ pub struct MetastoreServiceTowerLayerStack {
     acquire_shards_layers: Vec<AcquireShardsLayer>,
     delete_shards_layers: Vec<DeleteShardsLayer>,
     list_shards_layers: Vec<ListShardsLayer>,
+    create_index_template_layers: Vec<CreateIndexTemplateLayer>,
+    get_index_template_layers: Vec<GetIndexTemplateLayer>,
+    find_index_template_matches_layers: Vec<FindIndexTemplateMatchesLayer>,
+    list_index_templates_layers: Vec<ListIndexTemplatesLayer>,
+    delete_index_templates_layers: Vec<DeleteIndexTemplatesLayer>,
 }
 impl MetastoreServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -2535,6 +2916,139 @@ impl MetastoreServiceTowerLayerStack {
                 crate::metastore::MetastoreError,
             >,
         >>::Service as tower::Service<ListShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    CreateIndexTemplateRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                CreateIndexTemplateRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                CreateIndexTemplateRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                CreateIndexTemplateRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            CreateIndexTemplateRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetIndexTemplateRequest,
+                    GetIndexTemplateResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetIndexTemplateRequest,
+                GetIndexTemplateResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                GetIndexTemplateRequest,
+                Response = GetIndexTemplateResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetIndexTemplateRequest,
+                GetIndexTemplateResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<GetIndexTemplateRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    FindIndexTemplateMatchesRequest,
+                    FindIndexTemplateMatchesResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                FindIndexTemplateMatchesRequest,
+                FindIndexTemplateMatchesResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                FindIndexTemplateMatchesRequest,
+                Response = FindIndexTemplateMatchesResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                FindIndexTemplateMatchesRequest,
+                FindIndexTemplateMatchesResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            FindIndexTemplateMatchesRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListIndexTemplatesRequest,
+                    ListIndexTemplatesResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListIndexTemplatesRequest,
+                ListIndexTemplatesResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                ListIndexTemplatesRequest,
+                Response = ListIndexTemplatesResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListIndexTemplatesRequest,
+                ListIndexTemplatesResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            ListIndexTemplatesRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteIndexTemplatesRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteIndexTemplatesRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                DeleteIndexTemplatesRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteIndexTemplatesRequest,
+                EmptyResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            DeleteIndexTemplatesRequest,
+        >>::Future: Send + 'static,
     {
         self.create_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -2579,6 +3093,16 @@ impl MetastoreServiceTowerLayerStack {
         self.delete_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.list_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.create_index_template_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.get_index_template_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.find_index_template_matches_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.list_index_templates_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.delete_index_templates_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -3014,6 +3538,114 @@ impl MetastoreServiceTowerLayerStack {
         self.list_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_create_index_template_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    CreateIndexTemplateRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                CreateIndexTemplateRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            CreateIndexTemplateRequest,
+        >>::Future: Send + 'static,
+    {
+        self.create_index_template_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_get_index_template_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetIndexTemplateRequest,
+                    GetIndexTemplateResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                GetIndexTemplateRequest,
+                Response = GetIndexTemplateResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<GetIndexTemplateRequest>>::Future: Send + 'static,
+    {
+        self.get_index_template_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_find_index_template_matches_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    FindIndexTemplateMatchesRequest,
+                    FindIndexTemplateMatchesResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                FindIndexTemplateMatchesRequest,
+                Response = FindIndexTemplateMatchesResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            FindIndexTemplateMatchesRequest,
+        >>::Future: Send + 'static,
+    {
+        self.find_index_template_matches_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_list_index_templates_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListIndexTemplatesRequest,
+                    ListIndexTemplatesResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                ListIndexTemplatesRequest,
+                Response = ListIndexTemplatesResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            ListIndexTemplatesRequest,
+        >>::Future: Send + 'static,
+    {
+        self.list_index_templates_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_delete_index_templates_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteIndexTemplatesRequest,
+                    EmptyResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                DeleteIndexTemplatesRequest,
+                Response = EmptyResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            DeleteIndexTemplatesRequest,
+        >>::Future: Send + 'static,
+    {
+        self.delete_index_templates_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn build<T>(self, instance: T) -> MetastoreServiceClient
     where
         T: MetastoreService,
@@ -3236,6 +3868,46 @@ impl MetastoreServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(boxed_instance.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let create_index_template_svc = self
+            .create_index_template_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let get_index_template_svc = self
+            .get_index_template_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let find_index_template_matches_svc = self
+            .find_index_template_matches_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let list_index_templates_svc = self
+            .list_index_templates_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let delete_index_templates_svc = self
+            .delete_index_templates_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = MetastoreServiceTowerServiceStack {
             inner: boxed_instance.clone(),
             create_index_svc,
@@ -3260,6 +3932,11 @@ impl MetastoreServiceTowerLayerStack {
             acquire_shards_svc,
             delete_shards_svc,
             list_shards_svc,
+            create_index_template_svc,
+            get_index_template_svc,
+            find_index_template_matches_svc,
+            list_index_templates_svc,
+            delete_index_templates_svc,
         };
         MetastoreServiceClient::new(tower_svc_stack)
     }
@@ -3479,6 +4156,45 @@ where
             Response = ListShardsResponse,
             Error = crate::metastore::MetastoreError,
             Future = BoxFuture<ListShardsResponse, crate::metastore::MetastoreError>,
+        >
+        + tower::Service<
+            CreateIndexTemplateRequest,
+            Response = EmptyResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
+        >
+        + tower::Service<
+            GetIndexTemplateRequest,
+            Response = GetIndexTemplateResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<
+                GetIndexTemplateResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >
+        + tower::Service<
+            FindIndexTemplateMatchesRequest,
+            Response = FindIndexTemplateMatchesResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<
+                FindIndexTemplateMatchesResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >
+        + tower::Service<
+            ListIndexTemplatesRequest,
+            Response = ListIndexTemplatesResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<
+                ListIndexTemplatesResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >
+        + tower::Service<
+            DeleteIndexTemplatesRequest,
+            Response = EmptyResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
         >,
 {
     async fn create_index(
@@ -3611,6 +4327,36 @@ where
         &mut self,
         request: ListShardsRequest,
     ) -> crate::metastore::MetastoreResult<ListShardsResponse> {
+        self.call(request).await
+    }
+    async fn create_index_template(
+        &mut self,
+        request: CreateIndexTemplateRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.call(request).await
+    }
+    async fn get_index_template(
+        &mut self,
+        request: GetIndexTemplateRequest,
+    ) -> crate::metastore::MetastoreResult<GetIndexTemplateResponse> {
+        self.call(request).await
+    }
+    async fn find_index_template_matches(
+        &mut self,
+        request: FindIndexTemplateMatchesRequest,
+    ) -> crate::metastore::MetastoreResult<FindIndexTemplateMatchesResponse> {
+        self.call(request).await
+    }
+    async fn list_index_templates(
+        &mut self,
+        request: ListIndexTemplatesRequest,
+    ) -> crate::metastore::MetastoreResult<ListIndexTemplatesResponse> {
+        self.call(request).await
+    }
+    async fn delete_index_templates(
+        &mut self,
+        request: DeleteIndexTemplatesRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.call(request).await
     }
     async fn check_connectivity(&mut self) -> anyhow::Result<()> {
@@ -3880,6 +4626,56 @@ where
     ) -> crate::metastore::MetastoreResult<ListShardsResponse> {
         self.inner
             .list_shards(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+    async fn create_index_template(
+        &mut self,
+        request: CreateIndexTemplateRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.inner
+            .create_index_template(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+    async fn get_index_template(
+        &mut self,
+        request: GetIndexTemplateRequest,
+    ) -> crate::metastore::MetastoreResult<GetIndexTemplateResponse> {
+        self.inner
+            .get_index_template(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+    async fn find_index_template_matches(
+        &mut self,
+        request: FindIndexTemplateMatchesRequest,
+    ) -> crate::metastore::MetastoreResult<FindIndexTemplateMatchesResponse> {
+        self.inner
+            .find_index_template_matches(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+    async fn list_index_templates(
+        &mut self,
+        request: ListIndexTemplatesRequest,
+    ) -> crate::metastore::MetastoreResult<ListIndexTemplatesResponse> {
+        self.inner
+            .list_index_templates(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+    async fn delete_index_templates(
+        &mut self,
+        request: DeleteIndexTemplatesRequest,
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.inner
+            .delete_index_templates(request)
             .await
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
@@ -4156,6 +4952,61 @@ for MetastoreServiceGrpcServerAdapter {
         self.inner
             .clone()
             .list_shards(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn create_index_template(
+        &self,
+        request: tonic::Request<CreateIndexTemplateRequest>,
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .create_index_template(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn get_index_template(
+        &self,
+        request: tonic::Request<GetIndexTemplateRequest>,
+    ) -> Result<tonic::Response<GetIndexTemplateResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .get_index_template(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn find_index_template_matches(
+        &self,
+        request: tonic::Request<FindIndexTemplateMatchesRequest>,
+    ) -> Result<tonic::Response<FindIndexTemplateMatchesResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .find_index_template_matches(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn list_index_templates(
+        &self,
+        request: tonic::Request<ListIndexTemplatesRequest>,
+    ) -> Result<tonic::Response<ListIndexTemplatesResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .list_index_templates(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn delete_index_templates(
+        &self,
+        request: tonic::Request<DeleteIndexTemplatesRequest>,
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .delete_index_templates(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(|error| error.into())
@@ -4933,6 +5784,155 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Creates an index template.
+        pub async fn create_index_template(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateIndexTemplateRequest>,
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/CreateIndexTemplate",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "CreateIndexTemplate",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Fetches an index template.
+        pub async fn get_index_template(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetIndexTemplateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIndexTemplateResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/GetIndexTemplate",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "GetIndexTemplate",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Finds matching index templates.
+        pub async fn find_index_template_matches(
+            &mut self,
+            request: impl tonic::IntoRequest<super::FindIndexTemplateMatchesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::FindIndexTemplateMatchesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/FindIndexTemplateMatches",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "FindIndexTemplateMatches",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Returns all the index templates.
+        pub async fn list_index_templates(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListIndexTemplatesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListIndexTemplatesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/ListIndexTemplates",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "ListIndexTemplates",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Deletes index templates.
+        pub async fn delete_index_templates(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteIndexTemplatesRequest>,
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/DeleteIndexTemplates",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "DeleteIndexTemplates",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -5101,6 +6101,40 @@ pub mod metastore_service_grpc_server {
             tonic::Response<super::ListShardsResponse>,
             tonic::Status,
         >;
+        /// Creates an index template.
+        async fn create_index_template(
+            &self,
+            request: tonic::Request<super::CreateIndexTemplateRequest>,
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
+        /// Fetches an index template.
+        async fn get_index_template(
+            &self,
+            request: tonic::Request<super::GetIndexTemplateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIndexTemplateResponse>,
+            tonic::Status,
+        >;
+        /// Finds matching index templates.
+        async fn find_index_template_matches(
+            &self,
+            request: tonic::Request<super::FindIndexTemplateMatchesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::FindIndexTemplateMatchesResponse>,
+            tonic::Status,
+        >;
+        /// Returns all the index templates.
+        async fn list_index_templates(
+            &self,
+            request: tonic::Request<super::ListIndexTemplatesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListIndexTemplatesResponse>,
+            tonic::Status,
+        >;
+        /// Deletes index templates.
+        async fn delete_index_templates(
+            &self,
+            request: tonic::Request<super::DeleteIndexTemplatesRequest>,
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
     }
     /// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
     ///
@@ -6223,6 +7257,240 @@ pub mod metastore_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = ListShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/CreateIndexTemplate" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateIndexTemplateSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::CreateIndexTemplateRequest>
+                    for CreateIndexTemplateSvc<T> {
+                        type Response = super::EmptyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateIndexTemplateRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).create_index_template(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CreateIndexTemplateSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/GetIndexTemplate" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetIndexTemplateSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::GetIndexTemplateRequest>
+                    for GetIndexTemplateSvc<T> {
+                        type Response = super::GetIndexTemplateResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetIndexTemplateRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_index_template(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetIndexTemplateSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/FindIndexTemplateMatches" => {
+                    #[allow(non_camel_case_types)]
+                    struct FindIndexTemplateMatchesSvc<T: MetastoreServiceGrpc>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::FindIndexTemplateMatchesRequest>
+                    for FindIndexTemplateMatchesSvc<T> {
+                        type Response = super::FindIndexTemplateMatchesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::FindIndexTemplateMatchesRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).find_index_template_matches(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = FindIndexTemplateMatchesSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/ListIndexTemplates" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListIndexTemplatesSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::ListIndexTemplatesRequest>
+                    for ListIndexTemplatesSvc<T> {
+                        type Response = super::ListIndexTemplatesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListIndexTemplatesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).list_index_templates(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ListIndexTemplatesSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/DeleteIndexTemplates" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteIndexTemplatesSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::DeleteIndexTemplatesRequest>
+                    for DeleteIndexTemplatesSvc<T> {
+                        type Response = super::EmptyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteIndexTemplatesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).delete_index_templates(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteIndexTemplatesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -269,13 +269,16 @@ def get_logs(
 
 
 def download_logs_to_file(request_id: str, function_name: str, invoke_start: float):
-    with open(f"lambda.{request_id}.log", "w") as f:
-        for log in get_logs(
-            function_name,
-            request_id,
-            int(invoke_start * 1000),
-        ):
-            f.write(log)
+    try:
+        with open(f"lambda.{request_id}.log", "w") as f:
+            for log in get_logs(
+                function_name,
+                request_id,
+                int(invoke_start * 1000),
+            ):
+                f.write(log)
+    except Exception as e:
+        print(f"Failed to download logs: {e}")
 
 
 def invoke_mock_data_searcher():
@@ -288,9 +291,29 @@ def invoke_mock_data_searcher():
 
 
 def _clean_s3_bucket(bucket_name: str, prefix: str = ""):
+    print(f"Cleaning up bucket {bucket_name}/{prefix}...")
     s3 = session.resource("s3")
     bucket = s3.Bucket(bucket_name)
     bucket.objects.filter(Prefix=prefix).delete()
+
+
+def empty_hdfs_bucket():
+    bucket_name = _get_cloudformation_output_value(
+        app.HDFS_STACK_NAME, hdfs_stack.INDEX_STORE_BUCKET_NAME_EXPORT_NAME
+    )
+
+    _clean_s3_bucket(bucket_name)
+
+
+def empty_mock_data_buckets():
+    bucket_name = _get_cloudformation_output_value(
+        app.MOCK_DATA_STACK_NAME, mock_data_stack.INDEX_STORE_BUCKET_NAME_EXPORT_NAME
+    )
+    _clean_s3_bucket(bucket_name)
+    bucket_name = _get_cloudformation_output_value(
+        app.MOCK_DATA_STACK_NAME, mock_data_stack.SOURCE_BUCKET_NAME_EXPORT_NAME
+    )
+    _clean_s3_bucket(bucket_name)
 
 
 @cache

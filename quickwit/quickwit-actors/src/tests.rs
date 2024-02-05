@@ -23,6 +23,7 @@ use std::ops::Mul;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use quickwit_common::new_coolid;
 use serde::Serialize;
 
 use crate::observation::ObservationType;
@@ -723,5 +724,51 @@ async fn test_unsync_actor_message() {
     let response_rx = mailbox.try_send_message(Cell::new(1)).unwrap();
     assert_eq!(response_rx.await.unwrap().unwrap(), 5);
 
+    universe.assert_quit().await;
+}
+
+struct FakeActorService {
+    // We use a cool id to make sure in the test that we get twice the same instance.
+    cool_id: String,
+}
+
+#[derive(Debug)]
+struct GetCoolId;
+
+impl Actor for FakeActorService {
+    type ObservableState = ();
+
+    fn observable_state(&self) {}
+}
+
+#[async_trait]
+impl Handler<GetCoolId> for FakeActorService {
+    type Reply = String;
+
+    async fn handle(
+        &mut self,
+        _: GetCoolId,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.cool_id.clone())
+    }
+}
+
+impl Default for FakeActorService {
+    fn default() -> Self {
+        FakeActorService {
+            cool_id: new_coolid("fake-actor"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_get_or_spawn() {
+    let universe = Universe::new();
+    let mailbox1: Mailbox<FakeActorService> = universe.get_or_spawn_one();
+    let id1 = mailbox1.ask(GetCoolId).await.unwrap();
+    let mailbox2: Mailbox<FakeActorService> = universe.get_or_spawn_one();
+    let id2 = mailbox2.ask(GetCoolId).await.unwrap();
+    assert_eq!(id1, id2);
     universe.assert_quit().await;
 }

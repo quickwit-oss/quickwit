@@ -337,7 +337,7 @@ mod tests {
     use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
     use quickwit_proto::ingest::ingester::ObservationMessage;
     use quickwit_proto::ingest::ShardState;
-    use quickwit_proto::types::{queue_id, Position};
+    use quickwit_proto::types::{queue_id, IndexUid, Position};
     use tokio::sync::watch;
 
     use super::*;
@@ -482,7 +482,8 @@ mod tests {
 
         let mut state_guard = state.lock_partially().await;
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let shard =
             IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
         state_guard.shards.insert(queue_id_01.clone(), shard);
@@ -506,7 +507,7 @@ mod tests {
 
         let key = format!(
             "{INGESTER_PRIMARY_SHARDS_PREFIX}{}:{}",
-            "test-index:0", "test-source"
+            index_uid, "test-source"
         );
         task.cluster.get_self_key_value(&key).await.unwrap();
 
