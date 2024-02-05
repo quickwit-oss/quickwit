@@ -760,6 +760,7 @@ mod tests {
     }
 
     async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {
+        let index_uid: IndexUid = "test-index:11111111111111111111111111".parse().unwrap();
         let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
@@ -771,35 +772,25 @@ mod tests {
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
                 Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
+        let index_uid_clone = index_uid.clone();
         metastore
             .expect_last_delete_opstamp()
-            .withf(|last_delete_opstamp| {
-                last_delete_opstamp.index_uid()
-                    == &"test-index:11111111111111111111111111"
-                        .parse::<IndexUid>()
-                        .unwrap()
-            })
+            .withf(move |last_delete_opstamp| last_delete_opstamp.index_uid() == &index_uid_clone)
             .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
+        let index_uid_clone = index_uid.clone();
         metastore
             .expect_stage_splits()
-            .withf(|stage_splits_request| {
-                stage_splits_request.index_uid()
-                    == &"test-index:11111111111111111111111111"
-                        .parse::<IndexUid>()
-                        .unwrap()
-            })
+            .withf(move |stage_splits_request| stage_splits_request.index_uid() == &index_uid_clone)
             .returning(|_| Ok(EmptyResponse {}));
+        let index_uid_clone = index_uid.clone();
         metastore
             .expect_publish_splits()
-            .withf(|publish_splits_request| -> bool {
+            .withf(move |publish_splits_request| -> bool {
                 let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
                     .deserialize_index_checkpoint()
                     .unwrap()
                     .unwrap();
-                publish_splits_request.index_uid()
-                    == &"test-index:11111111111111111111111111"
-                        .parse::<IndexUid>()
-                        .unwrap()
+                publish_splits_request.index_uid() == &index_uid_clone
                     && publish_splits_request.staged_split_ids.len() == 1
                     && publish_splits_request.replaced_split_ids.is_empty()
                     && checkpoint_delta.source_id == "test-source"
@@ -810,7 +801,7 @@ mod tests {
         let universe = Universe::new();
         let node_id = "test-node";
         let pipeline_id = IndexingPipelineId {
-            index_uid: "test-index:11111111111111111111111111".to_string().into(),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_uid: PipelineUid::from_u128(0u128),
@@ -966,6 +957,7 @@ mod tests {
     }
 
     async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
+        let index_uid: IndexUid = "test-index:11111111111111111111111111".parse().unwrap();
         let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
@@ -977,30 +969,24 @@ mod tests {
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
                 Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
+        let index_uid_clone = index_uid.clone();
         metastore
             .expect_last_delete_opstamp()
-            .withf(|last_delete_opstamp| {
-                last_delete_opstamp.index_uid()
-                    == &"test-index:11111111111111111111111111"
-                        .parse::<IndexUid>()
-                        .unwrap()
-            })
+            .withf(move |last_delete_opstamp| last_delete_opstamp.index_uid() == &index_uid_clone)
             .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
         metastore
             .expect_stage_splits()
             .never()
             .returning(|_| Ok(EmptyResponse {}));
+        let index_uid_clone = index_uid.clone();
         metastore
             .expect_publish_splits()
-            .withf(|publish_splits_request| -> bool {
+            .withf(move |publish_splits_request| -> bool {
                 let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
                     .deserialize_index_checkpoint()
                     .unwrap()
                     .unwrap();
-                publish_splits_request.index_uid()
-                    == &"test-index:11111111111111111111111111"
-                        .parse::<IndexUid>()
-                        .unwrap()
+                publish_splits_request.index_uid() == &index_uid_clone
                     && publish_splits_request.staged_split_ids.is_empty()
                     && publish_splits_request.replaced_split_ids.is_empty()
                     && checkpoint_delta.source_id == "test-source"
@@ -1011,7 +997,7 @@ mod tests {
         let universe = Universe::new();
         let node_id = "test-node";
         let pipeline_id = IndexingPipelineId {
-            index_uid: "test-index:11111111111111111111111111".to_string().into(),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_uid: PipelineUid::from_u128(0u128),

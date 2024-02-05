@@ -572,14 +572,14 @@ mod tests {
             source_id: source_id.clone(),
             local_shards: vec![
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
@@ -602,27 +602,27 @@ mod tests {
         closed_shard_ids.clear();
 
         let table_entry = RoutingTableEntry {
-            index_uid,
+            index_uid: index_uid.clone(),
             source_id,
             local_shards: Vec::new(),
             local_round_robin_idx: AtomicUsize::default(),
             remote_shards: vec![
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-2".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
@@ -666,21 +666,21 @@ mod tests {
             source_id: source_id.clone(),
             local_shards: vec![
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
@@ -710,7 +710,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
             local_shards: vec![RoutingEntry {
-                index_uid: "test-index:0".into(),
+                index_uid: index_uid.clone(),
                 source_id: "test-source".to_string(),
                 shard_id: ShardId::from(1),
                 shard_state: ShardState::Closed,
@@ -719,28 +719,28 @@ mod tests {
             local_round_robin_idx: AtomicUsize::default(),
             remote_shards: vec![
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(4),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-2".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
@@ -890,21 +890,21 @@ mod tests {
             source_id: source_id.clone(),
             local_shards: vec![
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
@@ -914,21 +914,21 @@ mod tests {
             local_round_robin_idx: AtomicUsize::default(),
             remote_shards: vec![
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(6),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(7),
                     shard_state: ShardState::Open,
@@ -971,21 +971,21 @@ mod tests {
             source_id: source_id.clone(),
             local_shards: vec![
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
@@ -995,21 +995,21 @@ mod tests {
             local_round_robin_idx: AtomicUsize::default(),
             remote_shards: vec![
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(6),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
                 RoutingEntry {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(7),
                     shard_state: ShardState::Open,

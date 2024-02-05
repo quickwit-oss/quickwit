@@ -1108,7 +1108,7 @@ mod tests {
             IngestController::new(metastore, ingester_pool, replication_factor);
         let mut model = ControlPlaneModel::default();
 
-        let index_uid: IndexUid = "test-index-0:0".into();
+        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
         let source_id: SourceId = "test-source".into();
 
         let shards = vec![Shard {
@@ -1158,7 +1158,7 @@ mod tests {
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
         let mut model = ControlPlaneModel::default();
 
-        let index_uid: IndexUid = "test-index-0:0".into();
+        let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
         let source_id: SourceId = "test-source".into();
 
         let shards = vec![
@@ -1229,7 +1229,7 @@ mod tests {
         let mut ingest_controller =
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id: SourceId = "test-source".into();
 
         let source_uid = SourceUid {
@@ -1406,7 +1406,7 @@ mod tests {
             replication_factor,
         );
 
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id: SourceId = INGEST_V2_SOURCE_ID.to_string();
 
         let source_uid = SourceUid {
@@ -1497,7 +1497,7 @@ mod tests {
         let ingest_controller =
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id: SourceId = "test-source".into();
 
         let source_uid = SourceUid {
@@ -1592,7 +1592,7 @@ mod tests {
 
     #[test]
     fn test_find_scale_down_candidate() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id: SourceId = "test-source".into();
 
         let source_uid = SourceUid {
@@ -1703,7 +1703,7 @@ mod tests {
         let ingest_controller =
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".parse().unwrap();
         let source_id: SourceId = "test-source".into();
         let mut model = ControlPlaneModel::default();
         let shards = vec![

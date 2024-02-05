@@ -80,7 +80,7 @@ impl SearchJob {
     #[cfg(test)]
     pub fn for_test(split_id: &str, cost: usize) -> SearchJob {
         SearchJob {
-            index_uid: IndexUid::from("test-index:0"),
+            index_uid: IndexUid::parse("test-index:0").unwrap(),
             cost,
             offsets: SplitIdAndFooterOffsets {
                 split_id: split_id.to_string(),

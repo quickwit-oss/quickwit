@@ -315,12 +315,11 @@ impl MultiFetchStream {
 
     pub fn unsubscribe(
         &mut self,
-        index_uid: &str,
+        index_uid: &IndexUid,
         source_id: &str,
         shard_id: ShardId,
     ) -> IngestV2Result<()> {
-        // TODO change prototype to accept typed values
-        let queue_id = queue_id(&index_uid.to_string().into(), source_id, &shard_id);
+        let queue_id = queue_id(index_uid, source_id, &shard_id);
 
         if let Some(fetch_stream_handle) = self.fetch_task_handles.remove(&queue_id) {
             fetch_stream_handle.abort();

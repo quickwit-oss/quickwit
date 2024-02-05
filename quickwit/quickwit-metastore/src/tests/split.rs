@@ -1120,8 +1120,12 @@ pub async fn test_metastore_mark_splits_for_deletion<
         .index_uid()
         .clone();
 
-    let mark_splits_for_deletion_request =
-        MarkSplitsForDeletionRequest::new("index-not-found:0".into(), Vec::new());
+    let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest::new(
+        "index-not-found:00000000000000000000000000"
+            .parse()
+            .unwrap(),
+        Vec::new(),
+    );
     let error = metastore
         .mark_splits_for_deletion(mark_splits_for_deletion_request)
         .await

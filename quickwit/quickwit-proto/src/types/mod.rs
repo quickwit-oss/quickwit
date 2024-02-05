@@ -104,7 +104,7 @@ impl<'de> Deserialize<'de> for IndexUid {
     where D: Deserializer<'de> {
         let index_uid_str: String = String::deserialize(deserializer)?;
         if !index_uid_str.contains(':') {
-            return Ok(IndexUid::from_parts(&index_uid_str, ""));
+            return Ok(IndexUid::from_parts(&index_uid_str, 0));
         }
         let index_uid = IndexUid::from_str(&index_uid_str).map_err(D::Error::custom)?;
         Ok(index_uid)
@@ -214,7 +214,7 @@ impl IndexUid {
     /// Creates a new index uid from index_id.
     /// A random ULID will be used as incarnation
     pub fn new_with_random_ulid(index_id: &str) -> Self {
-        Self::from_parts(index_id, Ulid::new().to_string())
+        Self::from_parts(index_id, Ulid::new())
     }
 
     /// TODO: Remove when Trinity lands their refactor for #3943.
@@ -225,14 +225,9 @@ impl IndexUid {
         }
     }
 
-    pub fn from_parts(index_id: &str, incarnation_id: impl Display) -> Self {
+    pub fn from_parts(index_id: &str, incarnation_id: impl Into<Ulid>) -> Self {
         assert!(!index_id.contains(':'), "index ID may not contain `:`");
-        let incarnation_id = incarnation_id.to_string();
-        let incarnation_id = if incarnation_id.is_empty() {
-            Ulid::nil()
-        } else {
-            Ulid::from_string(&incarnation_id).unwrap()
-        };
+        let incarnation_id = incarnation_id.into();
         IndexUid {
             index_id: index_id.to_string(),
             incarnation_id,
@@ -268,16 +263,11 @@ pub struct InvalidIndexUid {
     pub invalid_index_uid_str: String,
 }
 
-impl From<&str> for IndexUid {
-    fn from(_index_uid: &str) -> Self {
-        todo!()
-    }
-}
+impl TryFrom<String> for IndexUid {
+    type Error = InvalidIndexUid;
 
-// TODO remove me and only keep `TryFrom` implementation.
-impl From<String> for IndexUid {
-    fn from(_index_uid: String) -> IndexUid {
-        todo!()
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 

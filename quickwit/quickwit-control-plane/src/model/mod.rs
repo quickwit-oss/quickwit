@@ -440,7 +440,7 @@ mod tests {
         assert_eq!(model.shard_table.num_shards(), 1);
 
         let source_uid_0 = SourceUid {
-            index_uid: "test-index-0:0".into(),
+            index_uid: index_uid.clone(),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
         let shards: Vec<&ShardEntry> = model
@@ -452,7 +452,7 @@ mod tests {
         assert_eq!(shards[0].shard_id(), ShardId::from(42));
 
         let source_uid_1 = SourceUid {
-            index_uid: "test-index-1:0".into(),
+            index_uid: index_uid2.clone(),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
         let shards: Vec<&ShardEntry> = model

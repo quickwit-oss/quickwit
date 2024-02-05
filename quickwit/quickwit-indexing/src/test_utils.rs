@@ -239,10 +239,7 @@ pub struct MockSplitBuilder {
 impl MockSplitBuilder {
     pub fn new(split_id: &str) -> Self {
         Self {
-            split_metadata: mock_split_meta(
-                split_id,
-                &IndexUid::from_parts("test-index", "000000"),
-            ),
+            split_metadata: mock_split_meta(split_id, &IndexUid::from_parts("test-index", 0)),
         }
     }
 

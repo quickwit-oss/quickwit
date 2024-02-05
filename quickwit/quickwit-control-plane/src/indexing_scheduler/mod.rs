@@ -767,11 +767,11 @@ mod tests {
     #[test]
     fn test_build_physical_indexing_plan_simple() {
         let source_1 = SourceUid {
-            index_uid: IndexUid::from_parts("index-1", "000"),
+            index_uid: IndexUid::from_parts("index-1", 0),
             source_id: "source1".to_string(),
         };
         let source_2 = SourceUid {
-            index_uid: IndexUid::from_parts("index-2", "000"),
+            index_uid: IndexUid::from_parts("index-2", 0),
             source_id: "source2".to_string(),
         };
         let sources = vec![
@@ -845,7 +845,7 @@ mod tests {
     prop_compose! {
       fn gen_kafka_source()
         (index_idx in 0usize..100usize, desired_num_pipelines in 1usize..51usize, max_num_pipelines_per_indexer in 1usize..5usize) -> (IndexUid, SourceConfig) {
-          let index_uid = IndexUid::from_parts(&format!("index-id-{index_idx}"), "" /* this is the index uid */);
+          let index_uid = IndexUid::from_parts(&format!("index-id-{index_idx}"), 0 /* this is the index uid */);
           let source_id = quickwit_common::rand::append_random_suffix("kafka-source");
           (index_uid, SourceConfig {
               source_id,

@@ -287,7 +287,7 @@ fn parse_key(key: &str) -> Option<SourceUid> {
     let (index_uid_str, source_id_str) = key.rsplit_once(':')?;
 
     Some(SourceUid {
-        index_uid: index_uid_str.into(),
+        index_uid: index_uid_str.parse().ok()?,
         source_id: source_id_str.to_string(),
     })
 }
@@ -524,7 +524,7 @@ mod tests {
     #[test]
     fn test_make_key() {
         let source_uid = SourceUid {
-            index_uid: "test-index:0".into(),
+            index_uid: "test-index:0".parse().unwrap(),
             source_id: "test-source".to_string(),
         };
         let key = make_key(&source_uid);

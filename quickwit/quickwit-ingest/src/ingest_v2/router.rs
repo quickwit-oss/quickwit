@@ -979,7 +979,7 @@ mod tests {
         let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
         let mut state_guard = router.state.write().await;
         state_guard.routing_table.replace_shards(
-            "test-index-0:0",
+            index_uid.clone(),
             "test-source",
             vec![
                 Shard {
@@ -1150,7 +1150,7 @@ mod tests {
         let index_uid2: IndexUid = "test-index-1:0".parse().unwrap();
         let mut state_guard = router.state.write().await;
         state_guard.routing_table.replace_shards(
-            "test-index-0:0",
+            index_uid.clone(),
             "test-source",
             vec![Shard {
                 index_uid: Some(index_uid.clone()),
@@ -1162,7 +1162,7 @@ mod tests {
             }],
         );
         state_guard.routing_table.replace_shards(
-            "test-index-1:0",
+            index_uid2.clone(),
             "test-source",
             vec![
                 Shard {
@@ -1363,7 +1363,7 @@ mod tests {
         let mut state_guard = router.state.write().await;
         let index_uid: IndexUid = "test-index-0:0".parse().unwrap();
         state_guard.routing_table.replace_shards(
-            "test-index-0:0",
+            index_uid.clone(),
             "test-source",
             vec![Shard {
                 index_uid: Some(index_uid.clone()),
@@ -1473,7 +1473,7 @@ mod tests {
 
         let mut state_guard = router.state.write().await;
         state_guard.routing_table.replace_shards(
-            "test-index-0:0",
+            index_uid.clone(),
             "test-source",
             vec![Shard {
                 index_uid: Some(index_uid.clone()),

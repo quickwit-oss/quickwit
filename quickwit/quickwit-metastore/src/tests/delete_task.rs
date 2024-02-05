@@ -66,7 +66,7 @@ pub async fn test_metastore_create_delete_task<
     // Create a delete task on an index with wrong incarnation_id
     let error = metastore
         .create_delete_task(DeleteQuery {
-            index_uid: Some(IndexUid::from_parts(&index_id, "12345")),
+            index_uid: Some(IndexUid::from_parts(&index_id, 12345)),
             ..delete_query.clone()
         })
         .await

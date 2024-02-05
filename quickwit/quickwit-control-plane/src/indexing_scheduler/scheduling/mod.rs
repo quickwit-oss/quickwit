@@ -603,7 +603,7 @@ mod tests {
 
     fn source_id() -> SourceUid {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let index = IndexUid::from_parts("test_index", "0000");
+        let index = IndexUid::from_parts("test_index", 0);
         let source_id = COUNTER.fetch_add(1, Ordering::SeqCst);
         SourceUid {
             index_uid: index,
