@@ -100,7 +100,10 @@ def run_request_step(method, step, previous_result):
     body_from_file = step.get("body_from_file", None)
     if body_from_file is not None:
         body_from_file = osp.join(step["cwd"], body_from_file)
-        kvargs["data"] = load_data(body_from_file)
+        kvargs["data"] = open(body_from_file, 'rb').read()
+        if body_from_file.endswith("gz"):
+            kvargs.setdefault("headers")["content-encoding"] = "gzip"
+
     kvargs = resolve_previous_result(kvargs, previous_result)
     ndjson = step.get("ndjson", None)
     if ndjson is not None:

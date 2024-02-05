@@ -16,6 +16,7 @@ base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 elasticsearch-dsl = "0.4.15"
+flate2 = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
@@ -46,6 +47,7 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 utoipa = { workspace = true }
 warp = { workspace = true }
+zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }

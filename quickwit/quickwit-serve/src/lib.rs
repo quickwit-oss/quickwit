@@ -20,6 +20,7 @@
 mod build_info;
 mod cluster_api;
 mod debugging_api;
+mod decompression;
 mod delete_task_api;
 mod elasticsearch_api;
 mod format;

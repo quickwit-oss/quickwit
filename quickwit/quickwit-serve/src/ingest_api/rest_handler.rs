@@ -32,6 +32,7 @@ use serde::Deserialize;
 use thiserror::Error;
 use warp::{Filter, Rejection};
 
+use crate::decompression::get_body_bytes;
 use crate::format::extract_format_from_qs;
 use crate::rest_api_response::into_rest_api_response;
 use crate::{with_arg, BodyFormat};
@@ -80,7 +81,7 @@ fn ingest_filter(
         .and(warp::body::content_length_limit(
             config.content_length_limit.as_u64(),
         ))
-        .and(warp::body::bytes())
+        .and(get_body_bytes())
         .and(serde_qs::warp::query::<IngestOptions>(
             serde_qs::Config::default(),
         ))
@@ -104,7 +105,7 @@ fn ingest_v2_filter(
         .and(warp::body::content_length_limit(
             config.content_length_limit.as_u64(),
         ))
-        .and(warp::body::bytes())
+        .and(get_body_bytes())
         .and(serde_qs::warp::query::<IngestOptions>(
             serde_qs::Config::default(),
         ))

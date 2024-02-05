@@ -27,6 +27,7 @@ use super::model::{
     CatIndexQueryParams, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
     MultiSearchQueryParams, SearchQueryParamsCount,
 };
+use crate::decompression::get_body_bytes;
 use crate::elasticsearch_api::model::{
     ElasticBulkOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
@@ -76,7 +77,7 @@ pub(crate) fn elastic_bulk_filter(
         .and(warp::body::content_length_limit(
             CONTENT_LENGTH_LIMIT.as_u64(),
         ))
-        .and(warp::body::bytes())
+        .and(get_body_bytes())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
