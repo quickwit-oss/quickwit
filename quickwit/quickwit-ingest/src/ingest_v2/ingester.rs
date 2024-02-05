@@ -369,7 +369,7 @@ impl Ingester {
         let weak_ingester_state = self.state.weak();
 
         event_broker
-            .subscribe::<ShardPositionsUpdate>(weak_ingester_state)
+            .subscribe_with_no_timeout::<ShardPositionsUpdate>(weak_ingester_state)
             .forever();
     }
 

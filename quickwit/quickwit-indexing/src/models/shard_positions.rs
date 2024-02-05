@@ -141,7 +141,7 @@ impl ShardPositionsService {
         let (shard_positions_service_mailbox, _) =
             spawn_ctx.spawn_builder().spawn(shard_positions_service);
         event_broker
-            .subscribe::<LocalShardPositionsUpdate>(move |update| {
+            .subscribe_with_no_timeout::<LocalShardPositionsUpdate>(move |update| {
                 if shard_positions_service_mailbox
                     .try_send_message(update)
                     .is_err()
