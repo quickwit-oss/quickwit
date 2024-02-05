@@ -367,10 +367,11 @@ mod tests {
         assert_eq!(num_changes, 0);
 
         let previous_snapshot = LocalShardsSnapshot::default();
+        let index_uid = IndexUid::parse("test-index:0").unwrap();
         let current_snapshot = LocalShardsSnapshot {
             per_source_shard_infos: vec![(
                 SourceUid {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                 },
                 vec![ShardInfo {
@@ -399,7 +400,7 @@ mod tests {
                 changes[0]
             );
         };
-        assert_eq!(source_uid.index_uid, "test-index:0");
+        assert_eq!(source_uid.index_uid, index_uid);
         assert_eq!(source_uid.source_id, "test-source");
         assert_eq!(shard_infos.len(), 1);
 
@@ -410,7 +411,7 @@ mod tests {
         let current_snapshot = LocalShardsSnapshot {
             per_source_shard_infos: vec![(
                 SourceUid {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                 },
                 vec![ShardInfo {
@@ -439,7 +440,7 @@ mod tests {
                 changes[0]
             );
         };
-        assert_eq!(source_uid.index_uid, "test-index:0");
+        assert_eq!(source_uid.index_uid, index_uid);
         assert_eq!(source_uid.source_id, "test-source");
         assert_eq!(shard_infos.len(), 1);
 
@@ -457,7 +458,7 @@ mod tests {
                 changes[0]
             );
         };
-        assert_eq!(source_uid.index_uid, "test-index:0");
+        assert_eq!(source_uid.index_uid, index_uid);
         assert_eq!(source_uid.source_id, "test-source");
     }
 
@@ -534,8 +535,8 @@ mod tests {
     fn test_parse_key() {
         let key = "test-index:0:test-source";
         let source_uid = parse_key(key).unwrap();
-        assert_eq!(source_uid.index_uid, "test-index:0".to_string(),);
-        assert_eq!(source_uid.source_id, "test-source".to_string(),);
+        assert_eq!(&source_uid.index_uid.to_string(), "test-index:0");
+        assert_eq!(source_uid.source_id, "test-source".to_string());
     }
 
     #[tokio::test]
@@ -548,12 +549,14 @@ mod tests {
 
         let local_shards_update_counter = Arc::new(AtomicUsize::new(0));
         let local_shards_update_counter_clone = local_shards_update_counter.clone();
+        let index_uid = IndexUid::parse("test-index:0").unwrap();
 
+        let index_uid_clone = index_uid.clone();
         event_broker
             .subscribe(move |event: LocalShardsUpdate| {
                 local_shards_update_counter_clone.fetch_add(1, Ordering::Release);
 
-                assert_eq!(event.source_uid.index_uid, "test-index:0");
+                assert_eq!(event.source_uid.index_uid, index_uid_clone);
                 assert_eq!(event.source_uid.source_id, "test-source");
                 assert_eq!(event.shard_infos.len(), 1);
 
@@ -569,7 +572,7 @@ mod tests {
             .forever();
 
         let source_uid = SourceUid {
-            index_uid: "test-index:0".into(),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
         };
         let key = make_key(&source_uid);

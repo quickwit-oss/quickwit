@@ -954,13 +954,13 @@ mod tests {
         ingester_pool.insert("test-ingester-1".into(), ingester.clone());
 
         let mut mock_ingester = MockIngesterService::default();
-        let index_id_0_clone = index_id_0.clone();
+        let index_uid_1_clone = index_uid_1.clone();
         mock_ingester
             .expect_init_shards()
             .once()
             .returning(move |request| {
                 assert_eq!(request.shards.len(), 1);
-                assert_eq!(request.shards[0].index_uid(), &index_id_0_clone);
+                assert_eq!(request.shards[0].index_uid(), &index_uid_1_clone);
                 assert_eq!(request.shards[0].source_id, "test-source");
                 assert_eq!(request.shards[0].shard_id(), ShardId::from(1));
                 assert_eq!(request.shards[0].leader_id, "test-ingester-2");

@@ -61,7 +61,7 @@ pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
     let source_id = parts.next()?;
     let shard_id = parts.next()?;
     Some((
-        index_uid.into(),
+        index_uid.parse().ok()?,
         source_id.to_string(),
         ShardId::from(shard_id),
     ))
@@ -277,24 +277,6 @@ impl From<&str> for IndexUid {
 // TODO remove me and only keep `TryFrom` implementation.
 impl From<String> for IndexUid {
     fn from(_index_uid: String) -> IndexUid {
-        todo!()
-    }
-}
-
-impl PartialEq<&str> for IndexUid {
-    fn eq(&self, _other: &&str) -> bool {
-        todo!()
-    }
-}
-
-impl PartialEq<String> for IndexUid {
-    fn eq(&self, _other: &String) -> bool {
-        todo!()
-    }
-}
-
-impl PartialEq<IndexUid> for String {
-    fn eq(&self, _other: &IndexUid) -> bool {
         todo!()
     }
 }
@@ -528,7 +510,7 @@ mod tests {
 
         let (index_uid, source_id, shard_id) =
             split_queue_id("test-index:0/test-source/00000000000000000001").unwrap();
-        assert_eq!(index_uid, "test-index:0");
+        assert_eq!(&index_uid.to_string(), "test-index:0");
         assert_eq!(source_id, "test-source");
         assert_eq!(shard_id, ShardId::from(1u64));
     }

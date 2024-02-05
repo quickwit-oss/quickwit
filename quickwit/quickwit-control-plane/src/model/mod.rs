@@ -367,6 +367,7 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         let index_uid = IndexUid::parse("test-index-0:0").unwrap();
         let index_uid2 = IndexUid::parse("test-index-1:0").unwrap();
+        let index_uid3 = IndexUid::parse("test-index-2:0").unwrap();
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(|request| {
@@ -432,9 +433,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(model.index_table.len(), 3);
-        assert_eq!(model.index_uid("test-index-0").unwrap(), "test-index-0:0");
-        assert_eq!(model.index_uid("test-index-1").unwrap(), "test-index-1:0");
-        assert_eq!(model.index_uid("test-index-2").unwrap(), "test-index-2:0");
+        assert_eq!(model.index_uid("test-index-0").unwrap(), index_uid);
+        assert_eq!(model.index_uid("test-index-1").unwrap(), index_uid2);
+        assert_eq!(model.index_uid("test-index-2").unwrap(), index_uid3);
 
         assert_eq!(model.shard_table.num_shards(), 1);
 
@@ -473,7 +474,7 @@ mod tests {
         assert_eq!(model.index_table.get(&index_uid).unwrap(), &index_metadata);
 
         assert_eq!(model.index_uid_table.len(), 1);
-        assert_eq!(model.index_uid("test-index").unwrap(), "test-index:0");
+        assert_eq!(model.index_uid("test-index").unwrap(), index_uid);
     }
 
     #[test]
@@ -491,7 +492,7 @@ mod tests {
         assert_eq!(model.index_table.get(&index_uid).unwrap(), &index_metadata);
 
         assert_eq!(model.index_uid_table.len(), 1);
-        assert_eq!(model.index_uid("test-index").unwrap(), "test-index:0");
+        assert_eq!(model.index_uid("test-index").unwrap(), index_uid);
 
         assert_eq!(model.shard_table.num_sources(), 1);
 
