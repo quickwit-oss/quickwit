@@ -47,7 +47,7 @@ use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
 use quickwit_proto::types::{IndexId, NodeId};
 
 pub use self::fetch::{FetchStreamError, MultiFetchStream};
-pub use self::ingester::{wait_for_ingester_decommission, Ingester};
+pub use self::ingester::{wait_for_ingester_decommission, wait_for_ingester_status, Ingester};
 use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{decoded_mrecords, MRecord};
 pub use self::router::IngestRouter;
