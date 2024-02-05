@@ -186,7 +186,7 @@ impl FullyLockedIngesterState<'_> {
     /// mrecordlog queue first and then removes the associated in-memory shard and rate trackers.
     pub async fn delete_shard(&mut self, queue_id: &QueueId) {
         // This if-statement is here to avoid needless log.
-        if self.inner.shards.contains_key(queue_id) {
+        if !self.inner.shards.contains_key(queue_id) {
             // No need to do anything. This queue is not on this ingester.
             return;
         }
