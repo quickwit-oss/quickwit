@@ -230,11 +230,10 @@ impl NodeId {
     pub fn take(self) -> String {
         self.0
     }
-}
 
-impl AsRef<str> for NodeId {
-    fn as_ref(&self) -> &str {
-        self.as_str()
+    /// Returns a reference to the underlying [`str`].
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
