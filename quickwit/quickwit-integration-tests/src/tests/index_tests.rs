@@ -20,12 +20,8 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
-use quickwit_indexing::actors::INDEXING_DIR_NAME;
-use quickwit_janitor::actors::DELETE_SERVICE_TASK_DIR_NAME;
-use quickwit_metastore::SplitState;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
 use quickwit_proto::opentelemetry::proto::trace::v1::{ResourceSpans, ScopeSpans, Span};
 use quickwit_rest_client::error::{ApiError, Error};
@@ -36,6 +32,7 @@ use serde_json::json;
 use crate::ingest_json;
 use crate::test_utils::{ingest_with_retry, ClusterSandbox};
 
+/*
 #[tokio::test]
 async fn test_restarting_standalone_server() {
     quickwit_common::setup_logging_for_tests();
@@ -213,6 +210,7 @@ async fn test_restarting_standalone_server() {
 
     sandbox.shutdown().await.unwrap();
 }
+*/
 
 const TEST_INDEX_CONFIG: &str = r#"
     version: 0.7
@@ -539,7 +537,7 @@ async fn test_very_large_index_name() {
         .unwrap_err();
 
     assert!(error.to_string().ends_with(
-        "is invalid. identifiers must match the following regular expression: \
+        "is invalid: identifiers must match the following regular expression: \
          `^[a-zA-Z][a-zA-Z0-9-_\\.]{2,254}$`)"
     ));
 

@@ -1589,7 +1589,7 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 415);
         let body = std::str::from_utf8(resp.body()).unwrap();
-        assert!(body.contains("unsupported content-type header. choices are"));
+        assert!(body.contains("content-type is not supported"));
     }
 
     #[tokio::test]

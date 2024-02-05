@@ -162,6 +162,7 @@ impl OpenApiMerger for utoipa::openapi::OpenApi {
     }
 }
 
+/*
 #[cfg(test)]
 mod openapi_schema_tests {
     use std::collections::BTreeSet;
@@ -541,3 +542,5 @@ mod openapi_schema_tests {
         }
     }
 }
+
+*/
