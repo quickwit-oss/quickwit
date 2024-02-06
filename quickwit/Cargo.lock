@@ -1382,6 +1382,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "coarsetime"
+version = "0.1.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71367d3385c716342014ad17e3d19f7788ae514885a1f4c24f500260fb365e1a"
+dependencies = [
+ "libc",
+ "once_cell",
+ "wasi 0.11.0+wasi-snapshot-preview1",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "cobs"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5595,6 +5607,7 @@ dependencies = [
  "async-speed-limit",
  "async-trait",
  "bytesize",
+ "coarsetime",
  "dyn-clone",
  "env_logger",
  "fnv",

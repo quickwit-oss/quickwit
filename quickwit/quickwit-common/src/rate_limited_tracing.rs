@@ -17,35 +17,75 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+// TODO coasetime has a recent() instead of now() which is essentially free (atomic read instead of
+// vdso call), but needs us to spawn a future/thread updating that value regularly
+
 #[macro_export]
 macro_rules! rate_limited_tracing {
     ($log_fn:ident, limit_per_min=$limit:literal, $($args:tt)*) => {{
-        use ::std::sync::atomic::{AtomicU32, Ordering};
-        use ::std::sync::Mutex;
-        use ::std::time::{Instant, Duration};
+        use ::std::sync::atomic::{AtomicU64, Ordering};
 
-        static COUNT: AtomicU32 = AtomicU32::new(0);
-        // we can't build an Instant from const context, so we pinitialize with a None
-        static LAST_RESET: Mutex<Option<Instant>> = Mutex::new(None);
+        use $crate::rate_limited_tracing::coarsetime::{Instant, Duration};
 
-        let count = COUNT.fetch_add(1, Ordering::Relaxed);
+        //  This is treated as 2 u32: upper bits count "generation", lower bits count number of
+        //  calls since LAST_RESET. We assume there won't be 2**32 calls to this log in ~60s.
+        //  Generation is free to wrap arround.
+        static COUNT: AtomicU64 = AtomicU64::new(0);
+        const MASK: u64 = 0xffffffff;
+        // we can't get time from constant context, so we pre-initialize with zero
+        static LAST_RESET: AtomicU64 = AtomicU64::new(0);
+
+        let count = COUNT.fetch_add(1, Ordering::Acquire);
         if count == 0 {
             // this can only be reached the very 1st time we log
-            *LAST_RESET.lock().unwrap() = Some(Instant::now());
+            LAST_RESET.store(Instant::now().as_ticks(), Ordering::Release);
         }
 
-        let do_log = if count >= $limit {
-            let mut last_reset = LAST_RESET.lock().unwrap();
-            let current_time = Instant::now();
-            let should_reset = last_reset
-                .map(|last_reset| current_time.duration_since(last_reset) >= Duration::from_secs(60))
-                .unwrap_or(true);
+        let do_log = if count & MASK >= $limit {
+            let current_time = Duration::from_ticks(Instant::now().as_ticks());
+            let last_reset = Duration::from_ticks(LAST_RESET.load(Ordering::Acquire));
+
+            let should_reset = current_time.abs_diff(last_reset) >= Duration::from_secs(60);
 
             if should_reset {
-                *last_reset = Some(current_time);
-                // we store 1 because we are already about to log something
-                COUNT.store(1, Ordering::Relaxed);
-                true
+                let generation = count >> 32;
+                let mut update_time = false;
+                let mut can_log = false;
+
+                let _ = COUNT.fetch_update(Ordering::Release, Ordering::Acquire, |current_count| {
+                    let current_generation = current_count >> 32;
+                    if generation == current_generation {
+                        // we can update generation&time, so we can definitely log
+                        update_time = true;
+                        can_log = true;
+                        let generation_part = (generation + 1) << 32;
+                        let count_part = 1;
+                        Some(generation_part + count_part)
+                    } else {
+                        // we can't update generation&time, but maybe we can still log?
+                        update_time = false;
+                        if current_generation & MASK < $limit {
+                            // we can log, update the count
+                            can_log = true;
+                            Some(current_count + 1)
+                        } else {
+                            // we can't log, save some contention by not recording that we tried to
+                            // log
+                            can_log = false;
+                            None
+                        }
+                    }
+                });
+
+                // technically there is a race condition if we stay stuck *here* for > 60s, which
+                // could cause us to log more than required. This is unlikely to happen, and not
+                // really a big issue.
+
+                if update_time {
+                    // *we* updated generation, so we must update last_reset too
+                    LAST_RESET.store(current_time.as_ticks(), Ordering::Release);
+                }
+                can_log
             } else {
                 // we are over-limit and not far enough in time to reset: don't log
                 false
@@ -91,6 +131,12 @@ macro_rules! rate_limited_error {
     };
 }
 
+fn _check_macro_works() {
+    rate_limited_info!(limit_per_min = 10, "test {}", "test");
+}
+
+#[doc(hidden)]
+pub use coarsetime;
 #[doc(hidden)]
 pub use rate_limited_tracing;
 pub use {
