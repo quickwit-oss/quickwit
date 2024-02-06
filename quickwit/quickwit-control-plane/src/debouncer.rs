@@ -35,18 +35,10 @@ use quickwit_actors::{Actor, ActorContext, DeferableReplyHandler, Handler};
 ///
 /// In particular, note the event triggered at `t=COOLDOWN`.
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct Debouncer {
     cooldown_period: Duration,
     cooldown_state: Arc<Mutex<DebouncerState>>,
-}
-
-impl Debouncer {
-    pub fn new(cooldown_period: Duration) -> Debouncer {
-        Debouncer {
-            cooldown_period,
-            cooldown_state: Arc::new(Mutex::new(DebouncerState::NoCooldown)),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -81,7 +73,15 @@ enum Transition {
     Emit,
 }
 
+#[allow(dead_code)]
 impl Debouncer {
+    pub fn new(cooldown_period: Duration) -> Debouncer {
+        Debouncer {
+            cooldown_period,
+            cooldown_state: Arc::new(Mutex::new(DebouncerState::NoCooldown)),
+        }
+    }
+
     /// Updates the state according to the transition, and returns the state before the transition.
     /// The entire transition is atomic.
     fn accept_transition(&self, transition: Transition) -> DebouncerState {

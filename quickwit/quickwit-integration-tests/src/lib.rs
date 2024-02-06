@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![recursion_limit = "256"]
+
 #[cfg(test)]
 mod test_utils;
 #[cfg(test)]

@@ -538,23 +538,24 @@ mod tests {
         );
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1000", mock_search_service)]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
-        let (downloader_mailbox, downloader_inbox) = test_sandbox.universe().create_test_mailbox();
-        let (merge_split_downloader_mailbox, _) = universe.create_test_mailbox();
-        let delete_planner_executor = DeleteTaskPlanner::new(
+        let merge_scheduler_mailbox = universe.get_or_spawn_one();
+        let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
+            universe.create_test_mailbox();
+        let delete_planner = DeleteTaskPlanner::new(
             index_uid.clone(),
             index_config.index_uri.clone(),
             doc_mapper_str,
             metastore.clone(),
             search_job_placer,
             merge_split_downloader_mailbox,
-            downloader_mailbox,
+            merge_scheduler_mailbox,
         );
         let (delete_planner_mailbox, delete_planner_handle) = test_sandbox
             .universe()
             .spawn_builder()
-            .spawn(delete_planner_executor);
+            .spawn(delete_planner);
         delete_planner_handle.process_pending_and_observe().await;
-        let downloader_msgs: Vec<MergeTask> = downloader_inbox.drain_for_test_typed();
+        let downloader_msgs: Vec<MergeTask> = merge_split_downloader_inbox.drain_for_test_typed();
         assert_eq!(downloader_msgs.len(), 1);
         // The last split will undergo a delete operation.
         assert_eq!(
@@ -572,7 +573,7 @@ mod tests {
             .ask(PlanDeleteOperations)
             .await
             .unwrap();
-        assert!(downloader_inbox.drain_for_test().is_empty());
+        assert!(merge_split_downloader_inbox.drain_for_test().is_empty());
         // Now drop the current merge operation and check that the planner will plan a new
         // operation.
         drop(downloader_msgs.into_iter().next().unwrap());
@@ -588,7 +589,7 @@ mod tests {
             .ask(PlanDeleteOperations)
             .await
             .unwrap();
-        let downloader_last_msgs = downloader_inbox.drain_for_test_typed::<MergeTask>();
+        let downloader_last_msgs = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
         assert_eq!(downloader_last_msgs.len(), 1);
         assert_eq!(
             downloader_last_msgs[0].splits[0].split_id(),

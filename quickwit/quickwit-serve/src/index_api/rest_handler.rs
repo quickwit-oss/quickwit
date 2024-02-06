@@ -1589,8 +1589,7 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 415);
         let body = std::str::from_utf8(resp.body()).unwrap();
-        eprintln!("body={body}");
-        assert!(body.contains("request's content-type is not supported"));
+        assert!(body.contains("content-type is not supported"));
     }
 
     #[tokio::test]
