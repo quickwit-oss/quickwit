@@ -75,11 +75,7 @@ impl RunCliCommand {
 
     pub async fn execute(&self) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
-        let build_info = BuildInfo::get();
-        let version_text = format!(
-            "{} ({} {})",
-            build_info.cargo_pkg_version, build_info.cargo_pkg_version, build_info.commit_date,
-        );
+        let version_text = BuildInfo::get_version_text();
         info!("quickwit version: {version_text}");
         let mut node_config = load_node_config(&self.config_uri).await?;
         let (storage_resolver, metastore_resolver) =
