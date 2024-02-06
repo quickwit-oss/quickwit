@@ -1704,7 +1704,7 @@ mod tests {
             assert_eq!(source_configs[1].source_id, INGEST_V2_SOURCE_ID);
             assert_eq!(source_configs[2].source_id, CLI_SOURCE_ID);
 
-            let index_uid = IndexUid::new_2("test-index-foo", 0);
+            let index_uid = IndexUid::from_parts("test-index-foo", 0);
             let mut index_metadata = IndexMetadata::new_with_index_uid(index_uid, index_config);
 
             for source_config in source_configs {

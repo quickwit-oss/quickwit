@@ -103,9 +103,6 @@ impl<'de> Deserialize<'de> for IndexUid {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
         let index_uid_str: String = String::deserialize(deserializer)?;
-        if !index_uid_str.contains(':') {
-            return Ok(IndexUid::from_parts(&index_uid_str, 0));
-        }
         let index_uid = IndexUid::from_str(&index_uid_str).map_err(D::Error::custom)?;
         Ok(index_uid)
     }
@@ -215,14 +212,6 @@ impl IndexUid {
     /// A random ULID will be used as incarnation
     pub fn new_with_random_ulid(index_id: &str) -> Self {
         Self::from_parts(index_id, Ulid::new())
-    }
-
-    /// TODO: Remove when Trinity lands their refactor for #3943.
-    pub fn new_2(index_id: impl Into<String>, incarnation_id: impl Into<Ulid>) -> Self {
-        IndexUid {
-            index_id: index_id.into(),
-            incarnation_id: incarnation_id.into(),
-        }
     }
 
     pub fn from_parts(index_id: &str, incarnation_id: impl Into<Ulid>) -> Self {
