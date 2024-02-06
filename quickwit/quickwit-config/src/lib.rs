@@ -60,6 +60,7 @@ pub use source_config::{
 };
 use tracing::warn;
 
+use crate::index_template::IndexTemplateV0_7;
 pub use crate::index_template::{IndexTemplate, IndexTemplateId, VersionedIndexTemplate};
 use crate::merge_policy_config::{
     ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
@@ -89,6 +90,8 @@ pub use crate::storage_config::{
     SourceConfigV0_7,
     VersionedIndexConfig,
     IndexConfigV0_7,
+    VersionedIndexTemplate,
+    IndexTemplateV0_7,
     SourceInputFormat,
     SourceParams,
     FileSourceParams,
