@@ -323,7 +323,7 @@ mod tests {
         let grpc_status: tonic::Status = error.into();
         let error_serdeser = IngestV2Error::from(grpc_status);
         assert!(
-            matches!(error_serdeser, IngestV2Error::IngesterUnavailable { ingester_id } if ingester_id.as_str() == "test-ingester")
+            matches!(error_serdeser, IngestV2Error::IngesterUnavailable { ingester_id } if ingester_id == "test-ingester")
         );
     }
 }
