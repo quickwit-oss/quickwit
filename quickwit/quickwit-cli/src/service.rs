@@ -26,10 +26,10 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
-use quickwit_serve::serve_quickwit;
+use quickwit_serve::{serve_quickwit, BuildInfo};
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tokio::signal;
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::{config_cli_arg, get_resolvers, load_node_config, start_actor_runtimes};
 
@@ -75,13 +75,19 @@ impl RunCliCommand {
 
     pub async fn execute(&self) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
+        let build_info = BuildInfo::get();
+        let version_text = format!(
+            "{} ({} {})",
+            build_info.cargo_pkg_version, build_info.cargo_pkg_version, build_info.commit_date,
+        );
+        info!("quickwit version: {version_text}");
         let mut node_config = load_node_config(&self.config_uri).await?;
         let (storage_resolver, metastore_resolver) =
             get_resolvers(&node_config.storage_configs, &node_config.metastore_configs);
         crate::busy_detector::set_enabled(true);
 
         if let Some(services) = &self.services {
-            tracing::info!(services = %services.iter().join(", "), "setting services from override");
+            info!(services = %services.iter().join(", "), "setting services from override");
             node_config.enabled_services = services.clone();
         }
         let telemetry_handle_opt =
