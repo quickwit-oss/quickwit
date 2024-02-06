@@ -54,7 +54,8 @@ pub async fn test_metastore_create_index<
         .create_index(create_index_request.clone())
         .await
         .unwrap()
-        .index_uid;
+        .index_uid()
+        .clone();
 
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
@@ -74,7 +75,7 @@ pub async fn test_metastore_create_index<
         .unwrap_err();
     assert!(matches!(error, MetastoreError::AlreadyExists { .. }));
 
-    cleanup_index(&mut metastore, index_uid.unwrap()).await;
+    cleanup_index(&mut metastore, index_uid).await;
 }
 
 pub async fn test_metastore_create_index_with_sources<
@@ -161,11 +162,12 @@ pub async fn test_metastore_index_exists<
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid;
+        .index_uid()
+        .clone();
 
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
-    cleanup_index(&mut metastore, index_uid.unwrap()).await;
+    cleanup_index(&mut metastore, index_uid).await;
 }
 
 pub async fn test_metastore_index_metadata<
@@ -235,12 +237,14 @@ pub async fn test_metastore_list_all_indexes<
         .create_index(CreateIndexRequest::try_from_index_config(&index_config_1).unwrap())
         .await
         .unwrap()
-        .index_uid;
+        .index_uid()
+        .clone();
     let index_uid_2 = metastore
         .create_index(CreateIndexRequest::try_from_index_config(&index_config_2).unwrap())
         .await
         .unwrap()
-        .index_uid;
+        .index_uid()
+        .clone();
 
     let indexes_count = metastore
         .list_indexes_metadata(ListIndexesMetadataRequest::all())
@@ -253,8 +257,8 @@ pub async fn test_metastore_list_all_indexes<
         .count();
     assert_eq!(indexes_count, 2);
 
-    cleanup_index(&mut metastore, index_uid_1.unwrap()).await;
-    cleanup_index(&mut metastore, index_uid_2.unwrap()).await;
+    cleanup_index(&mut metastore, index_uid_1).await;
+    cleanup_index(&mut metastore, index_uid_2).await;
 }
 
 pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreServiceExt + DefaultForTest>() {
@@ -294,22 +298,26 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreServiceExt + 
         .create_index(CreateIndexRequest::try_from_index_config(&index_config_1).unwrap())
         .await
         .unwrap()
-        .index_uid;
+        .index_uid()
+        .clone();
     let index_uid_2 = metastore
         .create_index(CreateIndexRequest::try_from_index_config(&index_config_2).unwrap())
         .await
         .unwrap()
-        .index_uid;
+        .index_uid()
+        .clone();
     let index_uid_3 = metastore
         .create_index(CreateIndexRequest::try_from_index_config(&index_config_3).unwrap())
         .await
         .unwrap()
-        .index_uid;
+        .index_uid()
+        .clone();
     let index_uid_4 = metastore
         .create_index(CreateIndexRequest::try_from_index_config(&index_config_4).unwrap())
         .await
         .unwrap()
-        .index_uid;
+        .index_uid()
+        .clone();
 
     let index_id_patterns = vec![format!("prefix-*-{index_id_fragment}-suffix-*")];
     let indexes_count = metastore
@@ -321,10 +329,10 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreServiceExt + 
         .len();
     assert_eq!(indexes_count, 2);
 
-    cleanup_index(&mut metastore, index_uid_1.unwrap()).await;
-    cleanup_index(&mut metastore, index_uid_2.unwrap()).await;
-    cleanup_index(&mut metastore, index_uid_3.unwrap()).await;
-    cleanup_index(&mut metastore, index_uid_4.unwrap()).await;
+    cleanup_index(&mut metastore, index_uid_1).await;
+    cleanup_index(&mut metastore, index_uid_2).await;
+    cleanup_index(&mut metastore, index_uid_3).await;
+    cleanup_index(&mut metastore, index_uid_4).await;
 }
 
 pub async fn test_metastore_delete_index<
