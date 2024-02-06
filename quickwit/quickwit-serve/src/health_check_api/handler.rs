@@ -79,13 +79,13 @@ async fn get_liveness(
 
     if let Some(indexer_service) = indexer_service_opt {
         if !indexer_service.ask(Healthz).await.unwrap_or(false) {
-            error!("the indexer service is unhealthy");
+            error!("indexer service is unhealthy");
             is_live = false;
         }
     }
     if let Some(janitor_service) = janitor_service_opt {
         if !janitor_service.ask(Healthz).await.unwrap_or(false) {
-            error!("the janitor service is unhealthy");
+            error!("janitor service is unhealthy");
             is_live = false;
         }
     }

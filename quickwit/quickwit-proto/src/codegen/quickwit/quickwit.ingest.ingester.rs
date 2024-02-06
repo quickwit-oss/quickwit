@@ -484,15 +484,19 @@ impl ReplicateFailureReason {
 #[repr(i32)]
 pub enum IngesterStatus {
     Unspecified = 0,
+    /// The ingester is live but not ready yet to accept requests.
+    Initializing = 1,
     /// The ingester is ready and accepts read and write requests.
-    Ready = 1,
+    Ready = 2,
     /// The ingester is being decommissioned. It accepts read requests but rejects write requests
     /// (open shards, persist, and replicate requests). It will transition to `Decommissioned` once
     /// all shards are fully indexed.
-    Decommissioning = 2,
+    Decommissioning = 3,
     /// The ingester no longer accepts read and write requests. It does not hold any data and can
     /// be safely removed from the cluster.
-    Decommissioned = 3,
+    Decommissioned = 4,
+    /// The ingester failed to initialize and is not ready to accept requests.
+    Failed = 5,
 }
 impl IngesterStatus {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -502,18 +506,22 @@ impl IngesterStatus {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             IngesterStatus::Unspecified => "INGESTER_STATUS_UNSPECIFIED",
+            IngesterStatus::Initializing => "INGESTER_STATUS_INITIALIZING",
             IngesterStatus::Ready => "INGESTER_STATUS_READY",
             IngesterStatus::Decommissioning => "INGESTER_STATUS_DECOMMISSIONING",
             IngesterStatus::Decommissioned => "INGESTER_STATUS_DECOMMISSIONED",
+            IngesterStatus::Failed => "INGESTER_STATUS_FAILED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "INGESTER_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+            "INGESTER_STATUS_INITIALIZING" => Some(Self::Initializing),
             "INGESTER_STATUS_READY" => Some(Self::Ready),
             "INGESTER_STATUS_DECOMMISSIONING" => Some(Self::Decommissioning),
             "INGESTER_STATUS_DECOMMISSIONED" => Some(Self::Decommissioned),
+            "INGESTER_STATUS_FAILED" => Some(Self::Failed),
             _ => None,
         }
     }

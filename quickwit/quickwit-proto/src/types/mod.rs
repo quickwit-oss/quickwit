@@ -232,12 +232,6 @@ impl NodeId {
     }
 }
 
-impl AsRef<str> for NodeId {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
 impl AsRef<NodeIdRef> for NodeId {
     fn as_ref(&self) -> &NodeIdRef {
         self.deref()

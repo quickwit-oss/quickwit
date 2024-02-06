@@ -311,6 +311,7 @@ impl ClusterSandbox {
     }
 
     // Waits for the needed number of indexing pipeline to start.
+    #[allow(dead_code)]
     pub async fn wait_for_splits(
         &self,
         index_id: &str,

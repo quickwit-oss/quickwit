@@ -80,8 +80,8 @@ use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
-    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    LocalShardsUpdate,
+    wait_for_ingester_status, GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient,
+    Ingester, IngesterPool, LocalShardsUpdate,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{start_janitor_service, JanitorService};
@@ -91,7 +91,7 @@ use quickwit_metastore::{
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
-use quickwit_proto::ingest::ingester::IngesterServiceClient;
+use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::metastore::{
     EntityKind, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
@@ -616,6 +616,7 @@ pub async fn serve_quickwit(
         node_readiness_reporting_task(
             cluster,
             metastore_through_control_plane,
+            ingester_service_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
         ),
@@ -627,7 +628,9 @@ pub async fn serve_quickwit(
 
         // We must decommission the ingester first before terminating the indexing pipelines that
         // may consume from it. We also need to keep the gRPC server running while doing so.
-        wait_for_ingester_decommission(ingester_service_opt).await;
+        if let Some(ingester_service) = ingester_service_opt {
+            wait_for_ingester_decommission(ingester_service).await;
+        }
         let actor_exit_statuses = universe.quit().await;
 
         if grpc_shutdown_trigger_tx.send(()).is_err() {
@@ -720,8 +723,8 @@ async fn setup_ingest_v2(
                     let node_id: NodeId = node.node_id().into();
 
                     if node.is_self_node() {
-                        let ingester_service = ingester_service_opt
-                            .expect("the ingester service should be initialized");
+                        let ingester_service =
+                            ingester_service_opt.expect("ingester service should be initialized");
                         Some(Change::Insert(node_id, ingester_service))
                     } else {
                         let ingester_service = IngesterServiceClient::from_channel(
@@ -910,6 +913,7 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 async fn node_readiness_reporting_task(
     cluster: Cluster,
     mut metastore: MetastoreServiceClient,
+    ingester_service_opt: Option<IngesterServiceClient>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
 ) {
@@ -925,6 +929,9 @@ async fn node_readiness_reporting_task(
     };
     info!("REST server is ready");
 
+    if let Some(ingester_service) = ingester_service_opt {
+        wait_for_ingester_status(ingester_service, IngesterStatus::Ready).await;
+    }
     let mut interval = tokio::time::interval(READINESS_REPORTING_INTERVAL);
 
     loop {
@@ -993,9 +1000,11 @@ async fn check_cluster_configuration(
 mod tests {
     use quickwit_cluster::{create_cluster_for_test, ChannelTransport, ClusterNode};
     use quickwit_common::uri::Uri;
+    use quickwit_common::ServiceStream;
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{metastore_for_test, IndexMetadata};
     use quickwit_proto::indexing::IndexingTask;
+    use quickwit_proto::ingest::ingester::ObservationMessage;
     use quickwit_proto::metastore::ListIndexesMetadataResponse;
     use quickwit_proto::types::PipelineUid;
     use quickwit_search::Job;
@@ -1048,11 +1057,27 @@ mod tests {
                     Err(anyhow::anyhow!("Metastore not ready"))
                 }
             });
+        let (ingester_status_tx, ingester_status_rx) = watch::channel(IngesterStatus::Initializing);
+        let mut mock_ingester = IngesterServiceClient::mock();
+        mock_ingester
+            .expect_open_observation_stream()
+            .returning(move |_| {
+                let status_stream = ServiceStream::from(ingester_status_rx.clone());
+                let observation_stream = status_stream.map(|status| {
+                    let message = ObservationMessage {
+                        node_id: "test-node".to_string(),
+                        status: status as i32,
+                    };
+                    Ok(message)
+                });
+                Ok(observation_stream)
+            });
         let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
         let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
             MetastoreServiceClient::from(mock_metastore),
+            Some(IngesterServiceClient::from(mock_ingester)),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
         ));
@@ -1063,6 +1088,7 @@ mod tests {
         assert!(!cluster.is_self_node_ready().await);
 
         metastore_readiness_tx.send(true).unwrap();
+        ingester_status_tx.send(IngesterStatus::Ready).unwrap();
         tokio::time::sleep(Duration::from_millis(25)).await;
         assert!(cluster.is_self_node_ready().await);
 
