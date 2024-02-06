@@ -52,12 +52,6 @@ def run_step(step, previous_result):
         time.sleep(step["sleep_after"])
     return result
 
-def load_data(path):
-    if path.endswith("gz"):
-        return gzip.open(path, 'rb').read()
-    else:
-        return open(path, 'rb').read()
-
 def run_request_with_retry(run_req, expected_status_code=None, num_retries=10, wait_time=0.5):
     for try_number in range(num_retries + 1):
         r = run_req()
@@ -103,6 +97,8 @@ def run_request_step(method, step, previous_result):
         kvargs["data"] = open(body_from_file, 'rb').read()
         if body_from_file.endswith("gz"):
             kvargs.setdefault("headers")["content-encoding"] = "gzip"
+        if body_from_file.endswith("zst"):
+            kvargs.setdefault("headers")["content-encoding"] = "zstd"
 
     kvargs = resolve_previous_result(kvargs, previous_result)
     ndjson = step.get("ndjson", None)

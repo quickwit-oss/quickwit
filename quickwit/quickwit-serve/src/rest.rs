@@ -34,6 +34,7 @@ use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
 use crate::debugging_api::debugging_handler;
+use crate::decompression::UnsupportedEncoding;
 use crate::delete_task_api::delete_task_api_handlers;
 use crate::elasticsearch_api::elastic_api_handlers;
 use crate::health_check_api::health_check_handlers;
@@ -269,6 +270,11 @@ fn get_status_with_error(rejection: Rejection) -> RestApiError {
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::UnsupportedMediaType>() {
+        RestApiError {
+            service_code: ServiceErrorCode::UnsupportedMediaType,
+            message: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<UnsupportedEncoding>() {
         RestApiError {
             service_code: ServiceErrorCode::UnsupportedMediaType,
             message: error.to_string(),

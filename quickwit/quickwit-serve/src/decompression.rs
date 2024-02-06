@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use core::fmt;
 use std::io::Read;
 
 use bytes::Bytes;
@@ -25,6 +24,7 @@ use flate2::read::GzDecoder;
 use tokio::task;
 use warp::reject::Reject;
 use warp::Filter;
+use thiserror::Error;
 
 /// There are two ways to decompress the body:
 /// - Stream the body through an async decompressor
@@ -65,18 +65,9 @@ async fn decompress_body(encoding: Option<String>, body: Bytes) -> Result<Bytes,
     }
 }
 
-#[derive(Debug)]
-struct UnsupportedEncoding(String);
-
-impl fmt::Display for UnsupportedEncoding {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Unsupported Content-Encoding {}. Supported encodings are 'gzip' and 'zstd'.",
-            self.0
-        )
-    }
-}
+#[derive(Debug, Error)]
+#[error("Unsupported Content-Encoding {}. Supported encodings are 'gzip' and 'zstd'", self.0)]
+pub(crate) struct UnsupportedEncoding(String);
 
 impl Reject for UnsupportedEncoding {}
 
