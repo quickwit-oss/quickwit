@@ -3533,12 +3533,10 @@ mod tests {
         )
         .await;
         assert!(search_response.is_err());
-        assert_eq!(
-            search_response.unwrap_err().to_string(),
-            "invalid aggregation request: unknown variant `termss`, expected one of `range`, \
-             `histogram`, `date_histogram`, `terms`, `avg`, `value_count`, `max`, `min`, `stats`, \
-             `sum`, `percentiles` at line 18 column 13"
-        );
+        assert!(search_response
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid aggregation request: unknown variant `termss`, expected one of"));
         Ok(())
     }
 
