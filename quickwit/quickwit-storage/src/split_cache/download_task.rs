@@ -19,11 +19,11 @@
 
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_common::split_file;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 use tracing::{error, instrument};
 use ulid::Ulid;
 
@@ -85,7 +85,7 @@ async fn perform_eviction_and_download(
     })
     .await;
     let num_bytes = download_split(&root_path, &split_to_download, storage_resolver).await?;
-    let mut shared_split_table_lock = shared_split_table.lock().unwrap();
+    let mut shared_split_table_lock = shared_split_table.lock().await;
     shared_split_table_lock.register_as_downloaded(split_ulid, num_bytes);
     Ok(())
 }
@@ -100,10 +100,8 @@ pub(crate) fn spawn_download_task(
     tokio::task::spawn(async move {
         loop {
             let download_permit = Semaphore::acquire_owned(semaphore.clone()).await.unwrap();
-            let download_opportunity_opt = shared_split_table
-                .lock()
-                .unwrap()
-                .find_download_opportunity();
+            let download_opportunity_opt =
+                shared_split_table.lock().await.find_download_opportunity();
             if let Some(download_opportunity) = download_opportunity_opt {
                 tokio::task::spawn(perform_eviction_and_download(
                     download_opportunity,

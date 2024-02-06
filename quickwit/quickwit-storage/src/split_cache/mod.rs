@@ -22,32 +22,29 @@ mod split_table;
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
-use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::SplitCacheLimits;
 use quickwit_proto::search::ReportSplit;
 use tantivy::directory::OwnedBytes;
+use tokio::sync::{Mutex, OwnedSemaphorePermit};
 use tracing::{error, info, warn};
 use ulid::Ulid;
 
 use crate::split_cache::download_task::{delete_evicted_splits, spawn_download_task};
-use crate::split_cache::split_table::{SplitGuard, SplitTable};
+use crate::split_cache::split_table::SplitTable;
 use crate::{wrap_storage_with_cache, Storage, StorageCache};
 
 /// On disk Cache of splits for searchers.
 ///
 /// The search acts receives reports of splits.
 pub struct SplitCache {
-    // Directory containing the cached split files.
-    // Split ids are universally unique, so we all put them in the same directory.
-    root_path: PathBuf,
     // In memory structure, listing the splits we know about regardless
     // of whether they are in cache, being downloaded, or just available for download.
     split_table: Arc<Mutex<SplitTable>>,
@@ -94,10 +91,11 @@ impl SplitCache {
                 }
             }
         }
-        let mut split_table = SplitTable::with_limits_and_existing_splits(limits, existing_splits);
+        let mut split_table =
+            SplitTable::with_limits_and_existing_splits(limits, existing_splits, root_path.clone());
 
         // In case of a setting change, it could be useful to evict some splits on startup.
-        let splits_to_remove_opt = split_table.make_room_for_split_if_necessary(u64::MAX);
+        let splits_to_remove_opt = split_table.make_room_for_split_if_necessary(None);
         let root_path_clone = root_path.clone();
         if let Some(splits_to_remove) = splits_to_remove_opt {
             info!(
@@ -116,7 +114,6 @@ impl SplitCache {
         );
 
         Ok(SplitCache {
-            root_path,
             split_table: split_table_arc,
         })
     }
@@ -131,8 +128,8 @@ impl SplitCache {
     }
 
     /// Report the split cache about the existence of new splits.
-    pub fn report_splits(&self, report_splits: Vec<ReportSplit>) {
-        let mut split_table = self.split_table.lock().unwrap();
+    pub async fn report_splits(&self, report_splits: Vec<ReportSplit>) {
+        let mut split_table = self.split_table.lock().await;
         for report_split in report_splits {
             let Ok(split_ulid) = Ulid::from_str(&report_split.split_id) else {
                 error!(split_id=%report_split.split_id, "received invalid split ulid: ignoring");
@@ -146,35 +143,25 @@ impl SplitCache {
         }
     }
 
-    fn cached_split_filepath(&self, split_id: Ulid) -> PathBuf {
-        let split_filename = quickwit_common::split_file(split_id);
-        self.root_path.join(split_filename)
-    }
-
     // Returns a split guard object. As long as it is not dropped, the
     // split won't be evinced from the cache.
-    fn get_split_guard(&self, split_id: Ulid, storage_uri: &Uri) -> Option<SplitFilepath> {
-        let split_guard = self
-            .split_table
-            .lock()
-            .unwrap()
-            .get_split_guard(split_id, storage_uri)?;
-        Some(SplitFilepath {
-            _split_guard: split_guard,
-            cached_split_file_path: self.cached_split_filepath(split_id),
-        })
+    async fn get_split_guard(
+        &self,
+        split_id: Ulid,
+        storage_uri: &Uri,
+    ) -> Option<Arc<SplitFilepath>> {
+        let mut split_table_lock = self.split_table.lock().await;
+        // The file is not on the disk
+        split_table_lock
+            .try_get_or_open_fd(split_id, storage_uri)
+            .await
     }
 }
 
 pub struct SplitFilepath {
-    _split_guard: SplitGuard,
-    cached_split_file_path: PathBuf,
-}
-
-impl AsRef<Path> for SplitFilepath {
-    fn as_ref(&self) -> &Path {
-        &self.cached_split_file_path
-    }
+    file: std::fs::File,
+    num_bytes: u64,
+    _fd_guard: OwnedSemaphorePermit,
 }
 
 fn split_id_from_path(split_path: &Path) -> Option<Ulid> {
@@ -188,44 +175,25 @@ struct SplitCacheBackingStorage {
     storage_root_uri: Uri,
 }
 
+use std::os::unix::fs::FileExt;
+
 impl SplitCacheBackingStorage {
-    async fn get_impl(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
+    async fn get_split_guard(&self, path: &Path) -> Option<Arc<SplitFilepath>> {
         let split_id = split_id_from_path(path)?;
-        let split_guard = self
-            .split_cache
-            .get_split_guard(split_id, &self.storage_root_uri)?;
-        // TODO touch file in cache.
-        // We don't use async file io here because it spawn blocks anyway, and it feels dumb to
-        // spawn block 3 times in a row.
-        tokio::task::spawn_blocking(move || {
-            let mut file = File::open(&split_guard).ok()?;
-            file.seek(SeekFrom::Start(byte_range.start as u64)).ok()?;
-            let mut buf = Vec::with_capacity(byte_range.len());
-            file.take(byte_range.len() as u64)
-                .read_to_end(&mut buf)
-                .ok()?;
-            Some(OwnedBytes::new(buf))
-        })
-        .await
-        // TODO Remove file from cache if io error?
-        .ok()?
+        self.split_cache
+            .get_split_guard(split_id, &self.storage_root_uri)
+            .await
+    }
+
+    async fn get_impl(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
+        let split_guard = self.get_split_guard(path).await?;
+        get_range(split_guard, byte_range.start as u64..byte_range.end as u64).await
     }
 
     async fn get_all_impl(&self, path: &Path) -> Option<OwnedBytes> {
-        let split_id = split_id_from_path(path)?;
-        let split_guard = self
-            .split_cache
-            .get_split_guard(split_id, &self.storage_root_uri)?;
-        // We don't use async file io here because it spawn blocks anyway, and it feels dumb to
-        // spawn block 3 times in a row.
-        tokio::task::spawn_blocking(move || {
-            let mut file = File::open(split_guard).ok()?;
-            let mut buf = Vec::new();
-            file.read_to_end(&mut buf).ok()?;
-            Some(OwnedBytes::new(buf))
-        })
-        .await
-        .ok()?
+        let split_guard = self.get_split_guard(path).await?;
+        let len = split_guard.num_bytes;
+        get_range(split_guard, 0..len).await
     }
 
     fn record_hit_metrics(&self, result_opt: Option<&OwnedBytes>) {
@@ -237,6 +205,17 @@ impl SplitCacheBackingStorage {
             split_metrics.misses_num_items.inc();
         }
     }
+}
+
+async fn get_range(split_file: Arc<SplitFilepath>, range: Range<u64>) -> Option<OwnedBytes> {
+    tokio::task::spawn_blocking(move || {
+        let len = range.end - range.start;
+        let mut buf = vec![0u8; len as usize];
+        split_file.file.read_at(&mut buf, range.start).unwrap();
+        Some(OwnedBytes::new(buf))
+    })
+    .await
+    .unwrap()
 }
 
 #[async_trait]

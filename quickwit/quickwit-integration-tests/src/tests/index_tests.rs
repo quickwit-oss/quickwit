@@ -289,6 +289,8 @@ async fn test_ingest_v2_happy_path() {
         .create(TEST_INDEX_CONFIG, ConfigFormat::Yaml, false)
         .await
         .unwrap();
+    // tokio::time::sleep(Duration::from_secs(1)).await;
+
     sandbox
         .indexer_rest_client
         .sources("test_index")

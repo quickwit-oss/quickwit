@@ -322,7 +322,7 @@ impl SearchService for SearchServiceImpl {
 
     async fn report_splits(&self, report_splits: ReportSplitsRequest) -> ReportSplitsResponse {
         if let Some(split_cache) = self.searcher_context.split_cache_opt.as_ref() {
-            split_cache.report_splits(report_splits.report_splits);
+            split_cache.report_splits(report_splits.report_splits).await;
         }
         ReportSplitsResponse {}
     }

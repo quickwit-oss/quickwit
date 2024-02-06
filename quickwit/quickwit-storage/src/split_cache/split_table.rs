@@ -19,12 +19,17 @@
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::num::NonZeroUsize;
+use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use quickwit_common::uri::Uri;
 use quickwit_config::SplitCacheLimits;
+use tokio::sync::Semaphore;
 use ulid::Ulid;
+
+use super::SplitFilepath;
 
 type LastAccessDate = u64;
 
@@ -109,12 +114,20 @@ pub struct SplitTable {
     origin_time: Instant,
     limits: SplitCacheLimits,
     on_disk_bytes: u64,
+
+    // Directory containing the cached split files.
+    // Split ids are universally unique, so we all put them in the same directory.
+    root_path: PathBuf,
+
+    fd_semaphore: Arc<Semaphore>,
+    fd_cache: lru::LruCache<Ulid, Arc<SplitFilepath>>,
 }
 
 impl SplitTable {
     pub(crate) fn with_limits_and_existing_splits(
         limits: SplitCacheLimits,
         existing_filepaths: BTreeMap<Ulid, u64>,
+        root_path: PathBuf,
     ) -> SplitTable {
         let origin_time = Instant::now() - NEWLY_REPORTED_SPLIT_LAST_TIME;
         let mut split_table = SplitTable {
@@ -125,9 +138,47 @@ impl SplitTable {
             origin_time,
             limits,
             on_disk_bytes: 0u64,
+
+            fd_semaphore: Arc::new(Semaphore::new(200)),
+            fd_cache: lru::LruCache::new(NonZeroUsize::new(100).unwrap()),
+            root_path,
         };
         split_table.acknowledge_on_disk_splits(existing_filepaths);
         split_table
+    }
+
+    /// Returns a File object for the given split if it is within the local
+    /// searcher split cache (None if absent).
+    ///
+    /// This method ensure that the number of file descriptors opened at ounce is
+    /// bounded using a semaphore.
+    ///
+    /// In order to avoid opening and closing files too many times, the split table also
+    /// includes a cache of file descriptors.
+    pub async fn try_get_or_open_fd(
+        &mut self,
+        split_id: Ulid,
+        storage_uri: &Uri,
+    ) -> Option<Arc<SplitFilepath>> {
+        // TODO when do we have cache eviction?
+        // do we have it for both caches?
+        if let Some(split_filepath) = self.fd_cache.get(&split_id) {
+            return Some(split_filepath.clone());
+        }
+        let num_bytes: u64 = self.is_on_disk(split_id, storage_uri)?;
+        let fd_guard = Semaphore::acquire_owned(self.fd_semaphore.clone())
+            .await
+            .unwrap();
+        let split_filename = quickwit_common::split_file(split_id);
+        let cache_split_file_path = self.root_path.join(split_filename);
+        let file = std::fs::File::open(cache_split_file_path).unwrap();
+        let split_filepath = Arc::new(SplitFilepath {
+            file,
+            num_bytes,
+            _fd_guard: fd_guard,
+        });
+        self.fd_cache.put(split_id, split_filepath.clone());
+        Some(split_filepath)
     }
 
     fn acknowledge_on_disk_splits(&mut self, existing_filepaths: BTreeMap<Ulid, u64>) {
@@ -148,24 +199,17 @@ fn compute_timestamp(start: Instant) -> LastAccessDate {
     start.elapsed().as_micros() as u64
 }
 
-// TODO improve SplitGuard with Atomic
-// Right only touch is helping.
-pub(super) struct SplitGuard;
-
 impl SplitTable {
-    pub(super) fn get_split_guard(
-        &mut self,
-        split_ulid: Ulid,
-        storage_uri: &Uri,
-    ) -> Option<SplitGuard> {
-        if let Status::OnDisk { .. } = self.touch(split_ulid, storage_uri) {
-            Some(SplitGuard)
+    fn is_on_disk(&mut self, split_ulid: Ulid, storage_uri: &Uri) -> Option<u64> {
+        if let Status::OnDisk { num_bytes } = self.touch(split_ulid, storage_uri) {
+            Some(num_bytes)
         } else {
             None
         }
     }
 
     fn remove(&mut self, split_ulid: Ulid) -> Option<SplitInfo> {
+        self.fd_cache.pop(&split_ulid);
         let split_info = self.split_to_status.remove(&split_ulid)?;
         let split_queue: &mut BTreeSet<SplitKey> = match split_info.status {
             Status::Candidate { .. } => &mut self.candidate_splits,
@@ -255,6 +299,8 @@ impl SplitTable {
                 split_info.split_key.last_accessed = timestamp;
                 split_info
             } else {
+                // We did not know anything about this split.
+                // Let's add it to the table.
                 SplitInfo {
                     split_key: SplitKey {
                         split_ulid,
@@ -295,7 +341,7 @@ impl SplitTable {
             } else {
                 SplitInfo {
                     split_key: SplitKey {
-                        last_accessed: compute_timestamp(start_time),
+                        last_accessed: Instant::now(),
                         split_ulid,
                     },
                     status,
@@ -312,8 +358,9 @@ impl SplitTable {
             }
             SplitInfo {
                 split_key: SplitKey {
-                    last_accessed: compute_timestamp(origin_time)
-                        .saturating_sub(NEWLY_REPORTED_SPLIT_LAST_TIME.as_micros() as u64),
+                    last_accessed: Instant::now()
+                        .checked_sub(NEWLY_REPORTED_SPLIT_LAST_TIME)
+                        .unwrap_or(origin_time),
                     split_ulid,
                 },
                 status: Status::Candidate(CandidateSplit {
@@ -384,14 +431,16 @@ impl SplitTable {
     /// have been accessed more recently than the candidate split.
     pub(crate) fn make_room_for_split_if_necessary(
         &mut self,
-        last_access_date: LastAccessDate,
+        last_access_date_bound_opt: Option<LastAccessDate>,
     ) -> Option<Vec<Ulid>> {
         let mut split_infos = Vec::new();
         while self.is_out_of_limits() {
             if let Some(first_split) = self.on_disk_splits.first() {
-                if first_split.last_accessed > last_access_date {
-                    // This is not worth doing the eviction.
-                    break;
+                if let Some(last_access_date) = last_access_date_bound_opt {
+                    if first_split.last_accessed > last_access_date {
+                        // This is not worth doing the eviction.
+                        break;
+                    }
                 }
                 split_infos.extend(self.remove(first_split.split_ulid));
             } else {
@@ -418,7 +467,7 @@ impl SplitTable {
     pub(crate) fn find_download_opportunity(&mut self) -> Option<DownloadOpportunity> {
         let best_candidate_split_key = self.best_candidate()?;
         let splits_to_delete: Vec<Ulid> =
-            self.make_room_for_split_if_necessary(best_candidate_split_key.last_accessed)?;
+            self.make_room_for_split_if_necessary(Some(best_candidate_split_key.last_accessed))?;
         let split_to_download: CandidateSplit =
             self.start_download(best_candidate_split_key.split_ulid)?;
         Some(DownloadOpportunity {
