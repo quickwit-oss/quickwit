@@ -332,13 +332,10 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use mrecordlog::MultiRecordLog;
     use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
     use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
-    use quickwit_proto::ingest::ingester::ObservationMessage;
     use quickwit_proto::ingest::ShardState;
     use quickwit_proto::types::{queue_id, Position};
-    use tokio::sync::watch;
 
     use super::*;
     use crate::ingest_v2::models::IngesterShard;
@@ -467,11 +464,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-
-        let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = IngesterState::new(mrecordlog, observation_tx);
+        let (_temp_dir, state, _status_rx) = IngesterState::for_test().await;
         let weak_state = state.weak();
         let task = BroadcastLocalShardsTask {
             cluster,

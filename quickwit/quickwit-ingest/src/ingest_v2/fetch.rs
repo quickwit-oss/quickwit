@@ -51,7 +51,7 @@ pub(super) struct FetchStreamTask {
     queue_id: QueueId,
     /// The position of the next record fetched.
     from_position_inclusive: u64,
-    mrecordlog: Arc<RwLock<MultiRecordLog>>,
+    mrecordlog: Arc<RwLock<Option<MultiRecordLog>>>,
     fetch_message_tx: mpsc::Sender<IngestV2Result<FetchMessage>>,
     /// This channel notifies the fetch task when new records are available. This way the fetch
     /// task does not need to grab the lock and poll the mrecordlog queue unnecessarily.
@@ -75,7 +75,7 @@ impl FetchStreamTask {
 
     pub fn spawn(
         open_fetch_stream_request: OpenFetchStreamRequest,
-        mrecordlog: Arc<RwLock<MultiRecordLog>>,
+        mrecordlog: Arc<RwLock<Option<MultiRecordLog>>>,
         shard_status_rx: watch::Receiver<ShardStatus>,
         batch_num_bytes: usize,
     ) -> (ServiceStream<IngestV2Result<FetchMessage>>, JoinHandle<()>) {
@@ -129,8 +129,10 @@ impl FetchStreamTask {
             let mrecordlog_guard =
                 with_lock_metrics!(self.mrecordlog.read().await, "fetch", "read");
 
-            let Ok(mrecords) =
-                mrecordlog_guard.range(&self.queue_id, self.from_position_inclusive..)
+            let Ok(mrecords) = mrecordlog_guard
+                .as_ref()
+                .expect("mrecordlog should be initialized")
+                .range(&self.queue_id, self.from_position_inclusive..)
             else {
                 // The queue was dropped.
                 break;
@@ -618,9 +620,9 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fetch_task_happy_path() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = Arc::new(RwLock::new(
+        let mrecordlog = Arc::new(RwLock::new(Some(
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
-        ));
+        )));
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -642,8 +644,15 @@ pub(super) mod tests {
 
         let mut mrecordlog_guard = mrecordlog.write().await;
 
-        mrecordlog_guard.create_queue(&queue_id).await.unwrap();
         mrecordlog_guard
+            .as_mut()
+            .unwrap()
+            .create_queue(&queue_id)
+            .await
+            .unwrap();
+        mrecordlog_guard
+            .as_mut()
+            .unwrap()
             .append_record(&queue_id, None, MRecord::new_doc("test-doc-foo").encode())
             .await
             .unwrap();
@@ -692,6 +701,8 @@ pub(super) mod tests {
         let mut mrecordlog_guard = mrecordlog.write().await;
 
         mrecordlog_guard
+            .as_mut()
+            .unwrap()
             .append_record(&queue_id, None, MRecord::new_doc("test-doc-bar").encode())
             .await
             .unwrap();
@@ -737,6 +748,8 @@ pub(super) mod tests {
         .into_iter();
 
         mrecordlog_guard
+            .as_mut()
+            .unwrap()
             .append_records(&queue_id, None, mrecords)
             .await
             .unwrap();
@@ -794,9 +807,9 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fetch_task_eof_at_beginning() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = Arc::new(RwLock::new(
+        let mrecordlog = Arc::new(RwLock::new(Some(
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
-        ));
+        )));
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -818,7 +831,12 @@ pub(super) mod tests {
 
         let mut mrecordlog_guard = mrecordlog.write().await;
 
-        mrecordlog_guard.create_queue(&queue_id).await.unwrap();
+        mrecordlog_guard
+            .as_mut()
+            .unwrap()
+            .create_queue(&queue_id)
+            .await
+            .unwrap();
         drop(mrecordlog_guard);
 
         timeout(Duration::from_millis(100), fetch_stream.next())
@@ -846,9 +864,9 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fetch_task_from_position_exclusive() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = Arc::new(RwLock::new(
+        let mrecordlog = Arc::new(RwLock::new(Some(
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
-        ));
+        )));
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -870,7 +888,12 @@ pub(super) mod tests {
 
         let mut mrecordlog_guard = mrecordlog.write().await;
 
-        mrecordlog_guard.create_queue(&queue_id).await.unwrap();
+        mrecordlog_guard
+            .as_mut()
+            .unwrap()
+            .create_queue(&queue_id)
+            .await
+            .unwrap();
         drop(mrecordlog_guard);
 
         timeout(Duration::from_millis(100), fetch_stream.next())
@@ -880,6 +903,8 @@ pub(super) mod tests {
         let mut mrecordlog_guard = mrecordlog.write().await;
 
         mrecordlog_guard
+            .as_mut()
+            .unwrap()
             .append_record(&queue_id, None, MRecord::new_doc("test-doc-foo").encode())
             .await
             .unwrap();
@@ -895,6 +920,8 @@ pub(super) mod tests {
         let mut mrecordlog_guard = mrecordlog.write().await;
 
         mrecordlog_guard
+            .as_mut()
+            .unwrap()
             .append_record(&queue_id, None, MRecord::new_doc("test-doc-bar").encode())
             .await
             .unwrap();
@@ -938,9 +965,9 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fetch_task_error() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = Arc::new(RwLock::new(
+        let mrecordlog = Arc::new(RwLock::new(Some(
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
-        ));
+        )));
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -971,9 +998,9 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fetch_task_batch_num_bytes() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = Arc::new(RwLock::new(
+        let mrecordlog = Arc::new(RwLock::new(Some(
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
-        ));
+        )));
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -995,7 +1022,12 @@ pub(super) mod tests {
 
         let mut mrecordlog_guard = mrecordlog.write().await;
 
-        mrecordlog_guard.create_queue(&queue_id).await.unwrap();
+        mrecordlog_guard
+            .as_mut()
+            .unwrap()
+            .create_queue(&queue_id)
+            .await
+            .unwrap();
 
         let records = [
             Bytes::from_static(b"test-doc-foo"),
@@ -1005,6 +1037,8 @@ pub(super) mod tests {
         .into_iter();
 
         mrecordlog_guard
+            .as_mut()
+            .unwrap()
             .append_records(&queue_id, None, records)
             .await
             .unwrap();
