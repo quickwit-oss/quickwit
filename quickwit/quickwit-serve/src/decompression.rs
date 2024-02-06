@@ -41,21 +41,21 @@ async fn decompress_body(encoding: Option<String>, body: Bytes) -> Result<Bytes,
                 let mut decoder = GzDecoder::new(body.as_ref());
                 decoder
                     .read_to_end(&mut decompressed)
-                    .map_err(|_| warp::reject())?;
+                    .map_err(|_| warp::reject::custom(CorruptedData))?;
                 Result::<_, warp::Rejection>::Ok(Bytes::from(decompressed))
             })
             .await
-            .map_err(|_| warp::reject())??;
+            .map_err(|_| warp::reject::custom(CorruptedData))??;
             Ok(decompressed)
         }
         Some("zstd") => {
             let decompressed = task::spawn_blocking(move || {
                 zstd::decode_all(body.as_ref())
                     .map(Bytes::from)
-                    .map_err(|_| warp::reject())
+                    .map_err(|_| warp::reject::custom(CorruptedData))
             })
             .await
-            .map_err(|_| warp::reject())??;
+            .map_err(|_| warp::reject::custom(CorruptedData))??;
             Ok(decompressed)
         }
         Some(encoding) => Err(warp::reject::custom(UnsupportedEncoding(
@@ -64,6 +64,12 @@ async fn decompress_body(encoding: Option<String>, body: Bytes) -> Result<Bytes,
         _ => Ok(body),
     }
 }
+
+#[derive(Debug, Error)]
+#[error("Error while decompressing the data")]
+pub(crate) struct CorruptedData;
+
+impl Reject for CorruptedData {}
 
 #[derive(Debug, Error)]
 #[error("Unsupported Content-Encoding {}. Supported encodings are 'gzip' and 'zstd'", self.0)]
