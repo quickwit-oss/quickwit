@@ -33,8 +33,11 @@ pub enum VersionedIndexTemplate {
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IndexTemplateV0_7 {
+    #[schema(value_type = String)]
     pub template_id: IndexTemplateId,
+    #[schema(value_type = Vec<String>)]
     pub index_id_patterns: Vec<IndexIdPattern>,
+    #[schema(value_type = String)]
     #[serde(default)]
     pub index_root_uri: Option<Uri>,
     #[serde(default)]
