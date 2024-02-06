@@ -1111,7 +1111,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
         let index_uid = shard_positions_update.source_uid.index_uid;
         let source_id = shard_positions_update.source_uid.source_id;
 
-        for (shard_id, shard_position) in shard_positions_update.shard_positions {
+        for (shard_id, shard_position) in shard_positions_update.updated_shard_positions {
             let queue_id = queue_id(&index_uid, &source_id, &shard_id);
 
             if shard_position.is_eof() {
@@ -2807,7 +2807,7 @@ mod tests {
                 index_uid: index_uid.clone(),
                 source_id: "test-source".to_string(),
             },
-            shard_positions: vec![
+            updated_shard_positions: vec![
                 (ShardId::from(1), Position::offset(0u64)),
                 (ShardId::from(2), Position::eof(0u64)),
                 (ShardId::from(1337), Position::offset(1337u64)),

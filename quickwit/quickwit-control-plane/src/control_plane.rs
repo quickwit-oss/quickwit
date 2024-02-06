@@ -343,7 +343,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
             .collect();
         // let's identify the shard that have reached EOF but have not yet been removed.
         let shard_ids_to_close: Vec<ShardId> = shard_positions_update
-            .shard_positions
+            .updated_shard_positions
             .into_iter()
             .filter(|(shard_id, position)| position.is_eof() && known_shard_ids.contains(shard_id))
             .map(|(shard_id, _position)| shard_id)
@@ -1319,7 +1319,7 @@ mod tests {
         control_plane_mailbox
             .ask(ShardPositionsUpdate {
                 source_uid: source_uid.clone(),
-                shard_positions: vec![(ShardId::from(17), Position::offset(1_000u64))],
+                updated_shard_positions: vec![(ShardId::from(17), Position::offset(1_000u64))],
             })
             .await
             .unwrap();
@@ -1343,7 +1343,7 @@ mod tests {
         control_plane_mailbox
             .ask(ShardPositionsUpdate {
                 source_uid,
-                shard_positions: vec![(ShardId::from(17), Position::eof(1_000u64))],
+                updated_shard_positions: vec![(ShardId::from(17), Position::eof(1_000u64))],
             })
             .await
             .unwrap();
@@ -1445,7 +1445,7 @@ mod tests {
         control_plane_mailbox
             .ask(ShardPositionsUpdate {
                 source_uid: source_uid.clone(),
-                shard_positions: vec![(ShardId::from(17), Position::eof(1_000u64))],
+                updated_shard_positions: vec![(ShardId::from(17), Position::eof(1_000u64))],
             })
             .await
             .unwrap();

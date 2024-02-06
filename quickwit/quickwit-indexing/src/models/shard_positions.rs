@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 
@@ -176,9 +175,9 @@ impl Handler<ClusterShardPositionsUpdate> for ShardPositionsService {
             source_uid,
             shard_positions,
         } = update;
-        let was_updated = self.apply_update(&source_uid, shard_positions);
-        if was_updated {
-            self.publish_shard_updates_to_event_broker(source_uid);
+        let updated_shard_positions = self.apply_update(&source_uid, shard_positions);
+        if !updated_shard_positions.is_empty() {
+            self.publish_shard_updates_to_event_broker(source_uid, updated_shard_positions);
         }
         Ok(())
     }
@@ -192,17 +191,19 @@ impl Handler<LocalShardPositionsUpdate> for ShardPositionsService {
         &mut self,
         update: LocalShardPositionsUpdate,
         _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
+    ) -> Result<(), ActorExitStatus> {
         let LocalShardPositionsUpdate {
             source_uid,
             shard_positions,
         } = update;
-        let was_updated = self.apply_update(&source_uid, shard_positions);
-        if was_updated {
-            self.publish_positions_into_chitchat(source_uid.clone())
-                .await;
-            self.publish_shard_updates_to_event_broker(source_uid);
+        let updated_shard_positions: Vec<(ShardId, Position)> =
+            self.apply_update(&source_uid, shard_positions);
+        if updated_shard_positions.is_empty() {
+            return Ok(());
         }
+        self.publish_positions_into_chitchat(source_uid.clone())
+            .await;
+        self.publish_shard_updates_to_event_broker(source_uid, updated_shard_positions);
         Ok(())
     }
 }
@@ -223,51 +224,48 @@ impl ShardPositionsService {
             .await;
     }
 
-    fn publish_shard_updates_to_event_broker(&self, source_uid: SourceUid) {
-        let Some(shard_positions_map) = self.shard_positions_per_source.get(&source_uid) else {
-            return;
-        };
-        let shard_positions: Vec<(ShardId, Position)> = shard_positions_map
-            .iter()
-            .map(|(shard_id, position)| (shard_id.clone(), position.clone()))
-            .collect();
+    fn publish_shard_updates_to_event_broker(
+        &self,
+        source_uid: SourceUid,
+        shard_positions: Vec<(ShardId, Position)>,
+    ) {
         self.event_broker.publish(ShardPositionsUpdate {
             source_uid,
-            shard_positions,
+            updated_shard_positions: shard_positions,
         });
     }
 
     /// Updates the internal model holding the last position per shard, and
-    /// returns true if at least one of the publish position was updated.
+    /// returns the list of shards that were updated.
     fn apply_update(
         &mut self,
         source_uid: &SourceUid,
         published_positions_per_shard: Vec<(ShardId, Position)>,
-    ) -> bool {
+    ) -> Vec<(ShardId, Position)> {
         if published_positions_per_shard.is_empty() {
             warn!("received an empty publish shard positions update");
-            return false;
+            return Vec::new();
         }
-        let mut was_modified = false;
         let current_shard_positions = self
             .shard_positions_per_source
             .entry(source_uid.clone())
             .or_default();
-        for (shard, new_position) in published_positions_per_shard {
-            match current_shard_positions.entry(shard) {
-                Entry::Occupied(mut occupied) => {
-                    if *occupied.get() < new_position {
-                        occupied.insert(new_position);
-                        was_modified = true;
-                    }
-                }
-                Entry::Vacant(vacant) => {
-                    was_modified = true;
-                    vacant.insert(new_position.clone());
-                }
-            }
+
+        let updated_positions_per_shard = published_positions_per_shard
+            .into_iter()
+            .filter(|(shard, new_position)| {
+                let Some(position) = current_shard_positions.get(shard) else {
+                    return true;
+                };
+                new_position > position
+            })
+            .collect::<Vec<_>>();
+
+        for (shard, position) in updated_positions_per_shard.iter() {
+            current_shard_positions.insert(shard.clone(), position.clone());
         }
-        was_modified
+
+        updated_positions_per_shard
     }
 }
 
@@ -380,7 +378,7 @@ mod tests {
         for _ in 0..4 {
             let update = rx1.recv().await.unwrap();
             assert_eq!(update.source_uid, source_uid);
-            updates1.push(update.shard_positions);
+            updates1.push(update.updated_shard_positions);
         }
 
         // The updates as seen from the first node.
@@ -388,18 +386,9 @@ mod tests {
             updates1,
             vec![
                 vec![(ShardId::from(1), Position::Beginning)],
-                vec![
-                    (ShardId::from(1), Position::Beginning),
-                    (ShardId::from(2), Position::offset(10u64))
-                ],
-                vec![
-                    (ShardId::from(1), Position::offset(10u64)),
-                    (ShardId::from(2), Position::offset(10u64)),
-                ],
-                vec![
-                    (ShardId::from(1), Position::offset(10u64)),
-                    (ShardId::from(2), Position::offset(12u64)),
-                ],
+                vec![(ShardId::from(2), Position::offset(10u64))],
+                vec![(ShardId::from(1), Position::offset(10u64)),],
+                vec![(ShardId::from(2), Position::offset(12u64)),],
             ]
         );
 
@@ -408,21 +397,15 @@ mod tests {
         for _ in 0..4 {
             let update = rx2.recv().await.unwrap();
             assert_eq!(update.source_uid, source_uid);
-            updates2.push(update.shard_positions);
+            updates2.push(update.updated_shard_positions);
         }
         assert_eq!(
             updates2,
             vec![
                 vec![(ShardId::from(2), Position::offset(10u64))],
                 vec![(ShardId::from(2), Position::offset(12u64))],
-                vec![
-                    (ShardId::from(1), Position::Beginning),
-                    (ShardId::from(2), Position::offset(12u64))
-                ],
-                vec![
-                    (ShardId::from(1), Position::offset(10u64)),
-                    (ShardId::from(2), Position::offset(12u64))
-                ],
+                vec![(ShardId::from(1), Position::Beginning),],
+                vec![(ShardId::from(1), Position::offset(10u64)),],
             ]
         );
 

@@ -331,8 +331,8 @@ impl From<CpuCapacity> for CpuCapacityForSerialization {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShardPositionsUpdate {
     pub source_uid: SourceUid,
-    // All of the shards known are listed here, regardless of whether they were updated or not.
-    pub shard_positions: Vec<(ShardId, Position)>,
+    // Only shards that received an update are listed here.
+    pub updated_shard_positions: Vec<(ShardId, Position)>,
 }
 
 impl Event for ShardPositionsUpdate {}
