@@ -102,6 +102,6 @@ method: POST
 endpoint: _bulk
 params:
   refresh: "true"
-headers: {"Content-Type": "application/json"}
+headers: {"Content-Type": "application/json", "content-encoding": "gzip"}
 body_from_file: gharchive-bulk.json.gz
 

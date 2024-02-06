@@ -21,10 +21,10 @@ use std::io::Read;
 
 use bytes::Bytes;
 use flate2::read::GzDecoder;
+use thiserror::Error;
 use tokio::task;
 use warp::reject::Reject;
 use warp::Filter;
-use thiserror::Error;
 
 /// There are two ways to decompress the body:
 /// - Stream the body through an async decompressor
