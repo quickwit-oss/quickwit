@@ -120,6 +120,7 @@ impl ControlPlaneModel {
             }
         }
         if !subrequests.is_empty() {
+            // TODO: Limit the number of subrequests and perform multiple requests if needed.
             let list_shards_request = metastore::ListShardsRequest { subrequests };
             let list_shard_response = progress
                 .protect_future(metastore.list_shards(list_shards_request))

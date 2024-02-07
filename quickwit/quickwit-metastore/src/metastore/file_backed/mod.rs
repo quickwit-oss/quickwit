@@ -43,11 +43,10 @@ use itertools::Itertools;
 use quickwit_common::ServiceStream;
 use quickwit_config::IndexTemplate;
 use quickwit_proto::metastore::{
-    serde_utils, AcquireShardsRequest, AcquireShardsResponse, AcquireShardsSubrequest,
-    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, CreateIndexTemplateRequest,
-    DeleteIndexRequest, DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest,
-    DeleteShardsResponse, DeleteShardsSubrequest, DeleteSourceRequest, DeleteSplitsRequest,
-    DeleteTask, EmptyResponse, EntityKind, FindIndexTemplateMatchesRequest,
+    serde_utils, AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
+    CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
+    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteSourceRequest,
+    DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind, FindIndexTemplateMatchesRequest,
     FindIndexTemplateMatchesResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
     IndexMetadataRequest, IndexMetadataResponse, IndexTemplateMatch, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
@@ -359,8 +358,8 @@ impl FileBackedMetastore {
 
     /// Helper used for testing to obtain the data associated with the given index.
     #[cfg(test)]
-    async fn get_index(&self, index_uid: IndexUid) -> MetastoreResult<FileBackedIndex> {
-        self.read(&index_uid, |index| Ok(index.clone())).await
+    async fn get_index(&self, index_uid: &IndexUid) -> MetastoreResult<FileBackedIndex> {
+        self.read(index_uid, |index| Ok(index.clone())).await
     }
 }
 
@@ -783,48 +782,21 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: AcquireShardsRequest,
     ) -> MetastoreResult<AcquireShardsResponse> {
-        let mut response = AcquireShardsResponse {
-            subresponses: Vec::with_capacity(request.subrequests.len()),
-        };
-        // We must group the subrequests by `index_uid` to mutate each index only once, since each
-        // mutation triggers an IO.
-        let grouped_subrequests: HashMap<IndexUid, Vec<AcquireShardsSubrequest>> = request
-            .subrequests
-            .into_iter()
-            .into_group_map_by(|subrequest| subrequest.index_uid().clone());
-
-        for (index_uid, subrequests) in grouped_subrequests {
-            let subresponses = self
-                .mutate(&index_uid, |index| index.acquire_shards(subrequests))
-                .await?;
-            response.subresponses.extend(subresponses);
-        }
+        let index_uid = request.index_uid().clone();
+        let response = self
+            .mutate(&index_uid, |index| index.acquire_shards(request))
+            .await?;
         Ok(response)
     }
 
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> MetastoreResult<DeleteShardsResponse> {
-        let mut subresponses = Vec::with_capacity(request.subrequests.len());
-
-        // We must group the subrequests by `index_uid` to mutate each index only once, since each
-        // mutation triggers an IO.
-        let grouped_subrequests: HashMap<IndexUid, Vec<DeleteShardsSubrequest>> = request
-            .subrequests
-            .into_iter()
-            .into_group_map_by(|subrequest| subrequest.index_uid().clone());
-
-        for (index_uid, subrequests) in grouped_subrequests {
-            let subresponse = self
-                .mutate(&index_uid, |index| {
-                    index.delete_shards(subrequests, request.force)
-                })
-                .await?;
-            subresponses.push(subresponse);
-        }
-        let response = DeleteShardsResponse {};
-        Ok(response)
+    ) -> MetastoreResult<EmptyResponse> {
+        let index_uid = request.index_uid().clone();
+        self.mutate(&index_uid, |index| index.delete_shards(request))
+            .await?;
+        Ok(EmptyResponse {})
     }
 
     async fn list_shards(
@@ -1242,7 +1214,7 @@ mod tests {
             .clone();
 
         // Open index and check its metadata
-        let created_index = metastore.get_index(index_uid).await.unwrap();
+        let created_index = metastore.get_index(&index_uid).await.unwrap();
         assert_eq!(created_index.index_id(), index_config.index_id);
         assert_eq!(
             created_index.metadata().index_uri(),
@@ -1260,14 +1232,14 @@ mod tests {
 
         // Open a non-existent index.
         let metastore_error = metastore
-            .get_index(IndexUid::new_with_random_ulid("index-does-not-exist"))
+            .get_index(&IndexUid::new_with_random_ulid("index-does-not-exist"))
             .await
             .unwrap_err();
         assert!(matches!(metastore_error, MetastoreError::NotFound { .. }));
 
         // Open a index with a different incarnation_id.
         let metastore_error = metastore
-            .get_index(IndexUid::new_with_random_ulid(index_id))
+            .get_index(&IndexUid::new_with_random_ulid(index_id))
             .await
             .unwrap_err();
         assert!(matches!(metastore_error, MetastoreError::NotFound { .. }));
@@ -1391,7 +1363,7 @@ mod tests {
 
         // Getting index with inconsistent index ID should raise an error.
         let metastore_error = metastore
-            .get_index(IndexUid::new_with_random_ulid(index_id))
+            .get_index(&IndexUid::new_with_random_ulid(index_id))
             .await
             .unwrap_err();
         assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
@@ -1680,7 +1652,7 @@ mod tests {
         assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
         // Try fetch the not created index.
         let created_index_error = metastore
-            .get_index(IndexUid::new_with_random_ulid(index_id))
+            .get_index(&IndexUid::new_with_random_ulid(index_id))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -1731,7 +1703,7 @@ mod tests {
         assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
         // Let's fetch the index, we expect an internal error as the index state is in `Creating`
         // state.
-        let created_index_error = metastore.get_index(index_uid.clone()).await.unwrap_err();
+        let created_index_error = metastore.get_index(&index_uid.clone()).await.unwrap_err();
         assert!(matches!(
             created_index_error,
             MetastoreError::Internal { .. }
@@ -1755,7 +1727,7 @@ mod tests {
         let manifest = load_or_create_manifest(&*storage).await.unwrap();
         assert!(!manifest.indexes.contains_key(index_id));
         // Now we can expect an `IndexDoesNotExist` error.
-        let created_index_error = metastore.get_index(index_uid).await.unwrap_err();
+        let created_index_error = metastore.get_index(&index_uid).await.unwrap_err();
         assert!(matches!(
             created_index_error,
             MetastoreError::NotFound { .. }
@@ -1806,7 +1778,7 @@ mod tests {
         // Let's fetch the index, we expect an internal error as the index state is in `Creating`
         // state.
         let created_index_error = metastore
-            .get_index(IndexUid::new_with_random_ulid(index_id))
+            .get_index(&IndexUid::new_with_random_ulid(index_id))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -1857,7 +1829,7 @@ mod tests {
         assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
         // Let's fetch the index, we expect an internal error as the index state is in `Deleting`
         // state.
-        let created_index_error = metastore.get_index(index_uid).await.unwrap_err();
+        let created_index_error = metastore.get_index(&index_uid).await.unwrap_err();
         assert!(matches!(
             created_index_error,
             MetastoreError::Internal { .. }
@@ -1913,7 +1885,7 @@ mod tests {
         assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
         // Let's fetch the index, we expect an internal error as the index state is in `Deleting`
         // state.
-        let created_index_error = metastore.get_index(index_uid).await.unwrap_err();
+        let created_index_error = metastore.get_index(&index_uid).await.unwrap_err();
         assert!(matches!(
             created_index_error,
             MetastoreError::Internal { .. }
@@ -1976,7 +1948,7 @@ mod tests {
 
         // Fetch the index metadata not registered in index states json.
         metastore
-            .get_index(index_uid_unregistered.clone())
+            .get_index(&index_uid_unregistered.clone())
             .await
             .unwrap();
 

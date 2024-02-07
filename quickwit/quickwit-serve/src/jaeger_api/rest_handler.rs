@@ -455,9 +455,9 @@ mod tests {
             .return_once(|_| {
                 Ok(quickwit_proto::search::SearchResponse {
                     num_hits: 0,
-                    hits: vec![],
+                    hits: Vec::new(),
                     elapsed_time_micros: 0,
-                    errors: vec![],
+                    errors: Vec::new(),
                     aggregation: None,
                     scroll_id: None,
                 })
@@ -486,9 +486,9 @@ mod tests {
             .return_once(|_| {
                 Ok(quickwit_proto::search::SearchResponse {
                     num_hits: 0,
-                    hits: vec![],
+                    hits: Vec::new(),
                     elapsed_time_micros: 0,
-                    errors: vec![],
+                    errors: Vec::new(),
                     aggregation: None,
                     scroll_id: None,
                 })

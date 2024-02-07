@@ -38,12 +38,9 @@ use quickwit_proto::ingest::ingester::{
     TruncateShardsSubrequest,
 };
 use quickwit_proto::ingest::IngestV2Error;
-use quickwit_proto::metastore::{
-    AcquireShardsRequest, AcquireShardsSubrequest, AcquireShardsSubresponse, MetastoreService,
-    MetastoreServiceClient,
-};
+use quickwit_proto::metastore::{AcquireShardsRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{
-    IndexUid, NodeId, Position, PublishToken, ShardId, SourceId, SourceUid,
+    NodeId, PipelineUid, Position, PublishToken, ShardId, SourceId, SourceUid,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -88,7 +85,7 @@ impl TypedSourceFactory for IngestSourceFactory {
 struct ClientId {
     node_id: NodeId,
     source_uid: SourceUid,
-    pipeline_uid: String,
+    pipeline_uid: PipelineUid,
 }
 
 impl fmt::Display for ClientId {
@@ -102,7 +99,7 @@ impl fmt::Display for ClientId {
 }
 
 impl ClientId {
-    fn new(node_id: NodeId, source_uid: SourceUid, pipeline_uid: String) -> Self {
+    fn new(node_id: NodeId, source_uid: SourceUid, pipeline_uid: PipelineUid) -> Self {
         ClientId {
             node_id,
             source_uid,
@@ -172,7 +169,7 @@ impl IngestSource {
                 index_uid: runtime_args.index_uid().clone(),
                 source_id: runtime_args.source_id().to_string(),
             },
-            runtime_args.pipeline_uid().to_string(),
+            runtime_args.pipeline_uid(),
         );
         let metastore = runtime_args.metastore.clone();
         let ingester_pool = runtime_args.ingester_pool.clone();
@@ -435,11 +432,10 @@ impl IngestSource {
             });
             return Ok(());
         }
-
-        warn!(
-            index_uid =% self.client_id.source_uid.index_uid,
-            pipeline_uid = self.client_id.pipeline_uid,
-            "resetting pipeline"
+        info!(
+            index_uid=%self.client_id.source_uid.index_uid,
+            pipeline_uid=%self.client_id.pipeline_uid,
+            "resetting indexing pipeline"
         );
         self.assigned_shards.clear();
         self.fetch_stream.reset();
@@ -457,15 +453,6 @@ impl IngestSource {
         )
         .await?;
         Ok(())
-    }
-
-    fn contains_publish_token(&self, subresponse: &AcquireShardsSubresponse) -> bool {
-        if let Some(acquired_shard) = subresponse.acquired_shards.first() {
-            if let Some(publish_token) = &acquired_shard.publish_token {
-                return *publish_token == self.publish_token;
-            }
-        }
-        false
     }
 }
 
@@ -551,38 +538,29 @@ impl Source for IngestSource {
 
         info!(added_shards=?added_shard_ids, "adding shards assignment");
 
-        let acquire_shards_subrequest = AcquireShardsSubrequest {
+        let acquire_shards_request = AcquireShardsRequest {
             index_uid: Some(self.client_id.source_uid.index_uid.clone()),
             source_id: self.client_id.source_uid.source_id.clone(),
             shard_ids: added_shard_ids,
             publish_token: self.publish_token.clone(),
         };
-        let acquire_shards_request = AcquireShardsRequest {
-            subrequests: vec![acquire_shards_subrequest],
-        };
         let acquire_shards_response = ctx
             .protect_future(self.metastore.acquire_shards(acquire_shards_request))
             .await
             .context("failed to acquire shards")?;
-        let acquire_shards_subresponse = acquire_shards_response
-            .subresponses
-            .into_iter()
-            .find(|subresponse| self.contains_publish_token(subresponse))
-            .context("acquire shards response is empty")?;
 
         let mut truncate_up_to_positions =
-            Vec::with_capacity(acquire_shards_subresponse.acquired_shards.len());
+            Vec::with_capacity(acquire_shards_response.acquired_shards.len());
 
-        for acquired_shard in acquire_shards_subresponse.acquired_shards {
+        for acquired_shard in acquire_shards_response.acquired_shards {
+            let index_uid = acquired_shard.index_uid().clone();
             let shard_id = acquired_shard.shard_id().clone();
-            let index_uid: IndexUid = acquired_shard.index_uid().clone();
+            let mut current_position_inclusive =
+                acquired_shard.publish_position_inclusive().clone();
             let leader_id: NodeId = acquired_shard.leader_id.into();
             let follower_id_opt: Option<NodeId> = acquired_shard.follower_id.map(Into::into);
             let source_id: SourceId = acquired_shard.source_id;
             let partition_id = PartitionId::from(shard_id.as_str());
-            let mut current_position_inclusive = acquired_shard
-                .publish_position_inclusive
-                .unwrap_or_default();
             let from_position_exclusive = current_position_inclusive.clone();
 
             let status = if from_position_exclusive.is_eof() {
@@ -680,8 +658,8 @@ mod tests {
         FetchMessage, IngesterServiceClient, TruncateShardsResponse,
     };
     use quickwit_proto::ingest::{IngestV2Error, MRecordBatch, Shard, ShardState};
-    use quickwit_proto::metastore::{AcquireShardsResponse, AcquireShardsSubresponse};
-    use quickwit_proto::types::PipelineUid;
+    use quickwit_proto::metastore::AcquireShardsResponse;
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_storage::StorageResolver;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::watch;
@@ -697,123 +675,91 @@ mod tests {
     // [2,3] (which triggers a reset)
     #[tokio::test]
     async fn test_ingest_source_assign_shards() {
-        let ref_index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
-            index_uid: ref_index_uid.clone(),
+            index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let publish_token = "indexer/test-node/test-index:00000000000000000000000000/test-source/\
+        let publish_token = "indexer/test-node/test-index:0/test-source/\
                              00000000000000000000000000/00000000000000000000000000";
 
         let mut mock_metastore = MetastoreServiceClient::mock();
-        let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
             .expect_acquire_shards()
-            .withf(|request| {
-                assert_eq!(request.subrequests.len(), 1);
-                request.subrequests[0].shard_ids == [ShardId::from(0)]
-            })
+            .withf(|request| request.shard_ids == [ShardId::from(0)])
             .once()
-            .returning(move |request| {
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid(), &ref_index_uid_clone);
-                assert_eq!(subrequest.source_id, "test-source");
+            .returning(|request| {
+                assert_eq!(request.index_uid(), &("test-index", 0));
+                assert_eq!(request.source_id, "test-source");
                 let response = AcquireShardsResponse {
-                    subresponses: vec![AcquireShardsSubresponse {
-                        index_uid: Some(ref_index_uid_clone.clone()),
+                    acquired_shards: vec![Shard {
+                        index_uid: Some(IndexUid::for_test("test-index", 0)),
                         source_id: "test-source".to_string(),
-                        acquired_shards: vec![Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
-                            index_uid: Some(ref_index_uid_clone.clone()),
-                            source_id: "test-source".to_string(),
-                            shard_id: Some(ShardId::from(0)),
-                            shard_state: ShardState::Open as i32,
-                            publish_position_inclusive: Some(Position::offset(10u64)),
-                            publish_token: Some(publish_token.to_string()),
-                        }],
+                        leader_id: "test-ingester-0".to_string(),
+                        follower_id: None,
+                        shard_id: Some(ShardId::from(0)),
+                        shard_state: ShardState::Open as i32,
+                        publish_position_inclusive: Some(Position::offset(10u64)),
+                        publish_token: Some(publish_token.to_string()),
                     }],
                 };
                 Ok(response)
             });
-        let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
             .expect_acquire_shards()
             .once()
-            .withf(|request| {
-                assert_eq!(request.subrequests.len(), 1);
-                request.subrequests[0].shard_ids == [ShardId::from(1)]
-            })
-            .returning(move |request| {
-                assert_eq!(request.subrequests.len(), 1);
-
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid(), &ref_index_uid_clone);
-                assert_eq!(subrequest.source_id, "test-source");
+            .withf(|request| request.shard_ids == [ShardId::from(1)])
+            .returning(|request| {
+                assert_eq!(request.index_uid(), &("test-index", 0));
+                assert_eq!(request.source_id, "test-source");
 
                 let response = AcquireShardsResponse {
-                    subresponses: vec![AcquireShardsSubresponse {
-                        index_uid: Some(ref_index_uid_clone.clone()),
+                    acquired_shards: vec![Shard {
+                        leader_id: "test-ingester-0".to_string(),
+                        follower_id: None,
+                        index_uid: Some(IndexUid::for_test("test-index", 0)),
                         source_id: "test-source".to_string(),
-                        acquired_shards: vec![Shard {
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        publish_position_inclusive: Some(Position::offset(11u64)),
+                        publish_token: Some(publish_token.to_string()),
+                    }],
+                };
+                Ok(response)
+            });
+        mock_metastore
+            .expect_acquire_shards()
+            .withf(|request| request.shard_ids == [ShardId::from(1), ShardId::from(2)])
+            .once()
+            .returning(|request| {
+                assert_eq!(request.index_uid(), &("test-index", 0));
+                assert_eq!(request.source_id, "test-source");
+
+                let response = AcquireShardsResponse {
+                    acquired_shards: vec![
+                        Shard {
                             leader_id: "test-ingester-0".to_string(),
                             follower_id: None,
-                            index_uid: Some(ref_index_uid_clone.clone()),
+                            index_uid: Some(IndexUid::for_test("test-index", 0)),
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(1)),
                             shard_state: ShardState::Open as i32,
                             publish_position_inclusive: Some(Position::offset(11u64)),
                             publish_token: Some(publish_token.to_string()),
-                        }],
-                    }],
-                };
-                Ok(response)
-            });
-        let ref_index_uid_clone = ref_index_uid.clone();
-        mock_metastore
-            .expect_acquire_shards()
-            .withf(|request| {
-                assert_eq!(request.subrequests.len(), 1);
-                request.subrequests[0].shard_ids == [ShardId::from(1), ShardId::from(2)]
-            })
-            .once()
-            .returning(move |request| {
-                assert_eq!(request.subrequests.len(), 1);
-
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid(), &ref_index_uid_clone);
-                assert_eq!(subrequest.source_id, "test-source");
-
-                let response = AcquireShardsResponse {
-                    subresponses: vec![AcquireShardsSubresponse {
-                        index_uid: Some(ref_index_uid_clone.clone()),
-                        source_id: "test-source".to_string(),
-                        acquired_shards: vec![
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: Some(ref_index_uid_clone.clone()),
-                                source_id: "test-source".to_string(),
-                                shard_id: Some(ShardId::from(1)),
-                                shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(Position::offset(11u64)),
-                                publish_token: Some(publish_token.to_string()),
-                            },
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: Some(ref_index_uid_clone.clone()),
-                                source_id: "test-source".to_string(),
-                                shard_id: Some(ShardId::from(2)),
-                                shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(Position::offset(12u64)),
-                                publish_token: Some(publish_token.to_string()),
-                            },
-                        ],
-                    }],
+                        },
+                        Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: Some(IndexUid::for_test("test-index", 0)),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(2)),
+                            shard_state: ShardState::Open as i32,
+                            publish_position_inclusive: Some(Position::offset(12u64)),
+                            publish_token: Some(publish_token.to_string()),
+                        },
+                    ],
                 };
                 Ok(response)
             });
@@ -825,7 +771,6 @@ mod tests {
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
         let sequence_tx_clone1 = sequence_tx.clone();
-        let ref_index_uid_clone = ref_index_uid.clone();
         ingester_mock_0
             .expect_open_fetch_stream()
             .withf(|request| {
@@ -840,14 +785,13 @@ mod tests {
                     "indexer/test-node/test-index:00000000000000000000000000/test-source/\
                      00000000000000000000000000"
                 );
-                assert_eq!(request.index_uid(), &ref_index_uid_clone);
+                assert_eq!(request.index_uid(), &("test-index", 0));
                 assert_eq!(request.source_id, "test-source");
 
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
                 Ok(service_stream)
             });
         let sequence_tx_clone2 = sequence_tx.clone();
-        let ref_index_uid_clone = ref_index_uid.clone();
         ingester_mock_0
             .expect_open_fetch_stream()
             .withf(|request| {
@@ -862,14 +806,13 @@ mod tests {
                     "indexer/test-node/test-index:00000000000000000000000000/test-source/\
                      00000000000000000000000000"
                 );
-                assert_eq!(request.index_uid(), &ref_index_uid_clone);
+                assert_eq!(request.index_uid(), &("test-index", 0));
                 assert_eq!(request.source_id, "test-source");
 
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
                 Ok(service_stream)
             });
         let sequence_tx_clone3 = sequence_tx.clone();
-        let ref_index_uid_clone = ref_index_uid.clone();
         ingester_mock_0
             .expect_open_fetch_stream()
             .withf(|request| {
@@ -884,23 +827,22 @@ mod tests {
                     "indexer/test-node/test-index:00000000000000000000000000/test-source/\
                      00000000000000000000000000"
                 );
-                assert_eq!(request.index_uid(), &ref_index_uid_clone);
+                assert_eq!(request.index_uid(), &("test-index", 0));
                 assert_eq!(request.source_id, "test-source");
 
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
                 Ok(service_stream)
             });
-        let ref_index_uid_clone = ref_index_uid.clone();
         ingester_mock_0
             .expect_truncate_shards()
             .withf(|truncate_req| truncate_req.subrequests[0].shard_id() == ShardId::from(0))
             .once()
-            .returning(move |request| {
+            .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
                 assert_eq!(request.subrequests.len(), 1);
 
                 let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid(), &ref_index_uid_clone);
+                assert_eq!(subrequest.index_uid(), &("test-index", 0));
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(
                     subrequest.truncate_up_to_position_inclusive(),
@@ -911,17 +853,16 @@ mod tests {
                 Ok(response)
             });
 
-        let ref_index_uid_clone = ref_index_uid.clone();
         ingester_mock_0
             .expect_truncate_shards()
             .withf(|truncate_req| truncate_req.subrequests[0].shard_id() == ShardId::from(1))
             .once()
-            .returning(move |request| {
+            .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
                 assert_eq!(request.subrequests.len(), 1);
 
                 let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid(), &ref_index_uid_clone);
+                assert_eq!(subrequest.index_uid(), &("test-index", 0));
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(
                     subrequest.truncate_up_to_position_inclusive(),
@@ -930,7 +871,6 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ref_index_uid_clone = ref_index_uid.clone();
         ingester_mock_0
             .expect_truncate_shards()
             .withf(|truncate_req| {
@@ -939,11 +879,11 @@ mod tests {
                     && truncate_req.subrequests[1].shard_id() == ShardId::from(2)
             })
             .once()
-            .returning(move |request| {
+            .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
 
                 let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid(), &ref_index_uid_clone);
+                assert_eq!(subrequest.index_uid(), &("test-index", 0));
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(
                     subrequest.truncate_up_to_position_inclusive(),
@@ -951,7 +891,7 @@ mod tests {
                 );
 
                 let subrequest = &request.subrequests[1];
-                assert_eq!(subrequest.index_uid(), &ref_index_uid_clone);
+                assert_eq!(subrequest.index_uid(), &("test-index", 0));
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(
                     subrequest.truncate_up_to_position_inclusive(),
@@ -1080,73 +1020,63 @@ mod tests {
         // metastore, we observe the following:
         // - emission of a suggest truncate
         // - no stream request is emitted
-        let ref_index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
-            index_uid: ref_index_uid.clone(),
+            index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let publish_token = "indexer/test-node/test-index:00000000000000000000000000/test-source/\
+        let publish_token = "indexer/test-node/test-index:0/test-source/\
                              00000000000000000000000000/00000000000000000000000000";
 
         let mut mock_metastore = MetastoreServiceClient::mock();
-        let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
             .expect_acquire_shards()
             .once()
-            .returning(move |request| {
-                assert_eq!(request.subrequests.len(), 1);
-
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid(), &ref_index_uid_clone);
-                assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_ids, [ShardId::from(1), ShardId::from(2)]);
+            .returning(|request| {
+                assert_eq!(request.index_uid(), &("test-index", 0));
+                assert_eq!(request.source_id, "test-source");
+                assert_eq!(request.shard_ids, [ShardId::from(1), ShardId::from(2)]);
 
                 let response = AcquireShardsResponse {
-                    subresponses: vec![AcquireShardsSubresponse {
-                        index_uid: Some(ref_index_uid_clone.clone()),
-                        source_id: "test-source".to_string(),
-                        acquired_shards: vec![
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: Some(ref_index_uid_clone.clone()),
-                                source_id: "test-source".to_string(),
-                                shard_id: Some(ShardId::from(1)),
-                                shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(Position::eof(11u64)),
-                                publish_token: Some(publish_token.to_string()),
-                            },
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: Some(ref_index_uid_clone.clone()),
-                                source_id: "test-source".to_string(),
-                                shard_id: Some(ShardId::from(2)),
-                                shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(Position::Beginning.as_eof()),
-                                publish_token: Some(publish_token.to_string()),
-                            },
-                        ],
-                    }],
+                    acquired_shards: vec![
+                        Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: Some(IndexUid::for_test("test-index", 0)),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(1)),
+                            shard_state: ShardState::Open as i32,
+                            publish_position_inclusive: Some(Position::eof(11u64)),
+                            publish_token: Some(publish_token.to_string()),
+                        },
+                        Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: Some(IndexUid::for_test("test-index", 0)),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(2)),
+                            shard_state: ShardState::Open as i32,
+                            publish_position_inclusive: Some(Position::Beginning.as_eof()),
+                            publish_token: Some(publish_token.to_string()),
+                        },
+                    ],
                 };
                 Ok(response)
             });
         let ingester_pool = IngesterPool::default();
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
-        let ref_index_uid_clone = ref_index_uid.clone();
         ingester_mock_0
             .expect_truncate_shards()
             .once()
-            .returning(move |request| {
+            .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
                 assert_eq!(request.subrequests.len(), 2);
 
                 let subrequest_0 = &request.subrequests[0];
-                assert_eq!(subrequest_0.index_uid(), &ref_index_uid_clone);
+                assert_eq!(subrequest_0.index_uid(), &("test-index", 0));
                 assert_eq!(subrequest_0.source_id, "test-source");
                 assert_eq!(subrequest_0.shard_id(), ShardId::from(1));
                 assert_eq!(
@@ -1155,7 +1085,7 @@ mod tests {
                 );
 
                 let subrequest_1 = &request.subrequests[1];
-                assert_eq!(subrequest_0.index_uid(), &ref_index_uid_clone);
+                assert_eq!(subrequest_1.index_uid(), &("test-index", 0));
                 assert_eq!(subrequest_1.source_id, "test-source");
                 assert_eq!(subrequest_1.shard_id(), ShardId::from(2));
                 assert_eq!(
@@ -1212,7 +1142,7 @@ mod tests {
 
         let expected_local_update = LocalShardPositionsUpdate::new(
             SourceUid {
-                index_uid: ref_index_uid.clone(),
+                index_uid: IndexUid::for_test("test-index", 0),
                 source_id: "test-source".to_string(),
             },
             vec![
@@ -1230,74 +1160,64 @@ mod tests {
         // metastore, we observe the following:
         // - emission of a suggest truncate
         // - the stream request emitted does not include the EOF shards
-        let ref_index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
-            index_uid: ref_index_uid.clone(),
+            index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let publish_token = "indexer/test-node/test-index:00000000000000000000000000/test-source/\
+        let publish_token = "indexer/test-node/test-index:0/test-source/\
                              00000000000000000000000000/00000000000000000000000000";
 
         let mut mock_metastore = MetastoreServiceClient::mock();
-        let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
             .expect_acquire_shards()
             .once()
-            .returning(move |request| {
-                assert_eq!(request.subrequests.len(), 1);
-
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid(), &ref_index_uid_clone);
-                assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_ids, [ShardId::from(1), ShardId::from(2)]);
+            .returning(|request| {
+                assert_eq!(request.index_uid(), &("test-index", 0));
+                assert_eq!(request.source_id, "test-source");
+                assert_eq!(request.shard_ids, [ShardId::from(1), ShardId::from(2)]);
 
                 let response = AcquireShardsResponse {
-                    subresponses: vec![AcquireShardsSubresponse {
-                        index_uid: Some(ref_index_uid_clone.clone()),
-                        source_id: "test-source".to_string(),
-                        acquired_shards: vec![
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: Some(ref_index_uid_clone.clone()),
-                                source_id: "test-source".to_string(),
-                                shard_id: Some(ShardId::from(1)),
-                                shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(Position::offset(11u64)),
-                                publish_token: Some(publish_token.to_string()),
-                            },
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: Some(ref_index_uid_clone.clone()),
-                                source_id: "test-source".to_string(),
-                                shard_id: Some(ShardId::from(2)),
-                                shard_state: ShardState::Closed as i32,
-                                publish_position_inclusive: Some(Position::eof(22u64)),
-                                publish_token: Some(publish_token.to_string()),
-                            },
-                        ],
-                    }],
+                    acquired_shards: vec![
+                        Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: Some(IndexUid::for_test("test-index", 0)),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(1)),
+                            shard_state: ShardState::Open as i32,
+                            publish_position_inclusive: Some(Position::offset(11u64)),
+                            publish_token: Some(publish_token.to_string()),
+                        },
+                        Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: Some(IndexUid::for_test("test-index", 0)),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(2)),
+                            shard_state: ShardState::Closed as i32,
+                            publish_position_inclusive: Some(Position::eof(22u64)),
+                            publish_token: Some(publish_token.to_string()),
+                        },
+                    ],
                 };
                 Ok(response)
             });
         let ingester_pool = IngesterPool::default();
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
-        let ref_index_uid_clone = ref_index_uid.clone();
         ingester_mock_0
             .expect_open_fetch_stream()
             .once()
-            .returning(move |request| {
+            .returning(|request| {
                 assert_eq!(
                     request.client_id,
                     "indexer/test-node/test-index:00000000000000000000000000/test-source/\
                      00000000000000000000000000"
                 );
-                assert_eq!(request.index_uid(), &ref_index_uid_clone);
+                assert_eq!(request.index_uid(), &("test-index", 0));
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(11u64));
@@ -1305,11 +1225,10 @@ mod tests {
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
                 Ok(service_stream)
             });
-        let ref_index_uid_clone = ref_index_uid.clone();
         ingester_mock_0
             .expect_truncate_shards()
             .once()
-            .returning(move |mut request| {
+            .returning(|mut request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
                 assert_eq!(request.subrequests.len(), 2);
                 request
@@ -1317,7 +1236,7 @@ mod tests {
                     .sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
 
                 let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid(), &ref_index_uid_clone);
+                assert_eq!(subrequest.index_uid(), &("test-index", 0));
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id(), ShardId::from(1));
                 assert_eq!(
@@ -1326,7 +1245,7 @@ mod tests {
                 );
 
                 let subrequest = &request.subrequests[1];
-                assert_eq!(subrequest.index_uid(), &ref_index_uid_clone);
+                assert_eq!(subrequest.index_uid(), &("test-index", 0));
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id(), ShardId::from(2));
                 assert_eq!(
@@ -1388,7 +1307,7 @@ mod tests {
         let local_shard_positions_update = shard_positions_update_rx.recv().await.unwrap();
         let expected_local_shard_positions_update = LocalShardPositionsUpdate::new(
             SourceUid {
-                index_uid: ref_index_uid.clone(),
+                index_uid: IndexUid::for_test("test-index", 0),
                 source_id: "test-source".to_string(),
             },
             vec![
@@ -1404,10 +1323,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_source_emit_batches() {
-        let ref_index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
-            index_uid: ref_index_uid.clone(),
+            index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
         };
@@ -1462,7 +1380,7 @@ mod tests {
         let fetch_message_tx = source.fetch_stream.fetch_message_tx();
 
         let fetch_payload = FetchPayload {
-            index_uid: Some(ref_index_uid.clone()),
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
             source_id: "test-source".into(),
             shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test([
@@ -1477,7 +1395,7 @@ mod tests {
         fetch_message_tx.send(Ok(fetch_message)).await.unwrap();
 
         let fetch_payload = FetchPayload {
-            index_uid: Some(ref_index_uid.clone()),
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
             source_id: "test-source".into(),
             shard_id: Some(ShardId::from(2)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-qux"]),
@@ -1488,7 +1406,7 @@ mod tests {
         fetch_message_tx.send(Ok(fetch_message)).await.unwrap();
 
         let fetch_eof = FetchEof {
-            index_uid: Some(ref_index_uid.clone()),
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
             source_id: "test-source".into(),
             shard_id: Some(ShardId::from(2)),
             eof_position: Some(Position::eof(23u64)),
@@ -1534,7 +1452,7 @@ mod tests {
 
         fetch_message_tx
             .send(Err(FetchStreamError {
-                index_uid: ref_index_uid.clone(),
+                index_uid: IndexUid::for_test("test-index", 0),
                 source_id: "test-source".into(),
                 shard_id: ShardId::from(1),
                 ingest_error: IngestV2Error::Internal("test-error".to_string()),
@@ -1550,7 +1468,7 @@ mod tests {
         assert_eq!(shard.status, IndexingStatus::Error);
 
         let fetch_payload = FetchPayload {
-            index_uid: Some(ref_index_uid.clone()),
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
             source_id: "test-source".into(),
             shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-baz"]),
@@ -1570,44 +1488,35 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_source_emit_batches_shard_not_found() {
-        let ref_index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
-            index_uid: ref_index_uid.clone(),
+            index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let publish_token = "indexer/test-node/test-index:00000000000000000000000000/test-source/\
+        let publish_token = "indexer/test-node/test-index:0/test-source/\
                              00000000000000000000000000/00000000000000000000000000";
 
         let mut mock_metastore = MetastoreServiceClient::mock();
-        let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
             .expect_acquire_shards()
             .once()
-            .returning(move |request| {
-                assert_eq!(request.subrequests.len(), 1);
-
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid(), &ref_index_uid_clone);
-                assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_ids, [ShardId::from(1)]);
+            .returning(|request: AcquireShardsRequest| {
+                assert_eq!(request.index_uid(), &("test-index", 0));
+                assert_eq!(request.source_id, "test-source");
+                assert_eq!(request.shard_ids, [ShardId::from(1)]);
 
                 let response = AcquireShardsResponse {
-                    subresponses: vec![AcquireShardsSubresponse {
-                        index_uid: Some(ref_index_uid_clone.clone()),
+                    acquired_shards: vec![Shard {
+                        leader_id: "test-ingester-0".to_string(),
+                        follower_id: None,
+                        index_uid: Some(IndexUid::for_test("test-index", 0)),
                         source_id: "test-source".to_string(),
-                        acquired_shards: vec![Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
-                            index_uid: Some(ref_index_uid_clone.clone()),
-                            source_id: "test-source".to_string(),
-                            shard_id: Some(ShardId::from(1)),
-                            shard_state: ShardState::Open as i32,
-                            publish_position_inclusive: Some(Position::Beginning),
-                            publish_token: Some(publish_token.to_string()),
-                        }],
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        publish_position_inclusive: Some(Position::Beginning),
+                        publish_token: Some(publish_token.to_string()),
                     }],
                 };
                 Ok(response)
@@ -1615,12 +1524,11 @@ mod tests {
         let ingester_pool = IngesterPool::default();
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
-        let ref_index_uid_clone = ref_index_uid.clone();
         ingester_mock_0
             .expect_open_fetch_stream()
             .once()
-            .returning(move |request| {
-                assert_eq!(request.index_uid(), &ref_index_uid_clone);
+            .returning(|request| {
+                assert_eq!(request.index_uid(), &("test-index", 0));
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::Beginning);
@@ -1687,10 +1595,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_source_suggest_truncate() {
-        let ref_index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
-            index_uid: ref_index_uid.clone(),
+            index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
         };
@@ -1874,7 +1781,7 @@ mod tests {
         let local_shards_update = shard_positions_update_rx.recv().await.unwrap();
         let expected_local_shards_update = LocalShardPositionsUpdate::new(
             SourceUid {
-                index_uid: ref_index_uid,
+                index_uid: IndexUid::for_test("test-index", 0),
                 source_id: "test-source".to_string(),
             },
             vec![

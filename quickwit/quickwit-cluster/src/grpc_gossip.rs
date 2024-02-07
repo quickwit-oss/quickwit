@@ -210,7 +210,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_perform_grpc_gossip_rounds() {
-        let peer_seeds = vec![];
+        let peer_seeds = Vec::new();
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(peer_seeds, &["indexer"], &transport, true)
             .await

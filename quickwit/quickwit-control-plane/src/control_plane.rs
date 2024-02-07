@@ -49,9 +49,9 @@ use quickwit_proto::control_plane::{
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
-    DeleteShardsRequest, DeleteShardsSubrequest, DeleteSourceRequest, EmptyResponse,
-    FindIndexTemplateMatchesRequest, IndexTemplateMatch, MetastoreError, MetastoreResult,
-    MetastoreService, MetastoreServiceClient, ToggleSourceRequest,
+    DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
+    IndexTemplateMatch, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    ToggleSourceRequest,
 };
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::Serialize;
@@ -259,13 +259,10 @@ impl ControlPlane {
         shard_ids: &[ShardId],
         progress: &Progress,
     ) -> anyhow::Result<()> {
-        let delete_shards_subrequest = DeleteShardsSubrequest {
+        let delete_shards_request = DeleteShardsRequest {
             index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.clone(),
             shard_ids: shard_ids.to_vec(),
-        };
-        let delete_shards_request = DeleteShardsRequest {
-            subrequests: vec![delete_shards_subrequest],
             force: false,
         };
         // We use a tiny bit different strategy here than for other handlers
@@ -865,9 +862,9 @@ mod tests {
     use quickwit_proto::ingest::ingester::{IngesterServiceClient, RetainShardsResponse};
     use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::{
-        DeleteShardsResponse, EntityKind, FindIndexTemplateMatchesResponse,
-        ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest,
-        ListShardsResponse, ListShardsSubresponse, MetastoreError, SourceType,
+        EntityKind, FindIndexTemplateMatchesResponse, ListIndexesMetadataRequest,
+        ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
+        MetastoreError, SourceType,
     };
     use quickwit_proto::types::Position;
 
@@ -1402,13 +1399,11 @@ mod tests {
         let index_uid_clone = index_0.index_uid.clone();
         mock_metastore.expect_delete_shards().return_once(
             move |delete_shards_request: DeleteShardsRequest| {
+                assert_eq!(delete_shards_request.index_uid(), &index_uid_clone);
+                assert_eq!(delete_shards_request.source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(delete_shards_request.shard_ids, [ShardId::from(17)]);
                 assert!(!delete_shards_request.force);
-                assert_eq!(delete_shards_request.subrequests.len(), 1);
-                let subrequest = &delete_shards_request.subrequests[0];
-                assert_eq!(subrequest.index_uid(), &index_uid_clone);
-                assert_eq!(subrequest.source_id, INGEST_V2_SOURCE_ID);
-                assert_eq!(subrequest.shard_ids, [ShardId::from(17)]);
-                Ok(DeleteShardsResponse {})
+                Ok(EmptyResponse {})
             },
         );
 
@@ -1539,13 +1534,11 @@ mod tests {
         let index_uid_clone = index_0.index_uid.clone();
         mock_metastore.expect_delete_shards().return_once(
             move |delete_shards_request: DeleteShardsRequest| {
+                assert_eq!(delete_shards_request.index_uid(), &index_uid_clone);
+                assert_eq!(delete_shards_request.source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(delete_shards_request.shard_ids, [ShardId::from(17)]);
                 assert!(!delete_shards_request.force);
-                assert_eq!(delete_shards_request.subrequests.len(), 1);
-                let subrequest = &delete_shards_request.subrequests[0];
-                assert_eq!(subrequest.index_uid(), &index_uid_clone);
-                assert_eq!(subrequest.source_id, INGEST_V2_SOURCE_ID);
-                assert_eq!(subrequest.shard_ids, [ShardId::from(17)]);
-                Ok(DeleteShardsResponse {})
+                Ok(EmptyResponse {})
             },
         );
 
@@ -1556,7 +1549,7 @@ mod tests {
                     subresponses: vec![ListShardsSubresponse {
                         index_uid: Some(index_uid_clone),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
-                        shards: vec![],
+                        shards: Vec::new(),
                     }],
                 };
                 Ok(list_shards_resp)

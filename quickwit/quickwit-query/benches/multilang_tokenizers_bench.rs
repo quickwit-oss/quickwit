@@ -61,7 +61,7 @@ const KOR_LONG: &str = r#"
 
 fn process_tokens(analyzer: &mut TextAnalyzer, text: &str) -> Vec<Token> {
     let mut token_stream = analyzer.token_stream(text);
-    let mut tokens: Vec<Token> = vec![];
+    let mut tokens: Vec<Token> = Vec::new();
     token_stream.process(&mut |token: &Token| tokens.push(token.clone()));
     tokens
 }
