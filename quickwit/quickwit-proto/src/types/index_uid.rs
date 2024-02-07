@@ -25,6 +25,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 pub use ulid::Ulid;
 
+use crate::types::pipeline_uid::ULID_SIZE;
 use crate::types::IndexId;
 
 /// Index identifiers that uniquely identify not only the index, but also
@@ -75,65 +76,56 @@ impl Serialize for IndexUid {
     }
 }
 
-impl ::prost::Message for IndexUid {
+impl prost::Message for IndexUid {
     fn encode_raw<B>(&self, buf: &mut B)
-    where B: ::prost::bytes::BufMut {
+    where B: prost::bytes::BufMut {
         if !self.index_id.is_empty() {
-            ::prost::encoding::string::encode(1u32, &self.index_id, buf);
+            prost::encoding::string::encode(1u32, &self.index_id, buf);
         }
-        let (ulid_high, ulid_low): (u64, u64) = self.incarnation_id.into();
-
-        if ulid_high != 0u64 {
-            ::prost::encoding::uint64::encode(2u32, &ulid_high, buf);
-        }
-        if ulid_low != 0u64 {
-            ::prost::encoding::uint64::encode(3u32, &ulid_low, buf);
-        }
+        // TODO: when `bytes::encode` supports `&[u8]`, we can remove this allocation.
+        prost::encoding::bytes::encode(2u32, &self.incarnation_id.to_bytes().to_vec(), buf);
     }
 
     fn merge_field<B>(
         &mut self,
         tag: u32,
-        wire_type: ::prost::encoding::WireType,
+        wire_type: prost::encoding::WireType,
         buf: &mut B,
-        ctx: ::prost::encoding::DecodeContext,
-    ) -> ::core::result::Result<(), ::prost::DecodeError>
+        ctx: prost::encoding::DecodeContext,
+    ) -> ::core::result::Result<(), prost::DecodeError>
     where
-        B: ::prost::bytes::Buf,
+        B: prost::bytes::Buf,
     {
         const STRUCT_NAME: &str = "IndexUid";
 
         match tag {
             1u32 => {
                 let value = &mut self.index_id;
-                ::prost::encoding::string::merge(wire_type, value, buf, ctx).map_err(|mut error| {
+                prost::encoding::string::merge(wire_type, value, buf, ctx).map_err(|mut error| {
                     error.push(STRUCT_NAME, "index_id");
                     error
                 })
             }
             2u32 => {
-                let (mut ulid_high, ulid_low) = self.incarnation_id.into();
-                ::prost::encoding::uint64::merge(wire_type, &mut ulid_high, buf, ctx).map_err(
+                let mut buffer = Vec::with_capacity(ULID_SIZE);
+
+                prost::encoding::bytes::merge(wire_type, &mut buffer, buf, ctx).map_err(
                     |mut error| {
-                        error.push(STRUCT_NAME, "incarnation_id_high");
+                        error.push(STRUCT_NAME, "incarnation_id");
                         error
                     },
                 )?;
-                self.incarnation_id = (ulid_high, ulid_low).into();
+                let ulid_bytes: [u8; ULID_SIZE] =
+                    buffer.try_into().map_err(|buffer: Vec<u8>| {
+                        prost::DecodeError::new(format!(
+                            "invalid length for field `incarnation_id`, expected 16 bytes, got {}",
+                            buffer.len()
+                        ))
+                    })?;
+                self.incarnation_id = Ulid::from_bytes(ulid_bytes);
                 Ok(())
             }
-            3u32 => {
-                let (ulid_high, mut ulid_low) = self.incarnation_id.into();
-                ::prost::encoding::uint64::merge(wire_type, &mut ulid_low, buf, ctx).map_err(
-                    |mut error| {
-                        error.push(STRUCT_NAME, "incarnation_id_low");
-                        error
-                    },
-                )?;
-                self.incarnation_id = (ulid_high, ulid_low).into();
-                Ok(())
-            }
-            _ => ::prost::encoding::skip_field(wire_type, tag, buf, ctx),
+            _ => prost::encoding::skip_field(wire_type, tag, buf, ctx),
         }
     }
 
@@ -142,16 +134,12 @@ impl ::prost::Message for IndexUid {
         let mut len = 0;
 
         if !self.index_id.is_empty() {
-            len += ::prost::encoding::string::encoded_len(1u32, &self.index_id);
+            len += prost::encoding::string::encoded_len(1u32, &self.index_id);
         }
-        let (ulid_high, ulid_low): (u64, u64) = self.incarnation_id.into();
 
-        if ulid_high != 0u64 {
-            len += ::prost::encoding::uint64::encoded_len(2u32, &ulid_high);
-        }
-        if ulid_low != 0u64 {
-            len += ::prost::encoding::uint64::encoded_len(3u32, &ulid_low);
-        }
+        len += prost::encoding::key_len(2u32)
+            + prost::encoding::encoded_len_varint(ULID_SIZE as u64)
+            + ULID_SIZE;
         len
     }
 
@@ -204,6 +192,7 @@ pub struct InvalidIndexUid {
     pub invalid_index_uid_str: String,
 }
 
+#[cfg(feature = "postgres")]
 impl TryFrom<String> for IndexUid {
     type Error = InvalidIndexUid;
 

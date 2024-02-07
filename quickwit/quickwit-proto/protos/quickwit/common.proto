@@ -21,8 +21,11 @@ syntax = "proto3";
 
 package quickwit.common;
 
+// The corresponding Rust struct [`crate::types::IndexUid`] is defined manually and
+// externally provided during code generation (see `build.rs`).
+//
+// Modify at your own risk.
 message IndexUid {
   string index_id = 1;
-  uint64 incarnation_id_high = 2;
-  uint64 incarnation_id_low = 3;
+  bytes incarnation_id = 2;
 }
