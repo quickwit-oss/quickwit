@@ -21,8 +21,9 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use anyhow::Context;
 use async_trait::async_trait;
 use bytesize::ByteSize;
 use fnv::FnvHashMap;
@@ -130,7 +131,6 @@ impl Ingester {
         if state.status == IngesterStatus::Decommissioning
             && state.shards.values().all(|shard| shard.is_indexed())
         {
-            info!("ingester is fully decommissioned");
             state.status = IngesterStatus::Decommissioned;
             state
                 .status_tx
@@ -1042,39 +1042,43 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
     }
 }
 
-// TODO: This should return an error if an error occurs.
-pub async fn wait_for_ingester_status(mut ingester: IngesterServiceClient, status: IngesterStatus) {
-    let mut observation_stream = match ingester
+pub async fn wait_for_ingester_status(
+    mut ingester: IngesterServiceClient,
+    status: IngesterStatus,
+) -> anyhow::Result<()> {
+    let mut observation_stream = ingester
         .open_observation_stream(OpenObservationStreamRequest {})
         .await
-    {
-        Ok(observation_stream) => observation_stream,
-        Err(error) => {
-            error!("failed to open observation stream: {error}");
-            return;
-        }
-    };
+        .context("failed to open observation stream")?;
+
     while let Some(observation_message_result) = observation_stream.next().await {
-        let observation_message = match observation_message_result {
-            Ok(observation_message) => observation_message,
-            Err(error) => {
-                error!("observation stream ended unexpectedly: {error}");
-                return;
-            }
-        };
+        let observation_message =
+            observation_message_result.context("observation stream ended unexpectedly")?;
+
         if observation_message.status() == status {
-            return;
+            break;
         }
     }
+    Ok(())
 }
 
-// TODO: This should return an error if the decommission fails.
-pub async fn wait_for_ingester_decommission(mut ingester: IngesterServiceClient) {
-    if let Err(error) = ingester.decommission(DecommissionRequest {}).await {
-        error!("failed to initiate ingester decommission: {error}");
-        return;
-    }
-    wait_for_ingester_status(ingester, IngesterStatus::Decommissioned).await;
+pub async fn wait_for_ingester_decommission(
+    mut ingester: IngesterServiceClient,
+) -> anyhow::Result<()> {
+    let now = Instant::now();
+
+    ingester
+        .decommission(DecommissionRequest {})
+        .await
+        .context("failed to initiate ingester decommission")?;
+
+    wait_for_ingester_status(ingester, IngesterStatus::Decommissioned).await?;
+
+    info!(
+        "successfully decommissioned ingester in {} seconds",
+        now.elapsed().as_secs()
+    );
+    Ok(())
 }
 
 struct LocalPersistSubrequest {
@@ -1207,7 +1211,8 @@ mod tests {
                 IngesterServiceClient::new(ingester.clone()),
                 IngesterStatus::Ready,
             )
-            .await;
+            .await
+            .unwrap();
 
             let ingester_env = IngesterContext {
                 tempdir,

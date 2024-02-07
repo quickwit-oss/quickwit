@@ -21,6 +21,7 @@ use std::collections::HashSet;
 use std::str::FromStr;
 
 use clap::{arg, ArgAction, ArgMatches, Command};
+use futures::future::select;
 use itertools::Itertools;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::{Protocol, Uri};
@@ -92,10 +93,21 @@ impl RunCliCommand {
         // TODO move in serve quickwit?
         let runtimes_config = RuntimesConfig::default();
         start_actor_runtimes(runtimes_config, &node_config.enabled_services)?;
-        let shutdown_signal = Box::pin(async move {
-            signal::ctrl_c()
-                .await
-                .expect("Registering a signal handler for SIGINT should not fail.");
+        let shutdown_signal = Box::pin(async {
+            select(
+                Box::pin(async {
+                    signal::ctrl_c()
+                        .await
+                        .expect("registering a signal handler for SIGINT should not fail");
+                }),
+                Box::pin(async {
+                    signal::unix::signal(signal::unix::SignalKind::terminate())
+                        .expect("registering a signal handler for SIGTERM should not fail")
+                        .recv()
+                        .await;
+                }),
+            )
+            .await;
         });
         let serve_result = serve_quickwit(
             node_config,
