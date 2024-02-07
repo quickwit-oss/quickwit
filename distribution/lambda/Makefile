@@ -38,13 +38,13 @@ package:
 	else
 	  if ! [ -f $(SEARCHER_PACKAGE_PATH) ]; then
 	  	echo "Downloading package $(PACKAGE_BASE_URL)$(SEARCHER_PACKAGE_FILE)"
-	    curl -C - -Ls -o $(SEARCHER_PACKAGE_PATH) $(PACKAGE_BASE_URL)$(SEARCHER_PACKAGE_FILE)
+	    curl --fail -C - -Ls -o $(SEARCHER_PACKAGE_PATH) $(PACKAGE_BASE_URL)$(SEARCHER_PACKAGE_FILE)
 	  else
 	  	echo "Using cached package $(SEARCHER_PACKAGE_PATH)"
 	  fi
 	  if ! [ -f $(INDEXER_PACKAGE_PATH) ]; then
 	  	echo "Downloading package $(PACKAGE_BASE_URL)$(INDEXER_PACKAGE_FILE)"
-	  	curl -C - -Ls -o $(INDEXER_PACKAGE_PATH) $(PACKAGE_BASE_URL)$(INDEXER_PACKAGE_FILE)
+	  	curl --fail -C - -Ls -o $(INDEXER_PACKAGE_PATH) $(PACKAGE_BASE_URL)$(INDEXER_PACKAGE_FILE)
 	  else
 	  	echo "Using cached package $(INDEXER_PACKAGE_PATH)"
 	  fi

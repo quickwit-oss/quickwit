@@ -41,14 +41,12 @@ class Source(Construct):
             ],
         )
 
-        with open("resources/data-generator.py") as f:
-            lambda_code = f.read()
         generator_lambda = aws_lambda.Function(
             self,
             id="MockDataGenerator",
-            code=aws_lambda.Code.from_inline(lambda_code),
+            code=aws_lambda.Code.from_asset("resources/data-generator/"),
             runtime=aws_lambda.Runtime.PYTHON_3_10,
-            handler="index.lambda_handler",
+            handler="handler.lambda_handler",
             environment={
                 "BUCKET_NAME": mock_data_bucket.bucket_name,
                 "PREFIX": index_id,
