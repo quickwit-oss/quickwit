@@ -136,7 +136,7 @@ doc_mapping:
   timestamp_field: span_start_timestamp_nanos
 
 indexing_settings:
-  commit_timeout_secs: 5
+  commit_timeout_secs: 10
 
 search_settings:
   default_search_fields: []
