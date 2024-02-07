@@ -187,10 +187,6 @@ impl IndexUid {
         &self.index_id
     }
 
-    pub fn incarnation_id(&self) -> &Ulid {
-        &self.incarnation_id
-    }
-
     pub fn is_empty(&self) -> bool {
         self.index_id.is_empty()
     }

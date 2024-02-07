@@ -216,7 +216,7 @@ impl DeleteTaskPipeline {
             ctx.spawn_actor().supervise(delete_executor);
         let scratch_directory = temp_dir::Builder::default()
             .join(self.index_uid.index_id())
-            .join(&self.index_uid.incarnation_id().to_string())
+            .join(&self.index_uid.incarnation_id.to_string())
             .tempdir_in(&self.delete_service_task_dir)?;
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory,
