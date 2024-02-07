@@ -133,7 +133,7 @@ impl ControlPlaneModel {
                     source_id,
                     shards,
                 } = list_shards_subresponse;
-                let index_uid = index_uid.expect("`index_uid` must always be present");
+                let index_uid = index_uid.expect("`index_uid` should be a required field");
                 self.shard_table
                     .insert_shards(&index_uid, &source_id, shards);
             }
@@ -353,6 +353,8 @@ impl ControlPlaneModel {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use quickwit_config::{SourceConfig, SourceParams, INGEST_V2_SOURCE_ID};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::{Shard, ShardState};
@@ -365,9 +367,9 @@ mod tests {
         let progress = Progress::default();
 
         let mut mock_metastore = MetastoreServiceClient::mock();
-        let index_uid = IndexUid::parse("test-index-0:00000000000000000000000000").unwrap();
-        let index_uid2 = IndexUid::parse("test-index-1:00000000000000000000000000").unwrap();
-        let index_uid3 = IndexUid::parse("test-index-2:00000000000000000000000000").unwrap();
+        let index_uid = IndexUid::from_str("test-index-0:00000000000000000000000000").unwrap();
+        let index_uid2 = IndexUid::from_str("test-index-1:00000000000000000000000000").unwrap();
+        let index_uid3 = IndexUid::from_str("test-index-2:00000000000000000000000000").unwrap();
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(|request| {

@@ -683,6 +683,7 @@ pub enum PingError {
 mod tests {
 
     use std::collections::BTreeSet;
+    use std::str::FromStr;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -1356,7 +1357,7 @@ mod tests {
     async fn test_ingest_controller_try_scale_up_shards() {
         let mut mock_metastore = MetastoreServiceClient::mock();
 
-        let index_uid = IndexUid::parse("test-index:00000000000000000000000000").unwrap();
+        let index_uid = IndexUid::from_str("test-index:00000000000000000000000000").unwrap();
         let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_open_shards()

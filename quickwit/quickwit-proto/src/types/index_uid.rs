@@ -32,8 +32,8 @@ use crate::types::IndexId;
 /// It is represented as a string in index_id:incarnation_id format.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct IndexUid {
-    index_id: IndexId,
-    incarnation_id: Ulid,
+    pub index_id: IndexId,
+    pub incarnation_id: Ulid,
 }
 
 impl FromStr for IndexUid {
@@ -71,7 +71,7 @@ impl<'de> Deserialize<'de> for IndexUid {
 impl Serialize for IndexUid {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: Serializer {
-        serializer.serialize_str(&self.to_string())
+        serializer.collect_str(&self)
     }
 }
 
@@ -181,10 +181,6 @@ impl IndexUid {
             index_id: index_id.to_string(),
             incarnation_id,
         }
-    }
-
-    pub fn parse(string: &str) -> Result<Self, InvalidIndexUid> {
-        string.parse()
     }
 
     pub fn index_id(&self) -> &str {

@@ -208,6 +208,7 @@ impl Handler<Loop> for GarbageCollector {
 mod tests {
     use std::ops::Bound;
     use std::path::Path;
+    use std::str::FromStr;
     use std::sync::Arc;
 
     use quickwit_actors::Universe;
@@ -244,7 +245,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_garbage_collect_calls_dependencies_appropriately() {
-        let index_uid = IndexUid::parse("test-index:11111111111111111111111111").unwrap();
+        let index_uid = IndexUid::from_str("test-index:11111111111111111111111111").unwrap();
         let mut mock_storage = MockStorage::default();
         mock_storage
             .expect_bulk_delete()

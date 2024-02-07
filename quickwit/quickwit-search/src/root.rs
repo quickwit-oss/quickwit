@@ -79,8 +79,9 @@ pub struct SearchJob {
 impl SearchJob {
     #[cfg(test)]
     pub fn for_test(split_id: &str, cost: usize) -> SearchJob {
+        use std::str::FromStr;
         SearchJob {
-            index_uid: IndexUid::parse("test-index:00000000000000000000000000").unwrap(),
+            index_uid: IndexUid::from_str("test-index:00000000000000000000000000").unwrap(),
             cost,
             offsets: SplitIdAndFooterOffsets {
                 split_id: split_id.to_string(),

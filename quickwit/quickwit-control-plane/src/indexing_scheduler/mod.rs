@@ -492,6 +492,7 @@ fn get_indexing_tasks_diff<'a>(
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
+    use std::str::FromStr;
 
     use proptest::{prop_compose, proptest};
     use quickwit_config::{IndexConfig, KafkaSourceParams, SourceConfig, SourceParams};
@@ -501,8 +502,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_indexing_plans_diff() {
-        let index_uid = IndexUid::parse("index-1:11111111111111111111111111").unwrap();
-        let index_uid2 = IndexUid::parse("index-2:11111111111111111111111111").unwrap();
+        let index_uid = IndexUid::from_str("index-1:11111111111111111111111111").unwrap();
+        let index_uid2 = IndexUid::from_str("index-2:11111111111111111111111111").unwrap();
         {
             let running_plan = FnvHashMap::default();
             let desired_plan = FnvHashMap::default();

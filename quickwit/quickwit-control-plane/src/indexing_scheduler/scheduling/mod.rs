@@ -588,6 +588,7 @@ pub fn build_physical_indexing_plan(
 mod tests {
 
     use std::num::NonZeroU32;
+    use std::str::FromStr;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use fnv::FnvHashMap;
@@ -981,7 +982,7 @@ mod tests {
         let sources_to_schedule = vec![
             SourceToSchedule {
                 source_uid: SourceUid {
-                    index_uid: IndexUid::parse("otel-logs-v0_6:01HKYD1SE37C90KSH21CD1M11A")
+                    index_uid: IndexUid::from_str("otel-logs-v0_6:01HKYD1SE37C90KSH21CD1M11A")
                         .unwrap(),
                     source_id: "_ingest-api-source".to_string(),
                 },
@@ -989,7 +990,7 @@ mod tests {
             },
             SourceToSchedule {
                 source_uid: SourceUid {
-                    index_uid: IndexUid::parse(
+                    index_uid: IndexUid::from_str(
                         "simian_chico_12856033706389338959:01HKYD414H1WVSASC5YD972P39",
                     )
                     .unwrap(),

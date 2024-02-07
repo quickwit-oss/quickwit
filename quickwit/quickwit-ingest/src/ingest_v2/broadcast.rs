@@ -329,6 +329,7 @@ pub async fn setup_local_shards_update_listener(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -367,7 +368,7 @@ mod tests {
         assert_eq!(num_changes, 0);
 
         let previous_snapshot = LocalShardsSnapshot::default();
-        let index_uid = IndexUid::parse("test-index:00000000000000000000000000").unwrap();
+        let index_uid = IndexUid::from_str("test-index:00000000000000000000000000").unwrap();
         let current_snapshot = LocalShardsSnapshot {
             per_source_shard_infos: vec![(
                 SourceUid {
@@ -555,7 +556,7 @@ mod tests {
 
         let local_shards_update_counter = Arc::new(AtomicUsize::new(0));
         let local_shards_update_counter_clone = local_shards_update_counter.clone();
-        let index_uid = IndexUid::parse("test-index:00000000000000000000000000").unwrap();
+        let index_uid = IndexUid::from_str("test-index:00000000000000000000000000").unwrap();
 
         let index_uid_clone = index_uid.clone();
         event_broker
