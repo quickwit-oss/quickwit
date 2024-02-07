@@ -571,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "testsuite")]
+    #[cfg(feature = "multilang")]
     fn test_doc_mapper_query_with_multilang_field() {
         use quickwit_query::query_ast::TermQuery;
         use tantivy::schema::IndexRecordOption;

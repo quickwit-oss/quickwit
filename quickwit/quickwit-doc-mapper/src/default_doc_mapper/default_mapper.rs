@@ -38,7 +38,6 @@ use super::field_mapping_entry::RAW_TOKENIZER_NAME;
 use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{build_mapping_tree, MappingNode};
 use crate::default_doc_mapper::FieldMappingType;
-pub use crate::default_doc_mapper::QuickwitJsonOptions;
 use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
