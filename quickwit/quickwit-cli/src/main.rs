@@ -42,11 +42,7 @@ async fn main_impl() -> anyhow::Result<()> {
     openssl_probe::init_ssl_cert_env_vars();
 
     let about_text = about_text();
-    let build_info = BuildInfo::get();
-    let version_text = format!(
-        "{} ({} {})",
-        build_info.version, build_info.commit_short_hash, build_info.build_date
-    );
+    let version_text = BuildInfo::get_version_text();
 
     let app = build_cli().about(about_text).version(version_text);
     let matches = app.get_matches();
@@ -63,6 +59,7 @@ async fn main_impl() -> anyhow::Result<()> {
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
+    let build_info = BuildInfo::get();
     setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
     let return_code: i32 = if let Err(err) = command.execute().await {
         eprintln!("{} Command failed: {:?}\n", "✘".color(RED_COLOR), err);

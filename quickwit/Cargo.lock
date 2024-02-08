@@ -6285,6 +6285,7 @@ dependencies = [
  "bytes",
  "bytesize",
  "elasticsearch-dsl",
+ "flate2",
  "futures",
  "futures-util",
  "hex",
@@ -6339,6 +6340,7 @@ dependencies = [
  "tracing-opentelemetry",
  "utoipa",
  "warp",
+ "zstd 0.13.0",
 ]
 
 [[package]]

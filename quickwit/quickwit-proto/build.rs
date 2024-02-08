@@ -66,6 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
         .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
         .field_attribute("DeleteQuery.index_uid", "#[serde(alias = \"index_id\")]")
+        .field_attribute("DeleteQuery.index_uid", "#[schema(value_type = String)]")
         .field_attribute("DeleteQuery.query_ast", "#[serde(alias = \"query\")]")
         .field_attribute(
             "DeleteQuery.start_timestamp",

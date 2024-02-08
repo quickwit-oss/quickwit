@@ -42,7 +42,7 @@ use super::mrecordlog_utils::check_enough_capacity;
 use super::state::IngesterState;
 use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::metrics::INGEST_METRICS;
-use crate::{estimate_size, with_request_metrics};
+use crate::{estimate_size, with_lock_metrics, with_request_metrics};
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
 
@@ -468,7 +468,8 @@ impl ReplicationTask {
         };
         let queue_id = replica_shard.queue_id();
 
-        let mut state_guard = self.state.lock_fully().await;
+        let mut state_guard =
+            with_lock_metrics!(self.state.lock_fully(), "init_replica", "write").await?;
 
         state_guard
             .mrecordlog
@@ -521,7 +522,8 @@ impl ReplicationTask {
         let mut replicate_successes = Vec::with_capacity(replicate_request.subrequests.len());
         let mut replicate_failures = Vec::new();
 
-        let mut state_guard = self.state.lock_fully().await;
+        let mut state_guard =
+            with_lock_metrics!(self.state.lock_fully(), "replicate", "write").await?;
 
         if state_guard.status != IngesterStatus::Ready {
             replicate_failures.reserve_exact(replicate_request.subrequests.len());
@@ -737,13 +739,9 @@ impl Drop for ReplicationTaskHandle {
 #[cfg(test)]
 mod tests {
 
-    use mrecordlog::MultiRecordLog;
-    use quickwit_proto::ingest::ingester::{
-        ObservationMessage, ReplicateSubrequest, ReplicateSuccess,
-    };
+    use quickwit_proto::ingest::ingester::{ReplicateSubrequest, ReplicateSuccess};
     use quickwit_proto::ingest::{DocBatchV2, Shard};
     use quickwit_proto::types::{queue_id, IndexUid, ShardId};
-    use tokio::sync::watch;
 
     use super::*;
     use crate::ingest_v2::test_utils::MultiRecordLogTestExt;
@@ -1016,10 +1014,7 @@ mod tests {
     async fn test_replication_task_happy_path() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = IngesterState::new(mrecordlog, observation_tx);
+        let (_temp_dir, state, _status_rx) = IngesterState::for_test().await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1110,7 +1105,7 @@ mod tests {
         let init_replica_response = into_init_replica_response(ack_replication_message);
         assert_eq!(init_replica_response.replication_seqno, 2);
 
-        let state_guard = state.lock_fully().await;
+        let state_guard = state.lock_fully().await.unwrap();
 
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
@@ -1213,7 +1208,7 @@ mod tests {
             Position::offset(1u64)
         );
 
-        let state_guard = state.lock_fully().await;
+        let state_guard = state.lock_fully().await.unwrap();
 
         state_guard
             .mrecordlog
@@ -1269,7 +1264,7 @@ mod tests {
             Position::offset(1u64)
         );
 
-        let state_guard = state.lock_fully().await;
+        let state_guard = state.lock_fully().await.unwrap();
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_01,
@@ -1282,10 +1277,7 @@ mod tests {
     async fn test_replication_task_shard_closed() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = IngesterState::new(mrecordlog, observation_tx);
+        let (_temp_dir, state, _status_rx) = IngesterState::for_test().await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1315,6 +1307,7 @@ mod tests {
         state
             .lock_fully()
             .await
+            .unwrap()
             .shards
             .insert(queue_id_01.clone(), replica_shard);
 
@@ -1359,10 +1352,7 @@ mod tests {
     async fn test_replication_task_resource_exhausted() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = IngesterState::new(mrecordlog, observation_tx);
+        let (_temp_dir, state, _status_rx) = IngesterState::for_test().await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1392,6 +1382,7 @@ mod tests {
         state
             .lock_fully()
             .await
+            .unwrap()
             .shards
             .insert(queue_id_01.clone(), replica_shard);
 

@@ -52,11 +52,12 @@ use quickwit_proto::types::{queue_id, IndexUid, NodeId, Position, QueueId, Sourc
 use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
 
+use super::broadcast::BroadcastLocalShardsTask;
 use super::fetch::FetchStreamTask;
 use super::metrics::INGEST_V2_METRICS;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{
-    append_non_empty_doc_batch, check_enough_capacity, force_delete_queue, AppendDocBatchError,
+    append_non_empty_doc_batch, check_enough_capacity, AppendDocBatchError,
 };
 use super::rate_meter::RateMeter;
 use super::replication::{
@@ -65,8 +66,6 @@ use super::replication::{
 };
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use super::IngesterPool;
-use crate::ingest_v2::broadcast::BroadcastLocalShardsTask;
-use crate::ingest_v2::mrecordlog_utils::queue_position_range;
 use crate::metrics::INGEST_METRICS;
 use crate::{estimate_size, with_lock_metrics, with_request_metrics, FollowerId};
 
@@ -87,7 +86,7 @@ pub struct Ingester {
     memory_capacity: ByteSize,
     rate_limiter_settings: RateLimiterSettings,
     replication_factor: usize,
-    observation_rx: watch::Receiver<IngestV2Result<ObservationMessage>>,
+    status_rx: watch::Receiver<IngesterStatus>,
 }
 
 impl fmt::Debug for Ingester {
@@ -109,47 +108,18 @@ impl Ingester {
         replication_factor: usize,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();
-        info!(
-            "opening write-ahead log located at `{}`",
-            wal_dir_path.display()
-        );
-        let mrecordlog = MultiRecordLog::open_with_prefs(
-            wal_dir_path,
-            mrecordlog::SyncPolicy::OnDelay(Duration::from_secs(5)),
-        )
-        .await
-        .map_err(|error| {
-            let message = format!(
-                "failed to create or open write-ahead log located at `{}`: {error}",
-                wal_dir_path.display()
-            );
-            IngestV2Error::Internal(message)
-        })?;
-        let observe_message = ObservationMessage {
-            node_id: self_node_id.clone().into(),
-            status: IngesterStatus::Ready as i32,
-        };
-        let (observation_tx, observation_rx) = watch::channel(Ok(observe_message));
-
-        let state = IngesterState::new(mrecordlog, observation_tx);
+        let (state, status_rx) = IngesterState::load(wal_dir_path, rate_limiter_settings);
         let ingester = Self {
             self_node_id,
             ingester_pool,
-            state,
+            state: state.clone(),
             disk_capacity,
             memory_capacity,
             rate_limiter_settings,
             replication_factor,
-            observation_rx,
+            status_rx,
         };
-        info!(
-            replication_factor=%replication_factor,
-            wal_dir=%wal_dir_path.display(),
-            "spawning ingester"
-        );
-        ingester.init().await?;
-
-        let weak_state = ingester.state.weak();
+        let weak_state = state.weak();
         BroadcastLocalShardsTask::spawn(cluster, weak_state);
 
         Ok(ingester)
@@ -157,82 +127,16 @@ impl Ingester {
 
     /// Checks whether the ingester is fully decommissioned and updates its status accordingly.
     fn check_decommissioning_status(&self, state: &mut InnerIngesterState) {
-        if state.status != IngesterStatus::Decommissioning {
-            return;
-        }
-        if state.shards.values().all(|shard| shard.is_indexed()) {
-            info!("ingester fully decommissioned");
+        if state.status == IngesterStatus::Decommissioning
+            && state.shards.values().all(|shard| shard.is_indexed())
+        {
+            info!("ingester is fully decommissioned");
             state.status = IngesterStatus::Decommissioned;
-
-            state.observation_tx.send_if_modified(|observation_result| {
-                if let Ok(observation) = observation_result {
-                    observation.status = IngesterStatus::Decommissioned as i32;
-                    return true;
-                }
-                false
-            });
+            state
+                .status_tx
+                .send(IngesterStatus::Decommissioned)
+                .expect("channel should be open");
         }
-    }
-
-    /// During the initialization of the ingester, we list all the queues contained in
-    /// the write-ahead log. Empty queues are deleted, while non-empty queues are recovered.
-    /// However, the corresponding shards are closed and become read-only.
-    async fn init(&self) -> IngestV2Result<()> {
-        let mut state_guard = self.state.lock_fully().await;
-
-        let queue_ids: Vec<QueueId> = state_guard
-            .mrecordlog
-            .list_queues()
-            .map(|queue_id| queue_id.to_string())
-            .collect();
-
-        if !queue_ids.is_empty() {
-            info!("recovering {} shard(s)", queue_ids.len());
-        }
-        let mut num_closed_shards = 0;
-        let mut num_deleted_shards = 0;
-
-        for queue_id in queue_ids {
-            if let Some(position_range) = queue_position_range(&state_guard.mrecordlog, &queue_id) {
-                // The queue is not empty: recover it.
-                let replication_position_inclusive = Position::offset(*position_range.end());
-                let truncation_position_inclusive = if *position_range.start() == 0 {
-                    Position::Beginning
-                } else {
-                    Position::offset(*position_range.start() - 1)
-                };
-                let solo_shard = IngesterShard::new_solo(
-                    ShardState::Closed,
-                    replication_position_inclusive,
-                    truncation_position_inclusive,
-                );
-                state_guard.shards.insert(queue_id.clone(), solo_shard);
-
-                let rate_limiter = RateLimiter::from_settings(self.rate_limiter_settings);
-                let rate_meter = RateMeter::default();
-                state_guard
-                    .rate_trackers
-                    .insert(queue_id, (rate_limiter, rate_meter));
-
-                num_closed_shards += 1;
-            } else {
-                // The queue is empty: delete it.
-                if let Err(io_error) =
-                    force_delete_queue(&mut state_guard.mrecordlog, &queue_id).await
-                {
-                    error!("failed to delete shard `{queue_id}`: {io_error}");
-                    continue;
-                }
-                num_deleted_shards += 1;
-            }
-        }
-        if num_closed_shards > 0 {
-            info!("recovered and closed {num_closed_shards} shard(s)");
-        }
-        if num_deleted_shards > 0 {
-            info!("deleted {num_deleted_shards} empty shard(s)");
-        }
-        Ok(())
     }
 
     /// Initializes a primary shard by creating a queue in the write-ahead log and inserting a new
@@ -401,7 +305,8 @@ impl Ingester {
         let force_commit = commit_type == CommitTypeV2::Force;
         let leader_id: NodeId = persist_request.leader_id.into();
 
-        let mut state_guard = with_lock_metrics!(self.state.lock_fully().await, "persist", "write");
+        let mut state_guard =
+            with_lock_metrics!(self.state.lock_fully().await, "persist", "write")?;
 
         if state_guard.status != IngesterStatus::Ready {
             persist_failures.reserve_exact(persist_request.subrequests.len());
@@ -829,7 +734,15 @@ impl Ingester {
         &mut self,
         _open_observation_stream_request: OpenObservationStreamRequest,
     ) -> IngestV2Result<IngesterServiceStream<ObservationMessage>> {
-        let observation_stream = self.observation_rx.clone().into();
+        let status_stream = ServiceStream::from(self.status_rx.clone());
+        let self_node_id = self.self_node_id.clone();
+        let observation_stream = status_stream.map(move |status| {
+            let observation_message = ObservationMessage {
+                node_id: self_node_id.clone().into(),
+                status: status as i32,
+            };
+            Ok(observation_message)
+        });
         Ok(observation_stream)
     }
 
@@ -838,7 +751,7 @@ impl Ingester {
         init_shards_request: InitShardsRequest,
     ) -> IngestV2Result<InitShardsResponse> {
         let mut state_guard =
-            with_lock_metrics!(self.state.lock_fully().await, "init_shards", "write");
+            with_lock_metrics!(self.state.lock_fully().await, "init_shards", "write")?;
 
         if state_guard.status != IngesterStatus::Ready {
             return Err(IngestV2Error::Internal("node decommissioned".to_string()));
@@ -862,7 +775,7 @@ impl Ingester {
             )));
         }
         let mut state_guard =
-            with_lock_metrics!(self.state.lock_fully().await, "truncate_shards", "write");
+            with_lock_metrics!(self.state.lock_fully().await, "truncate_shards", "write")?;
 
         for subrequest in truncate_shards_request.subrequests {
             let queue_id = subrequest.queue_id();
@@ -1039,7 +952,8 @@ impl IngesterService for Ingester {
                     })
             })
             .collect();
-        let mut state_guard = self.state.lock_fully().await;
+        let mut state_guard =
+            with_lock_metrics!(self.state.lock_fully(), "retain_shards", "write").await?;
         let remove_queue_ids: HashSet<QueueId> = state_guard
             .shards
             .keys()
@@ -1106,8 +1020,11 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
         let Some(state) = self.upgrade() else {
             return;
         };
-        let mut state_guard = with_lock_metrics!(state.lock_fully().await, "gc_shards", "write");
-
+        let Ok(mut state_guard) =
+            with_lock_metrics!(state.lock_fully().await, "gc_shards", "write")
+        else {
+            return;
+        };
         let index_uid = shard_positions_update.source_uid.index_uid;
         let source_id = shard_positions_update.source_uid.source_id;
 
@@ -1123,14 +1040,8 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
     }
 }
 
-pub async fn wait_for_ingester_decommission(ingester_opt: Option<IngesterServiceClient>) {
-    let Some(mut ingester) = ingester_opt else {
-        return;
-    };
-    if let Err(error) = ingester.decommission(DecommissionRequest {}).await {
-        error!("failed to initiate ingester decommission: {error}");
-        return;
-    }
+// TODO: This should return an error if an error occurs.
+pub async fn wait_for_ingester_status(mut ingester: IngesterServiceClient, status: IngesterStatus) {
     let mut observation_stream = match ingester
         .open_observation_stream(OpenObservationStreamRequest {})
         .await
@@ -1149,10 +1060,19 @@ pub async fn wait_for_ingester_decommission(ingester_opt: Option<IngesterService
                 return;
             }
         };
-        if observation_message.status() == IngesterStatus::Decommissioned {
+        if observation_message.status() == status {
             return;
         }
     }
+}
+
+// TODO: This should return an error if the decommission fails.
+pub async fn wait_for_ingester_decommission(mut ingester: IngesterServiceClient) {
+    if let Err(error) = ingester.decommission(DecommissionRequest {}).await {
+        error!("failed to initiate ingester decommission: {error}");
+        return;
+    }
+    wait_for_ingester_status(ingester, IngesterStatus::Decommissioned).await;
 }
 
 struct LocalPersistSubrequest {
@@ -1281,8 +1201,14 @@ mod tests {
             .await
             .unwrap();
 
+            wait_for_ingester_status(
+                IngesterServiceClient::new(ingester.clone()),
+                IngesterStatus::Ready,
+            )
+            .await;
+
             let ingester_env = IngesterContext {
-                _tempdir: tempdir,
+                tempdir,
                 _transport: transport,
                 node_id: self.node_id,
                 cluster,
@@ -1293,7 +1219,7 @@ mod tests {
     }
 
     pub struct IngesterContext {
-        _tempdir: tempfile::TempDir,
+        tempdir: tempfile::TempDir,
         _transport: ChannelTransport,
         node_id: NodeId,
         cluster: Cluster,
@@ -1302,11 +1228,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_init() {
-        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
-        let mut state_guard = ingester.state.lock_fully().await;
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
         let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
+        let queue_id_03 = queue_id(&index_uid, "test-source", &ShardId::from(3));
+
         state_guard
             .mrecordlog
             .create_queue(&queue_id_01)
@@ -1327,7 +1256,6 @@ mod tests {
             .await
             .unwrap();
 
-        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
         state_guard
             .mrecordlog
             .create_queue(&queue_id_02)
@@ -1352,18 +1280,23 @@ mod tests {
             .await
             .unwrap();
 
-        let queue_id_03 = queue_id(&index_uid, "test-source", &ShardId::from(3));
         state_guard
             .mrecordlog
             .create_queue(&queue_id_03)
             .await
             .unwrap();
 
+        state_guard.status = IngesterStatus::Initializing;
+        state_guard.status_tx.send(IngesterStatus::Ready).unwrap();
+
         drop(state_guard);
 
-        ingester.init().await.unwrap();
+        ingester
+            .state
+            .init(ingester_ctx.tempdir.path(), RateLimiterSettings::default())
+            .await;
 
-        let state_guard = ingester.state.lock_fully().await;
+        let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 1);
 
         let solo_shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
@@ -1377,13 +1310,16 @@ mod tests {
             .assert_records_eq(&queue_id_02, .., &[(1, "\0\0test-doc-bar")]);
 
         state_guard.rate_trackers.contains_key(&queue_id_02);
+
+        assert_eq!(state_guard.status, IngesterStatus::Ready);
+        assert_eq!(*state_guard.status_tx.borrow(), IngesterStatus::Ready);
     }
 
     #[tokio::test]
     async fn test_ingester_broadcasts_local_shards() {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
 
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
@@ -1415,7 +1351,7 @@ mod tests {
         assert_eq!(shard_info.shard_state, ShardState::Open);
         assert_eq!(shard_info.ingestion_rate, 0);
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
         state_guard
             .shards
             .get_mut(&queue_id_01)
@@ -1433,7 +1369,7 @@ mod tests {
         let shard_info = shard_infos.iter().next().unwrap();
         assert_eq!(shard_info.shard_state, ShardState::Closed);
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
         state_guard.shards.remove(&queue_id_01).unwrap();
         drop(state_guard);
 
@@ -1516,7 +1452,7 @@ mod tests {
             Some(Position::offset(2u64))
         );
 
-        let state_guard = ingester.state.lock_fully().await;
+        let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 2);
 
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
@@ -1613,7 +1549,7 @@ mod tests {
 
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let solo_shard =
@@ -1657,7 +1593,7 @@ mod tests {
         assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(persist_failure.reason(), PersistFailureReason::ShardClosed,);
 
-        let state_guard = ingester.state.lock_fully().await;
+        let state_guard = ingester.state.lock_fully().await.unwrap();
         let shard = state_guard.shards.get(&queue_id).unwrap();
         shard.assert_is_closed();
 
@@ -1668,7 +1604,7 @@ mod tests {
     async fn test_ingester_persist_deletes_dangling_shard() {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let solo_shard =
@@ -1709,7 +1645,7 @@ mod tests {
             PersistFailureReason::ShardNotFound
         );
 
-        let state_guard = ingester.state.lock_fully().await;
+        let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 0);
         assert_eq!(state_guard.rate_trackers.len(), 0);
     }
@@ -1806,7 +1742,7 @@ mod tests {
             Some(Position::offset(2u64))
         );
 
-        let leader_state_guard = leader.state.lock_fully().await;
+        let leader_state_guard = leader.state.lock_fully().await.unwrap();
         assert_eq!(leader_state_guard.shards.len(), 2);
 
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
@@ -1837,7 +1773,7 @@ mod tests {
             ],
         );
 
-        let follower_state_guard = follower.state.lock_fully().await;
+        let follower_state_guard = follower.state.lock_fully().await.unwrap();
         assert_eq!(follower_state_guard.shards.len(), 2);
 
         let replica_shard_01 = follower_state_guard.shards.get(&queue_id_01).unwrap();
@@ -1992,7 +1928,7 @@ mod tests {
             Some(Position::offset(1u64))
         );
 
-        let leader_state_guard = leader.state.lock_fully().await;
+        let leader_state_guard = leader.state.lock_fully().await.unwrap();
         assert_eq!(leader_state_guard.shards.len(), 2);
 
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
@@ -2019,7 +1955,7 @@ mod tests {
             &[(0, "\0\0test-doc-110"), (1, "\0\0test-doc-111")],
         );
 
-        let follower_state_guard = follower.state.lock_fully().await;
+        let follower_state_guard = follower.state.lock_fully().await.unwrap();
         assert_eq!(follower_state_guard.shards.len(), 2);
 
         let replica_shard_01 = follower_state_guard.shards.get(&queue_id_01).unwrap();
@@ -2056,6 +1992,7 @@ mod tests {
             .state
             .lock_fully()
             .await
+            .unwrap()
             .shards
             .insert(queue_id_01.clone(), solo_shard);
 
@@ -2082,7 +2019,7 @@ mod tests {
         assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(persist_failure.reason(), PersistFailureReason::ShardClosed);
 
-        let state_guard = ingester.state.lock_fully().await;
+        let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 1);
 
         let solo_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
@@ -2102,7 +2039,7 @@ mod tests {
             .build()
             .await;
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
         let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let primary_shard = Shard {
@@ -2147,7 +2084,7 @@ mod tests {
         assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(persist_failure.reason(), PersistFailureReason::RateLimited);
 
-        let state_guard = ingester.state.lock_fully().await;
+        let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 1);
 
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
@@ -2169,7 +2106,7 @@ mod tests {
             .build()
             .await;
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
         let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let primary_shard = Shard {
@@ -2217,7 +2154,7 @@ mod tests {
             PersistFailureReason::ResourceExhausted
         );
 
-        let state_guard = ingester.state.lock_fully().await;
+        let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 1);
 
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
@@ -2261,7 +2198,7 @@ mod tests {
             .into_open_response()
             .unwrap();
 
-        let state_guard = ingester.state.lock_fully().await;
+        let state_guard = ingester.state.lock_fully().await.unwrap();
         assert!(state_guard.replication_tasks.contains_key("test-leader"));
     }
 
@@ -2294,7 +2231,7 @@ mod tests {
         };
         let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
         ingester
             .init_primary_shard(&mut state_guard.inner, &mut state_guard.mrecordlog, shard)
@@ -2339,7 +2276,7 @@ mod tests {
         );
         assert_eq!(mrecord_batch.mrecord_lengths, [14]);
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
         let records = [MRecord::new_doc("test-doc-bar").encode()].into_iter();
 
@@ -2400,7 +2337,7 @@ mod tests {
         };
         let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
         ingester
             .init_primary_shard(
@@ -2475,7 +2412,7 @@ mod tests {
             .await
             .unwrap();
 
-        let state_guard = ingester.state.lock_fully().await;
+        let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 1);
 
         assert!(state_guard.shards.contains_key(&queue_id_01));
@@ -2495,7 +2432,7 @@ mod tests {
         let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
         let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let solo_shard =
             IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
         state_guard.shards.insert(queue_id.clone(), solo_shard);
@@ -2522,7 +2459,7 @@ mod tests {
             .await
             .unwrap();
 
-        let state_guard = ingester.state.lock_fully().await;
+        let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 0);
         assert_eq!(state_guard.rate_trackers.len(), 0);
     }
@@ -2553,7 +2490,7 @@ mod tests {
             shard_17.shard_id(),
         );
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
         ingester
             .init_primary_shard(
                 &mut state_guard.inner,
@@ -2574,21 +2511,21 @@ mod tests {
         drop(state_guard);
 
         {
-            let state_guard = ingester.state.lock_fully().await;
+            let state_guard = ingester.state.lock_fully().await.unwrap();
             assert_eq!(state_guard.shards.len(), 2);
         }
 
-        let retain_shard_request = RetainShardsRequest {
+        let retain_shards_request = RetainShardsRequest {
             retain_shards_for_sources: vec![RetainShardsForSource {
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_ids: vec![ShardId::from(17u64)],
             }],
         };
-        ingester.retain_shards(retain_shard_request).await.unwrap();
+        ingester.retain_shards(retain_shards_request).await.unwrap();
 
         {
-            let state_guard = ingester.state.lock_fully().await;
+            let state_guard = ingester.state.lock_fully().await.unwrap();
             assert_eq!(state_guard.shards.len(), 1);
             assert!(state_guard.shards.contains_key(&queue_id_17));
         }
@@ -2609,7 +2546,7 @@ mod tests {
         };
         let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
         ingester
             .init_primary_shard(&mut state_guard.inner, &mut state_guard.mrecordlog, shard)
             .await
@@ -2672,14 +2609,10 @@ mod tests {
         assert_eq!(observation.node_id, ingester_ctx.node_id);
         assert_eq!(observation.status(), IngesterStatus::Ready);
 
-        let state_guard = ingester.state.lock_fully().await;
-        let observe_message = ObservationMessage {
-            node_id: ingester_ctx.node_id.to_string(),
-            status: IngesterStatus::Decommissioning as i32,
-        };
+        let state_guard = ingester.state.lock_fully().await.unwrap();
         state_guard
-            .observation_tx
-            .send(Ok(observe_message))
+            .status_tx
+            .send(IngesterStatus::Decommissioning)
             .unwrap();
         drop(state_guard);
 
@@ -2696,18 +2629,16 @@ mod tests {
     #[tokio::test]
     async fn test_check_decommissioning_status() {
         let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
         ingester.check_decommissioning_status(&mut state_guard);
         assert_eq!(state_guard.status, IngesterStatus::Ready);
-        assert_eq!(
-            ingester.observation_rx.borrow().as_ref().unwrap().status(),
-            IngesterStatus::Ready
-        );
+        assert_eq!(*ingester.status_rx.borrow(), IngesterStatus::Ready);
 
         state_guard.status = IngesterStatus::Decommissioning;
         ingester.check_decommissioning_status(&mut state_guard);
         assert_eq!(state_guard.status, IngesterStatus::Decommissioned);
+        assert_eq!(*ingester.status_rx.borrow(), IngesterStatus::Decommissioned);
 
         state_guard.status = IngesterStatus::Decommissioning;
 
@@ -2730,10 +2661,7 @@ mod tests {
 
         ingester.check_decommissioning_status(&mut state_guard);
         assert_eq!(state_guard.status, IngesterStatus::Decommissioned);
-        assert_eq!(
-            ingester.observation_rx.borrow().as_ref().unwrap().status(),
-            IngesterStatus::Decommissioned
-        );
+        assert_eq!(*ingester.status_rx.borrow(), IngesterStatus::Decommissioned);
     }
 
     #[tokio::test]
@@ -2761,7 +2689,7 @@ mod tests {
         };
         let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
 
-        let mut state_guard = ingester.state.lock_fully().await;
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
         ingester
             .init_primary_shard(
@@ -2821,7 +2749,7 @@ mod tests {
         // Yield so that the event is processed.
         yield_now().await;
 
-        let state_guard = ingester.state.lock_fully().await;
+        let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 1);
 
         assert!(state_guard.shards.contains_key(&queue_id_01));

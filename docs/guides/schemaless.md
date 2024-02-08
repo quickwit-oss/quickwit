@@ -53,7 +53,7 @@ search_settings:
   default_search_fields: [severity, message]
 
 indexing_settings:
-  commit_timeout_secs: 5
+  commit_timeout_secs: 30
 ```
 
 The `mode` attribute controls what should be done if an ingested document
@@ -136,7 +136,7 @@ doc_mapping:
   timestamp_field: timestamp
 
 indexing_settings:
-  commit_timeout_secs: 5  # <--- Your document will be searchable ~5 seconds after you ingest them.
+  commit_timeout_secs: 30  # <--- Your document will be searchable ~30 seconds after you ingest them.
 ```
 
 Our index is now ready to handle queries like this:
@@ -170,7 +170,7 @@ doc_mapping:
   timestamp_field: timestamp
 
 indexing_settings:
-  commit_timeout_secs: 5
+  commit_timeout_secs: 30
 EOF
 
 # Create index.
@@ -256,7 +256,7 @@ search_settings:
   default_search_fields: [SeverityText, Body, Attributes, Resource]
 
 indexing_settings:
-  commit_timeout_secs: 5
+  commit_timeout_secs: 10
 ```
 
 We can now naturally search our logs with the following query:

@@ -81,6 +81,14 @@ impl BuildInfo {
             }
         })
     }
+
+    pub fn get_version_text() -> String {
+        let build_info = Self::get();
+        format!(
+            "{} ({} {})",
+            build_info.cargo_pkg_version, build_info.cargo_pkg_version, build_info.commit_date,
+        )
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize, utoipa::ToSchema)]
