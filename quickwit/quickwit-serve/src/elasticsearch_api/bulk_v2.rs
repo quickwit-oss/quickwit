@@ -114,7 +114,7 @@ mod tests {
     use quickwit_proto::ingest::router::{
         IngestFailure, IngestFailureReason, IngestResponseV2, IngestSuccess,
     };
-    use quickwit_proto::types::{Position, ShardId};
+    use quickwit_proto::types::{IndexUid, Position, ShardId};
     use warp::{Filter, Rejection, Reply};
 
     use super::*;
@@ -167,14 +167,14 @@ mod tests {
                     successes: vec![
                         IngestSuccess {
                             subrequest_id: 0,
-                            index_uid: "my-index-1:0".to_string(),
+                            index_uid: Some(IndexUid::for_test("my-index-1", 0)),
                             source_id: INGEST_V2_SOURCE_ID.to_string(),
                             shard_id: Some(ShardId::from(1)),
                             replication_position_inclusive: Some(Position::offset(1u64)),
                         },
                         IngestSuccess {
                             subrequest_id: 1,
-                            index_uid: "my-index-2:0".to_string(),
+                            index_uid: Some(IndexUid::for_test("my-index-2", 0)),
                             source_id: INGEST_V2_SOURCE_ID.to_string(),
                             shard_id: Some(ShardId::from(1)),
                             replication_position_inclusive: Some(Position::offset(0u64)),
@@ -243,7 +243,7 @@ mod tests {
                 Ok(IngestResponseV2 {
                     successes: vec![IngestSuccess {
                         subrequest_id: 0,
-                        index_uid: "my-index-1:0".to_string(),
+                        index_uid: Some(IndexUid::for_test("my-index-1", 0)),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shard_id: Some(ShardId::from(1)),
                         replication_position_inclusive: Some(Position::offset(0u64)),

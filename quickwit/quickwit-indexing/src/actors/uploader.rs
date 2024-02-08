@@ -521,8 +521,8 @@ mod tests {
             .withf(move |stage_splits_request| -> bool {
                 let splits_metadata = stage_splits_request.deserialize_splits_metadata().unwrap();
                 let split_metadata = &splits_metadata[0];
-                let index_uid: IndexUid = stage_splits_request.index_uid.clone().into();
-                index_uid.index_id() == "test-index"
+                let index_uid: IndexUid = stage_splits_request.index_uid().clone();
+                index_uid.index_id == "test-index"
                     && split_metadata.split_id() == "test-split"
                     && split_metadata.time_range == Some(1628203589..=1628203640)
             })
@@ -600,7 +600,7 @@ mod tests {
             ..
         } = publisher_message;
 
-        assert_eq!(index_uid.index_id(), "test-index");
+        assert_eq!(index_uid.index_id, "test-index");
         assert_eq!(new_splits.len(), 1);
         assert_eq!(new_splits[0].split_id(), "test-split");
         let checkpoint_delta = checkpoint_delta_opt.unwrap();
@@ -637,8 +637,8 @@ mod tests {
                     ["test-split-1", "test-split-2"].contains(&metadata.split_id())
                         && metadata.time_range == Some(1628203589..=1628203640)
                 });
-                let index_uid: IndexUid = stage_splits_request.index_uid.clone().into();
-                index_uid.index_id() == "test-index" && is_metadata_valid
+                let index_uid: IndexUid = stage_splits_request.index_uid().clone();
+                index_uid.index_id == "test-index" && is_metadata_valid
             })
             .times(1)
             .returning(|_| Ok(EmptyResponse {}));
@@ -738,7 +738,7 @@ mod tests {
             checkpoint_delta_opt,
             ..
         } = publisher_message;
-        assert_eq!(index_uid.index_id(), "test-index");
+        assert_eq!(index_uid.index_id, "test-index");
         // Sort first to avoid test failing.
         replaced_split_ids.sort();
         assert_eq!(new_splits.len(), 2);
@@ -768,8 +768,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_uploader_without_sequencer() -> anyhow::Result<()> {
+        let ref_index_uid: IndexUid = "test-index-no-sequencer:11111111111111111111111111"
+            .parse()
+            .unwrap();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::from("test-index-no-sequencer:11111111111111111111111111"),
+            index_uid: ref_index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -780,8 +783,7 @@ mod tests {
         mock_metastore
             .expect_stage_splits()
             .withf(move |stage_splits_request| -> bool {
-                stage_splits_request.index_uid
-                    == "test-index-no-sequencer:11111111111111111111111111"
+                stage_splits_request.index_uid() == &ref_index_uid
             })
             .times(1)
             .returning(|_| Ok(EmptyResponse {}));
@@ -842,7 +844,7 @@ mod tests {
             ..
         } = publisher_inbox.recv_typed_message().await.unwrap();
 
-        assert_eq!(index_uid.index_id(), "test-index-no-sequencer");
+        assert_eq!(index_uid.index_id, "test-index-no-sequencer");
         assert_eq!(new_splits.len(), 1);
         assert!(replaced_split_ids.is_empty());
         universe.assert_quit().await;
@@ -905,7 +907,7 @@ mod tests {
             ..
         } = publisher_message;
 
-        assert_eq!(index_uid.index_id(), "test-index");
+        assert_eq!(index_uid.index_id, "test-index");
         assert_eq!(new_splits.len(), 0);
         let checkpoint_delta = checkpoint_delta_opt.unwrap();
         assert_eq!(checkpoint_delta.source_id, "test-source");

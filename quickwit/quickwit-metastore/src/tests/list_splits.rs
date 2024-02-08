@@ -107,8 +107,8 @@ pub async fn test_metastore_list_all_splits<
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
         index_uid.clone(),
@@ -125,7 +125,7 @@ pub async fn test_metastore_list_all_splits<
     metastore.stage_splits(stage_splits_request).await.unwrap();
 
     let publish_splits_request = PublishSplitsRequest {
-        index_uid: index_uid.clone().to_string(),
+        index_uid: Some(index_uid.clone()),
         staged_split_ids: vec![split_id_1.clone(), split_id_2.clone()],
         ..Default::default()
     };
@@ -178,8 +178,8 @@ pub async fn test_metastore_stream_splits<MetastoreToTest: MetastoreServiceExt +
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     let mut split_metadatas_to_create = Vec::new();
     for split_idx in 1..1001 {
@@ -203,7 +203,7 @@ pub async fn test_metastore_stream_splits<MetastoreToTest: MetastoreServiceExt +
             .unwrap();
             metastore.stage_splits(stage_splits_request).await.unwrap();
             let publish_splits_request = PublishSplitsRequest {
-                index_uid: index_uid.clone().to_string(),
+                index_uid: Some(index_uid.clone()),
                 staged_split_ids,
                 ..Default::default()
             };
@@ -329,8 +329,8 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
 
         let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
             index_uid.clone(),
@@ -954,7 +954,7 @@ pub async fn test_metastore_list_stale_splits<
     };
 
     let list_stale_splits_request = ListStaleSplitsRequest {
-        index_uid: IndexUid::new_with_random_ulid("index-not-found").to_string(),
+        index_uid: Some(IndexUid::new_with_random_ulid("index-not-found")),
         delete_opstamp: 0,
         num_splits: 100,
     };
@@ -974,8 +974,8 @@ pub async fn test_metastore_list_stale_splits<
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
 
         let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
             index_uid.clone(),

@@ -26,6 +26,7 @@ use quickwit_common::metrics::{new_counter, new_gauge, IntCounter, IntGauge};
 pub struct StorageMetrics {
     pub shortlived_cache: CacheMetrics,
     pub partial_request_cache: CacheMetrics,
+    pub fd_cache_metrics: CacheMetrics,
     pub fast_field_cache: CacheMetrics,
     pub split_footer_cache: CacheMetrics,
     pub searcher_split_cache: CacheMetrics,
@@ -40,10 +41,10 @@ impl Default for StorageMetrics {
     fn default() -> Self {
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
+            fd_cache_metrics: CacheMetrics::for_component("fd"),
             shortlived_cache: CacheMetrics::for_component("shortlived"),
             partial_request_cache: CacheMetrics::for_component("partial_request"),
             searcher_split_cache: CacheMetrics::for_component("searcher_split"),
-
             split_footer_cache: CacheMetrics::for_component("splitfooter"),
             object_storage_get_total: new_counter(
                 "object_storage_gets_total",

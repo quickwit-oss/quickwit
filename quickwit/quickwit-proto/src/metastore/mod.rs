@@ -235,7 +235,7 @@ impl IndexMetadataRequest {
 
     pub fn for_index_uid(index_uid: IndexUid) -> Self {
         Self {
-            index_uid: Some(index_uid.into()),
+            index_uid: Some(index_uid),
             index_id: None,
         }
     }
@@ -246,8 +246,7 @@ impl IndexMetadataRequest {
         if let Some(index_id) = &self.index_id {
             Ok(index_id.to_string())
         } else if let Some(index_uid) = &self.index_uid {
-            let index_uid: IndexUid = index_uid.clone().into();
-            Ok(index_uid.index_id().to_string())
+            Ok(index_uid.index_id.to_string())
         } else {
             Err(MetastoreError::Internal {
                 message: "index_id or index_uid must be set".to_string(),
