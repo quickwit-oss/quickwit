@@ -492,6 +492,7 @@ fn get_indexing_tasks_diff<'a>(
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
+    use std::str::FromStr;
 
     use proptest::{prop_compose, proptest};
     use quickwit_config::{IndexConfig, KafkaSourceParams, SourceConfig, SourceParams};
@@ -501,6 +502,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_indexing_plans_diff() {
+        let index_uid = IndexUid::from_str("index-1:11111111111111111111111111").unwrap();
+        let index_uid2 = IndexUid::from_str("index-2:11111111111111111111111111").unwrap();
         {
             let running_plan = FnvHashMap::default();
             let desired_plan = FnvHashMap::default();
@@ -512,19 +515,19 @@ mod tests {
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(10u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1b = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(11u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(20u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
             };
@@ -544,13 +547,13 @@ mod tests {
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(1u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(2u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
             };
@@ -576,13 +579,13 @@ mod tests {
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(1u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(2u128)),
-                index_uid: "index-2:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid2.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
             };
@@ -616,19 +619,19 @@ mod tests {
             let mut desired_plan = FnvHashMap::default();
             let task_1a = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(10u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1b = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(11u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1c = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(12u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
@@ -751,7 +754,7 @@ mod tests {
             )
             .unwrap();
         let shard = Shard {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "ingest_v2".to_string(),
             shard_id: Some(ShardId::from(17)),
             shard_state: ShardState::Open as i32,
@@ -765,11 +768,11 @@ mod tests {
     #[test]
     fn test_build_physical_indexing_plan_simple() {
         let source_1 = SourceUid {
-            index_uid: IndexUid::from_parts("index-1", "000"),
+            index_uid: IndexUid::from_parts("index-1", 0),
             source_id: "source1".to_string(),
         };
         let source_2 = SourceUid {
-            index_uid: IndexUid::from_parts("index-2", "000"),
+            index_uid: IndexUid::from_parts("index-2", 0),
             source_id: "source2".to_string(),
         };
         let sources = vec![
@@ -808,7 +811,7 @@ mod tests {
                     .collect();
             let mut model = ControlPlaneModel::default();
             for index_uid in index_uids {
-                let index_config = IndexConfig::for_test(index_uid.index_id(), &format!("ram://test/{index_uid}"));
+                let index_config = IndexConfig::for_test(&index_uid.index_id, &format!("ram://test/{index_uid}"));
                 model.add_index(IndexMetadata::new_with_index_uid(index_uid, index_config));
             }
             for (index_uid, source_config) in &index_id_sources {
@@ -843,7 +846,7 @@ mod tests {
     prop_compose! {
       fn gen_kafka_source()
         (index_idx in 0usize..100usize, desired_num_pipelines in 1usize..51usize, max_num_pipelines_per_indexer in 1usize..5usize) -> (IndexUid, SourceConfig) {
-          let index_uid = IndexUid::from_parts(&format!("index-id-{index_idx}"), "" /* this is the index uid */);
+          let index_uid = IndexUid::from_parts(&format!("index-id-{index_idx}"), 0 /* this is the index uid */);
           let source_id = quickwit_common::rand::append_random_suffix("kafka-source");
           (index_uid, SourceConfig {
               source_id,

@@ -145,7 +145,7 @@ impl IngestController {
         let mut retain_shards_req = RetainShardsRequest::default();
         for (source_uid, shard_ids) in &*model.list_shards_for_node(ingester) {
             let shards_for_source = RetainShardsForSource {
-                index_uid: source_uid.index_uid.to_string(),
+                index_uid: Some(source_uid.index_uid.clone()),
                 source_id: source_uid.source_id.clone(),
                 shard_ids: shard_ids.iter().cloned().collect(),
             };
@@ -269,7 +269,7 @@ impl IngestController {
 
     fn handle_closed_shards(&self, closed_shards: Vec<ShardIds>, model: &mut ControlPlaneModel) {
         for closed_shard in closed_shards {
-            let index_uid: IndexUid = closed_shard.index_uid.into();
+            let index_uid: IndexUid = closed_shard.index_uid().clone();
             let source_id = closed_shard.source_id;
 
             let source_uid = SourceUid {
@@ -280,7 +280,7 @@ impl IngestController {
 
             if !closed_shard_ids.is_empty() {
                 info!(
-                    index_id=%source_uid.index_uid.index_id(),
+                    index_id=%source_uid.index_uid.index_id,
                     source_id=%source_uid.source_id,
                     shard_ids=?PrettySample::new(&closed_shard_ids, 5),
                     "closed {} shard(s) reported by router",
@@ -437,7 +437,7 @@ impl IngestController {
             let _ = self.init_shards(&open_shards_response, progress).await;
 
             for open_shards_subresponse in open_shards_response.subresponses {
-                let index_uid: IndexUid = open_shards_subresponse.index_uid.clone().into();
+                let index_uid: IndexUid = open_shards_subresponse.index_uid().clone();
                 let source_id = open_shards_subresponse.source_id.clone();
                 model.insert_shards(
                     &index_uid,
@@ -520,7 +520,7 @@ impl IngestController {
         let new_num_open_shards = shard_stats.num_open_shards + 1;
 
         info!(
-            index_id=%source_uid.index_uid.index_id(),
+            index_id=%source_uid.index_uid.index_id,
             source_id=%source_uid.source_id,
             "scaling up number of shards to {new_num_open_shards}"
         );
@@ -563,7 +563,7 @@ impl IngestController {
             return;
         }
         for open_shards_subresponse in open_shards_response.subresponses {
-            let index_uid: IndexUid = open_shards_subresponse.index_uid.into();
+            let index_uid = open_shards_subresponse.index_uid().clone();
             let source_id = open_shards_subresponse.source_id;
 
             model.insert_shards(
@@ -572,7 +572,10 @@ impl IngestController {
                 open_shards_subresponse.opened_shards,
             );
         }
-        let label_values = [source_uid.index_uid.index_id(), &source_uid.source_id];
+        let label_values = [
+            source_uid.index_uid.index_id.as_str(),
+            &source_uid.source_id,
+        ];
         CONTROL_PLANE_METRICS
             .open_shards_total
             .with_label_values(label_values)
@@ -599,7 +602,7 @@ impl IngestController {
         let new_num_open_shards = shard_stats.num_open_shards - 1;
 
         info!(
-            index_id=%source_uid.index_uid.index_id(),
+            index_id=%source_uid.index_uid.index_id,
             source_id=%source_uid.source_id,
             "scaling down number of shards to {new_num_open_shards}"
         );
@@ -628,7 +631,10 @@ impl IngestController {
         }
         model.close_shards(&source_uid, &[shard_id]);
 
-        let label_values = [source_uid.index_uid.index_id(), &source_uid.source_id];
+        let label_values = [
+            source_uid.index_uid.index_id.as_str(),
+            &source_uid.source_id,
+        ];
         CONTROL_PLANE_METRICS
             .open_shards_total
             .with_label_values(label_values)
@@ -682,6 +688,7 @@ pub enum PingError {
 mod tests {
 
     use std::collections::BTreeSet;
+    use std::str::FromStr;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -920,7 +927,7 @@ mod tests {
 
             move |request| {
                 assert_eq!(request.subrequests.len(), 1);
-                assert_eq!(&request.subrequests[0].index_uid, index_uid_1.as_str());
+                assert_eq!(request.subrequests[0].index_uid(), &index_uid_1);
                 assert_eq!(&request.subrequests[0].source_id, source_id);
 
                 let subresponses = vec![metastore::OpenShardsSubresponse {
@@ -953,12 +960,13 @@ mod tests {
         ingester_pool.insert("test-ingester-1".into(), ingester.clone());
 
         let mut mock_ingester = MockIngesterService::default();
+        let index_uid_1_clone = index_uid_1.clone();
         mock_ingester
             .expect_init_shards()
             .once()
-            .returning(|request| {
+            .returning(move |request| {
                 assert_eq!(request.shards.len(), 1);
-                assert_eq!(request.shards[0].index_uid, "test-index-1:0");
+                assert_eq!(request.shards[0].index_uid(), &index_uid_1_clone);
                 assert_eq!(request.shards[0].source_id, "test-source");
                 assert_eq!(request.shards[0].shard_id(), ShardId::from(1));
                 assert_eq!(request.shards[0].leader_id, "test-ingester-2");
@@ -1061,7 +1069,7 @@ mod tests {
 
         let success = &response.successes[0];
         assert_eq!(success.subrequest_id, 0);
-        assert_eq!(success.index_uid, index_uid_0.as_str());
+        assert_eq!(success.index_uid(), &index_uid_0);
         assert_eq!(success.source_id, source_id);
         assert_eq!(success.open_shards.len(), 1);
         assert_eq!(success.open_shards[0].shard_id(), ShardId::from(2));
@@ -1069,7 +1077,7 @@ mod tests {
 
         let success = &response.successes[1];
         assert_eq!(success.subrequest_id, 1);
-        assert_eq!(success.index_uid, index_uid_1.as_str());
+        assert_eq!(success.index_uid(), &index_uid_1);
         assert_eq!(success.source_id, source_id);
         assert_eq!(success.open_shards.len(), 1);
         assert_eq!(success.open_shards[0].shard_id(), ShardId::from(1));
@@ -1106,12 +1114,12 @@ mod tests {
             IngestController::new(metastore, ingester_pool, replication_factor);
         let mut model = ControlPlaneModel::default();
 
-        let index_uid: IndexUid = "test-index-0:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         let source_id: SourceId = "test-source".into();
 
         let shards = vec![Shard {
             shard_id: Some(ShardId::from(1)),
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             leader_id: "test-ingester-0".to_string(),
             shard_state: ShardState::Open as i32,
@@ -1156,12 +1164,12 @@ mod tests {
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
         let mut model = ControlPlaneModel::default();
 
-        let index_uid: IndexUid = "test-index-0:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         let source_id: SourceId = "test-source".into();
 
         let shards = vec![
             Shard {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: source_id.clone(),
                 shard_id: Some(ShardId::from(1)),
                 leader_id: "test-ingester-0".to_string(),
@@ -1169,7 +1177,7 @@ mod tests {
                 ..Default::default()
             },
             Shard {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: source_id.clone(),
                 shard_id: Some(ShardId::from(2)),
                 leader_id: "test-ingester-0".to_string(),
@@ -1177,7 +1185,7 @@ mod tests {
                 ..Default::default()
             },
             Shard {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: source_id.clone(),
                 shard_id: Some(ShardId::from(3)),
                 leader_id: "test-ingester-1".to_string(),
@@ -1227,7 +1235,7 @@ mod tests {
         let mut ingest_controller =
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
 
         let source_uid = SourceUid {
@@ -1238,7 +1246,7 @@ mod tests {
         let progress = Progress::default();
 
         let shards = vec![Shard {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             leader_id: "test-ingester".to_string(),
@@ -1272,7 +1280,7 @@ mod tests {
 
         // Test update shard ingestion rate with failing scale down.
         let shards = vec![Shard {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(2)),
             shard_state: ShardState::Open as i32,
@@ -1286,16 +1294,19 @@ mod tests {
 
         let mut ingester_mock = IngesterServiceClient::mock();
 
-        ingester_mock.expect_close_shards().returning(|request| {
-            assert_eq!(request.shards.len(), 1);
-            assert_eq!(request.shards[0].index_uid, "test-index:0");
-            assert_eq!(request.shards[0].source_id, "test-source");
-            assert_eq!(request.shards[0].shard_ids, [ShardId::from(2)]);
+        let index_uid_clone = index_uid.clone();
+        ingester_mock
+            .expect_close_shards()
+            .returning(move |request| {
+                assert_eq!(request.shards.len(), 1);
+                assert_eq!(request.shards[0].index_uid(), &index_uid_clone);
+                assert_eq!(request.shards[0].source_id, "test-source");
+                assert_eq!(request.shards[0].shard_ids, [ShardId::from(2)]);
 
-            Err(IngestV2Error::Internal(
-                "failed to close shards".to_string(),
-            ))
-        });
+                Err(IngestV2Error::Internal(
+                    "failed to close shards".to_string(),
+                ))
+            });
         ingester_mock.expect_ping().returning(|request| {
             assert_eq!(request.leader_id, "test-ingester");
 
@@ -1351,12 +1362,14 @@ mod tests {
     async fn test_ingest_controller_try_scale_up_shards() {
         let mut mock_metastore = MetastoreServiceClient::mock();
 
+        let index_uid = IndexUid::from_str("test-index:00000000000000000000000000").unwrap();
+        let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_open_shards()
             .once()
-            .returning(|request| {
+            .returning(move |request| {
                 assert_eq!(request.subrequests.len(), 1);
-                assert_eq!(request.subrequests[0].index_uid, "test-index:0");
+                assert_eq!(request.subrequests[0].index_uid(), &index_uid_clone);
                 assert_eq!(request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(request.subrequests[0].leader_id, "test-ingester");
 
@@ -1364,28 +1377,31 @@ mod tests {
                     message: "failed to open shards".to_string(),
                 })
             });
-        mock_metastore.expect_open_shards().returning(|request| {
-            assert_eq!(request.subrequests.len(), 1);
-            assert_eq!(request.subrequests[0].index_uid, "test-index:0");
-            assert_eq!(request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
-            assert_eq!(request.subrequests[0].leader_id, "test-ingester");
+        let index_uid_clone = index_uid.clone();
+        mock_metastore
+            .expect_open_shards()
+            .returning(move |request| {
+                assert_eq!(request.subrequests.len(), 1);
+                assert_eq!(request.subrequests[0].index_uid(), &index_uid_clone);
+                assert_eq!(request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(request.subrequests[0].leader_id, "test-ingester");
 
-            let subresponses = vec![metastore::OpenShardsSubresponse {
-                subrequest_id: 0,
-                index_uid: "test-index:0".into(),
-                source_id: INGEST_V2_SOURCE_ID.to_string(),
-                opened_shards: vec![Shard {
-                    index_uid: "test-index:0".into(),
+                let subresponses = vec![metastore::OpenShardsSubresponse {
+                    subrequest_id: 0,
+                    index_uid: Some(index_uid.clone()),
                     source_id: INGEST_V2_SOURCE_ID.to_string(),
-                    shard_id: Some(ShardId::from(1)),
-                    leader_id: "test-ingester".to_string(),
-                    shard_state: ShardState::Open as i32,
-                    ..Default::default()
-                }],
-            }];
-            let response = metastore::OpenShardsResponse { subresponses };
-            Ok(response)
-        });
+                    opened_shards: vec![Shard {
+                        index_uid: Some(index_uid.clone()),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                        shard_id: Some(ShardId::from(1)),
+                        leader_id: "test-ingester".to_string(),
+                        shard_state: ShardState::Open as i32,
+                        ..Default::default()
+                    }],
+                }];
+                let response = metastore::OpenShardsResponse { subresponses };
+                Ok(response)
+            });
 
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
@@ -1396,7 +1412,7 @@ mod tests {
             replication_factor,
         );
 
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = INGEST_V2_SOURCE_ID.to_string();
 
         let source_uid = SourceUid {
@@ -1409,7 +1425,7 @@ mod tests {
         };
         let mut model = ControlPlaneModel::default();
         let index_metadata =
-            IndexMetadata::for_test(index_uid.index_id(), "ram://indexes/test-index:0");
+            IndexMetadata::for_test(&index_uid.index_id, "ram://indexes/test-index:0");
         model.add_index(index_metadata);
 
         let souce_config = SourceConfig::ingest_v2();
@@ -1429,27 +1445,31 @@ mod tests {
 
             Ok(PingResponse {})
         });
+        let index_uid_clone = index_uid.clone();
         ingester_mock
             .expect_init_shards()
             .once()
-            .returning(|request| {
+            .returning(move |request| {
                 assert_eq!(request.shards.len(), 1);
-                assert_eq!(request.shards[0].index_uid, "test-index:0");
+                assert_eq!(request.shards[0].index_uid(), &index_uid_clone);
                 assert_eq!(request.shards[0].source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(request.shards[0].shard_id(), ShardId::from(1));
                 assert_eq!(request.shards[0].leader_id, "test-ingester");
 
                 Err(IngestV2Error::Internal("failed to init shards".to_string()))
             });
-        ingester_mock.expect_init_shards().returning(|request| {
-            assert_eq!(request.shards.len(), 1);
-            assert_eq!(request.shards[0].index_uid, "test-index:0");
-            assert_eq!(request.shards[0].source_id, INGEST_V2_SOURCE_ID);
-            assert_eq!(request.shards[0].shard_id(), ShardId::from(1));
-            assert_eq!(request.shards[0].leader_id, "test-ingester");
+        let index_uid_clone = index_uid.clone();
+        ingester_mock
+            .expect_init_shards()
+            .returning(move |request| {
+                assert_eq!(request.shards.len(), 1);
+                assert_eq!(request.shards[0].index_uid(), &index_uid_clone);
+                assert_eq!(request.shards[0].source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(request.shards[0].shard_id(), ShardId::from(1));
+                assert_eq!(request.shards[0].leader_id, "test-ingester");
 
-            Ok(InitShardsResponse {})
-        });
+                Ok(InitShardsResponse {})
+            });
         ingester_pool.insert("test-ingester".into(), ingester_mock.into());
 
         // Test failed to open shards.
@@ -1483,7 +1503,7 @@ mod tests {
         let ingest_controller =
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
 
         let source_uid = SourceUid {
@@ -1504,7 +1524,7 @@ mod tests {
 
         let shards = vec![Shard {
             shard_id: Some(ShardId::from(1)),
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             leader_id: "test-ingester".to_string(),
             shard_state: ShardState::Open as i32,
@@ -1519,12 +1539,13 @@ mod tests {
 
         let mut ingester_mock = IngesterServiceClient::mock();
 
+        let index_uid_clone = index_uid.clone();
         ingester_mock
             .expect_close_shards()
             .once()
-            .returning(|request| {
+            .returning(move |request| {
                 assert_eq!(request.shards.len(), 1);
-                assert_eq!(request.shards[0].index_uid, "test-index:0");
+                assert_eq!(request.shards[0].index_uid(), &index_uid_clone);
                 assert_eq!(request.shards[0].source_id, "test-source");
                 assert_eq!(request.shards[0].shard_ids, [ShardId::from(1)]);
 
@@ -1532,12 +1553,13 @@ mod tests {
                     "failed to close shards".to_string(),
                 ))
             });
+        let index_uid_clone = index_uid.clone();
         ingester_mock
             .expect_close_shards()
             .once()
-            .returning(|request| {
+            .returning(move |request| {
                 assert_eq!(request.shards.len(), 1);
-                assert_eq!(request.shards[0].index_uid, "test-index:0");
+                assert_eq!(request.shards[0].index_uid(), &index_uid_clone);
                 assert_eq!(request.shards[0].source_id, "test-source");
                 assert_eq!(request.shards[0].shard_ids, [ShardId::from(1)]);
 
@@ -1559,7 +1581,7 @@ mod tests {
 
         let shards = vec![Shard {
             shard_id: Some(ShardId::from(2)),
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             leader_id: "test-ingester".to_string(),
             shard_state: ShardState::Open as i32,
@@ -1576,7 +1598,7 @@ mod tests {
 
     #[test]
     fn test_find_scale_down_candidate() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
 
         let source_uid = SourceUid {
@@ -1687,12 +1709,12 @@ mod tests {
         let ingest_controller =
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let mut model = ControlPlaneModel::default();
         let shards = vec![
             Shard {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: source_id.clone(),
                 shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
@@ -1701,7 +1723,7 @@ mod tests {
                 ..Default::default()
             },
             Shard {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: source_id.clone(),
                 shard_id: Some(ShardId::from(2)),
                 shard_state: ShardState::Open as i32,
@@ -1710,7 +1732,7 @@ mod tests {
                 ..Default::default()
             },
             Shard {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: source_id.clone(),
                 shard_id: Some(ShardId::from(3)),
                 shard_state: ShardState::Open as i32,

@@ -191,13 +191,13 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         message: Execute,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        info!(index_id=%message.index_uid.index_id(), "retention-policy-execute-operation");
+        info!(index_id=%message.index_uid.index_id, "retention-policy-execute-operation");
         self.counters.num_execution_passes += 1;
 
-        let index_config = match self.index_configs.get(message.index_uid.index_id()) {
+        let index_config = match self.index_configs.get(&message.index_uid.index_id) {
             Some(config) => config,
             None => {
-                debug!(index_id=%message.index_uid.index_id(), "the index might have been deleted");
+                debug!(index_id=%message.index_uid.index_id, "the index might have been deleted");
                 return Ok(());
             }
         };
@@ -217,7 +217,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         match execution_result {
             Ok(splits) => self.counters.num_expired_splits += splits.len(),
             Err(error) => {
-                error!(index_id=%message.index_uid.index_id(), error=?error, "Failed to execute the retention policy on the index.")
+                error!(index_id=%message.index_uid.index_id, error=?error, "Failed to execute the retention policy on the index.")
             }
         }
 
@@ -228,8 +228,8 @@ impl Handler<Execute> for RetentionPolicyExecutor {
             // Since we have failed to schedule next execution for this index,
             // we remove it from the cache for it to be retried next time it gets
             // added back by the RetentionPolicyExecutor cache refresh loop.
-            self.index_configs.remove(message.index_uid.index_id());
-            error!(index_id=%message.index_uid.index_id(), "couldn't extract the index next schedule interval");
+            self.index_configs.remove(&message.index_uid.index_id);
+            error!(index_id=%message.index_uid.index_id, "couldn't extract the index next schedule interval");
         }
         Ok(())
     }
@@ -466,7 +466,7 @@ mod tests {
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert_eq!(query.split_states, &[SplitState::Published]);
-                let splits = match query.index_uids[0].index_id() {
+                let splits = match query.index_uids[0].index_id.as_ref() {
                     "index-1" => {
                         vec![
                             make_split("split-1", Some(1000..=5000)),
@@ -485,8 +485,8 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(1..=3)
             .returning(|mark_splits_for_deletion_request| {
-                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid.clone().into();
-                assert_eq!(index_uid.index_id(), "index-1");
+                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid().clone();
+                assert_eq!(index_uid.index_id, "index-1");
                 assert_eq!(
                     mark_splits_for_deletion_request.split_ids,
                     ["split-1", "split-2"]

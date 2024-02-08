@@ -63,7 +63,7 @@ impl FetchPayload {
     }
 
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id())
+        queue_id(self.index_uid(), &self.source_id, self.shard_id())
     }
 
     pub fn num_mrecords(&self) -> usize {
@@ -103,7 +103,7 @@ impl OpenFetchStreamRequest {
     }
 
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id())
+        queue_id(self.index_uid(), &self.source_id, self.shard_id())
     }
 
     pub fn from_position_exclusive(&self) -> &Position {
@@ -121,7 +121,7 @@ impl PersistSubrequest {
     }
 
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id())
+        queue_id(self.index_uid(), &self.source_id, self.shard_id())
     }
 }
 
@@ -133,7 +133,7 @@ impl PersistSuccess {
     }
 
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id())
+        queue_id(self.index_uid(), &self.source_id, self.shard_id())
     }
 }
 
@@ -219,7 +219,7 @@ impl ReplicateSubrequest {
     }
 
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id())
+        queue_id(self.index_uid(), &self.source_id, self.shard_id())
     }
 
     pub fn from_position_exclusive(&self) -> &Position {
@@ -259,7 +259,7 @@ impl TruncateShardsSubrequest {
     }
 
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id())
+        queue_id(self.index_uid(), &self.source_id, self.shard_id())
     }
 
     pub fn truncate_up_to_position_inclusive(&self) -> &Position {
