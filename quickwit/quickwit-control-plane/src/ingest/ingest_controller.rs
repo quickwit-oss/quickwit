@@ -142,7 +142,6 @@ impl IngestController {
             warn!("failed to sync with ingester `{ingester}`: not available");
             return wait_handle;
         };
-
         let mut retain_shards_req = RetainShardsRequest::default();
         for (source_uid, shard_ids) in &*model.list_shards_for_node(ingester) {
             let shards_for_source = RetainShardsForSource {

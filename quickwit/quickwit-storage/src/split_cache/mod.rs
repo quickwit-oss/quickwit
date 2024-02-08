@@ -22,23 +22,24 @@ mod split_table;
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
-use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use quickwit_common::split_file;
 use quickwit_common::uri::Uri;
 use quickwit_config::SplitCacheLimits;
 use quickwit_proto::search::ReportSplit;
 use tantivy::directory::OwnedBytes;
-use tracing::{error, info, warn};
+use tracing::{error, info, instrument, warn};
 use ulid::Ulid;
 
-use crate::split_cache::download_task::{delete_evicted_splits, spawn_download_task};
-use crate::split_cache::split_table::{SplitGuard, SplitTable};
+use crate::file_descriptor_cache::{FileDescriptorCache, SplitFile};
+use crate::split_cache::download_task::spawn_download_task;
+use crate::split_cache::split_table::SplitTable;
 use crate::{wrap_storage_with_cache, Storage, StorageCache};
 
 /// On disk Cache of splits for searchers.
@@ -50,7 +51,8 @@ pub struct SplitCache {
     root_path: PathBuf,
     // In memory structure, listing the splits we know about regardless
     // of whether they are in cache, being downloaded, or just available for download.
-    split_table: Arc<Mutex<SplitTable>>,
+    split_table: Mutex<SplitTable>,
+    fd_cache: FileDescriptorCache,
 }
 
 impl SplitCache {
@@ -60,7 +62,7 @@ impl SplitCache {
         root_path: PathBuf,
         storage_resolver: crate::StorageResolver,
         limits: SplitCacheLimits,
-    ) -> io::Result<SplitCache> {
+    ) -> io::Result<Arc<SplitCache>> {
         std::fs::create_dir_all(&root_path)?;
         let mut existing_splits: BTreeMap<Ulid, u64> = Default::default();
         for dir_entry_res in std::fs::read_dir(&root_path)? {
@@ -97,28 +99,35 @@ impl SplitCache {
         let mut split_table = SplitTable::with_limits_and_existing_splits(limits, existing_splits);
 
         // In case of a setting change, it could be useful to evict some splits on startup.
-        let splits_to_remove_opt = split_table.make_room_for_split_if_necessary(u64::MAX);
-        let root_path_clone = root_path.clone();
-        if let Some(splits_to_remove) = splits_to_remove_opt {
+        let splits_to_remove_res = split_table.make_room_for_split_if_necessary(u64::MAX);
+        if let Ok(splits_to_remove) = splits_to_remove_res {
             info!(
                 num_splits = splits_to_remove.len(),
                 "Evicting splits from the searcher cache. Has the node configuration changed?"
             );
-            delete_evicted_splits(&root_path_clone, &splits_to_remove[..]);
+            delete_evicted_splits(&root_path, &splits_to_remove[..]);
         }
-        let split_table_arc = Arc::new(Mutex::new(split_table));
+        let fd_cache = FileDescriptorCache::with_fd_cache_capacity(limits.max_file_descriptors);
+        let split_cache = Arc::new(SplitCache {
+            root_path,
+            split_table: Mutex::new(split_table),
+            fd_cache,
+        });
 
         spawn_download_task(
-            root_path.clone(),
-            split_table_arc.clone(),
+            split_cache.clone(),
             storage_resolver,
             limits.num_concurrent_downloads,
         );
 
-        Ok(SplitCache {
-            root_path,
-            split_table: split_table_arc,
-        })
+        Ok(split_cache)
+    }
+
+    /// Remove splits from both the fd cache and the split cache.
+    /// This method does NOT update the split table.
+    pub(crate) fn evict(&self, splits_to_evict: &[Ulid]) {
+        self.fd_cache.evict_split_files(splits_to_evict);
+        delete_evicted_splits(&self.root_path, splits_to_evict);
     }
 
     /// Wraps a storage with our split cache.
@@ -146,34 +155,39 @@ impl SplitCache {
         }
     }
 
-    fn cached_split_filepath(&self, split_id: Ulid) -> PathBuf {
-        let split_filename = quickwit_common::split_file(split_id);
-        self.root_path.join(split_filename)
-    }
-
     // Returns a split guard object. As long as it is not dropped, the
     // split won't be evinced from the cache.
-    fn get_split_guard(&self, split_id: Ulid, storage_uri: &Uri) -> Option<SplitFilepath> {
-        let split_guard = self
+    async fn get_split_file(&self, split_id: Ulid, storage_uri: &Uri) -> Option<SplitFile> {
+        // We touch before even checking the fd cache in order to update the file's last access time
+        // for the file cache.
+        let num_bytes_opt: Option<u64> = self
             .split_table
             .lock()
             .unwrap()
-            .get_split_guard(split_id, storage_uri)?;
-        Some(SplitFilepath {
-            _split_guard: split_guard,
-            cached_split_file_path: self.cached_split_filepath(split_id),
-        })
+            .touch(split_id, storage_uri);
+
+        let num_bytes = num_bytes_opt?;
+        self.fd_cache
+            .get_or_open_split_file(&self.root_path, split_id, num_bytes)
+            .await
+            .ok()
     }
 }
 
-pub struct SplitFilepath {
-    _split_guard: SplitGuard,
-    cached_split_file_path: PathBuf,
-}
-
-impl AsRef<Path> for SplitFilepath {
-    fn as_ref(&self) -> &Path {
-        &self.cached_split_file_path
+/// Removes the evicted split files from the file system.
+/// This function just logs errors, and swallows them.
+///
+/// At this point, the disk space is already accounted as released,
+/// so the error could result in a "disk space leak".
+#[instrument]
+fn delete_evicted_splits(root_path: &Path, splits_to_delete: &[Ulid]) {
+    for &split_to_delete in splits_to_delete {
+        let split_file_path = root_path.join(split_file(split_to_delete));
+        if let Err(_io_err) = std::fs::remove_file(&split_file_path) {
+            // This is an pretty critical error. The split size is not tracked anymore at this
+            // point.
+            error!(path=%split_file_path.display(), "failed to remove split file from cache directory. This is critical as the file is now not taken in account in the cache size limits");
+        }
     }
 }
 
@@ -191,41 +205,22 @@ struct SplitCacheBackingStorage {
 impl SplitCacheBackingStorage {
     async fn get_impl(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
         let split_id = split_id_from_path(path)?;
-        let split_guard = self
+        let split_file: SplitFile = self
             .split_cache
-            .get_split_guard(split_id, &self.storage_root_uri)?;
-        // TODO touch file in cache.
+            .get_split_file(split_id, &self.storage_root_uri)
+            .await?;
         // We don't use async file io here because it spawn blocks anyway, and it feels dumb to
         // spawn block 3 times in a row.
-        tokio::task::spawn_blocking(move || {
-            let mut file = File::open(&split_guard).ok()?;
-            file.seek(SeekFrom::Start(byte_range.start as u64)).ok()?;
-            let mut buf = Vec::with_capacity(byte_range.len());
-            file.take(byte_range.len() as u64)
-                .read_to_end(&mut buf)
-                .ok()?;
-            Some(OwnedBytes::new(buf))
-        })
-        .await
-        // TODO Remove file from cache if io error?
-        .ok()?
+        split_file.get_range(byte_range).await.ok()
     }
 
     async fn get_all_impl(&self, path: &Path) -> Option<OwnedBytes> {
         let split_id = split_id_from_path(path)?;
-        let split_guard = self
+        let split_file = self
             .split_cache
-            .get_split_guard(split_id, &self.storage_root_uri)?;
-        // We don't use async file io here because it spawn blocks anyway, and it feels dumb to
-        // spawn block 3 times in a row.
-        tokio::task::spawn_blocking(move || {
-            let mut file = File::open(split_guard).ok()?;
-            let mut buf = Vec::new();
-            file.read_to_end(&mut buf).ok()?;
-            Some(OwnedBytes::new(buf))
-        })
-        .await
-        .ok()?
+            .get_split_file(split_id, &self.storage_root_uri)
+            .await?;
+        split_file.get_all().await.ok()
     }
 
     fn record_hit_metrics(&self, result_opt: Option<&OwnedBytes>) {

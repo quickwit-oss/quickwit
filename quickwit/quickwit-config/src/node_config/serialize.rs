@@ -288,6 +288,7 @@ impl NodeConfigBuilder {
         self.storage_configs.validate()?;
         self.storage_configs.apply_flavors();
         self.ingest_api_config.validate()?;
+        self.searcher_config.validate()?;
 
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,

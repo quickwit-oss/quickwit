@@ -459,14 +459,14 @@ pub async fn serve_quickwit(
     let split_cache_root_directory: PathBuf =
         node_config.data_dir_path.join("searcher-split-cache");
     let split_cache_opt: Option<Arc<SplitCache>> =
-        if let Some(split_cache_config) = node_config.searcher_config.split_cache {
+        if let Some(split_cache_limits) = node_config.searcher_config.split_cache {
             let split_cache = SplitCache::with_root_path(
                 split_cache_root_directory,
                 storage_resolver.clone(),
-                split_cache_config,
+                split_cache_limits,
             )
             .context("failed to load searcher split cache")?;
-            Some(Arc::new(split_cache))
+            Some(split_cache)
         } else {
             None
         };
