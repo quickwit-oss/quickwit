@@ -41,16 +41,14 @@ impl FromStr for IndexUid {
     type Err = InvalidIndexUid;
 
     fn from_str(index_uid_str: &str) -> Result<Self, Self::Err> {
-        let (index_id, incarnation_id) = match index_uid_str.split_once(':') {
-            Some((index_id, "")) => (index_id, Ulid::nil()), // TODO reject
-            Some((index_id, ulid)) => {
-                let ulid = Ulid::from_string(ulid).map_err(|_| InvalidIndexUid {
-                    invalid_index_uid_str: index_uid_str.to_string(),
-                })?;
-                (index_id, ulid)
-            }
-            None => (index_uid_str, Ulid::nil()), // TODO reject
+        let Some((index_id, ulid)) = index_uid_str.split_once(':') else {
+            return Err(InvalidIndexUid {
+                invalid_index_uid_str: index_uid_str.to_string(),
+            });
         };
+        let incarnation_id = Ulid::from_string(ulid).map_err(|_| InvalidIndexUid {
+            invalid_index_uid_str: index_uid_str.to_string(),
+        })?;
         Ok(IndexUid {
             index_id: index_id.to_string(),
             incarnation_id,
