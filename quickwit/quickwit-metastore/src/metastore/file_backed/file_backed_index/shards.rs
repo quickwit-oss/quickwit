@@ -98,14 +98,14 @@ impl Shards {
 
     fn get_shard(&self, shard_id: &ShardId) -> MetastoreResult<&Shard> {
         self.shards.get(shard_id).ok_or_else(|| {
-            let queue_id = queue_id(self.index_uid.as_str(), &self.source_id, shard_id);
+            let queue_id = queue_id(&self.index_uid, &self.source_id, shard_id);
             MetastoreError::NotFound(EntityKind::Shard { queue_id })
         })
     }
 
     fn get_shard_mut(&mut self, shard_id: &ShardId) -> MetastoreResult<&mut Shard> {
         self.shards.get_mut(shard_id).ok_or_else(|| {
-            let queue_id = queue_id(self.index_uid.as_str(), &self.source_id, shard_id);
+            let queue_id = queue_id(&self.index_uid, &self.source_id, shard_id);
             MetastoreError::NotFound(EntityKind::Shard { queue_id })
         })
     }
@@ -122,7 +122,7 @@ impl Shards {
             Entry::Occupied(entry) => entry.get().clone(),
             Entry::Vacant(entry) => {
                 let shard = Shard {
-                    index_uid: self.index_uid.clone().into(),
+                    index_uid: Some(self.index_uid.clone()),
                     source_id: self.source_id.clone(),
                     shard_id: Some(shard_id.clone()),
                     shard_state: ShardState::Open as i32,
@@ -135,7 +135,7 @@ impl Shards {
                 entry.insert(shard.clone());
 
                 info!(
-                    index_id=%self.index_uid.index_id(),
+                    index_id=%self.index_uid.index_id,
                     source_id=%self.source_id,
                     shard_id=%shard_id,
                     leader_id=%shard.leader_id,
@@ -175,7 +175,7 @@ impl Shards {
                 acquired_shards.push(shard.clone());
             } else {
                 warn!(
-                    index_id=%self.index_uid.index_id(),
+                    index_id=%self.index_uid.index_id,
                     source_id=%self.source_id,
                     shard_id=%shard_id,
                     "shard not found"
@@ -208,7 +208,7 @@ impl Shards {
                     continue;
                 }
                 info!(
-                    index_id=%self.index_uid.index_id(),
+                    index_id=%self.index_uid.index_id,
                     source_id=%self.source_id,
                     shard_id=%shard_id,
                     "deleted shard",
@@ -305,13 +305,13 @@ mod tests {
 
     #[test]
     fn test_open_shards() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
         let mut shards = Shards::empty(index_uid.clone(), source_id.clone());
 
         let subrequest = OpenShardsSubrequest {
             subrequest_id: 0,
-            index_uid: index_uid.clone().into(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             leader_id: "leader_id".to_string(),
@@ -321,12 +321,12 @@ mod tests {
         else {
             panic!("Expected `MutationOccured::Yes`");
         };
-        assert_eq!(subresponse.index_uid, index_uid.as_str());
+        assert_eq!(subresponse.index_uid(), &index_uid);
         assert_eq!(subresponse.source_id, source_id);
         assert_eq!(subresponse.opened_shards.len(), 1);
 
         let shard = &subresponse.opened_shards[0];
-        assert_eq!(shard.index_uid, index_uid.as_str());
+        assert_eq!(shard.index_uid(), &index_uid);
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id(), ShardId::from(1));
         assert_eq!(shard.shard_state(), ShardState::Open);
@@ -346,7 +346,7 @@ mod tests {
 
         let subrequest = OpenShardsSubrequest {
             subrequest_id: 0,
-            index_uid: index_uid.clone().into(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(2)),
             leader_id: "leader_id".to_string(),
@@ -355,12 +355,12 @@ mod tests {
         let MutationOccurred::Yes(subresponse) = shards.open_shards(subrequest).unwrap() else {
             panic!("Expected `MutationOccured::No`");
         };
-        assert_eq!(subresponse.index_uid, index_uid.as_str());
+        assert_eq!(subresponse.index_uid(), &index_uid);
         assert_eq!(subresponse.source_id, source_id);
         assert_eq!(subresponse.opened_shards.len(), 1);
 
         let shard = &subresponse.opened_shards[0];
-        assert_eq!(shard.index_uid, index_uid.as_str());
+        assert_eq!(shard.index_uid(), &index_uid);
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id(), ShardId::from(2));
         assert_eq!(shard.shard_state(), ShardState::Open);
@@ -373,29 +373,29 @@ mod tests {
 
     #[test]
     fn test_list_shards() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
         let mut shards = Shards::empty(index_uid.clone(), source_id.clone());
 
         let subrequest = ListShardsSubrequest {
-            index_uid: index_uid.clone().into(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_state: None,
         };
         let subresponse = shards.list_shards(subrequest).unwrap();
-        assert_eq!(subresponse.index_uid, index_uid.as_str());
+        assert_eq!(subresponse.index_uid(), &index_uid);
         assert_eq!(subresponse.source_id, source_id);
         assert_eq!(subresponse.shards.len(), 0);
 
         let shard_0 = Shard {
-            index_uid: index_uid.clone().into(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(0)),
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
         let shard_1 = Shard {
-            index_uid: index_uid.clone().into(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Closed as i32,
@@ -405,7 +405,7 @@ mod tests {
         shards.shards.insert(ShardId::from(1), shard_1);
 
         let subrequest = ListShardsSubrequest {
-            index_uid: index_uid.clone().into(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_state: None,
         };

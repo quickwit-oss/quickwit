@@ -24,8 +24,8 @@ pub struct MRecordBatch {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Shard {
     /// Immutable fields
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "3")]
@@ -56,8 +56,8 @@ pub struct Shard {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ShardIds {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "3")]

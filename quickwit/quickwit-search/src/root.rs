@@ -79,8 +79,9 @@ pub struct SearchJob {
 impl SearchJob {
     #[cfg(test)]
     pub fn for_test(split_id: &str, cost: usize) -> SearchJob {
+        use std::str::FromStr;
         SearchJob {
-            index_uid: IndexUid::from("test-index:0"),
+            index_uid: IndexUid::from_str("test-index:00000000000000000000000000").unwrap(),
             cost,
             offsets: SplitIdAndFooterOffsets {
                 split_id: split_id.to_string(),
@@ -755,7 +756,7 @@ pub(crate) async fn fetch_docs_phase(
         .map(|split_metadata| {
             (
                 &split_metadata.split_id,
-                split_metadata.index_uid.index_id(),
+                split_metadata.index_uid.index_id.as_str(),
             )
         })
         .collect();
@@ -984,7 +985,7 @@ pub fn check_all_index_metadata_found(
     }
 
     for index_metadata in index_metadatas {
-        index_ids.remove(index_metadata.index_uid.index_id());
+        index_ids.remove(index_metadata.index_uid.index_id.as_str());
     }
 
     if !index_ids.is_empty() {

@@ -425,9 +425,9 @@ mod tests {
             num_merge_ops: 0,
         };
 
-        let expected_output = "SplitMetadata { split_id: \"split-1\", index_uid: \
-                               IndexUid(\"00000000-0000-0000-0000-000000000000:\
-                               00000000000000000000000000\"), partition_id: 0, source_id: \
+        let expected_output = "SplitMetadata { split_id: \"split-1\", index_uid: IndexUid { \
+                               index_id: \"00000000-0000-0000-0000-000000000000\", \
+                               incarnation_id: Ulid(0) }, partition_id: 0, source_id: \
                                \"source-1\", node_id: \"node-1\", num_docs: 100, \
                                uncompressed_docs_size_in_bytes: 1024, time_range: Some(0..=100), \
                                create_timestamp: 1629867600, maturity: Mature, tags: \

@@ -24,7 +24,7 @@ use std::num::NonZeroU32;
 
 use fnv::{FnvHashMap, FnvHashSet};
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
-use quickwit_proto::types::{IndexUid, PipelineUid, ShardId, SourceUid};
+use quickwit_proto::types::{PipelineUid, ShardId, SourceUid};
 use scheduling_logic_model::{IndexerOrd, SourceOrd};
 use tracing::{error, warn};
 
@@ -128,7 +128,7 @@ fn convert_physical_plan_to_solution(
             let indexer_assignment = &mut solution.indexer_assignments[indexer_ord];
             for indexing_task in indexing_tasks {
                 let source_uid = SourceUid {
-                    index_uid: IndexUid::from(indexing_task.index_uid.clone()),
+                    index_uid: indexing_task.index_uid().clone(),
                     source_id: indexing_task.source_id.clone(),
                 };
                 if let Some((source_ord, source)) = id_to_ord_map.source(&source_uid) {
@@ -262,7 +262,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
                 .collect();
             indexing_tasks.resize_with(remaining_num_shards_to_schedule_on_node as usize, || {
                 IndexingTask {
-                    index_uid: source.source_uid.index_uid.to_string(),
+                    index_uid: Some(source.source_uid.index_uid.clone()),
                     source_id: source.source_uid.source_id.clone(),
                     pipeline_uid: Some(PipelineUid::new()),
                     shard_ids: Vec::new(),
@@ -278,7 +278,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
             } else {
                 // The source is new, we need to create a new task.
                 vec![IndexingTask {
-                    index_uid: source.source_uid.index_uid.to_string(),
+                    index_uid: Some(source.source_uid.index_uid.clone()),
                     source_id: source.source_uid.source_id.clone(),
                     pipeline_uid: Some(PipelineUid::new()),
                     shard_ids: Vec::new(),
@@ -306,7 +306,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node(
         let source_pipelines: Vec<&IndexingTask> = previous_tasks
             .iter()
             .filter(|task| {
-                task.index_uid == source.source_uid.index_uid.as_str()
+                task.index_uid() == &source.source_uid.index_uid
                     && task.source_id == source.source_uid.source_id
             })
             .collect();
@@ -381,7 +381,7 @@ fn convert_scheduling_solution_to_physical_plan(
             let mut num_shards_for_indexer_source: u32 =
                 indexer_assignments[indexer_ord].num_shards(source_ord);
             for indexing_task in indexing_tasks {
-                if indexing_task.index_uid == source.source_uid.index_uid.as_str()
+                if indexing_task.index_uid() == &source.source_uid.index_uid
                     && indexing_task.source_id == source.source_uid.source_id
                 {
                     indexing_task.shard_ids.retain(|shard_id| {
@@ -459,7 +459,7 @@ fn add_shard_to_indexer(
     let indexing_task_opt = indexer_tasks
         .iter_mut()
         .filter(|indexing_task| {
-            indexing_task.index_uid == source_uid.index_uid.as_str()
+            indexing_task.index_uid() == &source_uid.index_uid
                 && indexing_task.source_id == source_uid.source_id
         })
         .filter(|task| task.shard_ids.len() < max_shard_per_pipeline.get() as usize)
@@ -471,7 +471,7 @@ fn add_shard_to_indexer(
         // We haven't found any pipeline with remaining room.
         // It is time to create a new pipeline.
         indexer_tasks.push(IndexingTask {
-            index_uid: source_uid.index_uid.to_string(),
+            index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.clone(),
             pipeline_uid: Some(PipelineUid::new()),
             shard_ids: vec![missing_shard],
@@ -588,6 +588,7 @@ pub fn build_physical_indexing_plan(
 mod tests {
 
     use std::num::NonZeroU32;
+    use std::str::FromStr;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use fnv::FnvHashMap;
@@ -603,7 +604,7 @@ mod tests {
 
     fn source_id() -> SourceUid {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let index = IndexUid::from_parts("test_index", "0000");
+        let index = IndexUid::from_parts("test_index", 0);
         let source_id = COUNTER.fetch_add(1, Ordering::SeqCst);
         SourceUid {
             index_uid: index,
@@ -730,7 +731,7 @@ mod tests {
         let mut plan = Vec::new();
         for (pipeline_uid, shard_ids) in shards {
             plan.push(IndexingTask {
-                index_uid: source_uid.index_uid.to_string(),
+                index_uid: Some(source_uid.index_uid.clone()),
                 source_id: source_uid.source_id.clone(),
                 pipeline_uid: Some(*pipeline_uid),
                 shard_ids: shard_ids.to_vec(),
@@ -981,7 +982,7 @@ mod tests {
         let sources_to_schedule = vec![
             SourceToSchedule {
                 source_uid: SourceUid {
-                    index_uid: IndexUid::parse("otel-logs-v0_6:01HKYD1SE37C90KSH21CD1M11A")
+                    index_uid: IndexUid::from_str("otel-logs-v0_6:01HKYD1SE37C90KSH21CD1M11A")
                         .unwrap(),
                     source_id: "_ingest-api-source".to_string(),
                 },
@@ -989,7 +990,7 @@ mod tests {
             },
             SourceToSchedule {
                 source_uid: SourceUid {
-                    index_uid: IndexUid::parse(
+                    index_uid: IndexUid::from_str(
                         "simian_chico_12856033706389338959:01HKYD414H1WVSASC5YD972P39",
                     )
                     .unwrap(),
@@ -1013,13 +1014,13 @@ mod tests {
             source_id: "testsource".to_string(),
         };
         let previous_task1 = IndexingTask {
-            index_uid: source_uid.index_uid.to_string(),
+            index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.to_string(),
             pipeline_uid: Some(PipelineUid::new()),
             shard_ids: vec![ShardId::from(1), ShardId::from(4), ShardId::from(5)],
         };
         let previous_task2 = IndexingTask {
-            index_uid: source_uid.index_uid.to_string(),
+            index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.to_string(),
             pipeline_uid: Some(PipelineUid::new()),
             shard_ids: vec![
@@ -1049,9 +1050,9 @@ mod tests {
                 &sharded_source,
             );
             assert_eq!(tasks.len(), 2);
-            assert_eq!(tasks[0].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[0].index_uid(), &source_uid.index_uid);
             assert_eq!(tasks[0].shard_ids, [ShardId::from(1), ShardId::from(4)]);
-            assert_eq!(tasks[1].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[1].index_uid(), &source_uid.index_uid);
             assert_eq!(tasks[1].shard_ids, [ShardId::from(6)]);
         }
         {
@@ -1074,7 +1075,7 @@ mod tests {
                 &sharded_source,
             );
             assert_eq!(tasks.len(), 1);
-            assert_eq!(tasks[0].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[0].index_uid(), &source_uid.index_uid);
             assert_eq!(tasks[0].shard_ids, [ShardId::from(1), ShardId::from(4)]);
         }
     }
@@ -1087,14 +1088,14 @@ mod tests {
         };
         let pipeline_uid1 = PipelineUid::new();
         let previous_task1 = IndexingTask {
-            index_uid: source_uid.index_uid.to_string(),
+            index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.to_string(),
             pipeline_uid: Some(pipeline_uid1),
             shard_ids: Vec::new(),
         };
         let pipeline_uid2 = PipelineUid::new();
         let previous_task2 = IndexingTask {
-            index_uid: source_uid.index_uid.to_string(),
+            index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.to_string(),
             pipeline_uid: Some(pipeline_uid2),
             shard_ids: Vec::new(),
@@ -1113,7 +1114,7 @@ mod tests {
                 &sharded_source,
             );
             assert_eq!(tasks.len(), 1);
-            assert_eq!(tasks[0].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[0].index_uid(), &source_uid.index_uid);
             assert!(tasks[0].shard_ids.is_empty());
             assert_eq!(tasks[0].pipeline_uid.as_ref().unwrap(), &pipeline_uid1);
         }
@@ -1146,10 +1147,10 @@ mod tests {
                 &sharded_source,
             );
             assert_eq!(tasks.len(), 2);
-            assert_eq!(tasks[0].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[0].index_uid(), &source_uid.index_uid);
             assert!(tasks[0].shard_ids.is_empty());
             assert_eq!(tasks[0].pipeline_uid.as_ref().unwrap(), &pipeline_uid1);
-            assert_eq!(tasks[1].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[1].index_uid(), &source_uid.index_uid);
             assert!(tasks[1].shard_ids.is_empty());
             assert_eq!(tasks[1].pipeline_uid.as_ref().unwrap(), &pipeline_uid2);
         }
@@ -1167,10 +1168,10 @@ mod tests {
                 &sharded_source,
             );
             assert_eq!(tasks.len(), 2);
-            assert_eq!(tasks[0].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[0].index_uid(), &source_uid.index_uid);
             assert!(tasks[0].shard_ids.is_empty());
             assert_eq!(tasks[0].pipeline_uid.as_ref().unwrap(), &pipeline_uid1);
-            assert_eq!(tasks[1].index_uid, source_uid.index_uid.as_str());
+            assert_eq!(tasks[1].index_uid(), &source_uid.index_uid);
             assert!(tasks[1].shard_ids.is_empty());
             assert_ne!(tasks[1].pipeline_uid.as_ref().unwrap(), &pipeline_uid1);
         }

@@ -30,7 +30,7 @@ use quickwit_common::Progress;
 use quickwit_config::SourceConfig;
 use quickwit_ingest::ShardInfos;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
-use quickwit_proto::control_plane::{ControlPlaneError, ControlPlaneResult};
+use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::metastore::{
     self, EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, ListShardsSubresponse,
@@ -133,11 +133,7 @@ impl ControlPlaneModel {
                     source_id,
                     shards,
                 } = list_shards_subresponse;
-                let index_uid = IndexUid::parse(&index_uid).map_err(|invalid_index_uri| {
-                    ControlPlaneError::Internal(format!(
-                        "invalid index uid received from the metastore: {invalid_index_uri:?}"
-                    ))
-                })?;
+                let index_uid = index_uid.expect("`index_uid` should be a required field");
                 self.shard_table
                     .insert_shards(&index_uid, &source_id, shards);
             }
@@ -174,7 +170,7 @@ impl ControlPlaneModel {
 
     pub(crate) fn add_index(&mut self, index_metadata: IndexMetadata) {
         let index_uid = index_metadata.index_uid.clone();
-        let index_id = index_uid.index_id().to_string();
+        let index_id = index_uid.index_id.clone();
 
         self.index_uid_table.insert(index_id, index_uid.clone());
 
@@ -188,8 +184,8 @@ impl ControlPlaneModel {
 
     pub(crate) fn delete_index(&mut self, index_uid: &IndexUid) {
         self.index_table.remove(index_uid);
-        self.index_uid_table.remove(index_uid.index_id());
-        self.shard_table.delete_index(index_uid.index_id());
+        self.index_uid_table.remove(&index_uid.index_id);
+        self.shard_table.delete_index(&index_uid.index_id);
     }
 
     /// Adds a source to a given index. Returns an error if the source already
@@ -240,7 +236,7 @@ impl ControlPlaneModel {
         enable: bool,
     ) -> anyhow::Result<bool> {
         let Some(index_model) = self.index_table.get_mut(index_uid) else {
-            bail!("index `{}` not found", index_uid.index_id());
+            bail!("index `{}` not found", index_uid.index_id);
         };
         let Some(source_config) = index_model.sources.get_mut(source_id) else {
             bail!("source `{source_id}` not found");
@@ -357,6 +353,8 @@ impl ControlPlaneModel {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use quickwit_config::{SourceConfig, SourceParams, INGEST_V2_SOURCE_ID};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::{Shard, ShardState};
@@ -369,6 +367,9 @@ mod tests {
         let progress = Progress::default();
 
         let mut mock_metastore = MetastoreServiceClient::mock();
+        let index_uid = IndexUid::from_str("test-index-0:00000000000000000000000000").unwrap();
+        let index_uid2 = IndexUid::from_str("test-index-1:00000000000000000000000000").unwrap();
+        let index_uid3 = IndexUid::from_str("test-index-2:00000000000000000000000000").unwrap();
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(|request| {
@@ -389,39 +390,43 @@ mod tests {
                 let indexes = vec![index_0, index_1, index_2];
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(indexes).unwrap())
             });
-        mock_metastore.expect_list_shards().returning(|request| {
-            assert_eq!(request.subrequests.len(), 2);
+        let index_uid_clone = index_uid.clone();
+        let index_uid2_clone = index_uid2.clone();
+        mock_metastore
+            .expect_list_shards()
+            .returning(move |request| {
+                assert_eq!(request.subrequests.len(), 2);
 
-            assert_eq!(request.subrequests[0].index_uid, "test-index-0:0");
-            assert_eq!(request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
-            assert!(request.subrequests[0].shard_state.is_none());
+                assert_eq!(request.subrequests[0].index_uid(), &index_uid_clone);
+                assert_eq!(request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
+                assert!(request.subrequests[0].shard_state.is_none());
 
-            assert_eq!(request.subrequests[1].index_uid, "test-index-1:0");
-            assert_eq!(request.subrequests[1].source_id, INGEST_V2_SOURCE_ID);
-            assert!(request.subrequests[1].shard_state.is_none());
+                assert_eq!(request.subrequests[1].index_uid(), &index_uid2_clone);
+                assert_eq!(request.subrequests[1].source_id, INGEST_V2_SOURCE_ID);
+                assert!(request.subrequests[1].shard_state.is_none());
 
-            let subresponses = vec![
-                metastore::ListShardsSubresponse {
-                    index_uid: "test-index-0:0".to_string(),
-                    source_id: INGEST_V2_SOURCE_ID.to_string(),
-                    shards: vec![Shard {
-                        shard_id: Some(ShardId::from(42)),
-                        index_uid: "test-index-0:0".to_string(),
+                let subresponses = vec![
+                    metastore::ListShardsSubresponse {
+                        index_uid: Some(index_uid_clone.clone()),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
-                        shard_state: ShardState::Open as i32,
-                        leader_id: "node1".to_string(),
-                        ..Default::default()
-                    }],
-                },
-                metastore::ListShardsSubresponse {
-                    index_uid: "test-index-1:0".to_string(),
-                    source_id: INGEST_V2_SOURCE_ID.to_string(),
-                    shards: Vec::new(),
-                },
-            ];
-            let response = metastore::ListShardsResponse { subresponses };
-            Ok(response)
-        });
+                        shards: vec![Shard {
+                            shard_id: Some(ShardId::from(42)),
+                            index_uid: Some(index_uid_clone.clone()),
+                            source_id: INGEST_V2_SOURCE_ID.to_string(),
+                            shard_state: ShardState::Open as i32,
+                            leader_id: "node1".to_string(),
+                            ..Default::default()
+                        }],
+                    },
+                    metastore::ListShardsSubresponse {
+                        index_uid: Some(index_uid2_clone.clone()),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                        shards: Vec::new(),
+                    },
+                ];
+                let response = metastore::ListShardsResponse { subresponses };
+                Ok(response)
+            });
         let mut model = ControlPlaneModel::default();
         let mut metastore = MetastoreServiceClient::from(mock_metastore);
         model
@@ -430,14 +435,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(model.index_table.len(), 3);
-        assert_eq!(model.index_uid("test-index-0").unwrap(), "test-index-0:0");
-        assert_eq!(model.index_uid("test-index-1").unwrap(), "test-index-1:0");
-        assert_eq!(model.index_uid("test-index-2").unwrap(), "test-index-2:0");
+        assert_eq!(model.index_uid("test-index-0").unwrap(), index_uid);
+        assert_eq!(model.index_uid("test-index-1").unwrap(), index_uid2);
+        assert_eq!(model.index_uid("test-index-2").unwrap(), index_uid3);
 
         assert_eq!(model.shard_table.num_shards(), 1);
 
         let source_uid_0 = SourceUid {
-            index_uid: "test-index-0:0".into(),
+            index_uid: index_uid.clone(),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
         let shards: Vec<&ShardEntry> = model
@@ -449,7 +454,7 @@ mod tests {
         assert_eq!(shards[0].shard_id(), ShardId::from(42));
 
         let source_uid_1 = SourceUid {
-            index_uid: "test-index-1:0".into(),
+            index_uid: index_uid2.clone(),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
         let shards: Vec<&ShardEntry> = model
@@ -471,7 +476,7 @@ mod tests {
         assert_eq!(model.index_table.get(&index_uid).unwrap(), &index_metadata);
 
         assert_eq!(model.index_uid_table.len(), 1);
-        assert_eq!(model.index_uid("test-index").unwrap(), "test-index:0");
+        assert_eq!(model.index_uid("test-index").unwrap(), index_uid);
     }
 
     #[test]
@@ -489,7 +494,7 @@ mod tests {
         assert_eq!(model.index_table.get(&index_uid).unwrap(), &index_metadata);
 
         assert_eq!(model.index_uid_table.len(), 1);
-        assert_eq!(model.index_uid("test-index").unwrap(), "test-index:0");
+        assert_eq!(model.index_uid("test-index").unwrap(), index_uid);
 
         assert_eq!(model.shard_table.num_sources(), 1);
 
