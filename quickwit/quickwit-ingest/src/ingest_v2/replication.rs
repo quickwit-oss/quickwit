@@ -525,7 +525,7 @@ impl ReplicationTask {
         let mut state_guard =
             with_lock_metrics!(self.state.lock_fully(), "replicate", "write").await?;
 
-        if state_guard.status != IngesterStatus::Ready {
+        if state_guard.status() != IngesterStatus::Ready {
             replicate_failures.reserve_exact(replicate_request.subrequests.len());
 
             for subrequest in replicate_request.subrequests {
@@ -1014,7 +1014,7 @@ mod tests {
     async fn test_replication_task_happy_path() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let (_temp_dir, state, _status_rx) = IngesterState::for_test().await;
+        let (_temp_dir, state) = IngesterState::for_test().await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1277,7 +1277,7 @@ mod tests {
     async fn test_replication_task_shard_closed() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let (_temp_dir, state, _status_rx) = IngesterState::for_test().await;
+        let (_temp_dir, state) = IngesterState::for_test().await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1352,7 +1352,7 @@ mod tests {
     async fn test_replication_task_resource_exhausted() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let (_temp_dir, state, _status_rx) = IngesterState::for_test().await;
+        let (_temp_dir, state) = IngesterState::for_test().await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
