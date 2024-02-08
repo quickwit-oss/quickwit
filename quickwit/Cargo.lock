@@ -5527,6 +5527,7 @@ dependencies = [
  "chitchat",
  "futures",
  "itertools 0.12.1",
+ "once_cell",
  "quickwit-common",
  "quickwit-config",
  "quickwit-proto",
