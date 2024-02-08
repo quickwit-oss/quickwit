@@ -209,7 +209,7 @@ impl IndexService {
         )
         .await?;
         let delete_index_request = DeleteIndexRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid),
         };
         self.metastore.delete_index(delete_index_request).await?;
 
@@ -307,7 +307,7 @@ impl IndexService {
         }
         for source_id in index_metadata.sources.keys() {
             let reset_source_checkpoint_request = ResetSourceCheckpointRequest {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: source_id.to_string(),
             };
             self.metastore
@@ -338,11 +338,9 @@ impl IndexService {
         self.metastore.add_source(add_source_request).await?;
         info!(
             "source `{}` successfully created for index `{}`",
-            source_id,
-            index_uid.index_id()
+            source_id, index_uid.index_id,
         );
-        let index_metadata_request =
-            IndexMetadataRequest::for_index_id(index_uid.index_id().to_string());
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_uid.index_id);
         let source = self
             .metastore
             .index_metadata(index_metadata_request)

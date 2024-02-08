@@ -105,8 +105,8 @@ impl TestSandbox {
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await?
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
         let storage = storage_resolver.resolve(&index_uri).await?;
         let universe = Universe::with_accelerated_time();
         let merge_scheduler_mailbox = universe.get_or_spawn_one();
@@ -157,7 +157,7 @@ impl TestSandbox {
             .collect();
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let source_config = SourceConfig {
-            source_id: self.index_uid.index_id().to_string(),
+            source_id: self.index_uid.index_id.to_string(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
@@ -172,7 +172,7 @@ impl TestSandbox {
         let pipeline_id = self
             .indexing_service
             .ask_for_res(SpawnPipeline {
-                index_id: self.index_uid.index_id().to_string(),
+                index_id: self.index_uid.index_id.to_string(),
                 source_config,
                 pipeline_uid: PipelineUid::from_u128(0u128),
             })
@@ -239,10 +239,7 @@ pub struct MockSplitBuilder {
 impl MockSplitBuilder {
     pub fn new(split_id: &str) -> Self {
         Self {
-            split_metadata: mock_split_meta(
-                split_id,
-                &IndexUid::from_parts("test-index", "000000"),
-            ),
+            split_metadata: mock_split_meta(split_id, &IndexUid::from_parts("test-index", 0)),
         }
     }
 

@@ -50,12 +50,12 @@ pub async fn test_metastore_create_index<
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
     let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
-    let index_uid: IndexUid = metastore
+    let index_uid = metastore
         .create_index(create_index_request.clone())
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
@@ -100,8 +100,8 @@ pub async fn test_metastore_create_index_with_sources<
         .create_index(create_index_request.clone())
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
@@ -138,8 +138,8 @@ pub async fn test_metastore_create_index_enforces_index_id_maximum_length<
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
@@ -162,8 +162,8 @@ pub async fn test_metastore_index_exists<
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
@@ -193,8 +193,8 @@ pub async fn test_metastore_index_metadata<
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     let index_metadata = metastore
         .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
@@ -237,14 +237,14 @@ pub async fn test_metastore_list_all_indexes<
         .create_index(CreateIndexRequest::try_from_index_config(&index_config_1).unwrap())
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
     let index_uid_2 = metastore
         .create_index(CreateIndexRequest::try_from_index_config(&index_config_2).unwrap())
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     let indexes_count = metastore
         .list_indexes_metadata(ListIndexesMetadataRequest::all())
@@ -298,26 +298,26 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreServiceExt + 
         .create_index(CreateIndexRequest::try_from_index_config(&index_config_1).unwrap())
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
     let index_uid_2 = metastore
         .create_index(CreateIndexRequest::try_from_index_config(&index_config_2).unwrap())
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
     let index_uid_3 = metastore
         .create_index(CreateIndexRequest::try_from_index_config(&index_config_3).unwrap())
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
     let index_uid_4 = metastore
         .create_index(CreateIndexRequest::try_from_index_config(&index_config_4).unwrap())
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     let index_id_patterns = vec![format!("prefix-*-{index_id_fragment}-suffix-*")];
     let indexes_count = metastore
@@ -347,7 +347,7 @@ pub async fn test_metastore_delete_index<
     let index_uid_not_existing = IndexUid::new_with_random_ulid("index-not-found");
     let error = metastore
         .delete_index(DeleteIndexRequest {
-            index_uid: index_uid_not_existing.to_string(),
+            index_uid: Some(index_uid_not_existing.clone()),
         })
         .await
         .unwrap_err();
@@ -358,7 +358,7 @@ pub async fn test_metastore_delete_index<
 
     let error = metastore
         .delete_index(DeleteIndexRequest {
-            index_uid: index_uid_not_existing.to_string(),
+            index_uid: Some(index_uid_not_existing),
         })
         .await
         .unwrap_err();
@@ -372,8 +372,8 @@ pub async fn test_metastore_delete_index<
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
 
     metastore
         .delete_index(DeleteIndexRequest {
@@ -397,7 +397,7 @@ pub async fn test_metastore_delete_index<
         .await
         .unwrap()
         .index_uid
-        .into();
+        .unwrap();
 
     let stage_splits_request =
         StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata).unwrap();

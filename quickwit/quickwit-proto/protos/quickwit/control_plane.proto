@@ -21,6 +21,7 @@ syntax = "proto3";
 
 package quickwit.control_plane;
 
+import "quickwit/common.proto";
 import "quickwit/indexing.proto";
 import "quickwit/ingest.proto";
 import "quickwit/metastore.proto";
@@ -90,7 +91,7 @@ message GetOrCreateOpenShardsResponse {
 
 message GetOrCreateOpenShardsSuccess {
   uint32 subrequest_id = 1;
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   repeated quickwit.ingest.Shard open_shards = 4;
 }

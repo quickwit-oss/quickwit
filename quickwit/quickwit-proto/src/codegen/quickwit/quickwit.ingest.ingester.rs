@@ -2,8 +2,8 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RetainShardsForSource {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "3")]
@@ -37,8 +37,8 @@ pub struct PersistRequest {
 pub struct PersistSubrequest {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -63,8 +63,8 @@ pub struct PersistResponse {
 pub struct PersistSuccess {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -78,8 +78,8 @@ pub struct PersistSuccess {
 pub struct PersistFailure {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -189,8 +189,8 @@ pub struct ReplicateRequest {
 pub struct ReplicateSubrequest {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -220,8 +220,8 @@ pub struct ReplicateResponse {
 pub struct ReplicateSuccess {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -235,8 +235,8 @@ pub struct ReplicateSuccess {
 pub struct ReplicateFailure {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -257,8 +257,8 @@ pub struct TruncateShardsRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TruncateShardsSubrequest {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "3")]
@@ -280,8 +280,8 @@ pub struct TruncateShardsResponse {}
 pub struct OpenFetchStreamRequest {
     #[prost(string, tag = "1")]
     pub client_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -313,8 +313,8 @@ pub mod fetch_message {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchPayload {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "3")]
@@ -330,8 +330,8 @@ pub struct FetchPayload {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchEof {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "3")]

@@ -345,7 +345,7 @@ mod tests {
             let error = serde_json::from_str::<InputFormats>(input_formats_json)
                 .unwrap_err()
                 .to_string();
-            assert!(error.contains("invalid format specification"));
+            assert!(error.contains("invalid strptime format"));
         }
     }
 
