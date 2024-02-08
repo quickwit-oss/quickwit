@@ -407,6 +407,7 @@ pub struct NodeConfig {
     pub grpc_listen_addr: SocketAddr,
     pub gossip_advertise_addr: SocketAddr,
     pub grpc_advertise_addr: SocketAddr,
+    pub gossip_interval: Duration,
     pub peer_seeds: Vec<String>,
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,

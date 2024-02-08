@@ -90,6 +90,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         self_node,
         gossip_listen_addr,
         peer_seed_addrs,
+        node_config.gossip_interval,
         FailureDetectorConfig::default(),
         &UdpTransport,
     )

@@ -49,12 +49,6 @@ use crate::member::{
 };
 use crate::ClusterNode;
 
-const GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_millis(25)
-} else {
-    Duration::from_secs(1)
-};
-
 const MARKED_FOR_DELETION_GRACE_PERIOD: usize = if cfg!(any(test, feature = "testsuite")) {
     100 // ~ HEARTBEAT * 100 = 2.5 seconds.
 } else {
@@ -71,6 +65,7 @@ pub struct Cluster {
     self_chitchat_id: ChitchatId,
     /// Socket address (UDP) the node listens on for receiving gossip messages.
     pub gossip_listen_addr: SocketAddr,
+    gossip_interval: Duration,
     inner: Arc<RwLock<InnerCluster>>,
 }
 
@@ -85,6 +80,7 @@ impl Debug for Cluster {
                 "gossip_advertise_addr",
                 &self.self_chitchat_id.gossip_advertise_addr,
             )
+            .field("gossip_interval", &self.gossip_interval)
             .finish()
     }
 }
@@ -115,6 +111,7 @@ impl Cluster {
         self_node: ClusterMember,
         gossip_listen_addr: SocketAddr,
         peer_seed_addrs: Vec<String>,
+        gossip_interval: Duration,
         failure_detector_config: FailureDetectorConfig,
         transport: &dyn Transport,
     ) -> anyhow::Result<Self> {
@@ -134,7 +131,7 @@ impl Cluster {
             listen_addr: gossip_listen_addr,
             seed_nodes: peer_seed_addrs,
             failure_detector_config,
-            gossip_interval: GOSSIP_INTERVAL,
+            gossip_interval,
             marked_for_deletion_grace_period: MARKED_FOR_DELETION_GRACE_PERIOD,
         };
         let chitchat_handle = spawn_chitchat(
@@ -178,6 +175,7 @@ impl Cluster {
             cluster_id,
             self_chitchat_id: self_node.chitchat_id(),
             gossip_listen_addr,
+            gossip_interval,
             inner: Arc::new(RwLock::new(inner)),
         };
         spawn_ready_nodes_change_stream_task(cluster.clone()).await;
@@ -335,7 +333,7 @@ impl Cluster {
             "Leaving the cluster."
         );
         self.set_self_node_readiness(false).await;
-        tokio::time::sleep(GOSSIP_INTERVAL * 2).await;
+        tokio::time::sleep(self.gossip_interval * 2).await;
     }
 
     /// This exposes in chitchat some metrics about the CPU usage of cooperative pipelines.
@@ -641,6 +639,7 @@ pub async fn create_cluster_for_test_with_id(
         self_node,
         gossip_advertise_addr,
         peer_seed_addrs,
+        Duration::from_millis(25),
         failure_detector_config,
         transport,
     )
@@ -654,7 +653,7 @@ pub async fn create_cluster_for_test_with_id(
 fn create_failure_detector_config_for_test() -> FailureDetectorConfig {
     FailureDetectorConfig {
         phi_threshold: 5.0,
-        initial_interval: GOSSIP_INTERVAL,
+        initial_interval: Duration::from_millis(25),
         ..Default::default()
     }
 }
