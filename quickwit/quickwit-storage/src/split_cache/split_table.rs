@@ -236,7 +236,7 @@ impl SplitTable {
     /// cache (if in cache).
     ///
     /// If the file is already on the disk cache, return `Some(num_bytes)`.
-    //. If the file is not in cache, return `None`, and register the file in the candidate for
+    /// If the file is not in cache, return `None`, and register the file in the candidate for
     /// download list.
     pub fn touch(&mut self, split_ulid: Ulid, storage_uri: &Uri) -> Option<u64> {
         let timestamp = compute_timestamp(self.origin_time);

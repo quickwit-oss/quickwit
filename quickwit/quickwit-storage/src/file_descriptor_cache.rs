@@ -156,13 +156,11 @@ impl FileDescriptorCache {
 }
 
 impl SplitFile {
-    #[allow(clippy::uninit_vec)]
     pub async fn get_range(&self, range: Range<usize>) -> io::Result<OwnedBytes> {
         use std::os::unix::fs::FileExt;
         let file = self.clone();
         let buf = tokio::task::spawn_blocking(move || {
-            let mut buf = Vec::with_capacity(range.len());
-            unsafe { buf.set_len(range.len()) };
+            let mut buf = vec![0u8; range.len()];
             file.0.file.read_exact_at(&mut buf, range.start as u64)?;
             io::Result::Ok(buf)
         })
@@ -254,7 +252,7 @@ mod tests {
         }
         assert_eq!(cache_metrics.in_cache_count.get(), 10);
         assert_eq!(cache_metrics.hits_num_items.get(), 100 * 9);
-        assert_eq!(cache_metrics.misses_num_items.get(), 100 * 1);
+        assert_eq!(cache_metrics.misses_num_items.get(), 100);
     }
 
     #[tokio::test]
