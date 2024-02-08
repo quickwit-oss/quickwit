@@ -98,7 +98,7 @@ impl TryFrom<IndexMetadataV0_7> for IndexMetadata {
         }
         Ok(Self {
             index_uid: if v0_6.index_uid.is_empty() {
-                IndexUid::from_parts(&v0_6.index_config.index_id, "")
+                IndexUid::from_parts(&v0_6.index_config.index_id, 0)
             } else {
                 v0_6.index_uid
             },

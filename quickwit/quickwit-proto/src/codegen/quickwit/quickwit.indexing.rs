@@ -10,8 +10,8 @@ pub struct ApplyIndexingPlanRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexingTask {
     /// The tasks's index UID.
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     /// The task's source ID.
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,

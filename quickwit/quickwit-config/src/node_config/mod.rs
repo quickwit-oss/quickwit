@@ -186,6 +186,8 @@ pub struct SplitCacheLimits {
     pub max_num_splits: NonZeroU32,
     #[serde(default = "SplitCacheLimits::default_num_concurrent_downloads")]
     pub num_concurrent_downloads: NonZeroU32,
+    #[serde(default = "SplitCacheLimits::default_max_file_descriptors")]
+    pub max_file_descriptors: NonZeroU32,
 }
 
 impl SplitCacheLimits {
@@ -196,15 +198,9 @@ impl SplitCacheLimits {
     fn default_num_concurrent_downloads() -> NonZeroU32 {
         NonZeroU32::new(1).unwrap()
     }
-}
 
-impl Default for SplitCacheLimits {
-    fn default() -> SplitCacheLimits {
-        SplitCacheLimits {
-            max_num_bytes: ByteSize::gb(1),
-            max_num_splits: NonZeroU32::new(100).unwrap(),
-            num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
-        }
+    fn default_max_file_descriptors() -> NonZeroU32 {
+        NonZeroU32::new(100).unwrap()
     }
 }
 
@@ -237,6 +233,34 @@ impl Default for SearcherConfig {
             aggregation_bucket_limit: 65000,
             split_cache: None,
         }
+    }
+}
+
+impl SearcherConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if let Some(split_cache_limits) = self.split_cache {
+            if self.max_num_concurrent_split_searches
+                > split_cache_limits.max_file_descriptors.get() as usize
+            {
+                anyhow::bail!(
+                    "max_num_concurrent_split_searches ({}) must be lower or equal to \
+                     split_cache.max_file_descriptors ({})",
+                    self.max_num_concurrent_split_searches,
+                    split_cache_limits.max_file_descriptors
+                );
+            }
+            if self.max_num_concurrent_split_streams
+                > split_cache_limits.max_file_descriptors.get() as usize
+            {
+                anyhow::bail!(
+                    "max_num_concurrent_split_streams ({}) must be lower or equal to \
+                     split_cache.max_file_descriptors ({})",
+                    self.max_num_concurrent_split_streams,
+                    split_cache_limits.max_file_descriptors
+                );
+            }
+        }
+        Ok(())
     }
 }
 

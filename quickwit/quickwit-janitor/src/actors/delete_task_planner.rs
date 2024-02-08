@@ -147,7 +147,7 @@ impl DeleteTaskPlanner {
         // Loop until there is no more stale splits.
         loop {
             let last_delete_opstamp_request = LastDeleteOpstampRequest {
-                index_uid: self.index_uid.to_string(),
+                index_uid: Some(self.index_uid.clone()),
             };
             let last_delete_opstamp = self
                 .metastore
@@ -159,7 +159,7 @@ impl DeleteTaskPlanner {
                 .await?;
             ctx.record_progress();
             debug!(
-                index_id = self.index_uid.index_id(),
+                index_id = self.index_uid.index_id,
                 last_delete_opstamp = last_delete_opstamp,
                 num_stale_splits = stale_splits.len()
             );
@@ -184,7 +184,7 @@ impl DeleteTaskPlanner {
                 .map(|split| split.split_id().to_string())
                 .collect_vec();
             let update_splits_delete_opstamp_request = UpdateSplitsDeleteOpstampRequest {
-                index_uid: self.index_uid.to_string(),
+                index_uid: Some(self.index_uid.clone()),
                 split_ids: split_ids_without_delete.clone(),
                 delete_opstamp: last_delete_opstamp,
             };
@@ -211,7 +211,7 @@ impl DeleteTaskPlanner {
                 .await?;
                 JANITOR_METRICS
                     .ongoing_num_delete_operations_total
-                    .with_label_values([self.index_uid.index_id()])
+                    .with_label_values([&self.index_uid.index_id])
                     .set(self.ongoing_delete_operations_inventory.list().len() as i64);
             }
         }
@@ -310,9 +310,7 @@ impl DeleteTaskPlanner {
                 .expect("Delete task must have a delete query.");
             // TODO: resolve with the default fields.
             let search_request = SearchRequest {
-                index_id_patterns: vec![IndexUid::from(delete_query.index_uid.clone())
-                    .index_id()
-                    .to_string()],
+                index_id_patterns: vec![delete_query.index_uid().index_id.to_string()],
                 query_ast: delete_query.query_ast.clone(),
                 start_timestamp: delete_query.start_timestamp,
                 end_timestamp: delete_query.end_timestamp,
@@ -321,7 +319,7 @@ impl DeleteTaskPlanner {
             let mut search_indexes_metas = HashMap::new();
             let index_uri = Uri::from_str(index_uri).context("invalid index URI")?;
             search_indexes_metas.insert(
-                IndexUid::from(delete_query.index_uid.clone()),
+                delete_query.index_uid().clone(),
                 IndexMetasForLeafSearch {
                     doc_mapper_str: doc_mapper_str.to_string(),
                     index_uri,
@@ -352,7 +350,7 @@ impl DeleteTaskPlanner {
         ctx: &ActorContext<Self>,
     ) -> MetastoreResult<Vec<Split>> {
         let list_stale_splits_request = ListStaleSplitsRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             delete_opstamp: last_delete_opstamp,
             num_splits: NUM_STALE_SPLITS_TO_FETCH as u64,
         };
@@ -361,7 +359,7 @@ impl DeleteTaskPlanner {
             .await?
             .deserialize_splits()?;
         debug!(
-            index_id = index_uid.index_id(),
+            index_id = index_uid.index_id,
             last_delete_opstamp = last_delete_opstamp,
             num_stale_splits_from_metastore = stale_splits.len()
         );
@@ -501,7 +499,7 @@ mod tests {
             quickwit_query::query_ast::qast_json_helper("body:matchnothing", &[]);
         metastore
             .create_delete_task(DeleteQuery {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 start_timestamp: None,
                 end_timestamp: None,
                 query_ast: body_delete_ast.clone(),
@@ -509,7 +507,7 @@ mod tests {
             .await?;
         metastore
             .create_delete_task(DeleteQuery {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 start_timestamp: None,
                 end_timestamp: None,
                 query_ast: match_nothing_ast,

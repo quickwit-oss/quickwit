@@ -38,8 +38,8 @@ pub struct IngestResponseV2 {
 pub struct IngestSuccess {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]

@@ -296,6 +296,7 @@ impl NodeConfigBuilder {
         self.storage_configs.validate()?;
         self.storage_configs.apply_flavors();
         self.ingest_api_config.validate()?;
+        self.searcher_config.validate()?;
 
         let gossip_interval = self
             .gossip_interval_ms

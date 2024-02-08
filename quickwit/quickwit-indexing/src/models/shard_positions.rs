@@ -27,7 +27,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, SpawnContex
 use quickwit_cluster::{Cluster, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_proto::indexing::ShardPositionsUpdate;
-use quickwit_proto::types::{IndexUid, Position, ShardId, SourceUid};
+use quickwit_proto::types::{Position, ShardId, SourceUid};
 use tracing::{error, warn};
 
 /// Prefix used in chitchat to publish the shard positions.
@@ -92,7 +92,7 @@ fn parse_shard_positions_from_kv(
     value: &str,
 ) -> anyhow::Result<ClusterShardPositionsUpdate> {
     let (index_uid_str, source_id) = key.rsplit_once(':').context("invalid key")?;
-    let index_uid = IndexUid::parse(index_uid_str)?;
+    let index_uid = index_uid_str.parse()?;
     let source_uid = SourceUid {
         index_uid,
         source_id: source_id.to_string(),
