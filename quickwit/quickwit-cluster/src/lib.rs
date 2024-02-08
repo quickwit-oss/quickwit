@@ -22,11 +22,17 @@
 mod change;
 mod cluster;
 mod member;
+pub mod metrics;
 mod node;
 
+use std::net::SocketAddr;
+
+use async_trait::async_trait;
 pub use chitchat::transport::ChannelTransport;
-use chitchat::transport::UdpTransport;
+use chitchat::transport::{Socket, Transport, UdpTransport};
+use chitchat::ChitchatMessage;
 pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
+use quickwit_common::metrics::IntCounter;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_proto::indexing::CpuCapacity;
@@ -61,6 +67,42 @@ impl From<u64> for GenerationId {
     }
 }
 
+struct CountingUdpTransport;
+
+struct CountingUdpSocket {
+    socket: Box<dyn Socket>,
+    gossip_recv: IntCounter,
+    gossip_send: IntCounter,
+}
+
+#[async_trait]
+impl Socket for CountingUdpSocket {
+    async fn send(&mut self, to: SocketAddr, msg: ChitchatMessage) -> anyhow::Result<()> {
+        self.socket.send(to, msg).await?;
+        self.gossip_send.inc();
+        Ok(())
+    }
+
+    async fn recv(&mut self) -> anyhow::Result<(SocketAddr, ChitchatMessage)> {
+        let (socket_addr, msg) = self.socket.recv().await?;
+        self.gossip_recv.inc();
+        Ok((socket_addr, msg))
+    }
+}
+
+#[async_trait]
+impl Transport for CountingUdpTransport {
+    async fn open(&self, listen_addr: SocketAddr) -> anyhow::Result<Box<dyn Socket>> {
+        let transport = UdpTransport;
+        let socket = transport.open(listen_addr).await?;
+        Ok(Box::new(CountingUdpSocket {
+            socket,
+            gossip_recv: crate::metrics::CLUSTER_METRICS.gossip_recv_total.clone(),
+            gossip_send: crate::metrics::CLUSTER_METRICS.gossip_send_total.clone(),
+        }))
+    }
+}
+
 pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<Cluster> {
     let cluster_id = node_config.cluster_id.clone();
     let gossip_listen_addr = node_config.gossip_listen_addr;
@@ -92,7 +134,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         peer_seed_addrs,
         node_config.gossip_interval,
         FailureDetectorConfig::default(),
-        &UdpTransport,
+        &CountingUdpTransport,
     )
     .await?;
     if node_config
