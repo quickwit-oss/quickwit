@@ -697,7 +697,7 @@ mod tests {
     // [2,3] (which triggers a reset)
     #[tokio::test]
     async fn test_ingest_source_assign_shards() {
-        let ref_index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let ref_index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid: ref_index_uid.clone(),
@@ -1080,7 +1080,7 @@ mod tests {
         // metastore, we observe the following:
         // - emission of a suggest truncate
         // - no stream request is emitted
-        let ref_index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let ref_index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid: ref_index_uid.clone(),
@@ -1230,7 +1230,7 @@ mod tests {
         // metastore, we observe the following:
         // - emission of a suggest truncate
         // - the stream request emitted does not include the EOF shards
-        let ref_index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let ref_index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid: ref_index_uid.clone(),
@@ -1404,7 +1404,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_source_emit_batches() {
-        let ref_index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let ref_index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid: ref_index_uid.clone(),
@@ -1570,7 +1570,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_source_emit_batches_shard_not_found() {
-        let ref_index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let ref_index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid: ref_index_uid.clone(),
@@ -1687,7 +1687,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_source_suggest_truncate() {
-        let ref_index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let ref_index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid: ref_index_uid.clone(),

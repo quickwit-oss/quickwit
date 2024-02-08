@@ -477,7 +477,7 @@ mod tests {
 
         let mut state_guard = state.lock_partially().await;
 
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let shard =
             IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
@@ -518,7 +518,7 @@ mod tests {
     #[test]
     fn test_make_key() {
         let source_uid = SourceUid {
-            index_uid: "test-index:00000000000000000000000000".parse().unwrap(),
+            index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
         };
         let key = make_key(&source_uid);

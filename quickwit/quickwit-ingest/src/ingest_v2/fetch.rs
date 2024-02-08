@@ -624,7 +624,7 @@ pub(super) mod tests {
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
         )));
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
@@ -811,7 +811,7 @@ pub(super) mod tests {
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
         )));
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
@@ -868,7 +868,7 @@ pub(super) mod tests {
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
         )));
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
@@ -969,7 +969,7 @@ pub(super) mod tests {
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
         )));
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
@@ -1002,7 +1002,7 @@ pub(super) mod tests {
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
         )));
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
@@ -1117,7 +1117,7 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fault_tolerant_fetch_stream_ingester_unavailable_failover() {
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
@@ -1211,7 +1211,7 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fault_tolerant_fetch_stream_open_fetch_stream_error_failover() {
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
@@ -1323,7 +1323,7 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fault_tolerant_fetch_stream_error_failover() {
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
@@ -1437,7 +1437,7 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_fault_tolerant_fetch_stream_shard_not_found() {
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
@@ -1493,7 +1493,7 @@ pub(super) mod tests {
     #[tokio::test]
     async fn test_retrying_fetch_stream() {
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let shard_id = ShardId::from(1);
         let from_position_exclusive = Position::offset(0u64);

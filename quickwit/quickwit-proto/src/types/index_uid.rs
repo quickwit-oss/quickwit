@@ -174,6 +174,14 @@ impl IndexUid {
     pub fn is_empty(&self) -> bool {
         self.index_id.is_empty()
     }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(index_id: &str, ulid: u128) -> Self {
+        IndexUid {
+            index_id: index_id.to_string(),
+            incarnation_id: Ulid(ulid),
+        }
+    }
 }
 
 impl From<IndexUid> for String {

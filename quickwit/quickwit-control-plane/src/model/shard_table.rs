@@ -527,14 +527,14 @@ mod tests {
         let mut shard_table = ShardTable::default();
         shard_table.delete_index("test-index");
 
-        let index_uid_0: IndexUid = "test-index-foo:00000000000000000000000000".parse().unwrap();
+        let index_uid_0: IndexUid = IndexUid::for_test("test-index-foo", 0);
         let source_id_0 = "test-source-0".to_string();
         shard_table.add_source(&index_uid_0, &source_id_0);
 
         let source_id_1 = "test-source-1".to_string();
         shard_table.add_source(&index_uid_0, &source_id_1);
 
-        let index_uid_1: IndexUid = "test-index-bar:00000000000000000000000001".parse().unwrap();
+        let index_uid_1: IndexUid = IndexUid::for_test("test-index-bar", 1);
         shard_table.add_source(&index_uid_1, &source_id_0);
 
         shard_table.delete_index("test-index-foo");
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_add_source() {
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -565,7 +565,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_list_shards() {
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
         let source_uid = SourceUid {
             index_uid: index_uid.clone(),
@@ -595,7 +595,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_insert_newly_opened_shards() {
-        let index_uid_0: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid_0: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -660,7 +660,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_find_open_shards() {
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -728,7 +728,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_update_shards() {
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -831,8 +831,8 @@ mod tests {
 
     #[test]
     fn test_shard_table_close_shards() {
-        let index_uid_0: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
-        let index_uid_1: IndexUid = "test-index:00000000000000000000000001".parse().unwrap();
+        let index_uid_0: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid_1: IndexUid = IndexUid::for_test("test-index", 1);
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -883,8 +883,8 @@ mod tests {
     fn test_shard_table_delete_shards() {
         let mut shard_table = ShardTable::default();
 
-        let index_uid_0: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
-        let index_uid_1: IndexUid = "test-index:00000000000000000000000001".parse().unwrap();
+        let index_uid_0: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid_1: IndexUid = IndexUid::for_test("test-index", 1);
         let source_id = "test-source".to_string();
 
         let shard_01 = Shard {
@@ -941,7 +941,7 @@ mod tests {
     fn test_shard_table_acquire_scaling_up_permits() {
         let mut shard_table = ShardTable::default();
 
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         let source_uid = SourceUid {
@@ -977,7 +977,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_acquire_scaling_down_permits() {
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -1017,7 +1017,7 @@ mod tests {
     fn test_shard_table_release_scaling_up_permits() {
         let mut shard_table = ShardTable::default();
 
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         shard_table.add_source(&index_uid, &source_id);
@@ -1053,7 +1053,7 @@ mod tests {
     fn test_shard_table_release_scaling_down_permits() {
         let mut shard_table = ShardTable::default();
 
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         shard_table.add_source(&index_uid, &source_id);

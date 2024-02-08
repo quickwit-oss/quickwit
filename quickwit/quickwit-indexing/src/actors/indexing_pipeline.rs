@@ -668,7 +668,7 @@ mod tests {
             .expect_stage_splits()
             .withf(|stage_splits_request| -> bool {
                 stage_splits_request.index_uid()
-                    == &"test-index:11111111111111111111111111"
+                    == &"test-index:00000000000000000000000002"
                         .parse::<IndexUid>()
                         .unwrap()
             })
@@ -681,7 +681,7 @@ mod tests {
                     .unwrap()
                     .unwrap();
                 publish_splits_request.index_uid()
-                    == &"test-index:11111111111111111111111111"
+                    == &"test-index:00000000000000000000000002"
                         .parse::<IndexUid>()
                         .unwrap()
                     && checkpoint_delta.source_id == "test-source"
@@ -693,7 +693,7 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
         let node_id = "test-node";
         let pipeline_id = IndexingPipelineId {
-            index_uid: "test-index:11111111111111111111111111".parse().unwrap(),
+            index_uid: IndexUid::for_test("test-index", 2),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_uid: PipelineUid::from_u128(0u128),
@@ -760,7 +760,7 @@ mod tests {
     }
 
     async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {
-        let index_uid: IndexUid = "test-index:11111111111111111111111111".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 1);
         let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
@@ -957,7 +957,7 @@ mod tests {
     }
 
     async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
-        let index_uid: IndexUid = "test-index:11111111111111111111111111".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 2);
         let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()

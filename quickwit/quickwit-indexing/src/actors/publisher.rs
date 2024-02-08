@@ -209,7 +209,7 @@ mod tests {
     #[tokio::test]
     async fn test_publisher_publish_operation() {
         let universe = Universe::with_accelerated_time();
-        let ref_index_uid: IndexUid = "index:11111111111111111111111111".parse().unwrap();
+        let ref_index_uid: IndexUid = IndexUid::for_test("index", 1);
         let mut mock_metastore = MetastoreServiceClient::mock();
         let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
@@ -285,7 +285,7 @@ mod tests {
     #[tokio::test]
     async fn test_publisher_publish_operation_with_empty_splits() {
         let universe = Universe::with_accelerated_time();
-        let ref_index_uid: IndexUid = "index:11111111111111111111111111".parse().unwrap();
+        let ref_index_uid: IndexUid = IndexUid::for_test("index", 1);
         let mut mock_metastore = MetastoreServiceClient::mock();
         let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
@@ -360,7 +360,7 @@ mod tests {
     async fn test_publisher_replace_operation() {
         let universe = Universe::with_accelerated_time();
         let mut mock_metastore = MetastoreServiceClient::mock();
-        let ref_index_uid: IndexUid = "index:11111111111111111111111111".parse().unwrap();
+        let ref_index_uid: IndexUid = IndexUid::for_test("index", 1);
         let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
             .expect_publish_splits()

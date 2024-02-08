@@ -764,7 +764,7 @@ mod tests {
         let ingester_pool = IngesterPool::default();
 
         let mut mock_metastore = MetastoreServiceClient::mock();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_create_index()
@@ -819,7 +819,7 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let mut mock_metastore = MetastoreServiceClient::mock();
         let index_uid_clone = index_uid.clone();
         mock_metastore
@@ -918,7 +918,7 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         let mut index_metadata = IndexMetadata::for_test("test-index", "ram://toto");
         let test_source_config = SourceConfig::for_test("test-source", SourceParams::void());
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         index_metadata.add_source(test_source_config).unwrap();
         mock_metastore
             .expect_list_indexes_metadata()
@@ -989,7 +989,7 @@ mod tests {
         let ingester_pool = IngesterPool::default();
 
         let mut mock_metastore = MetastoreServiceClient::mock();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_delete_source()
@@ -1037,7 +1037,7 @@ mod tests {
         let ingester_pool = IngesterPool::default();
 
         let mut mock_metastore = MetastoreServiceClient::mock();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(|_| {

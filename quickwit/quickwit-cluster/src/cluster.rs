@@ -894,7 +894,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let index_uid: IndexUid = "index-1:11111111111111111111111111".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("index-1", 1);
         let indexing_task1 = IndexingTask {
             pipeline_uid: Some(PipelineUid::from_u128(1u128)),
             index_uid: Some(index_uid.clone()),
@@ -1209,7 +1209,7 @@ mod tests {
     #[test]
     fn test_serialize_indexing_tasks() {
         let mut node_state = NodeState::for_test();
-        let index_uid: IndexUid = "test-index:00000000000000000000000000".parse().unwrap();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         test_serialize_indexing_tasks_aux(&[], &mut node_state);
         test_serialize_indexing_tasks_aux(
             &[IndexingTask {
@@ -1258,7 +1258,7 @@ mod tests {
                 },
                 IndexingTask {
                     pipeline_uid: Some(PipelineUid::from_u128(2u128)),
-                    index_uid: Some("test-index2:00000000000000000000000000".parse().unwrap()),
+                    index_uid: Some(IndexUid::for_test("test-index2", 0)),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![ShardId::from(3), ShardId::from(4)],
                 },

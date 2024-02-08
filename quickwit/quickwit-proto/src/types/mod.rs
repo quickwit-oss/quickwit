@@ -272,7 +272,7 @@ mod tests {
     fn test_queue_id() {
         assert_eq!(
             queue_id(
-                &"test-index:00000000000000000000000000".parse().unwrap(),
+                &IndexUid::for_test("test-index", 0),
                 "test-source",
                 &ShardId::from(1u64)
             ),
