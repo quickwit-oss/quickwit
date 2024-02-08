@@ -1,13 +1,14 @@
 [package]
 name = "quickwit-lambda"
-version = "0.7.1"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "AGPL-3.0-or-later"                               # For a commercial, license, contact hello@quickwit.io
-description = "Quickwit is a cost-efficient search engine."
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+description = "Serverless Quickwit on AWS Lambda"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "indexer"
@@ -25,7 +26,7 @@ flate2 = { workspace = true }
 lambda_http = "0.9.1"
 lambda_runtime = "0.9.1"
 once_cell = { workspace = true }
-opentelemetry =  { workspace = true }
+opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true, features = [
     "reqwest-client",
     "reqwest-rustls",
@@ -38,16 +39,16 @@ time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
-tracing-subscriber = { workspace = true, features = [ "json" ] }
+tracing-subscriber = { workspace = true, features = ["json"] }
 
 quickwit-actors = { workspace = true }
-quickwit-cluster = { workspace = true }
 quickwit-cli = { workspace = true }
+quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
-quickwit-index-management = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
+quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }
