@@ -811,7 +811,7 @@ mod tests {
                     .collect();
             let mut model = ControlPlaneModel::default();
             for index_uid in index_uids {
-                let index_config = IndexConfig::for_test(index_uid.index_id(), &format!("ram://test/{index_uid}"));
+                let index_config = IndexConfig::for_test(&index_uid.index_id, &format!("ram://test/{index_uid}"));
                 model.add_index(IndexMetadata::new_with_index_uid(index_uid, index_config));
             }
             for (index_uid, source_config) in &index_id_sources {

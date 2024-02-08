@@ -171,10 +171,6 @@ impl IndexUid {
         }
     }
 
-    pub fn index_id(&self) -> &str {
-        &self.index_id
-    }
-
     pub fn is_empty(&self) -> bool {
         self.index_id.is_empty()
     }

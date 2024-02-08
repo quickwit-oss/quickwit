@@ -219,11 +219,11 @@ impl BroadcastLocalShardsTask {
             }
             INGEST_V2_METRICS
                 .shards
-                .with_label_values(["open", source_uid.index_uid.index_id()])
+                .with_label_values(["open", &source_uid.index_uid.index_id])
                 .set(num_open_shards as i64);
             INGEST_V2_METRICS
                 .shards
-                .with_label_values(["closed", source_uid.index_uid.index_id()])
+                .with_label_values(["closed", &source_uid.index_uid.index_id])
                 .set(num_closed_shards as i64);
         }
         let snapshot = LocalShardsSnapshot {

@@ -149,7 +149,7 @@ impl SourceRuntimeArgs {
     }
 
     pub fn index_id(&self) -> &str {
-        self.pipeline_id.index_uid.index_id()
+        &self.pipeline_id.index_uid.index_id
     }
 
     pub fn source_id(&self) -> &str {

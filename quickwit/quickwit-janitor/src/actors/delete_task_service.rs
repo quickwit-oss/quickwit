@@ -136,7 +136,7 @@ impl DeleteTaskService {
         // Remove pipelines on deleted indexes.
         for deleted_index_uid in pipeline_index_uids.difference(&index_uids) {
             info!(
-                deleted_index_id = deleted_index_uid.index_id(),
+                deleted_index_id = deleted_index_uid.index_id,
                 "Remove deleted index from delete task pipelines."
             );
             let pipeline_handle = self
@@ -153,10 +153,7 @@ impl DeleteTaskService {
                 .remove(index_uid)
                 .expect("Index metadata must be present.");
             if self.spawn_pipeline(index_config, ctx).await.is_err() {
-                warn!(
-                    "Failed to spawn delete pipeline for {}",
-                    index_uid.index_id()
-                );
+                warn!("Failed to spawn delete pipeline for {}", index_uid.index_id);
             }
         }
 

@@ -137,7 +137,7 @@ impl ShardTable {
         let shards_removed = self
             .table_entries
             .iter()
-            .filter(|(source_uid, _)| source_uid.index_uid.index_id() == index_id)
+            .filter(|(source_uid, _)| source_uid.index_uid.index_id == index_id)
             .flat_map(|(source_uid, shard_table_entry)| {
                 shard_table_entry
                     .shard_entries
@@ -148,7 +148,7 @@ impl ShardTable {
             remove_shard_from_ingesters_internal(source_uid, shard, &mut self.ingester_shards);
         }
         self.table_entries
-            .retain(|source_uid, _| source_uid.index_uid.index_id() != index_id);
+            .retain(|source_uid, _| source_uid.index_uid.index_id != index_id);
         self.check_invariant();
     }
 
@@ -230,8 +230,7 @@ impl ShardTable {
             if !previous_table_entry.is_empty() {
                 error!(
                     "shard table entry for index `{}` and source `{}` already exists",
-                    index_uid.index_id(),
-                    source_id
+                    index_uid.index_id, source_id
                 );
             }
         }

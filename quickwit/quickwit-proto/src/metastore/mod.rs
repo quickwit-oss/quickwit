@@ -246,7 +246,7 @@ impl IndexMetadataRequest {
         if let Some(index_id) = &self.index_id {
             Ok(index_id.to_string())
         } else if let Some(index_uid) = &self.index_uid {
-            Ok(index_uid.index_id().to_string())
+            Ok(index_uid.index_id.to_string())
         } else {
             Err(MetastoreError::Internal {
                 message: "index_id or index_uid must be set".to_string(),

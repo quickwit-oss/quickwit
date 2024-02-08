@@ -159,7 +159,7 @@ impl DeleteTaskPlanner {
                 .await?;
             ctx.record_progress();
             debug!(
-                index_id = self.index_uid.index_id(),
+                index_id = self.index_uid.index_id,
                 last_delete_opstamp = last_delete_opstamp,
                 num_stale_splits = stale_splits.len()
             );
@@ -211,7 +211,7 @@ impl DeleteTaskPlanner {
                 .await?;
                 JANITOR_METRICS
                     .ongoing_num_delete_operations_total
-                    .with_label_values([self.index_uid.index_id()])
+                    .with_label_values([&self.index_uid.index_id])
                     .set(self.ongoing_delete_operations_inventory.list().len() as i64);
             }
         }
@@ -310,7 +310,7 @@ impl DeleteTaskPlanner {
                 .expect("Delete task must have a delete query.");
             // TODO: resolve with the default fields.
             let search_request = SearchRequest {
-                index_id_patterns: vec![delete_query.index_uid().index_id().to_string()],
+                index_id_patterns: vec![delete_query.index_uid().index_id.to_string()],
                 query_ast: delete_query.query_ast.clone(),
                 start_timestamp: delete_query.start_timestamp,
                 end_timestamp: delete_query.end_timestamp,
@@ -359,7 +359,7 @@ impl DeleteTaskPlanner {
             .await?
             .deserialize_splits()?;
         debug!(
-            index_id = index_uid.index_id(),
+            index_id = index_uid.index_id,
             last_delete_opstamp = last_delete_opstamp,
             num_stale_splits_from_metastore = stale_splits.len()
         );

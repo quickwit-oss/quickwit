@@ -338,11 +338,9 @@ impl IndexService {
         self.metastore.add_source(add_source_request).await?;
         info!(
             "source `{}` successfully created for index `{}`",
-            source_id,
-            index_uid.index_id()
+            source_id, index_uid.index_id,
         );
-        let index_metadata_request =
-            IndexMetadataRequest::for_index_id(index_uid.index_id().to_string());
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_uid.index_id);
         let source = self
             .metastore
             .index_metadata(index_metadata_request)

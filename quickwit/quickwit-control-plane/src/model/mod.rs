@@ -170,7 +170,7 @@ impl ControlPlaneModel {
 
     pub(crate) fn add_index(&mut self, index_metadata: IndexMetadata) {
         let index_uid = index_metadata.index_uid.clone();
-        let index_id = index_uid.index_id().to_string();
+        let index_id = index_uid.index_id.clone();
 
         self.index_uid_table.insert(index_id, index_uid.clone());
 
@@ -184,8 +184,8 @@ impl ControlPlaneModel {
 
     pub(crate) fn delete_index(&mut self, index_uid: &IndexUid) {
         self.index_table.remove(index_uid);
-        self.index_uid_table.remove(index_uid.index_id());
-        self.shard_table.delete_index(index_uid.index_id());
+        self.index_uid_table.remove(&index_uid.index_id);
+        self.shard_table.delete_index(&index_uid.index_id);
     }
 
     /// Adds a source to a given index. Returns an error if the source already
@@ -236,7 +236,7 @@ impl ControlPlaneModel {
         enable: bool,
     ) -> anyhow::Result<bool> {
         let Some(index_model) = self.index_table.get_mut(index_uid) else {
-            bail!("index `{}` not found", index_uid.index_id());
+            bail!("index `{}` not found", index_uid.index_id);
         };
         let Some(source_config) = index_model.sources.get_mut(source_id) else {
             bail!("source `{source_id}` not found");

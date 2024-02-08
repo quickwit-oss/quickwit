@@ -297,7 +297,7 @@ pub async fn delete_splits_from_storage_and_metastore(
                 .collect::<Vec<_>>();
             error!(
                 error=?bulk_delete_error.error,
-                index_id=index_uid.index_id(),
+                index_id=index_uid.index_id,
                 "Failed to delete split file(s) {:?} from storage.",
                 PrettySample::new(&failed_split_paths, 5),
             );
@@ -319,7 +319,7 @@ pub async fn delete_splits_from_storage_and_metastore(
         if let Err(metastore_error) = metastore_result {
             error!(
                 error=?metastore_error,
-                index_id=index_uid.index_id(),
+                index_id=index_uid.index_id,
                 "failed to delete split(s) {:?} from metastore",
                 PrettySample::new(&split_ids, 5),
             );

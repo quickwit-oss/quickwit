@@ -135,7 +135,7 @@ impl Shards {
                 entry.insert(shard.clone());
 
                 info!(
-                    index_id=%self.index_uid.index_id(),
+                    index_id=%self.index_uid.index_id,
                     source_id=%self.source_id,
                     shard_id=%shard_id,
                     leader_id=%shard.leader_id,
@@ -175,7 +175,7 @@ impl Shards {
                 acquired_shards.push(shard.clone());
             } else {
                 warn!(
-                    index_id=%self.index_uid.index_id(),
+                    index_id=%self.index_uid.index_id,
                     source_id=%self.source_id,
                     shard_id=%shard_id,
                     "shard not found"
@@ -208,7 +208,7 @@ impl Shards {
                     continue;
                 }
                 info!(
-                    index_id=%self.index_uid.index_id(),
+                    index_id=%self.index_uid.index_id,
                     source_id=%self.source_id,
                     shard_id=%shard_id,
                     "deleted shard",

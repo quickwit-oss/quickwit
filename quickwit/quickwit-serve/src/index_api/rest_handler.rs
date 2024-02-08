@@ -1109,7 +1109,7 @@ mod tests {
                 |mark_splits_for_deletion_request: MarkSplitsForDeletionRequest| {
                     let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid().clone();
                     let split_ids = mark_splits_for_deletion_request.split_ids;
-                    if index_uid.index_id() == "quickwit-demo-index"
+                    if index_uid.index_id == "quickwit-demo-index"
                         && split_ids == ["split-1", "split-2"]
                     {
                         return Ok(EmptyResponse {});
@@ -1681,7 +1681,7 @@ mod tests {
             |delete_source_request: DeleteSourceRequest| {
                 let index_uid: IndexUid = delete_source_request.index_uid().clone();
                 let source_id = delete_source_request.source_id;
-                assert_eq!(index_uid.index_id(), "quickwit-demo-index");
+                assert_eq!(index_uid.index_id, "quickwit-demo-index");
                 Err(MetastoreError::NotFound(EntityKind::Source {
                     index_id: "quickwit-demo-index".to_string(),
                     source_id: source_id.to_string(),
@@ -1724,8 +1724,7 @@ mod tests {
                 |reset_source_checkpoint_request: ResetSourceCheckpointRequest| {
                     let index_uid: IndexUid = reset_source_checkpoint_request.index_uid().clone();
                     let source_id = reset_source_checkpoint_request.source_id;
-                    if index_uid.index_id() == "quickwit-demo-index"
-                        && source_id == "source-to-reset"
+                    if index_uid.index_id == "quickwit-demo-index" && source_id == "source-to-reset"
                     {
                         return Ok(EmptyResponse {});
                     }
@@ -1778,7 +1777,7 @@ mod tests {
                 let index_uid: IndexUid = toggle_source_request.index_uid().clone();
                 let source_id = toggle_source_request.source_id;
                 let enable = toggle_source_request.enable;
-                if index_uid.index_id() == "quickwit-demo-index"
+                if index_uid.index_id == "quickwit-demo-index"
                     && source_id == "source-to-toggle"
                     && enable
                 {

@@ -188,7 +188,7 @@ impl IndexerState {
     ) -> anyhow::Result<IndexingWorkbench> {
         let workbench_id = Ulid::new();
         let batch_parent_span = info_span!(target: "quickwit-indexing", "index-doc-batches",
-            index_id=%self.pipeline_id.index_uid.index_id(),
+            index_id=%self.pipeline_id.index_uid.index_id,
             source_id=%self.pipeline_id.source_id,
             pipeline_uid=%self.pipeline_id.pipeline_uid,
             workbench_id=%workbench_id,
@@ -1636,7 +1636,7 @@ mod tests {
             index_serializer_inbox.drain_for_test_typed();
         assert_eq!(index_serializer_messages.len(), 1);
         let update = index_serializer_messages.into_iter().next().unwrap();
-        assert_eq!(update.index_uid.index_id(), "test-index");
+        assert_eq!(update.index_uid.index_id, "test-index");
         assert_eq!(
             update.checkpoint_delta,
             IndexCheckpointDelta::for_test("test-source", 4..8)

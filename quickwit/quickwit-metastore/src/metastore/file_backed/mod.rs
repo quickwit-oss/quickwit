@@ -201,7 +201,7 @@ impl FileBackedMetastore {
         index_uid: &IndexUid,
         mutate_fn: impl FnOnce(&mut FileBackedIndex) -> MetastoreResult<MutationOccurred<T>>,
     ) -> MetastoreResult<T> {
-        let index_id = index_uid.index_id();
+        let index_id = &index_uid.index_id;
         let mut locked_index = self.get_locked_index(index_id).await?;
         if locked_index.index_uid() != index_uid {
             return Err(MetastoreError::NotFound(EntityKind::Index {
@@ -249,7 +249,7 @@ impl FileBackedMetastore {
 
     async fn read<T, F>(&self, index_uid: &IndexUid, view: F) -> MetastoreResult<T>
     where F: FnOnce(&FileBackedIndex) -> MetastoreResult<T> {
-        let index_id = index_uid.index_id();
+        let index_id = &index_uid.index_id;
         let locked_index = self.get_locked_index(index_id).await?;
         if locked_index.index_uid() == index_uid {
             view(&locked_index)
@@ -390,7 +390,7 @@ impl MetastoreService for FileBackedMetastore {
             index_metadata.add_source(source_config)?;
         }
         let index_uid = index_metadata.index_uid.clone();
-        let index_id = index_uid.index_id().to_string();
+        let index_id = &index_uid.index_id;
 
         let index_metadata_json = serde_utils::to_json_str(&index_metadata)?;
         let index = FileBackedIndex::from(index_metadata);
@@ -403,13 +403,13 @@ impl MetastoreService for FileBackedMetastore {
         //   transitioning states.
         // - if the index is not in the index states map, we still need to check the storage as we
         //   don't want to override an existing metadata file.
-        if let Some(index_status) = state_wlock_guard.indexes.get(&index_id) {
+        if let Some(index_status) = state_wlock_guard.indexes.get(index_id) {
             if let LazyIndexStatus::Active(_) = index_status {
                 return Err(MetastoreError::AlreadyExists(EntityKind::Index {
-                    index_id,
+                    index_id: index_id.to_string(),
                 }));
             }
-        } else if index_exists(&*self.storage, &index_id).await? {
+        } else if index_exists(&*self.storage, index_id).await? {
             return Err(MetastoreError::Internal {
                 message: format!("index {index_id} cannot be created"),
                 cause: format!(
@@ -426,7 +426,7 @@ impl MetastoreService for FileBackedMetastore {
         let manifest = state_wlock_guard.as_manifest();
 
         if let Err(error) = save_manifest(&*self.storage, &manifest).await {
-            state_wlock_guard.indexes.remove(&index_id);
+            state_wlock_guard.indexes.remove(index_id);
             return Err(error);
         }
         put_index(&*self.storage, &index).await?;
@@ -464,7 +464,7 @@ impl MetastoreService for FileBackedMetastore {
         // We pick the outer lock here, so that we enter a critical section.
         let mut state_wlock_guard = self.state.write().await;
 
-        let index_id = request.index_uid().index_id();
+        let index_id = &request.index_uid().index_id;
         // If index is neither in `per_index_metastores_wlock` nor on the storage, it does not
         // exist.
         if !state_wlock_guard.indexes.contains_key(index_id)
@@ -1600,7 +1600,7 @@ mod tests {
         for idx in 0..10 {
             let index_uid = IndexUid::new_with_random_ulid(&format!("test-index-{idx}"));
             let index_config =
-                IndexConfig::for_test(index_uid.index_id(), "ram:///indexes/test-index");
+                IndexConfig::for_test(&index_uid.index_id, "ram:///indexes/test-index");
             let create_index_request =
                 CreateIndexRequest::try_from_index_config(&index_config).unwrap();
             let index_uid: IndexUid = metastore
@@ -1823,9 +1823,9 @@ mod tests {
         let index_id = "test-index";
         let index_uid = IndexUid::new_with_random_ulid(index_id);
         let index_metadata =
-            IndexMetadata::for_test(index_uid.index_id(), "ram:///indexes/test-index");
+            IndexMetadata::for_test(&index_uid.index_id, "ram:///indexes/test-index");
         let index = FileBackedIndex::from(index_metadata);
-        put_index_given_index_id(&ram_storage, &index, index_uid.index_id())
+        put_index_given_index_id(&ram_storage, &index, &index_uid.index_id)
             .await
             .unwrap();
 
@@ -1873,9 +1873,9 @@ mod tests {
         let index_id = "test-index";
         let index_uid = IndexUid::new_with_random_ulid(index_id);
         let index_metadata =
-            IndexMetadata::for_test(index_uid.index_id(), "ram:///indexes/test-index");
+            IndexMetadata::for_test(&index_uid.index_id, "ram:///indexes/test-index");
         let index = FileBackedIndex::from(index_metadata);
-        put_index_given_index_id(&ram_storage, &index, index_uid.index_id())
+        put_index_given_index_id(&ram_storage, &index, &index_uid.index_id)
             .await
             .unwrap();
         let mut indexes_json_valid_put = 1;

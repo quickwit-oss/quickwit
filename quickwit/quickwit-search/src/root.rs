@@ -756,7 +756,7 @@ pub(crate) async fn fetch_docs_phase(
         .map(|split_metadata| {
             (
                 &split_metadata.split_id,
-                split_metadata.index_uid.index_id(),
+                split_metadata.index_uid.index_id.as_str(),
             )
         })
         .collect();
@@ -985,7 +985,7 @@ pub fn check_all_index_metadata_found(
     }
 
     for index_metadata in index_metadatas {
-        index_ids.remove(index_metadata.index_uid.index_id());
+        index_ids.remove(index_metadata.index_uid.index_id.as_str());
     }
 
     if !index_ids.is_empty() {

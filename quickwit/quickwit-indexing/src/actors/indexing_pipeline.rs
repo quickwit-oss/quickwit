@@ -305,7 +305,7 @@ impl IndexingPipeline {
         level="info",
         skip_all,
         fields(
-            index=%self.params.pipeline_id.index_uid.index_id(),
+            index=%self.params.pipeline_id.index_uid.index_id,
             gen=self.generation()
         ))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
@@ -314,7 +314,7 @@ impl IndexingPipeline {
             .await
             .expect("The semaphore should not be closed.");
         self.statistics.num_spawn_attempts += 1;
-        let index_id = self.params.pipeline_id.index_uid.index_id();
+        let index_id = &self.params.pipeline_id.index_uid.index_id;
         let source_id = self.params.pipeline_id.source_id.as_str();
         self.kill_switch = ctx.kill_switch().child();
         info!(

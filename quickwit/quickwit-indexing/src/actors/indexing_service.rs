@@ -269,14 +269,14 @@ impl IndexingService {
             .contains_key(&pipeline_id.pipeline_uid)
         {
             return Err(IndexingError::PipelineAlreadyExists {
-                index_id: pipeline_id.index_uid.index_id().to_string(),
+                index_id: pipeline_id.index_uid.index_id,
                 source_id: pipeline_id.source_id,
                 pipeline_uid: pipeline_id.pipeline_uid,
             });
         }
         let pipeline_uid_str = pipeline_id.pipeline_uid.to_string();
         let indexing_directory = temp_dir::Builder::default()
-            .join(pipeline_id.index_uid.index_id())
+            .join(&pipeline_id.index_uid.index_id)
             .join(&pipeline_id.index_uid.incarnation_id.to_string())
             .join(&pipeline_id.source_id)
             .join(&pipeline_uid_str)
@@ -417,7 +417,7 @@ impl IndexingService {
                 // We kill the merge pipeline to avoid waiting a merge operation to finish as it can
                 // be long.
                 info!(
-                    index_id=%merge_pipeline_id_to_shut_down.index_uid.index_id(),
+                    index_id=%merge_pipeline_id_to_shut_down.index_uid.index_id,
                     source_id=%merge_pipeline_id_to_shut_down.source_id,
                     "No more indexing pipeline on this index and source, killing merge pipeline."
                 );
@@ -574,7 +574,7 @@ impl IndexingService {
             .iter()
             // No need to emit two request for the same `index_uid`
             .unique_by(|pipeline_id| pipeline_id.index_uid.clone())
-            .map(|pipeline_id| self.index_metadata(ctx, pipeline_id.index_uid.index_id()));
+            .map(|pipeline_id| self.index_metadata(ctx, &pipeline_id.index_uid.index_id));
         let indexes_metadata = try_join_all(indexes_metadata_futures).await?;
         let indexes_metadata_by_index_id: HashMap<IndexUid, IndexMetadata> = indexes_metadata
             .into_iter()
@@ -976,7 +976,7 @@ mod tests {
             .ask_for_res(spawn_pipeline_msg)
             .await
             .unwrap_err();
-        assert_eq!(pipeline_id.index_uid.index_id(), index_id);
+        assert_eq!(pipeline_id.index_uid.index_id, index_id);
         assert_eq!(pipeline_id.source_id, source_config_0.source_id);
         assert_eq!(pipeline_id.node_id, "test-node");
         assert_eq!(pipeline_id.pipeline_uid, PipelineUid::from_u128(1111u128));

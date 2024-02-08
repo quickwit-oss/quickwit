@@ -293,7 +293,7 @@ async fn mutate_index_metadata<E, M: FnOnce(&mut IndexMetadata) -> Result<bool, 
 where
     MetastoreError: From<E>,
 {
-    let index_id = index_uid.index_id();
+    let index_id = &index_uid.index_id;
     let mut index_metadata = index_metadata(tx, index_id).await?;
     if index_metadata.index_uid != index_uid {
         return Err(MetastoreError::NotFound(EntityKind::Index {
@@ -382,7 +382,7 @@ impl MetastoreService for PostgresqlMetastore {
             "INSERT INTO indexes (index_uid, index_id, index_metadata_json) VALUES ($1, $2, $3)",
         )
         .bind(index_metadata.index_uid.to_string())
-        .bind(index_metadata.index_uid.index_id())
+        .bind(&index_metadata.index_uid.index_id)
         .bind(&index_metadata_json)
         .execute(&self.connection_pool)
         .await
@@ -408,13 +408,10 @@ impl MetastoreService for PostgresqlMetastore {
         // FIXME: This is not idempotent.
         if delete_result.rows_affected() == 0 {
             return Err(MetastoreError::NotFound(EntityKind::Index {
-                index_id: index_uid.index_id().to_string(),
+                index_id: index_uid.index_id,
             }));
         }
-        info!(
-            index_id = index_uid.index_id(),
-            "deleted index successfully"
-        );
+        info!(index_id = index_uid.index_id, "deleted index successfully");
         Ok(EmptyResponse {})
     }
 
@@ -501,7 +498,7 @@ impl MetastoreService for PostgresqlMetastore {
                 .bind(index_uid.to_string())
                 .fetch_all(tx.as_mut())
                 .await
-                .map_err(|sqlx_error| convert_sqlx_err(index_uid.index_id(), sqlx_error))?;
+                .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
 
             if upserted_split_ids.len() != split_ids.len() {
                 let failed_split_ids: Vec<String> = split_ids
@@ -515,7 +512,7 @@ impl MetastoreService for PostgresqlMetastore {
                 return Err(MetastoreError::FailedPrecondition { entity, message });
             }
             info!(
-                index_id=%index_uid.index_id(),
+                index_id=%index_uid.index_id,
                 "staged `{}` splits successfully", split_ids.len()
             );
             Ok(EmptyResponse {})
@@ -534,10 +531,10 @@ impl MetastoreService for PostgresqlMetastore {
         let replaced_split_ids = request.replaced_split_ids;
 
         run_with_tx!(self.connection_pool, tx, {
-            let mut index_metadata = index_metadata(tx, index_uid.index_id()).await?;
+            let mut index_metadata = index_metadata(tx, &index_uid.index_id).await?;
             if index_metadata.index_uid != index_uid {
                 return Err(MetastoreError::NotFound(EntityKind::Index {
-                    index_id: index_uid.index_id().to_string(),
+                    index_id: index_uid.index_id,
                 }));
             }
             if let Some(checkpoint_delta) = checkpoint_delta_opt {
@@ -565,7 +562,7 @@ impl MetastoreService for PostgresqlMetastore {
                         .try_apply_delta(checkpoint_delta)
                         .map_err(|error| {
                             let entity = EntityKind::CheckpointDelta {
-                                index_id: index_uid.index_id().to_string(),
+                                index_id: index_uid.index_id.to_string(),
                                 source_id,
                             };
                             let message = error.to_string();
@@ -660,7 +657,7 @@ impl MetastoreService for PostgresqlMetastore {
                     .bind(replaced_split_ids)
                     .fetch_one(tx.as_mut())
                     .await
-                    .map_err(|sqlx_error| convert_sqlx_err(index_uid.index_id(), sqlx_error))?;
+                    .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
 
             if !not_found_split_ids.is_empty() {
                 return Err(MetastoreError::NotFound(EntityKind::Splits {
@@ -682,7 +679,7 @@ impl MetastoreService for PostgresqlMetastore {
                 return Err(MetastoreError::FailedPrecondition { entity, message });
             }
             info!(
-                index_id=%index_uid.index_id(),
+                index_id=%index_uid.index_id,
                 "published {} splits and marked {} for deletion successfully",
                 num_published_splits, num_marked_splits
             );
@@ -788,26 +785,26 @@ impl MetastoreService for PostgresqlMetastore {
                 .bind(split_ids.clone())
                 .fetch_one(&self.connection_pool)
                 .await
-                .map_err(|sqlx_error| convert_sqlx_err(index_uid.index_id(), sqlx_error))?;
+                .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
 
         if num_found_splits == 0
-            && index_opt(&self.connection_pool, index_uid.index_id())
+            && index_opt(&self.connection_pool, &index_uid.index_id)
                 .await?
                 .is_none()
         {
             return Err(MetastoreError::NotFound(EntityKind::Index {
-                index_id: index_uid.index_id().to_string(),
+                index_id: index_uid.index_id,
             }));
         }
         info!(
-            index_id=%index_uid.index_id(),
+            index_id=%index_uid.index_id,
             "Marked {} splits for deletion, among which {} were newly marked.",
             split_ids.len() - not_found_split_ids.len(),
             num_marked_splits
         );
         if !not_found_split_ids.is_empty() {
             warn!(
-                index_id=%index_uid.index_id(),
+                index_id=%index_uid.index_id,
                 split_ids=?PrettySample::new(&not_found_split_ids, 5),
                 "{} splits were not found and could not be marked for deletion.",
                 not_found_split_ids.len()
@@ -871,7 +868,7 @@ impl MetastoreService for PostgresqlMetastore {
             .bind(split_ids)
             .fetch_one(&self.connection_pool)
             .await
-            .map_err(|sqlx_error| convert_sqlx_err(index_uid.index_id(), sqlx_error))?;
+            .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
 
         if num_found_splits == 0
             && index_opt_for_uid(&self.connection_pool, index_uid.clone())
@@ -879,7 +876,7 @@ impl MetastoreService for PostgresqlMetastore {
                 .is_none()
         {
             return Err(MetastoreError::NotFound(EntityKind::Index {
-                index_id: index_uid.index_id().to_string(),
+                index_id: index_uid.index_id,
             }));
         }
         if !not_deletable_split_ids.is_empty() {
@@ -892,11 +889,11 @@ impl MetastoreService for PostgresqlMetastore {
             };
             return Err(MetastoreError::FailedPrecondition { entity, message });
         }
-        info!(index_id=%index_uid.index_id(), "Deleted {} splits from index.", num_deleted_splits);
+        info!(index_id=%index_uid.index_id, "Deleted {} splits from index.", num_deleted_splits);
 
         if !not_found_split_ids.is_empty() {
             warn!(
-                index_id=%index_uid.index_id(),
+                index_id=%index_uid.index_id,
                 split_ids=?PrettySample::new(&not_found_split_ids, 5),
                 "{} splits were not found and could not be deleted.",
                 not_found_split_ids.len()
@@ -1057,7 +1054,7 @@ impl MetastoreService for PostgresqlMetastore {
             .bind(&delete_query_json)
             .fetch_one(&self.connection_pool)
             .await
-            .map_err(|error| convert_sqlx_err(delete_query.index_uid().index_id(), error))?;
+            .map_err(|error| convert_sqlx_err(&delete_query.index_uid().index_id, error))?;
 
         Ok(DeleteTask {
             create_timestamp: create_timestamp.assume_utc().unix_timestamp(),
@@ -1105,7 +1102,7 @@ impl MetastoreService for PostgresqlMetastore {
                 .is_none()
         {
             return Err(MetastoreError::NotFound(EntityKind::Index {
-                index_id: index_uid.index_id().to_string(),
+                index_id: index_uid.index_id,
             }));
         }
         Ok(UpdateSplitsDeleteOpstampResponse {})

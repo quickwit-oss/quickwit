@@ -131,7 +131,7 @@ impl TryFrom<metastore::DeleteQuery> for search::SearchRequest {
 
     fn try_from(delete_query: metastore::DeleteQuery) -> anyhow::Result<Self> {
         Ok(Self {
-            index_id_patterns: vec![delete_query.index_uid().index_id().to_string()],
+            index_id_patterns: vec![delete_query.index_uid().index_id.to_string()],
             query_ast: delete_query.query_ast,
             start_timestamp: delete_query.start_timestamp,
             end_timestamp: delete_query.end_timestamp,

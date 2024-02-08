@@ -236,7 +236,7 @@ impl RoutingTableEntry {
             target_shards.sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
 
             info!(
-                index_id=%self.index_uid.index_id(),
+                index_id=%self.index_uid.index_id,
                 source_id=%self.source_id,
                 "inserted {num_inserted_shards} shards into routing table"
             );
@@ -378,12 +378,11 @@ impl RoutingTable {
     /// Replaces the routing table entry for the source with the provided shards.
     pub fn replace_shards(
         &mut self,
-        index_uid: impl Into<IndexUid>,
+        index_uid: IndexUid,
         source_id: impl Into<SourceId>,
         shards: Vec<Shard>,
     ) {
-        let index_uid: IndexUid = index_uid.into();
-        let index_id: IndexId = index_uid.index_id().into();
+        let index_id: IndexId = index_uid.index_id.to_string();
         let source_id: SourceId = source_id.into();
         let key = (index_id, source_id.clone());
 
@@ -416,12 +415,11 @@ impl RoutingTable {
     pub fn insert_open_shards(
         &mut self,
         leader_id: &NodeId,
-        index_uid: impl Into<IndexUid>,
+        index_uid: IndexUid,
         source_id: impl Into<SourceId>,
         shard_ids: &[ShardId],
     ) {
-        let index_uid: IndexUid = index_uid.into();
-        let index_id: IndexId = index_uid.index_id().into();
+        let index_id: IndexId = index_uid.index_id.to_string();
         let source_id: SourceId = source_id.into();
         let key = (index_id, source_id.clone());
 
@@ -438,7 +436,7 @@ impl RoutingTable {
         source_id: impl Into<SourceId>,
         shard_ids: &[ShardId],
     ) {
-        let key = (index_uid.index_id().into(), source_id.into());
+        let key = (index_uid.index_id.clone(), source_id.into());
         if let Some(entry) = self.table.get_mut(&key) {
             entry.close_shards(index_uid, shard_ids);
         }
@@ -451,7 +449,7 @@ impl RoutingTable {
         source_id: impl Into<SourceId>,
         shard_ids: &[ShardId],
     ) {
-        let key = (index_uid.index_id().into(), source_id.into());
+        let key = (index_uid.index_id.clone(), source_id.into());
         if let Some(entry) = self.table.get_mut(&key) {
             entry.delete_shards(index_uid, shard_ids);
         }

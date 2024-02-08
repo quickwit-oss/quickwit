@@ -157,7 +157,7 @@ impl TestSandbox {
             .collect();
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let source_config = SourceConfig {
-            source_id: self.index_uid.index_id().to_string(),
+            source_id: self.index_uid.index_id.to_string(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
@@ -172,7 +172,7 @@ impl TestSandbox {
         let pipeline_id = self
             .indexing_service
             .ask_for_res(SpawnPipeline {
-                index_id: self.index_uid.index_id().to_string(),
+                index_id: self.index_uid.index_id.to_string(),
                 source_config,
                 pipeline_uid: PipelineUid::from_u128(0u128),
             })

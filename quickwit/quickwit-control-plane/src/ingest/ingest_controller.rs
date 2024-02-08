@@ -281,7 +281,7 @@ impl IngestController {
 
             if !closed_shard_ids.is_empty() {
                 info!(
-                    index_id=%source_uid.index_uid.index_id(),
+                    index_id=%source_uid.index_uid.index_id,
                     source_id=%source_uid.source_id,
                     shard_ids=?PrettySample::new(&closed_shard_ids, 5),
                     "closed {} shard(s) reported by router",
@@ -521,7 +521,7 @@ impl IngestController {
         let new_num_open_shards = shard_stats.num_open_shards + 1;
 
         info!(
-            index_id=%source_uid.index_uid.index_id(),
+            index_id=%source_uid.index_uid.index_id,
             source_id=%source_uid.source_id,
             "scaling up number of shards to {new_num_open_shards}"
         );
@@ -573,7 +573,10 @@ impl IngestController {
                 open_shards_subresponse.opened_shards,
             );
         }
-        let label_values = [source_uid.index_uid.index_id(), &source_uid.source_id];
+        let label_values = [
+            source_uid.index_uid.index_id.as_str(),
+            &source_uid.source_id,
+        ];
         CONTROL_PLANE_METRICS
             .open_shards_total
             .with_label_values(label_values)
@@ -600,7 +603,7 @@ impl IngestController {
         let new_num_open_shards = shard_stats.num_open_shards - 1;
 
         info!(
-            index_id=%source_uid.index_uid.index_id(),
+            index_id=%source_uid.index_uid.index_id,
             source_id=%source_uid.source_id,
             "scaling down number of shards to {new_num_open_shards}"
         );
@@ -629,7 +632,10 @@ impl IngestController {
         }
         model.close_shards(&source_uid, &[shard_id]);
 
-        let label_values = [source_uid.index_uid.index_id(), &source_uid.source_id];
+        let label_values = [
+            source_uid.index_uid.index_id.as_str(),
+            &source_uid.source_id,
+        ];
         CONTROL_PLANE_METRICS
             .open_shards_total
             .with_label_values(label_values)
@@ -1420,7 +1426,7 @@ mod tests {
         };
         let mut model = ControlPlaneModel::default();
         let index_metadata =
-            IndexMetadata::for_test(index_uid.index_id(), "ram://indexes/test-index:0");
+            IndexMetadata::for_test(&index_uid.index_id, "ram://indexes/test-index:0");
         model.add_index(index_metadata);
 
         let souce_config = SourceConfig::ingest_v2();
