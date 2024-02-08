@@ -209,8 +209,6 @@ impl SplitCacheBackingStorage {
             .split_cache
             .get_split_file(split_id, &self.storage_root_uri)
             .await?;
-        // We don't use async file io here because it spawn blocks anyway, and it feels dumb to
-        // spawn block 3 times in a row.
         split_file.get_range(byte_range).await.ok()
     }
 
