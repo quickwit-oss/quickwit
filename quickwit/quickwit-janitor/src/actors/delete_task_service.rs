@@ -153,7 +153,7 @@ impl DeleteTaskService {
                 .remove(index_uid)
                 .expect("Index metadata must be present.");
             if self.spawn_pipeline(index_config, ctx).await.is_err() {
-                warn!("Failed to spawn delete pipeline for {}", index_uid.index_id);
+                warn!("failed to spawn delete pipeline for {}", index_uid.index_id);
             }
         }
 
