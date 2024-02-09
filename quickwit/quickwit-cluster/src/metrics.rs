@@ -29,13 +29,13 @@ impl Default for ClusterMetrics {
     fn default() -> Self {
         ClusterMetrics {
             gossip_recv_total: new_counter(
-                "gossip_recv",
-                "Number of gossip messages received.",
+                "gossip_recv_total",
+                "Total number of gossip messages received.",
                 "quickwit_cluster",
             ),
             gossip_send_total: new_counter(
-                "gossip_send",
-                "Number of gossip messages sent.",
+                "gossip_send_total",
+                "Total number of gossip messages sent.",
                 "quickwit_cluster",
             ),
         }
