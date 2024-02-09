@@ -19,6 +19,7 @@
 
 use std::cmp::Reverse;
 use std::hash::{Hash, Hasher};
+
 use siphasher::sip::SipHasher;
 
 /// Computes the affinity of a node for a given `key`.
