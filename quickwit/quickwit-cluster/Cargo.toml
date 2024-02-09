@@ -35,8 +35,9 @@ quickwit-proto = { workspace = true }
 testsuite = []
 
 [dev-dependencies]
-chitchat = { workspace = true, features = ["testsuite"] }
-quickwit-common = { workspace = true, features = ["testsuite"] }
-
 rand = { workspace = true }
 tempfile = { workspace = true }
+
+chitchat = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }

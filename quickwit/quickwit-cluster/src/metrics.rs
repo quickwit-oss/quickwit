@@ -22,7 +22,9 @@ use quickwit_common::metrics::{new_counter, IntCounter};
 
 pub struct ClusterMetrics {
     pub gossip_recv_total: IntCounter,
+    pub gossip_recv_bytes_total: IntCounter,
     pub gossip_send_total: IntCounter,
+    pub gossip_send_bytes_total: IntCounter,
 }
 
 impl Default for ClusterMetrics {
@@ -33,9 +35,19 @@ impl Default for ClusterMetrics {
                 "Total number of gossip messages received.",
                 "quickwit_cluster",
             ),
+            gossip_recv_bytes_total: new_counter(
+                "gossip_recv_bytes_total",
+                "Total amount of gossip data received in bytes.",
+                "quickwit_cluster",
+            ),
             gossip_send_total: new_counter(
                 "gossip_send_total",
                 "Total number of gossip messages sent.",
+                "quickwit_cluster",
+            ),
+            gossip_send_bytes_total: new_counter(
+                "gossip_send_bytes_total",
+                "Total amount of gossip data sent in bytes.",
                 "quickwit_cluster",
             ),
         }
