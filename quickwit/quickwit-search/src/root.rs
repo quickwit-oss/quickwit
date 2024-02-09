@@ -2890,33 +2890,6 @@ mod tests {
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1
             .expect_leaf_search()
-            .times(1)
-            .returning(
-                |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
-                    Ok(quickwit_proto::search::LeafSearchResponse {
-                        // requests from split 2 arrive here - simulate failure
-                        num_hits: 0,
-                        partial_hits: Vec::new(),
-                        failed_splits: vec![SplitSearchError {
-                            error: "mock_error".to_string(),
-                            split_id: "split2".to_string(),
-                            retryable_error: true,
-                        }],
-                        num_attempted_splits: 1,
-                        ..Default::default()
-                    })
-                },
-            );
-        mock_search_service_1.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
-                Ok(quickwit_proto::search::FetchDocsResponse {
-                    hits: get_doc_for_fetch_req(fetch_docs_req),
-                })
-            },
-        );
-        let mut mock_search_service_2 = MockSearchService::new();
-        mock_search_service_2
-            .expect_leaf_search()
             .times(2)
             .returning(
                 |leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
@@ -2948,6 +2921,33 @@ mod tests {
                     } else {
                         panic!("unexpected request in test {split_ids:?}");
                     }
+                },
+            );
+        mock_search_service_1.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2
+            .expect_leaf_search()
+            .times(1)
+            .returning(
+                |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                    Ok(quickwit_proto::search::LeafSearchResponse {
+                        // requests from split 2 arrive here - simulate failure
+                        num_hits: 0,
+                        partial_hits: Vec::new(),
+                        failed_splits: vec![SplitSearchError {
+                            error: "mock_error".to_string(),
+                            split_id: "split2".to_string(),
+                            retryable_error: true,
+                        }],
+                        num_attempted_splits: 1,
+                        ..Default::default()
+                    })
                 },
             );
         mock_search_service_2.expect_fetch_docs().returning(
