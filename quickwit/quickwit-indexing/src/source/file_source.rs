@@ -528,14 +528,14 @@ mod tests {
         }
         {
             let input = "hello";
-            let cursor = Cursor::new(input.clone());
+            let cursor = Cursor::new(input);
             let mut reader = FileSourceReader::new(Box::new(cursor), 5);
             let mut buf = String::new();
             assert!(reader.read_line(&mut buf).await.is_ok());
         }
         {
             let input = "hello";
-            let cursor = Cursor::new(input.clone());
+            let cursor = Cursor::new(input);
             let mut reader = FileSourceReader::new(Box::new(cursor), 10);
             let mut buf = String::new();
             assert!(reader.read_line(&mut buf).await.is_err());

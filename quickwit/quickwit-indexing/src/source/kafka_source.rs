@@ -542,13 +542,8 @@ impl Source for KafkaSource {
     fn observable_state(&self) -> JsonValue {
         let assigned_partitions: Vec<&i32> =
             self.state.assigned_partitions.keys().sorted().collect();
-        let current_positions: Vec<(&i32, &Position)> = self
-            .state
-            .current_positions
-            .iter()
-            .map(|(partition, position)| (partition, position))
-            .sorted()
-            .collect();
+        let current_positions: Vec<(&i32, &Position)> =
+            self.state.current_positions.iter().sorted().collect();
         json!({
             "index_id": self.ctx.index_id(),
             "source_id": self.ctx.source_id(),

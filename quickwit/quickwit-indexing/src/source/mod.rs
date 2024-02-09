@@ -205,7 +205,7 @@ pub type SourceContext = ActorContext<SourceActor>;
 /// let exit_status = loop {
 ///   if let Err(exit_status) = source.emit_batches()? {
 ///      break exit_status;
-////  }
+///  }
 /// };
 /// source.finalize(exit_status)?;
 /// # Ok(())

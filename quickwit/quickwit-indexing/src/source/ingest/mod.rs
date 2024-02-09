@@ -413,8 +413,8 @@ impl IngestSource {
             || self
                 .assigned_shards
                 .keys()
+                .filter(|&shard_id| !new_assigned_shard_ids.contains(shard_id))
                 .cloned()
-                .filter(|shard_id| !new_assigned_shard_ids.contains(shard_id))
                 .any(|removed_shard_id| {
                     let Some(assigned_shard) = self.assigned_shards.get(&removed_shard_id) else {
                         return false;
@@ -460,7 +460,7 @@ impl IngestSource {
     }
 
     fn contains_publish_token(&self, subresponse: &AcquireShardsSubresponse) -> bool {
-        if let Some(acquired_shard) = subresponse.acquired_shards.get(0) {
+        if let Some(acquired_shard) = subresponse.acquired_shards.first() {
             if let Some(publish_token) = &acquired_shard.publish_token {
                 return *publish_token == self.publish_token;
             }

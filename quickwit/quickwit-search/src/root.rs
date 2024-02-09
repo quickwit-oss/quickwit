@@ -1362,7 +1362,7 @@ async fn assign_client_fetch_docs_jobs(
     for partial_hit in partial_hits.iter() {
         partial_hits_map
             .entry(partial_hit.split_id.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(partial_hit.clone());
     }
 
