@@ -219,11 +219,11 @@ impl BroadcastLocalShardsTask {
             }
             INGEST_V2_METRICS
                 .shards
-                .with_label_values(["open", source_uid.index_uid.index_id()])
+                .with_label_values(["open", &source_uid.index_uid.index_id])
                 .set(num_open_shards as i64);
             INGEST_V2_METRICS
                 .shards
-                .with_label_values(["closed", source_uid.index_uid.index_id()])
+                .with_label_values(["closed", &source_uid.index_uid.index_id])
                 .set(num_closed_shards as i64);
         }
         let snapshot = LocalShardsSnapshot {
@@ -287,7 +287,7 @@ fn parse_key(key: &str) -> Option<SourceUid> {
     let (index_uid_str, source_id_str) = key.rsplit_once(':')?;
 
     Some(SourceUid {
-        index_uid: index_uid_str.into(),
+        index_uid: index_uid_str.parse().ok()?,
         source_id: source_id_str.to_string(),
     })
 }
@@ -329,16 +329,14 @@ pub async fn setup_local_shards_update_listener(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use mrecordlog::MultiRecordLog;
     use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
     use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
-    use quickwit_proto::ingest::ingester::ObservationMessage;
     use quickwit_proto::ingest::ShardState;
-    use quickwit_proto::types::{queue_id, Position};
-    use tokio::sync::watch;
+    use quickwit_proto::types::{queue_id, IndexUid, Position};
 
     use super::*;
     use crate::ingest_v2::models::IngesterShard;
@@ -367,10 +365,11 @@ mod tests {
         assert_eq!(num_changes, 0);
 
         let previous_snapshot = LocalShardsSnapshot::default();
+        let index_uid = IndexUid::from_str("test-index:00000000000000000000000000").unwrap();
         let current_snapshot = LocalShardsSnapshot {
             per_source_shard_infos: vec![(
                 SourceUid {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                 },
                 vec![ShardInfo {
@@ -399,7 +398,7 @@ mod tests {
                 changes[0]
             );
         };
-        assert_eq!(source_uid.index_uid, "test-index:0");
+        assert_eq!(source_uid.index_uid, index_uid);
         assert_eq!(source_uid.source_id, "test-source");
         assert_eq!(shard_infos.len(), 1);
 
@@ -410,7 +409,7 @@ mod tests {
         let current_snapshot = LocalShardsSnapshot {
             per_source_shard_infos: vec![(
                 SourceUid {
-                    index_uid: "test-index:0".into(),
+                    index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                 },
                 vec![ShardInfo {
@@ -439,7 +438,7 @@ mod tests {
                 changes[0]
             );
         };
-        assert_eq!(source_uid.index_uid, "test-index:0");
+        assert_eq!(source_uid.index_uid, index_uid);
         assert_eq!(source_uid.source_id, "test-source");
         assert_eq!(shard_infos.len(), 1);
 
@@ -457,7 +456,7 @@ mod tests {
                 changes[0]
             );
         };
-        assert_eq!(source_uid.index_uid, "test-index:0");
+        assert_eq!(source_uid.index_uid, index_uid);
         assert_eq!(source_uid.source_id, "test-source");
     }
 
@@ -467,11 +466,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-
-        let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = IngesterState::new(mrecordlog, observation_tx);
+        let (_temp_dir, state, _status_rx) = IngesterState::for_test().await;
         let weak_state = state.weak();
         let task = BroadcastLocalShardsTask {
             cluster,
@@ -482,7 +477,8 @@ mod tests {
 
         let mut state_guard = state.lock_partially().await;
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let shard =
             IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
         state_guard.shards.insert(queue_id_01.clone(), shard);
@@ -506,7 +502,7 @@ mod tests {
 
         let key = format!(
             "{INGESTER_PRIMARY_SHARDS_PREFIX}{}:{}",
-            "test-index:0", "test-source"
+            index_uid, "test-source"
         );
         task.cluster.get_self_key_value(&key).await.unwrap();
 
@@ -522,19 +518,25 @@ mod tests {
     #[test]
     fn test_make_key() {
         let source_uid = SourceUid {
-            index_uid: "test-index:0".into(),
+            index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
         };
         let key = make_key(&source_uid);
-        assert_eq!(key, "ingester.primary_shards:test-index:0:test-source");
+        assert_eq!(
+            key,
+            "ingester.primary_shards:test-index:00000000000000000000000000:test-source"
+        );
     }
 
     #[test]
     fn test_parse_key() {
-        let key = "test-index:0:test-source";
+        let key = "test-index:00000000000000000000000000:test-source";
         let source_uid = parse_key(key).unwrap();
-        assert_eq!(source_uid.index_uid, "test-index:0".to_string(),);
-        assert_eq!(source_uid.source_id, "test-source".to_string(),);
+        assert_eq!(
+            &source_uid.index_uid.to_string(),
+            "test-index:00000000000000000000000000"
+        );
+        assert_eq!(source_uid.source_id, "test-source".to_string());
     }
 
     #[tokio::test]
@@ -547,12 +549,14 @@ mod tests {
 
         let local_shards_update_counter = Arc::new(AtomicUsize::new(0));
         let local_shards_update_counter_clone = local_shards_update_counter.clone();
+        let index_uid = IndexUid::from_str("test-index:00000000000000000000000000").unwrap();
 
+        let index_uid_clone = index_uid.clone();
         event_broker
             .subscribe(move |event: LocalShardsUpdate| {
                 local_shards_update_counter_clone.fetch_add(1, Ordering::Release);
 
-                assert_eq!(event.source_uid.index_uid, "test-index:0");
+                assert_eq!(event.source_uid.index_uid, index_uid_clone);
                 assert_eq!(event.source_uid.source_id, "test-source");
                 assert_eq!(event.shard_infos.len(), 1);
 
@@ -568,7 +572,7 @@ mod tests {
             .forever();
 
         let source_uid = SourceUid {
-            index_uid: "test-index:0".into(),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
         };
         let key = make_key(&source_uid);

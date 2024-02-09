@@ -73,7 +73,7 @@ impl IndexMetadata {
     /// An incarnation id of `0` will be used to complete the index id into a index uuid.
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
-        let index_uid = IndexUid::from_parts(index_id, "0");
+        let index_uid = IndexUid::from_parts(index_id, 0);
         let mut index_metadata = IndexMetadata::new(IndexConfig::for_test(index_id, index_uri));
         index_metadata.index_uid = index_uid;
         index_metadata

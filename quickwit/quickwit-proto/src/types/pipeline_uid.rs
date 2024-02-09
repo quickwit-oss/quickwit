@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
 /// The size of a ULID in bytes.
-const ULID_SIZE: usize = 16;
+pub(crate) const ULID_SIZE: usize = 16;
 
 /// A pipeline uid identify an indexing pipeline and an indexing task.
 #[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]

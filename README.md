@@ -107,9 +107,19 @@ Cloud-native search engine for observability (logs, traces, and soon metrics!). 
 
 # 🙋 FAQ
 
-### How can I switch from Elasticsearch to Quickwit?
+### How can I switch from Elasticsearch or Opensearch to Quickwit?
 
-Quickwit has an Elasticsearch-compatible Ingest-API to make it easier to migrate your log shippers (Vector, Fluent Bit, Syslog, ...) to Quickwit. However, we only support [ES aggregation DSL](https://quickwit.io/docs/reference/aggregation), the query DSL support is planned for Q2 2023.
+Quickwit supports a large subset of Elasticsearch/Opensearch API.
+
+For instance, it has a ES-compatible ingest API to make it easier to migrate your log shippers (Vector, Fluent Bit, Syslog, ...) to Quickwit.
+
+On the search-side, the most popular Elasticsearch endpoints, query DSL, and even aggregations are supported.
+
+The list of available endpoints and queries is available [here](https://quickwit.io/docs/reference/es_compatible_api), while the list of supported aggregations is available [here](https://quickwit.io/docs/reference/aggregation).
+
+Let us know if part of the API you are using is missing!
+
+If the client you are using is refusing to connect to Quickwit due to missing headers, you can use the `extra_headers` option in the [node configuration](https://quickwit.io/docs/configuration/node-config#rest-configuration) to impersonate any compatible version of Elasticsearch or Opensearch.
 
 ### How is Quickwit different from traditional search engines like Elasticsearch or Solr?
 

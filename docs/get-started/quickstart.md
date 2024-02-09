@@ -117,7 +117,7 @@ search_settings:
   default_search_fields: [title, body]
 
 indexing_settings:
-  commit_timeout_secs: 10
+  commit_timeout_secs: 30
 ```
 
 Now we can create the index with the command:

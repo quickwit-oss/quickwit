@@ -2,8 +2,8 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RetainShardsForSource {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "3")]
@@ -37,8 +37,8 @@ pub struct PersistRequest {
 pub struct PersistSubrequest {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -63,8 +63,8 @@ pub struct PersistResponse {
 pub struct PersistSuccess {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -78,8 +78,8 @@ pub struct PersistSuccess {
 pub struct PersistFailure {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -189,8 +189,8 @@ pub struct ReplicateRequest {
 pub struct ReplicateSubrequest {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -220,8 +220,8 @@ pub struct ReplicateResponse {
 pub struct ReplicateSuccess {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -235,8 +235,8 @@ pub struct ReplicateSuccess {
 pub struct ReplicateFailure {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -257,8 +257,8 @@ pub struct TruncateShardsRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TruncateShardsSubrequest {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "3")]
@@ -280,8 +280,8 @@ pub struct TruncateShardsResponse {}
 pub struct OpenFetchStreamRequest {
     #[prost(string, tag = "1")]
     pub client_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -313,8 +313,8 @@ pub mod fetch_message {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchPayload {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "3")]
@@ -330,8 +330,8 @@ pub struct FetchPayload {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchEof {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "3")]
@@ -484,15 +484,19 @@ impl ReplicateFailureReason {
 #[repr(i32)]
 pub enum IngesterStatus {
     Unspecified = 0,
+    /// The ingester is live but not ready yet to accept requests.
+    Initializing = 1,
     /// The ingester is ready and accepts read and write requests.
-    Ready = 1,
+    Ready = 2,
     /// The ingester is being decommissioned. It accepts read requests but rejects write requests
     /// (open shards, persist, and replicate requests). It will transition to `Decommissioned` once
     /// all shards are fully indexed.
-    Decommissioning = 2,
+    Decommissioning = 3,
     /// The ingester no longer accepts read and write requests. It does not hold any data and can
     /// be safely removed from the cluster.
-    Decommissioned = 3,
+    Decommissioned = 4,
+    /// The ingester failed to initialize and is not ready to accept requests.
+    Failed = 5,
 }
 impl IngesterStatus {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -502,18 +506,22 @@ impl IngesterStatus {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             IngesterStatus::Unspecified => "INGESTER_STATUS_UNSPECIFIED",
+            IngesterStatus::Initializing => "INGESTER_STATUS_INITIALIZING",
             IngesterStatus::Ready => "INGESTER_STATUS_READY",
             IngesterStatus::Decommissioning => "INGESTER_STATUS_DECOMMISSIONING",
             IngesterStatus::Decommissioned => "INGESTER_STATUS_DECOMMISSIONED",
+            IngesterStatus::Failed => "INGESTER_STATUS_FAILED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "INGESTER_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+            "INGESTER_STATUS_INITIALIZING" => Some(Self::Initializing),
             "INGESTER_STATUS_READY" => Some(Self::Ready),
             "INGESTER_STATUS_DECOMMISSIONING" => Some(Self::Decommissioning),
             "INGESTER_STATUS_DECOMMISSIONED" => Some(Self::Decommissioned),
+            "INGESTER_STATUS_FAILED" => Some(Self::Failed),
             _ => None,
         }
     }

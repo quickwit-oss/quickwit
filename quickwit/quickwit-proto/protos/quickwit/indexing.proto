@@ -21,6 +21,7 @@ syntax = "proto3";
 
 package quickwit.indexing;
 
+import "quickwit/common.proto";
 import "quickwit/ingest.proto";
 
 service IndexingService {
@@ -38,7 +39,7 @@ message PipelineUid {
 
 message IndexingTask {
   // The tasks's index UID.
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   // The task's source ID.
   string source_id = 2;
   // pipeline id

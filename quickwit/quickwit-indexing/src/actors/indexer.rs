@@ -188,7 +188,7 @@ impl IndexerState {
     ) -> anyhow::Result<IndexingWorkbench> {
         let workbench_id = Ulid::new();
         let batch_parent_span = info_span!(target: "quickwit-indexing", "index-doc-batches",
-            index_id=%self.pipeline_id.index_uid.index_id(),
+            index_id=%self.pipeline_id.index_uid.index_id,
             source_id=%self.pipeline_id.source_id,
             pipeline_uid=%self.pipeline_id.pipeline_uid,
             workbench_id=%workbench_id,
@@ -206,7 +206,7 @@ impl IndexerState {
             };
 
         let last_delete_opstamp_request = LastDeleteOpstampRequest {
-            index_uid: self.pipeline_id.index_uid.to_string(),
+            index_uid: Some(self.pipeline_id.index_uid.clone()),
         };
         let last_delete_opstamp_response = ctx
             .protect_future(
@@ -658,7 +658,7 @@ impl Indexer {
         let num_splits = splits.len() as u64;
         let split_ids = splits.iter().map(|split| split.split_id()).join(",");
         info!(
-            index=self.indexer_state.pipeline_id.index_uid.as_str(),
+            index=%self.indexer_state.pipeline_id.index_uid,
             source=self.indexer_state.pipeline_id.source_id.as_str(),
             pipeline_uid=%self.indexer_state.pipeline_id.pipeline_uid,
             commit_trigger=?commit_trigger,
@@ -755,7 +755,7 @@ mod tests {
             .expect_last_delete_opstamp()
             .times(2)
             .returning(move |delete_opstamp_request| {
-                assert_eq!(delete_opstamp_request.index_uid, index_uid.to_string());
+                assert_eq!(delete_opstamp_request.index_uid(), &index_uid);
                 Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         metastore.expect_publish_splits().never();
@@ -891,7 +891,7 @@ mod tests {
             .expect_last_delete_opstamp()
             .times(1..=2)
             .returning(move |last_delete_opstamp_request| {
-                assert_eq!(last_delete_opstamp_request.index_uid, index_uid.to_string());
+                assert_eq!(last_delete_opstamp_request.index_uid(), &index_uid);
                 Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         metastore.expect_publish_splits().never();
@@ -1636,7 +1636,7 @@ mod tests {
             index_serializer_inbox.drain_for_test_typed();
         assert_eq!(index_serializer_messages.len(), 1);
         let update = index_serializer_messages.into_iter().next().unwrap();
-        assert_eq!(update.index_uid.index_id(), "test-index");
+        assert_eq!(update.index_uid.index_id, "test-index");
         assert_eq!(
             update.checkpoint_delta,
             IndexCheckpointDelta::for_test("test-source", 4..8)

@@ -206,6 +206,7 @@ This section contains the configuration options for a Searcher.
 This section contains the configuration options for the searcher split cache.
 
 | Property | Description | Default value |
+| --- | --- | --- |
 | `max_num_bytes` | Maximum size in bytes allowed in the split cache. | `1G` |
 | `max_num_splits` | Maximum number of splits allowed in the split cache.   | `10000` |
 | `num_concurrent_downloads` | Maximum number of concurrent download of splits. | `1` |

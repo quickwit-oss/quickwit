@@ -156,7 +156,7 @@ impl DeleteTaskPipeline {
 
     pub async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         info!(
-            index_id=%self.index_uid.index_id(),
+            index_id=%self.index_uid.index_id,
             root_dir=%self.delete_service_task_dir.to_str().unwrap(),
             "Spawning delete tasks pipeline.",
         );
@@ -215,8 +215,8 @@ impl DeleteTaskPipeline {
         let (delete_executor_mailbox, task_executor_supervisor_handler) =
             ctx.spawn_actor().supervise(delete_executor);
         let scratch_directory = temp_dir::Builder::default()
-            .join(self.index_uid.index_id())
-            .join(self.index_uid.incarnation_id())
+            .join(&self.index_uid.index_id)
+            .join(&self.index_uid.incarnation_id.to_string())
             .tempdir_in(&self.delete_service_task_dir)?;
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory,
@@ -355,7 +355,7 @@ mod tests {
         let mut metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 start_timestamp: None,
                 end_timestamp: None,
                 query_ast: quickwit_query::query_ast::qast_json_helper("body:delete", &[]),

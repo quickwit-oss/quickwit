@@ -88,6 +88,7 @@ pub struct ControlPlane {
     ingest_controller: IngestController,
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
+    #[allow(dead_code)]
     rebuild_plan_debouncer: Debouncer,
 }
 
@@ -244,8 +245,8 @@ impl ControlPlane {
         progress: &Progress,
     ) -> anyhow::Result<()> {
         let delete_shards_subrequest = DeleteShardsSubrequest {
-            index_uid: source_uid.index_uid.to_string(),
-            source_id: source_uid.source_id.to_string(),
+            index_uid: Some(source_uid.index_uid.clone()),
+            source_id: source_uid.source_id.clone(),
             shard_ids: shards.to_vec(),
         };
         let delete_shards_request = DeleteShardsRequest {
@@ -301,9 +302,10 @@ impl ControlPlane {
     ///
     /// This method includes some debouncing logic. Every call will be followed by a cooldown
     /// period.
-    fn rebuild_plan_debounced(&mut self, ctx: &ActorContext<Self>) {
-        self.rebuild_plan_debouncer
-            .self_send_with_cooldown::<RebuildPlan>(ctx);
+    fn rebuild_plan_debounced(&mut self, _ctx: &ActorContext<Self>) {
+        self.indexing_scheduler.rebuild_plan(&self.model);
+        // self.rebuild_plan_debouncer
+        //     .self_send_with_cooldown::<RebuildPlan>(ctx);
     }
 }
 
@@ -476,7 +478,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         request: DeleteIndexRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let index_uid: IndexUid = request.index_uid.clone().into();
+        let index_uid: IndexUid = request.index_uid().clone();
 
         if let Err(metastore_error) = self.metastore.delete_index(request).await {
             return convert_metastore_error(metastore_error);
@@ -513,7 +515,7 @@ impl Handler<AddSourceRequest> for ControlPlane {
         request: AddSourceRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let index_uid: IndexUid = request.index_uid.clone().into();
+        let index_uid: IndexUid = request.index_uid().clone();
         let source_config: SourceConfig =
             match serde_utils::from_json_str(&request.source_config_json) {
                 Ok(source_config) => source_config,
@@ -549,7 +551,7 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         request: ToggleSourceRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let index_uid: IndexUid = request.index_uid.clone().into();
+        let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
         let enable = request.enable;
 
@@ -576,7 +578,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
         request: DeleteSourceRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<ControlPlaneResult<EmptyResponse>, ActorExitStatus> {
-        let index_uid: IndexUid = request.index_uid.clone().into();
+        let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
 
         let source_uid = SourceUid {
@@ -762,6 +764,8 @@ mod tests {
         let ingester_pool = IngesterPool::default();
 
         let mut mock_metastore = MetastoreServiceClient::mock();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_create_index()
             .withf(|create_index_request| {
@@ -771,11 +775,11 @@ mod tests {
                 assert_eq!(index_config.index_uri, "ram:///test-index");
                 true
             })
-            .returning(|_| {
+            .returning(move |_| {
                 let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
                 let index_metadata_json = serde_json::to_string(&index_metadata).unwrap();
                 let response = CreateIndexResponse {
-                    index_uid: index_metadata.index_uid.into(),
+                    index_uid: Some(index_uid_clone.clone()),
                     index_metadata_json,
                 };
                 Ok(response)
@@ -801,7 +805,7 @@ mod tests {
             .ask_for_res(create_index_request)
             .await
             .unwrap();
-        assert_eq!(create_index_response.index_uid, "test-index:0");
+        assert_eq!(create_index_response.index_uid(), &index_uid);
 
         // TODO: Test that create index event is properly sent to ingest controller.
 
@@ -815,10 +819,12 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let mut mock_metastore = MetastoreServiceClient::mock();
+        let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_delete_index()
-            .withf(|delete_index_request| delete_index_request.index_uid == "test-index:0")
+            .withf(move |delete_index_request| delete_index_request.index_uid() == &index_uid_clone)
             .returning(|_| Ok(EmptyResponse {}));
         mock_metastore
             .expect_list_indexes_metadata()
@@ -836,7 +842,7 @@ mod tests {
             MetastoreServiceClient::from(mock_metastore),
         );
         let delete_index_request = DeleteIndexRequest {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid),
         };
         control_plane_mailbox
             .ask_for_res(delete_index_request)
@@ -889,7 +895,7 @@ mod tests {
         );
         let source_config = SourceConfig::for_test("test-source", SourceParams::void());
         let add_source_request = AddSourceRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid),
             source_config_json: serde_json::to_string(&source_config).unwrap(),
         };
         control_plane_mailbox
@@ -912,6 +918,7 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         let mut index_metadata = IndexMetadata::for_test("test-index", "ram://toto");
         let test_source_config = SourceConfig::for_test("test-source", SourceParams::void());
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         index_metadata.add_source(test_source_config).unwrap();
         mock_metastore
             .expect_list_indexes_metadata()
@@ -922,19 +929,21 @@ mod tests {
                 )
             });
 
+        let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_toggle_source()
             .times(1)
-            .return_once(|toggle_source_request| {
-                assert_eq!(toggle_source_request.index_uid, "test-index:0");
+            .return_once(move |toggle_source_request| {
+                assert_eq!(toggle_source_request.index_uid(), &index_uid_clone);
                 assert_eq!(toggle_source_request.source_id, "test-source");
                 Ok(EmptyResponse {})
             });
+        let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_toggle_source()
             .times(1)
-            .return_once(|toggle_source_request| {
-                assert_eq!(toggle_source_request.index_uid, "test-index:0");
+            .return_once(move |toggle_source_request| {
+                assert_eq!(toggle_source_request.index_uid(), &index_uid_clone);
                 assert_eq!(toggle_source_request.source_id, "test-source");
                 assert!(!toggle_source_request.enable);
                 Ok(EmptyResponse {})
@@ -950,7 +959,7 @@ mod tests {
             MetastoreServiceClient::from(mock_metastore),
         );
         let enable_source_request = ToggleSourceRequest {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             enable: true,
         };
@@ -960,7 +969,7 @@ mod tests {
             .unwrap();
 
         let disable_source_request = ToggleSourceRequest {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid),
             source_id: "test-source".to_string(),
             enable: false,
         };
@@ -980,10 +989,12 @@ mod tests {
         let ingester_pool = IngesterPool::default();
 
         let mut mock_metastore = MetastoreServiceClient::mock();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_delete_source()
-            .withf(|delete_source_request| {
-                assert_eq!(delete_source_request.index_uid, "test-index:0");
+            .withf(move |delete_source_request| {
+                assert_eq!(delete_source_request.index_uid(), &index_uid_clone);
                 assert_eq!(delete_source_request.source_id, "test-source");
                 true
             })
@@ -1004,7 +1015,7 @@ mod tests {
             MetastoreServiceClient::from(mock_metastore),
         );
         let delete_source_request = DeleteSourceRequest {
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(index_uid),
             source_id: "test-source".to_string(),
         };
         control_plane_mailbox
@@ -1026,6 +1037,7 @@ mod tests {
         let ingester_pool = IngesterPool::default();
 
         let mut mock_metastore = MetastoreServiceClient::mock();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(|_| {
@@ -1038,27 +1050,30 @@ mod tests {
                         .unwrap(),
                 )
             });
-        mock_metastore.expect_list_shards().returning(|request| {
-            assert_eq!(request.subrequests.len(), 1);
+        let index_uid_clone = index_uid.clone();
+        mock_metastore
+            .expect_list_shards()
+            .returning(move |request| {
+                assert_eq!(request.subrequests.len(), 1);
 
-            let subrequest = &request.subrequests[0];
-            assert_eq!(subrequest.index_uid, "test-index:0");
-            assert_eq!(subrequest.source_id, INGEST_V2_SOURCE_ID);
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.index_uid(), &index_uid_clone);
+                assert_eq!(subrequest.source_id, INGEST_V2_SOURCE_ID);
 
-            let subresponses = vec![ListShardsSubresponse {
-                index_uid: "test-index:0".to_string(),
-                source_id: INGEST_V2_SOURCE_ID.to_string(),
-                shards: vec![Shard {
-                    index_uid: "test-index:0".to_string(),
+                let subresponses = vec![ListShardsSubresponse {
+                    index_uid: Some(index_uid_clone.clone()),
                     source_id: INGEST_V2_SOURCE_ID.to_string(),
-                    shard_id: Some(ShardId::from(1)),
-                    shard_state: ShardState::Open as i32,
-                    ..Default::default()
-                }],
-            }];
-            let response = ListShardsResponse { subresponses };
-            Ok(response)
-        });
+                    shards: vec![Shard {
+                        index_uid: Some(index_uid_clone.clone()),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        ..Default::default()
+                    }],
+                }];
+                let response = ListShardsResponse { subresponses };
+                Ok(response)
+            });
 
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
@@ -1086,7 +1101,7 @@ mod tests {
         assert_eq!(get_open_shards_response.failures.len(), 0);
 
         let subresponse = &get_open_shards_response.successes[0];
-        assert_eq!(subresponse.index_uid, "test-index:0");
+        assert_eq!(subresponse.index_uid(), &index_uid);
         assert_eq!(subresponse.source_id, INGEST_V2_SOURCE_ID);
         assert_eq!(subresponse.open_shards.len(), 1);
         assert_eq!(subresponse.open_shards[0].shard_id(), ShardId::from(1));
@@ -1252,13 +1267,13 @@ mod tests {
                 .unwrap())
             },
         );
-        let index_uid_clone = index_0.index_uid.to_string();
+        let index_uid_clone = index_0.index_uid.clone();
         mock_metastore.expect_delete_shards().return_once(
             move |delete_shards_request: DeleteShardsRequest| {
                 assert!(!delete_shards_request.force);
                 assert_eq!(delete_shards_request.subrequests.len(), 1);
                 let subrequest = &delete_shards_request.subrequests[0];
-                assert_eq!(subrequest.index_uid, index_uid_clone);
+                assert_eq!(subrequest.index_uid(), &index_uid_clone);
                 assert_eq!(subrequest.source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(subrequest.shard_ids, [ShardId::from(17)]);
                 Ok(DeleteShardsResponse {})
@@ -1266,7 +1281,7 @@ mod tests {
         );
 
         let mut shard = Shard {
-            index_uid: index_0.index_uid.to_string(),
+            index_uid: Some(index_0.index_uid.clone()),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
             shard_id: Some(ShardId::from(17)),
             leader_id: "test_node".to_string(),
@@ -1279,7 +1294,7 @@ mod tests {
             move |_list_shards_request: ListShardsRequest| {
                 let list_shards_resp = ListShardsResponse {
                     subresponses: vec![ListShardsSubresponse {
-                        index_uid: index_uid_clone.to_string(),
+                        index_uid: Some(index_uid_clone),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shards: vec![shard],
                     }],
@@ -1387,13 +1402,13 @@ mod tests {
                 .unwrap())
             },
         );
-        let index_uid_clone = index_0.index_uid.to_string();
+        let index_uid_clone = index_0.index_uid.clone();
         mock_metastore.expect_delete_shards().return_once(
             move |delete_shards_request: DeleteShardsRequest| {
                 assert!(!delete_shards_request.force);
                 assert_eq!(delete_shards_request.subrequests.len(), 1);
                 let subrequest = &delete_shards_request.subrequests[0];
-                assert_eq!(subrequest.index_uid, index_uid_clone);
+                assert_eq!(subrequest.index_uid(), &index_uid_clone);
                 assert_eq!(subrequest.source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(subrequest.shard_ids, [ShardId::from(17)]);
                 Ok(DeleteShardsResponse {})
@@ -1405,7 +1420,7 @@ mod tests {
             move |_list_shards_request: ListShardsRequest| {
                 let list_shards_resp = ListShardsResponse {
                     subresponses: vec![ListShardsSubresponse {
-                        index_uid: index_uid_clone.to_string(),
+                        index_uid: Some(index_uid_clone),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shards: vec![],
                     }],
@@ -1478,10 +1493,10 @@ mod tests {
             .returning(move |_list_shards_request: ListShardsRequest| {
                 let list_shards_resp = ListShardsResponse {
                     subresponses: vec![ListShardsSubresponse {
-                        index_uid: index_uid_clone.to_string(),
+                        index_uid: Some(index_uid_clone.clone()),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shards: vec![Shard {
-                            index_uid: index_uid_clone.to_string(),
+                            index_uid: Some(index_uid_clone.clone()),
                             source_id: source.source_id.to_string(),
                             shard_id: Some(ShardId::from(15)),
                             leader_id: "node1".to_string(),
@@ -1514,7 +1529,7 @@ mod tests {
             .times(1)
             .in_sequence(&mut seq)
             .returning(move |delete_index_request: DeleteIndexRequest| {
-                assert_eq!(delete_index_request.index_uid, index_uid_clone.to_string());
+                assert_eq!(delete_index_request.index_uid(), &index_uid_clone);
                 Ok(EmptyResponse {})
             });
         ingester_mock
@@ -1541,7 +1556,7 @@ mod tests {
         // This update should not trigger anything in the control plane.
         control_plane_mailbox
             .ask(DeleteIndexRequest {
-                index_uid: index_0.index_uid.to_string(),
+                index_uid: Some(index_0.index_uid),
             })
             .await
             .unwrap()
@@ -1578,7 +1593,7 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore.expect_delete_source().return_once(
             move |delete_source_request: DeleteSourceRequest| {
-                assert_eq!(delete_source_request.index_uid, index_uid_clone.to_string());
+                assert_eq!(delete_source_request.index_uid(), &index_uid_clone);
                 assert_eq!(&delete_source_request.source_id, INGEST_V2_SOURCE_ID);
                 Ok(EmptyResponse {})
             },
@@ -1604,10 +1619,10 @@ mod tests {
             move |_list_shards_request: ListShardsRequest| {
                 let list_shards_resp = ListShardsResponse {
                     subresponses: vec![ListShardsSubresponse {
-                        index_uid: index_uid_clone.to_string(),
+                        index_uid: Some(index_uid_clone.clone()),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shards: vec![Shard {
-                            index_uid: index_uid_clone.to_string(),
+                            index_uid: Some(index_uid_clone),
                             source_id: source.source_id.to_string(),
                             shard_id: Some(ShardId::from(15)),
                             leader_id: "node1".to_string(),
@@ -1633,7 +1648,7 @@ mod tests {
         // This update should not trigger anything in the control plane.
         control_plane_mailbox
             .ask(DeleteSourceRequest {
-                index_uid: index_0.index_uid.to_string(),
+                index_uid: Some(index_0.index_uid),
                 source_id: INGEST_V2_SOURCE_ID.to_string(),
             })
             .await
@@ -1691,7 +1706,7 @@ mod tests {
             assert_eq!(source_configs[1].source_id, INGEST_V2_SOURCE_ID);
             assert_eq!(source_configs[2].source_id, CLI_SOURCE_ID);
 
-            let index_uid = IndexUid::new_2("test-index-foo", 0);
+            let index_uid = IndexUid::from_parts("test-index-foo", 0);
             let mut index_metadata = IndexMetadata::new_with_index_uid(index_uid, index_config);
 
             for source_config in source_configs {

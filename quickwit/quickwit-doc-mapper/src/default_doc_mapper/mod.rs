@@ -33,11 +33,13 @@ pub use self::default_mapper::DefaultDocMapper;
 pub use self::default_mapper_builder::{DefaultDocMapperBuilder, Mode, ModeType};
 pub use self::field_mapping_entry::{
     BinaryFormat, FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions, QuickwitJsonOptions,
-    QuickwitNumericOptions, QuickwitTextNormalizer, QuickwitTextOptions, TextIndexingOptions,
+    QuickwitTextNormalizer,
 };
 pub(crate) use self::field_mapping_entry::{
     FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
 };
+#[cfg(all(test, feature = "multilang"))]
+pub(crate) use self::field_mapping_entry::{QuickwitTextOptions, TextIndexingOptions};
 pub use self::field_mapping_type::FieldMappingType;
 pub use self::tokenizer_entry::{analyze_text, TokenizerConfig, TokenizerEntry};
 pub(crate) use self::tokenizer_entry::{
