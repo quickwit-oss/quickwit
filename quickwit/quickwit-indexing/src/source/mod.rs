@@ -200,16 +200,16 @@ pub type SourceContext = ActorContext<SourceActor>;
 /// as follow:
 ///
 /// ```ignore
-/// # fn whatever() -> anyhow::Result<()>
-/// source.initialize(ctx)?;
-/// let exit_status = loop {
-///   if let Err(exit_status) = source.emit_batches()? {
-///      break exit_status;
-///  }
-/// };
-/// source.finalize(exit_status)?;
-/// # Ok(())
-/// # }
+/// fn whatever() -> anyhow::Result<()> {
+///     source.initialize(ctx)?;
+///     let exit_status = loop {
+///         if let Err(exit_status) = source.emit_batches()? {
+///             break exit_status;
+///         }
+///     };
+///     source.finalize(exit_status)?;
+///     Ok(())
+/// }
 /// ```
 #[async_trait]
 pub trait Source: Send + 'static {

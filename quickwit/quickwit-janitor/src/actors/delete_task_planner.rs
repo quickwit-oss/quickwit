@@ -341,8 +341,8 @@ impl DeleteTaskPlanner {
         Ok(false)
     }
 
-    /// Fetches stale splits from [`Metastore`] and excludes immature splits and split already among
-    /// ongoing delete operations.
+    /// Fetches stale splits from [`quickwit_metastore::Metastore`] and excludes immature splits and
+    /// split already among ongoing delete operations.
     async fn get_relevant_stale_splits(
         &mut self,
         index_uid: IndexUid,

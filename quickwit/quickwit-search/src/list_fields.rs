@@ -164,7 +164,7 @@ fn merge_same_field_group(
     }
 }
 
-/// Merge iterators of ListFieldsEntryResponse into a Vec<ListFieldsEntryResponse>.
+/// Merge iterators of ListFieldsEntryResponse into a `Vec<ListFieldsEntryResponse>`.
 ///
 /// The iterators need to be sorted by (field_name, fieldtype)
 fn merge_leaf_list_fields(

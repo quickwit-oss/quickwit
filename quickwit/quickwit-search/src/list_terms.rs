@@ -176,7 +176,7 @@ pub async fn root_list_terms(
     })
 }
 
-/// Builds a list of [`LeafListFieldsRequest`], one per index, from a list of [`SearchJob`].
+/// Builds a list of [`LeafListTermsRequest`], one per index, from a list of [`SearchJob`].
 pub fn jobs_to_leaf_requests(
     request: &ListTermsRequest,
     index_uid_to_uri: &HashMap<IndexUid, String>,
