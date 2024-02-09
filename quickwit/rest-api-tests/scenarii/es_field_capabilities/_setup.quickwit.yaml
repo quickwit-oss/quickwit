@@ -21,6 +21,7 @@ json:
     dynamic_mapping:
       tokenizer: default
       fast: true
+    timestamp_field: date
     field_mappings:
       - name: date
         type: datetime
@@ -64,29 +65,29 @@ num_retries: 10
 params:
   commit: force
 ndjson:
-  - {"name": "Fritz", "response": 30, "id": 5, "host": "192.168.0.1", "tags": ["nice", "cool"]}
-  - {"nested": {"name": "Fritz", "response": 30}, "date": "2015-01-11T12:10:30Z", "host": "192.168.0.11", "tags": ["nice"]}
+  - {"name": "Fritz", "response": 30, "id": 5, "date": "2015-01-10T12:00:00Z", "host": "192.168.0.1", "tags": ["nice", "cool"]}
+  - {"nested": {"name": "Fritz", "response": 30}, "date": "2015-01-11T12:00:00Z", "host": "192.168.0.11", "tags": ["nice"]}
 ---
-# Ingest documents split #2
+# Ingest documents split #1 index fieldcaps
 method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: fieldcaps/ingest
 params:
   commit: force
 ndjson:
-  - {"id": -5.5} # cross split mixed type
+  - {"id": -5.5, "date": "2018-01-10T12:00:00Z"} # cross split mixed type
 ---
-# Ingest documents split #3
+# Ingest documents split #2 index fieldcaps
 method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: fieldcaps/ingest
 params:
   commit: force
 ndjson:
-  - {"mixed": 5} # inter split mixed type
-  - {"mixed": -5.5} 
+  - {"mixed": 5, "date": "2023-01-10T12:00:00Z"} # inter split mixed type
+  - {"mixed": -5.5, "date": "2024-01-10T12:00:00Z"} 
 ---
-# Ingest documents in index 2
+# Ingest documents in index fieldcaps-2
 method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: fieldcaps-2/ingest
