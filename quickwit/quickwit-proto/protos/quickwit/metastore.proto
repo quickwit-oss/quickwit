@@ -21,6 +21,7 @@ syntax = "proto3";
 
 package quickwit.metastore;
 
+import "quickwit/common.proto";
 import "quickwit/ingest.proto";
 
 enum SourceType {
@@ -190,7 +191,7 @@ message CreateIndexRequest {
 }
 
 message CreateIndexResponse {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string index_metadata_json = 2;
 }
 
@@ -207,7 +208,7 @@ message ListIndexesMetadataResponse {
 }
 
 message DeleteIndexRequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
 }
 
 // Request the metadata of an index.
@@ -216,7 +217,7 @@ message DeleteIndexRequest {
 // If both are supplied, `index_uid` is used.
 message IndexMetadataRequest {
   optional string index_id = 1;
-  optional string index_uid = 2;
+  optional quickwit.common.IndexUid index_uid = 2;
 }
 
 message IndexMetadataResponse {
@@ -236,12 +237,12 @@ message ListSplitsResponse {
 }
 
 message StageSplitsRequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string split_metadata_list_serialized_json = 2;
 }
 
 message PublishSplitsRequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   repeated string staged_split_ids = 2;
   repeated string replaced_split_ids = 3;
   optional string index_checkpoint_delta_json_opt = 4;
@@ -249,33 +250,33 @@ message PublishSplitsRequest {
 }
 
 message MarkSplitsForDeletionRequest {
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   repeated string split_ids = 3;
 }
 
 message DeleteSplitsRequest {
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   repeated string split_ids = 3;
 }
 
 message AddSourceRequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_config_json = 2;
 }
 
 message ToggleSourceRequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   bool enable = 3;
 }
 
 message DeleteSourceRequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
 }
 
 message ResetSourceCheckpointRequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
 }
 
@@ -291,7 +292,7 @@ message DeleteTask {
 
 message DeleteQuery {
   // Index ID.
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   // If set, restrict search to documents with a `timestamp >= start_timestamp`.
   optional int64 start_timestamp = 2;
   // If set, restrict search to documents with a `timestamp < end_timestamp``.
@@ -305,7 +306,7 @@ message DeleteQuery {
 }
 
 message UpdateSplitsDeleteOpstampRequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   repeated string split_ids = 2;
   uint64 delete_opstamp = 3;
 }
@@ -313,7 +314,7 @@ message UpdateSplitsDeleteOpstampRequest {
 message UpdateSplitsDeleteOpstampResponse {}
 
 message LastDeleteOpstampRequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
 }
 
 message LastDeleteOpstampResponse {
@@ -321,13 +322,13 @@ message LastDeleteOpstampResponse {
 }
 
 message ListStaleSplitsRequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   uint64 delete_opstamp = 2;
   uint64 num_splits = 3;
 }
 
 message ListDeleteTasksRequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   uint64 opstamp_start = 2;
 }
 
@@ -345,7 +346,7 @@ message OpenShardsRequest {
 
 message OpenShardsSubrequest {
   uint32 subrequest_id = 1;
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   quickwit.ingest.ShardId shard_id = 4;
   string leader_id = 5;
@@ -358,7 +359,7 @@ message OpenShardsResponse {
 
 message OpenShardsSubresponse {
   uint32 subrequest_id = 1;
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   repeated quickwit.ingest.Shard opened_shards = 4;
 }
@@ -368,7 +369,7 @@ message AcquireShardsRequest {
 }
 
 message AcquireShardsSubrequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   repeated quickwit.ingest.ShardId shard_ids = 3;
   string publish_token = 4;
@@ -379,7 +380,7 @@ message AcquireShardsResponse {
 }
 
 message AcquireShardsSubresponse {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   repeated quickwit.ingest.Shard acquired_shards = 3;
 }
@@ -391,7 +392,7 @@ message DeleteShardsRequest {
 }
 
 message DeleteShardsSubrequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   repeated quickwit.ingest.ShardId shard_ids = 3;
 }
@@ -404,7 +405,7 @@ message ListShardsRequest {
 }
 
 message ListShardsSubrequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   optional quickwit.ingest.ShardState shard_state = 3;
 }
@@ -414,7 +415,7 @@ message ListShardsResponse {
 }
 
 message ListShardsSubresponse {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   repeated quickwit.ingest.Shard shards = 3;
 }

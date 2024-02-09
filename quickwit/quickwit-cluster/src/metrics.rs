@@ -17,35 +17,29 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-syntax = "proto3";
+use once_cell::sync::Lazy;
+use quickwit_common::metrics::{new_counter, IntCounter};
 
-package quickwit.indexing;
-
-import "quickwit/common.proto";
-import "quickwit/ingest.proto";
-
-service IndexingService {
-  // Apply an indexing plan on the node.
-  rpc ApplyIndexingPlan(ApplyIndexingPlanRequest) returns (ApplyIndexingPlanResponse);
+pub struct ClusterMetrics {
+    pub gossip_recv_total: IntCounter,
+    pub gossip_send_total: IntCounter,
 }
 
-message ApplyIndexingPlanRequest {
-  repeated IndexingTask indexing_tasks = 1;
+impl Default for ClusterMetrics {
+    fn default() -> Self {
+        ClusterMetrics {
+            gossip_recv_total: new_counter(
+                "gossip_recv_total",
+                "Total number of gossip messages received.",
+                "quickwit_cluster",
+            ),
+            gossip_send_total: new_counter(
+                "gossip_send_total",
+                "Total number of gossip messages sent.",
+                "quickwit_cluster",
+            ),
+        }
+    }
 }
 
-message PipelineUid {
-  bytes pipeline_uid = 1;
-}
-
-message IndexingTask {
-  // The tasks's index UID.
-  quickwit.common.IndexUid index_uid = 1;
-  // The task's source ID.
-  string source_id = 2;
-  // pipeline id
-  PipelineUid pipeline_uid = 4;
-  // The shards assigned to the indexer.
-  repeated quickwit.ingest.ShardId shard_ids = 3;
-}
-
-message ApplyIndexingPlanResponse {}
+pub static CLUSTER_METRICS: Lazy<ClusterMetrics> = Lazy::new(ClusterMetrics::default);

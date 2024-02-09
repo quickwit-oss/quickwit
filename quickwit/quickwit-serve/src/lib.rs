@@ -459,14 +459,14 @@ pub async fn serve_quickwit(
     let split_cache_root_directory: PathBuf =
         node_config.data_dir_path.join("searcher-split-cache");
     let split_cache_opt: Option<Arc<SplitCache>> =
-        if let Some(split_cache_config) = node_config.searcher_config.split_cache {
+        if let Some(split_cache_limits) = node_config.searcher_config.split_cache {
             let split_cache = SplitCache::with_root_path(
                 split_cache_root_directory,
                 storage_resolver.clone(),
-                split_cache_config,
+                split_cache_limits,
             )
             .context("failed to load searcher split cache")?;
-            Some(Arc::new(split_cache))
+            Some(split_cache)
         } else {
             None
         };
@@ -1006,7 +1006,7 @@ mod tests {
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::ingest::ingester::ObservationMessage;
     use quickwit_proto::metastore::ListIndexesMetadataResponse;
-    use quickwit_proto::types::PipelineUid;
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
     use tokio::sync::{mpsc, watch};
     use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
@@ -1129,7 +1129,7 @@ mod tests {
 
         let new_indexing_task = IndexingTask {
             pipeline_uid: Some(PipelineUid::from_u128(0u128)),
-            index_uid: "test-index:0".to_string(),
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
             source_id: "test-source".to_string(),
             shard_ids: Vec::new(),
         };
