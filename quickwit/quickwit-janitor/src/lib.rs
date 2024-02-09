@@ -74,7 +74,7 @@ pub async fn start_janitor_service(
         let (_, delete_task_service_handle) = universe.spawn_builder().spawn(delete_task_service);
         Some(delete_task_service_handle)
     } else {
-        tracing::warn!("Delete task service is disabled. Delete queries will not be processed.");
+        tracing::warn!("delete task service is disabled: delete queries will not be processed");
         None
     };
 
