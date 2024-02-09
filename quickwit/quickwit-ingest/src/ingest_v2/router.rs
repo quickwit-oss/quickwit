@@ -1496,11 +1496,13 @@ mod tests {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     ingestion_rate: RateMibPerSec(0),
+                    truncation_position_inclusive_opt: Some(Position::Beginning),
                 },
                 ShardInfo {
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     ingestion_rate: RateMibPerSec(0),
+                    truncation_position_inclusive_opt: Some(Position::Beginning),
                 },
             ]),
         };

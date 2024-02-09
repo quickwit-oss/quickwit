@@ -380,6 +380,7 @@ impl ShardTable {
                     shard_id,
                     shard_state,
                     ingestion_rate,
+                    truncation_position_inclusive_opt,
                 } = shard_info;
 
                 if let Some(shard_entry) = table_entry.shard_entries.get_mut(shard_id) {

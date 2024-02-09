@@ -27,7 +27,7 @@ use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
 use quickwit_common::tower::Rate;
 use quickwit_proto::ingest::ShardState;
-use quickwit_proto::types::{split_queue_id, NodeId, QueueId, ShardId, SourceUid};
+use quickwit_proto::types::{split_queue_id, NodeId, Position, QueueId, ShardId, SourceUid};
 use serde::{Deserialize, Serialize, Serializer};
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
@@ -51,15 +51,24 @@ pub struct ShardInfo {
     pub shard_state: ShardState,
     /// Shard ingestion rate in MiB/s.
     pub ingestion_rate: RateMibPerSec,
+    // TODO: Remove the `Option` in a few weeks from now (Feb 2024) when all the users on `edge`
+    // have been updated.
+    pub truncation_position_inclusive_opt: Option<Position>,
 }
 
 impl Serialize for ShardInfo {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let truncation_position_inclusive = self
+            .truncation_position_inclusive_opt
+            .as_ref()
+            .expect("`truncation_position_inclusive` should be set");
+
         serializer.serialize_str(&format!(
-            "{}:{}:{}",
+            "{}:{}:{}:{}",
             self.shard_id,
             self.shard_state.as_json_str_name(),
             self.ingestion_rate.0,
+            truncation_position_inclusive,
         ))
     }
 }
@@ -88,11 +97,17 @@ impl<'de> Deserialize<'de> for ShardInfo {
             .map(RateMibPerSec)
             .map_err(|_| serde::de::Error::custom("invalid shard ingestion rate"))?;
 
-        Ok(Self {
+        let truncation_position_inclusive_opt = parts
+            .next()
+            .map(|position| Position::from(position.to_string()));
+
+        let shard_info = Self {
             shard_id,
             shard_state,
             ingestion_rate,
-        })
+            truncation_position_inclusive_opt,
+        };
+        Ok(shard_info)
     }
 }
 
@@ -167,19 +182,23 @@ impl BroadcastLocalShardsTask {
         };
         let mut per_source_shard_infos: BTreeMap<SourceUid, ShardInfos> = BTreeMap::new();
 
-        let queue_ids: Vec<(QueueId, ShardState)> = state_guard
+        let queue_ids: Vec<(QueueId, ShardState, Position)> = state_guard
             .shards
             .iter()
             .filter_map(|(queue_id, shard)| {
                 if !shard.is_replica() {
-                    Some((queue_id.clone(), shard.shard_state))
+                    Some((
+                        queue_id.clone(),
+                        shard.shard_state,
+                        shard.truncation_position_inclusive.clone(),
+                    ))
                 } else {
                     None
                 }
             })
             .collect();
 
-        for (queue_id, shard_state) in queue_ids {
+        for (queue_id, shard_state, truncation_position_inclusive) in queue_ids {
             let Some((_rate_limiter, rate_meter)) = state_guard.rate_trackers.get_mut(&queue_id)
             else {
                 warn!("rate limiter `{queue_id}` not found",);
@@ -202,6 +221,7 @@ impl BroadcastLocalShardsTask {
                 shard_id,
                 shard_state,
                 ingestion_rate,
+                truncation_position_inclusive_opt: Some(truncation_position_inclusive),
             };
             per_source_shard_infos
                 .entry(source_uid)
@@ -347,16 +367,46 @@ mod tests {
 
     #[test]
     fn test_shard_info_serde() {
-        let shard_info = ShardInfo {
-            shard_id: ShardId::from(1),
-            shard_state: ShardState::Open,
-            ingestion_rate: RateMibPerSec(42),
-        };
-        let serialized = serde_json::to_string(&shard_info).unwrap();
-        assert_eq!(serialized, r#""00000000000000000001:open:42""#);
+        {
+            let shard_info = ShardInfo {
+                shard_id: ShardId::from(1),
+                shard_state: ShardState::Open,
+                ingestion_rate: RateMibPerSec(42),
+                truncation_position_inclusive_opt: Some(Position::Beginning),
+            };
+            let serialized = serde_json::to_string(&shard_info).unwrap();
+            assert_eq!(serialized, r#""00000000000000000001:open:42:""#);
 
-        let deserialized = serde_json::from_str::<ShardInfo>(&serialized).unwrap();
-        assert_eq!(deserialized, shard_info);
+            let deserialized = serde_json::from_str::<ShardInfo>(&serialized).unwrap();
+            assert_eq!(deserialized, shard_info);
+        }
+        {
+            let shard_info = ShardInfo {
+                shard_id: ShardId::from(1),
+                shard_state: ShardState::Open,
+                ingestion_rate: RateMibPerSec(42),
+                truncation_position_inclusive_opt: Some(Position::offset(1337u64)),
+            };
+            let serialized = serde_json::to_string(&shard_info).unwrap();
+            assert_eq!(
+                serialized,
+                r#""00000000000000000001:open:42:00000000000000001337""#
+            );
+
+            let deserialized = serde_json::from_str::<ShardInfo>(&serialized).unwrap();
+            assert_eq!(deserialized, shard_info);
+        }
+        {
+            let serialized = r#""00000000000000000001:open:42""#;
+            let deserialized = serde_json::from_str::<ShardInfo>(serialized).unwrap();
+            let expected_shard_info = ShardInfo {
+                shard_id: ShardId::from(1),
+                shard_state: ShardState::Open,
+                ingestion_rate: RateMibPerSec(42),
+                truncation_position_inclusive_opt: None,
+            };
+            assert_eq!(deserialized, expected_shard_info,);
+        }
     }
 
     #[test]
@@ -378,6 +428,7 @@ mod tests {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
                     ingestion_rate: RateMibPerSec(42),
+                    truncation_position_inclusive_opt: Some(Position::offset(1337u64)),
                 }]
                 .into_iter()
                 .collect(),
@@ -418,6 +469,7 @@ mod tests {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     ingestion_rate: RateMibPerSec(42),
+                    truncation_position_inclusive_opt: Some(Position::offset(1337u64)),
                 }]
                 .into_iter()
                 .collect(),
@@ -582,6 +634,7 @@ mod tests {
             shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
             ingestion_rate: RateMibPerSec(42),
+            truncation_position_inclusive_opt: Some(Position::offset(1337u64)),
         }])
         .unwrap();
 
