@@ -151,7 +151,7 @@ impl DeleteTaskService {
         for index_uid in index_uids.difference(&pipeline_index_uids) {
             let index_config = index_config_by_index_id
                 .remove(index_uid)
-                .expect("Index metadata must be present.");
+                .expect("index metadata should be present");
             if self.spawn_pipeline(index_config, ctx).await.is_err() {
                 warn!("failed to spawn delete pipeline for {}", index_uid.index_id);
             }
