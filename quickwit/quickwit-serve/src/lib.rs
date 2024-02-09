@@ -631,7 +631,9 @@ pub async fn serve_quickwit(
         // We must decommission the ingester first before terminating the indexing pipelines that
         // may consume from it. We also need to keep the gRPC server running while doing so.
         if let Some(ingester_service) = ingester_service_opt {
-            wait_for_ingester_decommission(ingester_service).await;
+            if let Err(error) = wait_for_ingester_decommission(ingester_service).await {
+                error!("failed to decommission ingester gracefully: {:?}", error);
+            }
         }
         let actor_exit_statuses = universe.quit().await;
 
@@ -932,7 +934,12 @@ async fn node_readiness_reporting_task(
     info!("REST server is ready");
 
     if let Some(ingester_service) = ingester_service_opt {
-        wait_for_ingester_status(ingester_service, IngesterStatus::Ready).await;
+        if let Err(error) = wait_for_ingester_status(ingester_service, IngesterStatus::Ready).await
+        {
+            error!("failed to initialize ingester: {:?}", error);
+            info!("shutting down");
+            return;
+        }
     }
     let mut interval = tokio::time::interval(READINESS_REPORTING_INTERVAL);
 

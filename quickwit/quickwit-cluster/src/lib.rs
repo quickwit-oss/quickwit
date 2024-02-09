@@ -30,7 +30,7 @@ use std::net::SocketAddr;
 use async_trait::async_trait;
 pub use chitchat::transport::ChannelTransport;
 use chitchat::transport::{Socket, Transport, UdpTransport};
-use chitchat::ChitchatMessage;
+use chitchat::{ChitchatMessage, Serializable};
 pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
 use quickwit_common::metrics::IntCounter;
 use quickwit_config::service::QuickwitService;
@@ -72,20 +72,26 @@ struct CountingUdpTransport;
 struct CountingUdpSocket {
     socket: Box<dyn Socket>,
     gossip_recv: IntCounter,
+    gossip_recv_bytes: IntCounter,
     gossip_send: IntCounter,
+    gossip_send_bytes: IntCounter,
 }
 
 #[async_trait]
 impl Socket for CountingUdpSocket {
     async fn send(&mut self, to: SocketAddr, msg: ChitchatMessage) -> anyhow::Result<()> {
+        let msg_len = msg.serialized_len() as u64;
         self.socket.send(to, msg).await?;
         self.gossip_send.inc();
+        self.gossip_send_bytes.inc_by(msg_len);
         Ok(())
     }
 
     async fn recv(&mut self) -> anyhow::Result<(SocketAddr, ChitchatMessage)> {
         let (socket_addr, msg) = self.socket.recv().await?;
         self.gossip_recv.inc();
+        let msg_len = msg.serialized_len() as u64;
+        self.gossip_recv_bytes.inc_by(msg_len);
         Ok((socket_addr, msg))
     }
 }
@@ -98,7 +104,13 @@ impl Transport for CountingUdpTransport {
         Ok(Box::new(CountingUdpSocket {
             socket,
             gossip_recv: crate::metrics::CLUSTER_METRICS.gossip_recv_total.clone(),
+            gossip_recv_bytes: crate::metrics::CLUSTER_METRICS
+                .gossip_recv_bytes_total
+                .clone(),
             gossip_send: crate::metrics::CLUSTER_METRICS.gossip_send_total.clone(),
+            gossip_send_bytes: crate::metrics::CLUSTER_METRICS
+                .gossip_send_bytes_total
+                .clone(),
         }))
     }
 }

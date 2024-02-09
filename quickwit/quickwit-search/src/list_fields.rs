@@ -313,8 +313,14 @@ pub async fn root_list_fields(
         .into_iter()
         .map(|index_metadata| index_metadata.index_uid)
         .collect();
-    let split_metadatas: Vec<SplitMetadata> =
-        list_relevant_splits(index_uids, None, None, None, &mut metastore).await?;
+    let split_metadatas: Vec<SplitMetadata> = list_relevant_splits(
+        index_uids,
+        list_fields_req.start_timestamp,
+        list_fields_req.end_timestamp,
+        None,
+        &mut metastore,
+    )
+    .await?;
 
     // Build requests for each index id
     let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();

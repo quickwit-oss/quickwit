@@ -161,8 +161,10 @@ impl BroadcastLocalShardsTask {
 
     async fn snapshot_local_shards(&self) -> Option<LocalShardsSnapshot> {
         let state = self.weak_state.upgrade()?;
-        let mut state_guard = state.lock_partially().await;
 
+        let Ok(mut state_guard) = state.lock_partially().await else {
+            return Some(LocalShardsSnapshot::default());
+        };
         let mut per_source_shard_infos: BTreeMap<SourceUid, ShardInfos> = BTreeMap::new();
 
         let queue_ids: Vec<(QueueId, ShardState)> = state_guard
@@ -466,7 +468,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let (_temp_dir, state, _status_rx) = IngesterState::for_test().await;
+        let (_temp_dir, state) = IngesterState::for_test().await;
         let weak_state = state.weak();
         let task = BroadcastLocalShardsTask {
             cluster,
@@ -475,7 +477,7 @@ mod tests {
         let previous_snapshot = task.snapshot_local_shards().await.unwrap();
         assert!(previous_snapshot.per_source_shard_infos.is_empty());
 
-        let mut state_guard = state.lock_partially().await;
+        let mut state_guard = state.lock_partially().await.unwrap();
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
