@@ -126,6 +126,7 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 
 const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_CONCURRENCY";
 const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
+const DISABLE_DELETE_TASK_SERVICE_ENV_KEY: &str = "QW_DISABLE_DELETE_TASK_SERVICE";
 
 fn get_metastore_client_max_concurrency() -> usize {
     std::env::var(METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY).ok()
@@ -514,6 +515,7 @@ pub async fn serve_quickwit(
             search_job_placer,
             storage_resolver.clone(),
             event_broker.clone(),
+            std::env::var(DISABLE_DELETE_TASK_SERVICE_ENV_KEY).is_err(),
         )
         .await?;
         Some(janitor_service)
