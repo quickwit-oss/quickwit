@@ -15,6 +15,7 @@ async-trait = { workspace = true }
 chitchat = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
+once_cell = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -34,8 +35,9 @@ quickwit-proto = { workspace = true }
 testsuite = []
 
 [dev-dependencies]
-chitchat = { workspace = true, features = ["testsuite"] }
-quickwit-common = { workspace = true, features = ["testsuite"] }
-
 rand = { workspace = true }
 tempfile = { workspace = true }
+
+chitchat = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }

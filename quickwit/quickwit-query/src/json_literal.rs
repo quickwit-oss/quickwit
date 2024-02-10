@@ -192,6 +192,30 @@ impl<'a> InterpretUserInput<'a> for Vec<u8> {
     }
 }
 
+impl From<bool> for JsonLiteral {
+    fn from(b: bool) -> JsonLiteral {
+        JsonLiteral::Bool(b)
+    }
+}
+
+impl From<String> for JsonLiteral {
+    fn from(s: String) -> JsonLiteral {
+        JsonLiteral::String(s)
+    }
+}
+
+impl From<u64> for JsonLiteral {
+    fn from(number: u64) -> JsonLiteral {
+        JsonLiteral::Number(number.into())
+    }
+}
+
+impl From<i64> for JsonLiteral {
+    fn from(number: i64) -> JsonLiteral {
+        JsonLiteral::Number(number.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tantivy::DateTime;
@@ -284,29 +308,5 @@ mod tests {
     #[test]
     fn test_interpret_bytes_invalid() {
         assert!(Vec::<u8>::interpret_str("deadbeef@").is_none());
-    }
-}
-
-impl From<bool> for JsonLiteral {
-    fn from(b: bool) -> JsonLiteral {
-        JsonLiteral::Bool(b)
-    }
-}
-
-impl From<String> for JsonLiteral {
-    fn from(s: String) -> JsonLiteral {
-        JsonLiteral::String(s)
-    }
-}
-
-impl From<u64> for JsonLiteral {
-    fn from(number: u64) -> JsonLiteral {
-        JsonLiteral::Number(number.into())
-    }
-}
-
-impl From<i64> for JsonLiteral {
-    fn from(number: i64) -> JsonLiteral {
-        JsonLiteral::Number(number.into())
     }
 }

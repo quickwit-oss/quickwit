@@ -605,7 +605,7 @@ async fn single_node_search_sort_by_field(
         }
         Err(err) => {
             test_sandbox.assert_quit().await;
-            Err(err).map_err(anyhow::Error::from)
+            Err(anyhow::Error::from(err))
         }
     }
 }

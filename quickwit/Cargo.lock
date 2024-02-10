@@ -1244,7 +1244,7 @@ dependencies = [
 [[package]]
 name = "chitchat"
 version = "0.8.0"
-source = "git+https://github.com/quickwit-oss/chitchat.git?rev=5d7ff34#5d7ff34a314bb40e0763bb0c8762366b8aeccd04"
+source = "git+https://github.com/quickwit-oss/chitchat.git?rev=783bfd0#783bfd0be7728e4cebdebbe4ea0459392a28d0ac"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5527,6 +5527,7 @@ dependencies = [
  "chitchat",
  "futures",
  "itertools 0.12.1",
+ "once_cell",
  "quickwit-common",
  "quickwit-config",
  "quickwit-proto",
@@ -5615,6 +5616,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "siphasher",
  "tempfile",
  "thiserror",
  "tokio",

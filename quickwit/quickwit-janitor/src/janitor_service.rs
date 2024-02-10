@@ -26,14 +26,14 @@ use serde_json::{json, Value as JsonValue};
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 
 pub struct JanitorService {
-    delete_task_service_handle: ActorHandle<DeleteTaskService>,
+    delete_task_service_handle: Option<ActorHandle<DeleteTaskService>>,
     garbage_collector_handle: ActorHandle<GarbageCollector>,
     retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,
 }
 
 impl JanitorService {
     pub fn new(
-        delete_task_service_handle: ActorHandle<DeleteTaskService>,
+        delete_task_service_handle: Option<ActorHandle<DeleteTaskService>>,
         garbage_collector_handle: ActorHandle<GarbageCollector>,
         retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,
     ) -> Self {
@@ -45,7 +45,11 @@ impl JanitorService {
     }
 
     fn is_healthy(&self) -> bool {
-        self.delete_task_service_handle.state() != ActorState::Failure
+        self.delete_task_service_handle
+            .as_ref()
+            .map_or(true, |delete_task_service_handle| {
+                delete_task_service_handle.state() != ActorState::Failure
+            })
             && self.garbage_collector_handle.state() != ActorState::Failure
             && self.retention_policy_executor_handle.state() != ActorState::Failure
     }

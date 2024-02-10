@@ -53,7 +53,7 @@ impl ListFieldsCache {
     }
 }
 
-/// A key inside a [`LeafSearchCache`].
+/// A key inside a [`ListFieldsCache`].
 #[derive(Debug, Hash, PartialEq, Eq)]
 struct CacheKey {
     /// The split this entry refers to

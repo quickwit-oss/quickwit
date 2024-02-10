@@ -100,7 +100,7 @@ pub(crate) fn elastic_index_bulk_filter(
         .and(warp::body::content_length_limit(
             CONTENT_LENGTH_LIMIT.as_u64(),
         ))
-        .and(warp::body::bytes())
+        .and(get_body_bytes())
         .and(serde_qs::warp::query::<ElasticBulkOptions>(
             serde_qs::Config::default(),
         ))
