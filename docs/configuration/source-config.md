@@ -230,6 +230,7 @@ The following is an example of how one could parse and transform a CSV dataset c
 ```yaml
 # Your source config here
 # ...
+input_format: plain_text
 transform:
   script: |
     user = parse_csv!(.plain_text)
