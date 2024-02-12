@@ -633,7 +633,10 @@ impl Ingester {
             .set(state_guard.mrecordlog.disk_usage() as i64);
         INGEST_V2_METRICS
             .wal_memory_usage_bytes
-            .set(state_guard.mrecordlog.memory_usage() as i64);
+            .set(state_guard.mrecordlog.memory_usage().0 as i64);
+        INGEST_V2_METRICS
+            .wal_memory_capacity_bytes
+            .set(state_guard.mrecordlog.memory_usage().1 as i64);
 
         drop(state_guard);
 
@@ -791,7 +794,10 @@ impl Ingester {
             .set(current_disk_usage as i64);
         INGEST_V2_METRICS
             .wal_memory_usage_bytes
-            .set(current_memory_usage as i64);
+            .set(current_memory_usage.0 as i64);
+        INGEST_V2_METRICS
+            .wal_memory_capacity_bytes
+            .set(state_guard.mrecordlog.memory_usage().1 as i64);
 
         self.check_decommissioning_status(&mut state_guard);
         let truncate_response = TruncateShardsResponse {};

@@ -32,6 +32,7 @@ pub(super) struct IngestV2Metrics {
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
     pub wal_disk_usage_bytes: IntGauge,
     pub wal_memory_usage_bytes: IntGauge,
+    pub wal_memory_capacity_bytes: IntGauge,
 }
 
 impl Default for IngestV2Metrics {
@@ -80,7 +81,12 @@ impl Default for IngestV2Metrics {
             ),
             wal_memory_usage_bytes: new_gauge(
                 "wal_memory_usage_bytes",
-                "Memory usage of the write-ahead log in bytes.",
+                "Memory usage of the write-ahead log in bytes (used).",
+                "quickwit_ingest",
+            ),
+            wal_memory_capacity_bytes: new_gauge(
+                "wal_memory_capacity_bytes",
+                "Memory usage of the write-ahead log in bytes (allocated).",
                 "quickwit_ingest",
             ),
         }

@@ -128,7 +128,7 @@ pub(super) fn check_enough_capacity(
             requested: requested_capacity,
         });
     }
-    let memory_usage = ByteSize(mrecordlog.memory_usage() as u64);
+    let memory_usage = ByteSize(mrecordlog.memory_usage().0 as u64);
 
     if memory_usage + requested_capacity > memory_capacity {
         return Err(NotEnoughCapacityError::Memory {
