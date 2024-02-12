@@ -38,7 +38,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use serde::Serialize;
-pub(super) use shard_table::{ScalingMode, ShardEntry, ShardStats, ShardTable};
+pub(super) use shard_table::{ApplyLocalShardsUpdateTodo, ScalingMode, ShardEntry, ShardTable};
 use tracing::{info, instrument, warn};
 
 /// The control plane maintains a model in sync with the metastore.
@@ -311,12 +311,13 @@ impl ControlPlaneModel {
     }
 
     /// Updates the state and ingestion rate of the shards according to the given shard infos.
-    pub fn update_shards(
+    pub fn apply_local_shards_update(
         &mut self,
         source_uid: &SourceUid,
         shard_infos: &ShardInfos,
-    ) -> ShardStats {
-        self.shard_table.update_shards(source_uid, shard_infos)
+    ) -> ApplyLocalShardsUpdateTodo {
+        self.shard_table
+            .apply_local_shards_update(source_uid, shard_infos)
     }
 
     /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to

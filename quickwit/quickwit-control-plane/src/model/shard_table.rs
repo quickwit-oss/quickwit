@@ -27,7 +27,7 @@ use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::ConstantRate;
 use quickwit_ingest::{RateMibPerSec, ShardInfo, ShardInfos};
 use quickwit_proto::ingest::{Shard, ShardState};
-use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
+use quickwit_proto::types::{IndexUid, NodeId, Position, ShardId, SourceId, SourceUid};
 use tracing::{error, warn};
 
 /// Limits the number of shards that can be opened for scaling up a source to 5 per minute.
@@ -366,37 +366,60 @@ impl ShardTable {
         Some(open_shards)
     }
 
-    pub fn update_shards(
+    pub fn apply_local_shards_update(
         &mut self,
         source_uid: &SourceUid,
         shard_infos: &ShardInfos,
-    ) -> ShardStats {
+    ) -> ApplyLocalShardsUpdateTodo {
         let mut num_open_shards = 0;
         let mut ingestion_rate_sum = RateMibPerSec::default();
 
-        if let Some(table_entry) = self.table_entries.get_mut(source_uid) {
-            for shard_info in shard_infos {
-                let ShardInfo {
-                    shard_id,
-                    shard_state,
-                    ingestion_rate,
-                    truncation_position_inclusive_opt,
-                } = shard_info;
+        let Some(table_entry) = self.table_entries.get_mut(source_uid) else {
+            // The source no longer exists.
+            let shards_to_delete = shard_infos
+                .iter()
+                .map(|shard_info| shard_info.shard_id.clone())
+                .collect();
+            return ApplyLocalShardsUpdateTodo {
+                shards_to_delete,
+                shards_to_truncate: Vec::new(),
+                shard_stats: ShardStats::default(),
+            };
+        };
+        let mut shards_to_delete = Vec::new();
+        let mut shards_to_truncate = Vec::new();
 
-                if let Some(shard_entry) = table_entry.shard_entries.get_mut(shard_id) {
-                    shard_entry.ingestion_rate = *ingestion_rate;
-                    // `ShardInfos` are broadcasted via Chitchat and eventually consistent. As a
-                    // result, we can only trust the `Closed` state, which is final.
-                    if shard_state.is_closed() {
-                        shard_entry.set_shard_state(ShardState::Closed);
-                    }
+        for shard_info in shard_infos {
+            let ShardInfo {
+                shard_id,
+                shard_state,
+                ingestion_rate,
+                truncation_position_inclusive_opt,
+            } = shard_info;
+
+            let Some(shard_entry) = table_entry.shard_entries.get_mut(shard_id) else {
+                // The shard no longer exists.
+                shards_to_delete.push(shard_id.clone());
+                continue;
+            };
+            shard_entry.ingestion_rate = *ingestion_rate;
+            // `ShardInfos` are broadcasted via Chitchat and eventually consistent.
+            // As a result, we can only trust the `Closed` state, which
+            // is final.
+            if shard_state.is_closed() {
+                shard_entry.set_shard_state(ShardState::Closed);
+            }
+            if let Some(truncation_position_inclusive) = truncation_position_inclusive_opt {
+                if shard_entry.publish_position_inclusive() > truncation_position_inclusive {
+                    shards_to_truncate
+                        .push((shard_id.clone(), truncation_position_inclusive.clone()));
                 }
             }
-            for shard_entry in table_entry.shard_entries.values() {
-                if shard_entry.is_open() {
-                    num_open_shards += 1;
-                    ingestion_rate_sum += shard_entry.ingestion_rate;
-                }
+        }
+        for shard_entry in table_entry.shard_entries.values() {
+            if shard_entry.is_open() {
+                num_open_shards += 1;
+                ingestion_rate_sum += shard_entry.ingestion_rate;
             }
         }
         let avg_ingestion_rate = if num_open_shards > 0 {
@@ -405,9 +428,13 @@ impl ShardTable {
             0.0
         };
 
-        ShardStats {
-            num_open_shards,
-            avg_ingestion_rate,
+        ApplyLocalShardsUpdateTodo {
+            shards_to_delete,
+            shards_to_truncate,
+            shard_stats: ShardStats {
+                num_open_shards,
+                avg_ingestion_rate,
+            },
         }
     }
 
@@ -479,6 +506,13 @@ impl ShardTable {
             scaling_rate_limiter.release(num_permits);
         }
     }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct ApplyLocalShardsUpdateTodo {
+    pub shards_to_delete: Vec<ShardId>,
+    pub shards_to_truncate: Vec<(ShardId, Position)>,
+    pub shard_stats: ShardStats,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -728,7 +762,7 @@ mod tests {
     }
 
     #[test]
-    fn test_shard_table_update_shards() {
+    fn test_shard_table_apply_local_shards_updates() {
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
@@ -798,7 +832,7 @@ mod tests {
                 ingestion_rate: RateMibPerSec(5),
             },
         ]);
-        let shard_stats = shard_table.update_shards(&source_uid, &shard_infos);
+        let shard_stats = shard_table.apply_local_shards_update(&source_uid, &shard_infos);
         assert_eq!(shard_stats.num_open_shards, 2);
         assert_eq!(shard_stats.avg_ingestion_rate, 1.5);
 

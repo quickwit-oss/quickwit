@@ -46,7 +46,7 @@ use ulid::Ulid;
 
 use crate::ingest::wait_handle::WaitHandle;
 use crate::metrics::CONTROL_PLANE_METRICS;
-use crate::model::{ControlPlaneModel, ScalingMode, ShardEntry, ShardStats};
+use crate::model::{ApplyLocalShardsUpdateTodo, ControlPlaneModel, ScalingMode, ShardEntry};
 
 const MAX_SHARD_INGESTION_THROUGHPUT_MIB_PER_SEC: f32 = 5.;
 
@@ -296,7 +296,7 @@ impl IngestController {
         model: &mut ControlPlaneModel,
         progress: &Progress,
     ) {
-        let shard_stats = model.update_shards(
+        let shard_stats = model.apply_local_shards_update(
             &local_shards_update.source_uid,
             &local_shards_update.shard_infos,
         );
@@ -505,7 +505,7 @@ impl IngestController {
     async fn try_scale_up_shards(
         &mut self,
         source_uid: SourceUid,
-        shard_stats: ShardStats,
+        shard_stats: ApplyLocalShardsUpdateTodo,
         model: &mut ControlPlaneModel,
         progress: &Progress,
     ) {
@@ -587,7 +587,7 @@ impl IngestController {
     async fn try_scale_down_shards(
         &self,
         source_uid: SourceUid,
-        shard_stats: ShardStats,
+        shard_stats: ApplyLocalShardsUpdateTodo,
         model: &mut ControlPlaneModel,
         progress: &Progress,
     ) {
@@ -1419,7 +1419,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
         };
-        let shard_stats = ShardStats {
+        let shard_stats = ApplyLocalShardsUpdateTodo {
             num_open_shards: 2,
             ..Default::default()
         };
@@ -1510,7 +1510,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
         };
-        let shard_stats = ShardStats {
+        let shard_stats = ApplyLocalShardsUpdateTodo {
             num_open_shards: 2,
             ..Default::default()
         };
@@ -1693,7 +1693,7 @@ mod tests {
                 ingestion_rate: quickwit_ingest::RateMibPerSec(6),
             },
         ]);
-        model.update_shards(&source_uid, &shard_infos);
+        model.apply_local_shards_update(&source_uid, &shard_infos);
 
         let (leader_id, shard_id) = find_scale_down_candidate(&source_uid, &model).unwrap();
         assert_eq!(leader_id, "test-ingester-0");

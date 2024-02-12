@@ -308,10 +308,11 @@ fn make_key(source_uid: &SourceUid) -> String {
 fn parse_key(key: &str) -> Option<SourceUid> {
     let (index_uid_str, source_id_str) = key.rsplit_once(':')?;
 
-    Some(SourceUid {
+    let source_uid = SourceUid {
         index_uid: index_uid_str.parse().ok()?,
         source_id: source_id_str.to_string(),
-    })
+    };
+    Some(source_uid)
 }
 
 #[derive(Debug, Clone)]
