@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt::{self, Write};
-use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -84,31 +83,40 @@ impl fmt::Debug for PostgresqlMetastore {
 }
 
 impl PostgresqlMetastore {
-    /// Creates a meta store given a database URI.
+    /// Creates a metastore given a database URI.
     pub async fn new(
         postgres_metastore_config: &PostgresMetastoreConfig,
         connection_uri: &Uri,
     ) -> MetastoreResult<Self> {
-        let acquire_timeout = if cfg!(any(test, feature = "testsuite")) {
-            Duration::from_secs(20)
-        } else {
-            Duration::from_secs(2)
-        };
+        let min_connections = postgres_metastore_config.min_connections;
+        let max_connections = postgres_metastore_config.max_connections.get();
+        let acquire_timeout = postgres_metastore_config
+            .acquire_connection_timeout()
+            .expect("PostgreSQL metastore config should have been validated");
+        let idle_timeout_opt = postgres_metastore_config
+            .idle_connection_timeout_opt()
+            .expect("PostgreSQL metastore config should have been validated");
+        let max_lifetime_opt = postgres_metastore_config
+            .max_connection_lifetime_opt()
+            .expect("PostgreSQL metastore config should have been validated");
+
         let connection_pool = establish_connection(
             connection_uri,
-            1,
-            postgres_metastore_config.max_num_connections.get(),
+            min_connections,
+            max_connections,
             acquire_timeout,
-            Some(Duration::from_secs(1)),
-            None,
+            idle_timeout_opt,
+            max_lifetime_opt,
         )
         .await?;
+
         run_migrations(&connection_pool).await?;
 
-        Ok(PostgresqlMetastore {
+        let metastore = PostgresqlMetastore {
             uri: connection_uri.clone(),
             connection_pool,
-        })
+        };
+        Ok(metastore)
     }
 }
 

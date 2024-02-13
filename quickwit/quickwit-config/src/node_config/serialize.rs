@@ -560,7 +560,24 @@ mod tests {
         assert!(s3_storage_config.disable_multipart_upload);
 
         let postgres_config = config.metastore_configs.find_postgres().unwrap();
-        assert_eq!(postgres_config.max_num_connections.get(), 12);
+        assert_eq!(postgres_config.min_connections, 1);
+        assert_eq!(postgres_config.max_connections.get(), 12);
+        assert_eq!(
+            postgres_config.acquire_connection_timeout().unwrap(),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            postgres_config.acquire_connection_timeout().unwrap(),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            postgres_config.idle_connection_timeout_opt().unwrap(),
+            Some(Duration::from_secs(1800))
+        );
+        assert_eq!(
+            postgres_config.max_connection_lifetime_opt().unwrap(),
+            Some(Duration::from_secs(3600))
+        );
 
         assert_eq!(
             config.indexer_config,
