@@ -106,7 +106,11 @@ version: 0.7
 #
 # metastore:
 #   postgres:
-#     max_num_connections: 20
+#     min_connections: 0
+#     max_connections: 10
+#     acquire_connection_timeout: 10s
+#     idle_connection_timeout: 10min
+#     max_connection_lifetime: 30min
 #
 # -------------------------------- Indexer settings --------------------------------
 
