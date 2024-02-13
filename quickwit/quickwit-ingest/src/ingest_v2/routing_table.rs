@@ -370,7 +370,6 @@ impl RoutingTable {
                 index_uid: entry.index_uid.clone().into(),
                 source_id: entry.source_id.clone(),
                 shard_ids: closed_shard_ids,
-                shard_positions: Vec::new(),
             });
         }
         result

@@ -36,7 +36,6 @@ use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::Pool;
 use quickwit_common::{rate_limited_warn, ServiceStream};
-use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, DecommissionRequest,
@@ -81,7 +80,6 @@ pub(super) const PERSIST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature =
 #[derive(Clone)]
 pub struct Ingester {
     self_node_id: NodeId,
-    control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
     state: IngesterState,
     disk_capacity: ByteSize,
@@ -101,7 +99,6 @@ impl fmt::Debug for Ingester {
 impl Ingester {
     pub async fn try_new(
         cluster: Cluster,
-        control_plane: ControlPlaneServiceClient,
         ingester_pool: Pool<NodeId, IngesterServiceClient>,
         wal_dir_path: &Path,
         disk_capacity: ByteSize,
@@ -110,10 +107,9 @@ impl Ingester {
         replication_factor: usize,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();
-        let state = IngesterState::load(wal_dir_path, control_plane.clone(), rate_limiter_settings);
+        let state = IngesterState::load(wal_dir_path, rate_limiter_settings);
         let ingester = Self {
             self_node_id,
-            control_plane,
             ingester_pool,
             state: state.clone(),
             disk_capacity,
@@ -1100,7 +1096,6 @@ mod tests {
     use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
     use quickwit_common::tower::ConstantRate;
     use quickwit_config::service::QuickwitService;
-    use quickwit_proto::control_plane::MockControlPlaneService;
     use quickwit_proto::ingest::ingester::{
         IngesterServiceGrpcServer, IngesterServiceGrpcServerAdapter, PersistSubrequest,
         TruncateShardsSubrequest,
@@ -1121,7 +1116,6 @@ mod tests {
 
     pub(super) struct IngesterForTest {
         node_id: NodeId,
-        control_plane: ControlPlaneServiceClient,
         ingester_pool: IngesterPool,
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
@@ -1133,7 +1127,6 @@ mod tests {
         fn default() -> Self {
             Self {
                 node_id: "test-ingester".into(),
-                control_plane: ControlPlaneServiceClient::from(MockControlPlaneService::new()),
                 ingester_pool: IngesterPool::default(),
                 disk_capacity: ByteSize::mb(256),
                 memory_capacity: ByteSize::mb(1),
@@ -1146,11 +1139,6 @@ mod tests {
     impl IngesterForTest {
         pub fn with_node_id(mut self, node_id: &str) -> Self {
             self.node_id = node_id.into();
-            self
-        }
-
-        pub fn with_control_plane(mut self, control_plane: ControlPlaneServiceClient) -> Self {
-            self.control_plane = control_plane;
             self
         }
 
@@ -1201,7 +1189,6 @@ mod tests {
 
             let ingester = Ingester::try_new(
                 cluster.clone(),
-                self.control_plane.clone(),
                 self.ingester_pool.clone(),
                 wal_dir_path,
                 self.disk_capacity,
@@ -1224,7 +1211,6 @@ mod tests {
                 _transport: transport,
                 node_id: self.node_id,
                 cluster,
-                control_plane: self.control_plane,
                 ingester_pool: self.ingester_pool,
             };
             (ingester_env, ingester)
@@ -1236,7 +1222,6 @@ mod tests {
         _transport: ChannelTransport,
         node_id: NodeId,
         cluster: Cluster,
-        control_plane: ControlPlaneServiceClient,
         ingester_pool: IngesterPool,
     }
 
@@ -1306,11 +1291,7 @@ mod tests {
 
         ingester
             .state
-            .init(
-                ingester_ctx.tempdir.path(),
-                ingester_ctx.control_plane.clone(),
-                RateLimiterSettings::default(),
-            )
+            .init(ingester_ctx.tempdir.path(), RateLimiterSettings::default())
             .await;
 
         let state_guard = ingester.state.lock_fully().await.unwrap();
@@ -2586,7 +2567,6 @@ mod tests {
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
                 shard_ids: vec![ShardId::from(1), ShardId::from(1337)],
-                shard_positions: Vec::new(),
             }],
         };
         ingester

@@ -617,7 +617,6 @@ mod tests {
                 index_uid: Some(IndexUid::for_test("test-index-0", 0)),
                 source_id: "test-source".to_string(),
                 shard_ids: vec![ShardId::from(1)],
-                shard_positions: Vec::new(),
             }
         );
         assert_eq!(

@@ -17,9 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
 use std::fmt;
-use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::{Arc, Weak};
@@ -29,14 +27,11 @@ use fnv::FnvHashMap;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use mrecordlog::MultiRecordLog;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
-use quickwit_proto::control_plane::{
-    ControlPlaneService, ControlPlaneServiceClient, InspectShardsRequest, InspectShardsResponse,
-};
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardIds, ShardState};
-use quickwit_proto::types::{split_queue_id, Position, QueueId};
+use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
+use quickwit_proto::types::{Position, QueueId};
 use tokio::sync::{watch, Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use super::models::IngesterShard;
 use super::rate_meter::RateMeter;
@@ -102,19 +97,13 @@ impl IngesterState {
         }
     }
 
-    pub fn load(
-        wal_dir_path: &Path,
-        control_plane: ControlPlaneServiceClient,
-        rate_limiter_settings: RateLimiterSettings,
-    ) -> Self {
+    pub fn load(wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings) -> Self {
         let state = Self::new();
         let state_clone = state.clone();
         let wal_dir_path = wal_dir_path.to_path_buf();
 
         let init_future = async move {
-            state_clone
-                .init(&wal_dir_path, control_plane, rate_limiter_settings)
-                .await;
+            state_clone.init(&wal_dir_path, rate_limiter_settings).await;
         };
         tokio::spawn(init_future);
 
@@ -123,15 +112,8 @@ impl IngesterState {
 
     #[cfg(test)]
     pub async fn for_test() -> (tempfile::TempDir, Self) {
-        use quickwit_proto::control_plane::MockControlPlaneService;
-
         let temp_dir = tempfile::tempdir().unwrap();
-        let control_plane = ControlPlaneServiceClient::from(MockControlPlaneService::new());
-        let mut state = IngesterState::load(
-            temp_dir.path(),
-            control_plane,
-            RateLimiterSettings::default(),
-        );
+        let mut state = IngesterState::load(temp_dir.path(), RateLimiterSettings::default());
 
         state
             .status_rx
@@ -145,12 +127,7 @@ impl IngesterState {
     /// Initializes the internal state of the ingester. It loads the local WAL, then lists all its
     /// queues. Empty queues are deleted, while non-empty queues are recovered. However, the
     /// corresponding shards are closed and become read-only.
-    pub async fn init(
-        &self,
-        wal_dir_path: &Path,
-        mut control_plane: ControlPlaneServiceClient,
-        rate_limiter_settings: RateLimiterSettings,
-    ) {
+    pub async fn init(&self, wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings) {
         let mut inner_guard = self.inner.lock().await;
         let mut mrecordlog_guard = self.mrecordlog.write().await;
 
@@ -231,19 +208,6 @@ impl IngesterState {
         }
         mrecordlog_guard.replace(mrecordlog);
         inner_guard.set_status(IngesterStatus::Ready);
-
-        let mrecordlog_guard = RwLockWriteGuard::map(mrecordlog_guard, |mrecordlog_opt| {
-            mrecordlog_opt
-                .as_mut()
-                .expect("mrecordlog should be initialized")
-        });
-        let mut full_lock = FullyLockedIngesterState {
-            inner: inner_guard,
-            mrecordlog: mrecordlog_guard,
-        };
-        full_lock
-            .inspect_then_repair_shards(&mut control_plane)
-            .await;
     }
 
     pub async fn lock_partially(&self) -> IngestV2Result<PartiallyLockedIngesterState<'_>> {
@@ -413,63 +377,6 @@ impl FullyLockedIngesterState<'_> {
             }
         };
     }
-
-    pub async fn inspect_then_repair_shards(
-        &mut self,
-        control_plane: &mut ControlPlaneServiceClient,
-    ) {
-        match self.inspect_shards(control_plane).await {
-            Ok(inspect_shards_response) => {
-                self.repair_shards(inspect_shards_response).await;
-            }
-            Err(error) => {
-                error!("failed to inspect shards: {error}");
-            }
-        }
-    }
-
-    async fn inspect_shards(
-        &mut self,
-        control_plane: &mut ControlPlaneServiceClient,
-    ) -> anyhow::Result<InspectShardsResponse> {
-        let mut per_source_shard_ids = HashMap::new();
-
-        for queue_id in self.shards.keys() {
-            let Some((index_uid, source_id, shard_id)) = split_queue_id(&queue_id) else {
-                warn!("failed to parse queue ID `{queue_id}`");
-                continue;
-            };
-            per_source_shard_ids
-                .entry((index_uid, source_id))
-                .or_insert_with(Vec::new)
-                .push(shard_id);
-        }
-        let shard_ids = per_source_shard_ids
-            .into_iter()
-            .map(|((index_uid, source_id), shard_ids)| ShardIds {
-                index_uid: Some(index_uid),
-                source_id,
-                shard_ids,
-                shard_positions: Vec::new(),
-            })
-            .collect();
-        let inspect_shards_request = InspectShardsRequest { shard_ids };
-        let inspect_shards_response = control_plane.inspect_shards(inspect_shards_request).await?;
-        Ok(inspect_shards_response)
-    }
-
-    async fn repair_shards(&mut self, inspect_shards_response: InspectShardsResponse) {
-        for shard_ids in inspect_shards_response.shards_to_delete {
-            for queue_id in shard_ids.queue_ids() {
-                self.delete_shard(&queue_id).await;
-            }
-        }
-        for shard_ids in inspect_shards_response.shards_to_truncate {
-            for (queue_id, position) in shard_ids.shard_positions() {
-                self.truncate_shard(&queue_id, &position).await;
-            }
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -494,7 +401,6 @@ impl WeakIngesterState {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::control_plane::MockControlPlaneService;
     use tokio::time::timeout;
 
     use super::*;
@@ -532,14 +438,8 @@ mod tests {
         let mut state = IngesterState::new();
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let control_plane = ControlPlaneServiceClient::from(MockControlPlaneService::new());
-
         state
-            .init(
-                temp_dir.path(),
-                control_plane,
-                RateLimiterSettings::default(),
-            )
+            .init(temp_dir.path(), RateLimiterSettings::default())
             .await;
 
         timeout(

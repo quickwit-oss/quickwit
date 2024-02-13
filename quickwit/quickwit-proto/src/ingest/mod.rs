@@ -23,7 +23,7 @@ use self::ingester::{PersistFailureReason, ReplicateFailureReason};
 use self::router::IngestFailureReason;
 use super::types::NodeId;
 use super::{ServiceError, ServiceErrorCode};
-use crate::control_plane::{ControlPlaneError, InspectShardsResponse};
+use crate::control_plane::ControlPlaneError;
 use crate::types::{queue_id, Position, QueueId, ShardId};
 
 pub mod ingester;
@@ -265,18 +265,6 @@ impl ShardIds {
         self.shard_ids
             .iter()
             .map(|shard_id| queue_id(self.index_uid(), &self.source_id, shard_id))
-    }
-
-    pub fn shard_positions(&self) -> impl Iterator<Item = (QueueId, Position)> + '_ {
-        self.shard_ids
-            .iter()
-            .zip(self.shard_positions.iter())
-            .map(|(shard_id, position)| {
-                (
-                    queue_id(self.index_uid(), &self.source_id, &shard_id),
-                    position.clone(),
-                )
-            })
     }
 }
 
