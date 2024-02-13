@@ -371,13 +371,19 @@ async fn es_compat_index_search(
     search_body: SearchBody,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticsearchResponse, ElasticsearchError> {
+    let _source_excludes = search_params._source_excludes.clone();
+    let _source_includes = search_params._source_includes.clone();
     let start_instant = Instant::now();
     let (search_request, append_shard_doc) =
         build_request_for_es_api(index_id_patterns, search_params, search_body)?;
     let search_response: SearchResponse = search_service.root_search(search_request).await?;
     let elapsed = start_instant.elapsed();
-    let mut search_response_rest: ElasticsearchResponse =
-        convert_to_es_search_response(search_response, append_shard_doc);
+    let mut search_response_rest: ElasticsearchResponse = convert_to_es_search_response(
+        search_response,
+        append_shard_doc,
+        _source_excludes,
+        _source_includes,
+    );
     search_response_rest.took = elapsed.as_millis() as u32;
     Ok(search_response_rest)
 }
@@ -481,9 +487,22 @@ async fn es_compat_index_field_capabilities(
     Ok(search_response_rest)
 }
 
-fn convert_hit(hit: quickwit_proto::search::Hit, append_shard_doc: bool) -> ElasticHit {
-    let fields: BTreeMap<String, serde_json::Value> =
+fn convert_hit(
+    hit: quickwit_proto::search::Hit,
+    append_shard_doc: bool,
+    _source_excludes: &Option<Vec<String>>,
+    _source_includes: &Option<Vec<String>>,
+) -> ElasticHit {
+    let mut fields: BTreeMap<String, serde_json::Value> =
         serde_json::from_str(&hit.json).unwrap_or_default();
+    if let Some(_source_includes) = _source_includes {
+        fields.retain(|key, _| _source_includes.contains(key));
+    }
+    if let Some(_source_excludes) = _source_excludes {
+        for exclude in _source_excludes {
+            fields.remove(exclude);
+        }
+    }
     let mut sort = Vec::new();
     if let Some(partial_hit) = hit.partial_hit {
         if let Some(sort_value) = partial_hit.sort_value {
@@ -498,6 +517,9 @@ fn convert_hit(hit: quickwit_proto::search::Hit, append_shard_doc: bool) -> Elas
             ));
         }
     }
+    let source =
+        Source::from_string(serde_json::to_string(&fields).unwrap_or_else(|_| "{}".to_string()))
+            .unwrap_or_else(|_| Source::from_string("{}".to_string()).unwrap());
 
     ElasticHit {
         fields,
@@ -506,8 +528,7 @@ fn convert_hit(hit: quickwit_proto::search::Hit, append_shard_doc: bool) -> Elas
         id: "".to_string(),
         score: None,
         nested: None,
-        source: Source::from_string(hit.json)
-            .unwrap_or_else(|_| Source::from_string("{}".to_string()).unwrap()),
+        source,
         highlight: Default::default(),
         inner_hits: Default::default(),
         matched_queries: Vec::default(),
@@ -578,7 +599,7 @@ async fn es_compat_index_multi_search(
                     search_service.clone().root_search(search_request).await?;
                 let elapsed = start_instant.elapsed();
                 let mut search_response_rest: ElasticsearchResponse =
-                    convert_to_es_search_response(search_response, append_shard_doc);
+                    convert_to_es_search_response(search_response, append_shard_doc, None, None);
                 search_response_rest.took = elapsed.as_millis() as u32;
                 Ok::<_, ElasticsearchError>(search_response_rest)
             }
@@ -622,7 +643,7 @@ async fn es_scroll(
     let search_response: SearchResponse = search_service.scroll(scroll_request).await?;
     // TODO append_shard_doc depends on the initial request, but we don't have access to it
     let mut search_response_rest: ElasticsearchResponse =
-        convert_to_es_search_response(search_response, false);
+        convert_to_es_search_response(search_response, false, None, None);
     search_response_rest.took = start_instant.elapsed().as_millis() as u32;
     Ok(search_response_rest)
 }
@@ -685,11 +706,13 @@ fn convert_to_es_stats_response(
 fn convert_to_es_search_response(
     resp: SearchResponse,
     append_shard_doc: bool,
+    _source_excludes: Option<Vec<String>>,
+    _source_includes: Option<Vec<String>>,
 ) -> ElasticsearchResponse {
     let hits: Vec<ElasticHit> = resp
         .hits
         .into_iter()
-        .map(|hit| convert_hit(hit, append_shard_doc))
+        .map(|hit| convert_hit(hit, append_shard_doc, &_source_excludes, &_source_includes))
         .collect();
     let aggregations: Option<serde_json::Value> = if let Some(aggregation_json) = resp.aggregation {
         serde_json::from_str(&aggregation_json).ok()
