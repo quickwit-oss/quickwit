@@ -94,4 +94,6 @@ message ShardIds {
   quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   repeated ShardId shard_ids = 3;
+  // Optional shard positions.
+  repeated Position shard_positions = 4;
 }

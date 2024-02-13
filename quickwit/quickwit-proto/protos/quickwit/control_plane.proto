@@ -62,6 +62,9 @@ service ControlPlaneService {
   // for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
   rpc GetOrCreateOpenShards(GetOrCreateOpenShardsRequest) returns (GetOrCreateOpenShardsResponse);
 
+  /// Asks the control plane whether the shards listed in the request should be deleted or truncated.
+  rpc InspectShards(InspectShardsRequest) returns (InspectShardsResponse);
+
   // Return some innerstate of the control plane meant to assist debugging.
   rpc GetDebugState(GetDebugStateRequest) returns (GetDebugStateResponse);
 }
@@ -125,4 +128,13 @@ message ShardTableEntry {
 message PhysicalIndexingPlanEntry {
   string node_id = 1;
   repeated quickwit.indexing.IndexingTask tasks = 2;
+}
+
+message InspectShardsRequest {
+  repeated quickwit.ingest.ShardIds shard_ids = 1;
+}
+
+message InspectShardsResponse {
+  repeated quickwit.ingest.ShardIds shards_to_delete = 1;
+  repeated quickwit.ingest.ShardIds shards_to_truncate = 2;
 }

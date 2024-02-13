@@ -62,6 +62,9 @@ pub struct ShardIds {
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "3")]
     pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
+    /// Optional shard positions.
+    #[prost(message, repeated, tag = "4")]
+    pub shard_positions: ::prost::alloc::vec::Vec<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
