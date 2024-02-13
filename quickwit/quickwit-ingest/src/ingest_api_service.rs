@@ -241,7 +241,7 @@ impl IngestApiService {
             .await?;
 
         let memory_usage = self.queues.memory_usage();
-        let new_capacity = self.memory_limit - memory_usage;
+        let new_capacity = self.memory_limit - memory_usage.0;
         self.memory_capacity.reset_capacity(new_capacity);
 
         Ok(())

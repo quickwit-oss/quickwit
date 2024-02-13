@@ -329,9 +329,9 @@ pub async fn serve_quickwit(
         if let Some(metastore_server) = &metastore_server_opt {
             metastore_server.clone()
         } else {
-            // Wait for a metastore service to be available for at most 10 seconds.
+            // Wait for a metastore service to be available for at most 60 seconds.
             if cluster
-                .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(10))
+                .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(60))
                 .await
                 .is_err()
             {
