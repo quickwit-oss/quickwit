@@ -20,6 +20,7 @@
 mod debug;
 mod log_level;
 
+mod mprof;
 #[cfg_attr(not(feature = "pprof"), path = "pprof_disabled.rs")]
 mod pprof;
 
@@ -28,6 +29,7 @@ mod server;
 
 use debug::debug_handler;
 use log_level::log_level_handler;
+use mprof::mprof_handler;
 use pprof::pprof_handlers;
 use quickwit_cluster::Cluster;
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
@@ -52,6 +54,7 @@ pub(crate) fn developer_api_routes(
             debug_handler(cluster.clone())
                 .or(log_level_handler(env_filter_reload_fn.clone()))
                 .or(pprof_handlers())
+                .or(mprof_handler())
                 .or(rebuild_plan_handler(control_plane_client)),
         )
         .recover(recover_fn)

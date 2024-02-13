@@ -70,6 +70,7 @@ COPY --from=bin-builder /quickwit/config/quickwit.yaml /quickwit/config/quickwit
 ENV QW_CONFIG=/quickwit/config/quickwit.yaml
 ENV QW_DATA_DIR=/quickwit/qwdata
 ENV QW_LISTEN_ADDRESS=0.0.0.0
+ENV MALLOC_CONF=prof:true
 
 RUN quickwit --version
 
