@@ -34,7 +34,9 @@ pub fn node_info_handler(
     runtime_info: &'static RuntimeInfo,
     config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    node_version_handler(build_info, runtime_info).or(node_config_handler(config))
+    node_version_handler(build_info, runtime_info)
+        .or(node_config_handler(config))
+        .or(memory_map_handler())
 }
 
 #[utoipa::path(get, tag = "Node Info", path = "/version")]
@@ -74,6 +76,19 @@ async fn get_config(config: Arc<NodeConfig>) -> impl warp::Reply {
     let mut config = (*config).clone();
     config.redact();
     warp::reply::json(&config)
+}
+
+#[utoipa::path(get, tag = "Node Info", path = "/memory-map")]
+fn memory_map_handler() -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path("memory-map")
+        .and(warp::path::end())
+        .then(get_memory_map)
+}
+
+async fn get_memory_map() -> impl warp::Reply {
+    common_mem_prof::dump_profile()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

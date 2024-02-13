@@ -15,6 +15,7 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
+common-mem-prof = { workspace = true }
 elasticsearch-dsl = "0.4.15"
 flate2 = { workspace = true }
 futures = { workspace = true }
