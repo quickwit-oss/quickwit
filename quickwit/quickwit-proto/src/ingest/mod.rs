@@ -24,7 +24,7 @@ use self::router::IngestFailureReason;
 use super::types::NodeId;
 use super::{ServiceError, ServiceErrorCode};
 use crate::control_plane::ControlPlaneError;
-use crate::types::{queue_id, Position, QueueId, ShardId};
+use crate::types::{queue_id, IndexUid, Position, QueueId, ShardId};
 
 pub mod ingester;
 pub mod router;
@@ -265,6 +265,35 @@ impl ShardIds {
         self.shard_ids
             .iter()
             .map(|shard_id| queue_id(self.index_uid(), &self.source_id, shard_id))
+    }
+}
+
+impl ShardIdPositions {
+    pub fn index_uid(&self) -> &IndexUid {
+        self.index_uid
+            .as_ref()
+            .expect("`index_uid` should be a required field")
+    }
+
+    pub fn queue_id_positions(&self) -> impl Iterator<Item = (QueueId, &Position)> + '_ {
+        self.shard_positions.iter().map(|shard_position| {
+            let queue_id = queue_id(self.index_uid(), &self.source_id, shard_position.shard_id());
+            (queue_id, shard_position.publish_position_inclusive())
+        })
+    }
+}
+
+impl ShardIdPosition {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
+    pub fn publish_position_inclusive(&self) -> &Position {
+        self.publish_position_inclusive
+            .as_ref()
+            .expect("`publish_position_inclusive` should be a required field")
     }
 }
 

@@ -27,6 +27,7 @@ pub(super) struct IngestV2Metrics {
     pub grpc_requests_total: IntCounterVec<4>,
     pub grpc_requests_in_flight: IntGaugeVec<3>,
     pub grpc_request_duration_secs: HistogramVec<4>,
+    pub reset_shards_operations_total: IntCounterVec<1>,
     pub shards: IntGaugeVec<2>,
     pub wal_acquire_lock_requests_in_flight: IntGaugeVec<2>,
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
@@ -55,6 +56,12 @@ impl Default for IngestV2Metrics {
                 "quickwit_ingest",
                 ["component", "kind", "operation", "status"],
             ),
+            reset_shards_operations_total: new_counter_vec(
+                "reset_shards_operations_total",
+                "Total number of reset shards operations performed.",
+                "quickwit_ingest",
+                ["status"],
+            ),
             shards: new_gauge_vec(
                 "shards",
                 "Number of shards.",
@@ -75,12 +82,12 @@ impl Default for IngestV2Metrics {
             ),
             wal_disk_usage_bytes: new_gauge(
                 "wal_disk_usage_bytes",
-                "Disk usage of the write-ahead log in bytes.",
+                "WAL disk usage in bytes.",
                 "quickwit_ingest",
             ),
             wal_memory_usage_bytes: new_gauge(
                 "wal_memory_usage_bytes",
-                "Memory usage of the write-ahead log in bytes.",
+                "WAL memory usage in bytes.",
                 "quickwit_ingest",
             ),
         }

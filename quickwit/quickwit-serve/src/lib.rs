@@ -677,7 +677,7 @@ async fn setup_ingest_v2(
         .get();
     let ingest_router = IngestRouter::new(
         self_node_id.clone(),
-        control_plane,
+        control_plane.clone(),
         ingester_pool.clone(),
         replication_factor,
     );
@@ -699,6 +699,7 @@ async fn setup_ingest_v2(
         fs::create_dir_all(&wal_dir_path)?;
         let ingester = Ingester::try_new(
             cluster.clone(),
+            control_plane,
             ingester_pool.clone(),
             &wal_dir_path,
             node_config.ingest_api_config.max_queue_disk_usage,

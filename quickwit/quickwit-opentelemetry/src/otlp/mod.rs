@@ -46,6 +46,7 @@ pub use traces::{
     OTEL_TRACES_INDEX_ID, OTEL_TRACES_INDEX_ID_PATTERN,
 };
 
+#[derive(Debug, Clone, Copy)]
 pub enum OtelSignal {
     Logs,
     Traces,
@@ -188,7 +189,7 @@ pub fn extract_otel_traces_index_id_patterns_from_metadata(
 
 pub(crate) fn extract_otel_index_id_from_metadata(
     metadata: &tonic::metadata::MetadataMap,
-    otel_signal: &OtelSignal,
+    otel_signal: OtelSignal,
 ) -> Result<String, Status> {
     let index_id = metadata
         .get(otel_signal.header_name())
@@ -387,30 +388,30 @@ mod tests {
     fn test_extract_otel_index_id_from_metadata() {
         let mut metadata = tonic::metadata::MetadataMap::new();
         metadata.insert("qw-otel-logs-index", "foo".parse().unwrap());
-        let index_id = extract_otel_index_id_from_metadata(&metadata, &OtelSignal::Logs).unwrap();
+        let index_id = extract_otel_index_id_from_metadata(&metadata, OtelSignal::Logs).unwrap();
         assert_eq!(index_id, "foo");
 
         // default index ID
         let mut metadata = tonic::metadata::MetadataMap::new();
         metadata.insert("wrong-header", "foo".parse().unwrap());
-        let index_id = extract_otel_index_id_from_metadata(&metadata, &OtelSignal::Logs).unwrap();
+        let index_id = extract_otel_index_id_from_metadata(&metadata, OtelSignal::Logs).unwrap();
         assert_eq!(index_id, OTEL_LOGS_INDEX_ID);
 
         let mut metadata = tonic::metadata::MetadataMap::new();
         metadata.insert("qw-otel-traces-index", "foo".parse().unwrap());
-        let index_id = extract_otel_index_id_from_metadata(&metadata, &OtelSignal::Traces).unwrap();
+        let index_id = extract_otel_index_id_from_metadata(&metadata, OtelSignal::Traces).unwrap();
         assert_eq!(index_id, "foo");
 
         // default index ID
         let mut metadata = tonic::metadata::MetadataMap::new();
         metadata.insert("wrong-header", "foo".parse().unwrap());
-        let index_id = extract_otel_index_id_from_metadata(&metadata, &OtelSignal::Traces).unwrap();
+        let index_id = extract_otel_index_id_from_metadata(&metadata, OtelSignal::Traces).unwrap();
         assert_eq!(index_id, OTEL_TRACES_INDEX_ID);
 
         // invalid index ID
         let mut metadata = tonic::metadata::MetadataMap::new();
         metadata.insert("qw-otel-traces-index", "foo bar".parse().unwrap());
-        let extract_res = extract_otel_index_id_from_metadata(&metadata, &OtelSignal::Traces);
+        let extract_res = extract_otel_index_id_from_metadata(&metadata, OtelSignal::Traces);
         assert!(extract_res.is_err());
     }
 }
