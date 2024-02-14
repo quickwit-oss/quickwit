@@ -280,11 +280,11 @@ impl ControlPlaneModel {
     }
 
     /// Lists the shards of a given source. Returns `None` if the source does not exist.
-    pub fn list_shards_for_source(
+    pub fn get_shards_for_source(
         &self,
         source_uid: &SourceUid,
-    ) -> Option<impl Iterator<Item = &ShardEntry>> {
-        self.shard_table.list_shards(source_uid)
+    ) -> Option<&FnvHashMap<ShardId, ShardEntry>> {
+        self.shard_table.get_shards(source_uid)
     }
 
     /// Inserts the shards that have just been opened by calling `open_shards` on the metastore.
@@ -447,8 +447,9 @@ mod tests {
         };
         let shards: Vec<&ShardEntry> = model
             .shard_table
-            .list_shards(&source_uid_0)
+            .get_shards(&source_uid_0)
             .unwrap()
+            .values()
             .collect();
         assert_eq!(shards.len(), 1);
         assert_eq!(shards[0].shard_id(), ShardId::from(42));
@@ -459,8 +460,9 @@ mod tests {
         };
         let shards: Vec<&ShardEntry> = model
             .shard_table
-            .list_shards(&source_uid_1)
+            .get_shards(&source_uid_1)
             .unwrap()
+            .values()
             .collect();
         assert_eq!(shards.len(), 0);
     }
@@ -502,10 +504,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
-        assert_eq!(
-            model.shard_table.list_shards(&source_uid).unwrap().count(),
-            0
-        );
+        assert_eq!(model.shard_table.get_shards(&source_uid).unwrap().len(), 0);
     }
 
     #[test]

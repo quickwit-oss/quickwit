@@ -202,3 +202,9 @@ impl TryFrom<String> for IndexUid {
         value.parse()
     }
 }
+
+impl PartialEq<(&'static str, u128)> for IndexUid {
+    fn eq(&self, (index_id, incarnation_id): &(&str, u128)) -> bool {
+        self.index_id == *index_id && self.incarnation_id == Ulid::from(*incarnation_id)
+    }
+}

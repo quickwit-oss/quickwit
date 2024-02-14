@@ -24,7 +24,6 @@ use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
-use fnv::FnvHashSet;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use quickwit_actors::{
@@ -38,9 +37,10 @@ use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_metastore::IndexMetadata;
 use quickwit_proto::control_plane::{
-    ControlPlaneError, ControlPlaneResult, GetDebugStateRequest, GetDebugStateResponse,
-    GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
-    PhysicalIndexingPlanEntry, ShardTableEntry,
+    AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
+    GetDebugStateRequest, GetDebugStateResponse, GetOrCreateOpenShardsRequest,
+    GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest, PhysicalIndexingPlanEntry,
+    ShardTableEntry,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
@@ -241,13 +241,13 @@ impl ControlPlane {
     async fn delete_shards(
         &mut self,
         source_uid: &SourceUid,
-        shards: &[ShardId],
+        shard_ids: &[ShardId],
         progress: &Progress,
     ) -> anyhow::Result<()> {
         let delete_shards_subrequest = DeleteShardsSubrequest {
             index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.clone(),
-            shard_ids: shards.to_vec(),
+            shard_ids: shard_ids.to_vec(),
         };
         let delete_shards_request = DeleteShardsRequest {
             subrequests: vec![delete_shards_subrequest],
@@ -263,7 +263,7 @@ impl ControlPlane {
             .protect_future(self.metastore.delete_shards(delete_shards_request))
             .await
             .context("failed to delete shards from metastore")?;
-        self.model.delete_shards(source_uid, shards);
+        self.model.delete_shards(source_uid, shard_ids);
         Ok(())
     }
 
@@ -334,20 +334,18 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
     ) -> Result<(), ActorExitStatus> {
         let Some(shard_entries) = self
             .model
-            .list_shards_for_source(&shard_positions_update.source_uid)
+            .get_shards_for_source(&shard_positions_update.source_uid)
         else {
             // The source no longer exists.
             return Ok(());
         };
-        let known_shard_ids: FnvHashSet<ShardId> = shard_entries
-            .map(|shard_entry| shard_entry.shard_id())
-            .cloned()
-            .collect();
         // let's identify the shard that have reached EOF but have not yet been removed.
         let shard_ids_to_close: Vec<ShardId> = shard_positions_update
             .updated_shard_positions
             .into_iter()
-            .filter(|(shard_id, position)| position.is_eof() && known_shard_ids.contains(shard_id))
+            .filter(|(shard_id, position)| {
+                position.is_eof() && shard_entries.contains_key(shard_id)
+            })
             .map(|(shard_id, _position)| shard_id)
             .collect();
         if shard_ids_to_close.is_empty() {
@@ -594,9 +592,10 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
             return convert_metastore_error(metastore_error);
         };
 
-        let ingester_needing_resync: BTreeSet<NodeId> =
-            if let Some(shards) = self.model.list_shards_for_source(&source_uid) {
-                shards
+        let ingesters_needing_resync: BTreeSet<NodeId> =
+            if let Some(shard_entries) = self.model.get_shards_for_source(&source_uid) {
+                shard_entries
+                    .values()
                     .flat_map(|shard_entry| shard_entry.ingesters())
                     .collect()
             } else {
@@ -604,7 +603,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
             };
 
         self.ingest_controller
-            .sync_with_ingesters(&ingester_needing_resync, &self.model);
+            .sync_with_ingesters(&ingesters_needing_resync, &self.model);
 
         self.model.delete_source(&source_uid);
 
@@ -645,6 +644,23 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
             }
         };
         self.rebuild_plan_debounced(ctx);
+        Ok(Ok(response))
+    }
+}
+
+// This is neither a proxied call nor a metastore callback.
+#[async_trait]
+impl Handler<AdviseResetShardsRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<AdviseResetShardsResponse>;
+
+    async fn handle(
+        &mut self,
+        request: AdviseResetShardsRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let response = self
+            .ingest_controller
+            .advise_reset_shards(request, &self.model);
         Ok(Ok(response))
     }
 }
