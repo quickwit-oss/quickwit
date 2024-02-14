@@ -1,27 +1,27 @@
 [package]
 name = "quickwit-actors"
-version = "0.7.1"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "MIT"
-description = "Actor framework used in quickwit"
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+description = "Actor framework powering Quickwit services"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
 once_cell = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sync_wrapper = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
 

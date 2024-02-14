@@ -1,13 +1,14 @@
 [package]
 name = "quickwit-indexing"
-version = "0.7.1"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
-description = "Quickwit indexing"
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+description = "Indexing service implementation"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 aws-config = { workspace = true, optional = true }
@@ -66,15 +67,31 @@ quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
 
 [features]
-gcp-pubsub = ["dep:google-cloud-pubsub", "dep:google-cloud-default", "dep:google-cloud-googleapis", "dep:google-cloud-auth", "dep:google-cloud-gax"]
+gcp-pubsub = [
+  "dep:google-cloud-auth",
+  "dep:google-cloud-default",
+  "dep:google-cloud-gax",
+  "dep:google-cloud-googleapis",
+  "dep:google-cloud-pubsub",
+]
 gcp-pubsub-emulator-tests = []
 kafka = ["rdkafka", "backoff"]
 kafka-broker-tests = []
-kinesis = ["aws-config", "aws-smithy-client", "aws-sdk-kinesis", "quickwit-aws/kinesis"]
+kinesis = [
+  "aws-config",
+  "aws-smithy-client",
+  "aws-sdk-kinesis",
+  "quickwit-aws/kinesis",
+]
 kinesis-localstack-tests = []
 pulsar = ["dep:pulsar"]
 pulsar-broker-tests = []
-vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored", "rdkafka/gssapi-vendored"]
+vendored-kafka = [
+  "kafka",
+  "libz-sys/static",
+  "openssl/vendored",
+  "rdkafka/gssapi-vendored",
+]
 vendored-kafka-macos = ["kafka", "libz-sys/static", "openssl/vendored"]
 testsuite = [
   "quickwit-actors/testsuite",
@@ -88,17 +105,17 @@ bytes = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 mockall = { workspace = true }
 proptest = { workspace = true }
+prost = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 tempfile = { workspace = true }
-prost = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
-quickwit-indexing = { workspace = true, features = ["testsuite"]}
+quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-ingest = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }

@@ -1,13 +1,14 @@
 [package]
 name = "quickwit-codegen"
-version = "0.7.1"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
-description = "Generate traits, adapters, and gRPC clients/servers from proto files"
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+description = "Generate traits, adapters, and gRPC clients/servers from proto files."
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }

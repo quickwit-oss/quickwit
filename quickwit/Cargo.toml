@@ -71,8 +71,14 @@ default-members = [
   "quickwit-telemetry",
 ]
 
-[profile.dev]
-debug = false
+[workspace.package]
+version = "0.7.1"
+edition = "2021"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
+repository = "https://github.com/quickwit-oss/quickwit"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+license = "AGPL-3.0-or-later"
 
 [workspace.dependencies]
 anyhow = "1"
@@ -289,35 +295,35 @@ azure_storage_blobs = { version = "0.13.0", default-features = false, features =
 opendal = { version = "0.44", default-features = false }
 reqsign = { version = "0.14", default-features = false }
 
-quickwit-actors = { version = "0.7.1", path = "./quickwit-actors" }
-quickwit-aws = { version = "0.7.1", path = "./quickwit-aws" }
-quickwit-cli = { version = "0.7.1", path = "./quickwit-cli" }
-quickwit-cluster = { version = "0.7.1", path = "./quickwit-cluster" }
-quickwit-codegen = { version = "0.7.1", path = "./quickwit-codegen" }
-quickwit-codegen-example = { version = "0.7.1", path = "./quickwit-codegen/example" }
-quickwit-common = { version = "0.7.1", path = "./quickwit-common" }
-quickwit-config = { version = "0.7.1", path = "./quickwit-config" }
-quickwit-control-plane = { version = "0.7.1", path = "./quickwit-control-plane" }
-quickwit-index-management = { version = "0.7.1", path = "./quickwit-index-management" }
-quickwit-datetime = { version = "0.7.1", path = "./quickwit-datetime" }
-quickwit-directories = { version = "0.7.1", path = "./quickwit-directories" }
-quickwit-doc-mapper = { version = "0.7.1", path = "./quickwit-doc-mapper" }
-quickwit-indexing = { version = "0.7.1", path = "./quickwit-indexing" }
-quickwit-ingest = { version = "0.7.1", path = "./quickwit-ingest" }
-quickwit-integration-tests = { version = "0.7.1", path = "./quickwit-integration-tests" }
-quickwit-jaeger = { version = "0.7.1", path = "./quickwit-jaeger" }
-quickwit-janitor = { version = "0.7.1", path = "./quickwit-janitor" }
-quickwit-macros = { version = "0.7.1", path = "./quickwit-macros" }
-quickwit-macros-impl = { version = "0.7.1", path = "./quickwit-macros/impl" }
-quickwit-metastore = { version = "0.7.1", path = "./quickwit-metastore" }
-quickwit-opentelemetry = { version = "0.7.1", path = "./quickwit-opentelemetry" }
-quickwit-proto = { version = "0.7.1", path = "./quickwit-proto" }
-quickwit-query = { version = "0.7.1", path = "./quickwit-query" }
-quickwit-rest-client = { version = "0.7.1", path = "./quickwit-rest-client" }
-quickwit-search = { version = "0.7.1", path = "./quickwit-search" }
-quickwit-serve = { version = "0.7.1", path = "./quickwit-serve" }
-quickwit-storage = { version = "0.7.1", path = "./quickwit-storage" }
-quickwit-telemetry = { version = "0.7.1", path = "./quickwit-telemetry" }
+quickwit-actors = { path = "quickwit-actors" }
+quickwit-aws = { path = "quickwit-aws" }
+quickwit-cli = { path = "quickwit-cli" }
+quickwit-cluster = { path = "quickwit-cluster" }
+quickwit-codegen = { path = "quickwit-codegen" }
+quickwit-codegen-example = { path = "quickwit-codegen/example" }
+quickwit-common = { path = "quickwit-common" }
+quickwit-config = { path = "quickwit-config" }
+quickwit-control-plane = { path = "quickwit-control-plane" }
+quickwit-index-management = { path = "quickwit-index-management" }
+quickwit-datetime = { path = "quickwit-datetime" }
+quickwit-directories = { path = "quickwit-directories" }
+quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
+quickwit-indexing = { path = "quickwit-indexing" }
+quickwit-ingest = { path = "quickwit-ingest" }
+quickwit-integration-tests = { path = "quickwit-integration-tests" }
+quickwit-jaeger = { path = "quickwit-jaeger" }
+quickwit-janitor = { path = "quickwit-janitor" }
+quickwit-macros = { path = "quickwit-macros" }
+quickwit-macros-impl = { path = "quickwit-macros/impl" }
+quickwit-metastore = { path = "quickwit-metastore" }
+quickwit-opentelemetry = { path = "quickwit-opentelemetry" }
+quickwit-proto = { path = "quickwit-proto" }
+quickwit-query = { path = "quickwit-query" }
+quickwit-rest-client = { path = "quickwit-rest-client" }
+quickwit-search = { path = "quickwit-search" }
+quickwit-serve = { path = "quickwit-serve" }
+quickwit-storage = { path = "quickwit-storage" }
+quickwit-telemetry = { path = "quickwit-telemetry" }
 
 tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "1223a87", default-features = false, features = [
   "lz4-compression",
@@ -342,3 +348,6 @@ sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921
 #tracing-log = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
 #tracing-opentelemetry = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
 #tracing-subscriber = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
+
+[profile.dev]
+debug = false
