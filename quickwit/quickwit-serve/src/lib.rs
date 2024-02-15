@@ -329,9 +329,9 @@ pub async fn serve_quickwit(
         if let Some(metastore_server) = &metastore_server_opt {
             metastore_server.clone()
         } else {
-            // Wait for a metastore service to be available for at most 10 seconds.
+            // Wait for a metastore service to be available for at most 60 seconds.
             if cluster
-                .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(10))
+                .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(60))
                 .await
                 .is_err()
             {
@@ -677,7 +677,7 @@ async fn setup_ingest_v2(
         .get();
     let ingest_router = IngestRouter::new(
         self_node_id.clone(),
-        control_plane,
+        control_plane.clone(),
         ingester_pool.clone(),
         replication_factor,
     );
@@ -699,6 +699,7 @@ async fn setup_ingest_v2(
         fs::create_dir_all(&wal_dir_path)?;
         let ingester = Ingester::try_new(
             cluster.clone(),
+            control_plane,
             ingester_pool.clone(),
             &wal_dir_path,
             node_config.ingest_api_config.max_queue_disk_usage,

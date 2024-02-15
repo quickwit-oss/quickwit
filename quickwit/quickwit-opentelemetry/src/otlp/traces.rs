@@ -834,8 +834,7 @@ impl TraceService for OtlpGrpcTracesService {
         &self,
         request: Request<ExportTraceServiceRequest>,
     ) -> Result<Response<ExportTraceServiceResponse>, Status> {
-        let index_id =
-            extract_otel_index_id_from_metadata(request.metadata(), &OtelSignal::Traces)?;
+        let index_id = extract_otel_index_id_from_metadata(request.metadata(), OtelSignal::Traces)?;
         let request = request.into_inner();
         self.clone()
             .export_instrumented(request, index_id)

@@ -142,9 +142,9 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                 // Note that we keep all shards, including Closed shards:
                 // A closed shards still needs to be indexed.
                 let shard_ids: Vec<ShardId> = model
-                    .list_shards_for_source(&source_uid)
+                    .get_shards_for_source(&source_uid)
                     .expect("source should exist")
-                    .map(|shard| shard.shard_id())
+                    .keys()
                     .cloned()
                     .collect();
                 if shard_ids.is_empty() {

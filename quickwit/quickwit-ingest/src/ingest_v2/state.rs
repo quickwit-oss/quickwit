@@ -27,6 +27,7 @@ use fnv::FnvHashMap;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use mrecordlog::MultiRecordLog;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
+use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
 use quickwit_proto::types::{Position, QueueId};
@@ -210,6 +211,13 @@ impl IngesterState {
         inner_guard.set_status(IngesterStatus::Ready);
     }
 
+    pub async fn wait_for_ready(&mut self) -> Result<(), watch::error::RecvError> {
+        self.status_rx
+            .wait_for(|status| *status == IngesterStatus::Ready)
+            .await?;
+        Ok(())
+    }
+
     pub async fn lock_partially(&self) -> IngestV2Result<PartiallyLockedIngesterState<'_>> {
         if *self.status_rx.borrow() == IngesterStatus::Initializing {
             return Err(IngestV2Error::Internal(
@@ -320,6 +328,24 @@ impl DerefMut for FullyLockedIngesterState<'_> {
 }
 
 impl FullyLockedIngesterState<'_> {
+    /// Deletes the shard identified by `queue_id` from the ingester state. It removes the
+    /// mrecordlog queue first and then removes the associated in-memory shard and rate trackers.
+    pub async fn delete_shard(&mut self, queue_id: &QueueId) {
+        match self.mrecordlog.delete_queue(queue_id).await {
+            Ok(_) | Err(DeleteQueueError::MissingQueue(_)) => {
+                self.rate_trackers.remove(queue_id);
+
+                // Log only if the shard was actually removed.
+                if self.shards.remove(queue_id).is_some() {
+                    info!("deleted shard `{queue_id}`");
+                }
+            }
+            Err(DeleteQueueError::IoError(io_error)) => {
+                error!("failed to delete shard `{queue_id}`: {io_error}");
+            }
+        };
+    }
+
     /// Truncates the shard identified by `queue_id` up to `truncate_up_to_position_inclusive` only
     /// if the current truncation position of the shard is smaller.
     pub async fn truncate_shard(
@@ -358,24 +384,19 @@ impl FullyLockedIngesterState<'_> {
         };
     }
 
-    /// Deletes the shard identified by `queue_id` from the ingester state. It removes the
-    /// mrecordlog queue first and then removes the associated in-memory shard and rate trackers.
-    pub async fn delete_shard(&mut self, queue_id: &QueueId) {
-        // This if-statement is here to avoid needless log.
-        if !self.inner.shards.contains_key(queue_id) {
-            // No need to do anything. This queue is not on this ingester.
-            return;
+    /// Deletes and truncates the shards as directed by the `advise_reset_shards_response` returned
+    /// by the control plane.
+    pub async fn reset_shards(&mut self, advise_reset_shards_response: &AdviseResetShardsResponse) {
+        for shard_ids in &advise_reset_shards_response.shards_to_delete {
+            for queue_id in shard_ids.queue_ids() {
+                self.delete_shard(&queue_id).await;
+            }
         }
-        match self.mrecordlog.delete_queue(queue_id).await {
-            Ok(_) | Err(DeleteQueueError::MissingQueue(_)) => {
-                self.shards.remove(queue_id);
-                self.rate_trackers.remove(queue_id);
-                info!("deleted shard `{queue_id}`");
+        for shard_id_positions in &advise_reset_shards_response.shards_to_truncate {
+            for (queue_id, publish_position) in shard_id_positions.queue_id_positions() {
+                self.truncate_shard(&queue_id, publish_position).await;
             }
-            Err(DeleteQueueError::IoError(io_error)) => {
-                error!("failed to delete shard `{queue_id}`: {io_error}");
-            }
-        };
+        }
     }
 }
 
@@ -391,11 +412,12 @@ impl WeakIngesterState {
         let inner = self.inner.upgrade()?;
         let mrecordlog = self.mrecordlog.upgrade()?;
         let status_rx = self.status_rx.clone();
-        Some(IngesterState {
+        let state = IngesterState {
             inner,
             mrecordlog,
             status_rx,
-        })
+        };
+        Some(state)
     }
 }
 
@@ -436,21 +458,16 @@ mod tests {
     #[tokio::test]
     async fn test_ingester_state_init() {
         let mut state = IngesterState::new();
-
         let temp_dir = tempfile::tempdir().unwrap();
+
         state
             .init(temp_dir.path(), RateLimiterSettings::default())
             .await;
 
-        timeout(
-            Duration::from_millis(100),
-            state
-                .status_rx
-                .wait_for(|status| *status == IngesterStatus::Ready),
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        timeout(Duration::from_millis(100), state.wait_for_ready())
+            .await
+            .unwrap()
+            .unwrap();
 
         state.lock_partially().await.unwrap();
 

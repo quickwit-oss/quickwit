@@ -277,10 +277,10 @@ impl ShardTable {
     }
 
     /// Lists the shards of a given source. Returns `None` if the source does not exist.
-    pub fn list_shards(&self, source_uid: &SourceUid) -> Option<impl Iterator<Item = &ShardEntry>> {
+    pub fn get_shards(&self, source_uid: &SourceUid) -> Option<&FnvHashMap<ShardId, ShardEntry>> {
         self.table_entries
             .get(source_uid)
-            .map(|table_entry| table_entry.shard_entries.values())
+            .map(|table_entry| &table_entry.shard_entries)
     }
 
     /// Inserts the shards into the shard table.
@@ -573,11 +573,11 @@ mod tests {
         };
         let mut shard_table = ShardTable::default();
 
-        assert!(shard_table.list_shards(&source_uid).is_none());
+        assert!(shard_table.get_shards(&source_uid).is_none());
 
         shard_table.add_source(&index_uid, &source_id);
-        let shards = shard_table.list_shards(&source_uid).unwrap();
-        assert_eq!(shards.count(), 0);
+        let shards = shard_table.get_shards(&source_uid).unwrap();
+        assert_eq!(shards.len(), 0);
 
         let shard_01 = Shard {
             index_uid: index_uid.clone().into(),
@@ -589,8 +589,8 @@ mod tests {
         };
         shard_table.insert_shards(&index_uid, &source_id, vec![shard_01]);
 
-        let shards = shard_table.list_shards(&source_uid).unwrap();
-        assert_eq!(shards.count(), 1);
+        let shards = shard_table.get_shards(&source_uid).unwrap();
+        assert_eq!(shards.len(), 1);
     }
 
     #[test]
@@ -802,8 +802,9 @@ mod tests {
         assert_eq!(shard_stats.avg_ingestion_rate, 1.5);
 
         let shard_entries: Vec<ShardEntry> = shard_table
-            .list_shards(&source_uid)
+            .get_shards(&source_uid)
             .unwrap()
+            .values()
             .cloned()
             .sorted_unstable_by(|left, right| left.shard.shard_id.cmp(&right.shard.shard_id))
             .collect();

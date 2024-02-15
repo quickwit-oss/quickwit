@@ -95,3 +95,14 @@ message ShardIds {
   string source_id = 2;
   repeated ShardId shard_ids = 3;
 }
+
+message ShardIdPositions {
+  quickwit.common.IndexUid index_uid = 1;
+  string source_id = 2;
+  repeated ShardIdPosition shard_positions = 3;
+}
+
+message ShardIdPosition {
+  ShardId shard_id = 1;
+  Position publish_position_inclusive = 2;
+}

@@ -468,7 +468,7 @@ impl LogsService for OtlpGrpcLogsService {
         &self,
         request: Request<ExportLogsServiceRequest>,
     ) -> Result<Response<ExportLogsServiceResponse>, Status> {
-        let index_id = extract_otel_index_id_from_metadata(request.metadata(), &OtelSignal::Logs)?;
+        let index_id = extract_otel_index_id_from_metadata(request.metadata(), OtelSignal::Logs)?;
         let request = request.into_inner();
         self.clone()
             .export_instrumented(request, index_id)
