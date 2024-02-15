@@ -77,6 +77,13 @@ pub struct SearchQueryParams {
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
+    /// Additional filters to be applied to the query.
+    /// Useful for permissions and other use cases.
+    /// This is not part of the official Elasticsearch API.
+    pub extra_filters: Option<Vec<String>>,
+    #[serde(serialize_with = "to_simple_list")]
+    #[serde(deserialize_with = "from_simple_list")]
+    #[serde(default)]
     pub filter_path: Option<Vec<String>>,
     #[serde(default)]
     pub force_synthetic_source: Option<bool>,

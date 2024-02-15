@@ -38,7 +38,7 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_proto::ServiceErrorCode;
-use quickwit_query::query_ast::{QueryAst, UserInputQuery};
+use quickwit_query::query_ast::{BoolQuery, QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
 use quickwit_search::{list_all_splits, resolve_index_patterns, SearchError, SearchService};
 use serde::{Deserialize, Serialize};
@@ -210,7 +210,7 @@ fn build_request_for_es_api(
     let default_operator = search_params.default_operator.unwrap_or(BooleanOperand::Or);
     // The query string, if present, takes priority over what can be in the request
     // body.
-    let query_ast = if let Some(q) = &search_params.q {
+    let mut query_ast = if let Some(q) = &search_params.q {
         let user_text_query = UserInputQuery {
             user_text: q.to_string(),
             default_fields: None,
@@ -224,6 +224,28 @@ fn build_request_for_es_api(
     } else {
         QueryAst::MatchAll
     };
+
+    if let Some(extra_filters) = &search_params.extra_filters {
+        let queries: Vec<QueryAst> = extra_filters
+            .iter()
+            .map(|query| {
+                let user_text_query = UserInputQuery {
+                    user_text: query.to_string(),
+                    default_fields: None,
+                    default_operator,
+                };
+                QueryAst::UserInput(user_text_query)
+            })
+            .collect();
+
+        query_ast = QueryAst::Bool(BoolQuery {
+            must: vec![query_ast],
+            must_not: vec![],
+            should: vec![],
+            filter: queries,
+        });
+    }
+
     let aggregation_request: Option<String> = if search_body.aggs.is_empty() {
         None
     } else {
