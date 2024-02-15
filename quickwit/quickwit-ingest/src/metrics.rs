@@ -34,28 +34,24 @@ impl Default for IngestMetrics {
             ingested_num_bytes: new_counter(
                 "ingested_num_bytes",
                 "Total size of the docs ingested in bytes",
-                "quickwit_ingest",
+                "ingest",
             ),
             ingested_num_docs: new_counter(
                 "ingested_num_docs",
                 "Number of docs received to be ingested",
-                "quickwit_ingest",
+                "ingest",
             ),
             replicated_num_bytes_total: new_counter(
                 "replicated_num_bytes_total",
                 "Total size in bytes of the replicated docs.",
-                "quickwit_ingest",
+                "ingest",
             ),
             replicated_num_docs_total: new_counter(
                 "replicated_num_docs_total",
                 "Total number of docs replicated.",
-                "quickwit_ingest",
+                "ingest",
             ),
-            queue_count: new_gauge(
-                "queue_count",
-                "Number of queues currently active",
-                "quickwit_ingest",
-            ),
+            queue_count: new_gauge("queue_count", "Number of queues currently active", "ingest"),
         }
     }
 }

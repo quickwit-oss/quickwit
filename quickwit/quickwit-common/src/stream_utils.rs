@@ -26,6 +26,8 @@ use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream, WatchStream};
 use tracing::warn;
 
+use crate::tower::RpcName;
+
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + Unpin + 'static>>;
 
 /// A stream impl for code-generated services with streaming endpoints.
@@ -192,6 +194,14 @@ where T: Send + 'static
         Self {
             inner: Box::pin(stream::iter(values)),
         }
+    }
+}
+
+impl<T> RpcName for ServiceStream<T>
+where T: RpcName
+{
+    fn rpc_name() -> &'static str {
+        T::rpc_name()
     }
 }
 

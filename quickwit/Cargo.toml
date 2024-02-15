@@ -21,7 +21,6 @@ members = [
   "quickwit-janitor",
   "quickwit-lambda",
   "quickwit-macros",
-  "quickwit-macros/impl",
   "quickwit-metastore",
 
   # Disabling metastore-utils from the quickwit projects to ease build/deps.
@@ -49,17 +48,16 @@ default-members = [
   "quickwit-common",
   "quickwit-config",
   "quickwit-control-plane",
-  "quickwit-index-management",
   "quickwit-datetime",
   "quickwit-directories",
   "quickwit-doc-mapper",
+  "quickwit-index-management",
   "quickwit-indexing",
   "quickwit-ingest",
   "quickwit-integration-tests",
   "quickwit-jaeger",
   "quickwit-janitor",
   "quickwit-macros",
-  "quickwit-macros/impl",
   "quickwit-metastore",
   "quickwit-opentelemetry",
   "quickwit-proto",
@@ -314,7 +312,6 @@ quickwit-integration-tests = { path = "quickwit-integration-tests" }
 quickwit-jaeger = { path = "quickwit-jaeger" }
 quickwit-janitor = { path = "quickwit-janitor" }
 quickwit-macros = { path = "quickwit-macros" }
-quickwit-macros-impl = { path = "quickwit-macros/impl" }
 quickwit-metastore = { path = "quickwit-metastore" }
 quickwit-opentelemetry = { path = "quickwit-opentelemetry" }
 quickwit-proto = { path = "quickwit-proto" }

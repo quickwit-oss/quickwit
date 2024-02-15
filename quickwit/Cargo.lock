@@ -6061,17 +6061,6 @@ name = "quickwit-macros"
 version = "0.7.1"
 dependencies = [
  "proc-macro2",
- "quickwit-macros-impl",
- "quote",
- "syn 2.0.48",
-]
-
-[[package]]
-name = "quickwit-macros-impl"
-version = "0.7.1"
-dependencies = [
- "heck",
- "proc-macro2",
  "quote",
  "syn 2.0.48",
 ]

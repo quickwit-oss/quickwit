@@ -46,7 +46,7 @@ use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
 use super::IngesterPool;
 use crate::semaphore_with_waiter::SemaphoreWithMaxWaiters;
-use crate::{with_request_metrics, LeaderId};
+use crate::LeaderId;
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
 pub(super) const INGEST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -181,12 +181,7 @@ impl IngestRouter {
         if request.subrequests.is_empty() {
             return;
         }
-        let response_result = with_request_metrics!(
-            self.control_plane.get_or_create_open_shards(request).await,
-            "router",
-            "client",
-            "get_or_create_open_shards"
-        );
+        let response_result = self.control_plane.get_or_create_open_shards(request).await;
         let response = match response_result {
             Ok(response) => response,
             Err(control_plane_error) => {
@@ -366,17 +361,12 @@ impl IngestRouter {
                 commit_type: commit_type as i32,
             };
             let persist_future = async move {
-                let persist_result = with_request_metrics!(
-                    tokio::time::timeout(
-                        PERSIST_REQUEST_TIMEOUT,
-                        ingester.persist(persist_request),
-                    )
-                    .await
-                    .unwrap_or_else(|_| Err(IngestV2Error::Timeout)),
-                    "router",
-                    "client",
-                    "persist"
-                );
+                let persist_result = tokio::time::timeout(
+                    PERSIST_REQUEST_TIMEOUT,
+                    ingester.persist(persist_request),
+                )
+                .await
+                .unwrap_or_else(|_| Err(IngestV2Error::Timeout));
                 (persist_summary, persist_result)
             };
             persist_futures.push(persist_future);
@@ -429,13 +419,8 @@ impl IngestRouterService for IngestRouter {
             .acquire()
             .await
             .map_err(|()| IngestV2Error::TooManyRequests)?;
-        with_request_metrics!(
-            self.ingest_timeout(ingest_request, INGEST_REQUEST_TIMEOUT)
-                .await,
-            "router",
-            "server",
-            "ingest"
-        )
+        self.ingest_timeout(ingest_request, INGEST_REQUEST_TIMEOUT)
+            .await
     }
 }
 

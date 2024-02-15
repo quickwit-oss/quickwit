@@ -17,36 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::borrow::{Borrow, Cow};
+use std::collections::HashMap;
 
 use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
 pub use prometheus::{
     Histogram, HistogramTimer, HistogramVec as PrometheusHistogramVec, IntCounter,
     IntCounterVec as PrometheusIntCounterVec, IntGauge, IntGaugeVec as PrometheusIntGaugeVec,
 };
-
-pub struct OwnedPrometheusLabels<const N: usize> {
-    labels: [Cow<'static, str>; N],
-}
-
-impl<const N: usize> OwnedPrometheusLabels<N> {
-    pub fn new(labels: [Cow<'static, str>; N]) -> Self {
-        Self { labels }
-    }
-
-    pub fn borrow_labels(&self) -> [&str; N] {
-        let mut labels = [""; N];
-
-        for (i, label) in self.labels.iter().enumerate() {
-            labels[i] = label.borrow();
-        }
-        labels
-    }
-}
-
-pub trait PrometheusLabels<const N: usize> {
-    fn labels(&self) -> OwnedPrometheusLabels<N>;
-}
 
 #[derive(Clone)]
 pub struct HistogramVec<const N: usize> {
@@ -81,63 +58,102 @@ impl<const N: usize> IntGaugeVec<N> {
     }
 }
 
-pub fn new_counter(name: &str, description: &str, namespace: &str) -> IntCounter {
-    let counter_opts = Opts::new(name, description).namespace(namespace);
-    let counter = IntCounter::with_opts(counter_opts).expect("Failed to create counter");
-    prometheus::register(Box::new(counter.clone())).expect("Failed to register counter");
+pub fn new_counter(name: &str, help: &str, subsystem: &str) -> IntCounter {
+    let counter_opts = Opts::new(name, help)
+        .namespace("quickwit")
+        .subsystem(subsystem);
+    let counter = IntCounter::with_opts(counter_opts).expect("failed to create counter");
+    prometheus::register(Box::new(counter.clone())).expect("failed to register counter");
     counter
 }
 
 pub fn new_counter_vec<const N: usize>(
     name: &str,
-    description: &str,
-    namespace: &str,
+    help: &str,
+    subsystem: &str,
+    const_labels: &[(&str, &str)],
     label_names: [&str; N],
 ) -> IntCounterVec<N> {
-    let counter_opts = Opts::new(name, description).namespace(namespace);
+    let owned_const_labels: HashMap<String, String> = const_labels
+        .iter()
+        .map(|(label_name, label_value)| (label_name.to_string(), label_value.to_string()))
+        .collect();
+    let counter_opts = Opts::new(name, help)
+        .namespace("quickwit")
+        .subsystem(subsystem)
+        .const_labels(owned_const_labels);
     let underlying = PrometheusIntCounterVec::new(counter_opts, &label_names)
-        .expect("Failed to create counter vec");
-    prometheus::register(Box::new(underlying.clone())).expect("Failed to register counter vec");
+        .expect("failed to create counter vec");
+
+    let collector = Box::new(underlying.clone());
+    prometheus::register(collector).expect("failed to register counter vec");
+
     IntCounterVec { underlying }
 }
 
-pub fn new_gauge(name: &str, description: &str, namespace: &str) -> IntGauge {
-    let gauge_opts = Opts::new(name, description).namespace(namespace);
-    let gauge = IntGauge::with_opts(gauge_opts).expect("Failed to create gauge");
-    prometheus::register(Box::new(gauge.clone())).expect("Failed to register gauge");
+pub fn new_gauge(name: &str, help: &str, subsystem: &str) -> IntGauge {
+    let gauge_opts = Opts::new(name, help)
+        .namespace("quickwit")
+        .subsystem(subsystem);
+    let gauge = IntGauge::with_opts(gauge_opts).expect("failed to create gauge");
+    prometheus::register(Box::new(gauge.clone())).expect("failed to register gauge");
     gauge
 }
 
 pub fn new_gauge_vec<const N: usize>(
     name: &str,
-    description: &str,
-    namespace: &str,
+    help: &str,
+    subsystem: &str,
+    const_labels: &[(&str, &str)],
     label_names: [&str; N],
 ) -> IntGaugeVec<N> {
-    let gauge_opts = Opts::new(name, description).namespace(namespace);
+    let owned_const_labels: HashMap<String, String> = const_labels
+        .iter()
+        .map(|(label_name, label_value)| (label_name.to_string(), label_value.to_string()))
+        .collect();
+    let gauge_opts = Opts::new(name, help)
+        .namespace("quickwit")
+        .subsystem(subsystem)
+        .const_labels(owned_const_labels);
     let underlying =
-        PrometheusIntGaugeVec::new(gauge_opts, &label_names).expect("Failed to create gauge vec");
-    prometheus::register(Box::new(underlying.clone())).expect("Failed to register gauge vec");
+        PrometheusIntGaugeVec::new(gauge_opts, &label_names).expect("failed to create gauge vec");
+
+    let collector = Box::new(underlying.clone());
+    prometheus::register(collector).expect("failed to register counter vec");
+
     IntGaugeVec { underlying }
 }
 
-pub fn new_histogram(name: &str, description: &str, namespace: &str) -> Histogram {
-    let histogram_opts = HistogramOpts::new(name, description).namespace(namespace);
-    let histogram = Histogram::with_opts(histogram_opts).expect("Failed to create histogram");
-    prometheus::register(Box::new(histogram.clone())).expect("Failed to register counter");
+pub fn new_histogram(name: &str, help: &str, subsystem: &str) -> Histogram {
+    let histogram_opts = HistogramOpts::new(name, help)
+        .namespace("quickwit")
+        .subsystem(subsystem);
+    let histogram = Histogram::with_opts(histogram_opts).expect("failed to create histogram");
+    prometheus::register(Box::new(histogram.clone())).expect("failed to register histogram");
     histogram
 }
 
 pub fn new_histogram_vec<const N: usize>(
     name: &str,
-    description: &str,
-    namespace: &str,
+    help: &str,
+    subsystem: &str,
+    const_labels: &[(&str, &str)],
     label_names: [&str; N],
 ) -> HistogramVec<N> {
-    let histogram_opts = HistogramOpts::new(name, description).namespace(namespace);
+    let owned_const_labels: HashMap<String, String> = const_labels
+        .iter()
+        .map(|(label_name, label_value)| (label_name.to_string(), label_value.to_string()))
+        .collect();
+    let histogram_opts = HistogramOpts::new(name, help)
+        .namespace("quickwit")
+        .subsystem(subsystem)
+        .const_labels(owned_const_labels);
     let underlying = PrometheusHistogramVec::new(histogram_opts, &label_names)
-        .expect("Failed to create histogram vec");
-    prometheus::register(Box::new(underlying.clone())).expect("Failed to register histogram vec");
+        .expect("failed to create histogram vec");
+
+    let collector = Box::new(underlying.clone());
+    prometheus::register(collector).expect("failed to register histogram vec");
+
     HistogramVec { underlying }
 }
 

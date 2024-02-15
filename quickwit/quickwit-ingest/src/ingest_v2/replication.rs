@@ -42,7 +42,7 @@ use super::mrecordlog_utils::check_enough_capacity;
 use super::state::IngesterState;
 use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::metrics::INGEST_METRICS;
-use crate::{estimate_size, with_lock_metrics, with_request_metrics};
+use crate::{estimate_size, with_lock_metrics};
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
 
@@ -301,15 +301,6 @@ pub(super) enum ReplicationError {
     Timeout,
 }
 
-impl ReplicationError {
-    pub(super) fn label_value(&self) -> &'static str {
-        match self {
-            Self::Timeout { .. } => "timeout",
-            _ => "error",
-        }
-    }
-}
-
 // DO NOT derive or implement `Clone` for this object.
 #[derive(Debug)]
 pub(super) struct ReplicationClient {
@@ -334,19 +325,15 @@ impl ReplicationClient {
         let replication_request = ReplicationRequest::Init(init_replica_request);
 
         async {
-            with_request_metrics!(
-                self.submit(replication_request).await,
-                "ingester",
-                "client",
-                "init_replica"
-            )
-            .map(|replication_response| {
-                if let ReplicationResponse::Init(init_replica_response) = replication_response {
-                    init_replica_response
-                } else {
-                    panic!("response should be an init replica response")
-                }
-            })
+            self.submit(replication_request)
+                .await
+                .map(|replication_response| {
+                    if let ReplicationResponse::Init(init_replica_response) = replication_response {
+                        init_replica_response
+                    } else {
+                        panic!("response should be an init replica response")
+                    }
+                })
         }
     }
 
@@ -369,19 +356,16 @@ impl ReplicationClient {
         let replication_request = ReplicationRequest::Replicate(replicate_request);
 
         async {
-            with_request_metrics!(
-                self.submit(replication_request).await,
-                "ingester",
-                "client",
-                "replicate"
-            )
-            .map(|replication_response| {
-                if let ReplicationResponse::Replicate(replicate_response) = replication_response {
-                    replicate_response
-                } else {
-                    panic!("response should be a replicate response")
-                }
-            })
+            self.submit(replication_request)
+                .await
+                .map(|replication_response| {
+                    if let ReplicationResponse::Replicate(replicate_response) = replication_response
+                    {
+                        replicate_response
+                    } else {
+                        panic!("response should be a replicate response")
+                    }
+                })
         }
     }
 
@@ -691,24 +675,14 @@ impl ReplicationTask {
                 Some(syn_replication_message::Message::OpenRequest(_)) => {
                     panic!("TODO: this should not happen, internal error");
                 }
-                Some(syn_replication_message::Message::InitRequest(init_replica_request)) => {
-                    with_request_metrics!(
-                        self.init_replica(init_replica_request).await,
-                        "ingester",
-                        "server",
-                        "init_replica"
-                    )
-                    .map(AckReplicationMessage::new_init_replica_response)
-                }
-                Some(syn_replication_message::Message::ReplicateRequest(replicate_request)) => {
-                    with_request_metrics!(
-                        self.replicate(replicate_request).await,
-                        "ingester",
-                        "server",
-                        "replicate"
-                    )
-                    .map(AckReplicationMessage::new_replicate_response)
-                }
+                Some(syn_replication_message::Message::InitRequest(init_replica_request)) => self
+                    .init_replica(init_replica_request)
+                    .await
+                    .map(AckReplicationMessage::new_init_replica_response),
+                Some(syn_replication_message::Message::ReplicateRequest(replicate_request)) => self
+                    .replicate(replicate_request)
+                    .await
+                    .map(AckReplicationMessage::new_replicate_response),
                 None => {
                     warn!("received empty SYN replication message");
                     continue;

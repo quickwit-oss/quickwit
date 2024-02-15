@@ -39,43 +39,47 @@ impl Default for IndexerMetrics {
                 "processed_docs_total",
                 "Number of processed docs by index, source and processed status in [valid, \
                  schema_error, parse_error, transform_error]",
-                "quickwit_indexing",
+                "indexing",
+                &[],
                 ["index", "docs_processed_status"],
             ),
             processed_bytes: new_counter_vec(
                 "processed_bytes",
                 "Number of bytes of processed documents by index, source and processed status in \
                  [valid, schema_error, parse_error, transform_error]",
-                "quickwit_indexing",
+                "indexing",
+                &[],
                 ["index", "docs_processed_status"],
             ),
             backpressure_micros: new_counter_vec(
                 "backpressure_micros",
                 "Amount of time spent in backpressure (in micros). This time only includes the \
                  amount of time spent waiting for a place in the queue of another actor.",
-                "quickwit_indexing",
+                "indexing",
+                &[],
                 ["actor_name"],
             ),
             available_concurrent_upload_permits: new_gauge_vec(
                 "concurrent_upload_available_permits_num",
                 "Number of available concurrent upload permits by component in [merger, indexer]",
-                "quickwit_indexing",
+                "indexing",
+                &[],
                 ["component"],
             ),
             ongoing_merge_operations: new_gauge(
                 "ongoing_merge_operations",
                 "Number of ongoing merge operations",
-                "quickwit_indexing",
+                "indexing",
             ),
             pending_merge_operations: new_gauge(
                 "pending_merge_operations",
                 "Number of pending merge operations",
-                "quickwit_indexing",
+                "indexing",
             ),
             pending_merge_bytes: new_gauge(
                 "pending_merge_bytes",
                 "Number of pending merge bytes",
-                "quickwit_indexing",
+                "indexing",
             ),
         }
     }
