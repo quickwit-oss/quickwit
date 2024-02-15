@@ -29,7 +29,7 @@ use std::net::SocketAddr;
 
 use async_trait::async_trait;
 pub use chitchat::transport::ChannelTransport;
-use chitchat::transport::{Socket, Transport, UdpTransport};
+use chitchat::transport::{Socket, Transport, UdpSocket};
 use chitchat::{ChitchatMessage, Serializable};
 pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
 use quickwit_common::metrics::IntCounter;
@@ -70,7 +70,7 @@ impl From<u64> for GenerationId {
 struct CountingUdpTransport;
 
 struct CountingUdpSocket {
-    socket: Box<dyn Socket>,
+    socket: UdpSocket,
     gossip_recv: IntCounter,
     gossip_recv_bytes: IntCounter,
     gossip_send: IntCounter,
@@ -99,8 +99,7 @@ impl Socket for CountingUdpSocket {
 #[async_trait]
 impl Transport for CountingUdpTransport {
     async fn open(&self, listen_addr: SocketAddr) -> anyhow::Result<Box<dyn Socket>> {
-        let transport = UdpTransport;
-        let socket = transport.open(listen_addr).await?;
+        let socket = UdpSocket::open(listen_addr).await?;
         Ok(Box::new(CountingUdpSocket {
             socket,
             gossip_recv: crate::metrics::CLUSTER_METRICS.gossip_recv_total.clone(),
