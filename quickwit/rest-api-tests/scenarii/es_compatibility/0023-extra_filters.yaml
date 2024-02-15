@@ -1,0 +1,45 @@
+# Extra filters are additional filters that are applied to the query. Useful for permissions and other use cases. 
+json:
+  query:
+      match_all: {}
+params:
+  extra_filters: "type:PushEvent"
+expected:
+  hits:
+    total:
+      value: 60
+--- # 2 extra filters
+json:
+  query:
+      match_all: {}
+params:
+  extra_filters: "type:PushEvent,actor.login:jadonk"
+expected:
+  hits:
+    total:
+      value: 2
+--- # Test mixing
+json:
+  query:
+    query_string:
+      query: "type:PushEvent"
+params:
+  extra_filters: "actor.login:jadonk"
+expected:
+  hits:
+    total:
+      value: 2
+--- # Test mixing
+json:
+  query:
+    query_string:
+      query: "type:PushEvent"
+params:
+  extra_filters: "type:PushEvent,actor.login:jadonk"
+expected:
+  hits:
+    total:
+      value: 2
+
+
+
