@@ -140,8 +140,9 @@ impl ShardPositionsService {
         let shard_positions_service = ShardPositionsService::new(event_broker.clone(), cluster);
         let (shard_positions_service_mailbox, _) =
             spawn_ctx.spawn_builder().spawn(shard_positions_service);
+        // This subscription is in charge of updating the shard positions model.
         event_broker
-            .subscribe::<LocalShardPositionsUpdate>(move |update| {
+            .subscribe_without_timeout::<LocalShardPositionsUpdate>(move |update| {
                 if shard_positions_service_mailbox
                     .try_send_message(update)
                     .is_err()
