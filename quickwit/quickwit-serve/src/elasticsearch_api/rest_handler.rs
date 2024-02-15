@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -609,13 +609,6 @@ fn convert_hit(
         Source::from_string(serde_json::to_string(&json).unwrap_or_else(|_| "{}".to_string()))
             .unwrap_or_else(|_| Source::from_string("{}".to_string()).unwrap());
 
-    let mut fields: BTreeMap<String, serde_json::Value> = Default::default();
-    if let serde_json::Value::Object(map) = json {
-        for (key, val) in map {
-            fields.insert(key, val);
-        }
-    }
-
     let mut sort = Vec::new();
     if let Some(partial_hit) = hit.partial_hit {
         if let Some(sort_value) = partial_hit.sort_value {
@@ -632,7 +625,7 @@ fn convert_hit(
     }
 
     ElasticHit {
-        fields,
+        fields: Default::default(),
         explanation: None,
         index: hit.index_id,
         id: "".to_string(),

@@ -128,10 +128,6 @@ pub struct SearchQueryParams {
     #[serde(default)]
     pub sort: Option<Vec<String>>,
     #[serde(default)]
-    pub source: Option<String>,
-    #[serde(serialize_with = "to_simple_list")]
-    #[serde(deserialize_with = "from_simple_list")]
-    #[serde(default)]
     pub stats: Option<Vec<String>>,
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
