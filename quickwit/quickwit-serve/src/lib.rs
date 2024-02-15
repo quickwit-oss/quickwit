@@ -826,12 +826,11 @@ async fn setup_control_plane(
         metastore,
     );
     let subscriber = ControlPlaneEventSubscriber::new(control_plane_mailbox.downgrade());
-
     event_broker
-        .subscribe::<LocalShardsUpdate>(subscriber.clone())
+        .subscribe_without_timeout::<LocalShardsUpdate>(subscriber.clone())
         .forever();
     event_broker
-        .subscribe::<ShardPositionsUpdate>(subscriber)
+        .subscribe_without_timeout::<ShardPositionsUpdate>(subscriber)
         .forever();
 
     Ok(control_plane_mailbox)
