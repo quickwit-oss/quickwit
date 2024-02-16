@@ -258,11 +258,10 @@ impl Ingester {
 
         let mut per_source_shard_ids: HashMap<(IndexUid, SourceId), Vec<ShardId>> = HashMap::new();
 
-        let state_guard =
-            with_lock_metrics!(self.state.lock_partially().await, "reset_shards", "read")
-                .expect("ingester should be ready");
+        let state_guard = with_lock_metrics!(self.state.lock_fully().await, "reset_shards", "read")
+            .expect("ingester should be ready");
 
-        for queue_id in state_guard.shards.keys() {
+        for queue_id in state_guard.mrecordlog.list_queues() {
             let Some((index_uid, source_id, shard_id)) = split_queue_id(queue_id) else {
                 warn!("failed to parse queue ID `{queue_id}`");
                 continue;
