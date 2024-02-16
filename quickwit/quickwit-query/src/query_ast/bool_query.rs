@@ -30,9 +30,9 @@ use crate::InvalidQuery;
 /// - named queries
 ///
 /// Edge cases of BooleanQuery are not obvious,
-/// and different beahvior could be justified.
+/// and different behavior could be justified.
 ///
-/// Here we aligne ourselves with Elasticsearch.
+/// Here we align ourselves with Elasticsearch.
 /// A boolean query is to be interpreted like a filtering predicate
 /// over the set of documents.
 ///

@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -38,7 +38,7 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_proto::ServiceErrorCode;
-use quickwit_query::query_ast::{QueryAst, UserInputQuery};
+use quickwit_query::query_ast::{BoolQuery, QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
 use quickwit_search::{list_all_splits, resolve_index_patterns, SearchError, SearchService};
 use serde::{Deserialize, Serialize};
@@ -210,7 +210,7 @@ fn build_request_for_es_api(
     let default_operator = search_params.default_operator.unwrap_or(BooleanOperand::Or);
     // The query string, if present, takes priority over what can be in the request
     // body.
-    let query_ast = if let Some(q) = &search_params.q {
+    let mut query_ast = if let Some(q) = &search_params.q {
         let user_text_query = UserInputQuery {
             user_text: q.to_string(),
             default_fields: None,
@@ -224,6 +224,28 @@ fn build_request_for_es_api(
     } else {
         QueryAst::MatchAll
     };
+
+    if let Some(extra_filters) = &search_params.extra_filters {
+        let queries: Vec<QueryAst> = extra_filters
+            .iter()
+            .map(|query| {
+                let user_text_query = UserInputQuery {
+                    user_text: query.to_string(),
+                    default_fields: None,
+                    default_operator,
+                };
+                QueryAst::UserInput(user_text_query)
+            })
+            .collect();
+
+        query_ast = QueryAst::Bool(BoolQuery {
+            must: vec![query_ast],
+            must_not: vec![],
+            should: vec![],
+            filter: queries,
+        });
+    }
+
     let aggregation_request: Option<String> = if search_body.aggs.is_empty() {
         None
     } else {
@@ -587,13 +609,6 @@ fn convert_hit(
         Source::from_string(serde_json::to_string(&json).unwrap_or_else(|_| "{}".to_string()))
             .unwrap_or_else(|_| Source::from_string("{}".to_string()).unwrap());
 
-    let mut fields: BTreeMap<String, serde_json::Value> = Default::default();
-    if let serde_json::Value::Object(map) = json {
-        for (key, val) in map {
-            fields.insert(key, val);
-        }
-    }
-
     let mut sort = Vec::new();
     if let Some(partial_hit) = hit.partial_hit {
         if let Some(sort_value) = partial_hit.sort_value {
@@ -610,7 +625,7 @@ fn convert_hit(
     }
 
     ElasticHit {
-        fields,
+        fields: Default::default(),
         explanation: None,
         index: hit.index_id,
         id: "".to_string(),
