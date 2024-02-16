@@ -102,13 +102,17 @@ impl Transport for CountingUdpTransport {
         let socket = UdpSocket::open(listen_addr).await?;
         Ok(Box::new(CountingUdpSocket {
             socket,
-            gossip_recv: crate::metrics::CLUSTER_METRICS.gossip_recv_total.clone(),
+            gossip_recv: crate::metrics::CLUSTER_METRICS
+                .gossip_recv_messages_total
+                .clone(),
             gossip_recv_bytes: crate::metrics::CLUSTER_METRICS
                 .gossip_recv_bytes_total
                 .clone(),
-            gossip_send: crate::metrics::CLUSTER_METRICS.gossip_send_total.clone(),
+            gossip_send: crate::metrics::CLUSTER_METRICS
+                .gossip_sent_messages_total
+                .clone(),
             gossip_send_bytes: crate::metrics::CLUSTER_METRICS
-                .gossip_send_bytes_total
+                .gossip_sent_bytes_total
                 .clone(),
         }))
     }
