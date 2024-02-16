@@ -86,7 +86,7 @@ impl BuildInfo {
         let build_info = Self::get();
         format!(
             "{} ({} {})",
-            build_info.cargo_pkg_version, build_info.cargo_pkg_version, build_info.commit_date,
+            build_info.cargo_pkg_version, build_info.commit_short_hash, build_info.commit_date,
         )
     }
 }
