@@ -53,7 +53,7 @@ use crate::with_arg;
         create_index,
         clear_index,
         delete_index,
-        get_indexes_metadatas,
+        list_indexes_metadata,
         list_splits,
         describe_index,
         mark_splits_for_deletion,
@@ -72,7 +72,7 @@ pub fn index_management_handlers(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     // Indexes handlers.
     get_index_metadata_handler(index_service.metastore())
-        .or(get_indexes_metadatas_handler(index_service.metastore()))
+        .or(list_indexes_metadata_handler(index_service.metastore()))
         .or(create_index_handler(index_service.clone(), node_config))
         .or(clear_index_handler(index_service.clone()))
         .or(delete_index_handler(index_service.clone()))
@@ -119,13 +119,24 @@ async fn get_index_metadata(
     Ok(index_metadata)
 }
 
-fn get_indexes_metadatas_handler(
+/// This struct represents the QueryString passed to
+/// the rest API to filter indexes.
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema, Default)]
+#[into_params(parameter_in = Query)]
+pub struct ListIndexesQueryParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub index_id_pattern: Option<String>,
+}
+
+fn list_indexes_metadata_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes")
         .and(warp::get())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
         .and(with_arg(metastore))
-        .then(get_indexes_metadatas)
+        .then(list_indexes_metadata)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
 }
@@ -280,7 +291,7 @@ pub struct ListSplitsResponse {
     ),
     params(
         ListSplitsQueryParams,
-        ("index_id" = String, Path, description = "The index ID to retrieve delete tasks for."),
+        ("index_id" = String, Path, description = "The index ID to retrieve splits for."),
     )
 )]
 
@@ -407,13 +418,26 @@ fn mark_splits_for_deletion_handler(
         // We return `VersionedIndexMetadata` as it's the serialized model view.
         (status = 200, description = "Successfully fetched all indexes.", body = [VersionedIndexMetadata])
     ),
+    params(
+        ListIndexesQueryParams,
+        ("index_id_pattern" = String, Path, description = "The index ID pattern to retrieve indexes for."),
+    )
 )]
 /// Gets indexes metadata.
-async fn get_indexes_metadatas(
+async fn list_indexes_metadata(
+    list_indexes_params: ListIndexesQueryParams,
     mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<Vec<IndexMetadata>> {
+    let list_indexes_metata_request =
+        if let Some(index_id_pattern) = list_indexes_params.index_id_pattern {
+            ListIndexesMetadataRequest {
+                index_id_patterns: vec![index_id_pattern],
+            }
+        } else {
+            ListIndexesMetadataRequest::all()
+        };
     metastore
-        .list_indexes_metadata(ListIndexesMetadataRequest::all())
+        .list_indexes_metadata(list_indexes_metata_request)
         .await
         .and_then(|response| response.deserialize_indexes_metadata())
 }
@@ -1153,6 +1177,10 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadata()
             .return_once(|_list_indexes_request| {
+                assert_eq!(
+                    _list_indexes_request.index_id_patterns,
+                    vec!["test-index-*".to_string()]
+                );
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
                 Ok(
@@ -1168,7 +1196,7 @@ mod tests {
             super::index_management_handlers(index_service, Arc::new(NodeConfig::for_test()))
                 .recover(recover_fn);
         let resp = warp::test::request()
-            .path("/indexes")
+            .path("/indexes?index_id_pattern=test-index-*")
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
