@@ -49,13 +49,13 @@ impl Default for StorageMetrics {
             object_storage_get_total: new_counter(
                 "object_storage_gets_total",
                 "Number of objects fetched.",
-                "quickwit_storage",
+                "storage",
             ),
             object_storage_put_total: new_counter(
                 "object_storage_puts_total",
                 "Number of objects uploaded. May differ from object_storage_requests_parts due to \
                  multipart upload.",
-                "quickwit_storage",
+                "storage",
             ),
             object_storage_put_parts: new_counter(
                 "object_storage_puts_parts",
@@ -65,12 +65,12 @@ impl Default for StorageMetrics {
             object_storage_download_num_bytes: new_counter(
                 "object_storage_download_num_bytes",
                 "Amount of data downloaded from an object storage.",
-                "quickwit_storage",
+                "storage",
             ),
             object_storage_upload_num_bytes: new_counter(
                 "object_storage_upload_num_bytes",
                 "Amount of data uploaded to an object storage.",
-                "quickwit_storage",
+                "storage",
             ),
         }
     }
@@ -89,7 +89,7 @@ pub struct CacheMetrics {
 
 impl CacheMetrics {
     pub fn for_component(component_name: &str) -> Self {
-        let namespace = format!("quickwit_cache_{component_name}");
+        let namespace = format!("cache_{component_name}");
         CacheMetrics {
             component_name: component_name.to_string(),
             in_cache_count: new_gauge(
