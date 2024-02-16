@@ -47,6 +47,7 @@ use crate::member::{
     GRPC_ADVERTISE_ADDR_KEY, PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
     READINESS_VALUE_READY,
 };
+use crate::metrics::spawn_metrics_task;
 use crate::ClusterNode;
 
 const MARKED_FOR_DELETION_GRACE_PERIOD: usize = if cfg!(any(test, feature = "testsuite")) {
@@ -161,8 +162,11 @@ impl Cluster {
         let chitchat = chitchat_handle.chitchat();
         let live_nodes_stream = chitchat.lock().await.live_nodes_watcher();
         let (ready_members_tx, ready_members_rx) = watch::channel(Vec::new());
-
         spawn_ready_members_task(cluster_id.clone(), live_nodes_stream, ready_members_tx);
+
+        let weak_chitchat = Arc::downgrade(&chitchat);
+        spawn_metrics_task(weak_chitchat, self_node.chitchat_id());
+
         let inner = InnerCluster {
             cluster_id: cluster_id.clone(),
             self_chitchat_id: self_node.chitchat_id(),
