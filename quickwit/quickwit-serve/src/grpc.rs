@@ -34,7 +34,7 @@ use quickwit_proto::tonic::transport::Server;
 use tracing::*;
 
 use crate::search_api::GrpcSearchAdapter;
-use crate::QuickwitServices;
+use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
 
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(
@@ -61,7 +61,9 @@ pub(crate) async fn start_grpc_server(
     {
         if let Some(indexing_service) = services.indexing_service_opt.clone() {
             enabled_grpc_services.insert("indexing");
-            let indexing_service = IndexingServiceClient::from_mailbox(indexing_service);
+            let indexing_service = IndexingServiceClient::tower()
+                .stack_layer(INDEXING_GRPC_SERVER_METRICS_LAYER.clone())
+                .build_from_mailbox(indexing_service);
             Some(indexing_service.as_grpc_service(max_message_size))
         } else {
             None

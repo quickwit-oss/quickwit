@@ -77,7 +77,7 @@ use super::replication::{
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use super::IngesterPool;
 use crate::metrics::INGEST_METRICS;
-use crate::{estimate_size, with_lock_metrics, with_request_metrics, FollowerId};
+use crate::{estimate_size, with_lock_metrics, FollowerId};
 
 /// Minimum interval between two reset shards operations.
 const MIN_RESET_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -371,14 +371,9 @@ impl Ingester {
                 .ok_or(IngestV2Error::IngesterUnavailable {
                     ingester_id: follower_id.clone(),
                 })?;
-        let mut ack_replication_stream = with_request_metrics!(
-            ingester
-                .open_replication_stream(syn_replication_stream)
-                .await,
-            "ingester",
-            "client",
-            "open_replication_stream"
-        )?;
+        let mut ack_replication_stream = ingester
+            .open_replication_stream(syn_replication_stream)
+            .await?;
         ack_replication_stream
             .next()
             .await
@@ -976,12 +971,7 @@ impl Ingester {
                 ingester_id: follower_id,
             }
         })?;
-        with_request_metrics!(
-            ingester.ping(ping_request).await,
-            "ingester",
-            "client",
-            "ping"
-        )?;
+        ingester.ping(ping_request).await?;
         let ping_response = PingResponse {};
         Ok(ping_response)
     }
@@ -1010,63 +1000,38 @@ impl IngesterService for Ingester {
         &mut self,
         persist_request: PersistRequest,
     ) -> IngestV2Result<PersistResponse> {
-        with_request_metrics!(
-            self.persist_inner(persist_request).await,
-            "ingester",
-            "server",
-            "persist"
-        )
+        self.persist_inner(persist_request).await
     }
 
     async fn open_replication_stream(
         &mut self,
         syn_replication_stream: quickwit_common::ServiceStream<SynReplicationMessage>,
     ) -> IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
-        with_request_metrics!(
-            self.open_replication_stream_inner(syn_replication_stream)
-                .await,
-            "ingester",
-            "server",
-            "open_replication_stream"
-        )
+        self.open_replication_stream_inner(syn_replication_stream)
+            .await
     }
 
     async fn open_fetch_stream(
         &mut self,
         open_fetch_stream_request: OpenFetchStreamRequest,
     ) -> IngestV2Result<ServiceStream<IngestV2Result<FetchMessage>>> {
-        with_request_metrics!(
-            self.open_fetch_stream_inner(open_fetch_stream_request)
-                .await,
-            "ingester",
-            "server",
-            "open_fetch_stream"
-        )
+        self.open_fetch_stream_inner(open_fetch_stream_request)
+            .await
     }
 
     async fn open_observation_stream(
         &mut self,
         open_observation_stream_request: OpenObservationStreamRequest,
     ) -> IngestV2Result<IngesterServiceStream<ObservationMessage>> {
-        with_request_metrics!(
-            self.open_observation_stream_inner(open_observation_stream_request)
-                .await,
-            "ingester",
-            "server",
-            "open_observation_stream"
-        )
+        self.open_observation_stream_inner(open_observation_stream_request)
+            .await
     }
 
     async fn init_shards(
         &mut self,
         init_shards_request: InitShardsRequest,
     ) -> IngestV2Result<InitShardsResponse> {
-        with_request_metrics!(
-            self.init_shards_inner(init_shards_request).await,
-            "ingester",
-            "server",
-            "init_shards"
-        )
+        self.init_shards_inner(init_shards_request).await
     }
 
     async fn retain_shards(
@@ -1106,45 +1071,25 @@ impl IngesterService for Ingester {
         &mut self,
         truncate_shards_request: TruncateShardsRequest,
     ) -> IngestV2Result<TruncateShardsResponse> {
-        with_request_metrics!(
-            self.truncate_shards_inner(truncate_shards_request).await,
-            "ingester",
-            "server",
-            "truncate_shards"
-        )
+        self.truncate_shards_inner(truncate_shards_request).await
     }
 
     async fn close_shards(
         &mut self,
         close_shards_request: CloseShardsRequest,
     ) -> IngestV2Result<CloseShardsResponse> {
-        with_request_metrics!(
-            self.close_shards_inner(close_shards_request).await,
-            "ingester",
-            "server",
-            "close_shards"
-        )
+        self.close_shards_inner(close_shards_request).await
     }
 
     async fn ping(&mut self, ping_request: PingRequest) -> IngestV2Result<PingResponse> {
-        with_request_metrics!(
-            self.ping_inner(ping_request).await,
-            "ingester",
-            "server",
-            "ping"
-        )
+        self.ping_inner(ping_request).await
     }
 
     async fn decommission(
         &mut self,
         decommission_request: DecommissionRequest,
     ) -> IngestV2Result<DecommissionResponse> {
-        with_request_metrics!(
-            self.decommission_inner(decommission_request).await,
-            "ingester",
-            "server",
-            "decommission"
-        )
+        self.decommission_inner(decommission_request).await
     }
 }
 

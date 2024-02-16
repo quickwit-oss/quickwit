@@ -63,7 +63,8 @@ impl Default for IoMetrics {
             "write_bytes",
             "Number of bytes written by a given component in [indexer, merger, deleter, \
              split_downloader_{merge,delete}]",
-            "quickwit",
+            "",
+            &[],
             ["component"],
         );
         Self { write_bytes }

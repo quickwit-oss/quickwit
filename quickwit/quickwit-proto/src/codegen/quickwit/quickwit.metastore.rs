@@ -525,150 +525,140 @@ impl SourceType {
 #[allow(unused_imports)]
 use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
-use quickwit_common::metrics::{PrometheusLabels, OwnedPrometheusLabels};
-impl PrometheusLabels<1> for CreateIndexRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("create_index")])
+use quickwit_common::tower::RpcName;
+impl RpcName for CreateIndexRequest {
+    fn rpc_name() -> &'static str {
+        "create_index"
     }
 }
-impl PrometheusLabels<1> for IndexMetadataRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("index_metadata")])
+impl RpcName for IndexMetadataRequest {
+    fn rpc_name() -> &'static str {
+        "index_metadata"
     }
 }
-impl PrometheusLabels<1> for ListIndexesMetadataRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("list_indexes_metadata")])
+impl RpcName for ListIndexesMetadataRequest {
+    fn rpc_name() -> &'static str {
+        "list_indexes_metadata"
     }
 }
-impl PrometheusLabels<1> for DeleteIndexRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("delete_index")])
+impl RpcName for DeleteIndexRequest {
+    fn rpc_name() -> &'static str {
+        "delete_index"
     }
 }
-impl PrometheusLabels<1> for ListSplitsRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("list_splits")])
+impl RpcName for ListSplitsRequest {
+    fn rpc_name() -> &'static str {
+        "list_splits"
     }
 }
-impl PrometheusLabels<1> for StageSplitsRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("stage_splits")])
+impl RpcName for StageSplitsRequest {
+    fn rpc_name() -> &'static str {
+        "stage_splits"
     }
 }
-impl PrometheusLabels<1> for PublishSplitsRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("publish_splits")])
+impl RpcName for PublishSplitsRequest {
+    fn rpc_name() -> &'static str {
+        "publish_splits"
     }
 }
-impl PrometheusLabels<1> for MarkSplitsForDeletionRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([
-            std::borrow::Cow::Borrowed("mark_splits_for_deletion"),
-        ])
+impl RpcName for MarkSplitsForDeletionRequest {
+    fn rpc_name() -> &'static str {
+        "mark_splits_for_deletion"
     }
 }
-impl PrometheusLabels<1> for DeleteSplitsRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("delete_splits")])
+impl RpcName for DeleteSplitsRequest {
+    fn rpc_name() -> &'static str {
+        "delete_splits"
     }
 }
-impl PrometheusLabels<1> for AddSourceRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("add_source")])
+impl RpcName for AddSourceRequest {
+    fn rpc_name() -> &'static str {
+        "add_source"
     }
 }
-impl PrometheusLabels<1> for ToggleSourceRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("toggle_source")])
+impl RpcName for ToggleSourceRequest {
+    fn rpc_name() -> &'static str {
+        "toggle_source"
     }
 }
-impl PrometheusLabels<1> for DeleteSourceRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("delete_source")])
+impl RpcName for DeleteSourceRequest {
+    fn rpc_name() -> &'static str {
+        "delete_source"
     }
 }
-impl PrometheusLabels<1> for ResetSourceCheckpointRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([
-            std::borrow::Cow::Borrowed("reset_source_checkpoint"),
-        ])
+impl RpcName for ResetSourceCheckpointRequest {
+    fn rpc_name() -> &'static str {
+        "reset_source_checkpoint"
     }
 }
-impl PrometheusLabels<1> for LastDeleteOpstampRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("last_delete_opstamp")])
+impl RpcName for LastDeleteOpstampRequest {
+    fn rpc_name() -> &'static str {
+        "last_delete_opstamp"
     }
 }
-impl PrometheusLabels<1> for DeleteQuery {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("delete_query")])
+impl RpcName for DeleteQuery {
+    fn rpc_name() -> &'static str {
+        "create_delete_task"
     }
 }
-impl PrometheusLabels<1> for UpdateSplitsDeleteOpstampRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([
-            std::borrow::Cow::Borrowed("update_splits_delete_opstamp"),
-        ])
+impl RpcName for UpdateSplitsDeleteOpstampRequest {
+    fn rpc_name() -> &'static str {
+        "update_splits_delete_opstamp"
     }
 }
-impl PrometheusLabels<1> for ListDeleteTasksRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("list_delete_tasks")])
+impl RpcName for ListDeleteTasksRequest {
+    fn rpc_name() -> &'static str {
+        "list_delete_tasks"
     }
 }
-impl PrometheusLabels<1> for ListStaleSplitsRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("list_stale_splits")])
+impl RpcName for ListStaleSplitsRequest {
+    fn rpc_name() -> &'static str {
+        "list_stale_splits"
     }
 }
-impl PrometheusLabels<1> for OpenShardsRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("open_shards")])
+impl RpcName for OpenShardsRequest {
+    fn rpc_name() -> &'static str {
+        "open_shards"
     }
 }
-impl PrometheusLabels<1> for AcquireShardsRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("acquire_shards")])
+impl RpcName for AcquireShardsRequest {
+    fn rpc_name() -> &'static str {
+        "acquire_shards"
     }
 }
-impl PrometheusLabels<1> for DeleteShardsRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("delete_shards")])
+impl RpcName for DeleteShardsRequest {
+    fn rpc_name() -> &'static str {
+        "delete_shards"
     }
 }
-impl PrometheusLabels<1> for ListShardsRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("list_shards")])
+impl RpcName for ListShardsRequest {
+    fn rpc_name() -> &'static str {
+        "list_shards"
     }
 }
-impl PrometheusLabels<1> for CreateIndexTemplateRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("create_index_template")])
+impl RpcName for CreateIndexTemplateRequest {
+    fn rpc_name() -> &'static str {
+        "create_index_template"
     }
 }
-impl PrometheusLabels<1> for GetIndexTemplateRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("get_index_template")])
+impl RpcName for GetIndexTemplateRequest {
+    fn rpc_name() -> &'static str {
+        "get_index_template"
     }
 }
-impl PrometheusLabels<1> for FindIndexTemplateMatchesRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([
-            std::borrow::Cow::Borrowed("find_index_template_matches"),
-        ])
+impl RpcName for FindIndexTemplateMatchesRequest {
+    fn rpc_name() -> &'static str {
+        "find_index_template_matches"
     }
 }
-impl PrometheusLabels<1> for ListIndexTemplatesRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("list_index_templates")])
+impl RpcName for ListIndexTemplatesRequest {
+    fn rpc_name() -> &'static str {
+        "list_index_templates"
     }
 }
-impl PrometheusLabels<1> for DeleteIndexTemplatesRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([
-            std::borrow::Cow::Borrowed("delete_index_templates"),
-        ])
+impl RpcName for DeleteIndexTemplatesRequest {
+    fn rpc_name() -> &'static str {
+        "delete_index_templates"
     }
 }
 pub type MetastoreServiceStream<T> = quickwit_common::ServiceStream<

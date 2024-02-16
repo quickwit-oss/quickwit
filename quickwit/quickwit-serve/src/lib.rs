@@ -57,6 +57,7 @@ use bytesize::ByteSize;
 pub use format::BodyFormat;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
 use quickwit_cluster::{
     start_cluster_service, Cluster, ClusterChange, ClusterMember, ListenerHandle,
@@ -67,7 +68,8 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::spawn_named_task;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
-    EventListenerLayer, RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator,
+    EventListenerLayer, GrpcMetricsLayer, RateLimitLayer, RetryLayer, RetryPolicy,
+    SmaRateEstimator,
 };
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
@@ -141,6 +143,26 @@ fn get_metastore_client_max_concurrency() -> usize {
         })
         .unwrap_or(DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY)
 }
+
+static CP_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "client"));
+static CP_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "server"));
+
+static INDEXING_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("indexing", "client"));
+pub(crate) static INDEXING_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("indexing", "server"));
+
+static INGEST_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("ingest", "client"));
+static INGEST_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("ingest", "server"));
+
+static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("metastore", "client"));
+static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
 
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
@@ -278,16 +300,17 @@ async fn start_control_plane_if_needed(
             replication_factor,
         )
         .await?;
-        Ok(ControlPlaneServiceClient::from_mailbox(
-            control_plane_mailbox,
-        ))
+        let server = ControlPlaneServiceClient::tower()
+            .stack_layer(CP_GRPC_SERVER_METRICS_LAYER.clone())
+            .build_from_mailbox(control_plane_mailbox);
+        Ok(server)
     } else {
         let balance_channel =
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
-        Ok(ControlPlaneServiceClient::from_balance_channel(
-            balance_channel,
-            node_config.grpc_config.max_message_size,
-        ))
+        let client = ControlPlaneServiceClient::tower()
+            .stack_layer(CP_GRPC_CLIENT_METRICS_LAYER.clone())
+            .build_from_balance_channel(balance_channel, node_config.grpc_config.max_message_size);
+        Ok(client)
     }
 }
 
@@ -319,6 +342,7 @@ pub async fn serve_quickwit(
                 .stack_add_source_layer(broker_layer.clone())
                 .stack_delete_source_layer(broker_layer.clone())
                 .stack_toggle_source_layer(broker_layer)
+                .stack_layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
                 .build(metastore);
             Some(metastore)
         } else {
@@ -342,22 +366,19 @@ pub async fn serve_quickwit(
                      run --service metastore`"
                 )
             }
-
             let balance_channel =
                 balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
-            let metastore_client = MetastoreServiceClient::from_balance_channel(
-                balance_channel,
-                grpc_config.max_message_size,
-            );
-            let retry_layer = RetryLayer::new(RetryPolicy::default());
-            MetastoreServiceClient::tower()
-                .stack_layer(retry_layer)
-                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+            let layers = ServiceBuilder::new()
+                .layer(RetryLayer::new(RetryPolicy::default()))
+                .layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
+                .layer(tower::limit::GlobalConcurrencyLimitLayer::new(
                     get_metastore_client_max_concurrency(),
                 ))
-                .build(metastore_client)
+                .into_inner();
+            MetastoreServiceClient::tower()
+                .stack_layer(layers)
+                .build_from_balance_channel(balance_channel, grpc_config.max_message_size)
         };
-
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
     let control_plane_service: ControlPlaneServiceClient = start_control_plane_if_needed(
@@ -682,7 +703,12 @@ async fn setup_ingest_v2(
         replication_factor,
     );
     ingest_router.subscribe(event_broker);
-    let ingest_router_service = IngestRouterServiceClient::new(ingest_router);
+
+    // Any node can serve ingest requests, so we always instantiate an ingest router.
+    // TODO: I'm not sure that's such a good idea.
+    let ingest_router_service = IngestRouterServiceClient::tower()
+        .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
+        .build(ingest_router);
 
     // We compute the burst limit as something a bit larger than the content length limit, because
     // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
@@ -694,7 +720,7 @@ async fn setup_ingest_v2(
         ..Default::default()
     };
     // Instantiate ingester.
-    let ingester_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+    let ingester_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         let wal_dir_path = node_config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
         let ingester = Ingester::try_new(
@@ -709,17 +735,16 @@ async fn setup_ingest_v2(
         )
         .await?;
         ingester.subscribe(event_broker);
-        let ingester_service = IngesterServiceClient::new(ingester);
-        Some(ingester_service)
+        Some(ingester)
     } else {
         None
     };
     // Setup ingester pool change stream.
-    let ingester_service_opt_clone = ingester_service_opt.clone();
+    let ingester_opt_clone = ingester_opt.clone();
     let cluster_change_stream = cluster.ready_nodes_change_stream().await;
     let max_message_size = node_config.grpc_config.max_message_size;
     let ingester_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
-        let ingester_service_opt = ingester_service_opt_clone.clone();
+        let ingester_opt_clone_clone = ingester_opt_clone.clone();
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node)
@@ -728,15 +753,27 @@ async fn setup_ingest_v2(
                     let node_id: NodeId = node.node_id().into();
 
                     if node.is_self_node() {
-                        let ingester_service =
-                            ingester_service_opt.expect("ingester service should be initialized");
+                        // Here, since the service is available locally, we bypass the network stack
+                        // and use the instance directly. However, we still want client-side
+                        // metrics, so we use both metrics layers.
+                        let ingester = ingester_opt_clone_clone
+                            .expect("ingester service should be initialized");
+                        let layers = ServiceBuilder::new()
+                            .layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
+                            .into_inner();
+                        let ingester_service = IngesterServiceClient::tower()
+                            .stack_layer(layers)
+                            .build(ingester);
                         Some(Change::Insert(node_id, ingester_service))
                     } else {
-                        let ingester_service = IngesterServiceClient::from_channel(
-                            node.grpc_advertise_addr(),
-                            node.channel(),
-                            max_message_size,
-                        );
+                        let ingester_service = IngesterServiceClient::tower()
+                            .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .build_from_channel(
+                                node.grpc_advertise_addr(),
+                                node.channel(),
+                                max_message_size,
+                            );
                         Some(Change::Insert(node_id, ingester_service))
                     }
                 }
@@ -746,6 +783,12 @@ async fn setup_ingest_v2(
         })
     });
     ingester_pool.listen_for_changes(ingester_change_stream);
+
+    let ingester_service_opt = ingester_opt.map(|ingester| {
+        IngesterServiceClient::tower()
+            .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
+            .build(ingester)
+    });
     Ok((ingest_router_service, ingester_service_opt))
 }
 
@@ -853,37 +896,46 @@ fn setup_indexer_pool(
                     let node_id = node.node_id().to_string();
                     let indexing_tasks = node.indexing_tasks().to_vec();
                     let indexing_capacity = node.indexing_capacity();
+
                     if node.is_self_node() {
-                        if let Some(indexing_service_clone) = indexing_service_clone_opt {
-                            let client =
-                                IndexingServiceClient::from_mailbox(indexing_service_clone);
-                            Some(Change::Insert(
-                                node_id,
-                                IndexerNodeInfo {
-                                    client,
-                                    indexing_tasks,
-                                    indexing_capacity,
-                                },
-                            ))
-                        } else {
-                            // That means that cluster thinks we are supposed to have an indexer,
-                            // but we actually don't.
-                            None
-                        }
-                    } else {
-                        let client = IndexingServiceClient::from_channel(
-                            node.grpc_advertise_addr(),
-                            node.channel(),
-                            max_message_size,
-                        );
-                        Some(Change::Insert(
+                        // Here, since the service is available locally, we bypass the network stack
+                        // and use the mailbox directly. However, we still want client-side metrics,
+                        // so we use both metrics layers.
+                        let indexing_service_mailbox = indexing_service_clone_opt
+                            .expect("indexing service should be initialized");
+                        let layers = ServiceBuilder::new()
+                            .layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .layer(INDEXING_GRPC_SERVER_METRICS_LAYER.clone())
+                            .into_inner();
+                        let client = IndexingServiceClient::tower()
+                            .stack_layer(layers)
+                            .build_from_mailbox(indexing_service_mailbox);
+                        let change = Change::Insert(
                             node_id,
                             IndexerNodeInfo {
                                 client,
                                 indexing_tasks,
                                 indexing_capacity,
                             },
-                        ))
+                        );
+                        Some(change)
+                    } else {
+                        let client = IndexingServiceClient::tower()
+                            .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .build_from_channel(
+                                node.grpc_advertise_addr(),
+                                node.channel(),
+                                max_message_size,
+                            );
+                        let change = Change::Insert(
+                            node_id,
+                            IndexerNodeInfo {
+                                client,
+                                indexing_tasks,
+                                indexing_capacity,
+                            },
+                        );
+                        Some(change)
                     }
                 }
                 ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_string())),

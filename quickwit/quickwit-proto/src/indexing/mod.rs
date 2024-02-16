@@ -25,6 +25,7 @@ use std::{fmt, io};
 use anyhow::anyhow;
 use quickwit_actors::AskError;
 use quickwit_common::pubsub::Event;
+use quickwit_common::tower::RpcName;
 use serde::{Deserialize, Serialize};
 use thiserror;
 
@@ -341,6 +342,12 @@ impl IndexingTask {
     pub fn pipeline_uid(&self) -> PipelineUid {
         self.pipeline_uid
             .expect("`pipeline_uid` should be a required field")
+    }
+}
+
+impl RpcName for ApplyIndexingPlanRequest {
+    fn rpc_name() -> &'static str {
+        "apply_indexing_plan"
     }
 }
 

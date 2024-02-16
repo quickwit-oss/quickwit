@@ -85,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_result_type_path("crate::metastore::MetastoreResult")
         .with_error_type_path("crate::metastore::MetastoreError")
         .generate_extra_service_methods()
-        .generate_prom_labels_for_requests()
+        .generate_rpc_name_impls()
         .run()
         .unwrap();
 
@@ -128,6 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_output_dir("src/codegen/quickwit")
         .with_result_type_path("crate::ingest::IngestV2Result")
         .with_error_type_path("crate::ingest::IngestV2Error")
+        .generate_rpc_name_impls()
         .run()
         .unwrap();
 
