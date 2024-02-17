@@ -101,7 +101,7 @@ impl IngestRouter {
             ingester_pool,
             state,
             replication_factor,
-            write_semaphore: SemaphoreWithMaxWaiters::new(1, 10),
+            write_semaphore: SemaphoreWithMaxWaiters::new(2, 20),
         }
     }
 
