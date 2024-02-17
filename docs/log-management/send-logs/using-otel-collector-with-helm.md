@@ -86,11 +86,8 @@ config:
       # flavor: gcs
       # endpoint: https://storage.googleapis.com
 
-  # No metastore configuration.
-  # By default, metadata is stored on the local disk of the metastore instance.
-  # Everything will be lost after a metastore restart.
-  # If you want to have a metastore on S3, uncomment the following line.
-  # metastore_uri: ${DEFAULT_INDEX_ROOT_URI}
+  # Metastore on S3.
+  metastore_uri: ${DEFAULT_INDEX_ROOT_URI}
 
   default_index_root_uri: ${DEFAULT_INDEX_ROOT_URI}
 
@@ -217,6 +214,19 @@ helm uninstall quickwit
 
 # Delete namespace
 kubectl delete namespace qw-tutorial
+```
+
+Finally, you need to delete three JSON files created by Quickwit on your object storage:
+
+```bash
+# if your version <= 0.7.1
+aws s3 rm ${DEFAULT_INDEX_ROOT_URI}/indexes_states.json
+# if your version > 0.7.1
+aws s3 rm ${DEFAULT_INDEX_ROOT_URI}/manifest.json
+# the metastore file of the logs index
+aws s3 rm ${DEFAULT_INDEX_ROOT_URI}/otel-logs-v0_7/metastore.json
+# the metastore file of the traces index
+aws s3 rm ${DEFAULT_INDEX_ROOT_URI}/otel-traces-v0_7/metastore.json
 ```
 
 ## Next step
