@@ -76,13 +76,22 @@ environment:
 
 # Quickwit configuration
 config:
+  storage:
+    s3:
+      region: ${AWS_REGION}
+      access_key_id: ${AWS_ACCESS_KEY_ID}
+      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+      # If you are not on AWS S3, you can define a flavor (gcs, minio, garage...)
+      # and additional variables for your object storage.
+      # flavor: gcs
+      # endpoint: https://storage.googleapis.com
+
   # No metastore configuration.
   # By default, metadata is stored on the local disk of the metastore instance.
   # Everything will be lost after a metastore restart.
-  s3:
-    region: ${AWS_REGION}
-    access_key: ${AWS_ACCESS_KEY_ID}
-    secret_key: ${AWS_SECRET_ACCESS_KEY}
+  # If you want to have a metastore on S3, uncomment the following line.
+  # metastore_uri: ${DEFAULT_INDEX_ROOT_URI}
+
   default_index_root_uri: ${DEFAULT_INDEX_ROOT_URI}
 
   # Indexer settings
@@ -209,3 +218,7 @@ helm uninstall quickwit
 # Delete namespace
 kubectl delete namespace qw-tutorial
 ```
+
+## Next step
+
+Follow our [tutorial](../../get-started/tutorials/trace-analytics-with-grafana.md) to install Quickwit Grafana plugin to explore your logs, create dashboards and alerts.
