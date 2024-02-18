@@ -92,7 +92,7 @@ impl GrpcMetricsLayer {
             ),
             requests_in_flight: new_gauge_vec(
                 "grpc_requests_in_flight",
-                "Number of gRPC requests in flight.",
+                "Number of gRPC requests in-flight.",
                 subsystem,
                 &[("kind", kind)],
                 ["rpc"],
