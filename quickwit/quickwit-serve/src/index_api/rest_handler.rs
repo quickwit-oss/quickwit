@@ -22,8 +22,8 @@ use std::sync::Arc;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    load_source_config_from_user_config, ConfigFormat, NodeConfig, SourceConfig, SourceParams,
-    CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
+    load_source_config_from_user_config, validate_index_id_pattern, ConfigFormat, NodeConfig,
+    SourceConfig, SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
@@ -124,9 +124,10 @@ async fn get_index_metadata(
 #[derive(Debug, Clone, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema, Default)]
 #[into_params(parameter_in = Query)]
 pub struct ListIndexesQueryParams {
+    #[serde(deserialize_with = "from_simple_list")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub index_id_pattern: Option<String>,
+    pub index_id_patterns: Option<Vec<String>>,
 }
 
 fn list_indexes_metadata_handler(
@@ -420,7 +421,7 @@ fn mark_splits_for_deletion_handler(
     ),
     params(
         ListIndexesQueryParams,
-        ("index_id_pattern" = String, Path, description = "The index ID pattern to retrieve indexes for."),
+        ("index_id_patterns" = String, Path, description = "The index ID pattern to retrieve indexes for."),
     )
 )]
 /// Gets indexes metadata.
@@ -429,10 +430,15 @@ async fn list_indexes_metadata(
     mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<Vec<IndexMetadata>> {
     let list_indexes_metata_request =
-        if let Some(index_id_pattern) = list_indexes_params.index_id_pattern {
-            ListIndexesMetadataRequest {
-                index_id_patterns: vec![index_id_pattern],
+        if let Some(index_id_patterns) = list_indexes_params.index_id_patterns {
+            for index_id_pattern in &index_id_patterns {
+                validate_index_id_pattern(index_id_pattern, true).map_err(|error| {
+                    MetastoreError::InvalidArgument {
+                        message: error.to_string(),
+                    }
+                })?;
             }
+            ListIndexesMetadataRequest { index_id_patterns }
         } else {
             ListIndexesMetadataRequest::all()
         };
@@ -1176,9 +1182,9 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_list_indexes_metadata()
-            .return_once(|_list_indexes_request| {
+            .return_once(|list_indexes_request| {
                 assert_eq!(
-                    _list_indexes_request.index_id_patterns,
+                    list_indexes_request.index_id_patterns,
                     vec!["test-index-*".to_string()]
                 );
                 let index_metadata =
@@ -1196,7 +1202,7 @@ mod tests {
             super::index_management_handlers(index_service, Arc::new(NodeConfig::for_test()))
                 .recover(recover_fn);
         let resp = warp::test::request()
-            .path("/indexes?index_id_pattern=test-index-*")
+            .path("/indexes?index_id_patterns=test-index-*")
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
