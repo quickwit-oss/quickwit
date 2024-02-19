@@ -142,6 +142,8 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         indexing_tasks,
         indexing_cpu_capacity,
     };
+    let mut failure_detector_config = FailureDetectorConfig::default();
+    failure_detector_config.phi_threshold = 12.0f64;
     let cluster = Cluster::join(
         cluster_id,
         self_node,

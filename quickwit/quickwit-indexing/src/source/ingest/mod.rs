@@ -317,72 +317,72 @@ impl IngestSource {
 
         // Finally, we push the information to ingesters in a best effort manner.
         // If the request fails, we just log an error.
-        let mut per_ingester_truncate_subrequests: FnvHashMap<
-            &NodeId,
-            Vec<TruncateShardsSubrequest>,
-        > = FnvHashMap::default();
+        // let mut per_ingester_truncate_subrequests: FnvHashMap<
+        //     &NodeId,
+        //     Vec<TruncateShardsSubrequest>,
+        // > = FnvHashMap::default();
 
-        for (shard_id, truncate_up_to_position_inclusive) in truncate_up_to_positions {
-            if matches!(truncate_up_to_position_inclusive, Position::Beginning) {
-                continue;
-            }
-            let Some(shard) = self.assigned_shards.get(&shard_id) else {
-                warn!("failed to truncate shard `{shard_id}`: shard is no longer assigned");
-                continue;
-            };
-            let truncate_shards_subrequest = TruncateShardsSubrequest {
-                index_uid: self.client_id.source_uid.index_uid.clone().into(),
-                source_id: self.client_id.source_uid.source_id.clone(),
-                shard_id: Some(shard_id),
-                truncate_up_to_position_inclusive: Some(truncate_up_to_position_inclusive),
-            };
-            if let Some(follower_id) = &shard.follower_id_opt {
-                per_ingester_truncate_subrequests
-                    .entry(follower_id)
-                    .or_default()
-                    .push(truncate_shards_subrequest.clone());
-            }
-            per_ingester_truncate_subrequests
-                .entry(&shard.leader_id)
-                .or_default()
-                .push(truncate_shards_subrequest);
-        }
-        for (ingester_id, truncate_subrequests) in per_ingester_truncate_subrequests {
-            let Some(mut ingester) = self.ingester_pool.get(ingester_id) else {
-                warn!("failed to truncate shard(s): ingester `{ingester_id}` is unavailable");
-                continue;
-            };
-            let truncate_shards_request = TruncateShardsRequest {
-                ingester_id: ingester_id.clone().into(),
-                subrequests: truncate_subrequests,
-            };
-            let truncate_future = async move {
-                let retry_params = RetryParams {
-                    base_delay: Duration::from_secs(1),
-                    max_delay: Duration::from_secs(10),
-                    max_attempts: 5,
-                };
-                for num_attempts in 1..=retry_params.max_attempts {
-                    let Err(error) = ingester
-                        .truncate_shards(truncate_shards_request.clone())
-                        .await
-                    else {
-                        return;
-                    };
-                    let delay = retry_params.compute_delay(num_attempts);
-                    time::sleep(delay).await;
+        // for (shard_id, truncate_up_to_position_inclusive) in truncate_up_to_positions {
+        //     if matches!(truncate_up_to_position_inclusive, Position::Beginning) {
+        //         continue;
+        //     }
+        //     let Some(shard) = self.assigned_shards.get(&shard_id) else {
+        //         warn!("failed to truncate shard `{shard_id}`: shard is no longer assigned");
+        //         continue;
+        //     };
+        //     let truncate_shards_subrequest = TruncateShardsSubrequest {
+        //         index_uid: self.client_id.source_uid.index_uid.clone().into(),
+        //         source_id: self.client_id.source_uid.source_id.clone(),
+        //         shard_id: Some(shard_id),
+        //         truncate_up_to_position_inclusive: Some(truncate_up_to_position_inclusive),
+        //     };
+        //     if let Some(follower_id) = &shard.follower_id_opt {
+        //         per_ingester_truncate_subrequests
+        //             .entry(follower_id)
+        //             .or_default()
+        //             .push(truncate_shards_subrequest.clone());
+        //     }
+        //     per_ingester_truncate_subrequests
+        //         .entry(&shard.leader_id)
+        //         .or_default()
+        //         .push(truncate_shards_subrequest);
+        // }
+        // for (ingester_id, truncate_subrequests) in per_ingester_truncate_subrequests {
+        //     let Some(mut ingester) = self.ingester_pool.get(ingester_id) else {
+        //         warn!("failed to truncate shard(s): ingester `{ingester_id}` is unavailable");
+        //         continue;
+        //     };
+        //     let truncate_shards_request = TruncateShardsRequest {
+        //         ingester_id: ingester_id.clone().into(),
+        //         subrequests: truncate_subrequests,
+        //     };
+        //     let truncate_future = async move {
+        //         let retry_params = RetryParams {
+        //             base_delay: Duration::from_secs(1),
+        //             max_delay: Duration::from_secs(10),
+        //             max_attempts: 5,
+        //         };
+        //         for num_attempts in 1..=retry_params.max_attempts {
+        //             let Err(error) = ingester
+        //                 .truncate_shards(truncate_shards_request.clone())
+        //                 .await
+        //             else {
+        //                 return;
+        //             };
+        //             let delay = retry_params.compute_delay(num_attempts);
+        //             time::sleep(delay).await;
 
-                    if num_attempts == retry_params.max_attempts {
-                        warn!(
-                            ingester_id=%truncate_shards_request.ingester_id,
-                            "failed to truncate shard(s): {error}"
-                        );
-                    }
-                }
-            };
-            // Truncation is best-effort, so fire and forget.
-            tokio::spawn(truncate_future);
-        }
+        //             if num_attempts == retry_params.max_attempts {
+        //                 warn!(
+        //                     ingester_id=%truncate_shards_request.ingester_id,
+        //                     "failed to truncate shard(s): {error}"
+        //                 );
+        //             }
+        //         }
+        //     };
+        //     // Truncation is best-effort, so fire and forget.
+        //     tokio::spawn(truncate_future);
+        // }
     }
 
     /// If the new assignment removes a shard that we were in the middle of indexing (ie they have

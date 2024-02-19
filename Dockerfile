@@ -39,9 +39,7 @@ COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
 WORKDIR /quickwit
 
 RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
-    && cargo build \
-        --features $CARGO_FEATURES \
-        $(test "$CARGO_PROFILE" = "release" && echo "--release") \
+    && cargo build $(test "$CARGO_PROFILE" = "release" && echo "--release") \
     && echo "Copying binaries to /quickwit/bin" \
     && mkdir -p /quickwit/bin \
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;

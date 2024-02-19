@@ -50,10 +50,10 @@ use crate::member::{
 use crate::metrics::spawn_metrics_task;
 use crate::ClusterNode;
 
-const MARKED_FOR_DELETION_GRACE_PERIOD: usize = if cfg!(any(test, feature = "testsuite")) {
-    100 // ~ HEARTBEAT * 100 = 2.5 seconds.
+const MARKED_FOR_DELETION_GRACE_PERIOD: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(2500)
 } else {
-    5_000 // ~ HEARTBEAT * 5_000 ~ 4 hours.
+    Duration::from_secs(5_000)
 };
 
 // An indexing task key is formatted as
@@ -156,6 +156,11 @@ impl Cluster {
                 ),
             ],
             transport,
+            Some(Box::new(|node_state: &NodeState| {
+                node_state.contains_key(GRPC_ADVERTISE_ADDR_KEY) &&
+                node_state.contains_key(ENABLED_SERVICES_KEY) &&
+                node_state.get(READINESS_KEY) == Some(READINESS_VALUE_READY)
+            }))
         )
         .await?;
 
@@ -401,11 +406,11 @@ fn spawn_ready_members_task(
                 let member = match build_cluster_member(chitchat_id, &node_state) {
                     Ok(member) => member,
                     Err(error) => {
-                        warn!(
-                            cluster_id=%cluster_id,
-                            error=?error,
-                            "Failed to build cluster member from Chitchat node state."
-                        );
+                        // warn!(
+                        //     cluster_id=%cluster_id,
+                        //     error=?error,
+                        //     "Failed to build cluster member from Chitchat node state."
+                        // );
                         continue;
                     }
                 };
