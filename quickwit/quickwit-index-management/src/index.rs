@@ -17,21 +17,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Duration;
 
+use futures_util::StreamExt;
+use itertools::Itertools;
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
+use quickwit_common::PrettySample;
 use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
     AddSourceRequestExt, CreateIndexResponseExt, IndexMetadata, IndexMetadataResponseExt,
-    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitInfo,
-    SplitMetadata, SplitState,
+    ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
+    MetastoreServiceStreamSplitsExt, SplitInfo, SplitMetadata, SplitState,
 };
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, EntityKind,
-    IndexMetadataRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest,
+    IndexMetadataRequest, ListIndexesMetadataRequest, ListSplitsRequest,
+    MarkSplitsForDeletionRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
+    ResetSourceCheckpointRequest,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -216,6 +221,100 @@ impl IndexService {
         Ok(deleted_splits)
     }
 
+    /// Deletes the indexes specified with `index_id_patterns`.
+    /// This is a wrapper of delete_index, and support index delete with index pattern
+    ///
+    /// * `index_id_patterns` - The targeted index ID patterns.
+    /// * `dry_run` - Should this only return a list of affected files without performing deletion.
+    pub async fn delete_indexes(
+        &self,
+        index_id_patterns: Vec<String>,
+        dry_run: bool,
+    ) -> Result<Vec<SplitInfo>, IndexServiceError> {
+        let list_indexes_metadatas_request = ListIndexesMetadataRequest {
+            index_id_patterns: index_id_patterns.to_owned(),
+        };
+        // disallow index_id patterns containing *
+        for index_id_pattern in &index_id_patterns {
+            if index_id_pattern.contains('*') {
+                return Err(IndexServiceError::Metastore(
+                    MetastoreError::InvalidArgument {
+                        message: format!("index_id pattern {} contains *", index_id_pattern),
+                    },
+                ));
+            }
+        }
+
+        let mut metastore = self.metastore.clone();
+        let indexes_metadata = metastore
+            .list_indexes_metadata(list_indexes_metadatas_request)
+            .await?
+            .deserialize_indexes_metadata()?;
+
+        if indexes_metadata.len() != index_id_patterns.len() {
+            let found_index_ids: HashSet<&str> = indexes_metadata
+                .iter()
+                .map(|index_metadata| index_metadata.index_id())
+                .collect();
+            let missing_index_ids: Vec<String> = index_id_patterns
+                .iter()
+                .filter(|index_id| !found_index_ids.contains(index_id.as_str()))
+                .map(|index_id| index_id.to_string())
+                .collect_vec();
+            return Err(IndexServiceError::Metastore(MetastoreError::NotFound(
+                EntityKind::Indexes {
+                    index_ids: missing_index_ids.to_vec(),
+                },
+            )));
+        }
+        let index_ids = indexes_metadata
+            .iter()
+            .map(|index_metadata| index_metadata.index_id())
+            .collect_vec();
+        info!(index_ids = ?PrettySample::new(&index_ids, 5), "delete indexes");
+
+        // setup delete index tasks
+        let mut delete_index_tasks = Vec::new();
+        for index_id in index_ids {
+            let task = async move {
+                let result = self.clone().delete_index(index_id, dry_run).await;
+                (index_id, result)
+            };
+            delete_index_tasks.push(task);
+        }
+        let mut delete_responses: HashMap<String, Vec<SplitInfo>> = HashMap::new();
+        let mut delete_errors: HashMap<String, IndexServiceError> = HashMap::new();
+        let mut stream = futures::stream::iter(delete_index_tasks).buffer_unordered(100);
+        while let Some((index_id, delete_response)) = stream.next().await {
+            match delete_response {
+                Ok(split_infos) => {
+                    delete_responses.insert(index_id.to_string(), split_infos);
+                }
+                Err(error) => {
+                    delete_errors.insert(index_id.to_string(), error);
+                }
+            }
+        }
+
+        if delete_errors.is_empty() {
+            let mut concatenated_split_infos = Vec::new();
+            for (_, split_info_vec) in delete_responses.into_iter() {
+                concatenated_split_infos.extend(split_info_vec);
+            }
+            Ok(concatenated_split_infos)
+        } else {
+            Err(IndexServiceError::Metastore(MetastoreError::Internal {
+                message: format!(
+                    "errors occurred when deleting indexes: {:?}",
+                    index_id_patterns
+                ),
+                cause: format!(
+                    "errors: {:?}\ndeleted indexes: {:?}",
+                    delete_errors, delete_responses
+                ),
+            }))
+        }
+    }
     /// Detect all dangling splits and associated files from the index and removes them.
     ///
     /// * `index_id` - The target index Id.

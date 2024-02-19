@@ -172,6 +172,14 @@ pub(crate) fn elastic_index_count_filter(
         .and(json_or_empty())
 }
 
+#[utoipa::path(delete, tag = "Indexes", path = "/{index}")]
+pub(crate) fn elastic_delete_index_filter(
+) -> impl Filter<Extract = (Vec<String>,), Error = Rejection> + Clone {
+    warp::path!("_elastic" / String)
+        .and_then(extract_index_id_patterns)
+        .and(warp::get())
+}
+
 // No support for any query parameters for now.
 #[utoipa::path(get, tag = "Search", path = "/{index}/_stats")]
 pub(crate) fn elastic_index_stats_filter(
