@@ -209,7 +209,8 @@ impl ControlPlane {
             let index_config_json = serde_utils::to_json_str(&index_config)?;
 
             let source_configs_json = vec![
-                serde_utils::to_json_str(&SourceConfig::ingest_api_default())?,
+                // We disable ingest V1 for index templates.
+                // serde_utils::to_json_str(&SourceConfig::ingest_api_default())?,
                 serde_utils::to_json_str(&SourceConfig::ingest_v2())?,
                 serde_utils::to_json_str(&SourceConfig::cli())?,
             ];
