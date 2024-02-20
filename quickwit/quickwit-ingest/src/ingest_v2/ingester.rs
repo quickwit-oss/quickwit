@@ -2578,10 +2578,11 @@ mod tests {
         mock_control_plane
             .expect_advise_reset_shards()
             .once()
-            .returning(|request| {
+            .returning(|mut request| {
                 assert_eq!(request.shard_ids.len(), 1);
                 assert_eq!(request.shard_ids[0].index_uid(), &("test-index", 0));
                 assert_eq!(request.shard_ids[0].source_id, "test-source");
+                request.shard_ids[0].shard_ids.sort();
                 assert_eq!(
                     request.shard_ids[0].shard_ids,
                     [ShardId::from(1), ShardId::from(2)]
