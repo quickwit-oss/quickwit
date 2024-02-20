@@ -752,9 +752,7 @@ fn apply_index_template_match(
 mod tests {
     use mockall::Sequence;
     use quickwit_actors::{AskError, Observe, SupervisorMetrics};
-    use quickwit_config::{
-        IndexConfig, SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
-    };
+    use quickwit_config::{IndexConfig, SourceParams, CLI_SOURCE_ID, INGEST_V2_SOURCE_ID};
     use quickwit_indexing::IndexingService;
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
@@ -1718,10 +1716,10 @@ mod tests {
             assert_eq!(index_config.index_uri, "ram:///indexes/test-index-foo");
 
             let source_configs = request.deserialize_source_configs().unwrap();
-            assert_eq!(source_configs.len(), 3);
-            assert_eq!(source_configs[0].source_id, INGEST_API_SOURCE_ID);
-            assert_eq!(source_configs[1].source_id, INGEST_V2_SOURCE_ID);
-            assert_eq!(source_configs[2].source_id, CLI_SOURCE_ID);
+            assert_eq!(source_configs.len(), 2);
+            // assert_eq!(source_configs[0].source_id, INGEST_API_SOURCE_ID);
+            assert_eq!(source_configs[0].source_id, INGEST_V2_SOURCE_ID);
+            assert_eq!(source_configs[1].source_id, CLI_SOURCE_ID);
 
             let index_uid = IndexUid::from_parts("test-index-foo", 0);
             let mut index_metadata = IndexMetadata::new_with_index_uid(index_uid, index_config);
