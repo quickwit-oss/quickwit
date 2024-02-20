@@ -410,6 +410,42 @@ field_mappings:
     type: text
 ```
 
+#### concatenate
+
+Quickwit supports mapping the content of multiple fields to a single one. This can be more efficient at query time than
+searching through dozens of `default_search_fields`. It also allow querying inside a json field without knowing the path
+to the field being searched.
+
+```yaml
+name: my_default_field
+type: concatenate
+concatenated_fields:
+  - text
+  - params_* # shortcut for all fields starting with `params_`
+  - resource.author # all fields in resource.author, assuming resource is either of type `object` or `json`
+  - _dynamic # content of the dynamic field, assuming indexing mode is `dynamic` (see below)
+tokenizer: default
+record: basic
+```
+
+Concatenate fields don't support fast fields, and are never stored. They uses their own tokenizer, independantly of the
+tokenizer configured on the individual fields.
+At query time, concatenate fields don't support range queries.
+Only the following types are supported inside a concatenate field: text, datetime, bool, i64, u64, ip, json. Other types are reject
+at index creation, or discarded during indexation if they are found inside a json field.
+datetime can only be queried in their RFC-3339 form, possibly omiting later components. # todo! will have to confirm this is achievable
+For json fields, they path is not indexed, only values are.
+
+plan:
+- implement text/bool/i64/u64 (nothing to do on search side for it to work). all gets converted to strings
+- add json
+- add object
+- add dynamic
+- add sub-field and wildcard
+- add datetime (at index time, generate multiple tokens for yyyy, yyyy-MM... to yyyy-MM-ddThh:mm:ss; at search time, emit both tokenized and "raw" version of what may look like a datetime)
+- add ip (at index time, convert to single token; at search time, emit both tokenized and "raw" version of the ip)
+- allow optionally indexing json path (how do we tokenize it? split at each dot, or not?)
+
 ### Mode
 
 The `mode` describes how Quickwit should behave when it receives a field that is not defined in the field mapping.

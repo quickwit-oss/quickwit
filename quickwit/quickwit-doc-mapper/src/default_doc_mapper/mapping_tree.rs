@@ -29,6 +29,7 @@ use tantivy::schema::{
     BytesOptions, Field, IntoIpv6Addr, IpAddrOptions, JsonObjectOptions, NumericOptions,
     OwnedValue as TantivyValue, SchemaBuilder, TextOptions,
 };
+use tantivy::tokenizer::{PreTokenizedString, Token};
 use tantivy::{DateOptions, TantivyDocument as Document};
 use tracing::warn;
 
@@ -52,6 +53,20 @@ pub enum LeafType {
     IpAddr(QuickwitIpAddrOptions),
     Json(QuickwitJsonOptions),
     Text(QuickwitTextOptions),
+}
+
+fn value_to_pretokenized<T: ToString>(val: T) -> PreTokenizedString {
+    let val = val.to_string();
+    PreTokenizedString {
+        text: val.clone(),
+        tokens: vec![Token {
+            offset_from: 0,
+            offset_to: 0,
+            position: 0,
+            text: val,
+            position_length: 1,
+        }],
+    }
 }
 
 impl LeafType {
@@ -100,6 +115,70 @@ impl LeafType {
             }
         }
     }
+
+    fn string_value_from_json(
+        &self,
+        json_val: JsonValue,
+    ) -> Result<impl Iterator<Item = TantivyValue>, String> {
+        match self {
+            LeafType::Text(_) => {
+                if let JsonValue::String(text) = json_val {
+                    Ok(std::iter::once(TantivyValue::Str(text)))
+                } else {
+                    Err(format!("expected string, got `{json_val}`"))
+                }
+            }
+            LeafType::I64(numeric_options) => {
+                let val = i64::from_json_to_self(json_val, numeric_options.coerce)?;
+                Ok(std::iter::once(value_to_pretokenized(val).into()))
+            }
+            LeafType::U64(numeric_options) => {
+                let val = u64::from_json_to_self(json_val, numeric_options.coerce)?;
+                Ok(std::iter::once(value_to_pretokenized(val).into()))
+            }
+            LeafType::F64(_) => Err("unsuported concat type: f64".to_string()),
+            LeafType::Bool(_) => {
+                if let JsonValue::Bool(val) = json_val {
+                    Ok(std::iter::once(value_to_pretokenized(val).into()))
+                } else {
+                    Err(format!("expected boolean, got `{json_val}`"))
+                }
+            }
+            LeafType::IpAddr(_) => Err("unsuported concat type: IpAddr".to_string()),
+            LeafType::DateTime(_date_time_options) => {
+                Err("unsuported concat type: DateTime".to_string())
+            }
+            LeafType::Bytes(_binary_options) => Err("unsuported concat type: DateTime".to_string()),
+            LeafType::Json(_) => {
+                if let JsonValue::Object(_json_obj) = json_val {
+                    todo!()
+                    /*
+                    Ok(TantivyValue::Object(
+                        json_obj
+                            .into_iter()
+                            .map(|(key, val)| (key, val.into()))
+                            .collect(),
+                    ))*/
+                } else {
+                    Err(format!("expected object, got `{json_val}`"))
+                }
+            }
+        }
+    }
+
+    fn supported_for_concat(&self) -> bool {
+        use LeafType::*;
+        matches!(self, Text(_) | U64(_) | I64(_) | Bool(_))
+        /*
+            // will be supported
+            DateTime(QuickwitDateTimeOptions),
+            IpAddr(QuickwitIpAddrOptions),
+            Json(QuickwitJsonOptions),
+            // won't be supported
+            Bytes(QuickwitBytesOptions),
+            F64(QuickwitNumericOptions),
+        */
+    }
 }
 
 #[derive(Clone)]
@@ -107,6 +186,8 @@ pub(crate) struct MappingLeaf {
     field: Field,
     typ: LeafType,
     cardinality: Cardinality,
+    // concatenate fields this field is part of
+    concatenate: Vec<Field>,
 }
 
 impl MappingLeaf {
@@ -129,6 +210,17 @@ impl MappingLeaf {
                     // We just ignore `null`.
                     continue;
                 }
+                if !self.concatenate.is_empty() {
+                    let concat_values = self
+                        .typ
+                        .string_value_from_json(el_json_val.clone())
+                        .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
+                    for concat_value in concat_values {
+                        for field in &self.concatenate {
+                            document.add_field_value(*field, concat_value.clone());
+                        }
+                    }
+                }
                 let value = self
                     .typ
                     .value_from_json(el_json_val)
@@ -136,6 +228,18 @@ impl MappingLeaf {
                 document.add_field_value(self.field, value);
             }
             return Ok(());
+        }
+
+        if !self.concatenate.is_empty() {
+            let concat_values = self
+                .typ
+                .string_value_from_json(json_val.clone())
+                .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
+            for concat_value in concat_values {
+                for field in &self.concatenate {
+                    document.add_field_value(*field, concat_value.clone());
+                }
+            }
         }
         let value = self
             .typ
@@ -246,20 +350,18 @@ fn insert_json_val(
 trait NumVal: Sized + FromStr + ToString + Into<TantivyValue> {
     fn from_json_number(num: &serde_json::Number) -> Option<Self>;
 
-    fn from_json(json_val: JsonValue, coerce: bool) -> Result<TantivyValue, String> {
+    fn from_json_to_self(json_val: JsonValue, coerce: bool) -> Result<Self, String> {
         match json_val {
-            JsonValue::Number(num_val) => Self::from_json_number(&num_val)
-                .map(Self::into)
-                .ok_or_else(|| {
-                    format!(
-                        "expected {}, got inconvertible JSON number `{}`",
-                        type_name::<Self>(),
-                        num_val
-                    )
-                }),
+            JsonValue::Number(num_val) => Self::from_json_number(&num_val).ok_or_else(|| {
+                format!(
+                    "expected {}, got inconvertible JSON number `{}`",
+                    type_name::<Self>(),
+                    num_val
+                )
+            }),
             JsonValue::String(str_val) => {
                 if coerce {
-                    str_val.parse::<Self>().map(Self::into).map_err(|_| {
+                    str_val.parse::<Self>().map_err(|_| {
                         format!(
                             "failed to coerce JSON string `\"{str_val}\"` to {}",
                             type_name::<Self>()
@@ -282,6 +384,10 @@ trait NumVal: Sized + FromStr + ToString + Into<TantivyValue> {
                 Err(message)
             }
         }
+    }
+
+    fn from_json(json_val: JsonValue, coerce: bool) -> Result<TantivyValue, String> {
+        Self::from_json_to_self(json_val, coerce).map(Self::into)
     }
 
     fn to_json(&self, output_format: NumericOutputFormat) -> Option<JsonValue>;
@@ -377,6 +483,38 @@ impl MappingNode {
         }
     }
 
+    /// Finds the field mapping type for a given field path in the mapping tree.
+    /// Dots in `field_path_as_str` define the boundaries between field names.
+    /// If a dot is part of a field name, it must be escaped with '\'.
+    pub fn find_field_mapping_leaf(
+        &mut self,
+        field_path_as_str: &str,
+    ) -> Option<impl Iterator<Item = &mut MappingLeaf>> {
+        let field_path = build_field_path_from_str(field_path_as_str);
+        self.internal_find_field_mapping_leaf(&field_path)
+    }
+
+    fn internal_find_field_mapping_leaf(
+        &mut self,
+        field_path: &[String],
+    ) -> Option<impl Iterator<Item = &mut MappingLeaf>> {
+        let (first_path_fragment, sub_field_path) = field_path.split_first()?;
+        let field_name = self
+            .branches_order
+            .iter()
+            .find(|name| name == &first_path_fragment)?;
+        let child_tree = self.branches.get_mut(field_name).expect("Missing field");
+        match (child_tree, sub_field_path.is_empty()) {
+            (_, false) => {
+                todo!()
+            }
+            (MappingTree::Leaf(leaf), true) => Some([leaf].into_iter()),
+            (MappingTree::Node(_), true) => {
+                todo!()
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn num_fields(&self) -> usize {
         self.branches.len()
@@ -423,6 +561,7 @@ impl MappingNode {
                         let dynamic_json_obj_after_path =
                             get_or_insert_path(path, dynamic_json_obj);
                         dynamic_json_obj_after_path.insert(field_name, val);
+                        // TODO add to potential _dynamic concatenate field
                     }
                     ModeType::Strict => {
                         path.push(field_name);
@@ -545,14 +684,50 @@ fn build_mapping_tree_from_entries<'a>(
     schema: &mut SchemaBuilder,
 ) -> anyhow::Result<MappingNode> {
     let mut mapping_node = MappingNode::default();
+    let mut concatenate_fields = Vec::new();
     for entry in entries {
-        field_path.push(&entry.name);
-        if mapping_node.branches.contains_key(&entry.name) {
-            bail!("duplicated field definition `{}`", entry.name);
+        if let FieldMappingType::Concatenate(_) = &entry.mapping_type {
+            concatenate_fields.push(entry);
+        } else {
+            field_path.push(&entry.name);
+            if mapping_node.branches.contains_key(&entry.name) {
+                bail!("duplicated field definition `{}`", entry.name);
+            }
+            let child_tree =
+                build_mapping_from_field_type(&entry.mapping_type, field_path, schema)?;
+            field_path.pop();
+            mapping_node.insert(&entry.name, child_tree);
         }
-        let child_tree = build_mapping_from_field_type(&entry.mapping_type, field_path, schema)?;
-        field_path.pop();
-        mapping_node.insert(&entry.name, child_tree);
+    }
+    for concatenate_field_entry in concatenate_fields {
+        let FieldMappingType::Concatenate(options) = &concatenate_field_entry.mapping_type else {
+            continue; // unreachable
+        };
+        let name = &concatenate_field_entry.name;
+        if mapping_node.branches.contains_key(name) {
+            bail!("duplicated field definition `{}`", name);
+        }
+        let text_options: TextOptions = options.clone().into();
+        let field = schema.add_text_field(name, text_options);
+        for sub_field in &options.concatenate_fields {
+            // TODO handle *
+            for matched_field in
+                mapping_node
+                    .find_field_mapping_leaf(sub_field)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("concatenate field uses an unknown field `{sub_field}`")
+                    })?
+            {
+                if !matched_field.typ.supported_for_concat() {
+                    bail!(
+                        "subfield `{}` not supported inside a concatenate field",
+                        sub_field
+                    );
+                }
+                matched_field.concatenate.push(field);
+            }
+        }
+        // TODO handle _dynamic
     }
     Ok(mapping_node)
 }
@@ -696,6 +871,7 @@ fn build_mapping_from_field_type<'a>(
                 field,
                 typ: LeafType::Text(options.clone()),
                 cardinality: *cardinality,
+                concatenate: Vec::new(),
             };
             Ok(MappingTree::Leaf(mapping_leaf))
         }
@@ -706,6 +882,7 @@ fn build_mapping_from_field_type<'a>(
                 field,
                 typ: LeafType::I64(options.clone()),
                 cardinality: *cardinality,
+                concatenate: Vec::new(),
             };
             Ok(MappingTree::Leaf(mapping_leaf))
         }
@@ -716,6 +893,7 @@ fn build_mapping_from_field_type<'a>(
                 field,
                 typ: LeafType::U64(options.clone()),
                 cardinality: *cardinality,
+                concatenate: Vec::new(),
             };
             Ok(MappingTree::Leaf(mapping_leaf))
         }
@@ -726,6 +904,7 @@ fn build_mapping_from_field_type<'a>(
                 field,
                 typ: LeafType::F64(options.clone()),
                 cardinality: *cardinality,
+                concatenate: Vec::new(),
             };
             Ok(MappingTree::Leaf(mapping_leaf))
         }
@@ -736,6 +915,7 @@ fn build_mapping_from_field_type<'a>(
                 field,
                 typ: LeafType::Bool(options.clone()),
                 cardinality: *cardinality,
+                concatenate: Vec::new(),
             };
             Ok(MappingTree::Leaf(mapping_leaf))
         }
@@ -746,6 +926,7 @@ fn build_mapping_from_field_type<'a>(
                 field,
                 typ: LeafType::IpAddr(options.clone()),
                 cardinality: *cardinality,
+                concatenate: Vec::new(),
             };
             Ok(MappingTree::Leaf(mapping_leaf))
         }
@@ -756,6 +937,7 @@ fn build_mapping_from_field_type<'a>(
                 field,
                 typ: LeafType::DateTime(options.clone()),
                 cardinality: *cardinality,
+                concatenate: Vec::new(),
             };
             Ok(MappingTree::Leaf(mapping_leaf))
         }
@@ -766,6 +948,7 @@ fn build_mapping_from_field_type<'a>(
                 field,
                 typ: LeafType::Bytes(options.clone()),
                 cardinality: *cardinality,
+                concatenate: Vec::new(),
             };
             Ok(MappingTree::Leaf(mapping_leaf))
         }
@@ -776,6 +959,7 @@ fn build_mapping_from_field_type<'a>(
                 field,
                 typ: LeafType::Json(options.clone()),
                 cardinality: *cardinality,
+                concatenate: Vec::new(),
             }))
         }
         FieldMappingType::Object(entries) => {
@@ -785,6 +969,9 @@ fn build_mapping_from_field_type<'a>(
                 schema_builder,
             )?;
             Ok(MappingTree::Node(mapping_node))
+        }
+        FieldMappingType::Concatenate(_) => {
+            bail!("Concatenate shouldn't reach build_mapping_from_field_type: this is a bug")
         }
     }
 }
@@ -981,6 +1168,7 @@ mod tests {
             field,
             typ,
             cardinality: Cardinality::MultiValues,
+            concatenate: Vec::new(),
         };
         let mut document = Document::default();
         let mut path = Vec::new();
@@ -1032,6 +1220,7 @@ mod tests {
             field,
             typ,
             cardinality: Cardinality::MultiValues,
+            concatenate: Vec::new(),
         };
         let mut document = Document::default();
         let mut path = Vec::new();
@@ -1054,6 +1243,7 @@ mod tests {
             field,
             typ,
             cardinality: Cardinality::MultiValues,
+            concatenate: Vec::new(),
         };
         let mut document = Document::default();
         let mut path = Vec::new();
@@ -1071,6 +1261,7 @@ mod tests {
             field,
             typ,
             cardinality: Cardinality::MultiValues,
+            concatenate: Vec::new(),
         };
         let mut document = Document::default();
         let mut path = Vec::new();
@@ -1089,6 +1280,7 @@ mod tests {
             field,
             typ,
             cardinality: Cardinality::MultiValues,
+            concatenate: Vec::new(),
         };
         let mut document = Document::default();
         let mut path = vec!["root".to_string(), "my_field".to_string()];
@@ -1234,6 +1426,7 @@ mod tests {
             field,
             typ,
             cardinality: Cardinality::MultiValues,
+            concatenate: Vec::new(),
         };
         let mut document = Document::default();
         let mut path = vec!["root".to_string(), "my_field".to_string()];
