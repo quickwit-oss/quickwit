@@ -69,6 +69,110 @@ fn value_to_pretokenized<T: ToString>(val: T) -> PreTokenizedString {
     }
 }
 
+enum MapOrArrayIter {
+    Array(std::vec::IntoIter<JsonValue>),
+    Map(serde_json::map::IntoIter),
+    Value(JsonValue),
+}
+
+impl Iterator for MapOrArrayIter {
+    type Item = JsonValue;
+
+    fn next(&mut self) -> Option<JsonValue> {
+        match self {
+            MapOrArrayIter::Array(iter) => iter.next(),
+            MapOrArrayIter::Map(iter) => iter.next().map(|(_, val)| val),
+            MapOrArrayIter::Value(val) => {
+                if val.is_null() {
+                    None
+                } else {
+                    Some(std::mem::take(val))
+                }
+            }
+        }
+    }
+}
+
+/// Iterate over all primitive values inside the provided JsonValue, ignoring Nulls, and opening
+/// arrays and objects.
+struct JsonValueIterator {
+    currently_itered: Vec<MapOrArrayIter>,
+}
+
+impl JsonValueIterator {
+    pub fn new(source: JsonValue) -> JsonValueIterator {
+        let base_value = match source {
+            JsonValue::Array(array) => MapOrArrayIter::Array(array.into_iter()),
+            JsonValue::Object(map) => MapOrArrayIter::Map(map.into_iter()),
+            other => MapOrArrayIter::Value(other),
+        };
+        JsonValueIterator {
+            currently_itered: vec![base_value],
+        }
+    }
+}
+
+impl Iterator for JsonValueIterator {
+    type Item = JsonValue;
+
+    fn next(&mut self) -> Option<JsonValue> {
+        loop {
+            let currently_itered = self.currently_itered.last_mut()?;
+            match currently_itered.next() {
+                Some(JsonValue::Array(array)) => self
+                    .currently_itered
+                    .push(MapOrArrayIter::Array(array.into_iter())),
+                Some(JsonValue::Object(map)) => self
+                    .currently_itered
+                    .push(MapOrArrayIter::Map(map.into_iter())),
+                Some(JsonValue::Null) => continue,
+                Some(other) => return Some(other),
+                None => {
+                    self.currently_itered.pop();
+                    continue;
+                }
+            }
+        }
+    }
+}
+
+enum OneOrIter<T, I: Iterator<Item = T>> {
+    One(Option<T>),
+    Iter(I),
+}
+
+impl<T, I: Iterator<Item = T>> OneOrIter<T, I> {
+    pub fn one(item: T) -> Self {
+        OneOrIter::One(Some(item))
+    }
+}
+
+impl<T, I: Iterator<Item = T>> Iterator for OneOrIter<T, I> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        match self {
+            OneOrIter::Iter(iter) => iter.next(),
+            OneOrIter::One(item) => std::mem::take(item),
+        }
+    }
+}
+
+fn map_primitive_json_to_tantivy(value: JsonValue) -> Option<TantivyValue> {
+    match value {
+        JsonValue::Array(_) | JsonValue::Object(_) | JsonValue::Null => None,
+        JsonValue::String(text) => Some(TantivyValue::Str(text)),
+        JsonValue::Bool(val) => Some(value_to_pretokenized(val).into()),
+        JsonValue::Number(number) => {
+            if let Some(val) = u64::from_json_number(&number) {
+                Some(value_to_pretokenized(val).into())
+            } else {
+                i64::from_json_number(&number).map(|val| value_to_pretokenized(val).into())
+            }
+        }
+    }
+}
+
 impl LeafType {
     fn value_from_json(&self, json_val: JsonValue) -> Result<TantivyValue, String> {
         match self {
@@ -123,23 +227,23 @@ impl LeafType {
         match self {
             LeafType::Text(_) => {
                 if let JsonValue::String(text) = json_val {
-                    Ok(std::iter::once(TantivyValue::Str(text)))
+                    Ok(OneOrIter::one(TantivyValue::Str(text)))
                 } else {
                     Err(format!("expected string, got `{json_val}`"))
                 }
             }
             LeafType::I64(numeric_options) => {
                 let val = i64::from_json_to_self(json_val, numeric_options.coerce)?;
-                Ok(std::iter::once(value_to_pretokenized(val).into()))
+                Ok(OneOrIter::one(value_to_pretokenized(val).into()))
             }
             LeafType::U64(numeric_options) => {
                 let val = u64::from_json_to_self(json_val, numeric_options.coerce)?;
-                Ok(std::iter::once(value_to_pretokenized(val).into()))
+                Ok(OneOrIter::one(value_to_pretokenized(val).into()))
             }
             LeafType::F64(_) => Err("unsuported concat type: f64".to_string()),
             LeafType::Bool(_) => {
                 if let JsonValue::Bool(val) = json_val {
-                    Ok(std::iter::once(value_to_pretokenized(val).into()))
+                    Ok(OneOrIter::one(value_to_pretokenized(val).into()))
                 } else {
                     Err(format!("expected boolean, got `{json_val}`"))
                 }
@@ -150,15 +254,13 @@ impl LeafType {
             }
             LeafType::Bytes(_binary_options) => Err("unsuported concat type: DateTime".to_string()),
             LeafType::Json(_) => {
-                if let JsonValue::Object(_json_obj) = json_val {
-                    todo!()
-                    /*
-                    Ok(TantivyValue::Object(
+                if let JsonValue::Object(json_obj) = json_val {
+                    Ok(OneOrIter::Iter(
                         json_obj
                             .into_iter()
-                            .map(|(key, val)| (key, val.into()))
-                            .collect(),
-                    ))*/
+                            .flat_map(|(_key, val)| JsonValueIterator::new(val))
+                            .flat_map(map_primitive_json_to_tantivy),
+                    ))
                 } else {
                     Err(format!("expected object, got `{json_val}`"))
                 }
@@ -168,12 +270,11 @@ impl LeafType {
 
     fn supported_for_concat(&self) -> bool {
         use LeafType::*;
-        matches!(self, Text(_) | U64(_) | I64(_) | Bool(_))
+        matches!(self, Text(_) | U64(_) | I64(_) | Bool(_) | Json(_))
         /*
             // will be supported
             DateTime(QuickwitDateTimeOptions),
             IpAddr(QuickwitIpAddrOptions),
-            Json(QuickwitJsonOptions),
             // won't be supported
             Bytes(QuickwitBytesOptions),
             F64(QuickwitNumericOptions),
@@ -505,13 +606,12 @@ impl MappingNode {
             .find(|name| name == &first_path_fragment)?;
         let child_tree = self.branches.get_mut(field_name).expect("Missing field");
         match (child_tree, sub_field_path.is_empty()) {
-            (_, false) => {
-                todo!()
+            (MappingTree::Leaf(_), false) => None,
+            (MappingTree::Node(child_node), false) => {
+                child_node.internal_find_field_mapping_leaf(sub_field_path)
             }
             (MappingTree::Leaf(leaf), true) => Some([leaf].into_iter()),
-            (MappingTree::Node(_), true) => {
-                todo!()
-            }
+            (MappingTree::Node(_), true) => None,
         }
     }
 
