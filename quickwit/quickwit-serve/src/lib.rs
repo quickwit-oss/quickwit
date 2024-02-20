@@ -354,18 +354,18 @@ pub async fn serve_quickwit(
             metastore_server.clone()
         } else {
             // Wait for a metastore service to be available for at most 5 minutes.
-            if cluster
-                .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(300))
-                .await
-                .is_err()
-            {
-                error!("no metastore service found among cluster members, stopping server");
-                anyhow::bail!(
-                    "failed to start server: no metastore service was found among cluster \
-                     members. try running Quickwit with additional metastore service `quickwit \
-                     run --service metastore`"
-                )
-            }
+            // if cluster
+            //     .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(300))
+            //     .await
+            //     .is_err()
+            // {
+            //     error!("no metastore service found among cluster members, stopping server");
+            //     anyhow::bail!(
+            //         "failed to start server: no metastore service was found among cluster \
+            //          members. try running Quickwit with additional metastore service `quickwit \
+            //          run --service metastore`"
+            //     )
+            // }
             let balance_channel =
                 balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
             let layers = ServiceBuilder::new()

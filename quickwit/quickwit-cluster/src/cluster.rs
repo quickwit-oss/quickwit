@@ -161,8 +161,6 @@ impl Cluster {
 
         let chitchat = chitchat_handle.chitchat();
         let live_nodes_stream = chitchat.lock().await.live_nodes_watcher();
-        let (ready_members_tx, ready_members_rx) = watch::channel(Vec::new());
-        spawn_ready_members_task(cluster_id.clone(), live_nodes_stream, ready_members_tx);
 
         let weak_chitchat = Arc::downgrade(&chitchat);
         spawn_metrics_task(weak_chitchat, self_node.chitchat_id());
@@ -173,7 +171,6 @@ impl Cluster {
             chitchat_handle,
             live_nodes: BTreeMap::new(),
             change_stream_subscribers: Vec::new(),
-            ready_members_rx,
         };
         let cluster = Cluster {
             cluster_id,
@@ -184,16 +181,6 @@ impl Cluster {
         };
         spawn_ready_nodes_change_stream_task(cluster.clone()).await;
         Ok(cluster)
-    }
-
-    /// Deprecated: this is going away soon.
-    pub async fn ready_members(&self) -> Vec<ClusterMember> {
-        self.inner.read().await.ready_members_rx.borrow().clone()
-    }
-
-    /// Deprecated: this is going away soon.
-    pub async fn ready_members_watcher(&self) -> WatchStream<Vec<ClusterMember>> {
-        WatchStream::new(self.inner.read().await.ready_members_rx.clone())
     }
 
     /// Returns a stream of changes affecting the set of ready nodes in the cluster.
@@ -275,27 +262,6 @@ impl Cluster {
             .lock()
             .await
             .subscribe_event(key_prefix, callback)
-    }
-
-    /// Waits until the predicate holds true for the set of ready members.
-    pub async fn wait_for_ready_members<F>(
-        &self,
-        mut predicate: F,
-        timeout_after: Duration,
-    ) -> anyhow::Result<()>
-    where
-        F: FnMut(&[ClusterMember]) -> bool,
-    {
-        timeout(
-            timeout_after,
-            self.ready_members_watcher()
-                .await
-                .skip_while(|members| !predicate(members))
-                .next(),
-        )
-        .await
-        .context("deadline has passed before predicate held true")?;
-        Ok(())
     }
 
     /// Returns a snapshot of the cluster state, including the underlying Chitchat state.
@@ -553,7 +519,6 @@ struct InnerCluster {
     chitchat_handle: ChitchatHandle,
     live_nodes: BTreeMap<NodeId, ClusterNode>,
     change_stream_subscribers: Vec<mpsc::UnboundedSender<ClusterChange>>,
-    ready_members_rx: watch::Receiver<Vec<ClusterMember>>,
 }
 
 // Not used within the code, used for documentation.
