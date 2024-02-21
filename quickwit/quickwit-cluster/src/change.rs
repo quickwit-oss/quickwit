@@ -124,7 +124,7 @@ async fn compute_cluster_change_events_on_added(
                 cluster_id=%cluster_id,
                 rogue_node_id=%new_chitchat_id.node_id,
                 rogue_node_ip=%new_chitchat_id.gossip_advertise_addr.ip(),
-                "rogue node `{}` has rejoined the cluster with a lower incarnation ID and will be ignored",
+                "rogue node `{}` has rejoined the cluster with a lower generation ID and will be ignored",
                 new_chitchat_id.node_id
             );
             return events;
@@ -178,7 +178,19 @@ async fn compute_cluster_change_events_on_updated(
     updated_node_state: &NodeState,
     previous_nodes: &mut BTreeMap<NodeId, ClusterNode>,
 ) -> Option<ClusterChange> {
-    let previous_node = previous_nodes.get(&updated_chitchat_id.node_id)?.clone();
+    let Some(previous_node) = previous_nodes.get(&updated_chitchat_id.node_id).cloned() else {
+        // We did not manage to create a complete `ClusterNode` object previously.
+        let events = compute_cluster_change_events_on_added(
+            cluster_id,
+            self_chitchat_id,
+            updated_chitchat_id,
+            updated_node_state,
+            previous_nodes,
+        )
+        .await;
+        assert!(events.len() <= 1);
+        return events.into_iter().next();
+    };
     let previous_channel = previous_node.channel();
     let is_self_node = self_chitchat_id == updated_chitchat_id;
     let updated_node = try_new_node_with_channel(
@@ -537,6 +549,68 @@ mod tests {
         let cluster_id = "test-cluster".to_string();
         let self_port = 1234;
         let self_chitchat_id = ChitchatId::for_local_test(self_port);
+        {
+            // Node is live but not ready. It does not exist in the previous live nodes.
+            let port = 1235;
+            let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
+            let updated_chitchat_id = ChitchatId::for_local_test(port);
+            let updated_node_id: NodeId = updated_chitchat_id.node_id.clone().into();
+
+            let updated_node_state = NodeStateBuilder::default()
+                .with_grpc_advertise_addr(grpc_advertise_addr)
+                .with_readiness(false)
+                .with_key_value("my-key", "my-value")
+                .build();
+            let mut previous_nodes = BTreeMap::new();
+            let event_opt = compute_cluster_change_events_on_updated(
+                &cluster_id,
+                &self_chitchat_id,
+                &updated_chitchat_id,
+                &updated_node_state,
+                &mut previous_nodes,
+            )
+            .await;
+            assert!(event_opt.is_none());
+
+            let node = previous_nodes.get(&updated_node_id).unwrap();
+            assert_eq!(node.chitchat_id(), &updated_chitchat_id);
+            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert!(!node.is_ready());
+            assert!(!node.is_self_node());
+        }
+        {
+            // Node is ready. It does not exist in the previous live nodes.
+            let port = 1235;
+            let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
+            let updated_chitchat_id = ChitchatId::for_local_test(port);
+
+            let updated_node_state = NodeStateBuilder::default()
+                .with_grpc_advertise_addr(grpc_advertise_addr)
+                .with_readiness(true)
+                .with_key_value("my-key", "my-value")
+                .build();
+            let mut previous_nodes = BTreeMap::new();
+            let event = compute_cluster_change_events_on_updated(
+                &cluster_id,
+                &self_chitchat_id,
+                &updated_chitchat_id,
+                &updated_node_state,
+                &mut previous_nodes,
+            )
+            .await
+            .unwrap();
+            let ClusterChange::Add(node) = event else {
+                panic!("expected `ClusterChange::Add` event, got `{:?}`", event);
+            };
+            assert_eq!(node.chitchat_id(), &updated_chitchat_id);
+            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert!(node.is_ready());
+            assert!(!node.is_self_node());
+            assert_eq!(
+                previous_nodes.get(&updated_chitchat_id.node_id).unwrap(),
+                &node
+            );
+        }
         {
             // Node becomes ready.
             let port = 1235;
