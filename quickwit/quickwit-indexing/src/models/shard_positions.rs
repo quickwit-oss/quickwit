@@ -28,7 +28,7 @@ use quickwit_cluster::{Cluster, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::types::{Position, ShardId, SourceUid};
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 /// Prefix used in chitchat to publish the shard positions.
 const SHARD_POSITIONS_PREFIX: &str = "indexer.shard_positions:";
@@ -176,7 +176,9 @@ impl Handler<ClusterShardPositionsUpdate> for ShardPositionsService {
             source_uid,
             shard_positions,
         } = update;
+        info!(shard_positions=?shard_positions, "cluster position update");
         let updated_shard_positions = self.apply_update(&source_uid, shard_positions);
+        info!(updated_shard_positions=?updated_shard_positions, "cluster position update");
         if !updated_shard_positions.is_empty() {
             self.publish_shard_updates_to_event_broker(source_uid, updated_shard_positions);
         }

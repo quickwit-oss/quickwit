@@ -40,6 +40,7 @@ use quickwit_common::{rate_limited_warn, ServiceStream};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, ControlPlaneService, ControlPlaneServiceClient,
 };
+
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, DecommissionRequest,
@@ -1096,12 +1097,15 @@ impl IngesterService for Ingester {
 #[async_trait]
 impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
     async fn handle_event(&mut self, shard_positions_update: ShardPositionsUpdate) {
+        info!(positions_update=?shard_positions_update.updated_shard_positions, "received shard position update");
         let Some(state) = self.upgrade() else {
+            warn!("ingester state update failed");
             return;
         };
         let Ok(mut state_guard) =
             with_lock_metrics!(state.lock_fully().await, "gc_shards", "write")
         else {
+            error!("failed to lock the ingester state");
             return;
         };
         let index_uid = shard_positions_update.source_uid.index_uid;
@@ -1111,8 +1115,10 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
             let queue_id = queue_id(&index_uid, &source_id, &shard_id);
 
             if shard_position.is_eof() {
+                info!(shard=queue_id, "deleting shard");
                 state_guard.delete_shard(&queue_id).await;
             } else {
+                info!(shard=queue_id, shard_position=%shard_position, "truncating shard");
                 state_guard.truncate_shard(&queue_id, &shard_position).await;
             }
         }
