@@ -4036,7 +4036,7 @@ dependencies = [
 [[package]]
 name = "mrecordlog"
 version = "0.4.0"
-source = "git+https://github.com/quickwit-oss/mrecordlog?rev=2914cad#2914cad58864097d7fcb62a8a20a7cbff730c1e8"
+source = "git+https://github.com/quickwit-oss/mrecordlog?rev=bc6a998#bc6a998966603e11928ff23914d6da169fc8fce6"
 dependencies = [
  "async-trait",
  "bytes",

@@ -29,7 +29,7 @@ use quickwit_cluster::{Cluster, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::types::{Position, ShardId, SourceUid};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Prefix used in chitchat to publish the shard positions.
 const SHARD_POSITIONS_PREFIX: &str = "indexer.shard_positions:";
@@ -223,6 +223,7 @@ impl Handler<ClusterShardPositionsUpdate> for ShardPositionsService {
             shard_positions,
         } = update;
         let updated_shard_positions = self.apply_update(&source_uid, shard_positions);
+        debug!(updated_shard_positions=?updated_shard_positions, "cluster position update");
         if !updated_shard_positions.is_empty() {
             self.publish_shard_updates_to_event_broker(source_uid, updated_shard_positions);
         }
@@ -276,6 +277,7 @@ impl ShardPositionsService {
         source_uid: SourceUid,
         shard_positions: Vec<(ShardId, Position)>,
     ) {
+        debug!(shard_positions=?shard_positions, "shard positions updates");
         self.event_broker.publish(ShardPositionsUpdate {
             source_uid,
             updated_shard_positions: shard_positions,
