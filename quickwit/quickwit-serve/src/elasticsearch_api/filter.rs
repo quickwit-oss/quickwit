@@ -177,7 +177,7 @@ pub(crate) fn elastic_delete_index_filter(
 ) -> impl Filter<Extract = (Vec<String>,), Error = Rejection> + Clone {
     warp::path!("_elastic" / String)
         .and_then(extract_index_id_patterns)
-        .and(warp::get())
+        .and(warp::delete())
 }
 
 // No support for any query parameters for now.
