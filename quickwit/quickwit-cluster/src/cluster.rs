@@ -30,25 +30,24 @@ use chitchat::{
     spawn_chitchat, Chitchat, ChitchatConfig, ChitchatHandle, ChitchatId, ClusterStateSnapshot,
     FailureDetectorConfig, KeyChangeEvent, ListenerHandle, NodeState,
 };
-use futures::Stream;
 use itertools::Itertools;
 use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
 use quickwit_proto::types::{NodeId, PipelineUid, ShardId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use tokio::time::timeout;
-use tokio_stream::wrappers::{UnboundedReceiverStream, WatchStream};
+use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
-use crate::change::{compute_cluster_change_events, ClusterChange};
+use crate::change::{compute_cluster_change_events, ClusterChange, ClusterChangeStreamFactory};
 use crate::member::{
     build_cluster_member, ClusterMember, NodeStateExt, ENABLED_SERVICES_KEY,
     GRPC_ADVERTISE_ADDR_KEY, PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
     READINESS_VALUE_READY,
 };
 use crate::metrics::spawn_metrics_task;
-use crate::ClusterNode;
+use crate::{ClusterChangeStream, ClusterNode};
 
 const MARKED_FOR_DELETION_GRACE_PERIOD: usize = if cfg!(any(test, feature = "testsuite")) {
     100 // ~ HEARTBEAT * 100 = 2.5 seconds.
@@ -197,20 +196,23 @@ impl Cluster {
     }
 
     /// Returns a stream of changes affecting the set of ready nodes in the cluster.
-    pub async fn ready_nodes_change_stream(&self) -> impl Stream<Item = ClusterChange> {
-        // The subscriber channel must be unbounded because we do no want to block when sending the
-        // events.
-        let (change_stream_tx, change_stream_rx) = mpsc::unbounded_channel();
-        let mut inner = self.inner.write().await;
-        for node in inner.live_nodes.values() {
-            if node.is_ready() {
-                change_stream_tx
-                    .send(ClusterChange::Add(node.clone()))
-                    .expect("The receiver end of the channel should be open.");
+    pub fn change_stream(&self) -> ClusterChangeStream {
+        let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
+        let inner = self.inner.clone();
+        // We spawn a task so the signature of this function is sync.
+        let future = async move {
+            let mut inner = inner.write().await;
+            for node in inner.live_nodes.values() {
+                if node.is_ready() {
+                    change_stream_tx
+                        .send(ClusterChange::Add(node.clone()))
+                        .expect("receiver end of the channel should be open");
+                }
             }
-        }
-        inner.change_stream_subscribers.push(change_stream_tx);
-        UnboundedReceiverStream::new(change_stream_rx)
+            inner.change_stream_subscribers.push(change_stream_tx);
+        };
+        tokio::spawn(future);
+        change_stream
     }
 
     /// Returns whether the self node is ready.
@@ -384,6 +386,12 @@ impl Cluster {
 
     pub async fn chitchat(&self) -> Arc<Mutex<Chitchat>> {
         self.inner.read().await.chitchat_handle.chitchat()
+    }
+}
+
+impl ClusterChangeStreamFactory for Cluster {
+    fn create(&self) -> ClusterChangeStream {
+        self.change_stream()
     }
 }
 
@@ -787,7 +795,7 @@ mod tests {
     async fn test_cluster_multiple_nodes() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let node_1 = create_cluster_for_test(Vec::new(), &[], &transport, true).await?;
-        let node_1_change_stream = node_1.ready_nodes_change_stream().await;
+        let node_1_change_stream = node_1.change_stream();
 
         let peer_seeds = vec![node_1.gossip_listen_addr.to_string()];
         let node_2 = create_cluster_for_test(peer_seeds, &[], &transport, true).await?;

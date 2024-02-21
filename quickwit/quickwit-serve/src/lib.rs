@@ -55,12 +55,13 @@ use std::time::Duration;
 use anyhow::Context;
 use bytesize::ByteSize;
 pub use format::BodyFormat;
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
 use quickwit_cluster::{
-    start_cluster_service, Cluster, ClusterChange, ClusterMember, ListenerHandle,
+    start_cluster_service, Cluster, ClusterChange, ClusterChangeStream, ClusterMember,
+    ListenerHandle,
 };
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
@@ -205,7 +206,7 @@ async fn balance_channel_for_service(
     cluster: &Cluster,
     service: QuickwitService,
 ) -> BalanceChannel<SocketAddr> {
-    let cluster_change_stream = cluster.ready_nodes_change_stream().await;
+    let cluster_change_stream = cluster.change_stream();
     let service_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         Box::pin(async move {
             match cluster_change {
@@ -280,19 +281,18 @@ async fn start_control_plane_if_needed(
         )
         .await?;
 
-        let cluster_id = cluster.cluster_id().to_string();
         let self_node_id: NodeId = cluster.self_node_id().into();
-
         let replication_factor = node_config
             .ingest_api_config
             .replication_factor()
             .expect("replication factor should have been validated")
             .get();
+
         let control_plane_mailbox = setup_control_plane(
             universe,
             event_broker,
-            cluster_id,
             self_node_id,
+            cluster.clone(),
             indexer_pool.clone(),
             ingester_pool.clone(),
             metastore_client.clone(),
@@ -430,10 +430,9 @@ pub async fn serve_quickwit(
     };
 
     // Setup indexer pool.
-    let cluster_change_stream = cluster.ready_nodes_change_stream().await;
     setup_indexer_pool(
         &node_config,
-        cluster_change_stream,
+        cluster.change_stream(),
         indexer_pool.clone(),
         indexing_service_opt.clone(),
     );
@@ -475,9 +474,6 @@ pub async fn serve_quickwit(
             }
         }
     }
-
-    let cluster_change_stream = cluster.ready_nodes_change_stream().await;
-
     let split_cache_root_directory: PathBuf =
         node_config.data_dir_path.join("searcher-split-cache");
     let split_cache_opt: Option<Arc<SplitCache>> =
@@ -500,7 +496,7 @@ pub async fn serve_quickwit(
 
     let (search_job_placer, search_service) = setup_searcher(
         &node_config,
-        cluster_change_stream,
+        cluster.change_stream(),
         metastore_through_control_plane.clone(),
         storage_resolver.clone(),
         searcher_context,
@@ -741,9 +737,8 @@ async fn setup_ingest_v2(
     };
     // Setup ingester pool change stream.
     let ingester_opt_clone = ingester_opt.clone();
-    let cluster_change_stream = cluster.ready_nodes_change_stream().await;
     let max_message_size = node_config.grpc_config.max_message_size;
-    let ingester_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
+    let ingester_change_stream = cluster.change_stream().filter_map(move |cluster_change| {
         let ingester_opt_clone_clone = ingester_opt_clone.clone();
         Box::pin(async move {
             match cluster_change {
@@ -794,7 +789,7 @@ async fn setup_ingest_v2(
 
 async fn setup_searcher(
     node_config: &NodeConfig,
-    cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
+    cluster_change_stream: ClusterChangeStream,
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     searcher_context: Arc<SearcherContext>,
@@ -846,14 +841,15 @@ async fn setup_searcher(
 async fn setup_control_plane(
     universe: &Universe,
     event_broker: &EventBroker,
-    cluster_id: String,
     self_node_id: NodeId,
+    cluster: Cluster,
     indexer_pool: IndexerPool,
     ingester_pool: IngesterPool,
     metastore: MetastoreServiceClient,
     default_index_root_uri: Uri,
     replication_factor: usize,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
+    let cluster_id = cluster.cluster_id().to_string();
     let cluster_config = ClusterConfig {
         cluster_id,
         auto_create_indexes: true,
@@ -864,6 +860,7 @@ async fn setup_control_plane(
         universe,
         cluster_config,
         self_node_id,
+        cluster.clone(),
         indexer_pool,
         ingester_pool,
         metastore,
@@ -881,7 +878,7 @@ async fn setup_control_plane(
 
 fn setup_indexer_pool(
     node_config: &NodeConfig,
-    cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
+    cluster_change_stream: ClusterChangeStream,
     indexer_pool: IndexerPool,
     indexing_service_opt: Option<Mailbox<IndexingService>>,
 ) {
@@ -1069,8 +1066,7 @@ mod tests {
     use quickwit_proto::metastore::ListIndexesMetadataResponse;
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
-    use tokio::sync::{mpsc, watch};
-    use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
+    use tokio::sync::watch;
 
     use super::*;
 
@@ -1165,21 +1161,20 @@ mod tests {
             universe.create_test_mailbox::<IndexingService>();
         let node_config = NodeConfig::for_test();
 
-        let (indexer_change_stream_tx, indexer_change_stream_rx) = mpsc::channel(3);
-        let indexer_change_stream = ReceiverStream::new(indexer_change_stream_rx);
+        let (cluster_change_stream, cluster_change_stream_tx) =
+            ClusterChangeStream::new_unbounded();
         let indexer_pool = IndexerPool::default();
         setup_indexer_pool(
             &node_config,
-            indexer_change_stream,
+            cluster_change_stream,
             indexer_pool.clone(),
             Some(indexing_service_mailbox),
         );
 
         let new_indexer_node =
             ClusterNode::for_test("test-indexer-node", 1, true, &["indexer"], &[]).await;
-        indexer_change_stream_tx
+        cluster_change_stream_tx
             .send(ClusterChange::Add(new_indexer_node))
-            .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
 
@@ -1202,9 +1197,8 @@ mod tests {
             &[new_indexing_task.clone()],
         )
         .await;
-        indexer_change_stream_tx
+        cluster_change_stream_tx
             .send(ClusterChange::Update(updated_indexer_node.clone()))
-            .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
 
@@ -1215,9 +1209,8 @@ mod tests {
             new_indexing_task
         );
 
-        indexer_change_stream_tx
+        cluster_change_stream_tx
             .send(ClusterChange::Remove(updated_indexer_node))
-            .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
 
@@ -1229,8 +1222,7 @@ mod tests {
         let node_config = NodeConfig::for_test();
         let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default(), None));
         let metastore = metastore_for_test();
-        let (change_stream_tx, change_stream_rx) = mpsc::unbounded_channel();
-        let change_stream = UnboundedReceiverStream::new(change_stream_rx);
+        let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
         let storage_resolver = StorageResolver::unconfigured();
         let (search_job_placer, _searcher_service) = setup_searcher(
             &node_config,

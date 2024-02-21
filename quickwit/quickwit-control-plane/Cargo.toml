@@ -35,6 +35,7 @@ tracing = { workspace = true }
 ulid = { workspace = true }
 
 quickwit-actors = { workspace = true }
+quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
@@ -55,9 +56,6 @@ quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
-
-[build-dependencies]
-quickwit-codegen = { workspace = true }
 
 [features]
 testsuite = ["mockall"]

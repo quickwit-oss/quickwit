@@ -131,7 +131,6 @@ async fn start_control_plane(
 
     let indexer_pool = Pool::default();
     let ingester_pool = Pool::default();
-    let change_stream = cluster.ready_nodes_change_stream().await;
     let mut indexing_clients = FnvHashMap::default();
 
     for indexer in indexers {
@@ -139,7 +138,8 @@ async fn start_control_plane(
         indexing_clients.insert(indexer.self_node_id().to_string(), indexing_service_mailbox);
         indexer_inboxes.push(indexing_service_inbox);
     }
-    let indexer_change_stream = test_indexer_change_stream(change_stream, indexing_clients);
+    let indexer_change_stream =
+        test_indexer_change_stream(cluster.change_stream(), indexing_clients);
     indexer_pool.listen_for_changes(indexer_change_stream);
 
     let mut cluster_config = ClusterConfig::for_test();
@@ -150,6 +150,7 @@ async fn start_control_plane(
         universe,
         cluster_config,
         self_node_id,
+        cluster,
         indexer_pool,
         ingester_pool,
         MetastoreServiceClient::from(metastore),

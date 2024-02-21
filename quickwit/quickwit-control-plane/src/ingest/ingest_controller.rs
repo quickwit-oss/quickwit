@@ -42,6 +42,7 @@ use quickwit_proto::metastore;
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use rand::seq::SliceRandom;
+use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
 use tracing::{error, info, warn};
 use ulid::Ulid;
@@ -83,17 +84,23 @@ fn fire_and_forget(
     });
 }
 
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+pub struct IngestControllerStats {
+    pub num_rebalance_shards_ops: usize,
+}
+
 pub struct IngestController {
-    metastore: MetastoreServiceClient,
     ingester_pool: IngesterPool,
+    metastore: MetastoreServiceClient,
     replication_factor: usize,
+    pub stats: IngestControllerStats,
 }
 
 impl fmt::Debug for IngestController {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("IngestController")
-            .field("replication", &self.metastore)
             .field("ingester_pool", &self.ingester_pool)
+            .field("metastore", &self.metastore)
             .field("replication_factor", &self.replication_factor)
             .finish()
     }
@@ -109,6 +116,7 @@ impl IngestController {
             metastore,
             ingester_pool,
             replication_factor,
+            stats: IngestControllerStats::default(),
         }
     }
 
@@ -699,6 +707,11 @@ impl IngestController {
             shards_to_delete,
             shards_to_truncate,
         }
+    }
+
+    pub fn rebalance_shards(&mut self) {
+        // TODO: As of now, it is only used for unit testing.
+        self.stats.num_rebalance_shards_ops += 1;
     }
 }
 

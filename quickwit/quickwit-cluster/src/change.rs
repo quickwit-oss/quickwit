@@ -19,22 +19,56 @@
 
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use chitchat::{ChitchatId, NodeState};
+use futures::Stream;
+use pin_project::pin_project;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
 use quickwit_common::tower::{make_channel, warmup_channel};
 use quickwit_proto::types::NodeId;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Channel;
 use tracing::{info, warn};
 
 use crate::member::NodeStateExt;
 use crate::ClusterNode;
 
+/// Describes a change in the cluster.
 #[derive(Debug, Clone)]
 pub enum ClusterChange {
     Add(ClusterNode),
     Update(ClusterNode),
     Remove(ClusterNode),
+}
+
+/// A stream of cluster change events.
+#[pin_project]
+pub struct ClusterChangeStream(#[pin] UnboundedReceiverStream<ClusterChange>);
+
+impl ClusterChangeStream {
+    pub fn new_unbounded() -> (Self, mpsc::UnboundedSender<ClusterChange>) {
+        let (change_stream_tx, change_stream_rx) = mpsc::unbounded_channel();
+        (
+            Self(UnboundedReceiverStream::new(change_stream_rx)),
+            change_stream_tx,
+        )
+    }
+}
+
+impl Stream for ClusterChangeStream {
+    type Item = ClusterChange;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.project().0.poll_next(cx)
+    }
+}
+
+/// A factory for creating cluster change streams.
+pub trait ClusterChangeStreamFactory: Clone + Send + 'static {
+    fn create(&self) -> ClusterChangeStream;
 }
 
 /// Compares the digests of the previous and new set of lives nodes, identifies the changes that
@@ -290,6 +324,34 @@ async fn try_new_node(
                 "failed to read or parse gRPC advertise address"
             );
             None
+        }
+    }
+}
+
+#[cfg(any(test, feature = "testsuite"))]
+pub mod for_test {
+    use std::sync::{Arc, Mutex};
+
+    use tokio::sync::mpsc;
+
+    use super::*;
+
+    #[derive(Clone, Default)]
+    pub struct ClusterChangeStreamFactoryForTest {
+        inner: Arc<Mutex<Option<mpsc::UnboundedSender<ClusterChange>>>>,
+    }
+
+    impl ClusterChangeStreamFactoryForTest {
+        pub fn change_stream_tx(&self) -> mpsc::UnboundedSender<ClusterChange> {
+            self.inner.lock().unwrap().take().unwrap()
+        }
+    }
+
+    impl ClusterChangeStreamFactory for ClusterChangeStreamFactoryForTest {
+        fn create(&self) -> ClusterChangeStream {
+            let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
+            *self.inner.lock().unwrap() = Some(change_stream_tx);
+            change_stream
         }
     }
 }
