@@ -19,13 +19,16 @@
 
 #![deny(clippy::disallowed_methods)]
 
+mod bootstrap;
 mod change;
 mod cluster;
 mod member;
 pub mod metrics;
 mod node;
+mod service;
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 pub use chitchat::transport::ChannelTransport;
@@ -37,6 +40,7 @@ use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::types::NodeId;
+pub use service::cluster_grpc_server;
 use time::OffsetDateTime;
 
 pub use crate::change::ClusterChange;
@@ -149,7 +153,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         peer_seed_addrs,
         node_config.gossip_interval,
         FailureDetectorConfig::default(),
-        &CountingUdpTransport,
+        Arc::new(CountingUdpTransport),
     )
     .await?;
     if node_config

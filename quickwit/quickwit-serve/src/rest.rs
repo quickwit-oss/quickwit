@@ -605,8 +605,8 @@ mod tests {
             IndexService::new(metastore_client.clone(), StorageResolver::unconfigured());
         let control_plane_service =
             ControlPlaneServiceClient::from(ControlPlaneServiceClient::mock());
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster = create_cluster_for_test(Vec::new(), &[], transport, false)
             .await
             .unwrap();
         let quickwit_services = QuickwitServices {

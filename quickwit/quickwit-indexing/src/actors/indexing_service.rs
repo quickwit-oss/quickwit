@@ -919,8 +919,8 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_spawn_observe_detach() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], transport, true)
             .await
             .unwrap();
         let mut metastore = metastore_for_test();
@@ -1022,8 +1022,8 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_supervise_pipelines() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], transport, true)
             .await
             .unwrap();
         let mut metastore = metastore_for_test();
@@ -1078,8 +1078,8 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_apply_plan() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], transport, true)
             .await
             .unwrap();
         let mut metastore = metastore_for_test();
@@ -1310,8 +1310,8 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_shut_down_merge_pipeline_when_no_indexing_pipeline() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], transport, true)
             .await
             .unwrap();
         let mut metastore = metastore_for_test();
@@ -1443,8 +1443,8 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_does_not_shut_down_pipelines_on_indexing_pipeline_freeze() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], transport, true)
             .await
             .unwrap();
         let index_id = append_random_suffix("test-indexing-service-indexing-pipeline-timeout");
@@ -1524,8 +1524,8 @@ mod tests {
         let index_id = "test-ingest-api-gc-index".to_string();
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], transport, true)
             .await
             .unwrap();
         let mut metastore = metastore_for_test();

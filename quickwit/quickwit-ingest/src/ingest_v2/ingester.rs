@@ -1269,7 +1269,7 @@ mod tests {
 
             let tempdir = tempfile::tempdir().unwrap();
             let wal_dir_path = tempdir.path();
-            let transport = ChannelTransport::default();
+            let transport = Arc::new(ChannelTransport::default());
 
             let gossip_advertise_port =
                 GOSSIP_ADVERTISE_PORT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -1280,7 +1280,7 @@ mod tests {
                 "test-cluster".to_string(),
                 Vec::new(),
                 &HashSet::from_iter([QuickwitService::Indexer]),
-                &transport,
+                transport.clone(),
                 true,
             )
             .await
@@ -1319,7 +1319,7 @@ mod tests {
 
     pub struct IngesterContext {
         tempdir: tempfile::TempDir,
-        _transport: ChannelTransport,
+        _transport: Arc<ChannelTransport>,
         node_id: NodeId,
         cluster: Cluster,
         ingester_pool: IngesterPool,

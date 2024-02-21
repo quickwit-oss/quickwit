@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::time::Duration;
 
 use fnv::FnvHashMap;
@@ -161,9 +162,9 @@ async fn start_control_plane(
 #[tokio::test]
 async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
     quickwit_common::setup_logging_for_tests();
-    let transport = ChannelTransport::default();
+    let transport = Arc::new(ChannelTransport::default());
     let cluster =
-        create_cluster_for_test(Vec::new(), &["indexer", "control_plane"], &transport, true)
+        create_cluster_for_test(Vec::new(), &["indexer", "control_plane"], transport, true)
             .await
             .unwrap();
     cluster
@@ -255,8 +256,8 @@ async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
 
 #[tokio::test]
 async fn test_scheduler_scheduling_no_indexer() {
-    let transport = ChannelTransport::default();
-    let cluster = create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
+    let transport = Arc::new(ChannelTransport::default());
+    let cluster = create_cluster_for_test(Vec::new(), &["control_plane"], transport, true)
         .await
         .unwrap();
     let universe = Universe::with_accelerated_time();
@@ -291,14 +292,14 @@ async fn test_scheduler_scheduling_no_indexer() {
 
 #[tokio::test]
 async fn test_scheduler_scheduling_multiple_indexers() {
-    let transport = ChannelTransport::default();
-    let cluster = create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
+    let transport = Arc::new(ChannelTransport::default());
+    let cluster = create_cluster_for_test(Vec::new(), &["control_plane"], transport.clone(), true)
         .await
         .unwrap();
     let cluster_indexer_1 = create_cluster_for_test(
         vec![cluster.gossip_advertise_addr().to_string()],
         &["indexer"],
-        &transport,
+        transport.clone(),
         true,
     )
     .await
@@ -306,7 +307,7 @@ async fn test_scheduler_scheduling_multiple_indexers() {
     let cluster_indexer_2 = create_cluster_for_test(
         vec![cluster.gossip_advertise_addr().to_string()],
         &["indexer"],
-        &transport,
+        transport,
         true,
     )
     .await

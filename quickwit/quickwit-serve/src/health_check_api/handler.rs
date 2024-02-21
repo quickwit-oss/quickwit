@@ -120,12 +120,14 @@ async fn get_readiness(cluster: Cluster) -> impl warp::Reply {
 #[cfg(test)]
 mod tests {
 
+    use std::sync::Arc;
+
     use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
 
     #[tokio::test]
     async fn test_rest_search_api_health_checks() {
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster = create_cluster_for_test(Vec::new(), &[], transport, false)
             .await
             .unwrap();
         let health_check_handler = super::health_check_handlers(cluster.clone(), None, None);

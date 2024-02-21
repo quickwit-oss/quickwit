@@ -1244,7 +1244,7 @@ dependencies = [
 [[package]]
 name = "chitchat"
 version = "0.8.0"
-source = "git+https://github.com/quickwit-oss/chitchat.git?rev=31f8d02#31f8d029984c26d182e6a7f6e91e65dd24db6ac5"
+source = "git+https://github.com/quickwit-oss/chitchat?rev=d461963365480105609ff9acad3b74bda6b84a56#d461963365480105609ff9acad3b74bda6b84a56"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5530,6 +5530,7 @@ version = "0.7.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bytesize",
  "chitchat",
  "futures",
  "itertools 0.12.1",

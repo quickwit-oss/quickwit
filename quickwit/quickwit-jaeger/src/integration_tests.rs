@@ -298,11 +298,11 @@ async fn test_otel_jaeger_integration() {
 }
 
 async fn cluster_for_test() -> Cluster {
-    let transport = ChannelTransport::default();
+    let transport = Arc::new(ChannelTransport::default());
     create_cluster_for_test(
         Vec::new(),
         &["metastore", "indexer", "searcher"],
-        &transport,
+        transport,
         true,
     )
     .await

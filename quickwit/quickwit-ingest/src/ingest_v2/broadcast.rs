@@ -464,8 +464,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_broadcast_local_shards_task() {
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], transport, true)
             .await
             .unwrap();
         let (_temp_dir, state) = IngesterState::for_test().await;
@@ -543,8 +543,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_shards_update_listener() {
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], transport, true)
             .await
             .unwrap();
         let event_broker = EventBroker::default();

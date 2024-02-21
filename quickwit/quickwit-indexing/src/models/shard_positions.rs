@@ -272,6 +272,7 @@ impl ShardPositionsService {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::time::Duration;
 
     use quickwit_actors::Universe;
@@ -285,16 +286,16 @@ mod tests {
     async fn test_shard_positions_from_cluster() {
         quickwit_common::setup_logging_for_tests();
 
-        let transport = ChannelTransport::default();
+        let transport = Arc::new(ChannelTransport::default());
         let universe1 = Universe::with_accelerated_time();
         let universe2 = Universe::with_accelerated_time();
-        let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], transport.clone(), true)
             .await
             .unwrap();
         let cluster2 = create_cluster_for_test(
             vec![cluster1.gossip_listen_addr.to_string()],
             &["indexer", "metastore"],
-            &transport,
+            transport,
             true,
         )
         .await
@@ -418,9 +419,9 @@ mod tests {
     async fn test_shard_positions_local_updates_publish_to_cluster() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
-        let transport = ChannelTransport::default();
+        let transport = Arc::new(ChannelTransport::default());
 
-        let cluster: Cluster = create_cluster_for_test(Vec::new(), &[], &transport, true)
+        let cluster: Cluster = create_cluster_for_test(Vec::new(), &[], transport, true)
             .await
             .unwrap();
         let event_broker = EventBroker::default();

@@ -1103,8 +1103,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_readiness_updates() {
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster = create_cluster_for_test(Vec::new(), &[], transport, false)
             .await
             .unwrap();
         let (metastore_readiness_tx, metastore_readiness_rx) = watch::channel(false);

@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use futures::future::try_join_all;
-use quickwit_common::PrettySample;
+use quickwit_common::pretty::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{

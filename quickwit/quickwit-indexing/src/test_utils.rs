@@ -77,8 +77,8 @@ impl TestSandbox {
         search_fields: &[&str],
     ) -> anyhow::Result<TestSandbox> {
         let node_id = append_random_suffix("test-node");
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], transport, true)
             .await
             .unwrap();
         let index_uri = index_uri(index_id);

@@ -41,6 +41,7 @@ use tokio_stream::wrappers::{UnboundedReceiverStream, WatchStream};
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
+use crate::bootstrap::spawn_bootstrap_cluster_state_task;
 use crate::change::{compute_cluster_change_events, ClusterChange};
 use crate::member::{
     build_cluster_member, ClusterMember, NodeStateExt, ENABLED_SERVICES_KEY,
@@ -50,10 +51,10 @@ use crate::member::{
 use crate::metrics::spawn_metrics_task;
 use crate::ClusterNode;
 
-const MARKED_FOR_DELETION_GRACE_PERIOD: usize = if cfg!(any(test, feature = "testsuite")) {
-    100 // ~ HEARTBEAT * 100 = 2.5 seconds.
+const MARKED_FOR_DELETION_GRACE_PERIOD: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(2_500) // ~ HEARTBEAT * 100 = 2.5 seconds.
 } else {
-    5_000 // ~ HEARTBEAT * 5_000 ~ 4 hours.
+    Duration::from_secs(4 * 3600) // ~ HEARTBEAT * 5_000 ~ 4 hours.
 };
 
 // An indexing task key is formatted as
@@ -114,7 +115,7 @@ impl Cluster {
         peer_seed_addrs: Vec<String>,
         gossip_interval: Duration,
         failure_detector_config: FailureDetectorConfig,
-        transport: &dyn Transport,
+        transport: Arc<dyn Transport>,
     ) -> anyhow::Result<Self> {
         info!(
             cluster_id=%cluster_id,
@@ -155,7 +156,7 @@ impl Cluster {
                     READINESS_VALUE_NOT_READY.to_string(),
                 ),
             ],
-            transport,
+            &*transport,
         )
         .await?;
 
@@ -163,6 +164,14 @@ impl Cluster {
         let live_nodes_stream = chitchat.lock().await.live_nodes_watcher();
         let (ready_members_tx, ready_members_rx) = watch::channel(Vec::new());
         spawn_ready_members_task(cluster_id.clone(), live_nodes_stream, ready_members_tx);
+
+        spawn_bootstrap_cluster_state_task(
+            cluster_id.clone(),
+            transport,
+            gossip_listen_addr,
+            chitchat.clone(),
+        )
+        .await;
 
         let weak_chitchat = Arc::downgrade(&chitchat);
         spawn_metrics_task(weak_chitchat, self_node.chitchat_id());
@@ -252,7 +261,7 @@ impl Cluster {
             .await
             .self_node_state()
             .get_versioned(key)
-            .filter(|versioned_value| versioned_value.tombstone.is_none())
+            .filter(|versioned_value| !versioned_value.is_tombstone())
             .map(|versioned_value| versioned_value.value.clone())
     }
 
@@ -429,7 +438,7 @@ pub fn parse_indexing_tasks(node_state: &NodeState) -> Vec<IndexingTask> {
         .iter_prefix(INDEXING_TASK_PREFIX)
         .flat_map(|(key, versioned_value)| {
             // We want to skip the tombstoned keys.
-            if versioned_value.tombstone.is_none() {
+            if !versioned_value.is_tombstone() {
                 Some((key, versioned_value.value.as_str()))
             } else {
                 None
@@ -622,7 +631,7 @@ pub async fn create_cluster_for_test_with_id(
     cluster_id: String,
     peer_seed_addrs: Vec<String>,
     enabled_services: &HashSet<quickwit_config::service::QuickwitService>,
-    transport: &dyn Transport,
+    transport: Arc<dyn Transport>,
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
     use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
@@ -667,7 +676,7 @@ fn create_failure_detector_config_for_test() -> FailureDetectorConfig {
 pub async fn create_cluster_for_test(
     seeds: Vec<String>,
     enabled_services: &[&str],
-    transport: &dyn Transport,
+    transport: Arc<dyn Transport>,
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
     use std::sync::atomic::{AtomicU16, Ordering};
@@ -713,8 +722,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_node_cluster_readiness() {
-        let transport = ChannelTransport::default();
-        let node = create_cluster_for_test(Vec::new(), &[], &transport, false)
+        let transport = Arc::new(ChannelTransport::default());
+        let node = create_cluster_for_test(Vec::new(), &[], transport, false)
             .await
             .unwrap();
 
@@ -785,15 +794,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_multiple_nodes() -> anyhow::Result<()> {
-        let transport = ChannelTransport::default();
-        let node_1 = create_cluster_for_test(Vec::new(), &[], &transport, true).await?;
+        let transport = Arc::new(ChannelTransport::default());
+        let node_1 = create_cluster_for_test(Vec::new(), &[], transport.clone(), true).await?;
         let node_1_change_stream = node_1.ready_nodes_change_stream().await;
 
         let peer_seeds = vec![node_1.gossip_listen_addr.to_string()];
-        let node_2 = create_cluster_for_test(peer_seeds, &[], &transport, true).await?;
+        let node_2 = create_cluster_for_test(peer_seeds, &[], transport.clone(), true).await?;
 
         let peer_seeds = vec![node_2.gossip_listen_addr.to_string()];
-        let node_3 = create_cluster_for_test(peer_seeds, &[], &transport, true).await?;
+        let node_3 = create_cluster_for_test(peer_seeds, &[], transport, true).await?;
 
         let wait_secs = Duration::from_secs(30);
 
@@ -844,14 +853,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_multi_node_cluster_readiness() {
-        let transport = ChannelTransport::default();
-        let node_1 =
-            create_cluster_for_test(Vec::new(), &["searcher", "indexer"], &transport, true)
-                .await
-                .unwrap();
+        let transport = Arc::new(ChannelTransport::default());
+        let node_1 = create_cluster_for_test(
+            Vec::new(),
+            &["searcher", "indexer"],
+            transport.clone(),
+            true,
+        )
+        .await
+        .unwrap();
 
         let peer_seeds = vec![node_1.gossip_listen_addr.to_string()];
-        let node_2 = create_cluster_for_test(peer_seeds, &["indexer"], &transport, false)
+        let node_2 = create_cluster_for_test(peer_seeds, &["indexer"], transport, false)
             .await
             .unwrap();
 
@@ -885,14 +898,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_members_built_from_chitchat_state() {
-        let transport = ChannelTransport::default();
-        let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], transport.clone(), true)
             .await
             .unwrap();
         let cluster2 = create_cluster_for_test(
             vec![cluster1.gossip_listen_addr.to_string()],
             &["indexer", "metastore"],
-            &transport,
+            transport,
             true,
         )
         .await
@@ -952,15 +965,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_chitchat_state_set_high_number_of_tasks() {
-        let transport = ChannelTransport::default();
-        let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let transport = Arc::new(ChannelTransport::default());
+        let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], transport.clone(), true)
             .await
             .unwrap();
         let cluster2 = Arc::new(
             create_cluster_for_test(
                 vec![cluster1.gossip_listen_addr.to_string()],
                 &["indexer", "metastore"],
-                &transport,
+                transport.clone(),
                 true,
             )
             .await
@@ -970,7 +983,7 @@ mod tests {
             create_cluster_for_test(
                 vec![cluster1.gossip_listen_addr.to_string()],
                 &["indexer", "metastore"],
-                &transport,
+                transport,
                 true,
             )
             .await
@@ -1089,8 +1102,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_chitchat_state_with_malformatted_indexing_task_key() {
-        let transport = ChannelTransport::default();
-        let node = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let transport = Arc::new(ChannelTransport::default());
+        let node = create_cluster_for_test(Vec::new(), &["indexer"], transport, true)
             .await
             .unwrap();
         {
@@ -1115,7 +1128,7 @@ mod tests {
     #[tokio::test]
     async fn test_cluster_id_isolation() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = Arc::new(ChannelTransport::default());
 
         let cluster1a = create_cluster_for_test_with_id(
             "node-11".into(),
@@ -1123,7 +1136,7 @@ mod tests {
             "cluster1".to_string(),
             Vec::new(),
             &HashSet::default(),
-            &transport,
+            transport.clone(),
             true,
         )
         .await?;
@@ -1133,7 +1146,7 @@ mod tests {
             "cluster2".to_string(),
             vec![cluster1a.gossip_listen_addr.to_string()],
             &HashSet::default(),
-            &transport,
+            transport.clone(),
             true,
         )
         .await?;
@@ -1146,7 +1159,7 @@ mod tests {
                 cluster2a.gossip_listen_addr.to_string(),
             ],
             &HashSet::default(),
-            &transport,
+            transport.clone(),
             true,
         )
         .await?;
@@ -1159,7 +1172,7 @@ mod tests {
                 cluster2a.gossip_listen_addr.to_string(),
             ],
             &HashSet::default(),
-            &transport,
+            transport,
             true,
         )
         .await?;

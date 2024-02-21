@@ -24,7 +24,8 @@ use std::time::Duration;
 
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
-use quickwit_common::{PrettySample, Progress};
+use quickwit_common::pretty::PrettySample;
+use quickwit_common::Progress;
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,

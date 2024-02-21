@@ -20,6 +20,7 @@
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{bail, Context};
 use chitchat::transport::ChannelTransport;
@@ -81,7 +82,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         Vec::new(),
         config.gossip_interval,
         FailureDetectorConfig::default(),
-        &ChannelTransport::default(),
+        Arc::new(ChannelTransport::default()),
     )
     .await?;
     Ok(cluster)
