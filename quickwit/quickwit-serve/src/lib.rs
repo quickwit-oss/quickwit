@@ -58,7 +58,7 @@ pub use format::BodyFormat;
 use futures::StreamExt;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
+use quickwit_actors::{ActorExitStatus, Mailbox, SpawnContext, Universe};
 use quickwit_cluster::{
     start_cluster_service, Cluster, ClusterChange, ClusterChangeStream, ClusterMember,
     ListenerHandle,
@@ -314,6 +314,27 @@ async fn start_control_plane_if_needed(
     }
 }
 
+fn start_shard_positions_service(
+    ingester_service_opt: Option<IngesterServiceClient>,
+    cluster: Cluster,
+    event_broker: EventBroker,
+    spawn_ctx: SpawnContext,
+) {
+    // We spawn a task here, because we need the ingester to be ready before spawning the
+    // the `ShardPositionsService`. If we don't all, all of the event we emit will be dismissed.
+    tokio::spawn(async move {
+        if let Some(ingester_service) = ingester_service_opt {
+            if wait_for_ingester_status(ingester_service, IngesterStatus::Ready)
+                .await
+                .is_err()
+            {
+                warn!("ingester failed to reach ready status");
+            }
+        }
+        ShardPositionsService::spawn(&spawn_ctx, event_broker, cluster);
+    });
+}
+
 pub async fn serve_quickwit(
     node_config: NodeConfig,
     runtimes_config: RuntimesConfig,
@@ -392,17 +413,6 @@ pub async fn serve_quickwit(
     )
     .await?;
 
-    // If one of the two following service is enabled, we need to enable the shard position service:
-    // - the control plane: as it is in charge of cleaning up shard reach eof.
-    // - the indexer: as it hosts ingesters, and ingesters use the shard positions to truncate
-    // their the queue associated to shards in mrecordlog, and publish indexers' progress to
-    // chitchat.
-    if node_config.is_service_enabled(QuickwitService::Indexer)
-        || node_config.is_service_enabled(QuickwitService::ControlPlane)
-    {
-        ShardPositionsService::spawn(universe.spawn_ctx(), event_broker.clone(), cluster.clone());
-    }
-
     // Set up the "control plane proxy" for the metastore.
     let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
         control_plane_service.clone(),
@@ -446,6 +456,17 @@ pub async fn serve_quickwit(
         ingester_pool,
     )
     .await?;
+
+    if node_config.is_service_enabled(QuickwitService::Indexer)
+        || node_config.is_service_enabled(QuickwitService::ControlPlane)
+    {
+        start_shard_positions_service(
+            ingester_service_opt.clone(),
+            cluster.clone(),
+            event_broker.clone(),
+            universe.spawn_ctx().clone(),
+        );
+    }
 
     // Any node can serve index management requests (create/update/delete index, add/remove source,
     // etc.), so we always instantiate an index manager.
@@ -715,6 +736,7 @@ async fn setup_ingest_v2(
         burst_limit,
         ..Default::default()
     };
+
     // Instantiate ingester.
     let ingester_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         let wal_dir_path = node_config.data_dir_path.join("wal");
@@ -731,6 +753,10 @@ async fn setup_ingest_v2(
         )
         .await?;
         ingester.subscribe(event_broker);
+        // We will now receive all new shard positions update events, from chitchat.
+        // Unfortunately at this point, chitchat is already running.
+        //
+        // We need to make sure the existing positions are loaded too.
         Some(ingester)
     } else {
         None

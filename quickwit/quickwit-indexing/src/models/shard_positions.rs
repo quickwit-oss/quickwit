@@ -19,16 +19,17 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use fnv::FnvHashMap;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, SpawnContext};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, SpawnContext};
 use quickwit_cluster::{Cluster, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::types::{Position, ShardId, SourceUid};
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 /// Prefix used in chitchat to publish the shard positions.
 const SHARD_POSITIONS_PREFIX: &str = "indexer.shard_positions:";
@@ -106,6 +107,26 @@ fn parse_shard_positions_from_kv(
     })
 }
 
+fn push_position_update(
+    shard_positions_service_mailbox: &Mailbox<ShardPositionsService>,
+    key: &str,
+    value: &str,
+) {
+    let shard_positions = match parse_shard_positions_from_kv(key, value) {
+        Ok(shard_positions) => shard_positions,
+        Err(error) => {
+            error!(key=key, value=value, error=%error, "failed to parse shard positions from cluster kv");
+            return;
+        }
+    };
+    if shard_positions_service_mailbox
+        .try_send_message(shard_positions)
+        .is_err()
+    {
+        error!("failed to send shard positions to the shard positions service");
+    }
+}
+
 #[async_trait]
 impl Actor for ShardPositionsService {
     type ObservableState = ();
@@ -113,24 +134,49 @@ impl Actor for ShardPositionsService {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         let mailbox = ctx.mailbox().clone();
+
         self.cluster_listener_handle_opt = Some(
             self.cluster
                 .subscribe(SHARD_POSITIONS_PREFIX, move |event| {
-                    let shard_positions= match parse_shard_positions_from_kv(event.key, event.value) {
-                        Ok(shard_positions) => {
-                            shard_positions
-                        }
-                        Err(error) => {
-                            error!(key=event.key, value=event.value, error=%error, "failed to parse shard positions from cluster kv");
-                            return;
-                        }
-                    };
-                    if mailbox.try_send_message(shard_positions).is_err() {
-                        error!("failed to send shard positions to the shard positions service");
-                    }
+                    push_position_update(&mailbox, event.key, event.value);
                 })
-                .await
+                .await,
         );
+
+        // We are now listening to new updates. However the cluster has been started earlier.
+        // It might have already received shard updates from other nodes.
+        //
+        // Let's also sync our `ShardPositionsService` with the current state of the cluster.
+        // Shard positions update are trivially idempotent, so we can just replay all the events,
+        // without worrying about duplicates.
+
+        let now = Instant::now();
+        let chitchat = self.cluster.chitchat().await;
+        let chitchat_lock = chitchat.lock().await;
+        let mut num_keys = 0;
+        for node_state in chitchat_lock.node_states().values() {
+            for (key, versioned_value) in node_state.iter_prefix(SHARD_POSITIONS_PREFIX) {
+                let key_stripped = key.strip_prefix(SHARD_POSITIONS_PREFIX).unwrap();
+                push_position_update(ctx.mailbox(), key_stripped, &versioned_value.value);
+            }
+            num_keys += 1;
+            // It is tempting to yield here, but we are holding the chitchat lock.
+            // Let's just log the amount of time it takes for the moment.
+        }
+        let elapsed = now.elapsed();
+        if elapsed > Duration::from_millis(300) {
+            warn!(
+                "initializing shard positions took longer than expected: ({:?})ms ({} keys)",
+                elapsed.as_millis(),
+                num_keys
+            );
+        } else {
+            info!(
+                "initializing shard positions took ({:?})ms ({} keys)",
+                elapsed.as_millis(),
+                num_keys
+            );
+        }
         Ok(())
     }
 }
@@ -286,47 +332,12 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
 
         let transport = ChannelTransport::default();
+
         let universe1 = Universe::with_accelerated_time();
         let universe2 = Universe::with_accelerated_time();
-        let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-            .await
-            .unwrap();
-        let cluster2 = create_cluster_for_test(
-            vec![cluster1.gossip_listen_addr.to_string()],
-            &["indexer", "metastore"],
-            &transport,
-            true,
-        )
-        .await
-        .unwrap();
-        cluster1
-            .wait_for_ready_members(|members| members.len() == 2, Duration::from_secs(5))
-            .await
-            .unwrap();
-        cluster2
-            .wait_for_ready_members(|members| members.len() == 2, Duration::from_secs(5))
-            .await
-            .unwrap();
 
         let event_broker1 = EventBroker::default();
         let event_broker2 = EventBroker::default();
-        ShardPositionsService::spawn(
-            universe1.spawn_ctx(),
-            event_broker1.clone(),
-            cluster1.clone(),
-        );
-        ShardPositionsService::spawn(
-            universe2.spawn_ctx(),
-            event_broker2.clone(),
-            cluster2.clone(),
-        );
-
-        let index_uid = IndexUid::new_with_random_ulid("index-test");
-        let source_id = "test-source".to_string();
-        let source_uid = SourceUid {
-            index_uid,
-            source_id,
-        };
 
         let (tx1, mut rx1) = tokio::sync::mpsc::unbounded_channel::<ShardPositionsUpdate>();
         let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel::<ShardPositionsUpdate>();
@@ -343,14 +354,56 @@ mod tests {
             })
             .forever();
 
+        let index_uid = IndexUid::new_with_random_ulid("index-test");
+        let source_id = "test-source".to_string();
+        let source_uid = SourceUid {
+            index_uid,
+            source_id,
+        };
+
+        let cluster1 = create_cluster_for_test(vec![], &["indexer", "metastore"], &transport, true)
+            .await
+            .unwrap();
+        ShardPositionsService::spawn(
+            universe1.spawn_ctx(),
+            event_broker1.clone(),
+            cluster1.clone(),
+        );
+
+        // One of the event is published before cluster formation.
+        event_broker1.publish(LocalShardPositionsUpdate::new(
+            source_uid.clone(),
+            vec![(ShardId::from(20), Position::offset(100u64))],
+        ));
+
+        let cluster2 = create_cluster_for_test(
+            vec![cluster1.gossip_listen_addr.to_string()],
+            &["indexer"],
+            &transport,
+            true,
+        )
+        .await
+        .unwrap();
+
+        cluster1
+            .wait_for_ready_members(|members| members.len() == 2, Duration::from_secs(5))
+            .await
+            .unwrap();
+        cluster2
+            .wait_for_ready_members(|members| members.len() == 2, Duration::from_secs(5))
+            .await
+            .unwrap();
+
+        ShardPositionsService::spawn(
+            universe2.spawn_ctx(),
+            event_broker2.clone(),
+            cluster2.clone(),
+        );
+
         // ----------------------
         // One of the node publishes a given shard position update.
         // This is done using a LocalPublishShardPositionUpdate
 
-        event_broker1.publish(LocalShardPositionsUpdate::new(
-            source_uid.clone(),
-            vec![(ShardId::from(1), Position::Beginning)],
-        ));
         event_broker1.publish(LocalShardPositionsUpdate::new(
             source_uid.clone(),
             vec![(ShardId::from(2), Position::offset(10u64))],
@@ -386,16 +439,16 @@ mod tests {
         assert_eq!(
             updates1,
             vec![
-                vec![(ShardId::from(1), Position::Beginning)],
-                vec![(ShardId::from(2), Position::offset(10u64))],
-                vec![(ShardId::from(1), Position::offset(10u64)),],
-                vec![(ShardId::from(2), Position::offset(12u64)),],
+                vec![(ShardId::from(20), Position::offset(100u64))],
+                vec![(ShardId::from(2u64), Position::offset(10u64))],
+                vec![(ShardId::from(1u64), Position::offset(10u64)),],
+                vec![(ShardId::from(2u64), Position::offset(12u64)),],
             ]
         );
 
         // The updates as seen from the second.
         let mut updates2: Vec<Vec<(ShardId, Position)>> = Vec::new();
-        for _ in 0..4 {
+        for _ in 0..5 {
             let update = rx2.recv().await.unwrap();
             assert_eq!(update.source_uid, source_uid);
             updates2.push(update.updated_shard_positions);
@@ -403,10 +456,11 @@ mod tests {
         assert_eq!(
             updates2,
             vec![
-                vec![(ShardId::from(2), Position::offset(10u64))],
-                vec![(ShardId::from(2), Position::offset(12u64))],
-                vec![(ShardId::from(1), Position::Beginning),],
-                vec![(ShardId::from(1), Position::offset(10u64)),],
+                vec![(ShardId::from(20u64), Position::offset(100u64))],
+                vec![(ShardId::from(2u64), Position::offset(10u64))],
+                vec![(ShardId::from(2u64), Position::offset(12u64))],
+                vec![(ShardId::from(1u64), Position::Beginning)],
+                vec![(ShardId::from(1u64), Position::offset(10u64))]
             ]
         );
 

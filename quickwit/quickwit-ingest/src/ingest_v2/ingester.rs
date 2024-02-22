@@ -396,6 +396,7 @@ impl Ingester {
     pub fn subscribe(&self, event_broker: &EventBroker) {
         let weak_ingester_state = self.state.weak();
         // This subscription is the one in charge of truncating the mrecordlog.
+        info!("subscribing ingester to shard positions updates");
         event_broker
             .subscribe_without_timeout::<ShardPositionsUpdate>(weak_ingester_state)
             .forever();
