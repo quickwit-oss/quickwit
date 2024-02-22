@@ -39,7 +39,9 @@ use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::types::NodeId;
 use time::OffsetDateTime;
 
-pub use crate::change::ClusterChange;
+#[cfg(any(test, feature = "testsuite"))]
+pub use crate::change::for_test::*;
+pub use crate::change::{ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory};
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::cluster::{
     create_cluster_for_test, create_cluster_for_test_with_id, grpc_addr_from_listen_addr_for_test,

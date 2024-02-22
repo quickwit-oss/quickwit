@@ -20,7 +20,7 @@
 use quickwit_common::uri::Uri;
 
 /// An embryo of a cluster config.
-// TODO: Version object.
+// TODO: Move to `quickwit-config` and version object.
 #[derive(Debug, Clone)]
 pub struct ClusterConfig {
     pub cluster_id: String,

@@ -38,7 +38,7 @@ impl Default for ControlPlaneMetrics {
             ),
             schedule_total: new_counter(
                 "schedule_total",
-                "Number of control plane `schedule` operation.",
+                "Number of control plane `schedule` operations.",
                 "control_plane",
             ),
             metastore_error_aborted: new_counter(
