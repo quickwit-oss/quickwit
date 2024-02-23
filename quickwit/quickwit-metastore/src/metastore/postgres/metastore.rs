@@ -21,8 +21,9 @@ use std::fmt::{self, Write};
 
 use async_trait::async_trait;
 use futures::StreamExt;
+use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
-use quickwit_common::{PrettySample, ServiceStream};
+use quickwit_common::ServiceStream;
 use quickwit_config::{
     validate_index_id_pattern, IndexTemplate, IndexTemplateId, PostgresMetastoreConfig,
     INGEST_V2_SOURCE_ID,

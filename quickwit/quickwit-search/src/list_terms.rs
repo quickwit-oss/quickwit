@@ -24,7 +24,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
-use quickwit_common::PrettySample;
+use quickwit_common::pretty::PrettySample;
 use quickwit_config::build_doc_mapper;
 use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata};
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};

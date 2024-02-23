@@ -28,6 +28,7 @@ mod kill_switch;
 pub mod metrics;
 pub mod net;
 mod path_hasher;
+pub mod pretty;
 mod progress;
 pub mod pubsub;
 pub mod rand;
@@ -148,34 +149,6 @@ macro_rules! ignore_error_kind {
             Err(error) => Err(error),
         }
     };
-}
-
-pub struct PrettySample<'a, T>(&'a [T], usize);
-
-impl<'a, T> PrettySample<'a, T> {
-    pub fn new(slice: &'a [T], sample_size: usize) -> Self {
-        Self(slice, sample_size)
-    }
-}
-
-impl<T> Debug for PrettySample<'_, T>
-where T: Debug
-{
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "[")?;
-        for (i, item) in self.0.iter().enumerate() {
-            if i == self.1 {
-                write!(formatter, ", and {} more", self.0.len() - i)?;
-                break;
-            }
-            if i > 0 {
-                write!(formatter, ", ")?;
-            }
-            write!(formatter, "{item:?}")?;
-        }
-        write!(formatter, "]")?;
-        Ok(())
-    }
 }
 
 #[inline]
@@ -305,24 +278,6 @@ mod tests {
             std::fs::remove_file("file-does-not-exist")
         )
         .unwrap();
-    }
-
-    #[test]
-    fn test_pretty_sample() {
-        let pretty_sample = PrettySample::<'_, usize>::new(&[], 2);
-        assert_eq!(format!("{pretty_sample:?}"), "[]");
-
-        let pretty_sample = PrettySample::new(&[1], 2);
-        assert_eq!(format!("{pretty_sample:?}"), "[1]");
-
-        let pretty_sample = PrettySample::new(&[1, 2], 2);
-        assert_eq!(format!("{pretty_sample:?}"), "[1, 2]");
-
-        let pretty_sample = PrettySample::new(&[1, 2, 3], 2);
-        assert_eq!(format!("{pretty_sample:?}"), "[1, 2, and 1 more]");
-
-        let pretty_sample = PrettySample::new(&[1, 2, 3, 4], 2);
-        assert_eq!(format!("{pretty_sample:?}"), "[1, 2, and 2 more]");
     }
 
     #[test]

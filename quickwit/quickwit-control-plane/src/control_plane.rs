@@ -776,7 +776,7 @@ impl Handler<IndexerJoined> for ControlPlane {
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         info!(
-            "indexer joined `{}` the cluster: rebuilding indexing plan",
+            "indexer `{}` joined the cluster: rebuilding indexing plan",
             message.0.node_id()
         );
         // TODO:
@@ -802,7 +802,7 @@ impl Handler<IndexerLeft> for ControlPlane {
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         info!(
-            "indexer left `{}` the cluster: rebuilding indexing plan",
+            "indexer `{}` left the cluster: rebuilding indexing plan",
             message.0.node_id()
         );
         // 1. Update shard table.

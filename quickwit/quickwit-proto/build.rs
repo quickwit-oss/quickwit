@@ -26,6 +26,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Prost + tonic + Quickwit codegen for control plane, indexing, metastore, ingest and search
     // services.
     //
+    // Cluster service.
+    Codegen::builder()
+        .with_protos(&["protos/quickwit/cluster.proto"])
+        .with_output_dir("src/codegen/quickwit")
+        .with_result_type_path("crate::cluster::ClusterResult")
+        .with_error_type_path("crate::cluster::ClusterError")
+        .generate_rpc_name_impls()
+        .run()
+        .unwrap();
+
     // Control plane.
     let mut prost_config = prost_build::Config::default();
     prost_config.extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid");

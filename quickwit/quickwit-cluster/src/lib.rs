@@ -21,8 +21,10 @@
 
 mod change;
 mod cluster;
+mod grpc_gossip;
+mod grpc_service;
 mod member;
-pub mod metrics;
+mod metrics;
 mod node;
 
 use std::net::SocketAddr;
@@ -32,6 +34,7 @@ pub use chitchat::transport::ChannelTransport;
 use chitchat::transport::{Socket, Transport, UdpSocket};
 use chitchat::{ChitchatMessage, Serializable};
 pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
+pub use grpc_service::cluster_grpc_server;
 use quickwit_common::metrics::IntCounter;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
