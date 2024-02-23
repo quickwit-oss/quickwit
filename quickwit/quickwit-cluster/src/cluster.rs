@@ -49,10 +49,10 @@ use crate::member::{
 use crate::metrics::spawn_metrics_task;
 use crate::{ClusterChangeStream, ClusterNode};
 
-const MARKED_FOR_DELETION_GRACE_PERIOD: usize = if cfg!(any(test, feature = "testsuite")) {
-    100 // ~ HEARTBEAT * 100 = 2.5 seconds.
+const MARKED_FOR_DELETION_GRACE_PERIOD: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(2_500) // 2.5 secs
 } else {
-    5_000 // ~ HEARTBEAT * 5_000 ~ 4 hours.
+    Duration::from_secs(3_600 * 2) // 2 hours.
 };
 
 // An indexing task key is formatted as
@@ -133,6 +133,10 @@ impl Cluster {
             failure_detector_config,
             gossip_interval,
             marked_for_deletion_grace_period: MARKED_FOR_DELETION_GRACE_PERIOD,
+            extra_liveness_predicate: Some(Box::new(|node_state: &NodeState| {
+                node_state.contains_key(ENABLED_SERVICES_KEY)
+                    && node_state.contains_key(GRPC_ADVERTISE_ADDR_KEY)
+            })),
         };
         let chitchat_handle = spawn_chitchat(
             chitchat_config,
