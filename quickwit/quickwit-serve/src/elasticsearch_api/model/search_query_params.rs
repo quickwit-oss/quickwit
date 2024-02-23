@@ -213,6 +213,24 @@ impl From<SearchQueryParamsCount> for SearchQueryParams {
     }
 }
 
+#[serde_with::skip_serializing_none]
+#[derive(Default, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeleteQueryParams {
+    #[serde(default)]
+    pub allow_no_indices: Option<bool>,
+    #[serde(serialize_with = "to_simple_list")]
+    #[serde(deserialize_with = "from_simple_list")]
+    #[serde(default)]
+    pub expand_wildcards: Option<Vec<ExpandWildcards>>,
+    #[serde(default)]
+    pub ignore_unavailable: Option<bool>,
+    #[serde(default)]
+    pub master_timeout: Option<String>,
+    #[serde(default)]
+    pub timeout: Option<String>,
+}
+
 // Parse a single sort field parameter from ES sort query string parameter.
 fn parse_sort_field_str(sort_field_str: &str) -> Result<SortField, SearchError> {
     if let Some((field, order_str)) = sort_field_str.split_once(':') {

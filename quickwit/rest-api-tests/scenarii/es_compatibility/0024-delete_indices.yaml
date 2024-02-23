@@ -23,8 +23,21 @@ method: DELETE
 api_root: http://localhost:7280/api/v1/
 endpoint: _elastic/test_index1,does_not_exist
 status_code: 404
+--- # delete partially matching with ignore_unavailable
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: _elastic/test_index1,does_not_exist
+status_code: 200
+params:
+  ignore_unavailable: "true"
+--- # already deleted
+method: DELETE 
+api_root: http://localhost:7280/api/v1/
+endpoint: _elastic/test_index1
+status_code: 404
 ---
 method: DELETE
 api_root: http://localhost:7280/api/v1/
-endpoint: _elastic/test_index1,test_index2
+endpoint: _elastic/test_index2
 status_code: 200
+

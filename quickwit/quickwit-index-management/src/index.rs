@@ -229,6 +229,7 @@ impl IndexService {
     pub async fn delete_indexes(
         &self,
         index_id_patterns: Vec<String>,
+        ignore_missing: bool,
         dry_run: bool,
     ) -> Result<Vec<SplitInfo>, IndexServiceError> {
         let list_indexes_metadatas_request = ListIndexesMetadataRequest {
@@ -251,7 +252,7 @@ impl IndexService {
             .await?
             .deserialize_indexes_metadata()?;
 
-        if indexes_metadata.len() != index_id_patterns.len() {
+        if !ignore_missing && indexes_metadata.len() != index_id_patterns.len() {
             let found_index_ids: HashSet<&str> = indexes_metadata
                 .iter()
                 .map(|index_metadata| index_metadata.index_id())

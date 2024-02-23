@@ -24,7 +24,7 @@ use warp::reject::LengthRequired;
 use warp::{Filter, Rejection};
 
 use super::model::{
-    CatIndexQueryParams, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
+    CatIndexQueryParams, DeleteQueryParams, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
     MultiSearchQueryParams, SearchQueryParamsCount,
 };
 use crate::decompression::get_body_bytes;
@@ -174,10 +174,11 @@ pub(crate) fn elastic_index_count_filter(
 
 #[utoipa::path(delete, tag = "Indexes", path = "/{index}")]
 pub(crate) fn elastic_delete_index_filter(
-) -> impl Filter<Extract = (Vec<String>,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (Vec<String>, DeleteQueryParams), Error = Rejection> + Clone {
     warp::path!("_elastic" / String)
         .and_then(extract_index_id_patterns)
         .and(warp::delete())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
 // No support for any query parameters for now.

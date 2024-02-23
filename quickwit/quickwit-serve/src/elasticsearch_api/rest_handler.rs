@@ -55,7 +55,7 @@ use super::filter::{
 };
 use super::model::{
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
-    CatIndexQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
+    CatIndexQueryParams, DeleteQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
     ElasticsearchStatsResponse, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
     FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
     MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
@@ -434,10 +434,15 @@ pub struct ElasticsearchDeleteResponse {
 
 async fn es_compat_delete_index(
     index_id_patterns: Vec<String>,
+    query_params: DeleteQueryParams,
     index_service: IndexService,
 ) -> Result<ElasticsearchDeleteResponse, ElasticsearchError> {
     index_service
-        .delete_indexes(index_id_patterns, false)
+        .delete_indexes(
+            index_id_patterns,
+            query_params.ignore_unavailable.unwrap_or_default(),
+            false,
+        )
         .await?;
     Ok(ElasticsearchDeleteResponse { acknowledged: true })
 }
