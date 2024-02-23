@@ -134,9 +134,9 @@ impl Cluster {
             gossip_interval,
             marked_for_deletion_grace_period: MARKED_FOR_DELETION_GRACE_PERIOD,
             extra_liveness_predicate: Some(Box::new(|node_state: &NodeState| {
-                node_state.contains_key(GRPC_ADVERTISE_ADDR_KEY) &&
                 node_state.contains_key(ENABLED_SERVICES_KEY)
-            }))
+                    && node_state.contains_key(GRPC_ADVERTISE_ADDR_KEY)
+            })),
         };
         let chitchat_handle = spawn_chitchat(
             chitchat_config,
