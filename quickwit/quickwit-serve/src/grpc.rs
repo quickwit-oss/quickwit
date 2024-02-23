@@ -22,6 +22,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use bytesize::ByteSize;
+use quickwit_cluster::cluster_grpc_server;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::indexing::IndexingServiceClient;
@@ -46,6 +47,8 @@ pub(crate) async fn start_grpc_server(
 ) -> anyhow::Result<()> {
     let mut enabled_grpc_services = BTreeSet::new();
     let mut server = Server::builder();
+
+    let cluster_grpc_service = cluster_grpc_server(services.cluster.clone());
 
     // Mount gRPC metastore service if `QuickwitService::Metastore` is enabled on node.
     let metastore_grpc_service = if let Some(metastore_server) = &services.metastore_server_opt {
@@ -164,6 +167,7 @@ pub(crate) async fn start_grpc_server(
         None
     };
     let server_router = server
+        .add_service(cluster_grpc_service)
         .add_optional_service(control_plane_grpc_service)
         .add_optional_service(indexing_grpc_service)
         .add_optional_service(ingest_api_grpc_service)

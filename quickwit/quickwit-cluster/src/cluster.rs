@@ -41,6 +41,7 @@ use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
 use crate::change::{compute_cluster_change_events, ClusterChange, ClusterChangeStreamFactory};
+use crate::grpc_gossip::spawn_catchup_callback_task;
 use crate::member::{
     build_cluster_member, ClusterMember, NodeStateExt, ENABLED_SERVICES_KEY,
     GRPC_ADVERTISE_ADDR_KEY, PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
@@ -125,6 +126,16 @@ impl Cluster {
             peer_seed_addrs=%peer_seed_addrs.join(", "),
             "Joining cluster."
         );
+        // Set up catchup callback and extra liveness predicate functions.
+        let (catchup_callback_tx, catchup_callback_rx) = watch::channel(());
+        let catchup_callback = move || {
+            let _ = catchup_callback_tx.send(());
+        };
+        let extra_liveness_predicate = |node_state: &NodeState| {
+            [ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY]
+                .iter()
+                .all(|key| node_state.contains_key(key))
+        };
         let chitchat_config = ChitchatConfig {
             cluster_id: cluster_id.clone(),
             chitchat_id: self_node.chitchat_id(),
@@ -133,21 +144,15 @@ impl Cluster {
             failure_detector_config,
             gossip_interval,
             marked_for_deletion_grace_period: MARKED_FOR_DELETION_GRACE_PERIOD,
-            extra_liveness_predicate: Some(Box::new(|node_state: &NodeState| {
-                node_state.contains_key(ENABLED_SERVICES_KEY)
-                    && node_state.contains_key(GRPC_ADVERTISE_ADDR_KEY)
-            })),
+            catchup_callback: Some(Box::new(catchup_callback)),
+            extra_liveness_predicate: Some(Box::new(extra_liveness_predicate)),
         };
         let chitchat_handle = spawn_chitchat(
             chitchat_config,
             vec![
                 (
                     ENABLED_SERVICES_KEY.to_string(),
-                    self_node
-                        .enabled_services
-                        .iter()
-                        .map(|service| service.as_str())
-                        .join(","),
+                    self_node.enabled_services.iter().join(","),
                 ),
                 (
                     GRPC_ADVERTISE_ADDR_KEY.to_string(),
@@ -163,12 +168,24 @@ impl Cluster {
         .await?;
 
         let chitchat = chitchat_handle.chitchat();
-        let live_nodes_stream = chitchat.lock().await.live_nodes_watcher();
+        let chitchat_guard = chitchat.lock().await;
+        let live_nodes_rx = chitchat_guard.live_nodes_watcher();
+        let live_nodes_stream = chitchat_guard.live_nodes_watch_stream();
         let (ready_members_tx, ready_members_rx) = watch::channel(Vec::new());
         spawn_ready_members_task(cluster_id.clone(), live_nodes_stream, ready_members_tx);
+        drop(chitchat_guard);
 
         let weak_chitchat = Arc::downgrade(&chitchat);
-        spawn_metrics_task(weak_chitchat, self_node.chitchat_id());
+        spawn_metrics_task(weak_chitchat.clone(), self_node.chitchat_id());
+
+        spawn_catchup_callback_task(
+            cluster_id.clone(),
+            self_node.chitchat_id(),
+            weak_chitchat,
+            live_nodes_rx,
+            catchup_callback_rx.clone(),
+        )
+        .await;
 
         let inner = InnerCluster {
             cluster_id: cluster_id.clone(),
@@ -185,7 +202,7 @@ impl Cluster {
             gossip_interval,
             inner: Arc::new(RwLock::new(inner)),
         };
-        spawn_ready_nodes_change_stream_task(cluster.clone()).await;
+        spawn_change_stream_task(cluster.clone()).await;
         Ok(cluster)
     }
 
@@ -258,7 +275,7 @@ impl Cluster {
             .await
             .self_node_state()
             .get_versioned(key)
-            .filter(|versioned_value| versioned_value.tombstone.is_none())
+            .filter(|versioned_value| !versioned_value.is_tombstone())
             .map(|versioned_value| versioned_value.value.clone())
     }
 
@@ -441,7 +458,7 @@ pub fn parse_indexing_tasks(node_state: &NodeState) -> Vec<IndexingTask> {
         .iter_prefix(INDEXING_TASK_PREFIX)
         .flat_map(|(key, versioned_value)| {
             // We want to skip the tombstoned keys.
-            if versioned_value.tombstone.is_none() {
+            if !versioned_value.is_tombstone() {
                 Some((key, versioned_value.value.as_str()))
             } else {
                 None
@@ -516,7 +533,7 @@ fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> 
     })
 }
 
-async fn spawn_ready_nodes_change_stream_task(cluster: Cluster) {
+async fn spawn_change_stream_task(cluster: Cluster) {
     let cluster_guard = cluster.inner.read().await;
     let cluster_id = cluster_guard.cluster_id.clone();
     let self_chitchat_id = cluster_guard.self_chitchat_id.clone();
@@ -526,10 +543,10 @@ async fn spawn_ready_nodes_change_stream_task(cluster: Cluster) {
     drop(cluster);
 
     let mut previous_live_node_states = BTreeMap::new();
-    let mut live_nodes_watcher = chitchat.lock().await.live_nodes_watcher();
+    let mut live_nodes_watch_stream = chitchat.lock().await.live_nodes_watch_stream();
 
     let future = async move {
-        while let Some(new_live_node_states) = live_nodes_watcher.next().await {
+        while let Some(new_live_node_states) = live_nodes_watch_stream.next().await {
             let Some(cluster) = weak_cluster.upgrade() else {
                 break;
             };
