@@ -29,7 +29,10 @@ use quickwit_proto::search::{
     SplitSearchError,
 };
 use serde::Deserialize;
-use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
+use tantivy::aggregation::agg_req::{
+    get_fast_field_names, Aggregation, AggregationVariants, Aggregations,
+};
+use tantivy::aggregation::bucket::TermsAggregation;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::{AggregationLimits, AggregationSegmentCollector};
 use tantivy::collector::{Collector, SegmentCollector};
@@ -448,6 +451,22 @@ pub enum QuickwitAggregations {
     TantivyAggregations(Aggregations),
 }
 
+fn visit_term_aggregations<F>(aggs: &mut Aggregations, cb: &mut F)
+where F: FnMut(&mut TermsAggregation) {
+    visit_aggregations_mut(aggs, &mut |agg| {
+        if let AggregationVariants::Terms(terms_agg) = &mut agg.agg {
+            cb(terms_agg);
+        }
+    });
+}
+fn visit_aggregations_mut<F>(aggs: &mut Aggregations, cb: &mut F)
+where F: FnMut(&mut Aggregation) {
+    for agg in aggs.values_mut() {
+        cb(agg);
+        visit_aggregations_mut(&mut agg.sub_aggregation, cb);
+    }
+}
+
 impl QuickwitAggregations {
     fn fast_field_names(&self) -> HashSet<String> {
         match self {
@@ -611,16 +630,26 @@ impl Collector for QuickwitCollector {
                     Box::new(collector.for_segment(0, segment_reader)?),
                 ))
             }
-            Some(QuickwitAggregations::TantivyAggregations(aggs)) => Some(
-                AggregationSegmentCollectors::TantivyAggregationSegmentCollector(
-                    AggregationSegmentCollector::from_agg_req_and_reader(
-                        aggs,
-                        segment_reader,
-                        segment_ord,
-                        &self.aggregation_limits,
-                    )?,
-                ),
-            ),
+            Some(QuickwitAggregations::TantivyAggregations(aggs)) => {
+                let mut aggs = aggs.clone();
+                visit_term_aggregations(&mut aggs, &mut |terms_agg| {
+                    // Forward split_size (also shard_size) parameter to segment_size, as
+                    // this is the same in context of Quickwit
+                    if let Some(split_size) = &terms_agg.split_size {
+                        terms_agg.segment_size = Some(*split_size);
+                    }
+                });
+                Some(
+                    AggregationSegmentCollectors::TantivyAggregationSegmentCollector(
+                        AggregationSegmentCollector::from_agg_req_and_reader(
+                            &aggs,
+                            segment_reader,
+                            segment_ord,
+                            &self.aggregation_limits,
+                        )?,
+                    ),
+                )
+            }
             None => None,
         };
         let score_extractor = get_score_extractor(&self.sort_by, segment_reader)?;

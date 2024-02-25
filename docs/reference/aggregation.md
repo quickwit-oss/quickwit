@@ -532,15 +532,22 @@ By default, the top 10 terms with the most documents are returned. Larger values
 
 ###### **split_size**
 
-The get more accurate results, we fetch more than size from each segment/split.
-Increasing this value is will increase the accuracy, but also the CPU/memory usage.
+The get more accurate results, we fetch more than size from each segment/split. Aliases to `shard_size`.
 
-Defaults to size * 1.5 + 10.
+Increasing this value is will increase the accuracy, but also the CPU/memory usage.
+See the [`document count error`](#document-count-error) section for more information how this parameter impacts accuracy.
+
+`split_size` is the number of terms that are sent from a leaf result to the root node.
+Example: If you have 100 splits and `split_size` is 1000, the root node will receive 100_000 terms to merge.
+With an average cost of 50 bytes per term this requires up to 5MB of memory.
+The behaviour here deviates from elasticsearch, since we don't have global ordinals. That means we need to send serialized terms to the root node.
+
+Defaults to size * 10.
 
 ###### **show_term_doc_count_error**
 
 If you set the show_term_doc_count_error parameter to true, the terms aggregation will include doc_count_error_upper_bound, which is an upper bound to the error on the doc_count returned by each split.
-It’s the sum of the size of the largest bucket on each split that didn’t fit into split_size.
+It’s the sum of the size of the largest bucket on each split that didn’t fit into `split_size`.
 
 Defaults to true when ordering by count desc.
 
