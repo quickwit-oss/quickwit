@@ -155,10 +155,34 @@ expected:
         key: "Fritz"
       sum_other_doc_count: 8
       doc_count_error_upper_bound: 2
-
 --- 
 # Test term aggs with shard_size
-# shard_size is an alius to split_size
+# segment_size is an alias to shard_size
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    names: 
+      terms: 
+        field: "name"
+        size: 1
+        segment_size: 1
+expected:
+  aggregations:
+    names:
+      buckets:
+        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the 
+        # root node, because it gets cut off due to the split_size parameter set to 1.
+        # We also get doc_count_error_upper_bound: 2, which signals that the result is approximate.
+      - doc_count: 2 
+        key: "Fritz"
+      sum_other_doc_count: 8
+      doc_count_error_upper_bound: 2
+--- 
+# Test term aggs with shard_size
 method: [GET]
 engines:
   - quickwit

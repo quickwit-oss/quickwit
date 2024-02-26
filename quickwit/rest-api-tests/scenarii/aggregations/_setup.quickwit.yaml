@@ -54,7 +54,7 @@ num_retries: 10
 params:
   commit: force
 ndjson:
-  - {"name": "Fred", "response": 100, "id": 1, "date": "2015-01-01T12:10:30Z", "host": "192.168.0.10", "tags": ["nice"]}
+  - {"name": "Albert", "response": 100, "id": 1, "date": "2015-01-01T12:10:30Z", "host": "192.168.0.10", "tags": ["nice"]}
   - {"name": "Fred", "response": 100, "id": 3, "date": "2015-01-01T12:10:30Z", "host": "192.168.0.1", "tags": ["nice"]}
   - {"name": "Manfred", "response": 120, "id": 13, "date": "2015-01-11T12:10:30Z", "host": "192.168.0.11", "tags": ["nice"]}
   - {"name": "Horst", "id": 2, "date": "2015-01-01T11:11:30Z", "host": "192.168.0.10", "tags": ["nice", "cool"]}

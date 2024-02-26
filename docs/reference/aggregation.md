@@ -500,23 +500,23 @@ Response
 
 #### Document count error
 In Quickwit, we have one segment per split. Therefore the results returned from a split, is equivalent to results returned from a segment.
-To improve performance, results from one split are cut off at `split_size`.
+To improve performance, results from one split are cut off at `shard_size`.
 When combining results of multiple splits, terms that
 don't make it in the top n of a result from a split increase the theoretical upper bound error by lowest
 term-count.
 
-Even with a larger `split_size` value, doc_count values for a terms aggregation may be
+Even with a larger `shard_size` value, doc_count values for a terms aggregation may be
 approximate. As a result, any sub-aggregations on the terms aggregation may also be approximate.
 `sum_other_doc_count` is the number of documents that didn’t make it into the the top size
 terms. If this is greater than 0, you can be sure that the terms agg had to throw away some
 buckets, either because they didn’t fit into `size` on the root node or they didn’t fit into
-`split_size` on the leaf node.
+`shard_size` on the leaf node.
 
 #### Per bucket document count error
 If you set the `show_term_doc_count_error` parameter to true, the terms aggregation will include
 doc_count_error_upper_bound, which is an upper bound to the error on the doc_count returned by
 each split. It’s the sum of the size of the largest bucket on each split that didn’t fit
-into `split_size`.
+into `shard_size`.
 
 #### Parameters
 
@@ -530,24 +530,28 @@ Currently term aggregation only works on fast fields of type `text`, `f64`, `i64
 
 By default, the top 10 terms with the most documents are returned. Larger values for size are more expensive.
 
-###### **split_size**
+###### **shard_size**
 
-The get more accurate results, we fetch more than size from each segment/split. Aliases to `shard_size`.
+To obtain more accurate results, we fetch more than the `size` from each segment/split.
 
-Increasing this value is will increase the accuracy, but also the CPU/memory usage.
-See the [`document count error`](#document-count-error) section for more information how this parameter impacts accuracy.
+Increasing this value will enhance accuracy but will also increase CPU/memory usage. 
+Refer to the [`document count error`](#document-count-error) section for more information on how `shard_size` impacts accuracy.
 
-`split_size` is the number of terms that are sent from a leaf result to the root node.
-Example: If you have 100 splits and `split_size` is 1000, the root node will receive 100_000 terms to merge.
-With an average cost of 50 bytes per term this requires up to 5MB of memory.
-The behaviour here deviates from elasticsearch, since we don't have global ordinals. That means we need to send serialized terms to the root node.
+`shard_size` represents the number of terms that are returned from one split. 
+For example, if there are 100 splits and `shard_size` is set to 1000, the root node may receive up to 100_000 terms to merge. 
+Assuming an average cost of 50 bytes per term, this would require up to 5MB of memory. 
+The actual number of terms sent to the root depends on the number of splits handled by one node and how the intermediate results can be merged (e.g., the cardinality of the terms).
 
-Defaults to size * 10.
+Note on differences between Quickwit and Elasticsearch:
+* Unlike Elasticsearch, Quickwit does not use global ordinals, so serialized terms need to be sent to the root node.
+* The concept of shards in Elasticsearch differs from splits in Quickwit. In Elasticsearch, a shard contains up to 200M documents and is a collection of segments. In contrast, a Quickwit split comprises a single segment, typically with 5M documents. Therefore, `shard_size` in Elasticsearch applies to a group of segments, whereas in Quickwit, it applies to a single segment.
+
+Defaults to `size * 10`.
 
 ###### **show_term_doc_count_error**
 
 If you set the show_term_doc_count_error parameter to true, the terms aggregation will include doc_count_error_upper_bound, which is an upper bound to the error on the doc_count returned by each split.
-It’s the sum of the size of the largest bucket on each split that didn’t fit into `split_size`.
+It’s the sum of the size of the largest bucket on each split that didn’t fit into `shard_size`.
 
 Defaults to true when ordering by count desc.
 
