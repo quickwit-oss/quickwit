@@ -753,6 +753,22 @@ checksum = "4e84ed7ec0561e54444ad328c76b633f2946b77c234c99baf18c9e84250ceea1"
 dependencies = [
  "base64 0.21.7",
  "bytes",
+ "http 1.0.0",
+ "http-body 1.0.0",
+ "http-serde 2.0.0",
+ "query_map",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "aws_lambda_events"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "598e2ade8447dce8d3a15b6159b73354db34257851344b232fb1920c272acc61"
+dependencies = [
+ "base64 0.21.7",
+ "bytes",
  "chrono",
  "flate2",
  "http 1.0.0",
@@ -3405,7 +3421,7 @@ version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5107d9a9513f340fc9f80ec01ce88c81ab11de0a0826c9c3896504b602ae788b"
 dependencies = [
- "aws_lambda_events",
+ "aws_lambda_events 0.14.0",
  "base64 0.21.7",
  "bytes",
  "encoding_rs",
@@ -6068,7 +6084,7 @@ name = "quickwit-lambda"
 version = "0.7.1"
 dependencies = [
  "anyhow",
- "aws_lambda_events",
+ "aws_lambda_events 0.15.0",
  "chitchat",
  "flate2",
  "lambda_http",
