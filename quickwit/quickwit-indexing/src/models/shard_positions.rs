@@ -143,11 +143,11 @@ impl Actor for ShardPositionsService {
                 .await,
         );
 
-        // We are now listening to new updates. However the cluster has been started earlier.
+        // We are now listening to new updates. However, the cluster has been started earlier.
         // It might have already received shard updates from other nodes.
         //
         // Let's also sync our `ShardPositionsService` with the current state of the cluster.
-        // Shard positions update are trivially idempotent, so we can just replay all the events,
+        // Shard position updates are trivially idempotent, so we can replay all the events,
         // without worrying about duplicates.
 
         let now = Instant::now();

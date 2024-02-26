@@ -321,7 +321,7 @@ fn start_shard_positions_service(
     spawn_ctx: SpawnContext,
 ) {
     // We spawn a task here, because we need the ingester to be ready before spawning the
-    // the `ShardPositionsService`. If we don't all, all of the event we emit will be dismissed.
+    // the `ShardPositionsService`. If we don't, all the events we emit too early will be dismissed.
     tokio::spawn(async move {
         if let Some(ingester_service) = ingester_service_opt {
             if wait_for_ingester_status(ingester_service, IngesterStatus::Ready)
