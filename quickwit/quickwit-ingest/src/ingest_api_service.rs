@@ -241,6 +241,8 @@ impl IngestApiService {
             .await?;
 
         let memory_usage = self.queues.memory_usage();
+        // TODO trinity: i got `an attempt to subtract with overflow` once here. should investigate
+        // why (i was ingesting on 2k indexes at once)
         let new_capacity = self.memory_limit - memory_usage;
         self.memory_capacity.reset_capacity(new_capacity);
 

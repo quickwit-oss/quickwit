@@ -32,7 +32,7 @@ use serde::Deserialize;
 use thiserror::Error;
 use warp::{Filter, Rejection};
 
-use crate::decompression::get_body_bytes;
+use crate::decompression::{get_body_bytes, Body};
 use crate::format::extract_format_from_qs;
 use crate::rest_api_response::into_rest_api_response;
 use crate::{with_arg, BodyFormat};
@@ -75,7 +75,7 @@ pub(crate) fn ingest_api_handlers(
 
 fn ingest_filter(
     config: IngestApiConfig,
-) -> impl Filter<Extract = (String, Bytes, IngestOptions), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (String, Body, IngestOptions), Error = Rejection> + Clone {
     warp::path!(String / "ingest")
         .and(warp::post())
         .and(warp::body::content_length_limit(
@@ -99,7 +99,7 @@ fn ingest_handler(
 
 fn ingest_v2_filter(
     config: IngestApiConfig,
-) -> impl Filter<Extract = (String, Bytes, IngestOptions), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (String, Body, IngestOptions), Error = Rejection> + Clone {
     warp::path!(String / "ingest-v2")
         .and(warp::post())
         .and(warp::body::content_length_limit(
@@ -124,15 +124,16 @@ fn ingest_v2_handler(
 
 async fn ingest_v2(
     index_id: IndexId,
-    body: Bytes,
+    body: Body,
     ingest_options: IngestOptions,
     mut ingest_router: IngestRouterServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
     let mut doc_batch_builder = DocBatchV2Builder::default();
 
-    for doc in lines(&body) {
+    for doc in lines(&body.content) {
         doc_batch_builder.add_doc(doc);
     }
+    drop(body);
     let doc_batch_opt = doc_batch_builder.build();
 
     let Some(doc_batch) = doc_batch_opt else {
@@ -206,16 +207,17 @@ fn convert_ingest_response_v2(
 /// Ingest documents
 async fn ingest(
     index_id: String,
-    body: Bytes,
+    body: Body,
     ingest_options: IngestOptions,
     mut ingest_service: IngestServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
     // The size of the body should be an upper bound of the size of the batch. The removal of the
     // end of line character for each doc compensates the addition of the `DocCommand` header.
-    let mut doc_batch_builder = DocBatchBuilder::with_capacity(index_id, body.remaining());
-    for line in lines(&body) {
+    let mut doc_batch_builder = DocBatchBuilder::with_capacity(index_id, body.content.remaining());
+    for line in lines(&body.content) {
         doc_batch_builder.ingest_doc(line);
     }
+    drop(body);
     let ingest_req = IngestRequest {
         doc_batches: vec![doc_batch_builder.build()],
         commit: ingest_options.commit_type.into(),

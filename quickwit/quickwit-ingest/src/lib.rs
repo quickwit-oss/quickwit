@@ -47,6 +47,7 @@ pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::IngestApiConfig;
+pub use semaphore_with_waiter::SemaphoreWithMaxWaiters;
 use tokio::sync::Mutex;
 
 pub const QUEUES_DIR_NAME: &str = "queues";

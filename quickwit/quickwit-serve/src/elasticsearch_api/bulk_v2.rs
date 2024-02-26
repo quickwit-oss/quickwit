@@ -19,7 +19,6 @@
 
 use std::time::Instant;
 
-use bytes::Bytes;
 use hyper::StatusCode;
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::IngestRequestV2Builder;
@@ -31,6 +30,7 @@ use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+use crate::decompression::Body;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::ingest_api::lines;
 
@@ -43,44 +43,47 @@ pub(crate) struct ElasticBulkResponse {
 
 pub(crate) async fn elastic_bulk_ingest_v2(
     default_index_id: Option<IndexId>,
-    body: Bytes,
+    body: Body,
     bulk_options: ElasticBulkOptions,
     mut ingest_router: IngestRouterServiceClient,
 ) -> Result<ElasticBulkResponse, ElasticsearchError> {
     let now = Instant::now();
     let mut ingest_request_builder = IngestRequestV2Builder::default();
-    let mut lines = lines(&body).enumerate();
 
-    while let Some((line_no, line)) = lines.next() {
-        let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {
-            ElasticsearchError::new(
-                StatusCode::BAD_REQUEST,
-                format!("unsupported or malformed action on line #{line_no}: `{error}`"),
-            )
-        })?;
-        let (_, source) = lines.next().ok_or_else(|| {
-            ElasticsearchError::new(
-                StatusCode::BAD_REQUEST,
-                format!("associated source data with action on line #{line_no} is missing"),
-            )
-        })?;
-        // When ingesting into `/my-index/_bulk`, if `_index` is set to something other than
-        // `my-index`, ES honors it and creates the doc for the requested index. That is,
-        // `my-index` is a default value in case `_index`` is missing, but not a constraint on
-        // each sub-action.
-        let index_id = action
-            .into_index_id()
-            .or_else(|| default_index_id.clone())
-            .ok_or_else(|| {
+    {
+        let mut lines = lines(&body.content).enumerate();
+        while let Some((line_no, line)) = lines.next() {
+            let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {
                 ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
-                    format!("`_index` field of action on line #{line_no} is missing"),
+                    format!("unsupported or malformed action on line #{line_no}: `{error}`"),
                 )
             })?;
-        ingest_request_builder.add_doc(index_id, source);
+            let (_, source) = lines.next().ok_or_else(|| {
+                ElasticsearchError::new(
+                    StatusCode::BAD_REQUEST,
+                    format!("associated source data with action on line #{line_no} is missing"),
+                )
+            })?;
+            // When ingesting into `/my-index/_bulk`, if `_index` is set to something other than
+            // `my-index`, ES honors it and creates the doc for the requested index. That is,
+            // `my-index` is a default value in case `_index`` is missing, but not a constraint on
+            // each sub-action.
+            let index_id = action
+                .into_index_id()
+                .or_else(|| default_index_id.clone())
+                .ok_or_else(|| {
+                    ElasticsearchError::new(
+                        StatusCode::BAD_REQUEST,
+                        format!("`_index` field of action on line #{line_no} is missing"),
+                    )
+                })?;
+            ingest_request_builder.add_doc(index_id, source);
+        }
     }
-    let commit_type: CommitTypeV2 = bulk_options.refresh.into();
+    drop(body);
 
+    let commit_type: CommitTypeV2 = bulk_options.refresh.into();
     if commit_type != CommitTypeV2::Auto {
         warn!("ingest API v2 does not support the `refresh` parameter (yet)");
     }

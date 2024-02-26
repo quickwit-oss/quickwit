@@ -20,7 +20,6 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use bytes::Bytes;
 use hyper::StatusCode;
 use quickwit_config::enable_ingest_v2;
 use quickwit_ingest::{
@@ -31,6 +30,7 @@ use quickwit_proto::types::IndexId;
 use warp::{Filter, Rejection};
 
 use super::bulk_v2::{elastic_bulk_ingest_v2, ElasticBulkResponse};
+use crate::decompression::Body;
 use crate::elasticsearch_api::filter::{elastic_bulk_filter, elastic_index_bulk_filter};
 use crate::elasticsearch_api::make_elastic_api_response;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
@@ -78,7 +78,7 @@ pub fn es_compat_index_bulk_handler(
 
 async fn elastic_ingest_bulk(
     default_index_id: Option<IndexId>,
-    body: Bytes,
+    body: Body,
     bulk_options: ElasticBulkOptions,
     mut ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
@@ -88,39 +88,43 @@ async fn elastic_ingest_bulk(
     }
     let now = Instant::now();
     let mut doc_batch_builders = HashMap::new();
-    let mut lines = lines(&body).enumerate();
 
-    while let Some((line_number, line)) = lines.next() {
-        let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {
-            ElasticsearchError::new(
-                StatusCode::BAD_REQUEST,
-                format!("Malformed action/metadata line [#{line_number}]. Details: `{error}`"),
-            )
-        })?;
-        let (_, source) = lines.next().ok_or_else(|| {
-            ElasticsearchError::new(
-                StatusCode::BAD_REQUEST,
-                "expected source for the action".to_string(),
-            )
-        })?;
-        // when ingesting on /my-index/_bulk, if _index: is set to something else than my-index,
-        // ES honors it and create the doc in the requested index. That is, `my-index` is a default
-        // value in case _index: is missing, but not a constraint on each sub-action.
-        let index_id = action
-            .into_index_id()
-            .or_else(|| default_index_id.clone())
-            .ok_or_else(|| {
+    {
+        let mut lines = lines(&body.content).enumerate();
+        while let Some((line_number, line)) = lines.next() {
+            let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {
                 ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
-                    format!("missing required field: `_index` in the line [#{line_number}]."),
+                    format!("Malformed action/metadata line [#{line_number}]. Details: `{error}`"),
                 )
             })?;
-        let doc_batch_builder = doc_batch_builders
-            .entry(index_id.clone())
-            .or_insert(DocBatchBuilder::new(index_id));
+            let (_, source) = lines.next().ok_or_else(|| {
+                ElasticsearchError::new(
+                    StatusCode::BAD_REQUEST,
+                    "expected source for the action".to_string(),
+                )
+            })?;
+            // when ingesting on /my-index/_bulk, if _index: is set to something else than my-index,
+            // ES honors it and create the doc in the requested index. That is, `my-index` is a
+            // default value in case _index: is missing, but not a constraint on each
+            // sub-action.
+            let index_id = action
+                .into_index_id()
+                .or_else(|| default_index_id.clone())
+                .ok_or_else(|| {
+                    ElasticsearchError::new(
+                        StatusCode::BAD_REQUEST,
+                        format!("missing required field: `_index` in the line [#{line_number}]."),
+                    )
+                })?;
+            let doc_batch_builder = doc_batch_builders
+                .entry(index_id.clone())
+                .or_insert(DocBatchBuilder::new(index_id));
 
-        doc_batch_builder.ingest_doc(source);
+            doc_batch_builder.ingest_doc(source);
+        }
     }
+    drop(body);
     let doc_batches = doc_batch_builders
         .into_values()
         .map(|builder| builder.build())

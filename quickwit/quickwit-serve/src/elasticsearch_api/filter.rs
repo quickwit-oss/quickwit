@@ -27,7 +27,7 @@ use super::model::{
     CatIndexQueryParams, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
     MultiSearchQueryParams, SearchQueryParamsCount,
 };
-use crate::decompression::get_body_bytes;
+use crate::decompression::{get_body_bytes, Body};
 use crate::elasticsearch_api::model::{
     ElasticBulkOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
@@ -71,7 +71,7 @@ pub(crate) fn elasticsearch_filter(
     )
 )]
 pub(crate) fn elastic_bulk_filter(
-) -> impl Filter<Extract = (Bytes, ElasticBulkOptions), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (Body, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_bulk")
         .and(warp::post())
         .and(warp::body::content_length_limit(
@@ -94,7 +94,7 @@ pub(crate) fn elastic_bulk_filter(
     )
 )]
 pub(crate) fn elastic_index_bulk_filter(
-) -> impl Filter<Extract = (String, Bytes, ElasticBulkOptions), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (String, Body, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_bulk")
         .and(warp::post())
         .and(warp::body::content_length_limit(
