@@ -3,21 +3,21 @@ title: Google GKE
 sidebar_position: 2
 ---
 
-This guide will help you setting up a Quickwit cluster with the right GCS permissions.
+This guide will help you set up a Quickwit cluster with the correct GCS permissions.
 
 
 ## Set up
 
-Before install Quickwit with helm, let's create a namespace for our playground.
+Before installing Quickwit with Helm, let's create a namespace for our playground.
 
 ```
 export NS=quickwit-tutorial
 kubectl create ns ${NS}
 ```
 
-Quickwit stores its index on an object storage, we are going to use GCS which is natively supported since the 0.7 version (for version < 0.7, you should use an S3 interoperability key).
+Quickwit stores its index on an object storage. We will use GCS, which is natively supported since the 0.7 version (for versions < 0.7, you should use an S3 interoperability key).
 
-To ease the pain of setting permissions right, we prepared you a recipe which uses GCP service account and GKE service account.
+The following steps create a GCP and a GKE service account and bind them together.
 We are going to create them, set the right permissions and bind them.
 
 ```bash
@@ -47,7 +47,7 @@ iam.gke.io/gcp-service-account=${GCP_SERVICE_ACCOUNT}@${PROJECT_ID}.iam.gservice
 
 ## Install Quickwit using Helm
 
-We're now ready to install Quickwit on GKE. If you need details about Helm, look at the [generic guide](./helm.md) for installing Quickwit on Kubernetes.
+We are now ready to install Quickwit on GKE. If you'd like to know more about Helm, consult our [comprehensive guide](./helm.md) for installing Quickwit on Kubernetes.
 
 ```bash
 helm repo add quickwit https://helm.quickwit.io
@@ -78,9 +78,9 @@ helm install <deployment name> quickwit/quickwit -f values.yaml
 
 ## Check that Quickwit is running
 
-It should take a few seconds for the cluster to start. During the startup process individual pods might restart themselves several times.
+It should take a few seconds for the cluster to start. During the startup process, individual pods might restart themselves several times.
 
-To access the UI, you can run the command and open your browser at [http://localhost:7280](http://localhost:7280):
+To access the UI, you can run the following command and then open your browser at [http://localhost:7280](http://localhost:7280):
 
 ```
 kubectl port-forward svc/release-name-quickwit-searcher 7280:7280
