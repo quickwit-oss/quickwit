@@ -24,7 +24,7 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use itertools::Itertools;
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
-use quickwit_common::PrettySample;
+use quickwit_common::pretty::PrettySample;
 use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
@@ -247,7 +247,7 @@ impl IndexService {
             if index_id_pattern == "_all" {
                 return Err(IndexServiceError::Metastore(
                     MetastoreError::InvalidArgument {
-                        message: format!("index_id pattern _all not supported"),
+                        message: "index_id pattern _all not supported".to_string(),
                     },
                 ));
             }
