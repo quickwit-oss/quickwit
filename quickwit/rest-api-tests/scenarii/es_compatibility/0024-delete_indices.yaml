@@ -1,4 +1,6 @@
----
+--- #Create indices quickwit
+engines:
+  - quickwit
 method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
@@ -9,6 +11,8 @@ json:
     mode: dynamic
 sleep_after: 3
 ---
+engines:
+  - quickwit
 method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
@@ -18,26 +22,64 @@ json:
   doc_mapping:
     mode: dynamic
 sleep_after: 3
+--- # create indices elasticsearch
+engines:
+  - elasticsearch
+method: PUT
+endpoint: test_index1
+json: {
+  "mappings": {
+    "properties": {
+      "created_at": {
+        "type": "date",
+        "store": true
+      }
+    }
+  }
+}
+--- # create indices elasticsearch
+engines:
+  - elasticsearch
+method: PUT
+endpoint: test_index2
+json: {
+  "mappings": {
+    "properties": {
+      "created_at": {
+        "type": "date",
+        "store": true
+      }
+    }
+  }
+}
 ---
+engines:
+  - quickwit
+  - elasticsearch
 method: DELETE
-api_root: http://localhost:7280/api/v1/
-endpoint: _elastic/test_index1,does_not_exist
+endpoint: test_index1,does_not_exist
 status_code: 404
 --- # delete partially matching with ignore_unavailable
+engines:
+  - quickwit
+  - elasticsearch
 method: DELETE
-api_root: http://localhost:7280/api/v1/
-endpoint: _elastic/test_index1,does_not_exist
+endpoint: test_index1,does_not_exist
 status_code: 200
 params:
   ignore_unavailable: "true"
 --- # already deleted
+engines:
+  - quickwit
+  - elasticsearch
 method: DELETE 
-api_root: http://localhost:7280/api/v1/
-endpoint: _elastic/test_index1
+endpoint: test_index1
 status_code: 404
 ---
+engines:
+  - quickwit
+  - elasticsearch
 method: DELETE
-api_root: http://localhost:7280/api/v1/
-endpoint: _elastic/test_index2
+endpoint: test_index2
 status_code: 200
 

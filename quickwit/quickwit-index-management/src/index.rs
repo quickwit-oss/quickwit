@@ -235,12 +235,19 @@ impl IndexService {
         let list_indexes_metadatas_request = ListIndexesMetadataRequest {
             index_id_patterns: index_id_patterns.to_owned(),
         };
-        // disallow index_id patterns containing *
+        // disallow index_id patterns
         for index_id_pattern in &index_id_patterns {
             if index_id_pattern.contains('*') {
                 return Err(IndexServiceError::Metastore(
                     MetastoreError::InvalidArgument {
                         message: format!("index_id pattern {} contains *", index_id_pattern),
+                    },
+                ));
+            }
+            if index_id_pattern == "_all" {
+                return Err(IndexServiceError::Metastore(
+                    MetastoreError::InvalidArgument {
+                        message: format!("index_id pattern _all not supported"),
                     },
                 ));
             }
