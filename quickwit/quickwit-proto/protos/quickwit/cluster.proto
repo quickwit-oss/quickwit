@@ -17,26 +17,39 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_common::uri::Uri;
+syntax = "proto3";
 
-/// An embryo of a cluster config.
-// TODO: Move to `quickwit-config` and version object.
-#[derive(Debug, Clone)]
-pub struct ClusterConfig {
-    pub cluster_id: String,
-    pub auto_create_indexes: bool,
-    pub default_index_root_uri: Uri,
-    pub replication_factor: usize,
+package quickwit.cluster;
+
+message ChitchatId {
+  string node_id = 1;
+  uint64 generation_id = 2;
+  string gossip_advertise_addr = 3;
 }
 
-impl ClusterConfig {
-    #[cfg(any(test, feature = "testsuite"))]
-    pub fn for_test() -> Self {
-        ClusterConfig {
-            cluster_id: "test-cluster".to_string(),
-            auto_create_indexes: false,
-            default_index_root_uri: Uri::for_test("ram:///indexes"),
-            replication_factor: 1,
-        }
-    }
+message VersionedKeyValue {
+  string key = 1;
+  string value = 2;
+  uint64 version = 3;
+  bool is_tombstone = 4;
+}
+
+message NodeState {
+  ChitchatId chitchat_id = 1;
+  repeated VersionedKeyValue key_values = 2;
+  uint64 max_version = 3;
+  uint64 last_gc_version = 4;
+}
+
+service ClusterService {
+  rpc FetchClusterState(FetchClusterStateRequest) returns (FetchClusterStateResponse);
+}
+
+message FetchClusterStateRequest {
+  string cluster_id = 1;
+}
+
+message FetchClusterStateResponse {
+  string cluster_id = 1;
+  repeated NodeState node_states = 2;
 }

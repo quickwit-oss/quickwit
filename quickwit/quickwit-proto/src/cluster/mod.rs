@@ -17,26 +17,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_common::uri::Uri;
+use thiserror;
 
-/// An embryo of a cluster config.
-// TODO: Move to `quickwit-config` and version object.
-#[derive(Debug, Clone)]
-pub struct ClusterConfig {
-    pub cluster_id: String,
-    pub auto_create_indexes: bool,
-    pub default_index_root_uri: Uri,
-    pub replication_factor: usize,
+include!("../codegen/quickwit/quickwit.cluster.rs");
+
+pub type ClusterResult<T> = std::result::Result<T, ClusterError>;
+
+#[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ClusterError {
+    #[error("an internal error occurred: {0}")]
+    Internal(String),
 }
 
-impl ClusterConfig {
-    #[cfg(any(test, feature = "testsuite"))]
-    pub fn for_test() -> Self {
-        ClusterConfig {
-            cluster_id: "test-cluster".to_string(),
-            auto_create_indexes: false,
-            default_index_root_uri: Uri::for_test("ram:///indexes"),
-            replication_factor: 1,
-        }
+impl From<ClusterError> for tonic::Status {
+    fn from(cluster_error: ClusterError) -> Self {
+        tonic::Status::internal(cluster_error.to_string())
+    }
+}
+
+impl From<tonic::Status> for ClusterError {
+    fn from(status: tonic::Status) -> Self {
+        ClusterError::Internal(status.message().to_string())
     }
 }

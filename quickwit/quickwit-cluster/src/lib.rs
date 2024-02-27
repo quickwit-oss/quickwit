@@ -21,8 +21,10 @@
 
 mod change;
 mod cluster;
+mod grpc_gossip;
+mod grpc_service;
 mod member;
-pub mod metrics;
+mod metrics;
 mod node;
 
 use std::net::SocketAddr;
@@ -32,6 +34,7 @@ pub use chitchat::transport::ChannelTransport;
 use chitchat::transport::{Socket, Transport, UdpSocket};
 use chitchat::{ChitchatMessage, Serializable};
 pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
+pub use grpc_service::cluster_grpc_server;
 use quickwit_common::metrics::IntCounter;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
@@ -39,7 +42,9 @@ use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::types::NodeId;
 use time::OffsetDateTime;
 
-pub use crate::change::ClusterChange;
+#[cfg(any(test, feature = "testsuite"))]
+pub use crate::change::for_test::*;
+pub use crate::change::{ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory};
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::cluster::{
     create_cluster_for_test, create_cluster_for_test_with_id, grpc_addr_from_listen_addr_for_test,

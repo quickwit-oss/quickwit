@@ -396,6 +396,7 @@ impl Ingester {
     pub fn subscribe(&self, event_broker: &EventBroker) {
         let weak_ingester_state = self.state.weak();
         // This subscription is the one in charge of truncating the mrecordlog.
+        info!("subscribing ingester to shard positions updates");
         event_broker
             .subscribe_without_timeout::<ShardPositionsUpdate>(weak_ingester_state)
             .forever();
@@ -1097,11 +1098,13 @@ impl IngesterService for Ingester {
 impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
     async fn handle_event(&mut self, shard_positions_update: ShardPositionsUpdate) {
         let Some(state) = self.upgrade() else {
+            warn!("ingester state update failed");
             return;
         };
         let Ok(mut state_guard) =
             with_lock_metrics!(state.lock_fully().await, "gc_shards", "write")
         else {
+            error!("failed to lock the ingester state");
             return;
         };
         let index_uid = shard_positions_update.source_uid.index_uid;
@@ -1109,10 +1112,11 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
 
         for (shard_id, shard_position) in shard_positions_update.updated_shard_positions {
             let queue_id = queue_id(&index_uid, &source_id, &shard_id);
-
             if shard_position.is_eof() {
+                info!(shard = queue_id, "deleting shard");
                 state_guard.delete_shard(&queue_id).await;
             } else {
+                info!(shard=queue_id, shard_position=%shard_position, "truncating shard");
                 state_guard.truncate_shard(&queue_id, &shard_position).await;
             }
         }
@@ -2572,10 +2576,11 @@ mod tests {
         mock_control_plane
             .expect_advise_reset_shards()
             .once()
-            .returning(|request| {
+            .returning(|mut request| {
                 assert_eq!(request.shard_ids.len(), 1);
                 assert_eq!(request.shard_ids[0].index_uid(), &("test-index", 0));
                 assert_eq!(request.shard_ids[0].source_id, "test-source");
+                request.shard_ids[0].shard_ids.sort();
                 assert_eq!(
                     request.shard_ids[0].shard_ids,
                     [ShardId::from(1), ShardId::from(2)]

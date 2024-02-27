@@ -23,7 +23,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use futures::{FutureExt, StreamExt};
-use quickwit_common::PrettySample;
+use quickwit_common::pretty::PrettySample;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::search::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
