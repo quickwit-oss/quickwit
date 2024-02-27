@@ -367,9 +367,9 @@ fn field_metadata_to_list_field_serialized(
         field_type: tantivy_type_to_list_field_type(field_metadata.typ) as i32,
         searchable: field_metadata.indexed,
         aggregatable: field_metadata.fast,
-        index_ids: vec![],
-        non_searchable_index_ids: vec![],
-        non_aggregatable_index_ids: vec![],
+        index_ids: Vec::new(),
+        non_searchable_index_ids: Vec::new(),
+        non_aggregatable_index_ids: Vec::new(),
     }
 }
 

@@ -293,7 +293,7 @@ pub async fn root_list_fields(
         resolve_index_patterns(&list_fields_req.index_id_patterns[..], &mut metastore).await?;
     // The request contains a wildcard, but couldn't find any index.
     if indexes_metadata.is_empty() {
-        return Ok(ListFieldsResponse { fields: vec![] });
+        return Ok(ListFieldsResponse { fields: Vec::new() });
     }
     let index_uid_to_index_meta: HashMap<IndexUid, IndexMetasForLeafSearch> = indexes_metadata
         .iter()

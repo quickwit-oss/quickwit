@@ -296,7 +296,7 @@ impl Default for JaegerProcess {
         Self {
             service_name: "none".to_string(),
             key: "".to_string(),
-            tags: vec![],
+            tags: Vec::new(),
         }
     }
 }
@@ -382,7 +382,7 @@ mod tests {
             }),
             process: Some(quickwit_proto::jaeger::api_v2::Process {
                 service_name: "service-x".to_string(),
-                tags: vec![],
+                tags: Vec::new(),
             }),
             logs: vec![
                 Log {
@@ -426,7 +426,7 @@ mod tests {
             }),
             process: Some(quickwit_proto::jaeger::api_v2::Process {
                 service_name: "service-x".to_string(),
-                tags: vec![],
+                tags: Vec::new(),
             }),
             process_id: "".to_string(),
             tags: vec![
@@ -488,7 +488,7 @@ mod tests {
             }),
             process: Some(quickwit_proto::jaeger::api_v2::Process {
                 service_name: "service-y".to_string(),
-                tags: vec![],
+                tags: Vec::new(),
             }),
             process_id: "".to_string(),
             ..Default::default()
@@ -524,7 +524,7 @@ mod tests {
             }),
             process: Some(quickwit_proto::jaeger::api_v2::Process {
                 service_name: "service-y".to_string(),
-                tags: vec![],
+                tags: Vec::new(),
             }),
             process_id: "".to_string(),
             warnings: vec!["some span warning".to_string()],
@@ -549,7 +549,7 @@ mod tests {
             }),
             process: Some(quickwit_proto::jaeger::api_v2::Process {
                 service_name: "service-y".to_string(),
-                tags: vec![],
+                tags: Vec::new(),
             }),
             process_id: "".to_string(),
             warnings: vec!["some span warning".to_string()],

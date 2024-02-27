@@ -30,18 +30,17 @@ use quickwit_config::{
 };
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
-    serde_utils, AcquireShardsRequest, AcquireShardsResponse, AcquireShardsSubresponse,
-    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, CreateIndexTemplateRequest,
-    DeleteIndexRequest, DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest,
-    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
-    EntityKind, FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse,
-    GetIndexTemplateRequest, GetIndexTemplateResponse, IndexMetadataRequest, IndexMetadataResponse,
-    IndexTemplateMatch, LastDeleteOpstampRequest, LastDeleteOpstampResponse,
-    ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexTemplatesRequest,
-    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
-    ListShardsRequest, ListShardsResponse, ListShardsSubresponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardsRequest,
+    serde_utils, AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
+    CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
+    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteSourceRequest,
+    DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind, FindIndexTemplateMatchesRequest,
+    FindIndexTemplateMatchesResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
+    IndexMetadataRequest, IndexMetadataResponse, IndexTemplateMatch, LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
+    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
+    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardsRequest,
     OpenShardsResponse, OpenShardsSubrequest, OpenShardsSubresponse, PublishSplitsRequest,
     ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
@@ -1205,34 +1204,27 @@ impl MetastoreService for PostgresqlMetastore {
     ) -> MetastoreResult<AcquireShardsResponse> {
         const ACQUIRE_SHARDS_QUERY: &str = include_str!("queries/shards/acquire.sql");
 
-        let mut subresponses = Vec::with_capacity(request.subrequests.len());
-
-        for subrequest in request.subrequests {
-            let shard_ids: Vec<&str> = subrequest
-                .shard_ids
-                .iter()
-                .map(|shard_id| shard_id.as_str())
-                .collect();
-            let pg_shards: Vec<PgShard> = sqlx::query_as(ACQUIRE_SHARDS_QUERY)
-                .bind(subrequest.index_uid().to_string())
-                .bind(&subrequest.source_id)
-                .bind(shard_ids)
-                .bind(subrequest.publish_token)
-                .fetch_all(&self.connection_pool)
-                .await?;
-
-            let acquired_shards = pg_shards
-                .into_iter()
-                .map(|pg_shard| pg_shard.into())
-                .collect();
-
-            subresponses.push(AcquireShardsSubresponse {
-                index_uid: subrequest.index_uid,
-                source_id: subrequest.source_id,
-                acquired_shards,
-            });
+        if request.shard_ids.is_empty() {
+            return Ok(Default::default());
         }
-        Ok(AcquireShardsResponse { subresponses })
+        let shard_ids: Vec<&str> = request
+            .shard_ids
+            .iter()
+            .map(|shard_id| shard_id.as_str())
+            .collect();
+        let pg_shards: Vec<PgShard> = sqlx::query_as(ACQUIRE_SHARDS_QUERY)
+            .bind(request.index_uid().to_string())
+            .bind(&request.source_id)
+            .bind(&shard_ids)
+            .bind(request.publish_token)
+            .fetch_all(&self.connection_pool)
+            .await?;
+        let acquired_shards = pg_shards
+            .into_iter()
+            .map(|pg_shard| pg_shard.into())
+            .collect();
+        let response = AcquireShardsResponse { acquired_shards };
+        Ok(response)
     }
 
     async fn list_shards(
@@ -1274,25 +1266,34 @@ impl MetastoreService for PostgresqlMetastore {
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> MetastoreResult<DeleteShardsResponse> {
+    ) -> MetastoreResult<EmptyResponse> {
         const DELETE_SHARDS_QUERY: &str = include_str!("queries/shards/delete.sql");
 
-        for subrequest in request.subrequests {
-            let shard_ids: Vec<&str> = subrequest
-                .shard_ids
-                .iter()
-                .map(|shard_id| shard_id.as_str())
-                .collect();
-
-            sqlx::query(DELETE_SHARDS_QUERY)
-                .bind(subrequest.index_uid().to_string())
-                .bind(&subrequest.source_id)
-                .bind(shard_ids)
-                .bind(request.force)
-                .execute(&self.connection_pool)
-                .await?;
+        if request.shard_ids.is_empty() {
+            return Ok(Default::default());
         }
-        Ok(DeleteShardsResponse {})
+        let shard_ids: Vec<&str> = request
+            .shard_ids
+            .iter()
+            .map(|shard_id| shard_id.as_str())
+            .collect();
+        let pg_shards: Vec<PgShard> = sqlx::query_as(DELETE_SHARDS_QUERY)
+            .bind(request.index_uid().to_string())
+            .bind(&request.source_id)
+            .bind(&shard_ids)
+            .bind(request.force)
+            .fetch_all(&self.connection_pool)
+            .await?;
+        if !request.force
+            && pg_shards.into_iter().any(|pg_shard| {
+                let position: Position = pg_shard.publish_position_inclusive.into();
+                position.is_eof()
+            })
+        {
+            let message = "failed to delete shard ``: shard is not fully indexed".to_string();
+            return Err(MetastoreError::InvalidArgument { message });
+        }
+        Ok(EmptyResponse {})
     }
 
     // Index Template API

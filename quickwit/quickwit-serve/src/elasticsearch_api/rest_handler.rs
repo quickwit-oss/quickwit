@@ -252,8 +252,8 @@ fn build_request_for_es_api(
 
         query_ast = QueryAst::Bool(BoolQuery {
             must: vec![query_ast],
-            must_not: vec![],
-            should: vec![],
+            must_not: Vec::new(),
+            should: Vec::new(),
             filter: queries,
         });
     }

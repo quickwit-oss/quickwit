@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_extract_attributes() {
-        assert!(extract_attributes(vec![]).is_empty());
+        assert!(extract_attributes(Vec::new()).is_empty());
 
         let attributes = vec![
             OtlpKeyValue {

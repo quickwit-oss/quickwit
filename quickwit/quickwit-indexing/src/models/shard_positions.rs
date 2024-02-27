@@ -363,9 +363,10 @@ mod tests {
             source_id,
         };
 
-        let cluster1 = create_cluster_for_test(vec![], &["indexer", "metastore"], &transport, true)
-            .await
-            .unwrap();
+        let cluster1 =
+            create_cluster_for_test(Vec::new(), &["indexer", "metastore"], &transport, true)
+                .await
+                .unwrap();
         ShardPositionsService::spawn(
             universe1.spawn_ctx(),
             event_broker1.clone(),

@@ -49,8 +49,8 @@ services:
       retries: 100
 
   postgres:
-    # The oldest supported version. EOL November 9, 2023
-    image: postgres:${POSTGRES_VERSION:-11.19-alpine}
+    # The oldest supported version. EOL November 14, 2024
+    image: postgres:${POSTGRES_VERSION:-12.17-alpine}
     container_name: postgres
     ports:
       - "${MAP_HOST_POSTGRESS:-127.0.0.1}:5432:5432"

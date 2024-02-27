@@ -208,7 +208,7 @@ impl InnerRoutingExpr {
         match self {
             InnerRoutingExpr::Field(field_name) => vec![field_name.join(".")],
             InnerRoutingExpr::Composite(children) => {
-                let mut fields = vec![];
+                let mut fields = Vec::new();
                 for child in children {
                     fields.extend(child.field_names());
                 }
