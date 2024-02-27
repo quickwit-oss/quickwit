@@ -283,6 +283,16 @@ impl ShardTable {
             .map(|table_entry| &table_entry.shard_entries)
     }
 
+    /// Lists the shards of a given source. Returns `None` if the source does not exist.
+    pub fn get_mut_shards(
+        &mut self,
+        source_uid: &SourceUid,
+    ) -> Option<&mut FnvHashMap<ShardId, ShardEntry>> {
+        self.table_entries
+            .get_mut(source_uid)
+            .map(|table_entry| &mut table_entry.shard_entries)
+    }
+
     /// Inserts the shards into the shard table.
     pub fn insert_shards(
         &mut self,

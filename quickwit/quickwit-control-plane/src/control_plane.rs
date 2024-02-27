@@ -349,20 +349,23 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
     ) -> Result<(), ActorExitStatus> {
         let Some(shard_entries) = self
             .model
-            .get_shards_for_source(&shard_positions_update.source_uid)
+            .get_mut_shards_for_source(&shard_positions_update.source_uid)
         else {
             // The source no longer exists.
             return Ok(());
         };
-        // let's identify the shard that have reached EOF but have not yet been removed.
-        let shard_ids_to_close: Vec<ShardId> = shard_positions_update
-            .updated_shard_positions
-            .into_iter()
-            .filter(|(shard_id, position)| {
-                position.is_eof() && shard_entries.contains_key(shard_id)
-            })
-            .map(|(shard_id, _position)| shard_id)
-            .collect();
+
+        let mut shard_ids_to_close = Vec::new();
+        for (shard_id, position) in shard_positions_update.updated_shard_positions {
+            if let Some(shard) = shard_entries.get_mut(&shard_id) {
+                shard.publish_position_inclusive =
+                    Some(shard.publish_position_inclusive().max(&position).clone());
+                if position.is_eof() {
+                    // identify shards that have reached EOF but have not yet been removed.
+                    shard_ids_to_close.push(shard_id);
+                }
+            }
+        }
         if shard_ids_to_close.is_empty() {
             return Ok(());
         }
