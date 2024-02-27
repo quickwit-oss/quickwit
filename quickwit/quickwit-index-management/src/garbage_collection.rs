@@ -23,7 +23,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::Future;
-use quickwit_common::{PrettySample, Progress, ServiceStream};
+use quickwit_common::pretty::PrettySample;
+use quickwit_common::{Progress, ServiceStream};
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitInfo,
     SplitMetadata, SplitState,
