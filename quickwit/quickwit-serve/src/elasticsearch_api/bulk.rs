@@ -148,10 +148,13 @@ mod tests {
 
     use hyper::StatusCode;
     use quickwit_config::{IngestApiConfig, NodeConfig};
+    use quickwit_index_management::IndexService;
     use quickwit_ingest::{FetchRequest, IngestServiceClient, SuggestTruncateRequest};
+    use quickwit_metastore::metastore_for_test;
     use quickwit_proto::ingest::router::IngestRouterServiceClient;
     use quickwit_proto::metastore::MetastoreServiceClient;
     use quickwit_search::MockSearchService;
+    use quickwit_storage::StorageResolver;
 
     use crate::elasticsearch_api::bulk_v2::ElasticBulkResponse;
     use crate::elasticsearch_api::elastic_api_handlers;
@@ -166,12 +169,15 @@ mod tests {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let index_service =
+            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
             config,
             search_service,
             ingest_service,
             ingest_router,
             metastore_service.into(),
+            index_service,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index", "_id" : "1"} }
@@ -196,12 +202,15 @@ mod tests {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let index_service =
+            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
             config,
             search_service,
             ingest_service,
             ingest_router,
             metastore_service.into(),
+            index_service,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -230,12 +239,15 @@ mod tests {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index-1"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let index_service =
+            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
             config,
             search_service,
             ingest_service,
             ingest_router,
             metastore_service.into(),
+            index_service,
         );
         let payload = "
             {\"create\": {\"_index\": \"my-index-1\", \"_id\": \"1674834324802805760\"}}
@@ -261,12 +273,15 @@ mod tests {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let index_service =
+            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
             config,
             search_service,
             ingest_service,
             ingest_router,
             metastore_service.into(),
+            index_service,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -295,12 +310,15 @@ mod tests {
         let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let index_service =
+            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
             config,
             search_service,
             ingest_service,
             ingest_router,
             metastore_service.into(),
+            index_service,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -380,12 +398,15 @@ mod tests {
         let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let index_service =
+            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
             config,
             search_service,
             ingest_service,
             ingest_router,
             metastore_service.into(),
+            index_service,
         );
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
@@ -463,12 +484,15 @@ mod tests {
         let metastore_service = MetastoreServiceClient::mock();
         let ingest_service = IngestServiceClient::from(IngestServiceClient::mock());
         let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let index_service =
+            IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
             config,
             search_service,
             ingest_service,
             ingest_router,
             metastore_service.into(),
+            index_service,
         );
         let payload = r#"
             {"create": {"_index": "my-index", "_id": "1"},}

@@ -19,6 +19,7 @@
 
 use elasticsearch_dsl::search::ErrorCause;
 use hyper::StatusCode;
+use quickwit_index_management::IndexServiceError;
 use quickwit_ingest::IngestServiceError;
 use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::ServiceError;
@@ -91,6 +92,26 @@ impl From<IngestServiceError> for ElasticsearchError {
 
 impl From<IngestV2Error> for ElasticsearchError {
     fn from(ingest_error: IngestV2Error) -> Self {
+        let status = ingest_error.error_code().to_http_status_code();
+
+        let reason = ErrorCause {
+            reason: Some(ingest_error.to_string()),
+            caused_by: None,
+            root_cause: Vec::new(),
+            stack_trace: None,
+            suppressed: Vec::new(),
+            ty: None,
+            additional_details: Default::default(),
+        };
+        ElasticsearchError {
+            status,
+            error: reason,
+        }
+    }
+}
+
+impl From<IndexServiceError> for ElasticsearchError {
+    fn from(ingest_error: IndexServiceError) -> Self {
         let status = ingest_error.error_code().to_http_status_code();
 
         let reason = ErrorCause {
