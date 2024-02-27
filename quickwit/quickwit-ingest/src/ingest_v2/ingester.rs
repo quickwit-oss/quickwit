@@ -1098,11 +1098,13 @@ impl IngesterService for Ingester {
 impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
     async fn handle_event(&mut self, shard_positions_update: ShardPositionsUpdate) {
         let Some(state) = self.upgrade() else {
+            warn!("ingester state update failed");
             return;
         };
         let Ok(mut state_guard) =
             with_lock_metrics!(state.lock_fully().await, "gc_shards", "write")
         else {
+            error!("failed to lock the ingester state");
             return;
         };
         let index_uid = shard_positions_update.source_uid.index_uid;
@@ -1110,10 +1112,11 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
 
         for (shard_id, shard_position) in shard_positions_update.updated_shard_positions {
             let queue_id = queue_id(&index_uid, &source_id, &shard_id);
-
             if shard_position.is_eof() {
+                info!(shard = queue_id, "deleting shard");
                 state_guard.delete_shard(&queue_id).await;
             } else {
+                info!(shard=queue_id, shard_position=%shard_position, "truncating shard");
                 state_guard.truncate_shard(&queue_id, &shard_position).await;
             }
         }

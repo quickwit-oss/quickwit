@@ -747,22 +747,6 @@ dependencies = [
 
 [[package]]
 name = "aws_lambda_events"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e84ed7ec0561e54444ad328c76b633f2946b77c234c99baf18c9e84250ceea1"
-dependencies = [
- "base64 0.21.7",
- "bytes",
- "http 1.0.0",
- "http-body 1.0.0",
- "http-serde 2.0.0",
- "query_map",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "aws_lambda_events"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "598e2ade8447dce8d3a15b6159b73354db34257851344b232fb1920c272acc61"
@@ -3408,11 +3392,11 @@ checksum = "3f35c735096c0293d313e8f2a641627472b83d01b937177fe76e5e2708d31e0d"
 
 [[package]]
 name = "lambda_http"
-version = "0.9.3"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5107d9a9513f340fc9f80ec01ce88c81ab11de0a0826c9c3896504b602ae788b"
+checksum = "ef8fafd7a4ce0bc6093cf1bed3dcdfc1239c27df1e79e3f2154f4d3299d4f60e"
 dependencies = [
- "aws_lambda_events 0.14.0",
+ "aws_lambda_events",
  "base64 0.21.7",
  "bytes",
  "encoding_rs",
@@ -3422,7 +3406,7 @@ dependencies = [
  "http-body 1.0.0",
  "http-body-util",
  "hyper 1.2.0",
- "lambda_runtime 0.9.2",
+ "lambda_runtime",
  "mime",
  "percent-encoding",
  "pin-project-lite",
@@ -3431,32 +3415,6 @@ dependencies = [
  "serde_urlencoded",
  "tokio-stream",
  "url",
-]
-
-[[package]]
-name = "lambda_runtime"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97113292dd7dc3a4f2ca23f6f5e32cbc02b8d54d9966f9e98111a5b3f153d582"
-dependencies = [
- "async-stream",
- "base64 0.21.7",
- "bytes",
- "futures",
- "http 1.0.0",
- "http-body 1.0.0",
- "http-body-util",
- "http-serde 2.0.0",
- "hyper 1.2.0",
- "hyper-util",
- "lambda_runtime_api_client 0.9.0",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "tokio",
- "tokio-stream",
- "tower",
- "tracing",
 ]
 
 [[package]]
@@ -3475,7 +3433,7 @@ dependencies = [
  "http-serde 2.0.0",
  "hyper 1.2.0",
  "hyper-util",
- "lambda_runtime_api_client 0.10.0",
+ "lambda_runtime_api_client",
  "serde",
  "serde_json",
  "serde_path_to_error",
@@ -3483,25 +3441,6 @@ dependencies = [
  "tokio-stream",
  "tower",
  "tracing",
-]
-
-[[package]]
-name = "lambda_runtime_api_client"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "286b9131ad5312ecac04a655be8f2438988954d19e26f44986aefca6cca15333"
-dependencies = [
- "bytes",
- "futures-channel",
- "futures-util",
- "http 1.0.0",
- "http-body 1.0.0",
- "http-body-util",
- "hyper 1.2.0",
- "hyper-util",
- "tokio",
- "tower",
- "tower-service",
 ]
 
 [[package]]
@@ -4036,7 +3975,7 @@ dependencies = [
 [[package]]
 name = "mrecordlog"
 version = "0.4.0"
-source = "git+https://github.com/quickwit-oss/mrecordlog?rev=2914cad#2914cad58864097d7fcb62a8a20a7cbff730c1e8"
+source = "git+https://github.com/quickwit-oss/mrecordlog?rev=bc6a998#bc6a998966603e11928ff23914d6da169fc8fce6"
 dependencies = [
  "async-trait",
  "bytes",
@@ -6103,11 +6042,11 @@ name = "quickwit-lambda"
 version = "0.7.1"
 dependencies = [
  "anyhow",
- "aws_lambda_events 0.15.0",
+ "aws_lambda_events",
  "chitchat",
  "flate2",
  "lambda_http",
- "lambda_runtime 0.10.0",
+ "lambda_runtime",
  "once_cell",
  "opentelemetry",
  "opentelemetry-otlp",
