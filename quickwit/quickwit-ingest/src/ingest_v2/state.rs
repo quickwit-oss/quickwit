@@ -26,6 +26,7 @@ use std::time::{Duration, Instant};
 use fnv::FnvHashMap;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use mrecordlog::MultiRecordLog;
+use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
@@ -134,10 +135,7 @@ impl IngesterState {
 
         let now = Instant::now();
 
-        info!(
-            "opening write-ahead log located at `{}`",
-            wal_dir_path.display()
-        );
+        info!("opening WAL located at `{}`", wal_dir_path.display());
         let open_result = MultiRecordLog::open_with_prefs(
             wal_dir_path,
             mrecordlog::SyncPolicy::OnDelay(Duration::from_secs(5)),
@@ -147,13 +145,13 @@ impl IngesterState {
         let mut mrecordlog = match open_result {
             Ok(mrecordlog) => {
                 info!(
-                    "opened write-ahead log successfully in {} seconds",
-                    now.elapsed().as_secs()
+                    "opened WAL successfully in {}",
+                    now.elapsed().pretty_display()
                 );
                 mrecordlog
             }
             Err(error) => {
-                error!("failed to open write-ahead log: {error}");
+                error!("failed to open WAL: {error}");
                 inner_guard.set_status(IngesterStatus::Failed);
                 return;
             }

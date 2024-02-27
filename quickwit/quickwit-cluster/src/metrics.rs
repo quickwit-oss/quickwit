@@ -40,6 +40,7 @@ pub struct ClusterMetrics {
     pub gossip_recv_bytes_total: IntCounter,
     pub gossip_sent_messages_total: IntCounter,
     pub gossip_sent_bytes_total: IntCounter,
+    pub grpc_gossip_rounds_total: IntCounter,
 }
 
 impl Default for ClusterMetrics {
@@ -98,6 +99,11 @@ impl Default for ClusterMetrics {
             gossip_sent_bytes_total: new_counter(
                 "gossip_sent_bytes_total",
                 "Total amount of gossip data sent in bytes.",
+                "cluster",
+            ),
+            grpc_gossip_rounds_total: new_counter(
+                "grpc_gossip_rounds_total",
+                "Total number of gRPC gossip rounds performed with peer nodes.",
                 "cluster",
             ),
         }

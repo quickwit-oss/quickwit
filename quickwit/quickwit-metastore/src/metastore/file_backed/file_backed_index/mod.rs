@@ -29,7 +29,7 @@ use std::fmt::Debug;
 use std::ops::Bound;
 
 use itertools::Itertools;
-use quickwit_common::PrettySample;
+use quickwit_common::pretty::PrettySample;
 use quickwit_config::{SourceConfig, INGEST_V2_SOURCE_ID};
 use quickwit_proto::metastore::{
     AcquireShardsSubrequest, AcquireShardsSubresponse, DeleteQuery, DeleteShardsSubrequest,
