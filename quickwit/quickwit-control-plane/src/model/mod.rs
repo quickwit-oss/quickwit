@@ -288,11 +288,11 @@ impl ControlPlaneModel {
     }
 
     /// Lists the shards of a given source. Returns `None` if the source does not exist.
-    pub fn get_mut_shards_for_source(
+    pub fn get_shards_for_source_mut(
         &mut self,
         source_uid: &SourceUid,
     ) -> Option<&mut FnvHashMap<ShardId, ShardEntry>> {
-        self.shard_table.get_mut_shards(source_uid)
+        self.shard_table.get_shards_mut(source_uid)
     }
 
     /// Inserts the shards that have just been opened by calling `open_shards` on the metastore.

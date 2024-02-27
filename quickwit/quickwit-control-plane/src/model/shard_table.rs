@@ -284,7 +284,7 @@ impl ShardTable {
     }
 
     /// Lists the shards of a given source. Returns `None` if the source does not exist.
-    pub fn get_mut_shards(
+    pub fn get_shards_mut(
         &mut self,
         source_uid: &SourceUid,
     ) -> Option<&mut FnvHashMap<ShardId, ShardEntry>> {

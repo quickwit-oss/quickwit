@@ -349,7 +349,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
     ) -> Result<(), ActorExitStatus> {
         let Some(shard_entries) = self
             .model
-            .get_mut_shards_for_source(&shard_positions_update.source_uid)
+            .get_shards_for_source_mut(&shard_positions_update.source_uid)
         else {
             // The source no longer exists.
             return Ok(());
@@ -1420,6 +1420,7 @@ mod tests {
             source_id: INGEST_V2_SOURCE_ID.to_string(),
             shard_id: Some(ShardId::from(17)),
             leader_id: "test_node".to_string(),
+            publish_position_inclusive: Some(Position::Beginning),
             ..Default::default()
         };
         shard.set_shard_state(ShardState::Open);
@@ -1475,6 +1476,17 @@ mod tests {
             .unwrap();
         assert_eq!(indexing_tasks.len(), 1);
         assert_eq!(indexing_tasks[0].shard_ids, [ShardId::from(17)]);
+        let control_plane_state = control_plane_mailbox
+            .ask(GetDebugStateRequest {})
+            .await
+            .unwrap()
+            .unwrap();
+        let shard_state = &control_plane_state.shard_table[0].shards[0];
+        assert_eq!(shard_state.shard_id(), ShardId::from(17));
+        assert_eq!(
+            shard_state.publish_position_inclusive(),
+            Position::offset(1_000u64)
+        );
         let _ = client_inbox.drain_for_test();
 
         universe.sleep(Duration::from_secs(30)).await;
