@@ -164,6 +164,7 @@ impl IngesterState {
         if !queue_ids.is_empty() {
             info!("recovering {} shard(s)", queue_ids.len());
         }
+        let now = Instant::now();
         let mut num_closed_shards = 0;
         let mut num_deleted_shards = 0;
 
@@ -180,6 +181,7 @@ impl IngesterState {
                     ShardState::Closed,
                     replication_position_inclusive,
                     truncation_position_inclusive,
+                    now,
                 );
                 inner_guard.shards.insert(queue_id.clone(), solo_shard);
 

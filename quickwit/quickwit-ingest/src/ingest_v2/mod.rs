@@ -35,6 +35,7 @@ mod workbench;
 
 use std::fmt;
 use std::ops::{Add, AddAssign};
+use std::time::Duration;
 
 pub use broadcast::{setup_local_shards_update_listener, LocalShardsUpdate, ShardInfo, ShardInfos};
 use bytes::{BufMut, BytesMut};
@@ -60,6 +61,8 @@ pub type ClientId = String;
 pub type LeaderId = NodeId;
 
 pub type FollowerId = NodeId;
+
+pub(super) const SHARD_IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60); // 15 minutes
 
 /// Helper struct to build a [`DocBatchV2`]`.
 #[derive(Debug, Default)]
