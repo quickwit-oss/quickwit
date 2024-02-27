@@ -17,13 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use quickwit_proto::ingest::ShardState;
 use quickwit_proto::types::{NodeId, Position};
 use tokio::sync::watch;
-
-use crate::SHARD_IDLE_TIMEOUT;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(super) enum IngesterShardType {
@@ -120,8 +118,21 @@ impl IngesterShard {
         }
     }
 
-    pub fn is_idle(&self, now: Instant) -> bool {
-        now.duration_since(self.last_write_instant) >= SHARD_IDLE_TIMEOUT
+    pub fn close(&mut self) {
+        self.shard_state = ShardState::Closed;
+        self.notify_shard_status();
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.shard_state.is_closed()
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.shard_state.is_open()
+    }
+
+    pub fn is_idle(&self, now: Instant, idle_timeout: Duration) -> bool {
+        now.duration_since(self.last_write_instant) >= idle_timeout
     }
 
     pub fn is_indexed(&self) -> bool {

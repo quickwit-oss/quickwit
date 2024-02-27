@@ -211,11 +211,11 @@ impl IngesterState {
         inner_guard.set_status(IngesterStatus::Ready);
     }
 
-    pub async fn wait_for_ready(&mut self) -> Result<(), watch::error::RecvError> {
+    pub async fn wait_for_ready(&mut self) {
         self.status_rx
             .wait_for(|status| *status == IngesterStatus::Ready)
-            .await?;
-        Ok(())
+            .await
+            .expect("channel should be open");
     }
 
     pub async fn lock_partially(&self) -> IngestV2Result<PartiallyLockedIngesterState<'_>> {
@@ -466,7 +466,6 @@ mod tests {
 
         timeout(Duration::from_millis(100), state.wait_for_ready())
             .await
-            .unwrap()
             .unwrap();
 
         state.lock_partially().await.unwrap();

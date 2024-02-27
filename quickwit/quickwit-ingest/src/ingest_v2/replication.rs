@@ -550,7 +550,7 @@ impl ReplicationTask {
             };
             assert!(shard.is_replica());
 
-            if shard.shard_state.is_closed() {
+            if shard.is_closed() {
                 let replicate_failure = ReplicateFailure {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
