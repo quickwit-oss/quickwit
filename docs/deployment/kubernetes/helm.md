@@ -1,6 +1,6 @@
 ---
-title: Kubernetes (Helm)
-sidebar_position: 2
+title: Kubernetes
+sidebar_position: 1
 ---
 
 [Helm](https://helm.sh) is a package manager for Kubernetes that allows you to configure, install, and upgrade containerized applications in a Kubernetes cluster in a version-controlled and reproducible way.
