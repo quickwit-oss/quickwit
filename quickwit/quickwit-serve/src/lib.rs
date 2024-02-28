@@ -961,15 +961,18 @@ fn setup_indexer_pool(
     let indexer_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let indexing_service_clone_opt = indexing_service_opt.clone();
         Box::pin(async move {
-            if let ClusterChange::Add(node) = &cluster_change {
-                let chitchat_id = node.chitchat_id();
-                info!(
-                    node_id = chitchat_id.node_id,
-                    generation_id = chitchat_id.generation_id,
-                    "adding node `{}` to indexer pool",
-                    chitchat_id.node_id,
-                );
-            }
+            match &cluster_change {
+                ClusterChange::Add(node) if node.is_indexer() => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        node_id = chitchat_id.node_id,
+                        generation_id = chitchat_id.generation_id,
+                        "adding node `{}` to indexer pool",
+                        chitchat_id.node_id,
+                    );
+                }
+                _ => {}
+            };
             match cluster_change {
                 ClusterChange::Add(node) | ClusterChange::Update(node) if node.is_indexer() => {
                     let node_id = node.node_id().to_string();
