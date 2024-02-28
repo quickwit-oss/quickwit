@@ -1594,7 +1594,6 @@ mod tests {
             shard_state.publish_position_inclusive(),
             Position::offset(1234u64)
         );
-        //let _ = client_inbox.drain_for_test();
         universe.assert_quit().await;
     }
 
