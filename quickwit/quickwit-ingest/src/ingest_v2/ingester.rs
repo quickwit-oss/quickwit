@@ -64,6 +64,7 @@ use tracing::{debug, error, info, warn};
 
 use super::broadcast::BroadcastLocalShardsTask;
 use super::fetch::FetchStreamTask;
+use super::idle::CloseIdleShardsTask;
 use super::metrics::INGEST_V2_METRICS;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{
@@ -128,12 +129,14 @@ impl Ingester {
         memory_capacity: ByteSize,
         rate_limiter_settings: RateLimiterSettings,
         replication_factor: usize,
+        idle_shard_timeout: Duration,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();
         let state = IngesterState::load(wal_dir_path, rate_limiter_settings);
 
         let weak_state = state.weak();
-        BroadcastLocalShardsTask::spawn(cluster, weak_state);
+        BroadcastLocalShardsTask::spawn(cluster, weak_state.clone());
+        CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
         let ingester = Self {
             self_node_id,
@@ -172,6 +175,7 @@ impl Ingester {
         state: &mut InnerIngesterState,
         mrecordlog: &mut MultiRecordLog,
         shard: Shard,
+        now: Instant,
     ) -> IngestV2Result<()> {
         let queue_id = shard.queue_id();
         info!(
@@ -222,9 +226,15 @@ impl Ingester {
                 ShardState::Open,
                 Position::Beginning,
                 Position::Beginning,
+                now,
             )
         } else {
-            IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning)
+            IngesterShard::new_solo(
+                ShardState::Open,
+                Position::Beginning,
+                Position::Beginning,
+                now,
+            )
         };
         entry.insert(primary_shard);
         Ok(())
@@ -249,10 +259,8 @@ impl Ingester {
         let Ok(_permit) = self.reset_shards_permits.try_acquire() else {
             return;
         };
-        if self.state.wait_for_ready().await.is_err() {
-            // The ingester was dropped.
-            return;
-        }
+        self.state.wait_for_ready().await;
+
         info!("resetting shards");
         let now = Instant::now();
 
@@ -471,7 +479,7 @@ impl Ingester {
                     persist_failures.push(persist_failure);
                     continue;
                 };
-                if shard.shard_state.is_closed() {
+                if shard.is_closed() {
                     let persist_failure = PersistFailure {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
@@ -662,6 +670,7 @@ impl Ingester {
 
         // finally write locally
         {
+            let now = Instant::now();
             for subrequest in local_persist_subrequests {
                 let queue_id = subrequest.queue_id;
 
@@ -713,12 +722,11 @@ impl Ingester {
                         )));
                     }
                 }
-
                 state_guard
                     .shards
                     .get_mut(&queue_id)
                     .expect("primary shard should exist")
-                    .set_replication_position_inclusive(current_position_inclusive.clone());
+                    .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
                 let batch_num_bytes = subrequest.doc_batch.num_bytes() as u64;
                 let batch_num_docs = subrequest.doc_batch.num_docs() as u64;
@@ -886,10 +894,16 @@ impl Ingester {
         if state_guard.status() != IngesterStatus::Ready {
             return Err(IngestV2Error::Internal("node decommissioned".to_string()));
         }
+        let now = Instant::now();
 
         for shard in init_shards_request.shards {
-            self.init_primary_shard(&mut state_guard.inner, &mut state_guard.mrecordlog, shard)
-                .await?;
+            self.init_primary_shard(
+                &mut state_guard.inner,
+                &mut state_guard.mrecordlog,
+                shard,
+                now,
+            )
+            .await?;
         }
         Ok(InitShardsResponse {})
     }
@@ -944,8 +958,7 @@ impl Ingester {
         for shard_ids in close_shards_request.shards {
             for queue_id in shard_ids.queue_ids() {
                 if let Some(shard) = state_guard.shards.get_mut(&queue_id) {
-                    shard.shard_state = ShardState::Closed;
-                    shard.notify_shard_status();
+                    shard.close();
                 }
             }
         }
@@ -1200,6 +1213,7 @@ mod tests {
     use crate::ingest_v2::broadcast::ShardInfos;
     use crate::ingest_v2::fetch::tests::{into_fetch_eof, into_fetch_payload};
     use crate::ingest_v2::test_utils::MultiRecordLogTestExt;
+    use crate::ingest_v2::DEFAULT_IDLE_SHARD_TIMEOUT;
     use crate::MRecord;
 
     const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
@@ -1212,6 +1226,7 @@ mod tests {
         memory_capacity: ByteSize,
         rate_limiter_settings: RateLimiterSettings,
         replication_factor: usize,
+        idle_shard_timeout: Duration,
     }
 
     impl Default for IngesterForTest {
@@ -1230,6 +1245,7 @@ mod tests {
                 memory_capacity: ByteSize::mb(1),
                 rate_limiter_settings: RateLimiterSettings::default(),
                 replication_factor: 1,
+                idle_shard_timeout: DEFAULT_IDLE_SHARD_TIMEOUT,
             }
         }
     }
@@ -1268,6 +1284,11 @@ mod tests {
             self
         }
 
+        pub fn with_idle_shard_timeout(mut self, idle_shard_timeout: Duration) -> Self {
+            self.idle_shard_timeout = idle_shard_timeout;
+            self
+        }
+
         pub async fn build(self) -> (IngesterContext, Ingester) {
             static GOSSIP_ADVERTISE_PORT_SEQUENCE: AtomicU16 = AtomicU16::new(1u16);
 
@@ -1299,6 +1320,7 @@ mod tests {
                 self.memory_capacity,
                 self.rate_limiter_settings,
                 self.replication_factor,
+                self.idle_shard_timeout,
             )
             .await
             .unwrap();
@@ -1424,8 +1446,12 @@ mod tests {
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
 
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
-        let shard =
-            IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
+        let shard = IngesterShard::new_solo(
+            ShardState::Open,
+            Position::Beginning,
+            Position::Beginning,
+            Instant::now(),
+        );
         state_guard.shards.insert(queue_id_01.clone(), shard);
 
         let rate_limiter = RateLimiter::from_settings(RateLimiterSettings::default());
@@ -1653,8 +1679,12 @@ mod tests {
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
-        let solo_shard =
-            IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
+        let solo_shard = IngesterShard::new_solo(
+            ShardState::Open,
+            Position::Beginning,
+            Position::Beginning,
+            Instant::now(),
+        );
         state_guard.shards.insert(queue_id.clone(), solo_shard);
 
         state_guard
@@ -1708,8 +1738,12 @@ mod tests {
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
-        let solo_shard =
-            IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
+        let solo_shard = IngesterShard::new_solo(
+            ShardState::Open,
+            Position::Beginning,
+            Position::Beginning,
+            Instant::now(),
+        );
         state_guard.shards.insert(queue_id.clone(), solo_shard);
 
         let rate_limiter = RateLimiter::from_settings(RateLimiterSettings::default());
@@ -2087,8 +2121,12 @@ mod tests {
         let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
-        let solo_shard =
-            IngesterShard::new_solo(ShardState::Closed, Position::Beginning, Position::Beginning);
+        let solo_shard = IngesterShard::new_solo(
+            ShardState::Closed,
+            Position::Beginning,
+            Position::Beginning,
+            Instant::now(),
+        );
         ingester
             .state
             .lock_fully()
@@ -2156,6 +2194,7 @@ mod tests {
                 &mut state_guard.inner,
                 &mut state_guard.mrecordlog,
                 primary_shard,
+                Instant::now(),
             )
             .await
             .unwrap();
@@ -2223,6 +2262,7 @@ mod tests {
                 &mut state_guard.inner,
                 &mut state_guard.mrecordlog,
                 primary_shard,
+                Instant::now(),
             )
             .await
             .unwrap();
@@ -2335,7 +2375,12 @@ mod tests {
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
         ingester
-            .init_primary_shard(&mut state_guard.inner, &mut state_guard.mrecordlog, shard)
+            .init_primary_shard(
+                &mut state_guard.inner,
+                &mut state_guard.mrecordlog,
+                shard,
+                Instant::now(),
+            )
             .await
             .unwrap();
 
@@ -2439,12 +2484,14 @@ mod tests {
         let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
+        let now = Instant::now();
 
         ingester
             .init_primary_shard(
                 &mut state_guard.inner,
                 &mut state_guard.mrecordlog,
                 shard_01,
+                now,
             )
             .await
             .unwrap();
@@ -2453,6 +2500,7 @@ mod tests {
                 &mut state_guard.inner,
                 &mut state_guard.mrecordlog,
                 shard_02,
+                now,
             )
             .await
             .unwrap();
@@ -2534,8 +2582,12 @@ mod tests {
         let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
-        let solo_shard =
-            IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
+        let solo_shard = IngesterShard::new_solo(
+            ShardState::Open,
+            Position::Beginning,
+            Position::Beginning,
+            Instant::now(),
+        );
         state_guard.shards.insert(queue_id.clone(), solo_shard);
 
         let rate_limiter = RateLimiter::from_settings(RateLimiterSettings::default());
@@ -2629,12 +2681,14 @@ mod tests {
         let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
+        let now = Instant::now();
 
         ingester
             .init_primary_shard(
                 &mut state_guard.inner,
                 &mut state_guard.mrecordlog,
                 shard_01,
+                now,
             )
             .await
             .unwrap();
@@ -2643,6 +2697,7 @@ mod tests {
                 &mut state_guard.inner,
                 &mut state_guard.mrecordlog,
                 shard_02,
+                now,
             )
             .await
             .unwrap();
@@ -2697,11 +2752,14 @@ mod tests {
         );
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
+        let now = Instant::now();
+
         ingester
             .init_primary_shard(
                 &mut state_guard.inner,
                 &mut state_guard.mrecordlog,
                 shard_17,
+                now,
             )
             .await
             .unwrap();
@@ -2710,6 +2768,7 @@ mod tests {
                 &mut state_guard.inner,
                 &mut state_guard.mrecordlog,
                 shard_18,
+                now,
             )
             .await
             .unwrap();
@@ -2754,7 +2813,12 @@ mod tests {
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         ingester
-            .init_primary_shard(&mut state_guard.inner, &mut state_guard.mrecordlog, shard)
+            .init_primary_shard(
+                &mut state_guard.inner,
+                &mut state_guard.mrecordlog,
+                shard,
+                Instant::now(),
+            )
             .await
             .unwrap();
         drop(state_guard);
@@ -2852,6 +2916,7 @@ mod tests {
                 ShardState::Closed,
                 Position::offset(12u64),
                 Position::Beginning,
+                Instant::now(),
             ),
         );
         ingester.check_decommissioning_status(&mut state_guard);
@@ -2890,12 +2955,14 @@ mod tests {
         let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
+        let now = Instant::now();
 
         ingester
             .init_primary_shard(
                 &mut state_guard.inner,
                 &mut state_guard.mrecordlog,
                 shard_01,
+                now,
             )
             .await
             .unwrap();
@@ -2904,6 +2971,7 @@ mod tests {
                 &mut state_guard.inner,
                 &mut state_guard.mrecordlog,
                 shard_02,
+                now,
             )
             .await
             .unwrap();
@@ -2960,5 +3028,71 @@ mod tests {
 
         assert!(!state_guard.shards.contains_key(&queue_id_02));
         assert!(!state_guard.mrecordlog.queue_exists(&queue_id_02));
+    }
+
+    #[tokio::test]
+    async fn test_ingester_closes_idle_shards() {
+        let idle_shard_timeout = Duration::from_millis(200);
+        let (_ingester_ctx, ingester) = IngesterForTest::default()
+            .with_idle_shard_timeout(idle_shard_timeout)
+            .build()
+            .await;
+
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let shard_01 = Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(1)),
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        };
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+
+        let shard_02 = Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(2)),
+            shard_state: ShardState::Closed as i32,
+            ..Default::default()
+        };
+        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
+
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
+        let now = Instant::now();
+
+        ingester
+            .init_primary_shard(
+                &mut state_guard.inner,
+                &mut state_guard.mrecordlog,
+                shard_01,
+                now - idle_shard_timeout,
+            )
+            .await
+            .unwrap();
+        ingester
+            .init_primary_shard(
+                &mut state_guard.inner,
+                &mut state_guard.mrecordlog,
+                shard_02,
+                now,
+            )
+            .await
+            .unwrap();
+        drop(state_guard);
+
+        tokio::time::sleep(Duration::from_millis(100)).await; // 2 times the run interval period of the close idle shards task
+
+        let state_guard = ingester.state.lock_partially().await.unwrap();
+        state_guard
+            .shards
+            .get(&queue_id_01)
+            .unwrap()
+            .assert_is_closed();
+        state_guard
+            .shards
+            .get(&queue_id_02)
+            .unwrap()
+            .assert_is_open();
+        drop(state_guard);
     }
 }

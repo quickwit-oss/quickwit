@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::iter::once;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytesize::ByteSize;
 use futures::{Future, StreamExt};
@@ -466,6 +466,7 @@ impl ReplicationTask {
             ShardState::Open,
             Position::Beginning,
             Position::Beginning,
+            Instant::now(),
         );
         state_guard.shards.insert(queue_id, replica_shard);
 
@@ -530,6 +531,8 @@ impl ReplicationTask {
             };
             return Ok(replicate_response);
         }
+        let now = Instant::now();
+
         for subrequest in replicate_request.subrequests {
             let queue_id = subrequest.queue_id();
             let from_position_exclusive = subrequest.from_position_exclusive().clone();
@@ -547,7 +550,7 @@ impl ReplicationTask {
             };
             assert!(shard.is_replica());
 
-            if shard.shard_state.is_closed() {
+            if shard.is_closed() {
                 let replicate_failure = ReplicateFailure {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
@@ -647,7 +650,8 @@ impl ReplicationTask {
                 .shards
                 .get_mut(&queue_id)
                 .expect("replica shard should be initialized");
-            replica_shard.set_replication_position_inclusive(current_position_inclusive.clone());
+            replica_shard
+                .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
             let replicate_success = ReplicateSuccess {
                 subrequest_id: subrequest.subrequest_id,
@@ -1277,6 +1281,7 @@ mod tests {
             ShardState::Closed,
             Position::Beginning,
             Position::Beginning,
+            Instant::now(),
         );
         state
             .lock_fully()
@@ -1352,6 +1357,7 @@ mod tests {
             ShardState::Open,
             Position::Beginning,
             Position::Beginning,
+            Instant::now(),
         );
         state
             .lock_fully()

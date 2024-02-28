@@ -82,9 +82,9 @@ use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
-    setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
-    wait_for_ingester_status, GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient,
-    Ingester, IngesterPool, LocalShardsUpdate,
+    get_idle_shard_timeout, setup_local_shards_update_listener, start_ingest_api_service,
+    wait_for_ingester_decommission, wait_for_ingester_status, GetMemoryCapacity, IngestRequest,
+    IngestRouter, IngestServiceClient, Ingester, IngesterPool, LocalShardsUpdate,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{start_janitor_service, JanitorService};
@@ -138,7 +138,7 @@ fn get_metastore_client_max_concurrency() -> usize {
                 info!("overriding max concurrent metastore requests to {metastore_client_max_concurrency}");
                 Some(metastore_client_max_concurrency)
             } else {
-                error!("failed to parse environment variable `{METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY}={metastore_client_max_concurrency_str}` variable");
+                error!("failed to parse environment variable `{METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY}={metastore_client_max_concurrency_str}`");
                 None
             }
         })
@@ -741,6 +741,8 @@ async fn setup_ingest_v2(
     let ingester_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         let wal_dir_path = node_config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
+
+        let idle_shard_timeout = get_idle_shard_timeout();
         let ingester = Ingester::try_new(
             cluster.clone(),
             control_plane,
@@ -750,6 +752,7 @@ async fn setup_ingest_v2(
             node_config.ingest_api_config.max_queue_memory_usage,
             rate_limiter_settings,
             replication_factor,
+            idle_shard_timeout,
         )
         .await?;
         ingester.subscribe(event_broker);

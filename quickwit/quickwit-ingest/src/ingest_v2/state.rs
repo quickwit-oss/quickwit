@@ -164,6 +164,7 @@ impl IngesterState {
         if !queue_ids.is_empty() {
             info!("recovering {} shard(s)", queue_ids.len());
         }
+        let now = Instant::now();
         let mut num_closed_shards = 0;
         let mut num_deleted_shards = 0;
 
@@ -180,6 +181,7 @@ impl IngesterState {
                     ShardState::Closed,
                     replication_position_inclusive,
                     truncation_position_inclusive,
+                    now,
                 );
                 inner_guard.shards.insert(queue_id.clone(), solo_shard);
 
@@ -209,11 +211,11 @@ impl IngesterState {
         inner_guard.set_status(IngesterStatus::Ready);
     }
 
-    pub async fn wait_for_ready(&mut self) -> Result<(), watch::error::RecvError> {
+    pub async fn wait_for_ready(&mut self) {
         self.status_rx
             .wait_for(|status| *status == IngesterStatus::Ready)
-            .await?;
-        Ok(())
+            .await
+            .expect("channel should be open");
     }
 
     pub async fn lock_partially(&self) -> IngestV2Result<PartiallyLockedIngesterState<'_>> {
@@ -464,7 +466,6 @@ mod tests {
 
         timeout(Duration::from_millis(100), state.wait_for_ready())
             .await
-            .unwrap()
             .unwrap();
 
         state.lock_partially().await.unwrap();

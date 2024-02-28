@@ -334,6 +334,7 @@ mod tests {
     use std::str::FromStr;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::time::Instant;
 
     use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
     use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -481,8 +482,12 @@ mod tests {
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
-        let shard =
-            IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
+        let shard = IngesterShard::new_solo(
+            ShardState::Open,
+            Position::Beginning,
+            Position::Beginning,
+            Instant::now(),
+        );
         state_guard.shards.insert(queue_id_01.clone(), shard);
 
         let rate_limiter = RateLimiter::from_settings(RateLimiterSettings::default());
