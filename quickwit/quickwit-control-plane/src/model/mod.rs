@@ -26,6 +26,7 @@ use std::time::Instant;
 
 use anyhow::bail;
 use fnv::{FnvHashMap, FnvHashSet};
+use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::Progress;
 use quickwit_config::SourceConfig;
 use quickwit_ingest::ShardInfos;
@@ -139,11 +140,10 @@ impl ControlPlaneModel {
                     .insert_shards(&index_uid, &source_id, shards);
             }
         }
-        let elapsed_secs = now.elapsed().as_secs();
-
         info!(
-            "synced control plane model with metastore in {elapsed_secs} seconds ({num_indexes} \
-             indexes, {num_sources} sources, {num_shards} shards)",
+            "synced control plane model with metastore in {} ({num_indexes} indexes, \
+             {num_sources} sources, {num_shards} shards)",
+            now.elapsed().pretty_display()
         );
         Ok(())
     }

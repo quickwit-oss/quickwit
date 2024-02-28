@@ -158,7 +158,7 @@ impl DeleteTaskPipeline {
         info!(
             index_id=%self.index_uid.index_id,
             root_dir=%self.delete_service_task_dir.to_str().unwrap(),
-            "Spawning delete tasks pipeline.",
+            "spawning delete tasks pipeline",
         );
         let index_config = self
             .metastore

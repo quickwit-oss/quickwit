@@ -211,9 +211,27 @@ async fn balance_channel_for_service(
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node) if node.enabled_services().contains(&service) => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        node_id = chitchat_id.node_id,
+                        generation_id = chitchat_id.generation_id,
+                        "adding node `{}` to {} pool",
+                        chitchat_id.node_id,
+                        service.as_str().replace('_', " "),
+                    );
                     Some(Change::Insert(node.grpc_advertise_addr(), node.channel()))
                 }
-                ClusterChange::Remove(node) => Some(Change::Remove(node.grpc_advertise_addr())),
+                ClusterChange::Remove(node) if node.enabled_services().contains(&service) => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        node_id = chitchat_id.node_id,
+                        generation_id = chitchat_id.generation_id,
+                        "removing node `{}` from {} pool",
+                        chitchat_id.node_id,
+                        service.as_str().replace('_', " "),
+                    );
+                    Some(Change::Remove(node.grpc_advertise_addr()))
+                }
                 _ => None,
             }
         })
@@ -771,9 +789,14 @@ async fn setup_ingest_v2(
         let ingester_opt_clone_clone = ingester_opt_clone.clone();
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node)
-                    if node.enabled_services().contains(&QuickwitService::Indexer) =>
-                {
+                ClusterChange::Add(node) if node.is_indexer() => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        node_id = chitchat_id.node_id,
+                        generation_id = chitchat_id.generation_id,
+                        "adding node `{}` to ingester pool",
+                        chitchat_id.node_id,
+                    );
                     let node_id: NodeId = node.node_id().into();
 
                     if node.is_self_node() {
@@ -801,7 +824,16 @@ async fn setup_ingest_v2(
                         Some(Change::Insert(node_id, ingester_service))
                     }
                 }
-                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().into())),
+                ClusterChange::Remove(node) if node.is_indexer() => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        node_id = chitchat_id.node_id,
+                        generation_id = chitchat_id.generation_id,
+                        "removing node `{}` from ingester pool",
+                        chitchat_id.node_id,
+                    );
+                    Some(Change::Remove(node.node_id().into()))
+                }
                 _ => None,
             }
         })
@@ -838,9 +870,14 @@ async fn setup_searcher(
         let search_service_clone = search_service_clone.clone();
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node)
-                    if node.enabled_services().contains(&QuickwitService::Searcher) =>
-                {
+                ClusterChange::Add(node) if node.is_searcher() => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        node_id = chitchat_id.node_id,
+                        generation_id = chitchat_id.generation_id,
+                        "adding node `{}` to searcher pool",
+                        chitchat_id.node_id,
+                    );
                     let grpc_addr = node.grpc_advertise_addr();
 
                     if node.is_self_node() {
@@ -857,7 +894,16 @@ async fn setup_searcher(
                         Some(Change::Insert(grpc_addr, search_client))
                     }
                 }
-                ClusterChange::Remove(node) => Some(Change::Remove(node.grpc_advertise_addr())),
+                ClusterChange::Remove(node) if node.is_searcher() => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        node_id = chitchat_id.node_id,
+                        generation_id = chitchat_id.generation_id,
+                        "removing node `{}` from searcher pool",
+                        chitchat_id.node_id,
+                    );
+                    Some(Change::Remove(node.grpc_advertise_addr()))
+                }
                 _ => None,
             }
         })
@@ -915,10 +961,17 @@ fn setup_indexer_pool(
     let indexer_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let indexing_service_clone_opt = indexing_service_opt.clone();
         Box::pin(async move {
+            if let ClusterChange::Add(node) = &cluster_change {
+                let chitchat_id = node.chitchat_id();
+                info!(
+                    node_id = chitchat_id.node_id,
+                    generation_id = chitchat_id.generation_id,
+                    "adding node `{}` to indexer pool",
+                    chitchat_id.node_id,
+                );
+            }
             match cluster_change {
-                ClusterChange::Add(node) | ClusterChange::Update(node)
-                    if node.enabled_services().contains(&QuickwitService::Indexer) =>
-                {
+                ClusterChange::Add(node) | ClusterChange::Update(node) if node.is_indexer() => {
                     let node_id = node.node_id().to_string();
                     let indexing_tasks = node.indexing_tasks().to_vec();
                     let indexing_capacity = node.indexing_capacity();
@@ -964,7 +1017,16 @@ fn setup_indexer_pool(
                         Some(change)
                     }
                 }
-                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_string())),
+                ClusterChange::Remove(node) if node.is_indexer() => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        node_id = chitchat_id.node_id,
+                        generation_id = chitchat_id.generation_id,
+                        "removing node `{}` from indexer pool",
+                        chitchat_id.node_id,
+                    );
+                    Some(Change::Remove(node.node_id().to_string()))
+                }
                 _ => None,
             }
         })

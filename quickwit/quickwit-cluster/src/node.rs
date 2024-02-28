@@ -99,6 +99,24 @@ impl ClusterNode {
         &self.inner.enabled_services
     }
 
+    pub fn is_indexer(&self) -> bool {
+        self.inner
+            .enabled_services
+            .contains(&QuickwitService::Indexer)
+    }
+
+    pub fn is_ingester(&self) -> bool {
+        self.inner
+            .enabled_services
+            .contains(&QuickwitService::Indexer)
+    }
+
+    pub fn is_searcher(&self) -> bool {
+        self.inner
+            .enabled_services
+            .contains(&QuickwitService::Searcher)
+    }
+
     pub fn grpc_advertise_addr(&self) -> SocketAddr {
         self.inner.grpc_advertise_addr
     }

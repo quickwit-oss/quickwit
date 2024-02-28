@@ -1243,7 +1243,7 @@ dependencies = [
 [[package]]
 name = "chitchat"
 version = "0.8.0"
-source = "git+https://github.com/quickwit-oss/chitchat.git?rev=b3f109b#b3f109b31635b309a345af8de902ed12c56aedd0"
+source = "git+https://github.com/quickwit-oss/chitchat.git?rev=867207e#867207e5bb72297cb586980c48b854ec2428508b"
 dependencies = [
  "anyhow",
  "async-trait",
