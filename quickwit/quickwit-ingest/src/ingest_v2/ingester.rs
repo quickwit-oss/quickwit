@@ -33,6 +33,7 @@ use futures::StreamExt;
 use mrecordlog::error::CreateQueueError;
 use mrecordlog::MultiRecordLog;
 use quickwit_cluster::Cluster;
+use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::Pool;
@@ -308,10 +309,10 @@ impl Ingester {
                     .await;
 
                 info!(
-                    "deleted {} and truncated {} shard(s) in {} seconds",
+                    "deleted {} and truncated {} shard(s) in {}",
                     advise_reset_shards_response.shards_to_delete.len(),
                     advise_reset_shards_response.shards_to_truncate.len(),
-                    now.elapsed().as_secs()
+                    now.elapsed().pretty_display()
                 );
                 INGEST_V2_METRICS
                     .reset_shards_operations_total
@@ -1169,8 +1170,8 @@ pub async fn wait_for_ingester_decommission(
     wait_for_ingester_status(ingester, IngesterStatus::Decommissioned).await?;
 
     info!(
-        "successfully decommissioned ingester in {} seconds",
-        now.elapsed().as_secs()
+        "successfully decommissioned ingester in {}",
+        now.elapsed().pretty_display()
     );
     Ok(())
 }

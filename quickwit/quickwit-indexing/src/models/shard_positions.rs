@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use fnv::FnvHashMap;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, SpawnContext};
 use quickwit_cluster::{Cluster, ListenerHandle};
+use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::types::{Position, ShardId, SourceUid};
@@ -166,15 +167,13 @@ impl Actor for ShardPositionsService {
         let elapsed = now.elapsed();
         if elapsed > Duration::from_millis(300) {
             warn!(
-                "initializing shard positions took longer than expected: ({:?})ms ({} keys)",
-                elapsed.as_millis(),
-                num_keys
+                "initializing shard positions took longer than expected: {} ({num_keys} keys)",
+                elapsed.pretty_display(),
             );
         } else {
             info!(
-                "initializing shard positions took ({:?})ms ({} keys)",
-                elapsed.as_millis(),
-                num_keys
+                "initialized shard positions in {} ({num_keys} keys)",
+                elapsed.pretty_display(),
             );
         }
         Ok(())

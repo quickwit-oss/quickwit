@@ -109,12 +109,12 @@ fn default_data_dir_uri() -> ConfigValue<Uri, QW_DATA_DIR> {
 fn default_advertise_host(listen_ip: &IpAddr) -> anyhow::Result<Host> {
     if listen_ip.is_unspecified() {
         if let Some((interface_name, private_ip)) = find_private_ip() {
-            info!(advertise_address=%private_ip, interface_name=%interface_name, "using sniffed advertise address");
+            info!(advertise_address=%private_ip, interface_name=%interface_name, "using sniffed advertise address `{private_ip}`");
             return Ok(Host::from(private_ip));
         }
         bail!("listen address `{listen_ip}` is unspecified and advertise address is not set");
     }
-    info!(advertise_address=%listen_ip, "using listen address as advertise address");
+    info!(advertise_address=%listen_ip, "using listen address `{listen_ip}` as advertise address");
     Ok(Host::from(*listen_ip))
 }
 

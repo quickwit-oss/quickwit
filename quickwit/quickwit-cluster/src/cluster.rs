@@ -119,12 +119,13 @@ impl Cluster {
         info!(
             cluster_id=%cluster_id,
             node_id=%self_node.node_id,
+            generation_id=self_node.generation_id.as_u64(),
             enabled_services=?self_node.enabled_services,
             gossip_listen_addr=%gossip_listen_addr,
             gossip_advertise_addr=%self_node.gossip_advertise_addr,
             grpc_advertise_addr=%self_node.grpc_advertise_addr,
             peer_seed_addrs=%peer_seed_addrs.join(", "),
-            "Joining cluster."
+            "joining cluster"
         );
         // Set up catchup callback and extra liveness predicate functions.
         let (catchup_callback_tx, catchup_callback_rx) = watch::channel(());
