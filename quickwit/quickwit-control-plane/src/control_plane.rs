@@ -1515,6 +1515,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_fill_shard_table_position_from_metastore_on_startup() {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::with_accelerated_time();
+        let node_id = NodeId::new("control-plane-node".to_string());
+        let indexer_pool = IndexerPool::default();
+        let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
+        let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
+        let indexer_node_info = IndexerNodeInfo {
+            client,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+        };
+        indexer_pool.insert("indexer-node-1".to_string(), indexer_node_info);
+        let ingester_pool = IngesterPool::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
+
+        let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
+        let mut source = SourceConfig::ingest_v2();
+        source.enabled = true;
+        index_0.add_source(source.clone()).unwrap();
+
+        let index_0_clone = index_0.clone();
+        mock_metastore.expect_list_indexes_metadata().return_once(
+            move |list_indexes_request: ListIndexesMetadataRequest| {
+                assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
+                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                    index_0_clone.clone()
+                ])
+                .unwrap())
+            },
+        );
+
+        let mut shard = Shard {
+            index_uid: Some(index_0.index_uid.clone()),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
+            shard_id: Some(ShardId::from(17)),
+            leader_id: "test_node".to_string(),
+            publish_position_inclusive: Some(Position::Offset(1234u64.into())),
+            ..Default::default()
+        };
+        shard.set_shard_state(ShardState::Open);
+
+        let index_uid_clone = index_0.index_uid.clone();
+        mock_metastore.expect_list_shards().return_once(
+            move |_list_shards_request: ListShardsRequest| {
+                let list_shards_resp = ListShardsResponse {
+                    subresponses: vec![ListShardsSubresponse {
+                        index_uid: Some(index_uid_clone),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                        shards: vec![shard],
+                    }],
+                };
+                Ok(list_shards_resp)
+            },
+        );
+
+        let cluster_config = ClusterConfig::for_test();
+        let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
+        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+            &universe,
+            cluster_config,
+            node_id,
+            cluster_change_stream_factory,
+            indexer_pool,
+            ingester_pool,
+            MetastoreServiceClient::from(mock_metastore),
+        );
+
+        let control_plane_state = control_plane_mailbox
+            .ask(GetDebugStateRequest {})
+            .await
+            .unwrap()
+            .unwrap();
+        let shard_state = &control_plane_state.shard_table[0].shards[0];
+        assert_eq!(shard_state.shard_id(), ShardId::from(17));
+        assert_eq!(
+            shard_state.publish_position_inclusive(),
+            Position::offset(1234u64)
+        );
+        //let _ = client_inbox.drain_for_test();
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
     async fn test_delete_non_existing_shard() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
