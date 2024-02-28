@@ -23,7 +23,7 @@ use std::fmt;
 
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
-    AcquireShardsSubrequest, AcquireShardsSubresponse, DeleteShardsSubrequest, EntityKind,
+    AcquireShardsRequest, AcquireShardsResponse, DeleteShardsRequest, EntityKind,
     ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
     OpenShardsSubrequest, OpenShardsSubresponse,
 };
@@ -161,15 +161,15 @@ impl Shards {
 
     pub(super) fn acquire_shards(
         &mut self,
-        subrequest: AcquireShardsSubrequest,
-    ) -> MetastoreResult<MutationOccurred<AcquireShardsSubresponse>> {
+        request: AcquireShardsRequest,
+    ) -> MetastoreResult<MutationOccurred<AcquireShardsResponse>> {
         let mut mutation_occurred = false;
-        let mut acquired_shards = Vec::with_capacity(subrequest.shard_ids.len());
+        let mut acquired_shards = Vec::with_capacity(request.shard_ids.len());
 
-        for shard_id in subrequest.shard_ids {
-            if let Some(shard) = self.shards.get_mut(&shard_id) {
-                if shard.publish_token.as_ref() != Some(&subrequest.publish_token) {
-                    shard.publish_token = Some(subrequest.publish_token.clone());
+        for shard_id in &request.shard_ids {
+            if let Some(shard) = self.shards.get_mut(shard_id) {
+                if shard.publish_token() != request.publish_token {
+                    shard.publish_token = Some(request.publish_token.clone());
                     mutation_occurred = true;
                 }
                 acquired_shards.push(shard.clone());
@@ -182,28 +182,23 @@ impl Shards {
                 );
             }
         }
-        let subresponse = AcquireShardsSubresponse {
-            index_uid: subrequest.index_uid,
-            source_id: subrequest.source_id,
-            acquired_shards,
-        };
+        let response = AcquireShardsResponse { acquired_shards };
         if mutation_occurred {
-            Ok(MutationOccurred::Yes(subresponse))
+            Ok(MutationOccurred::Yes(response))
         } else {
-            Ok(MutationOccurred::No(subresponse))
+            Ok(MutationOccurred::No(response))
         }
     }
 
     pub(super) fn delete_shards(
         &mut self,
-        subrequest: DeleteShardsSubrequest,
-        force: bool,
+        request: DeleteShardsRequest,
     ) -> MetastoreResult<MutationOccurred<()>> {
         let mut mutation_occurred = false;
-        for shard_id in subrequest.shard_ids {
+        for shard_id in request.shard_ids {
             if let Entry::Occupied(entry) = self.shards.entry(shard_id.clone()) {
                 let shard = entry.get();
-                if !force && !shard.publish_position_inclusive().is_eof() {
+                if !request.force && !shard.publish_position_inclusive().is_eof() {
                     warn!("shard `{shard_id}` is not deletable");
                     continue;
                 }
@@ -425,5 +420,103 @@ mod tests {
         let subresponse = shards.list_shards(subrequest).unwrap();
         assert_eq!(subresponse.shards.len(), 1);
         assert_eq!(subresponse.shards[0].shard_id(), ShardId::from(1));
+    }
+
+    #[test]
+    fn test_acquire_shards() {
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = "test-source".to_string();
+        let mut shards = Shards::empty(index_uid.clone(), source_id.clone());
+
+        let request = AcquireShardsRequest {
+            index_uid: index_uid.clone().into(),
+            source_id: source_id.clone(),
+            shard_ids: Vec::new(),
+            publish_token: "test-publish-token".to_string(),
+        };
+        let MutationOccurred::No(response) = shards.acquire_shards(request).unwrap() else {
+            panic!("Expected `MutationOccured::No`");
+        };
+        assert!(response.acquired_shards.is_empty());
+
+        let request = AcquireShardsRequest {
+            index_uid: index_uid.clone().into(),
+            source_id: source_id.clone(),
+            shard_ids: vec![ShardId::from(0), ShardId::from(1)],
+            publish_token: "test-publish-token".to_string(),
+        };
+        let MutationOccurred::No(response) = shards.acquire_shards(request.clone()).unwrap() else {
+            panic!("Expected `MutationOccured::No`");
+        };
+        assert!(response.acquired_shards.is_empty());
+
+        shards.shards.insert(
+            ShardId::from(0),
+            Shard {
+                index_uid: index_uid.clone().into(),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(0)),
+                shard_state: ShardState::Open as i32,
+                publish_position_inclusive: Some(Position::eof(0u64)),
+                ..Default::default()
+            },
+        );
+        let MutationOccurred::Yes(response) = shards.acquire_shards(request.clone()).unwrap()
+        else {
+            panic!("Expected `MutationOccured::Yes`");
+        };
+        assert_eq!(response.acquired_shards.len(), 1);
+        let acquired_shard = &response.acquired_shards[0];
+        assert_eq!(acquired_shard.shard_id(), ShardId::from(0));
+
+        assert_eq!(
+            shards
+                .shards
+                .get(&ShardId::from(0))
+                .unwrap()
+                .publish_token(),
+            "test-publish-token"
+        );
+    }
+
+    #[test]
+    fn test_delete_shards() {
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = "test-source".to_string();
+        let mut shards = Shards::empty(index_uid.clone(), source_id.clone());
+
+        let request = DeleteShardsRequest {
+            index_uid: index_uid.clone().into(),
+            source_id: source_id.clone(),
+            shard_ids: Vec::new(),
+            force: false,
+        };
+        let response = shards.delete_shards(request).unwrap();
+        assert!(matches!(response, MutationOccurred::No(())));
+
+        let request = DeleteShardsRequest {
+            index_uid: index_uid.clone().into(),
+            source_id: source_id.clone(),
+            shard_ids: vec![ShardId::from(0)],
+            force: false,
+        };
+        let response = shards.delete_shards(request.clone()).unwrap();
+        assert!(matches!(response, MutationOccurred::No(())));
+
+        shards.shards.insert(
+            ShardId::from(0),
+            Shard {
+                index_uid: index_uid.clone().into(),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(0)),
+                shard_state: ShardState::Open as i32,
+                publish_position_inclusive: Some(Position::eof(0u64)),
+                ..Default::default()
+            },
+        );
+        let response = shards.delete_shards(request).unwrap();
+        assert!(matches!(response, MutationOccurred::Yes(())));
+
+        assert!(shards.shards.is_empty());
     }
 }

@@ -15,7 +15,8 @@ macro_rules! generate_getters{
             pub fn $field(&self) -> &$type {
                 self.$field
                     .as_ref()
-                    .expect(concat!("`", stringify!($field), "` should be a required field in `", stringify!($struct), "`"))
+                    .expect(concat!("`",
+                    stringify!($field), "` should be a required field"))
             }
         }
         )*
@@ -24,19 +25,48 @@ macro_rules! generate_getters{
 
 generate_getters! {
     impl fn index_uid() -> IndexUid {} for
+    // Control Plane API
     GetOrCreateOpenShardsSuccess,
-    IngestSuccess,
+
+    // Indexing API
     IndexingTask,
-    Shard, ShardIds,
 
-    RetainShardsForSource, PersistSubrequest, PersistSuccess, PersistFailure, ReplicateSubrequest,
-    ReplicateSuccess, ReplicateFailure, TruncateShardsSubrequest, OpenFetchStreamRequest,
-    FetchPayload, FetchEof,
+    // Ingest API
+    FetchEof,
+    FetchPayload,
+    IngestSuccess,
+    OpenFetchStreamRequest,
+    PersistFailure,
+    PersistSubrequest,
+    PersistSuccess,
+    ReplicateFailure,
+    ReplicateSubrequest,
+    ReplicateSuccess,
+    RetainShardsForSource,
+    Shard,
+    ShardIds,
+    TruncateShardsSubrequest,
 
-    CreateIndexResponse, DeleteIndexRequest, StageSplitsRequest, PublishSplitsRequest,
-    MarkSplitsForDeletionRequest, DeleteSplitsRequest, AddSourceRequest, ToggleSourceRequest,
-    DeleteSourceRequest, ResetSourceCheckpointRequest, DeleteQuery, UpdateSplitsDeleteOpstampRequest,
-    LastDeleteOpstampRequest, ListStaleSplitsRequest, ListDeleteTasksRequest, OpenShardsSubrequest,
-    OpenShardsSubresponse, AcquireShardsSubrequest, AcquireShardsSubresponse, DeleteShardsSubrequest,
-    ListShardsSubrequest, ListShardsSubresponse
+    // Metastore API
+    AcquireShardsRequest,
+    AddSourceRequest,
+    CreateIndexResponse,
+    DeleteIndexRequest,
+    DeleteQuery,
+    DeleteShardsRequest,
+    DeleteSourceRequest,
+    DeleteSplitsRequest,
+    LastDeleteOpstampRequest,
+    ListDeleteTasksRequest,
+    ListShardsSubrequest,
+    ListShardsSubresponse,
+    ListStaleSplitsRequest,
+    MarkSplitsForDeletionRequest,
+    OpenShardsSubrequest,
+    OpenShardsSubresponse,
+    PublishSplitsRequest,
+    ResetSourceCheckpointRequest,
+    StageSplitsRequest,
+    ToggleSourceRequest,
+    UpdateSplitsDeleteOpstampRequest
 }

@@ -4,3 +4,12 @@ endpoint: gharchive
 ---
 method: DELETE
 endpoint: empty_index
+---
+method: DELETE
+endpoint: test_index1
+status_code: null
+---
+method: DELETE
+endpoint: test_index2
+status_code: null
+

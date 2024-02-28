@@ -813,12 +813,12 @@ mod tests {
     #[test]
     fn test_list_splits_response_empty() {
         let response = ListSplitsResponse::empty();
-        assert_eq!(response.deserialize_splits().unwrap(), vec![]);
+        assert_eq!(response.deserialize_splits().unwrap(), Vec::new());
     }
 
     #[test]
     fn test_list_indexes_metadata_empty() {
         let response = ListIndexesMetadataResponse::empty();
-        assert_eq!(response.deserialize_indexes_metadata().unwrap(), vec![]);
+        assert_eq!(response.deserialize_indexes_metadata().unwrap(), Vec::new());
     }
 }

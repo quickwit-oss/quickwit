@@ -218,7 +218,7 @@ mod tests {
     use super::{get_language_from_prefix, MultiLangTokenizer, MultiLanguageTokenStream};
 
     fn test_helper(mut tokenizer: MultiLanguageTokenStream) -> Vec<Token> {
-        let mut tokens: Vec<Token> = vec![];
+        let mut tokens: Vec<Token> = Vec::new();
         tokenizer.process(&mut |token: &Token| tokens.push(token.clone()));
         tokens
     }

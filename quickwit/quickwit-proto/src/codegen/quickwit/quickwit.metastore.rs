@@ -302,13 +302,6 @@ pub struct OpenShardsSubresponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AcquireShardsRequest {
-    #[prost(message, repeated, tag = "1")]
-    pub subrequests: ::prost::alloc::vec::Vec<AcquireShardsSubrequest>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AcquireShardsSubrequest {
     #[prost(message, optional, tag = "1")]
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
@@ -322,17 +315,6 @@ pub struct AcquireShardsSubrequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AcquireShardsResponse {
-    #[prost(message, repeated, tag = "1")]
-    pub subresponses: ::prost::alloc::vec::Vec<AcquireShardsSubresponse>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AcquireShardsSubresponse {
-    #[prost(message, optional, tag = "1")]
-    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
-    #[prost(string, tag = "2")]
-    pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "3")]
     pub acquired_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
 }
@@ -340,27 +322,16 @@ pub struct AcquireShardsSubresponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteShardsRequest {
-    #[prost(message, repeated, tag = "1")]
-    pub subrequests: ::prost::alloc::vec::Vec<DeleteShardsSubrequest>,
-    /// If false, only shards at EOF positions will be deleted.
-    #[prost(bool, tag = "2")]
-    pub force: bool,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteShardsSubrequest {
     #[prost(message, optional, tag = "1")]
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "3")]
     pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
+    /// If false, only shards at EOF positions will be deleted.
+    #[prost(bool, tag = "4")]
+    pub force: bool,
 }
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteShardsResponse {}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -782,7 +753,7 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> crate::metastore::MetastoreResult<DeleteShardsResponse>;
+    ) -> crate::metastore::MetastoreResult<EmptyResponse>;
     async fn list_shards(
         &mut self,
         request: ListShardsRequest,
@@ -1025,7 +996,7 @@ impl MetastoreService for MetastoreServiceClient {
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> crate::metastore::MetastoreResult<DeleteShardsResponse> {
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.delete_shards(request).await
     }
     async fn list_shards(
@@ -1207,7 +1178,7 @@ pub mod metastore_service_mock {
         async fn delete_shards(
             &mut self,
             request: super::DeleteShardsRequest,
-        ) -> crate::metastore::MetastoreResult<super::DeleteShardsResponse> {
+        ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
             self.inner.lock().await.delete_shards(request).await
         }
         async fn list_shards(
@@ -1586,7 +1557,7 @@ impl tower::Service<AcquireShardsRequest> for Box<dyn MetastoreService> {
     }
 }
 impl tower::Service<DeleteShardsRequest> for Box<dyn MetastoreService> {
-    type Response = DeleteShardsResponse;
+    type Response = EmptyResponse;
     type Error = crate::metastore::MetastoreError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
@@ -1803,7 +1774,7 @@ struct MetastoreServiceTowerServiceStack {
     >,
     delete_shards_svc: quickwit_common::tower::BoxService<
         DeleteShardsRequest,
-        DeleteShardsResponse,
+        EmptyResponse,
         crate::metastore::MetastoreError,
     >,
     list_shards_svc: quickwit_common::tower::BoxService<
@@ -2000,7 +1971,7 @@ impl MetastoreService for MetastoreServiceTowerServiceStack {
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> crate::metastore::MetastoreResult<DeleteShardsResponse> {
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.delete_shards_svc.ready().await?.call(request).await
     }
     async fn list_shards(
@@ -2249,11 +2220,11 @@ type AcquireShardsLayer = quickwit_common::tower::BoxLayer<
 type DeleteShardsLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         DeleteShardsRequest,
-        DeleteShardsResponse,
+        EmptyResponse,
         crate::metastore::MetastoreError,
     >,
     DeleteShardsRequest,
-    DeleteShardsResponse,
+    EmptyResponse,
     crate::metastore::MetastoreError,
 >;
 type ListShardsLayer = quickwit_common::tower::BoxLayer<
@@ -2860,25 +2831,25 @@ impl MetastoreServiceTowerLayerStack {
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     DeleteShardsRequest,
-                    DeleteShardsResponse,
+                    EmptyResponse,
                     crate::metastore::MetastoreError,
                 >,
             > + Clone + Send + Sync + 'static,
         <L as tower::Layer<
             quickwit_common::tower::BoxService<
                 DeleteShardsRequest,
-                DeleteShardsResponse,
+                EmptyResponse,
                 crate::metastore::MetastoreError,
             >,
         >>::Service: tower::Service<
                 DeleteShardsRequest,
-                Response = DeleteShardsResponse,
+                Response = EmptyResponse,
                 Error = crate::metastore::MetastoreError,
             > + Clone + Send + Sync + 'static,
         <<L as tower::Layer<
             quickwit_common::tower::BoxService<
                 DeleteShardsRequest,
-                DeleteShardsResponse,
+                EmptyResponse,
                 crate::metastore::MetastoreError,
             >,
         >>::Service as tower::Service<DeleteShardsRequest>>::Future: Send + 'static,
@@ -3496,13 +3467,13 @@ impl MetastoreServiceTowerLayerStack {
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     DeleteShardsRequest,
-                    DeleteShardsResponse,
+                    EmptyResponse,
                     crate::metastore::MetastoreError,
                 >,
             > + Send + Sync + 'static,
         L::Service: tower::Service<
                 DeleteShardsRequest,
-                Response = DeleteShardsResponse,
+                Response = EmptyResponse,
                 Error = crate::metastore::MetastoreError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<DeleteShardsRequest>>::Future: Send + 'static,
@@ -4138,9 +4109,9 @@ where
         >
         + tower::Service<
             DeleteShardsRequest,
-            Response = DeleteShardsResponse,
+            Response = EmptyResponse,
             Error = crate::metastore::MetastoreError,
-            Future = BoxFuture<DeleteShardsResponse, crate::metastore::MetastoreError>,
+            Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
         >
         + tower::Service<
             ListShardsRequest,
@@ -4311,7 +4282,7 @@ where
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> crate::metastore::MetastoreResult<DeleteShardsResponse> {
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.call(request).await
     }
     async fn list_shards(
@@ -4604,7 +4575,7 @@ where
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> crate::metastore::MetastoreResult<DeleteShardsResponse> {
+    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner
             .delete_shards(request)
             .await
@@ -4928,7 +4899,7 @@ for MetastoreServiceGrpcServerAdapter {
     async fn delete_shards(
         &self,
         request: tonic::Request<DeleteShardsRequest>,
-    ) -> Result<tonic::Response<DeleteShardsResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         self.inner
             .clone()
             .delete_shards(request.into_inner())
@@ -5721,10 +5692,7 @@ pub mod metastore_service_grpc_client {
         pub async fn delete_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteShardsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::DeleteShardsResponse>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -6081,10 +6049,7 @@ pub mod metastore_service_grpc_server {
         async fn delete_shards(
             &self,
             request: tonic::Request<super::DeleteShardsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::DeleteShardsResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         async fn list_shards(
             &self,
             request: tonic::Request<super::ListShardsRequest>,
@@ -7180,7 +7145,7 @@ pub mod metastore_service_grpc_server {
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::DeleteShardsRequest>
                     for DeleteShardsSvc<T> {
-                        type Response = super::DeleteShardsResponse;
+                        type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

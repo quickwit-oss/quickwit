@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Weak;
 use std::time::Duration;
@@ -131,13 +132,14 @@ pub(crate) fn spawn_metrics_task(
             let mut cluster_state_size_bytes = 0;
 
             let chitchat_guard = chitchat.lock().await;
+            let live_nodes: HashSet<&ChitchatId> = chitchat_guard.live_nodes().collect();
 
-            let num_live_nodes = chitchat_guard.live_nodes().count();
+            let num_live_nodes = live_nodes.len();
             let num_zombie_nodes = chitchat_guard.scheduled_for_deletion_nodes().count();
             let num_dead_nodes = chitchat_guard.dead_nodes().count();
 
             for (chitchat_id, node_state) in chitchat_guard.node_states() {
-                if node_state.is_ready() {
+                if live_nodes.contains(chitchat_id) && node_state.is_ready() {
                     num_ready_nodes += 1;
                 }
                 let chitchat_id_size_bytes =

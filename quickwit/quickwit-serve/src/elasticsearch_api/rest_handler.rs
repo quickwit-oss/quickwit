@@ -30,6 +30,7 @@ use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
 use quickwit_config::{validate_index_id_pattern, NodeConfig};
+use quickwit_index_management::IndexService;
 use quickwit_metastore::*;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
@@ -46,15 +47,15 @@ use serde_json::json;
 use warp::{Filter, Rejection};
 
 use super::filter::{
-    elastic_cat_indices_filter, elastic_cluster_info_filter, elastic_field_capabilities_filter,
-    elastic_index_cat_indices_filter, elastic_index_count_filter,
-    elastic_index_field_capabilities_filter, elastic_index_search_filter,
-    elastic_index_stats_filter, elastic_multi_search_filter, elastic_scroll_filter,
-    elastic_stats_filter, elasticsearch_filter,
+    elastic_cat_indices_filter, elastic_cluster_info_filter, elastic_delete_index_filter,
+    elastic_field_capabilities_filter, elastic_index_cat_indices_filter,
+    elastic_index_count_filter, elastic_index_field_capabilities_filter,
+    elastic_index_search_filter, elastic_index_stats_filter, elastic_multi_search_filter,
+    elastic_scroll_filter, elastic_stats_filter, elasticsearch_filter,
 };
 use super::model::{
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
-    CatIndexQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
+    CatIndexQueryParams, DeleteQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
     ElasticsearchStatsResponse, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
     FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
     MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
@@ -117,6 +118,16 @@ pub fn es_compat_index_field_capabilities_handler(
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
+/// DELETE _elastic/{index}
+pub fn es_compat_delete_index_handler(
+    index_service: IndexService,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_delete_index_filter()
+        .and(with_arg(index_service))
+        .then(es_compat_delete_index)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+}
+
 /// GET _elastic/_stats
 pub fn es_compat_stats_handler(
     search_service: MetastoreServiceClient,
@@ -126,6 +137,7 @@ pub fn es_compat_stats_handler(
         .then(es_compat_stats)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
+
 /// GET _elastic/{index}/_stats
 pub fn es_compat_index_stats_handler(
     search_service: MetastoreServiceClient,
@@ -240,8 +252,8 @@ fn build_request_for_es_api(
 
         query_ast = QueryAst::Bool(BoolQuery {
             must: vec![query_ast],
-            must_not: vec![],
-            should: vec![],
+            must_not: Vec::new(),
+            should: Vec::new(),
             filter: queries,
         });
     }
@@ -408,6 +420,31 @@ async fn es_compat_index_search(
     );
     search_response_rest.took = elapsed.as_millis() as u32;
     Ok(search_response_rest)
+}
+
+/// Returns JSON in the format:
+///
+/// {
+///   "acknowledged": true
+/// }
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ElasticsearchDeleteResponse {
+    pub acknowledged: bool,
+}
+
+async fn es_compat_delete_index(
+    index_id_patterns: Vec<String>,
+    query_params: DeleteQueryParams,
+    index_service: IndexService,
+) -> Result<ElasticsearchDeleteResponse, ElasticsearchError> {
+    index_service
+        .delete_indexes(
+            index_id_patterns,
+            query_params.ignore_unavailable.unwrap_or_default(),
+            false,
+        )
+        .await?;
+    Ok(ElasticsearchDeleteResponse { acknowledged: true })
 }
 
 async fn es_compat_stats(
