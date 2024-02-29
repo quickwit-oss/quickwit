@@ -993,8 +993,10 @@ fn setup_indexer_pool(
                             .stack_layer(layers)
                             .build_from_mailbox(indexing_service_mailbox);
                         let change = Change::Insert(
-                            node_id,
+                            node_id.clone(),
                             IndexerNodeInfo {
+                                node_id: NodeId::from(node_id),
+                                generation_id: node.chitchat_id().generation_id,
                                 client,
                                 indexing_tasks,
                                 indexing_capacity,
@@ -1010,8 +1012,10 @@ fn setup_indexer_pool(
                                 max_message_size,
                             );
                         let change = Change::Insert(
-                            node_id,
+                            node_id.clone(),
                             IndexerNodeInfo {
+                                node_id: NodeId::from(node_id),
+                                generation_id: node.chitchat_id().generation_id,
                                 client,
                                 indexing_tasks,
                                 indexing_capacity,

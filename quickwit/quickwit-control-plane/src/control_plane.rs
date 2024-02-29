@@ -1376,6 +1376,8 @@ mod tests {
         let (client_mailbox, client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
         let indexer_node_info = IndexerNodeInfo {
+            node_id: NodeId::new("indexer-node-1".to_string()),
+            generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
@@ -1523,6 +1525,8 @@ mod tests {
         let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
         let indexer_node_info = IndexerNodeInfo {
+            node_id: NodeId::new("indexer-node-1".to_string()),
+            generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
@@ -1606,6 +1610,8 @@ mod tests {
         let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
         let indexer_node_info = IndexerNodeInfo {
+            node_id: NodeId::new("indexer-node-1".to_string()),
+            generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),

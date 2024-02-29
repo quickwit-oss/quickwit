@@ -204,13 +204,13 @@ impl IndexingScheduler {
 
         let sources = get_sources_to_schedule(model);
 
-        let mut indexers: Vec<(String, IndexerNodeInfo)> = self.get_indexers_from_indexer_pool();
+        let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
 
         let indexer_id_to_cpu_capacities: FnvHashMap<String, CpuCapacity> = indexers
             .iter()
-            .filter_map(|(indexer_id, indexer_node_info)| {
-                if indexer_node_info.indexing_capacity.cpu_millis() > 0 {
-                    Some((indexer_id.to_string(), indexer_node_info.indexing_capacity))
+            .filter_map(|indexer| {
+                if indexer.indexing_capacity.cpu_millis() > 0 {
+                    Some((indexer.node_id.to_string(), indexer.indexing_capacity))
                 } else {
                     None
                 }
@@ -239,7 +239,7 @@ impl IndexingScheduler {
                 return;
             }
         }
-        self.apply_physical_indexing_plan(&mut indexers, new_physical_plan);
+        self.apply_physical_indexing_plan(&indexers, new_physical_plan);
         self.state.num_schedule_indexing_plan += 1;
     }
 
@@ -267,12 +267,10 @@ impl IndexingScheduler {
             }
         }
 
-        let mut indexers: Vec<(String, IndexerNodeInfo)> = self.get_indexers_from_indexer_pool();
+        let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
         let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
             .iter()
-            .map(|(indexer_id, indexer_node_info)| {
-                (indexer_id.clone(), indexer_node_info.indexing_tasks.clone())
-            })
+            .map(|indexer| (indexer.node_id.to_string(), indexer.indexing_tasks.clone()))
             .collect();
 
         let indexing_plans_diff = get_indexing_plans_diff(
@@ -285,17 +283,17 @@ impl IndexingScheduler {
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
-            self.apply_physical_indexing_plan(&mut indexers, last_applied_plan.clone());
+            self.apply_physical_indexing_plan(&indexers, last_applied_plan.clone());
         }
     }
 
-    fn get_indexers_from_indexer_pool(&self) -> Vec<(String, IndexerNodeInfo)> {
-        self.indexer_pool.pairs()
+    fn get_indexers_from_indexer_pool(&self) -> Vec<IndexerNodeInfo> {
+        self.indexer_pool.values()
     }
 
     fn apply_physical_indexing_plan(
         &mut self,
-        indexers: &mut [(String, IndexerNodeInfo)],
+        indexers: &[IndexerNodeInfo],
         new_physical_plan: PhysicalIndexingPlan,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
@@ -306,19 +304,23 @@ impl IndexingScheduler {
             tokio::spawn({
                 let indexer = indexers
                     .iter()
-                    .find(|indexer| &indexer.0 == node_id)
+                    .find(|indexer| indexer.node_id == *node_id)
                     .expect("This should never happen as the plan was built from these indexers.")
                     .clone();
                 let indexing_tasks = indexing_tasks.clone();
                 async move {
                     if let Err(error) = indexer
-                        .1
                         .client
                         .clone()
                         .apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks })
                         .await
                     {
-                        warn!(error=%error, node_id=indexer.0, "failed to apply indexing plan to indexer");
+                        warn!(
+                            error=%error,
+                            node_id=%indexer.node_id,
+                            generation_id=indexer.generation_id,
+                            "failed to apply indexing plan to indexer"
+                        );
                     }
                 }
             });
