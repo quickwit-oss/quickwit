@@ -53,12 +53,17 @@ impl MRecord {
     }
 
     pub fn decode(mut buf: impl Buf) -> Option<Self> {
+        if buf.remaining() < 2 {
+            return None;
+        }
+
         let header_version = buf.get_u8();
 
         if header_version != HeaderVersion::V0 as u8 {
             warn!("unknown mrecord header version `{header_version}`");
             return None;
         }
+
         let mrecord = match buf.get_u8() {
             0 => {
                 let doc = buf.copy_to_bytes(buf.remaining());
@@ -86,6 +91,15 @@ pub fn decoded_mrecords(mrecord_batch: &MRecordBatch) -> impl Iterator<Item = MR
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+    #[test]
+    fn test_parse_invalid_mrecord() {
+        assert!(MRecord::decode(&b""[..]).is_none());
+        assert!(MRecord::decode(&b"a"[..]).is_none());
+        assert!(MRecord::decode(&[HeaderVersion::V0 as u8][..]).is_none());
+        assert!(MRecord::decode(&[HeaderVersion::V0 as u8, 19u8][..]).is_none());
+    }
 
     #[test]
     fn test_mrecord_doc_roundtrip() {
