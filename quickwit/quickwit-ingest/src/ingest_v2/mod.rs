@@ -30,8 +30,6 @@ mod replication;
 mod router;
 mod routing_table;
 mod state;
-#[cfg(test)]
-mod test_utils;
 mod workbench;
 
 use std::ops::{Add, AddAssign};

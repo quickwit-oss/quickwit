@@ -3975,15 +3975,13 @@ dependencies = [
 [[package]]
 name = "mrecordlog"
 version = "0.4.0"
-source = "git+https://github.com/quickwit-oss/mrecordlog?rev=bc6a998#bc6a998966603e11928ff23914d6da169fc8fce6"
+source = "git+https://github.com/quickwit-oss/mrecordlog?rev=eef768963#eef7689634e3fd1741b437ccea3f0d5745e5f4d2"
 dependencies = [
- "async-trait",
  "bytes",
  "crc32fast",
  "serde",
  "serde_json",
  "thiserror",
- "tokio",
  "tracing",
 ]
 

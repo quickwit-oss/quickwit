@@ -166,15 +166,16 @@ impl Source for IngestApiSource {
             return Ok(INGEST_API_POLLING_COOL_DOWN);
         };
 
+        let batch_num_docs = doc_batch.num_docs();
         // TODO use a timestamp (in the raw doc batch) given by at ingest time to be more accurate.
         let mut raw_doc_batch = RawDocBatch::with_capacity(doc_batch.num_docs());
-        for doc in doc_batch.iter() {
+        for doc in doc_batch.into_iter() {
             match doc {
                 DocCommand::Ingest { payload } => raw_doc_batch.docs.push(payload),
                 DocCommand::Commit => raw_doc_batch.force_commit = true,
             }
         }
-        let current_offset = first_position + doc_batch.num_docs() as u64 - 1;
+        let current_offset = first_position + batch_num_docs as u64 - 1;
         let partition_id = self.partition_id.clone();
         raw_doc_batch
             .checkpoint_delta

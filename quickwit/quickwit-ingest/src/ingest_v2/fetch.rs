@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use bytes::{BufMut, BytesMut};
 use futures::StreamExt;
-use mrecordlog::MultiRecordLog;
+use mrecordlog::Record;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::{spawn_named_task, ServiceStream};
 use quickwit_proto::ingest::ingester::{
@@ -38,6 +38,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, warn};
 
 use super::models::ShardStatus;
+use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{with_lock_metrics, ClientId, IngesterPool};
 
 /// A fetch stream task is responsible for waiting and pushing new records written to a shard's
@@ -51,7 +52,7 @@ pub(super) struct FetchStreamTask {
     queue_id: QueueId,
     /// The position of the next record fetched.
     from_position_inclusive: u64,
-    mrecordlog: Arc<RwLock<Option<MultiRecordLog>>>,
+    mrecordlog: Arc<RwLock<Option<MultiRecordLogAsync>>>,
     fetch_message_tx: mpsc::Sender<IngestV2Result<FetchMessage>>,
     /// This channel notifies the fetch task when new records are available. This way the fetch
     /// task does not need to grab the lock and poll the mrecordlog queue unnecessarily.
@@ -75,7 +76,7 @@ impl FetchStreamTask {
 
     pub fn spawn(
         open_fetch_stream_request: OpenFetchStreamRequest,
-        mrecordlog: Arc<RwLock<Option<MultiRecordLog>>>,
+        mrecordlog: Arc<RwLock<Option<MultiRecordLogAsync>>>,
         shard_status_rx: watch::Receiver<ShardStatus>,
         batch_num_bytes: usize,
     ) -> (ServiceStream<IngestV2Result<FetchMessage>>, JoinHandle<()>) {
@@ -137,13 +138,13 @@ impl FetchStreamTask {
                 // The queue was dropped.
                 break;
             };
-            for (_position, mrecord) in mrecords {
-                if mrecord_buffer.len() + mrecord.len() > mrecord_buffer.capacity() {
+            for Record { payload, .. } in mrecords {
+                if mrecord_buffer.len() + payload.len() > mrecord_buffer.capacity() {
                     has_drained_queue = false;
                     break;
                 }
-                mrecord_buffer.put(mrecord.borrow());
-                mrecord_lengths.push(mrecord.len() as u32);
+                mrecord_buffer.put(payload.borrow());
+                mrecord_lengths.push(payload.len() as u32);
             }
             // Drop the lock while we send the message.
             drop(mrecordlog_guard);
@@ -594,7 +595,6 @@ pub(super) mod tests {
     use std::time::Duration;
 
     use bytes::Bytes;
-    use mrecordlog::MultiRecordLog;
     use quickwit_proto::ingest::ingester::IngesterServiceClient;
     use quickwit_proto::ingest::ShardState;
     use quickwit_proto::types::queue_id;
@@ -621,7 +621,7 @@ pub(super) mod tests {
     async fn test_fetch_task_happy_path() {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = Arc::new(RwLock::new(Some(
-            MultiRecordLog::open(tempdir.path()).await.unwrap(),
+            MultiRecordLogAsync::open(tempdir.path()).await.unwrap(),
         )));
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
@@ -653,7 +653,11 @@ pub(super) mod tests {
         mrecordlog_guard
             .as_mut()
             .unwrap()
-            .append_record(&queue_id, None, MRecord::new_doc("test-doc-foo").encode())
+            .append_records(
+                &queue_id,
+                None,
+                std::iter::once(MRecord::new_doc("test-doc-foo").encode()),
+            )
             .await
             .unwrap();
         drop(mrecordlog_guard);
@@ -703,7 +707,11 @@ pub(super) mod tests {
         mrecordlog_guard
             .as_mut()
             .unwrap()
-            .append_record(&queue_id, None, MRecord::new_doc("test-doc-bar").encode())
+            .append_records(
+                &queue_id,
+                None,
+                std::iter::once(MRecord::new_doc("test-doc-bar").encode()),
+            )
             .await
             .unwrap();
         drop(mrecordlog_guard);
@@ -808,7 +816,7 @@ pub(super) mod tests {
     async fn test_fetch_task_eof_at_beginning() {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = Arc::new(RwLock::new(Some(
-            MultiRecordLog::open(tempdir.path()).await.unwrap(),
+            MultiRecordLogAsync::open(tempdir.path()).await.unwrap(),
         )));
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
@@ -865,7 +873,7 @@ pub(super) mod tests {
     async fn test_fetch_task_from_position_exclusive() {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = Arc::new(RwLock::new(Some(
-            MultiRecordLog::open(tempdir.path()).await.unwrap(),
+            MultiRecordLogAsync::open(tempdir.path()).await.unwrap(),
         )));
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
@@ -905,7 +913,11 @@ pub(super) mod tests {
         mrecordlog_guard
             .as_mut()
             .unwrap()
-            .append_record(&queue_id, None, MRecord::new_doc("test-doc-foo").encode())
+            .append_records(
+                &queue_id,
+                None,
+                std::iter::once(MRecord::new_doc("test-doc-foo").encode()),
+            )
             .await
             .unwrap();
         drop(mrecordlog_guard);
@@ -922,7 +934,11 @@ pub(super) mod tests {
         mrecordlog_guard
             .as_mut()
             .unwrap()
-            .append_record(&queue_id, None, MRecord::new_doc("test-doc-bar").encode())
+            .append_records(
+                &queue_id,
+                None,
+                std::iter::once(MRecord::new_doc("test-doc-bar").encode()),
+            )
             .await
             .unwrap();
         drop(mrecordlog_guard);
@@ -966,7 +982,7 @@ pub(super) mod tests {
     async fn test_fetch_task_error() {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = Arc::new(RwLock::new(Some(
-            MultiRecordLog::open(tempdir.path()).await.unwrap(),
+            MultiRecordLogAsync::open(tempdir.path()).await.unwrap(),
         )));
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
@@ -999,7 +1015,7 @@ pub(super) mod tests {
     async fn test_fetch_task_batch_num_bytes() {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = Arc::new(RwLock::new(Some(
-            MultiRecordLog::open(tempdir.path()).await.unwrap(),
+            MultiRecordLogAsync::open(tempdir.path()).await.unwrap(),
         )));
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);

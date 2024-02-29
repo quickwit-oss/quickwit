@@ -120,13 +120,19 @@ impl Shard {
 }
 
 impl DocBatchV2 {
-    pub fn docs(&self) -> impl Iterator<Item = Bytes> + '_ {
-        self.doc_lengths.iter().scan(0, |start_offset, doc_length| {
-            let start = *start_offset;
-            let end = start + *doc_length as usize;
-            *start_offset = end;
-            Some(self.doc_buffer.slice(start..end))
-        })
+    pub fn docs(self) -> impl Iterator<Item = Bytes> {
+        let DocBatchV2 {
+            doc_buffer,
+            doc_lengths,
+        } = self;
+        doc_lengths
+            .into_iter()
+            .scan(0, move |start_offset, doc_length| {
+                let start = *start_offset;
+                let end = start + doc_length as usize;
+                *start_offset = end;
+                Some(doc_buffer.slice(start..end))
+            })
     }
 
     pub fn is_empty(&self) -> bool {
