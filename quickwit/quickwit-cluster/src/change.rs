@@ -145,6 +145,7 @@ async fn compute_cluster_change_events_on_added(
     let maybe_previous_node_entry = previous_nodes.entry(new_node_id);
 
     let mut events = Vec::new();
+    let mut verb = "joined";
 
     if let Entry::Occupied(previous_node_entry) = maybe_previous_node_entry {
         let previous_node_ref = previous_node_entry.get();
@@ -158,13 +159,8 @@ async fn compute_cluster_change_events_on_added(
             );
             return events;
         }
-        info!(
-            node_id=%new_chitchat_id.node_id,
-            generation_id=%new_chitchat_id.generation_id,
-            "node `{}` has rejoined the cluster",
-            new_chitchat_id.node_id
-        );
         let previous_node = previous_node_entry.remove();
+        verb = "rejoined";
 
         if previous_node.is_ready() {
             events.push(ClusterChange::Remove(previous_node));
@@ -178,8 +174,8 @@ async fn compute_cluster_change_events_on_added(
     info!(
         node_id=%new_chitchat_id.node_id,
         generation_id=%new_chitchat_id.generation_id,
-        "node `{}` has joined the cluster",
-        new_chitchat_id.node_id
+        "node `{}` has {verb} the cluster",
+        new_chitchat_id.node_id,
     );
     let new_node_id: NodeId = new_node.node_id().into();
     previous_nodes.insert(new_node_id, new_node.clone());
