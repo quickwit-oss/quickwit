@@ -22,7 +22,7 @@ use std::task::{Context, Poll};
 use std::time::Instant;
 
 use futures::{ready, Future};
-use pin_project::pin_project;
+use pin_project::{pin_project, pinned_drop};
 use tower::{Layer, Service};
 
 use crate::metrics::{
@@ -65,6 +65,7 @@ where
             inner,
             start,
             rpc_name,
+            status: "canceled",
             requests_total: self.requests_total.clone(),
             requests_in_flight: self.requests_in_flight.clone(),
             request_duration_seconds: self.request_duration_seconds.clone(),
@@ -121,15 +122,32 @@ impl<S> Layer<S> for GrpcMetricsLayer {
 }
 
 /// Response future for [`PrometheusMetrics`].
-#[pin_project]
+#[pin_project(PinnedDrop)]
 pub struct ResponseFuture<F> {
     #[pin]
     inner: F,
     start: Instant,
     rpc_name: &'static str,
+    status: &'static str,
     requests_total: IntCounterVec<2>,
     requests_in_flight: IntGaugeVec<1>,
     request_duration_seconds: HistogramVec<2>,
+}
+
+#[pinned_drop]
+impl<F> PinnedDrop for ResponseFuture<F> {
+    fn drop(self: Pin<&mut Self>) {
+        let elapsed = self.start.elapsed().as_secs_f64();
+        let label_values = [self.rpc_name, self.status];
+
+        self.requests_total.with_label_values(label_values).inc();
+        self.request_duration_seconds
+            .with_label_values(label_values)
+            .observe(elapsed);
+        self.requests_in_flight
+            .with_label_values([self.rpc_name])
+            .dec();
+    }
 }
 
 impl<F, T, E> Future for ResponseFuture<F>
@@ -140,18 +158,7 @@ where F: Future<Output = Result<T, E>>
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let response = ready!(this.inner.poll(cx));
-        let elapsed = this.start.elapsed().as_secs_f64();
-
-        let rpc_name = this.rpc_name;
-        let status = if response.is_ok() { "success" } else { "error" };
-        let label_values = [rpc_name, status];
-
-        this.requests_total.with_label_values(label_values).inc();
-        this.requests_in_flight.with_label_values([rpc_name]).dec();
-        this.request_duration_seconds
-            .with_label_values(label_values)
-            .observe(elapsed);
-
+        *this.status = if response.is_ok() { "success" } else { "error" };
         Poll::Ready(Ok(response?))
     }
 }
@@ -216,6 +223,17 @@ mod tests {
             layer
                 .requests_total
                 .with_label_values(["goodbye", "success"])
+                .get(),
+            1
+        );
+
+        let hello_future = hello_service.call(HelloRequest);
+        drop(hello_future);
+
+        assert_eq!(
+            layer
+                .requests_total
+                .with_label_values(["hello", "canceled"])
                 .get(),
             1
         );
