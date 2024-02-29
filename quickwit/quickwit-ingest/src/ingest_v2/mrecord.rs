@@ -92,7 +92,6 @@ pub fn decoded_mrecords(mrecord_batch: &MRecordBatch) -> impl Iterator<Item = MR
 mod tests {
     use super::*;
 
-
     #[test]
     fn test_parse_invalid_mrecord() {
         assert!(MRecord::decode(&b""[..]).is_none());
