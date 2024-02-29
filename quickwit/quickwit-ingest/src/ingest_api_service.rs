@@ -174,32 +174,31 @@ impl IngestApiService {
         }
         let mut num_docs = 0usize;
         let mut notifications = Vec::new();
-        for doc_batch in &request.doc_batches {
+        let commit = request.commit();
+        for doc_batch in request.doc_batches {
             // TODO better error handling.
             // If there is an error, we probably want a transactional behavior.
-            let records_it = doc_batch.iter_raw();
-            let max_position = self
-                .queues
-                .append_batch(&doc_batch.index_id, records_it, ctx)
-                .await?;
-            let commit = request.commit();
+
+            let batch_num_docs = doc_batch.num_docs();
+            let batch_num_bytes = doc_batch.num_bytes();
+            let index_id = doc_batch.index_id.clone();
+            let records_it = doc_batch.into_iter_raw();
+            let max_position = self.queues.append_batch(&index_id, records_it, ctx).await?;
             if let Some(max_position) = max_position {
                 if commit != CommitType::Auto {
                     if commit == CommitType::Force {
                         self.queues
                             .append_batch(
-                                &doc_batch.index_id,
+                                &index_id,
                                 iter::once(DocCommand::Commit::<Bytes>.into_buf()),
                                 ctx,
                             )
                             .await?;
                     }
-                    notifications.push((doc_batch.index_id.clone(), max_position));
+                    notifications.push((index_id.clone(), max_position));
                 }
             }
 
-            let batch_num_docs = doc_batch.num_docs();
-            let batch_num_bytes = doc_batch.num_bytes();
             num_docs += batch_num_docs;
             INGEST_METRICS
                 .ingested_num_bytes
@@ -475,7 +474,7 @@ mod tests {
         let position = doc_batch.num_docs() as u64;
         assert_eq!(doc_batch.num_docs(), 5);
         assert!(matches!(
-            doc_batch.iter().nth(4),
+            doc_batch.into_iter().nth(4),
             Some(DocCommand::Commit::<Bytes>)
         ));
         ingest_api_service
