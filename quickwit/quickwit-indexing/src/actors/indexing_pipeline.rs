@@ -312,15 +312,19 @@ impl IndexingPipeline {
         let _spawn_pipeline_permit = ctx
             .protect_future(SPAWN_PIPELINE_SEMAPHORE.acquire())
             .await
-            .expect("The semaphore should not be closed.");
+            .expect("semaphore should not be closed");
+
         self.statistics.num_spawn_attempts += 1;
-        let index_id = &self.params.pipeline_id.index_uid.index_id;
-        let source_id = self.params.pipeline_id.source_id.as_str();
         self.kill_switch = ctx.kill_switch().child();
+
+        let index_id = &self.params.pipeline_id.index_uid.index_id;
+        let source_id = &self.params.pipeline_id.source_id;
+
         info!(
-            index_id=%index_id,
-            source_id=%source_id,
+            index_id,
+            source_id,
             pipeline_uid=%self.params.pipeline_id.pipeline_uid,
+            root_dir=%self.params.indexing_directory.path().display(),
             "spawning indexing pipeline",
         );
         let (source_mailbox, source_inbox) = ctx

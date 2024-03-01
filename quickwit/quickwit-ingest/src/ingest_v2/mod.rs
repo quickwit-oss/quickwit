@@ -19,6 +19,7 @@
 
 mod broadcast;
 mod fetch;
+mod idle;
 mod ingester;
 mod metrics;
 mod models;
@@ -29,12 +30,11 @@ mod replication;
 mod router;
 mod routing_table;
 mod state;
-#[cfg(test)]
-mod test_utils;
 mod workbench;
 
-use std::fmt;
 use std::ops::{Add, AddAssign};
+use std::time::Duration;
+use std::{env, fmt};
 
 pub use broadcast::{setup_local_shards_update_listener, LocalShardsUpdate, ShardInfo, ShardInfos};
 use bytes::{BufMut, BytesMut};
@@ -45,6 +45,7 @@ use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
 use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
 use quickwit_proto::types::{IndexId, NodeId};
+use tracing::{error, info};
 
 pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::{wait_for_ingester_decommission, wait_for_ingester_status, Ingester};
@@ -60,6 +61,29 @@ pub type ClientId = String;
 pub type LeaderId = NodeId;
 
 pub type FollowerId = NodeId;
+
+const IDLE_SHARD_TIMEOUT_ENV_KEY: &str = "QW_IDLE_SHARD_TIMEOUT_SECS";
+
+const DEFAULT_IDLE_SHARD_TIMEOUT: Duration = Duration::from_secs(15 * 60); // 15 minutes
+
+pub fn get_idle_shard_timeout() -> Duration {
+    env::var(IDLE_SHARD_TIMEOUT_ENV_KEY)
+        .ok()
+        .and_then(|idle_shard_timeout_str| {
+            if let Ok(idle_shard_timeout_secs) = idle_shard_timeout_str.parse::<u64>() {
+                info!("overriding idle shard timeout to {idle_shard_timeout_secs} seconds");
+                Some(idle_shard_timeout_secs)
+            } else {
+                error!(
+                    "failed to parse environment variable \
+                     `{IDLE_SHARD_TIMEOUT_ENV_KEY}={idle_shard_timeout_str}`"
+                );
+                None
+            }
+        })
+        .map(Duration::from_secs)
+        .unwrap_or(DEFAULT_IDLE_SHARD_TIMEOUT)
+}
 
 /// Helper struct to build a [`DocBatchV2`]`.
 #[derive(Debug, Default)]

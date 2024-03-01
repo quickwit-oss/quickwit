@@ -1,0 +1,67 @@
+--- # _source_excludes
+params:
+  _source_excludes: ["actor"]
+json:
+  size: 1
+  query:
+      match_all: {}
+expected:
+  hits:
+    total:
+      value: 100
+      relation: eq
+    hits:
+      - _source:
+          $expect: "not 'actor' in val" 
+--- # _source_includes
+params:
+  _source_includes: ["actor"]
+json:
+  size: 1
+  query:
+      match_all: {}
+expected:
+  hits:
+    total:
+      value: 100
+      relation: eq
+    hits:
+      - _source:
+          $expect: "len(val) == 1" # Contains only 'actor'
+          actor:
+            id: 5688
+--- # _source_includes and _source_excludes
+params:
+  _source_includes: "actor,id"
+  _source_excludes: ["actor"]
+json:
+  size: 1
+  query:
+      match_all: {}
+expected:
+  hits:
+    total:
+      value: 100
+      relation: eq
+    hits:
+      - _source:
+          $expect: "len(val) == 1" # Contains only 'actor'
+          id: 5688
+--- # _source_includes with path
+params:
+  _source_includes: "actor.id"
+json:
+  size: 1
+  query:
+      match_all: {}
+expected:
+  hits:
+    total:
+      value: 100
+      relation: eq
+    hits:
+      - _source:
+          actor: 
+            $expect: "len(val) == 1" # Contains only 'actor'
+            id: 5688
+

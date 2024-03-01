@@ -166,7 +166,7 @@ pub fn make_resource_spans_for_test() -> Vec<ResourceSpans> {
         scope: Some(InstrumentationScope {
             name: "opentelemetry-otlp".to_string(),
             version: "0.11.0".to_string(),
-            attributes: vec![],
+            attributes: Vec::new(),
             dropped_attributes_count: 0,
         }),
         spans,

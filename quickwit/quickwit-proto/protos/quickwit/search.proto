@@ -123,9 +123,15 @@ message ListFieldsRequest {
   // Optional limit query to a list of fields
   // Wildcard expressions are supported.
   repeated string fields = 2;
+  
+  // Time filter, expressed in seconds since epoch.
+  // That filter is to be interpreted as the semi-open interval:
+  // [start_timestamp, end_timestamp).
+  optional int64 start_timestamp = 3;
+  optional int64 end_timestamp = 4;
 
   // Control if the the request will fail if split_ids contains a split that does not exist. 
-  // optional bool fail_on_missing_index = 3;
+  // optional bool fail_on_missing_index = 6;
 }
 
 message LeafListFieldsRequest {

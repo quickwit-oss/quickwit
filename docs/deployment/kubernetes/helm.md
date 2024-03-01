@@ -1,6 +1,6 @@
 ---
-title: Kubernetes (Helm)
-sidebar_position: 2
+title: Kubernetes
+sidebar_position: 1
 ---
 
 [Helm](https://helm.sh) is a package manager for Kubernetes that allows you to configure, install, and upgrade containerized applications in a Kubernetes cluster in a version-controlled and reproducible way.
@@ -49,13 +49,13 @@ environment:
 
 config:
   default_index_root_uri: s3://<my-bucket>/quickwit-indexes
-
-  s3:
-    region: eu-east-1
-    # We recommend using IAM roles and permissions to access Amazon S3 resources,
-    # but you can specify a pair of access and secret keys if necessary.
-    access_key: <my access key>
-    secret_key: <my secret key>
+  storage:
+    s3:
+      region: eu-east-1
+      # We recommend using IAM roles and permissions to access Amazon S3 resources,
+      # but you can specify a pair of access and secret keys if necessary.
+      access_key_id: <my access key>
+      secret_access_key: <my secret key>
 ```
 
 5. Deploy Quickwit

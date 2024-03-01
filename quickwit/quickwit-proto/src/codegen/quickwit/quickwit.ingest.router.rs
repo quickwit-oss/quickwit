@@ -114,6 +114,12 @@ impl IngestFailureReason {
 #[allow(unused_imports)]
 use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
+use quickwit_common::tower::RpcName;
+impl RpcName for IngestRequestV2 {
+    fn rpc_name() -> &'static str {
+        "ingest"
+    }
+}
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait IngestRouterService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {

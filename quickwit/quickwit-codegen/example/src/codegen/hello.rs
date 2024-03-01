@@ -44,15 +44,20 @@ pub struct PingResponse {
 #[allow(unused_imports)]
 use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
-use quickwit_common::metrics::{PrometheusLabels, OwnedPrometheusLabels};
-impl PrometheusLabels<1> for HelloRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("hello")])
+use quickwit_common::tower::RpcName;
+impl RpcName for HelloRequest {
+    fn rpc_name() -> &'static str {
+        "hello"
     }
 }
-impl PrometheusLabels<1> for GoodbyeRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("goodbye")])
+impl RpcName for GoodbyeRequest {
+    fn rpc_name() -> &'static str {
+        "goodbye"
+    }
+}
+impl RpcName for PingRequest {
+    fn rpc_name() -> &'static str {
+        "ping"
     }
 }
 pub type HelloStream<T> = quickwit_common::ServiceStream<crate::HelloResult<T>>;

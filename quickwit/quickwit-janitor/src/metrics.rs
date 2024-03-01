@@ -31,6 +31,7 @@ impl Default for JanitorMetrics {
                 "ongoing_num_delete_operations_total",
                 "Num of ongoing delete operations (per index).",
                 "quickwit_janitor",
+                &[],
                 ["index"],
             ),
         }

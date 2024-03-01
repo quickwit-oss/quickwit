@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use futures::future::try_join_all;
-use quickwit_common::PrettySample;
+use quickwit_common::pretty::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
@@ -404,7 +404,7 @@ fn rewrite_request(
     timestamp_field: Option<&str>,
 ) {
     if search_request.max_hits == 0 {
-        search_request.sort_fields = vec![];
+        search_request.sort_fields = Vec::new();
     }
     if let Some(timestamp_field) = timestamp_field {
         remove_redundant_timestamp_range(search_request, split, timestamp_field);

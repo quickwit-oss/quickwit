@@ -18,14 +18,15 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::cmp::Reverse;
-use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+
+use siphasher::sip::SipHasher;
 
 /// Computes the affinity of a node for a given `key`.
 /// A higher value means a higher affinity.
 /// This is the `rendezvous hash`.
 pub fn node_affinity<T: Hash, U: Hash>(node: T, key: &U) -> u64 {
-    let mut state = DefaultHasher::new();
+    let mut state = SipHasher::new();
     key.hash(&mut state);
     node.hash(&mut state);
     state.finish()
@@ -54,7 +55,7 @@ mod tests {
         let socket3 = test_socket_addr(3);
         let socket4 = test_socket_addr(4);
 
-        let mut socket_set1 = vec![socket1, socket2, socket3, socket4];
+        let mut socket_set1 = vec![socket4, socket3, socket1, socket2];
         sort_by_rendez_vous_hash(&mut socket_set1, "key");
 
         let mut socket_set2 = vec![socket1, socket2, socket4];
@@ -63,7 +64,7 @@ mod tests {
         let mut socket_set3 = vec![socket1, socket4];
         sort_by_rendez_vous_hash(&mut socket_set3, "key");
 
-        assert_eq!(socket_set1, &[socket1, socket3, socket2, socket4]);
+        assert_eq!(socket_set1, &[socket1, socket2, socket3, socket4]);
         assert_eq!(socket_set2, &[socket1, socket2, socket4]);
         assert_eq!(socket_set3, &[socket1, socket4]);
     }

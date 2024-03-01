@@ -71,6 +71,13 @@ pub struct ListFieldsRequest {
     /// Wildcard expressions are supported.
     #[prost(string, repeated, tag = "2")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Time filter, expressed in seconds since epoch.
+    /// That filter is to be interpreted as the semi-open interval:
+    /// [start_timestamp, end_timestamp).
+    #[prost(int64, optional, tag = "3")]
+    pub start_timestamp: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "4")]
+    pub end_timestamp: ::core::option::Option<i64>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

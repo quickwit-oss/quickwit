@@ -22,9 +22,8 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
-    AcquireShardsRequest, AcquireShardsSubrequest, AddSourceRequest, CreateIndexRequest,
-    DeleteShardsRequest, DeleteShardsSubrequest, EntityKind, ListShardsRequest,
-    ListShardsSubrequest, MetastoreError, MetastoreService, OpenShardsRequest,
+    AcquireShardsRequest, AddSourceRequest, CreateIndexRequest, DeleteShardsRequest, EntityKind,
+    ListShardsRequest, ListShardsSubrequest, MetastoreError, MetastoreService, OpenShardsRequest,
     OpenShardsSubrequest, PublishSplitsRequest,
 };
 use quickwit_proto::types::{IndexUid, Position, ShardId, SourceId};
@@ -250,30 +249,18 @@ pub async fn test_metastore_acquire_shards<
         .await;
 
     // Test acquire shards.
-    let acquires_shards_request = AcquireShardsRequest {
-        subrequests: vec![AcquireShardsSubrequest {
-            index_uid: test_index.index_uid.clone().into(),
-            source_id: test_index.source_id.clone(),
-            shard_ids: vec![ShardId::from(1), ShardId::from(2), ShardId::from(3)],
-            publish_token: "test-publish-token-foo".to_string(),
-        }],
+    let acquire_shards_request = AcquireShardsRequest {
+        index_uid: test_index.index_uid.clone().into(),
+        source_id: test_index.source_id.clone(),
+        shard_ids: vec![ShardId::from(1), ShardId::from(2), ShardId::from(3)],
+        publish_token: "test-publish-token-foo".to_string(),
     };
     let acquire_shards_response = metastore
-        .acquire_shards(acquires_shards_request)
+        .acquire_shards(acquire_shards_request)
         .await
         .unwrap();
-    assert_eq!(acquire_shards_response.subresponses.len(), 1);
 
-    let mut subresponses = acquire_shards_response.subresponses;
-    assert_eq!(subresponses[0].index_uid(), &test_index.index_uid);
-    assert_eq!(subresponses[0].source_id, test_index.source_id);
-    assert_eq!(subresponses[0].acquired_shards.len(), 3);
-
-    subresponses[0]
-        .acquired_shards
-        .sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
-
-    let shard = &subresponses[0].acquired_shards[0];
+    let shard = &acquire_shards_response.acquired_shards[0];
     assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(1));
@@ -283,7 +270,7 @@ pub async fn test_metastore_acquire_shards<
     assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
     assert_eq!(shard.publish_token(), "test-publish-token-foo");
 
-    let shard = &subresponses[0].acquired_shards[1];
+    let shard = &acquire_shards_response.acquired_shards[1];
     assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(2));
@@ -293,7 +280,7 @@ pub async fn test_metastore_acquire_shards<
     assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
     assert_eq!(shard.publish_token(), "test-publish-token-foo");
 
-    let shard = &subresponses[0].acquired_shards[2];
+    let shard = &acquire_shards_response.acquired_shards[2];
     assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(3));
@@ -457,16 +444,14 @@ pub async fn test_metastore_delete_shards<
 
     // Attempt to delete shards #1, #2, #3, and #4.
     let delete_index_request = DeleteShardsRequest {
-        subrequests: vec![DeleteShardsSubrequest {
-            index_uid: test_index.index_uid.clone().into(),
-            source_id: test_index.source_id.clone(),
-            shard_ids: vec![
-                ShardId::from(1),
-                ShardId::from(2),
-                ShardId::from(3),
-                ShardId::from(4),
-            ],
-        }],
+        index_uid: test_index.index_uid.clone().into(),
+        source_id: test_index.source_id.clone(),
+        shard_ids: vec![
+            ShardId::from(1),
+            ShardId::from(2),
+            ShardId::from(3),
+            ShardId::from(4),
+        ],
         force: false,
     };
     metastore.delete_shards(delete_index_request).await.unwrap();
@@ -483,16 +468,14 @@ pub async fn test_metastore_delete_shards<
 
     // Attempt to delete shards #1, #2, #3, and #4.
     let delete_index_request = DeleteShardsRequest {
-        subrequests: vec![DeleteShardsSubrequest {
-            index_uid: test_index.index_uid.clone().into(),
-            source_id: test_index.source_id.clone(),
-            shard_ids: vec![
-                ShardId::from(1),
-                ShardId::from(2),
-                ShardId::from(3),
-                ShardId::from(4),
-            ],
-        }],
+        index_uid: test_index.index_uid.clone().into(),
+        source_id: test_index.source_id.clone(),
+        shard_ids: vec![
+            ShardId::from(1),
+            ShardId::from(2),
+            ShardId::from(3),
+            ShardId::from(4),
+        ],
         force: true,
     };
     metastore.delete_shards(delete_index_request).await.unwrap();

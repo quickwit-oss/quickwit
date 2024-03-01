@@ -377,7 +377,7 @@ async fn searcher_for_test(
     let grpc_advertise_addr = cluster
         .ready_members()
         .await
-        .get(0)
+        .first()
         .unwrap()
         .grpc_advertise_addr;
     let searcher_client =

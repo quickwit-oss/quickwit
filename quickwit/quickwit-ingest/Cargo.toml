@@ -1,9 +1,14 @@
 [package]
 name = "quickwit-ingest"
-version = "0.7.1"
-edition = "2021"
-license = "AGPL-3.0-or-later"                               # For a commercial, license, contact hello@quickwit.io
-description = "Quickwit is a cost-efficient search engine."
+description = "Native distributed and replicated ingestion engine"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
@@ -29,7 +34,7 @@ tokio = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
-ulid = {workspace = true }
+ulid = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }

@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::iter::once;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytesize::ByteSize;
 use futures::{Future, StreamExt};
@@ -42,7 +42,7 @@ use super::mrecordlog_utils::check_enough_capacity;
 use super::state::IngesterState;
 use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::metrics::INGEST_METRICS;
-use crate::{estimate_size, with_lock_metrics, with_request_metrics};
+use crate::{estimate_size, with_lock_metrics};
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
 
@@ -301,15 +301,6 @@ pub(super) enum ReplicationError {
     Timeout,
 }
 
-impl ReplicationError {
-    pub(super) fn label_value(&self) -> &'static str {
-        match self {
-            Self::Timeout { .. } => "timeout",
-            _ => "error",
-        }
-    }
-}
-
 // DO NOT derive or implement `Clone` for this object.
 #[derive(Debug)]
 pub(super) struct ReplicationClient {
@@ -334,19 +325,15 @@ impl ReplicationClient {
         let replication_request = ReplicationRequest::Init(init_replica_request);
 
         async {
-            with_request_metrics!(
-                self.submit(replication_request).await,
-                "ingester",
-                "client",
-                "init_replica"
-            )
-            .map(|replication_response| {
-                if let ReplicationResponse::Init(init_replica_response) = replication_response {
-                    init_replica_response
-                } else {
-                    panic!("response should be an init replica response")
-                }
-            })
+            self.submit(replication_request)
+                .await
+                .map(|replication_response| {
+                    if let ReplicationResponse::Init(init_replica_response) = replication_response {
+                        init_replica_response
+                    } else {
+                        panic!("response should be an init replica response")
+                    }
+                })
         }
     }
 
@@ -369,19 +356,16 @@ impl ReplicationClient {
         let replication_request = ReplicationRequest::Replicate(replicate_request);
 
         async {
-            with_request_metrics!(
-                self.submit(replication_request).await,
-                "ingester",
-                "client",
-                "replicate"
-            )
-            .map(|replication_response| {
-                if let ReplicationResponse::Replicate(replicate_response) = replication_response {
-                    replicate_response
-                } else {
-                    panic!("response should be a replicate response")
-                }
-            })
+            self.submit(replication_request)
+                .await
+                .map(|replication_response| {
+                    if let ReplicationResponse::Replicate(replicate_response) = replication_response
+                    {
+                        replicate_response
+                    } else {
+                        panic!("response should be a replicate response")
+                    }
+                })
         }
     }
 
@@ -482,6 +466,7 @@ impl ReplicationTask {
             ShardState::Open,
             Position::Beginning,
             Position::Beginning,
+            Instant::now(),
         );
         state_guard.shards.insert(queue_id, replica_shard);
 
@@ -525,7 +510,7 @@ impl ReplicationTask {
         let mut state_guard =
             with_lock_metrics!(self.state.lock_fully(), "replicate", "write").await?;
 
-        if state_guard.status != IngesterStatus::Ready {
+        if state_guard.status() != IngesterStatus::Ready {
             replicate_failures.reserve_exact(replicate_request.subrequests.len());
 
             for subrequest in replicate_request.subrequests {
@@ -546,6 +531,8 @@ impl ReplicationTask {
             };
             return Ok(replicate_response);
         }
+        let now = Instant::now();
+
         for subrequest in replicate_request.subrequests {
             let queue_id = subrequest.queue_id();
             let from_position_exclusive = subrequest.from_position_exclusive().clone();
@@ -563,7 +550,7 @@ impl ReplicationTask {
             };
             assert!(shard.is_replica());
 
-            if shard.shard_state.is_closed() {
+            if shard.is_closed() {
                 let replicate_failure = ReplicateFailure {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
@@ -595,6 +582,10 @@ impl ReplicationTask {
                     continue;
                 }
             };
+
+            let batch_num_bytes = doc_batch.num_bytes() as u64;
+            let batch_num_docs = doc_batch.num_docs() as u64;
+
             let requested_capacity = estimate_size(&doc_batch);
 
             let current_usage = match check_enough_capacity(
@@ -649,9 +640,6 @@ impl ReplicationTask {
                 .wal_memory_usage_bytes
                 .set(new_memory_usage.as_u64() as i64);
 
-            let batch_num_bytes = doc_batch.num_bytes() as u64;
-            let batch_num_docs = doc_batch.num_docs() as u64;
-
             INGEST_METRICS
                 .replicated_num_bytes_total
                 .inc_by(batch_num_bytes);
@@ -663,7 +651,8 @@ impl ReplicationTask {
                 .shards
                 .get_mut(&queue_id)
                 .expect("replica shard should be initialized");
-            replica_shard.set_replication_position_inclusive(current_position_inclusive.clone());
+            replica_shard
+                .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
             let replicate_success = ReplicateSuccess {
                 subrequest_id: subrequest.subrequest_id,
@@ -691,24 +680,14 @@ impl ReplicationTask {
                 Some(syn_replication_message::Message::OpenRequest(_)) => {
                     panic!("TODO: this should not happen, internal error");
                 }
-                Some(syn_replication_message::Message::InitRequest(init_replica_request)) => {
-                    with_request_metrics!(
-                        self.init_replica(init_replica_request).await,
-                        "ingester",
-                        "server",
-                        "init_replica"
-                    )
-                    .map(AckReplicationMessage::new_init_replica_response)
-                }
-                Some(syn_replication_message::Message::ReplicateRequest(replicate_request)) => {
-                    with_request_metrics!(
-                        self.replicate(replicate_request).await,
-                        "ingester",
-                        "server",
-                        "replicate"
-                    )
-                    .map(AckReplicationMessage::new_replicate_response)
-                }
+                Some(syn_replication_message::Message::InitRequest(init_replica_request)) => self
+                    .init_replica(init_replica_request)
+                    .await
+                    .map(AckReplicationMessage::new_init_replica_response),
+                Some(syn_replication_message::Message::ReplicateRequest(replicate_request)) => self
+                    .replicate(replicate_request)
+                    .await
+                    .map(AckReplicationMessage::new_replicate_response),
                 None => {
                     warn!("received empty SYN replication message");
                     continue;
@@ -744,7 +723,6 @@ mod tests {
     use quickwit_proto::types::{queue_id, IndexUid, ShardId};
 
     use super::*;
-    use crate::ingest_v2::test_utils::MultiRecordLogTestExt;
 
     fn into_init_replica_request(
         syn_replication_message: SynReplicationMessage,
@@ -1014,7 +992,7 @@ mod tests {
     async fn test_replication_task_happy_path() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let (_temp_dir, state, _status_rx) = IngesterState::for_test().await;
+        let (_temp_dir, state) = IngesterState::for_test().await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1277,7 +1255,7 @@ mod tests {
     async fn test_replication_task_shard_closed() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let (_temp_dir, state, _status_rx) = IngesterState::for_test().await;
+        let (_temp_dir, state) = IngesterState::for_test().await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1303,6 +1281,7 @@ mod tests {
             ShardState::Closed,
             Position::Beginning,
             Position::Beginning,
+            Instant::now(),
         );
         state
             .lock_fully()
@@ -1352,7 +1331,7 @@ mod tests {
     async fn test_replication_task_resource_exhausted() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let (_temp_dir, state, _status_rx) = IngesterState::for_test().await;
+        let (_temp_dir, state) = IngesterState::for_test().await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1378,6 +1357,7 @@ mod tests {
             ShardState::Open,
             Position::Beginning,
             Position::Beginning,
+            Instant::now(),
         );
         state
             .lock_fully()

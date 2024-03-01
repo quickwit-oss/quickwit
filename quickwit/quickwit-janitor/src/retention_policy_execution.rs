@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_actors::ActorContext;
-use quickwit_common::PrettySample;
+use quickwit_common::pretty::PrettySample;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,

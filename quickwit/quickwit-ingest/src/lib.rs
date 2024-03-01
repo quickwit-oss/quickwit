@@ -27,6 +27,7 @@ mod ingest_service;
 mod ingest_v2;
 mod memory_capacity;
 mod metrics;
+mod mrecordlog_async;
 mod notifications;
 mod position;
 mod queue;
@@ -126,35 +127,6 @@ impl CommitType {
 }
 
 #[macro_export]
-macro_rules! with_request_metrics {
-    ($future:expr, $($label:tt),*) => {
-        {
-            let now = std::time::Instant::now();
-            $crate::ingest_v2::metrics::INGEST_V2_METRICS
-                .grpc_requests_in_flight
-                .with_label_values([$($label),*])
-                .inc();
-            let result = $future;
-            $crate::ingest_v2::metrics::INGEST_V2_METRICS
-                .grpc_requests_in_flight
-                .with_label_values([$($label),*])
-                .dec();
-            let status_label = match &result {
-                Ok(_) => "success",
-                Err(error) => error.label_value(),
-            };
-            $crate::ingest_v2::metrics::INGEST_V2_METRICS.grpc_requests_total
-                .with_label_values([$($label),*, status_label])
-                .inc();
-            $crate::ingest_v2::metrics::INGEST_V2_METRICS.grpc_request_duration_secs
-                .with_label_values([$($label),*, status_label])
-                .observe(now.elapsed().as_secs_f64());
-            result
-        }
-    }
-}
-
-#[macro_export]
 macro_rules! with_lock_metrics {
     ($future:expr, $($label:tt),*) => {
         {
@@ -162,8 +134,10 @@ macro_rules! with_lock_metrics {
                 .wal_acquire_lock_requests_in_flight
                 .with_label_values([$($label),*])
                 .inc();
+
             let now = std::time::Instant::now();
             let guard = $future;
+
             $crate::ingest_v2::metrics::INGEST_V2_METRICS
                 .wal_acquire_lock_requests_in_flight
                 .with_label_values([$($label),*])
@@ -172,6 +146,7 @@ macro_rules! with_lock_metrics {
                 .wal_acquire_lock_request_duration_secs
                 .with_label_values([$($label),*])
                 .observe(now.elapsed().as_secs_f64());
+
             guard
         }
     }

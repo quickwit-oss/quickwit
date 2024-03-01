@@ -30,8 +30,6 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 pub use index_metadata::IndexMetadata;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
-use quickwit_common::tower::PrometheusMetricsLayer;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
@@ -48,17 +46,6 @@ use crate::{Split, SplitMetadata, SplitState};
 
 /// Splits batch size returned by the stream splits API
 pub(crate) const STREAM_SPLITS_CHUNK_SIZE: usize = 100;
-
-static METASTORE_METRICS_LAYER: Lazy<PrometheusMetricsLayer<1>> =
-    Lazy::new(|| PrometheusMetricsLayer::new("quickwit_metastore", ["request"]));
-
-pub(crate) fn instrument_metastore(
-    metastore_impl: impl MetastoreService,
-) -> MetastoreServiceClient {
-    MetastoreServiceClient::tower()
-        .stack_layer(METASTORE_METRICS_LAYER.clone())
-        .build(metastore_impl)
-}
 
 /// An extended trait for [`MetastoreService`].
 #[async_trait]
@@ -826,12 +813,12 @@ mod tests {
     #[test]
     fn test_list_splits_response_empty() {
         let response = ListSplitsResponse::empty();
-        assert_eq!(response.deserialize_splits().unwrap(), vec![]);
+        assert_eq!(response.deserialize_splits().unwrap(), Vec::new());
     }
 
     #[test]
     fn test_list_indexes_metadata_empty() {
         let response = ListIndexesMetadataResponse::empty();
-        assert_eq!(response.deserialize_indexes_metadata().unwrap(), vec![]);
+        assert_eq!(response.deserialize_indexes_metadata().unwrap(), Vec::new());
     }
 }

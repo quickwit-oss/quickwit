@@ -20,6 +20,7 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
+use std::time::Duration;
 
 use anyhow::{bail, Context};
 use http::HeaderMap;
@@ -43,6 +44,12 @@ use crate::{
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
 
 pub const DEFAULT_DATA_DIR_PATH: &str = "qwdata";
+
+pub const DEFAULT_GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(25)
+} else {
+    Duration::from_secs(1)
+};
 
 // Default config values in the order they appear in [`NodeConfigBuilder`].
 fn default_cluster_id() -> ConfigValue<String, QW_CLUSTER_ID> {
@@ -102,12 +109,12 @@ fn default_data_dir_uri() -> ConfigValue<Uri, QW_DATA_DIR> {
 fn default_advertise_host(listen_ip: &IpAddr) -> anyhow::Result<Host> {
     if listen_ip.is_unspecified() {
         if let Some((interface_name, private_ip)) = find_private_ip() {
-            info!(advertise_address=%private_ip, interface_name=%interface_name, "using sniffed advertise address");
+            info!(advertise_address=%private_ip, interface_name=%interface_name, "using sniffed advertise address `{private_ip}`");
             return Ok(Host::from(private_ip));
         }
         bail!("listen address `{listen_ip}` is unspecified and advertise address is not set");
     }
-    info!(advertise_address=%listen_ip, "using listen address as advertise address");
+    info!(advertise_address=%listen_ip, "using listen address `{listen_ip}` as advertise address");
     Ok(Host::from(*listen_ip))
 }
 
@@ -175,6 +182,7 @@ struct NodeConfigBuilder {
     rest_listen_port: Option<u16>,
     gossip_listen_port: ConfigValue<u16, QW_GOSSIP_LISTEN_PORT>,
     grpc_listen_port: ConfigValue<u16, QW_GRPC_LISTEN_PORT>,
+    gossip_interval_ms: ConfigValue<u32, QW_GOSSIP_INTERVAL_MS>,
     #[serde(default)]
     peer_seeds: ConfigValue<List, QW_PEER_SEEDS>,
     #[serde(rename = "data_dir")]
@@ -290,6 +298,12 @@ impl NodeConfigBuilder {
         self.ingest_api_config.validate()?;
         self.searcher_config.validate()?;
 
+        let gossip_interval = self
+            .gossip_interval_ms
+            .resolve_optional(env_vars)?
+            .map(|gossip_interval_ms| Duration::from_millis(gossip_interval_ms as u64))
+            .unwrap_or(DEFAULT_GOSSIP_INTERVAL);
+
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id: self.node_id.resolve(env_vars)?,
@@ -298,6 +312,7 @@ impl NodeConfigBuilder {
             grpc_listen_addr,
             gossip_advertise_addr,
             grpc_advertise_addr,
+            gossip_interval,
             peer_seeds: self.peer_seeds.resolve(env_vars)?.0,
             data_dir_path,
             metastore_uri,
@@ -341,6 +356,7 @@ impl Default for NodeConfigBuilder {
             rest_listen_port: None,
             gossip_listen_port: ConfigValue::none(),
             grpc_listen_port: ConfigValue::none(),
+            gossip_interval_ms: ConfigValue::none(),
             advertise_address: ConfigValue::none(),
             peer_seeds: ConfigValue::with_default(List::default()),
             data_dir_uri: default_data_dir_uri(),
@@ -434,6 +450,7 @@ pub fn node_config_for_test() -> NodeConfig {
         grpc_advertise_addr: grpc_listen_addr,
         gossip_listen_addr,
         grpc_listen_addr,
+        gossip_interval: Duration::from_millis(25u64),
         peer_seeds: Vec::new(),
         data_dir_path,
         metastore_uri,
@@ -543,7 +560,24 @@ mod tests {
         assert!(s3_storage_config.disable_multipart_upload);
 
         let postgres_config = config.metastore_configs.find_postgres().unwrap();
-        assert_eq!(postgres_config.max_num_connections.get(), 12);
+        assert_eq!(postgres_config.min_connections, 1);
+        assert_eq!(postgres_config.max_connections.get(), 12);
+        assert_eq!(
+            postgres_config.acquire_connection_timeout().unwrap(),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            postgres_config.acquire_connection_timeout().unwrap(),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            postgres_config.idle_connection_timeout_opt().unwrap(),
+            Some(Duration::from_secs(1800))
+        );
+        assert_eq!(
+            postgres_config.max_connection_lifetime_opt().unwrap(),
+            Some(Duration::from_secs(3600))
+        );
 
         assert_eq!(
             config.indexer_config,

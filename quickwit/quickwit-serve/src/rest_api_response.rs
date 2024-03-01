@@ -50,7 +50,7 @@ impl ToString for RestApiError {
 }
 
 /// Makes a JSON API response from a result.
-/// The error is wrapped into an [`ApiError`] to publicly expose
+/// The error is wrapped into an [`RestApiError`] to publicly expose
 /// a consistent error format.
 pub(crate) fn into_rest_api_response<T: serde::Serialize, E: ServiceError>(
     result: Result<T, E>,

@@ -24,22 +24,26 @@ use std::time::Duration;
 
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
-use quickwit_common::{PrettySample, Progress};
+use quickwit_common::pretty::PrettySample;
+use quickwit_common::Progress;
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_proto::control_plane::{
-    ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsFailure,
-    GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsRequest,
+    AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
+    GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess,
 };
 use quickwit_proto::ingest::ingester::{
     CloseShardsRequest, IngesterService, InitShardsRequest, PingRequest, RetainShardsForSource,
     RetainShardsRequest,
 };
-use quickwit_proto::ingest::{IngestV2Error, Shard, ShardIds, ShardState};
+use quickwit_proto::ingest::{
+    IngestV2Error, Shard, ShardIdPosition, ShardIdPositions, ShardIds, ShardState,
+};
 use quickwit_proto::metastore;
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use rand::seq::SliceRandom;
+use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
 use tracing::{error, info, warn};
 use ulid::Ulid;
@@ -81,17 +85,23 @@ fn fire_and_forget(
     });
 }
 
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+pub struct IngestControllerStats {
+    pub num_rebalance_shards_ops: usize,
+}
+
 pub struct IngestController {
-    metastore: MetastoreServiceClient,
     ingester_pool: IngesterPool,
+    metastore: MetastoreServiceClient,
     replication_factor: usize,
+    pub stats: IngestControllerStats,
 }
 
 impl fmt::Debug for IngestController {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("IngestController")
-            .field("replication", &self.metastore)
             .field("ingester_pool", &self.ingester_pool)
+            .field("metastore", &self.metastore)
             .field("replication_factor", &self.replication_factor)
             .finish()
     }
@@ -107,6 +117,7 @@ impl IngestController {
             metastore,
             ingester_pool,
             replication_factor,
+            stats: IngestControllerStats::default(),
         }
     }
 
@@ -640,6 +651,69 @@ impl IngestController {
             .with_label_values(label_values)
             .set(new_num_open_shards as i64);
     }
+
+    pub(crate) fn advise_reset_shards(
+        &self,
+        request: AdviseResetShardsRequest,
+        model: &ControlPlaneModel,
+    ) -> AdviseResetShardsResponse {
+        let mut shards_to_delete: Vec<ShardIds> = Vec::new();
+        let mut shards_to_truncate: Vec<ShardIdPositions> = Vec::new();
+
+        for shard_ids in request.shard_ids {
+            let index_uid = shard_ids.index_uid().clone();
+            let source_id = shard_ids.source_id.clone();
+
+            let source_uid = SourceUid {
+                index_uid,
+                source_id,
+            };
+            let Some(shard_entries) = model.get_shards_for_source(&source_uid) else {
+                // The source no longer exists: we can safely delete all the shards.
+                shards_to_delete.push(shard_ids);
+                continue;
+            };
+            let mut shard_ids_to_delete = Vec::new();
+            let mut shard_positions_to_truncate = Vec::new();
+
+            for shard_id in shard_ids.shard_ids {
+                if let Some(shard_entry) = shard_entries.get(&shard_id) {
+                    let publish_position_inclusive =
+                        shard_entry.publish_position_inclusive().clone();
+
+                    shard_positions_to_truncate.push(ShardIdPosition {
+                        shard_id: Some(shard_id),
+                        publish_position_inclusive: Some(publish_position_inclusive),
+                    });
+                } else {
+                    shard_ids_to_delete.push(shard_id);
+                }
+            }
+            if !shard_ids_to_delete.is_empty() {
+                shards_to_delete.push(ShardIds {
+                    index_uid: Some(source_uid.index_uid.clone()),
+                    source_id: source_uid.source_id.clone(),
+                    shard_ids: shard_ids_to_delete,
+                });
+            }
+            if !shard_positions_to_truncate.is_empty() {
+                shards_to_truncate.push(ShardIdPositions {
+                    index_uid: Some(source_uid.index_uid),
+                    source_id: source_uid.source_id,
+                    shard_positions: shard_positions_to_truncate,
+                });
+            }
+        }
+        AdviseResetShardsResponse {
+            shards_to_delete,
+            shards_to_truncate,
+        }
+    }
+
+    pub fn rebalance_shards(&mut self) {
+        // TODO: As of now, it is only used for unit testing.
+        self.stats.num_rebalance_shards_ops += 1;
+    }
 }
 
 /// Finds the shard with the highest ingestion rate on the ingester with the least number of open
@@ -651,7 +725,7 @@ fn find_scale_down_candidate(
 ) -> Option<(NodeId, ShardId)> {
     let mut per_leader_candidates: HashMap<&String, (usize, &ShardEntry)> = HashMap::new();
 
-    for shard in model.list_shards_for_source(source_uid)? {
+    for shard in model.get_shards_for_source(source_uid)?.values() {
         if shard.is_open() {
             per_leader_candidates
                 .entry(&shard.leader_id)
@@ -702,7 +776,7 @@ mod tests {
     };
     use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::MetastoreError;
-    use quickwit_proto::types::SourceId;
+    use quickwit_proto::types::{Position, SourceId};
 
     use super::*;
 
@@ -1114,7 +1188,7 @@ mod tests {
             IngestController::new(metastore, ingester_pool, replication_factor);
         let mut model = ControlPlaneModel::default();
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
+        let index_uid = IndexUid::for_test("test-index-0", 0);
         let source_id: SourceId = "test-source".into();
 
         let shards = vec![Shard {
@@ -1164,7 +1238,7 @@ mod tests {
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
         let mut model = ControlPlaneModel::default();
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
+        let index_uid = IndexUid::for_test("test-index-0", 0);
         let source_id: SourceId = "test-source".into();
 
         let shards = vec![
@@ -1235,7 +1309,7 @@ mod tests {
         let mut ingest_controller =
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
 
         let source_uid = SourceUid {
@@ -1412,7 +1486,7 @@ mod tests {
             replication_factor,
         );
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = INGEST_V2_SOURCE_ID.to_string();
 
         let source_uid = SourceUid {
@@ -1503,7 +1577,7 @@ mod tests {
         let ingest_controller =
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
 
         let source_uid = SourceUid {
@@ -1598,7 +1672,7 @@ mod tests {
 
     #[test]
     fn test_find_scale_down_candidate() {
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
 
         let source_uid = SourceUid {
@@ -1709,7 +1783,7 @@ mod tests {
         let ingest_controller =
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let mut model = ControlPlaneModel::default();
         let shards = vec![
@@ -1768,5 +1842,76 @@ mod tests {
         let wait_handle = ingest_controller.sync_with_ingester(&node_id, &model);
         wait_handle.wait().await;
         assert_eq!(count_calls.load(Ordering::Acquire), 1);
+    }
+
+    #[tokio::test]
+    async fn test_ingest_controller_advise_reset_shards() {
+        let metastore = MetastoreServiceClient::mock().into();
+        let ingester_pool = IngesterPool::default();
+        let replication_factor = 2;
+
+        let ingest_controller = IngestController::new(metastore, ingester_pool, replication_factor);
+
+        let mut model = ControlPlaneModel::default();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id_00: SourceId = "test-source-0".into();
+        let source_id_01: SourceId = "test-source-1".into();
+
+        let shards = vec![Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id_00.clone(),
+            shard_id: Some(ShardId::from(1)),
+            shard_state: ShardState::Open as i32,
+            publish_position_inclusive: Some(Position::offset(1337u64)),
+            ..Default::default()
+        }];
+        model.insert_shards(&index_uid, &source_id_00, shards);
+
+        let advise_reset_shards_request = AdviseResetShardsRequest {
+            shard_ids: vec![
+                ShardIds {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id_00.clone(),
+                    shard_ids: vec![ShardId::from(1), ShardId::from(2)],
+                },
+                ShardIds {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id_01.clone(),
+                    shard_ids: vec![ShardId::from(3)],
+                },
+            ],
+        };
+        let advise_reset_shards_response =
+            ingest_controller.advise_reset_shards(advise_reset_shards_request, &model);
+
+        assert_eq!(advise_reset_shards_response.shards_to_delete.len(), 2);
+
+        let shard_to_delete_00 = &advise_reset_shards_response.shards_to_delete[0];
+        assert_eq!(shard_to_delete_00.index_uid(), &index_uid);
+        assert_eq!(shard_to_delete_00.source_id, source_id_00);
+        assert_eq!(shard_to_delete_00.shard_ids.len(), 1);
+        assert_eq!(shard_to_delete_00.shard_ids[0], ShardId::from(2));
+
+        let shard_to_delete_01 = &advise_reset_shards_response.shards_to_delete[1];
+        assert_eq!(shard_to_delete_01.index_uid(), &index_uid);
+        assert_eq!(shard_to_delete_01.source_id, source_id_01);
+        assert_eq!(shard_to_delete_01.shard_ids.len(), 1);
+        assert_eq!(shard_to_delete_01.shard_ids[0], ShardId::from(3));
+
+        assert_eq!(advise_reset_shards_response.shards_to_truncate.len(), 1);
+
+        let shard_to_truncate = &advise_reset_shards_response.shards_to_truncate[0];
+        assert_eq!(shard_to_truncate.index_uid(), &index_uid);
+        assert_eq!(shard_to_truncate.source_id, source_id_00);
+        assert_eq!(shard_to_truncate.shard_positions.len(), 1);
+        assert_eq!(
+            shard_to_truncate.shard_positions[0].shard_id(),
+            ShardId::from(1)
+        );
+        assert_eq!(
+            shard_to_truncate.shard_positions[0].publish_position_inclusive(),
+            Position::offset(1337u64)
+        );
     }
 }

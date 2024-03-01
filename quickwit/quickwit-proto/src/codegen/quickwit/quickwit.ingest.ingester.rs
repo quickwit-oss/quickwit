@@ -530,6 +530,57 @@ impl IngesterStatus {
 #[allow(unused_imports)]
 use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
+use quickwit_common::tower::RpcName;
+impl RpcName for PersistRequest {
+    fn rpc_name() -> &'static str {
+        "persist"
+    }
+}
+impl RpcName for SynReplicationMessage {
+    fn rpc_name() -> &'static str {
+        "open_replication_stream"
+    }
+}
+impl RpcName for OpenFetchStreamRequest {
+    fn rpc_name() -> &'static str {
+        "open_fetch_stream"
+    }
+}
+impl RpcName for OpenObservationStreamRequest {
+    fn rpc_name() -> &'static str {
+        "open_observation_stream"
+    }
+}
+impl RpcName for InitShardsRequest {
+    fn rpc_name() -> &'static str {
+        "init_shards"
+    }
+}
+impl RpcName for RetainShardsRequest {
+    fn rpc_name() -> &'static str {
+        "retain_shards"
+    }
+}
+impl RpcName for TruncateShardsRequest {
+    fn rpc_name() -> &'static str {
+        "truncate_shards"
+    }
+}
+impl RpcName for CloseShardsRequest {
+    fn rpc_name() -> &'static str {
+        "close_shards"
+    }
+}
+impl RpcName for PingRequest {
+    fn rpc_name() -> &'static str {
+        "ping"
+    }
+}
+impl RpcName for DecommissionRequest {
+    fn rpc_name() -> &'static str {
+        "decommission"
+    }
+}
 pub type IngesterServiceStream<T> = quickwit_common::ServiceStream<
     crate::ingest::IngestV2Result<T>,
 >;

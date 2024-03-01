@@ -158,7 +158,7 @@ service MetastoreService {
 
   // Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
   // If the shard did not exist to begin with, the operation is successful and does not return any error.
-  rpc DeleteShards(DeleteShardsRequest) returns (DeleteShardsResponse);
+  rpc DeleteShards(DeleteShardsRequest) returns (EmptyResponse);
 
   rpc ListShards(ListShardsRequest) returns (ListShardsResponse);
 
@@ -365,10 +365,6 @@ message OpenShardsSubresponse {
 }
 
 message AcquireShardsRequest {
-  repeated AcquireShardsSubrequest subrequests = 1;
-}
-
-message AcquireShardsSubrequest {
   quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   repeated quickwit.ingest.ShardId shard_ids = 3;
@@ -376,28 +372,15 @@ message AcquireShardsSubrequest {
 }
 
 message AcquireShardsResponse {
-  repeated AcquireShardsSubresponse subresponses = 1;
-}
-
-message AcquireShardsSubresponse {
-  quickwit.common.IndexUid index_uid = 1;
-  string source_id = 2;
   repeated quickwit.ingest.Shard acquired_shards = 3;
 }
 
 message DeleteShardsRequest {
-  repeated DeleteShardsSubrequest subrequests = 1;
-  // If false, only shards at EOF positions will be deleted.
-  bool force = 2;
-}
-
-message DeleteShardsSubrequest {
   quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   repeated quickwit.ingest.ShardId shard_ids = 3;
-}
-
-message DeleteShardsResponse {
+  // If false, only shards at EOF positions will be deleted.
+  bool force = 4;
 }
 
 message ListShardsRequest {

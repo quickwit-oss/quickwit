@@ -26,6 +26,7 @@ use std::time::Instant;
 
 use anyhow::bail;
 use fnv::{FnvHashMap, FnvHashSet};
+use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::Progress;
 use quickwit_config::SourceConfig;
 use quickwit_ingest::ShardInfos;
@@ -120,6 +121,7 @@ impl ControlPlaneModel {
             }
         }
         if !subrequests.is_empty() {
+            // TODO: Limit the number of subrequests and perform multiple requests if needed.
             let list_shards_request = metastore::ListShardsRequest { subrequests };
             let list_shard_response = progress
                 .protect_future(metastore.list_shards(list_shards_request))
@@ -138,11 +140,10 @@ impl ControlPlaneModel {
                     .insert_shards(&index_uid, &source_id, shards);
             }
         }
-        let elapsed_secs = now.elapsed().as_secs();
-
         info!(
-            "synced control plane model with metastore in {elapsed_secs} seconds ({num_indexes} \
-             indexes, {num_sources} sources, {num_shards} shards)",
+            "synced control plane model with metastore in {} ({num_indexes} indexes, \
+             {num_sources} sources, {num_shards} shards)",
+            now.elapsed().pretty_display()
         );
         Ok(())
     }
@@ -280,11 +281,19 @@ impl ControlPlaneModel {
     }
 
     /// Lists the shards of a given source. Returns `None` if the source does not exist.
-    pub fn list_shards_for_source(
+    pub fn get_shards_for_source(
         &self,
         source_uid: &SourceUid,
-    ) -> Option<impl Iterator<Item = &ShardEntry>> {
-        self.shard_table.list_shards(source_uid)
+    ) -> Option<&FnvHashMap<ShardId, ShardEntry>> {
+        self.shard_table.get_shards(source_uid)
+    }
+
+    /// Lists the shards of a given source. Returns `None` if the source does not exist.
+    pub fn get_shards_for_source_mut(
+        &mut self,
+        source_uid: &SourceUid,
+    ) -> Option<&mut FnvHashMap<ShardId, ShardEntry>> {
+        self.shard_table.get_shards_mut(source_uid)
     }
 
     /// Inserts the shards that have just been opened by calling `open_shards` on the metastore.
@@ -447,8 +456,9 @@ mod tests {
         };
         let shards: Vec<&ShardEntry> = model
             .shard_table
-            .list_shards(&source_uid_0)
+            .get_shards(&source_uid_0)
             .unwrap()
+            .values()
             .collect();
         assert_eq!(shards.len(), 1);
         assert_eq!(shards[0].shard_id(), ShardId::from(42));
@@ -459,8 +469,9 @@ mod tests {
         };
         let shards: Vec<&ShardEntry> = model
             .shard_table
-            .list_shards(&source_uid_1)
+            .get_shards(&source_uid_1)
             .unwrap()
+            .values()
             .collect();
         assert_eq!(shards.len(), 0);
     }
@@ -502,10 +513,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
-        assert_eq!(
-            model.shard_table.list_shards(&source_uid).unwrap().count(),
-            0
-        );
+        assert_eq!(model.shard_table.get_shards(&source_uid).unwrap().len(), 0);
     }
 
     #[test]

@@ -48,7 +48,7 @@ pub(crate) use self::tokenizer_entry::{
 use crate::QW_RESERVED_FIELD_NAMES;
 
 /// Regular expression validating a field mapping name.
-pub const FIELD_MAPPING_NAME_PATTERN: &str = r"^[@$_\-a-zA-Z][@$_\.\-a-zA-Z0-9]{0,254}$";
+pub const FIELD_MAPPING_NAME_PATTERN: &str = r"^[@$_\-a-zA-Z][@$_/\.\-a-zA-Z0-9]{0,254}$";
 
 /// Validates a field mapping name.
 /// Returns `Ok(())` if the name can be used for a field mapping.
@@ -149,6 +149,7 @@ mod tests {
         assert!(validate_field_mapping_name("my.field").is_ok());
         assert!(validate_field_mapping_name("my_field").is_ok());
         assert!(validate_field_mapping_name("$my_field@").is_ok());
+        assert!(validate_field_mapping_name("my/field").is_ok());
         assert!(validate_field_mapping_name(&"a".repeat(255)).is_ok());
     }
 }

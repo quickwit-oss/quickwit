@@ -22,6 +22,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use bytesize::ByteSize;
+use quickwit_cluster::cluster_grpc_server;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::indexing::IndexingServiceClient;
@@ -34,7 +35,7 @@ use quickwit_proto::tonic::transport::Server;
 use tracing::*;
 
 use crate::search_api::GrpcSearchAdapter;
-use crate::QuickwitServices;
+use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
 
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(
@@ -46,6 +47,8 @@ pub(crate) async fn start_grpc_server(
 ) -> anyhow::Result<()> {
     let mut enabled_grpc_services = BTreeSet::new();
     let mut server = Server::builder();
+
+    let cluster_grpc_service = cluster_grpc_server(services.cluster.clone());
 
     // Mount gRPC metastore service if `QuickwitService::Metastore` is enabled on node.
     let metastore_grpc_service = if let Some(metastore_server) = &services.metastore_server_opt {
@@ -61,7 +64,9 @@ pub(crate) async fn start_grpc_server(
     {
         if let Some(indexing_service) = services.indexing_service_opt.clone() {
             enabled_grpc_services.insert("indexing");
-            let indexing_service = IndexingServiceClient::from_mailbox(indexing_service);
+            let indexing_service = IndexingServiceClient::tower()
+                .stack_layer(INDEXING_GRPC_SERVER_METRICS_LAYER.clone())
+                .build_from_mailbox(indexing_service);
             Some(indexing_service.as_grpc_service(max_message_size))
         } else {
             None
@@ -121,7 +126,7 @@ pub(crate) async fn start_grpc_server(
     // Mount gRPC OpenTelemetry OTLP services if present.
     let otlp_trace_grpc_service =
         if let Some(otlp_traces_service) = services.otlp_traces_service_opt.clone() {
-            enabled_grpc_services.insert("otlp-trace");
+            enabled_grpc_services.insert("otlp-traces");
             let trace_service = TraceServiceServer::new(otlp_traces_service)
                 .accept_compressed(CompressionEncoding::Gzip);
             Some(trace_service)
@@ -130,7 +135,7 @@ pub(crate) async fn start_grpc_server(
         };
     let otlp_log_grpc_service =
         if let Some(otlp_logs_service) = services.otlp_logs_service_opt.clone() {
-            enabled_grpc_services.insert("otlp-log");
+            enabled_grpc_services.insert("otlp-logs");
             let logs_service = LogsServiceServer::new(otlp_logs_service)
                 .accept_compressed(CompressionEncoding::Gzip);
             Some(logs_service)
@@ -162,6 +167,7 @@ pub(crate) async fn start_grpc_server(
         None
     };
     let server_router = server
+        .add_service(cluster_grpc_service)
         .add_optional_service(control_plane_grpc_service)
         .add_optional_service(indexing_grpc_service)
         .add_optional_service(ingest_api_grpc_service)

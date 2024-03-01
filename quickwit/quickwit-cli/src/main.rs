@@ -50,8 +50,8 @@ async fn main_impl() -> anyhow::Result<()> {
 
     let command = match CliCommand::parse_cli_args(matches) {
         Ok(command) => command,
-        Err(err) => {
-            eprintln!("Failed to parse command arguments: {err:?}");
+        Err(error) => {
+            eprintln!("failed to parse command line arguments: {error:?}");
             std::process::exit(1);
         }
     };
@@ -62,7 +62,7 @@ async fn main_impl() -> anyhow::Result<()> {
     let build_info = BuildInfo::get();
     setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
     let return_code: i32 = if let Err(err) = command.execute().await {
-        eprintln!("{} Command failed: {:?}\n", "✘".color(RED_COLOR), err);
+        eprintln!("{} command failed: {:?}\n", "✘".color(RED_COLOR), err);
         1
     } else {
         0

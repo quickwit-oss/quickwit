@@ -705,7 +705,7 @@ impl IndexStats {
     }
 
     pub fn display_as_table(&self) -> String {
-        let mut tables = vec![];
+        let mut tables = Vec::new();
         let index_stats_table = create_table(self, "General Information", true);
         tables.push(index_stats_table);
 

@@ -15,7 +15,7 @@ expected:
   aggregations:
     date_histo:
       buckets:
-        -  { "doc_count": 4, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z" }
+        -  { "doc_count": 5, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z" }
         -  { "doc_count": 2, "key": 1422662400000.0, "key_as_string": "2015-01-31T00:00:00Z" }
 --- 
 # Test date histogram aggregation and sub-aggregation 
@@ -39,7 +39,7 @@ expected:
   aggregations:
     date_histo:
       buckets:
-        -  { "doc_count": 4, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z", "response": { "avg": 80.0, "count": 3, "max": 120.0, "min": 20.0, "sum": 240.0 } }
+        -  { "doc_count": 5, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z", "response": { "avg": 85.0, "count": 4, "max": 120.0, "min": 20.0, "sum": 340.0 } }
         -  { "doc_count": 2, "key": 1422662400000.0, "key_as_string": "2015-01-31T00:00:00Z", "response": { "avg": 80.0, "count": 2, "max": 130.0, "min": 30.0, "sum": 160.0 }  }
 --- 
 # Test date histogram aggregation + exists and sub-aggregation 
@@ -67,7 +67,7 @@ expected:
   aggregations:
     date_histo:
       buckets:
-        -  { "doc_count": 3, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z", "response": { "avg": 80.0, "count": 3, "max": 120.0, "min": 20.0, "sum": 240.0 } }
+        -  { "doc_count": 4, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z", "response": { "avg": 85.0, "count": 4, "max": 120.0, "min": 20.0, "sum": 340.0 } }
         -  { "doc_count": 2, "key": 1422662400000.0, "key_as_string": "2015-01-31T00:00:00Z", "response": { "avg": 80.0, "count": 2, "max": 130.0, "min": 30.0, "sum": 160.0 }  }
 --- 
 # Test range aggregation
@@ -89,9 +89,9 @@ expected:
   aggregations:
     my_range:
       buckets:
-        - { "doc_count": 4, "key": "fast", "to": 50.0 }
+        - { "doc_count": 5, "key": "fast", "to": 50.0 }
         - { "doc_count": 0, "from": 50.0, "key": "medium", "to": 80.0 }
-        - { "doc_count": 3, "from": 80.0, "key": "slow" }
+        - { "doc_count": 4, "from": 80.0, "key": "slow" }
 --- 
 # Test term aggs
 method: [GET]
@@ -111,24 +111,126 @@ expected:
   aggregations:
     hosts:
       buckets:
-      - doc_count: 3
+      - doc_count: 4
         key: 192.168.0.10
       - doc_count: 2
         key: 192.168.0.1
       - doc_count: 1
-        key: 192.168.0.15
-      - doc_count: 1
         key: 192.168.0.11
+      - doc_count: 1
+        key: 192.168.0.15
       doc_count_error_upper_bound: 0
       sum_other_doc_count: 0
     tags:
       buckets:
-      - doc_count: 4
+      - doc_count: 5
         key: nice
       - doc_count: 2
         key: cool
       doc_count_error_upper_bound: 0
       sum_other_doc_count: 0
+--- 
+# Test term aggs with split_size
+# We set split_size to 1, so one document with name "Fritz" will be missing from one split.
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    names: 
+      terms: 
+        field: "name"
+        size: 1
+        split_size: 1
+expected:
+  aggregations:
+    names:
+      buckets:
+        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the 
+        # root node, because it gets cut off due to the split_size parameter set to 1.
+        # We also get doc_count_error_upper_bound: 2, which signals that the result is approximate.
+      - doc_count: 2 
+        key: "Fritz"
+      sum_other_doc_count: 8
+      doc_count_error_upper_bound: 2
+--- 
+# Test term aggs with shard_size
+# segment_size is an alias to shard_size
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    names: 
+      terms: 
+        field: "name"
+        size: 1
+        segment_size: 1
+expected:
+  aggregations:
+    names:
+      buckets:
+        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the 
+        # root node, because it gets cut off due to the split_size parameter set to 1.
+        # We also get doc_count_error_upper_bound: 2, which signals that the result is approximate.
+      - doc_count: 2 
+        key: "Fritz"
+      sum_other_doc_count: 8
+      doc_count_error_upper_bound: 2
+--- 
+# Test term aggs with shard_size
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    names: 
+      terms: 
+        field: "name"
+        size: 1
+        shard_size: 1
+expected:
+  aggregations:
+    names:
+      buckets:
+        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the 
+        # root node, because it gets cut off due to the split_size parameter set to 1.
+        # We also get doc_count_error_upper_bound: 2, which signals that the result is approximate.
+      - doc_count: 2 
+        key: "Fritz"
+      sum_other_doc_count: 8
+      doc_count_error_upper_bound: 2
+---
+# Test term aggs with split_size
+# Here we increase split_size to 5, so we will get the 3 documents with name "Fritz"
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    names: 
+      terms: 
+        field: "name"
+        size: 1
+        split_size: 5
+expected:
+  aggregations:
+    names:
+      buckets:
+        # We get all 3 documents with name "Fritz"
+        # We also get doc_count_error_upper_bound: 0, to the result is exact.
+      - doc_count: 3 
+        key: "Fritz"
+      sum_other_doc_count: 7
+      doc_count_error_upper_bound: 0
 --- 
 # Test date histogram + percentiles sub-aggregation
 method: [GET]
@@ -154,7 +256,7 @@ expected:
   aggregations:
     metrics:
       buckets:
-      - doc_count: 4
+      - doc_count: 5
         key: 1420070400000.0
         key_as_string: '2015-01-01T00:00:00Z'
         response:
@@ -185,11 +287,11 @@ expected:
   aggregations:
     metrics:
       buckets:
-      - doc_count: 4
+      - doc_count: 5
         key: 0.0
       - doc_count: 0
         key: 50.0
-      - doc_count: 3
+      - doc_count: 4
         key: 100.0
 
 --- 

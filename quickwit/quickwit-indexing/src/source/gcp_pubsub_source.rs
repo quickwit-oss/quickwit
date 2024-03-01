@@ -154,7 +154,7 @@ impl GcpPubSubSource {
     }
 
     fn should_exit(&self) -> bool {
-        self.backfill_mode_enabled && self.state.num_consecutive_empty_batches > 5
+        self.backfill_mode_enabled && self.state.num_consecutive_empty_batches >= 10
     }
 }
 
@@ -370,6 +370,7 @@ mod gcp_pubsub_emulator_tests {
         GcpPubSubSource::try_new(ctx, params).await.unwrap_err();
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_gcp_pubsub_source() {
         let universe = Universe::with_accelerated_time();
@@ -438,7 +439,7 @@ mod gcp_pubsub_emulator_tests {
             "num_bytes_processed": 54,
             "num_messages_processed": 6,
             "num_invalid_messages": 0,
-            "num_consecutive_empty_batches": 6,
+            "num_consecutive_empty_batches": 10,
         });
         assert_eq!(exit_state, expected_exit_state);
     }

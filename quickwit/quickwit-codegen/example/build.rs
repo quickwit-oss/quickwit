@@ -26,7 +26,7 @@ fn main() {
         .with_result_type_path("crate::HelloResult")
         .with_error_type_path("crate::HelloError")
         .generate_extra_service_methods()
-        .generate_prom_labels_for_requests()
+        .generate_rpc_name_impls()
         .run()
         .unwrap();
 }

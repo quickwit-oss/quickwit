@@ -40,7 +40,11 @@
     },
     "metastore": {
         "postgres": {
-            "max_num_connections": 12
+            "min_connections": 1,
+            "max_num_connections": 12,
+            "acquire_connection_timeout": "30s",
+            "idle_connection_timeout": "30min",
+            "max_connection_lifetime": "1h"
         }
     },
     "indexer": {

@@ -30,35 +30,30 @@ use chitchat::{
     spawn_chitchat, Chitchat, ChitchatConfig, ChitchatHandle, ChitchatId, ClusterStateSnapshot,
     FailureDetectorConfig, KeyChangeEvent, ListenerHandle, NodeState,
 };
-use futures::Stream;
 use itertools::Itertools;
 use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
 use quickwit_proto::types::{NodeId, PipelineUid, ShardId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use tokio::time::timeout;
-use tokio_stream::wrappers::{UnboundedReceiverStream, WatchStream};
+use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
-use crate::change::{compute_cluster_change_events, ClusterChange};
+use crate::change::{compute_cluster_change_events, ClusterChange, ClusterChangeStreamFactory};
+use crate::grpc_gossip::spawn_catchup_callback_task;
 use crate::member::{
     build_cluster_member, ClusterMember, NodeStateExt, ENABLED_SERVICES_KEY,
     GRPC_ADVERTISE_ADDR_KEY, PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
     READINESS_VALUE_READY,
 };
-use crate::ClusterNode;
+use crate::metrics::spawn_metrics_task;
+use crate::{ClusterChangeStream, ClusterNode};
 
-const GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_millis(25)
+const MARKED_FOR_DELETION_GRACE_PERIOD: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(2_500) // 2.5 secs
 } else {
-    Duration::from_secs(1)
-};
-
-const MARKED_FOR_DELETION_GRACE_PERIOD: usize = if cfg!(any(test, feature = "testsuite")) {
-    100 // ~ HEARTBEAT * 100 = 2.5 seconds.
-} else {
-    5_000 // ~ HEARTBEAT * 5_000 ~ 4 hours.
+    Duration::from_secs(3_600 * 2) // 2 hours.
 };
 
 // An indexing task key is formatted as
@@ -71,6 +66,7 @@ pub struct Cluster {
     self_chitchat_id: ChitchatId,
     /// Socket address (UDP) the node listens on for receiving gossip messages.
     pub gossip_listen_addr: SocketAddr,
+    gossip_interval: Duration,
     inner: Arc<RwLock<InnerCluster>>,
 }
 
@@ -85,6 +81,7 @@ impl Debug for Cluster {
                 "gossip_advertise_addr",
                 &self.self_chitchat_id.gossip_advertise_addr,
             )
+            .field("gossip_interval", &self.gossip_interval)
             .finish()
     }
 }
@@ -115,38 +112,48 @@ impl Cluster {
         self_node: ClusterMember,
         gossip_listen_addr: SocketAddr,
         peer_seed_addrs: Vec<String>,
+        gossip_interval: Duration,
         failure_detector_config: FailureDetectorConfig,
         transport: &dyn Transport,
     ) -> anyhow::Result<Self> {
         info!(
             cluster_id=%cluster_id,
             node_id=%self_node.node_id,
+            generation_id=self_node.generation_id.as_u64(),
             enabled_services=?self_node.enabled_services,
             gossip_listen_addr=%gossip_listen_addr,
             gossip_advertise_addr=%self_node.gossip_advertise_addr,
             grpc_advertise_addr=%self_node.grpc_advertise_addr,
             peer_seed_addrs=%peer_seed_addrs.join(", "),
-            "Joining cluster."
+            "joining cluster"
         );
+        // Set up catchup callback and extra liveness predicate functions.
+        let (catchup_callback_tx, catchup_callback_rx) = watch::channel(());
+        let catchup_callback = move || {
+            let _ = catchup_callback_tx.send(());
+        };
+        let extra_liveness_predicate = |node_state: &NodeState| {
+            [ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY]
+                .iter()
+                .all(|key| node_state.contains_key(key))
+        };
         let chitchat_config = ChitchatConfig {
             cluster_id: cluster_id.clone(),
             chitchat_id: self_node.chitchat_id(),
             listen_addr: gossip_listen_addr,
             seed_nodes: peer_seed_addrs,
             failure_detector_config,
-            gossip_interval: GOSSIP_INTERVAL,
+            gossip_interval,
             marked_for_deletion_grace_period: MARKED_FOR_DELETION_GRACE_PERIOD,
+            catchup_callback: Some(Box::new(catchup_callback)),
+            extra_liveness_predicate: Some(Box::new(extra_liveness_predicate)),
         };
         let chitchat_handle = spawn_chitchat(
             chitchat_config,
             vec![
                 (
                     ENABLED_SERVICES_KEY.to_string(),
-                    self_node
-                        .enabled_services
-                        .iter()
-                        .map(|service| service.as_str())
-                        .join(","),
+                    self_node.enabled_services.iter().join(","),
                 ),
                 (
                     GRPC_ADVERTISE_ADDR_KEY.to_string(),
@@ -162,10 +169,25 @@ impl Cluster {
         .await?;
 
         let chitchat = chitchat_handle.chitchat();
-        let live_nodes_stream = chitchat.lock().await.live_nodes_watcher();
+        let chitchat_guard = chitchat.lock().await;
+        let live_nodes_rx = chitchat_guard.live_nodes_watcher();
+        let live_nodes_stream = chitchat_guard.live_nodes_watch_stream();
         let (ready_members_tx, ready_members_rx) = watch::channel(Vec::new());
-
         spawn_ready_members_task(cluster_id.clone(), live_nodes_stream, ready_members_tx);
+        drop(chitchat_guard);
+
+        let weak_chitchat = Arc::downgrade(&chitchat);
+        spawn_metrics_task(weak_chitchat.clone(), self_node.chitchat_id());
+
+        spawn_catchup_callback_task(
+            cluster_id.clone(),
+            self_node.chitchat_id(),
+            weak_chitchat,
+            live_nodes_rx,
+            catchup_callback_rx.clone(),
+        )
+        .await;
+
         let inner = InnerCluster {
             cluster_id: cluster_id.clone(),
             self_chitchat_id: self_node.chitchat_id(),
@@ -178,9 +200,10 @@ impl Cluster {
             cluster_id,
             self_chitchat_id: self_node.chitchat_id(),
             gossip_listen_addr,
+            gossip_interval,
             inner: Arc::new(RwLock::new(inner)),
         };
-        spawn_ready_nodes_change_stream_task(cluster.clone()).await;
+        spawn_change_stream_task(cluster.clone()).await;
         Ok(cluster)
     }
 
@@ -195,20 +218,23 @@ impl Cluster {
     }
 
     /// Returns a stream of changes affecting the set of ready nodes in the cluster.
-    pub async fn ready_nodes_change_stream(&self) -> impl Stream<Item = ClusterChange> {
-        // The subscriber channel must be unbounded because we do no want to block when sending the
-        // events.
-        let (change_stream_tx, change_stream_rx) = mpsc::unbounded_channel();
-        let mut inner = self.inner.write().await;
-        for node in inner.live_nodes.values() {
-            if node.is_ready() {
-                change_stream_tx
-                    .send(ClusterChange::Add(node.clone()))
-                    .expect("The receiver end of the channel should be open.");
+    pub fn change_stream(&self) -> ClusterChangeStream {
+        let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
+        let inner = self.inner.clone();
+        // We spawn a task so the signature of this function is sync.
+        let future = async move {
+            let mut inner = inner.write().await;
+            for node in inner.live_nodes.values() {
+                if node.is_ready() {
+                    change_stream_tx
+                        .send(ClusterChange::Add(node.clone()))
+                        .expect("receiver end of the channel should be open");
+                }
             }
-        }
-        inner.change_stream_subscribers.push(change_stream_tx);
-        UnboundedReceiverStream::new(change_stream_rx)
+            inner.change_stream_subscribers.push(change_stream_tx);
+        };
+        tokio::spawn(future);
+        change_stream
     }
 
     /// Returns whether the self node is ready.
@@ -250,7 +276,7 @@ impl Cluster {
             .await
             .self_node_state()
             .get_versioned(key)
-            .filter(|versioned_value| versioned_value.tombstone.is_none())
+            .filter(|versioned_value| !versioned_value.is_tombstone())
             .map(|versioned_value| versioned_value.value.clone())
     }
 
@@ -335,7 +361,7 @@ impl Cluster {
             "Leaving the cluster."
         );
         self.set_self_node_readiness(false).await;
-        tokio::time::sleep(GOSSIP_INTERVAL * 2).await;
+        tokio::time::sleep(self.gossip_interval * 2).await;
     }
 
     /// This exposes in chitchat some metrics about the CPU usage of cooperative pipelines.
@@ -385,6 +411,12 @@ impl Cluster {
     }
 }
 
+impl ClusterChangeStreamFactory for Cluster {
+    fn create(&self) -> ClusterChangeStream {
+        self.change_stream()
+    }
+}
+
 /// Deprecated: this is going away soon.
 fn spawn_ready_members_task(
     cluster_id: String,
@@ -427,7 +459,7 @@ pub fn parse_indexing_tasks(node_state: &NodeState) -> Vec<IndexingTask> {
         .iter_prefix(INDEXING_TASK_PREFIX)
         .flat_map(|(key, versioned_value)| {
             // We want to skip the tombstoned keys.
-            if versioned_value.tombstone.is_none() {
+            if !versioned_value.is_tombstone() {
                 Some((key, versioned_value.value.as_str()))
             } else {
                 None
@@ -502,7 +534,7 @@ fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> 
     })
 }
 
-async fn spawn_ready_nodes_change_stream_task(cluster: Cluster) {
+async fn spawn_change_stream_task(cluster: Cluster) {
     let cluster_guard = cluster.inner.read().await;
     let cluster_id = cluster_guard.cluster_id.clone();
     let self_chitchat_id = cluster_guard.self_chitchat_id.clone();
@@ -512,10 +544,10 @@ async fn spawn_ready_nodes_change_stream_task(cluster: Cluster) {
     drop(cluster);
 
     let mut previous_live_node_states = BTreeMap::new();
-    let mut live_nodes_watcher = chitchat.lock().await.live_nodes_watcher();
+    let mut live_nodes_watch_stream = chitchat.lock().await.live_nodes_watch_stream();
 
     let future = async move {
-        while let Some(new_live_node_states) = live_nodes_watcher.next().await {
+        while let Some(new_live_node_states) = live_nodes_watch_stream.next().await {
             let Some(cluster) = weak_cluster.upgrade() else {
                 break;
             };
@@ -641,6 +673,7 @@ pub async fn create_cluster_for_test_with_id(
         self_node,
         gossip_advertise_addr,
         peer_seed_addrs,
+        Duration::from_millis(25),
         failure_detector_config,
         transport,
     )
@@ -654,7 +687,7 @@ pub async fn create_cluster_for_test_with_id(
 fn create_failure_detector_config_for_test() -> FailureDetectorConfig {
     FailureDetectorConfig {
         phi_threshold: 5.0,
-        initial_interval: GOSSIP_INTERVAL,
+        initial_interval: Duration::from_millis(25),
         ..Default::default()
     }
 }
@@ -784,7 +817,7 @@ mod tests {
     async fn test_cluster_multiple_nodes() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let node_1 = create_cluster_for_test(Vec::new(), &[], &transport, true).await?;
-        let node_1_change_stream = node_1.ready_nodes_change_stream().await;
+        let node_1_change_stream = node_1.change_stream();
 
         let peer_seeds = vec![node_1.gossip_listen_addr.to_string()];
         let node_2 = create_cluster_for_test(peer_seeds, &[], &transport, true).await?;

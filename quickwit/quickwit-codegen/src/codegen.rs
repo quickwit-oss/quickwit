@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
-
 use anyhow::ensure;
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
@@ -112,7 +110,8 @@ impl CodegenBuilder {
         self
     }
 
-    pub fn generate_prom_labels_for_requests(mut self) -> Self {
+    /// Generates `RpcName` trait implentations for request types.
+    pub fn generate_rpc_name_impls(mut self) -> Self {
         self.generate_prom_labels_for_requests = true;
         self
     }
@@ -340,17 +339,6 @@ struct SynMethod {
 }
 
 impl SynMethod {
-    fn request_prom_label(&self) -> String {
-        self.request_type
-            .segments
-            .last()
-            .unwrap()
-            .ident
-            .to_string()
-            .trim_end_matches("Request")
-            .to_snake_case()
-    }
-
     fn request_type(&self, mock: bool) -> TokenStream {
         let request_type = if mock {
             let request_type = &self.request_type;
@@ -406,32 +394,28 @@ impl SynMethod {
 }
 
 fn generate_prom_labels_impl_for_requests(context: &CodegenContext) -> TokenStream {
-    let mut stream = TokenStream::new();
-    stream.extend(quote! {
-        use quickwit_common::metrics::{PrometheusLabels, OwnedPrometheusLabels};
-    });
-    let mut implemented_request_types: HashSet<String> = HashSet::new();
+    let mut rpc_name_impls = Vec::new();
+
     for syn_method in &context.methods {
-        if syn_method.client_streaming {
-            continue;
-        }
-        let request_type = syn_method.request_type(false);
-        let request_type_snake_case = syn_method.request_prom_label();
-        if implemented_request_types.contains(&request_type_snake_case) {
-            continue;
-        } else {
-            implemented_request_types.insert(request_type_snake_case.clone());
-            let method = quote! {
-                impl PrometheusLabels<1> for #request_type {
-                    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-                        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed(#request_type_snake_case),])
-                    }
+        let request_type = syn_method.request_type.to_token_stream();
+        let rpc_name = &syn_method.name.to_string();
+        let rpc_name_impl = quote! {
+            impl RpcName for #request_type {
+                fn rpc_name() -> &'static str {
+                    #rpc_name
                 }
-            };
-            stream.extend(method);
-        }
+            }
+        };
+        rpc_name_impls.extend(rpc_name_impl);
     }
-    stream
+    if rpc_name_impls.is_empty() {
+        return TokenStream::new();
+    }
+    quote! {
+        use quickwit_common::tower::RpcName;
+
+        #(#rpc_name_impls)*
+    }
 }
 
 fn generate_comment_attributes(comments: &Comments) -> Vec<syn::Attribute> {
