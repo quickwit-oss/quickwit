@@ -66,9 +66,9 @@ use crate::IndexerPool;
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
 pub(crate) const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_millis(500)
+    Duration::from_millis(100)
 } else {
-    Duration::from_secs(3)
+    Duration::from_secs(5)
 };
 
 /// Minimum period between two rebuild plan operations.
@@ -94,7 +94,6 @@ pub struct ControlPlane {
     ingest_controller: IngestController,
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
-    #[allow(dead_code)]
     rebuild_plan_debouncer: Debouncer,
 }
 
@@ -314,10 +313,9 @@ impl ControlPlane {
     ///
     /// This method includes some debouncing logic. Every call will be followed by a cooldown
     /// period.
-    fn rebuild_plan_debounced(&mut self, _ctx: &ActorContext<Self>) {
-        self.indexing_scheduler.rebuild_plan(&self.model);
-        // self.rebuild_plan_debouncer
-        //     .self_send_with_cooldown::<RebuildPlan>(ctx);
+    fn rebuild_plan_debounced(&mut self, ctx: &ActorContext<Self>) {
+        self.rebuild_plan_debouncer
+            .self_send_with_cooldown::<RebuildPlan>(ctx);
     }
 }
 

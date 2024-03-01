@@ -304,7 +304,7 @@ impl QuickwitClient {
                     break;
                 }
             }
-            if let Some(event_fn) = on_ingest_event.as_ref() {
+            if let Some(event_fn) = on_ingest_event {
                 event_fn(IngestEvent::IngestedDocBatch(batch.len()))
             }
         }

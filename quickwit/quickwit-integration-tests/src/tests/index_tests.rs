@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
+use quickwit_metastore::SplitState;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
 use quickwit_proto::opentelemetry::proto::trace::v1::{ResourceSpans, ScopeSpans, Span};
 use quickwit_rest_client::error::{ApiError, Error};
@@ -32,12 +33,11 @@ use serde_json::json;
 use crate::ingest_json;
 use crate::test_utils::{ingest_with_retry, ClusterSandbox};
 
-/*
 #[tokio::test]
-async fn test_restarting_standalone_server() {
+async fn test_single_node_cluster() {
     quickwit_common::setup_logging_for_tests();
-    let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
-    let index_id = "test-index-with-restarting";
+    let mut sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
+    let index_id = "test-single-node-cluster";
     let index_config = format!(
         r#"
             version: 0.7
@@ -55,26 +55,24 @@ async fn test_restarting_standalone_server() {
             "#,
         index_id
     );
+    sandbox.enable_ingest_v2();
+    sandbox.wait_for_cluster_num_ready_nodes(1).await.unwrap();
 
     // Create the index.
-    sandbox
+    let current_index_metadata = sandbox
         .indexer_rest_client
         .indexes()
         .create(index_config.clone(), ConfigFormat::Yaml, false)
         .await
         .unwrap();
 
-    // Wait fo the pipeline to start.
-    // TODO: there should be a better way to do this.
-    sandbox.wait_for_indexing_pipelines(1).await.unwrap();
-
-    let old_uid = sandbox
+    // Enable ingest v2 source.
+    sandbox
         .indexer_rest_client
-        .indexes()
-        .get(index_id)
+        .sources(index_id)
+        .toggle("_ingest-source", true)
         .await
-        .unwrap()
-        .index_uid;
+        .unwrap();
 
     // Index one record.
     ingest_with_retry(
@@ -86,6 +84,12 @@ async fn test_restarting_standalone_server() {
     .await
     .unwrap();
 
+    // Wait for the split to be published.
+    sandbox
+        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
+        .await
+        .unwrap();
+
     // Delete the index
     sandbox
         .indexer_rest_client
@@ -95,94 +99,88 @@ async fn test_restarting_standalone_server() {
         .unwrap();
 
     // Create the index again.
-    sandbox
+    let new_index_metadata = sandbox
         .indexer_rest_client
         .indexes()
         .create(index_config, ConfigFormat::Yaml, false)
         .await
         .unwrap();
 
-    sandbox.wait_for_indexing_pipelines(1).await.unwrap();
+    assert_ne!(
+        current_index_metadata.index_uid.incarnation_id,
+        new_index_metadata.index_uid.incarnation_id
+    );
 
-    let new_uid = sandbox
-        .indexer_rest_client
-        .indexes()
-        .get(index_id)
-        .await
-        .unwrap()
-        .index_uid;
-    assert_ne!(old_uid.incarnation_id(), new_uid.incarnation_id());
+    // TODO: The control plane schedules the old pipeline and this test fails. I don't know if it's
+    // because the reschule takes too long to happen or it's a bug.
 
-    // Index a couple of records to create 2 additional splits.
-    ingest_with_retry(
-        &sandbox.indexer_rest_client,
-        index_id,
-        ingest_json!({"body": "second record"}),
-        CommitType::Force,
-    )
-    .await
-    .unwrap();
-    sandbox
-        .indexer_rest_client
-        .ingest(
-            index_id,
-            ingest_json!({"body": "third record"}),
-            None,
-            None,
-            CommitType::Force,
-        )
-        .await
-        .unwrap();
-    sandbox
-        .indexer_rest_client
-        .ingest(
-            index_id,
-            ingest_json!({"body": "fourth record"}),
-            None,
-            None,
-            CommitType::Force,
-        )
-        .await
-        .unwrap();
+    // Index multiple records in different splits.
+    // ingest_with_retry(
+    //     &sandbox.indexer_rest_client,
+    //     index_id,
+    //     ingest_json!({"body": "second record"}),
+    //     CommitType::Force,
+    // )
+    // .await
+    // .unwrap();
 
-    let search_response_empty = sandbox
-        .searcher_rest_client
-        .search(
-            index_id,
-            SearchRequestQueryString {
-                query: "body:record".to_string(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
+    // sandbox
+    //     .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
+    //     .await
+    //     .unwrap();
 
-    assert_eq!(search_response_empty.num_hits, 3);
+    // ingest_with_retry(
+    //     &sandbox.indexer_rest_client,
+    //     index_id,
+    //     ingest_json!({"body": "third record"}),
+    //     CommitType::Force,
+    // )
+    // .await
+    // .unwrap();
 
-    // Wait for splits to merge, since we created 3 splits and merge factor is 3,
-    // we should get 1 published split with no staged splits eventually.
-    sandbox
-        .wait_for_splits(
-            index_id,
-            Some(vec![SplitState::Published, SplitState::Staged]),
-            1,
-        )
-        .await
-        .unwrap();
+    // sandbox
+    //     .wait_for_splits(index_id, Some(vec![SplitState::Published]), 2)
+    //     .await
+    //     .unwrap();
 
-    // Check that we have one directory
-    let path = sandbox
-        .node_configs
-        .first()
-        .unwrap()
-        .node_config
-        .data_dir_path
-        .clone();
-    let delete_service_path = path.join(DELETE_SERVICE_TASK_DIR_NAME);
-    let indexing_path = path.join(INDEXING_DIR_NAME);
+    // ingest_with_retry(
+    //     &sandbox.indexer_rest_client,
+    //     index_id,
+    //     ingest_json!({"body": "fourd record"}),
+    //     CommitType::Force,
+    // )
+    // .await
+    // .unwrap();
 
-    assert_eq!(delete_service_path.read_dir().unwrap().count(), 1);
-    assert_eq!(indexing_path.read_dir().unwrap().count(), 1);
+    // sandbox
+    //     .wait_for_splits(index_id, Some(vec![SplitState::Published]), 3)
+    //     .await
+    //     .unwrap();
+
+    // let search_response_empty = sandbox
+    //     .searcher_rest_client
+    //     .search(
+    //         index_id,
+    //         SearchRequestQueryString {
+    //             query: "body:record".to_string(),
+    //             ..Default::default()
+    //         },
+    //     )
+    //     .await
+    //     .unwrap();
+
+    // assert_eq!(search_response_empty.num_hits, 3);
+
+    // // Wait for splits to merge, since we created 3 splits and merge factor is 3,
+    // // we should get 1 published split with no staged splits eventually.
+    // sandbox
+    //     .wait_for_splits(
+    //         index_id,
+    //         Some(vec![SplitState::Published, SplitState::Staged]),
+    //         1,
+    //     )
+    //     .await
+    //     .unwrap();
 
     // Delete the index
     sandbox
@@ -192,25 +190,31 @@ async fn test_restarting_standalone_server() {
         .await
         .unwrap();
 
-    // Wait to make sure all directories are cleaned up
-    wait_until_predicate(
-        || {
-            let delete_service_path = delete_service_path.clone();
-            let indexing_path = indexing_path.clone();
-            async move {
-                delete_service_path.read_dir().unwrap().count() == 0
-                    && indexing_path.read_dir().unwrap().count() == 0
-            }
-        },
-        Duration::from_secs(10),
-        Duration::from_millis(100),
-    )
-    .await
-    .unwrap();
+    // TODO: Those directories are no longer cleaned up properly.
+    // let data_dir_path = &sandbox
+    //     .node_configs
+    //     .first()
+    //     .unwrap()
+    //     .node_config
+    //     .data_dir_path;
+
+    // let delete_tasks_dir_name = data_dir_path.join(DELETE_SERVICE_TASK_DIR_NAME);
+    // let indexing_dir_path = data_dir_path.join(INDEXING_DIR_NAME);
+
+    // // Wait to make sure all directories are cleaned up
+    // wait_until_predicate(
+    //     || async {
+    //         delete_tasks_dir_name.read_dir().unwrap().count() == 0
+    //             && indexing_dir_path.read_dir().unwrap().count() == 0
+    //     },
+    //     Duration::from_secs(10),
+    //     Duration::from_millis(100),
+    // )
+    // .await
+    // .unwrap();
 
     sandbox.shutdown().await.unwrap();
 }
-*/
 
 const TEST_INDEX_CONFIG: &str = r#"
     version: 0.7
@@ -306,6 +310,11 @@ async fn test_ingest_v2_happy_path() {
         )
         .await
         .unwrap();
+    sandbox
+        .wait_for_splits("test_index", Some(vec![SplitState::Published]), 1)
+        .await
+        .unwrap();
+
     let search_req = SearchRequestQueryString {
         query: "*".to_string(),
         ..Default::default()
@@ -316,6 +325,14 @@ async fn test_ingest_v2_happy_path() {
         .await
         .unwrap();
     assert_eq!(search_result.num_hits, 1);
+
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .delete("test_index", false)
+        .await
+        .unwrap();
+
     sandbox.shutdown().await.unwrap();
 }
 
