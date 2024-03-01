@@ -37,7 +37,7 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestResponseV2, IngestRouterService};
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardIds, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 use tracing::{error, info, warn};
 
 use super::broadcast::LocalShardsUpdate;
@@ -45,8 +45,7 @@ use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
 use super::IngesterPool;
-use crate::semaphore_with_waiter::SemaphoreWithMaxWaiters;
-use crate::LeaderId;
+use crate::{get_ingest_router_buffer_size, LeaderId};
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
 pub(super) const INGEST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -66,7 +65,8 @@ pub struct IngestRouter {
     ingester_pool: IngesterPool,
     state: Arc<RwLock<RouterState>>,
     replication_factor: usize,
-    write_semaphore: SemaphoreWithMaxWaiters,
+    // Limits the number of ingest requests in-flight to some capacity in bytes.
+    ingest_semaphore: Arc<Semaphore>,
 }
 
 struct RouterState {
@@ -95,13 +95,16 @@ impl IngestRouter {
                 table: HashMap::default(),
             },
         }));
+        let ingest_semaphore_permits = get_ingest_router_buffer_size().as_u64() as usize;
+        let ingest_semaphore = Arc::new(Semaphore::new(ingest_semaphore_permits));
+
         Self {
             self_node_id,
             control_plane,
             ingester_pool,
             state,
             replication_factor,
-            write_semaphore: SemaphoreWithMaxWaiters::new(1, 10),
+            ingest_semaphore,
         }
     }
 
@@ -415,10 +418,11 @@ impl IngestRouterService for IngestRouter {
         ingest_request: IngestRequestV2,
     ) -> IngestV2Result<IngestResponseV2> {
         let _permit = self
-            .write_semaphore
-            .acquire()
-            .await
-            .map_err(|()| IngestV2Error::TooManyRequests)?;
+            .ingest_semaphore
+            .clone()
+            .try_acquire_many_owned(ingest_request.num_bytes() as u32)
+            .map_err(|_| IngestV2Error::TooManyRequests)?;
+
         self.ingest_timeout(ingest_request, INGEST_REQUEST_TIMEOUT)
             .await
     }

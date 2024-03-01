@@ -2633,12 +2633,11 @@ mod tests {
                 assert_eq!(request.shard_ids.len(), 1);
                 assert_eq!(request.shard_ids[0].index_uid(), &("test-index", 0));
                 assert_eq!(request.shard_ids[0].source_id, "test-source");
-                request.shard_ids[0].shard_ids.sort();
+                request.shard_ids[0].shard_ids.sort_unstable();
                 assert_eq!(
                     request.shard_ids[0].shard_ids,
                     [ShardId::from(1), ShardId::from(2)]
                 );
-
                 let response = AdviseResetShardsResponse {
                     shards_to_delete: vec![ShardIds {
                         index_uid: Some(IndexUid::for_test("test-index", 0)),

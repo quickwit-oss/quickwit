@@ -85,6 +85,28 @@ pub fn get_idle_shard_timeout() -> Duration {
         .unwrap_or(DEFAULT_IDLE_SHARD_TIMEOUT)
 }
 
+const INGEST_ROUTER_BUFFER_SIZE_ENV_KEY: &str = "QW_INGEST_ROUTER_BUFFER_SIZE_BYTES";
+
+const DEFAULT_INGEST_ROUTER_BUFFER_SIZE: ByteSize = ByteSize::mib(if cfg!(test) { 8 } else { 256 }); // 256 MiB
+
+pub(crate) fn get_ingest_router_buffer_size() -> ByteSize {
+    env::var(INGEST_ROUTER_BUFFER_SIZE_ENV_KEY)
+        .ok()
+        .and_then(|buffer_size_bytes_str| {
+            if let Ok(buffer_size) = buffer_size_bytes_str.parse::<ByteSize>() {
+                info!("overriding ingest router buffer size to {buffer_size}");
+                Some(buffer_size)
+            } else {
+                error!(
+                    "failed to parse environment variable \
+                     `{INGEST_ROUTER_BUFFER_SIZE_ENV_KEY}={buffer_size_bytes_str}`"
+                );
+                None
+            }
+        })
+        .unwrap_or(DEFAULT_INGEST_ROUTER_BUFFER_SIZE)
+}
+
 /// Helper struct to build a [`DocBatchV2`]`.
 #[derive(Debug, Default)]
 pub struct DocBatchV2Builder {
