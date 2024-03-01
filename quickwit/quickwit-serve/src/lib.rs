@@ -30,6 +30,7 @@ mod index_api;
 mod indexing_api;
 mod ingest_api;
 mod jaeger_api;
+mod log_level_handler;
 mod metrics;
 mod metrics_api;
 mod node_info_handler;
@@ -131,6 +132,12 @@ const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_
 const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
 const DISABLE_DELETE_TASK_SERVICE_ENV_KEY: &str = "QW_DISABLE_DELETE_TASK_SERVICE";
 
+pub type EnvFilterReloadFn = Arc<dyn Fn(&str) -> anyhow::Result<()> + Send + Sync>;
+
+pub fn do_nothing_env_filter_reload_fn() -> EnvFilterReloadFn {
+    Arc::new(|_| Ok(()))
+}
+
 fn get_metastore_client_max_concurrency() -> usize {
     std::env::var(METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY).ok()
         .and_then(|metastore_client_max_concurrency_str| {
@@ -186,6 +193,8 @@ struct QuickwitServices {
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
     pub search_service: Arc<dyn SearchService>,
+
+    pub env_filter_reload_fn: EnvFilterReloadFn,
 
     /// The control plane listens to various events.
     /// We must maintain a reference to the subscription handles to continue receiving
@@ -359,6 +368,7 @@ pub async fn serve_quickwit(
     metastore_resolver: MetastoreResolver,
     storage_resolver: StorageResolver,
     shutdown_signal: BoxFutureInfaillible<()>,
+    env_filter_reload_fn: EnvFilterReloadFn,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
     let cluster = start_cluster_service(&node_config).await?;
 
@@ -627,6 +637,7 @@ pub async fn serve_quickwit(
         otlp_logs_service_opt,
         otlp_traces_service_opt,
         search_service,
+        env_filter_reload_fn,
     });
     // Setup and start gRPC server.
     let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel::<()>();

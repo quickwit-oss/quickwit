@@ -164,6 +164,7 @@ impl ClusterSandbox {
                         metastore_resolver,
                         storage_resolver,
                         shutdown_signal,
+                        quickwit_serve::do_nothing_env_filter_reload_fn(),
                     )
                     .await?;
                     Result::<_, anyhow::Error>::Ok(result)
