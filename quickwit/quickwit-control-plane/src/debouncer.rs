@@ -35,7 +35,6 @@ use quickwit_actors::{Actor, ActorContext, DeferableReplyHandler, Handler};
 ///
 /// In particular, note the event triggered at `t=COOLDOWN`.
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct Debouncer {
     cooldown_period: Duration,
     cooldown_state: Arc<Mutex<DebouncerState>>,
