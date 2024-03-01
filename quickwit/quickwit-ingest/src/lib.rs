@@ -27,6 +27,7 @@ mod ingest_service;
 mod ingest_v2;
 mod memory_capacity;
 mod metrics;
+mod mrecordlog_async;
 mod notifications;
 mod position;
 mod queue;

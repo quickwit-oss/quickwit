@@ -582,6 +582,10 @@ impl ReplicationTask {
                     continue;
                 }
             };
+
+            let batch_num_bytes = doc_batch.num_bytes() as u64;
+            let batch_num_docs = doc_batch.num_docs() as u64;
+
             let requested_capacity = estimate_size(&doc_batch);
 
             let current_usage = match check_enough_capacity(
@@ -635,9 +639,6 @@ impl ReplicationTask {
             INGEST_V2_METRICS
                 .wal_memory_usage_bytes
                 .set(new_memory_usage.as_u64() as i64);
-
-            let batch_num_bytes = doc_batch.num_bytes() as u64;
-            let batch_num_docs = doc_batch.num_docs() as u64;
 
             INGEST_METRICS
                 .replicated_num_bytes_total
@@ -722,7 +723,6 @@ mod tests {
     use quickwit_proto::types::{queue_id, IndexUid, ShardId};
 
     use super::*;
-    use crate::ingest_v2::test_utils::MultiRecordLogTestExt;
 
     fn into_init_replica_request(
         syn_replication_message: SynReplicationMessage,

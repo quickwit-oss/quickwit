@@ -24,10 +24,10 @@ use std::ops::RangeInclusive;
 use bytesize::ByteSize;
 use fail::fail_point;
 use mrecordlog::error::{AppendError, DeleteQueueError};
-use mrecordlog::MultiRecordLog;
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::{Position, QueueId};
 
+use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::MRecord;
 
 #[derive(Debug, thiserror::Error)]
@@ -44,9 +44,9 @@ pub(super) enum AppendDocBatchError {
 ///
 /// Panics if `doc_batch` is empty.
 pub(super) async fn append_non_empty_doc_batch(
-    mrecordlog: &mut MultiRecordLog,
+    mrecordlog: &mut MultiRecordLogAsync,
     queue_id: &QueueId,
-    doc_batch: &DocBatchV2,
+    doc_batch: DocBatchV2,
     force_commit: bool,
 ) -> Result<Position, AppendDocBatchError> {
     let append_result = if force_commit {
@@ -114,7 +114,7 @@ pub(super) enum NotEnoughCapacityError {
 
 /// Checks whether the log has enough capacity to store some records.
 pub(super) fn check_enough_capacity(
-    mrecordlog: &MultiRecordLog,
+    mrecordlog: &MultiRecordLogAsync,
     disk_capacity: ByteSize,
     memory_capacity: ByteSize,
     requested_capacity: ByteSize,
@@ -146,7 +146,7 @@ pub(super) fn check_enough_capacity(
 
 /// Deletes a queue from the WAL. Returns without error if the queue does not exist.
 pub async fn force_delete_queue(
-    mrecordlog: &mut MultiRecordLog,
+    mrecordlog: &mut MultiRecordLogAsync,
     queue_id: &QueueId,
 ) -> io::Result<()> {
     match mrecordlog.delete_queue(queue_id).await {
@@ -158,19 +158,19 @@ pub async fn force_delete_queue(
 /// Returns the first and last position of the records currently stored in the queue. Returns `None`
 /// if the queue does not exist or is empty.
 pub(super) fn queue_position_range(
-    mrecordlog: &MultiRecordLog,
+    mrecordlog: &MultiRecordLogAsync,
     queue_id: &QueueId,
 ) -> Option<RangeInclusive<u64>> {
     let first_position = mrecordlog
         .range(queue_id, ..)
         .ok()?
         .next()
-        .map(|(position, _)| position)?;
+        .map(|record| record.position)?;
 
     let last_position = mrecordlog
         .last_record(queue_id)
         .ok()?
-        .map(|(position, _)| position)?;
+        .map(|record| record.position)?;
 
     Some(first_position..=last_position)
 }
@@ -182,13 +182,13 @@ mod tests {
     #[tokio::test]
     async fn test_append_non_empty_doc_batch() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mut mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let mut mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
 
         let queue_id = "test-queue".to_string();
         let doc_batch = DocBatchV2::for_test(["test-doc-foo"]);
 
         let append_error =
-            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, &doc_batch, false)
+            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), false)
                 .await
                 .unwrap_err();
 
@@ -199,14 +199,16 @@ mod tests {
 
         mrecordlog.create_queue(&queue_id).await.unwrap();
 
-        let position = append_non_empty_doc_batch(&mut mrecordlog, &queue_id, &doc_batch, false)
-            .await
-            .unwrap();
+        let position =
+            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), false)
+                .await
+                .unwrap();
         assert_eq!(position, Position::offset(0u64));
 
-        let position = append_non_empty_doc_batch(&mut mrecordlog, &queue_id, &doc_batch, true)
-            .await
-            .unwrap();
+        let position =
+            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), true)
+                .await
+                .unwrap();
         assert_eq!(position, Position::offset(2u64));
     }
 
@@ -219,16 +221,15 @@ mod tests {
         fail::cfg("ingester:append_records", "return").unwrap();
 
         let tempdir = tempfile::tempdir().unwrap();
-        let mut mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let mut mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
 
         let queue_id = "test-queue".to_string();
         mrecordlog.create_queue(&queue_id).await.unwrap();
 
         let doc_batch = DocBatchV2::for_test(["test-doc-foo"]);
-        let append_error =
-            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, &doc_batch, false)
-                .await
-                .unwrap_err();
+        let append_error = append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch, false)
+            .await
+            .unwrap_err();
 
         assert!(matches!(append_error, AppendDocBatchError::Io(..)));
 
@@ -238,7 +239,7 @@ mod tests {
     #[tokio::test]
     async fn test_check_enough_capacity() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
 
         let disk_error =
             check_enough_capacity(&mrecordlog, ByteSize(0), ByteSize(0), ByteSize(12)).unwrap_err();
@@ -260,7 +261,7 @@ mod tests {
     #[tokio::test]
     async fn test_append_queue_position_range() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mut mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let mut mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
 
         assert!(queue_position_range(&mrecordlog, &"queue-not-found".to_string()).is_none());
 
@@ -268,14 +269,14 @@ mod tests {
         assert!(queue_position_range(&mrecordlog, &"test-queue".to_string()).is_none());
 
         mrecordlog
-            .append_record("test-queue", None, &b"test-doc-foo"[..])
+            .append_records("test-queue", None, std::iter::once(&b"test-doc-foo"[..]))
             .await
             .unwrap();
         let position_range = queue_position_range(&mrecordlog, &"test-queue".to_string()).unwrap();
         assert_eq!(position_range, 0..=0);
 
         mrecordlog
-            .append_record("test-queue", None, &b"test-doc-bar"[..])
+            .append_records("test-queue", None, std::iter::once(&b"test-doc-bar"[..]))
             .await
             .unwrap();
         let position_range = queue_position_range(&mrecordlog, &"test-queue".to_string()).unwrap();
