@@ -46,25 +46,20 @@ pub(super) fn convert_sqlx_err(index_id: &str, sqlx_error: sqlx::Error) -> Metas
                     })
                 }
                 (pg_error_codes::UNIQUE_VIOLATION, _) => {
-                    error!(error=?boxed_db_error, "postgresql-error");
-                    MetastoreError::Internal {
-                        message: "unique key violation".to_string(),
-                        cause: format!("DB error {boxed_db_error:?}"),
-                    }
+                    error!(error = boxed_db_error.message(), "database error");
+                    let message = format!("unique key violation: {}", boxed_db_error.message());
+                    MetastoreError::Internal(message)
                 }
                 _ => {
-                    error!(error=?boxed_db_error, "postgresql-error");
-                    MetastoreError::Db {
-                        message: boxed_db_error.to_string(),
-                    }
+                    error!(error = boxed_db_error.message(), "database error");
+                    MetastoreError::Db(boxed_db_error.to_string())
                 }
             }
         }
+        sqlx::Error::PoolTimedOut => MetastoreError::Timeout(sqlx_error.to_string()),
         _ => {
             error!(error=?sqlx_error, "an error has occurred in the database operation");
-            MetastoreError::Db {
-                message: sqlx_error.to_string(),
-            }
+            MetastoreError::Db(sqlx_error.to_string())
         }
     }
 }

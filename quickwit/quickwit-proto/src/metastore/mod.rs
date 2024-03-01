@@ -20,6 +20,7 @@
 use std::fmt;
 
 use quickwit_common::retry::Retryable;
+use quickwit_common::service_error::ProutServiceError;
 use serde::{Deserialize, Serialize};
 
 use crate::types::{IndexId, IndexUid, QueueId, ShardId, SourceId, SplitId};
@@ -103,108 +104,123 @@ impl fmt::Display for EntityKind {
     }
 }
 
-#[derive(Debug, Clone, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
+// #[derive(Debug, Clone, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
+// pub enum MetastoreError {
+//     #[error("{0} already exist(s)")]
+//     AlreadyExists(EntityKind),
+
+//     #[error("connection error: {message}")]
+//     Connection { message: String },
+
+//     #[error("database error: {message}")]
+//     Db { message: String },
+
+//     #[error("precondition failed for {entity}: {message}")]
+//     FailedPrecondition { entity: EntityKind, message: String },
+
+//     #[error("internal error: {message}; cause: `{cause}`")]
+//     Internal { message: String, cause: String },
+
+//     #[error("IO error: {message}")]
+//     Io { message: String },
+
+// }
+
+#[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 pub enum MetastoreError {
-    #[error("{0} already exist(s)")]
+    #[error("{0} already exists")]
     AlreadyExists(EntityKind),
 
-    #[error("connection error: {message}")]
-    Connection { message: String },
+    #[error("database error: {0}")]
+    Db(String),
 
-    #[error("database error: {message}")]
-    Db { message: String },
-
-    #[error("precondition failed for {entity}: {message}")]
+    #[error("failed precondition: {message}")]
     FailedPrecondition { entity: EntityKind, message: String },
 
-    #[error("access forbidden: {message}")]
-    Forbidden { message: String },
+    #[error("access forbidden: {0}")]
+    Forbidden(String),
 
-    #[error("internal error: {message}; cause: `{cause}`")]
-    Internal { message: String, cause: String },
+    #[error("internal error: {0}")]
+    Internal(String),
 
-    #[error("invalid argument: {message}")]
-    InvalidArgument { message: String },
+    #[error("invalid argument: {0}")]
+    InvalidArgument(String),
 
-    #[error("IO error: {message}")]
-    Io { message: String },
+    #[error("{0}")]
+    Serde(String),
 
-    #[error("failed to deserialize `{struct_name}` from JSON: {message}")]
-    JsonDeserializeError {
-        struct_name: String,
-        message: String,
-    },
-
-    #[error("failed to serialize `{struct_name}` to JSON: {message}")]
-    JsonSerializeError {
-        struct_name: String,
-        message: String,
-    },
-
-    #[error("{0} do(es) not exist")]
+    #[error("{0} not found")]
     NotFound(EntityKind),
 
-    #[error("metastore unavailable: {0}")]
+    #[error("request timed out: {0}")]
+    Timeout(String),
+
+    #[error("service unavailable: {0}")]
     Unavailable(String),
+}
+
+impl ProutServiceError for MetastoreError {
+    fn grpc_status_code(&self) -> tonic::Code {
+        match self {
+            Self::AlreadyExists(_) => tonic::Code::AlreadyExists,
+            Self::Db(_) => tonic::Code::Internal,
+            Self::FailedPrecondition { .. } => tonic::Code::FailedPrecondition,
+            Self::Forbidden(_) => tonic::Code::PermissionDenied,
+            Self::Internal(_) => tonic::Code::Internal,
+            Self::InvalidArgument(_) => tonic::Code::InvalidArgument,
+            Self::NotFound(_) => tonic::Code::NotFound,
+            Self::Serde(_) => tonic::Code::Internal,
+            Self::Timeout(_) => tonic::Code::DeadlineExceeded,
+            Self::Unavailable(_) => tonic::Code::Unavailable,
+        }
+    }
+
+    fn new_internal(message: String) -> Self {
+        MetastoreError::Internal(message)
+    }
+
+    fn new_timeout(message: String) -> Self {
+        MetastoreError::Timeout(message)
+    }
+
+    fn new_unavailable(message: String) -> Self {
+        MetastoreError::Unavailable(message)
+    }
+
+    fn label_value(&self) -> &'static str {
+        match self {
+            Self::AlreadyExists(_) => "already_exists",
+            Self::Db(_) => "database",
+            Self::FailedPrecondition { .. } => "failed_precondition",
+            Self::Forbidden(_) => "forbidden",
+            Self::Internal(_) => "internal",
+            Self::InvalidArgument(_) => "invalid_argument",
+            Self::Serde(_) => "serde",
+            Self::NotFound(_) => "not_found",
+            Self::Timeout(_) => "timeout",
+            Self::Unavailable(_) => "unavailable",
+        }
+    }
 }
 
 #[cfg(feature = "postgres")]
 impl From<sqlx::Error> for MetastoreError {
     fn from(error: sqlx::Error) -> Self {
-        MetastoreError::Db {
-            message: error.to_string(),
-        }
+        MetastoreError::Db(error.to_string())
     }
 }
 
-impl From<tonic::Status> for MetastoreError {
-    fn from(status: tonic::Status) -> Self {
-        serde_json::from_str(status.message()).unwrap_or_else(|_| MetastoreError::Internal {
-            message: "failed to deserialize metastore error".to_string(),
-            cause: status.message().to_string(),
-        })
-    }
-}
-
-impl From<MetastoreError> for tonic::Status {
-    fn from(metastore_error: MetastoreError) -> Self {
-        let grpc_status_code = metastore_error.error_code().to_grpc_status_code();
-        let message_json = serde_json::to_string(&metastore_error)
-            .unwrap_or_else(|_| format!("original metastore error: {metastore_error}"));
-        tonic::Status::new(grpc_status_code, message_json)
-    }
-}
-
-impl ServiceError for MetastoreError {
-    fn error_code(&self) -> ServiceErrorCode {
-        match self {
-            Self::AlreadyExists { .. } => ServiceErrorCode::AlreadyExists,
-            Self::Connection { .. } => ServiceErrorCode::Internal,
-            Self::Db { .. } => ServiceErrorCode::Internal,
-            Self::FailedPrecondition { .. } => ServiceErrorCode::BadRequest,
-            Self::Forbidden { .. } => ServiceErrorCode::MethodNotAllowed,
-            Self::Internal { .. } => ServiceErrorCode::Internal,
-            Self::InvalidArgument { .. } => ServiceErrorCode::BadRequest,
-            Self::Io { .. } => ServiceErrorCode::Internal,
-            Self::JsonDeserializeError { .. } => ServiceErrorCode::Internal,
-            Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
-            Self::NotFound { .. } => ServiceErrorCode::NotFound,
-            Self::Unavailable(_) => ServiceErrorCode::Unavailable,
-        }
-    }
-}
-
-impl Retryable for MetastoreError {
-    fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            MetastoreError::Connection { .. }
-                | MetastoreError::Db { .. }
-                | MetastoreError::Io { .. }
-                | MetastoreError::Internal { .. }
-        )
-    }
-}
+// impl Retryable for MetastoreError {
+//     fn is_retryable(&self) -> bool {
+//         matches!(
+//             self,
+//             MetastoreError::Connection { .. }
+//                 | MetastoreError::Db(_)
+//                 | MetastoreError::Io { .. }
+//                 | MetastoreError::Internal { .. }
+//         )
+//     }
+// }
 
 impl SourceType {
     pub fn as_str(&self) -> &'static str {
@@ -226,14 +242,14 @@ impl SourceType {
 }
 
 impl IndexMetadataRequest {
-    pub fn for_index_id(index_id: IndexId) -> Self {
+    pub fn with_index_id(index_id: IndexId) -> Self {
         Self {
             index_uid: None,
             index_id: Some(index_id),
         }
     }
 
-    pub fn for_index_uid(index_uid: IndexUid) -> Self {
+    pub fn with_index_uid(index_uid: IndexUid) -> Self {
         Self {
             index_uid: Some(index_uid),
             index_id: None,
@@ -248,10 +264,9 @@ impl IndexMetadataRequest {
         } else if let Some(index_uid) = &self.index_uid {
             Ok(index_uid.index_id.to_string())
         } else {
-            Err(MetastoreError::Internal {
-                message: "index_id or index_uid must be set".to_string(),
-                cause: "".to_string(),
-            })
+            Err(MetastoreError::Internal(
+                "`index_id` or `index_uid` must be set".to_string(),
+            ))
         }
     }
 }
@@ -290,44 +305,53 @@ pub mod serde_utils {
     use super::{MetastoreError, MetastoreResult};
 
     pub fn from_json_bytes<'de, T: Deserialize<'de>>(value_bytes: &'de [u8]) -> MetastoreResult<T> {
-        serde_json::from_slice(value_bytes).map_err(|error| MetastoreError::JsonDeserializeError {
-            struct_name: std::any::type_name::<T>().to_string(),
-            message: error.to_string(),
+        serde_json::from_slice(value_bytes).map_err(|error| {
+            let struct_name = std::any::type_name::<T>();
+            let message =
+                format!("failed to deserialize object `{struct_name}` from JSON: {error}");
+            MetastoreError::Serde(message)
         })
     }
 
     pub fn from_json_str<'de, T: Deserialize<'de>>(value_str: &'de str) -> MetastoreResult<T> {
-        serde_json::from_str(value_str).map_err(|error| MetastoreError::JsonDeserializeError {
-            struct_name: std::any::type_name::<T>().to_string(),
-            message: error.to_string(),
+        serde_json::from_str(value_str).map_err(|error| {
+            let struct_name = std::any::type_name::<T>();
+            let message =
+                format!("failed to deserialize object `{struct_name}` from JSON: {error}");
+            MetastoreError::Serde(message)
         })
     }
 
     pub fn from_json_value<T: DeserializeOwned>(value: JsonValue) -> MetastoreResult<T> {
-        serde_json::from_value(value).map_err(|error| MetastoreError::JsonDeserializeError {
-            struct_name: std::any::type_name::<T>().to_string(),
-            message: error.to_string(),
+        serde_json::from_value(value).map_err(|error| {
+            let struct_name = std::any::type_name::<T>();
+            let message =
+                format!("failed to deserialize object `{struct_name}` from JSON: {error}");
+            MetastoreError::Serde(message)
         })
     }
 
     pub fn to_json_str<T: Serialize>(value: &T) -> Result<String, MetastoreError> {
-        serde_json::to_string(value).map_err(|error| MetastoreError::JsonSerializeError {
-            struct_name: std::any::type_name::<T>().to_string(),
-            message: error.to_string(),
+        serde_json::to_string(value).map_err(|error| {
+            let struct_name = std::any::type_name::<T>();
+            let message = format!("failed to serialize object `{struct_name}` to JSON: {error}");
+            MetastoreError::Serde(message)
         })
     }
 
     pub fn to_json_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, MetastoreError> {
-        serde_json::to_vec(value).map_err(|error| MetastoreError::JsonSerializeError {
-            struct_name: std::any::type_name::<T>().to_string(),
-            message: error.to_string(),
+        serde_json::to_vec(value).map_err(|error| {
+            let struct_name = std::any::type_name::<T>();
+            let message = format!("failed to serialize object `{struct_name}` to JSON: {error}");
+            MetastoreError::Serde(message)
         })
     }
 
     pub fn to_json_bytes_pretty<T: Serialize>(value: &T) -> Result<Vec<u8>, MetastoreError> {
-        serde_json::to_vec_pretty(value).map_err(|error| MetastoreError::JsonSerializeError {
-            struct_name: std::any::type_name::<T>().to_string(),
-            message: error.to_string(),
+        serde_json::to_vec_pretty(value).map_err(|error| {
+            let struct_name = std::any::type_name::<T>();
+            let message = format!("failed to serialize object `{struct_name}` to JSON: {error}");
+            MetastoreError::Serde(message)
         })
     }
 }

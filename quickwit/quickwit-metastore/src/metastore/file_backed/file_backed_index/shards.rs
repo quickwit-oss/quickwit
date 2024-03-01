@@ -238,9 +238,7 @@ impl Shards {
         }
         self.checkpoint
             .check_compatibility(&checkpoint_delta)
-            .map_err(|error| MetastoreError::InvalidArgument {
-                message: error.to_string(),
-            })?;
+            .map_err(|error| MetastoreError::InvalidArgument(error.to_string()))?;
 
         let mut shard_ids = Vec::with_capacity(checkpoint_delta.num_partitions());
 
@@ -249,8 +247,8 @@ impl Shards {
             let shard = self.get_shard(&shard_id)?;
 
             if shard.publish_token() != publish_token {
-                let message = "failed to apply checkpoint delta: invalid publish token".to_string();
-                return Err(MetastoreError::InvalidArgument { message });
+                let message = "invalid publish token".to_string();
+                return Err(MetastoreError::InvalidArgument(message));
             }
             let publish_position_inclusive = partition_delta.to;
             shard_ids.push((shard_id, publish_position_inclusive))
@@ -300,7 +298,7 @@ mod tests {
 
     #[test]
     fn test_open_shards() {
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
         let mut shards = Shards::empty(index_uid.clone(), source_id.clone());
 
@@ -368,7 +366,7 @@ mod tests {
 
     #[test]
     fn test_list_shards() {
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
         let mut shards = Shards::empty(index_uid.clone(), source_id.clone());
 

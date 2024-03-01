@@ -134,10 +134,8 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
                     MetastoreResolverError::UnsupportedBackend(message)
                 }
                 StorageResolverError::FailedToOpenStorage { kind, message } => {
-                    MetastoreResolverError::Initialization(MetastoreError::Internal {
-                        message: format!("failed to open metastore file `{uri}`"),
-                        cause: format!("StorageError {kind:?}: {message}"),
-                    })
+                    let message = format!("");
+                    MetastoreResolverError::Initialization(MetastoreError::Internal(message))
                 }
             })?;
         let file_backed_metastore = FileBackedMetastore::try_new(storage, polling_interval_opt)

@@ -40,6 +40,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
+use quickwit_common::pretty::PrettySample;
 use quickwit_common::ServiceStream;
 use quickwit_config::IndexTemplate;
 use quickwit_proto::metastore::{
@@ -409,13 +410,8 @@ impl MetastoreService for FileBackedMetastore {
                 }));
             }
         } else if index_exists(&*self.storage, index_id).await? {
-            return Err(MetastoreError::Internal {
-                message: format!("index {index_id} cannot be created"),
-                cause: format!(
-                    "index {index_id} is not present in the manifest file but its file \
-                     `{index_id}/metastore.json` is on the storage"
-                ),
-            });
+            let message = format!("");
+            return Err(MetastoreError::Internal(message));
         }
         // Set state to `Creating` and rollback on metastore error.
         state_wlock_guard
@@ -1047,18 +1043,14 @@ async fn get_index_mutex(
 ) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
     match lazy_index_status {
         LazyIndexStatus::Active(lazy_index) => lazy_index.get().await,
-        LazyIndexStatus::Creating => Err(MetastoreError::Internal {
-            message: format!("index `{index_id}` cannot be retrieved"),
-            cause: "index `{index_id}` is in transitioning state `creating` and this should not \
-                    happened. either recreate or delete it"
-                .to_string(),
-        }),
-        LazyIndexStatus::Deleting => Err(MetastoreError::Internal {
-            message: format!("index `{index_id}` cannot be retrieved"),
-            cause: "index `{index_id}` is in transitioning state `deleting` and this should not \
-                    happened. try to delete it again"
-                .to_string(),
-        }),
+        LazyIndexStatus::Creating => {
+            let message = format!("");
+            Err(MetastoreError::Internal(message))
+        }
+        LazyIndexStatus::Deleting => {
+            let message = format!("");
+            Err(MetastoreError::Internal(message))
+        }
     }
 }
 
@@ -1066,21 +1058,21 @@ async fn get_index_metadata(
     mut metastore: FileBackedMetastore,
     index_id: IndexId,
 ) -> MetastoreResult<Option<IndexMetadata>> {
-    let request = IndexMetadataRequest::for_index_id(index_id);
+    let request = IndexMetadataRequest::with_index_id(index_id);
     let index_metadata_result = metastore
         .index_metadata(request)
         .await
         .and_then(|response| response.deserialize_index_metadata());
     match index_metadata_result {
         Ok(index_metadata) => Ok(Some(index_metadata)),
-        Err(MetastoreError::NotFound { .. }) => Ok(None),
-        Err(MetastoreError::Internal { message, cause }) => {
+        Err(MetastoreError::NotFound(_)) => Ok(None),
+        Err(MetastoreError::Internal(message)) => {
             // Indexes can be in transient states `Creating` or `Deleting`.
             // It is fine to ignore those errors.
             if message.contains("transient state") {
                 Ok(None)
             } else {
-                Err(MetastoreError::Internal { message, cause })
+                Err(MetastoreError::Internal(message))
             }
         }
         Err(error) => Err(error),

@@ -14,6 +14,7 @@ license.workspace = true
 anyhow = { workspace = true }
 async-speed-limit = { workspace = true }
 async-trait = { workspace = true }
+bytes = { workspace = true }
 bytesize = { workspace = true }
 dyn-clone = { workspace = true }
 env_logger = { workspace = true }
@@ -32,6 +33,7 @@ prometheus = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 siphasher = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }

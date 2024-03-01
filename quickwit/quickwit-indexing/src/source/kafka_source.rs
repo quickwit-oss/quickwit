@@ -343,7 +343,7 @@ impl KafkaSource {
         assignment_tx: oneshot::Sender<Vec<(i32, Offset)>>,
     ) -> anyhow::Result<()> {
         let index_metadata_request =
-            IndexMetadataRequest::for_index_uid(self.ctx.index_uid().clone());
+            IndexMetadataRequest::with_index_uid(self.ctx.index_uid().clone());
         let index_metadata = ctx
             .protect_future(
                 self.ctx

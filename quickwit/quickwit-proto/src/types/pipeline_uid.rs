@@ -44,13 +44,14 @@ impl Display for PipelineUid {
 }
 
 impl PipelineUid {
-    pub fn from_u128(ulid_u128: u128) -> PipelineUid {
-        PipelineUid(Ulid::from_bytes(ulid_u128.to_le_bytes()))
-    }
-
     /// Creates a new random pipeline uid.
     pub fn new() -> Self {
         Self(Ulid::new())
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(ulid_u128: u128) -> PipelineUid {
+        Self(Ulid::from(ulid_u128))
     }
 }
 

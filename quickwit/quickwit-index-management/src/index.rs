@@ -155,7 +155,7 @@ impl IndexService {
         index_id: &str,
         dry_run: bool,
     ) -> Result<Vec<SplitInfo>, IndexServiceError> {
-        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+        let index_metadata_request = IndexMetadataRequest::with_index_id(index_id.to_string());
         let index_metadata = self
             .metastore
             .index_metadata(index_metadata_request)
@@ -334,7 +334,7 @@ impl IndexService {
         grace_period: Duration,
         dry_run: bool,
     ) -> anyhow::Result<SplitRemovalInfo> {
-        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+        let index_metadata_request = IndexMetadataRequest::with_index_id(index_id.to_string());
         let index_metadata = self
             .metastore
             .index_metadata(index_metadata_request)
@@ -373,7 +373,7 @@ impl IndexService {
     /// * `index_id` - The target index Id.
     /// * `storage_resolver` - A storage resolver object to access the storage.
     pub async fn clear_index(&mut self, index_id: &str) -> Result<(), IndexServiceError> {
-        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+        let index_metadata_request = IndexMetadataRequest::with_index_id(index_id.to_string());
         let index_metadata = self
             .metastore
             .index_metadata(index_metadata_request)
@@ -447,7 +447,7 @@ impl IndexService {
             "source `{}` successfully created for index `{}`",
             source_id, index_uid.index_id,
         );
-        let index_metadata_request = IndexMetadataRequest::for_index_id(index_uid.index_id);
+        let index_metadata_request = IndexMetadataRequest::with_index_id(index_uid.index_id);
         let source = self
             .metastore
             .index_metadata(index_metadata_request)
@@ -469,7 +469,7 @@ impl IndexService {
         index_id: &str,
         source_id: &str,
     ) -> Result<SourceConfig, IndexServiceError> {
-        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+        let index_metadata_request = IndexMetadataRequest::with_index_id(index_id.to_string());
         let source_config = self
             .metastore
             .index_metadata(index_metadata_request)
@@ -543,7 +543,7 @@ mod tests {
         assert!(index_metadata_0.sources.contains_key(INGEST_V2_SOURCE_ID));
 
         assert!(metastore
-            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+            .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
             .await
             .is_ok());
 

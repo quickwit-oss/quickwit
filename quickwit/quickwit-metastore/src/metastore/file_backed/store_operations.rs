@@ -37,13 +37,10 @@ fn convert_error(index_id: &str, storage_error: StorageError) -> MetastoreError 
         StorageErrorKind::NotFound => MetastoreError::NotFound(EntityKind::Index {
             index_id: index_id.to_string(),
         }),
-        StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
-            message: "the request credentials do not allow for this operation".to_string(),
-        },
-        _ => MetastoreError::Internal {
-            message: "failed to get index files".to_string(),
-            cause: storage_error.to_string(),
-        },
+        StorageErrorKind::Unauthorized => MetastoreError::Forbidden(
+            "the request credentials do not allow for this operation".to_string(),
+        ),
+        _ => MetastoreError::Internal("".to_string()),
     }
 }
 
@@ -61,14 +58,7 @@ pub(super) async fn load_index(
     let index: FileBackedIndex = serde_utils::from_json_bytes(&content)?;
 
     if index.index_id() != index_id {
-        return Err(MetastoreError::Internal {
-            message: "inconsistent manifest: index_id mismatch".to_string(),
-            cause: format!(
-                "expected index_id `{}`, but found `{}`",
-                index_id,
-                index.index_id()
-            ),
-        });
+        return Err(MetastoreError::Internal("".to_string()));
     }
     Ok(index)
 }
@@ -129,17 +119,10 @@ pub(super) async fn delete_index(storage: &dyn Storage, index_id: &str) -> Metas
         .delete(&metastore_filepath)
         .await
         .map_err(|storage_error| match storage_error.kind() {
-            StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
-                message: "the request credentials do not allow for this operation".to_string(),
-            },
-            _ => MetastoreError::Internal {
-                message: format!(
-                    "failed to delete metastore file located at `{}/{}`",
-                    storage.uri(),
-                    metastore_filepath.display()
-                ),
-                cause: storage_error.to_string(),
-            },
+            StorageErrorKind::Unauthorized => MetastoreError::Forbidden(
+                "the request credentials do not allow for this operation".to_string(),
+            ),
+            _ => MetastoreError::Internal("foo".to_string()),
         })?;
     Ok(())
 }

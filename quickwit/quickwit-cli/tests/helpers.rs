@@ -146,7 +146,7 @@ impl TestEnv {
         let index_metadata = self
             .metastore()
             .await
-            .index_metadata(IndexMetadataRequest::for_index_id(self.index_id.clone()))
+            .index_metadata(IndexMetadataRequest::with_index_id(self.index_id.clone()))
             .await?
             .deserialize_index_metadata()?;
         Ok(index_metadata)

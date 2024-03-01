@@ -554,9 +554,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
         .publish_splits(publish_splits_request.clone())
         .await
         .unwrap_err();
-    assert!(
-        matches!(error, MetastoreError::InvalidArgument { message } if message.contains("token"))
-    );
+    assert!(matches!(error, MetastoreError::InvalidArgument(message) if message.contains("token")));
 
     let index_checkpoint_delta_json = serde_json::to_string(&index_checkpoint_delta).unwrap();
     let publish_splits_request = PublishSplitsRequest {
@@ -594,7 +592,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
         .await
         .unwrap_err();
     assert!(
-        matches!(error, MetastoreError::InvalidArgument { message } if message.contains("checkpoint"))
+        matches!(error, MetastoreError::InvalidArgument(message) if message.contains("checkpoint"))
     );
 
     let mut source_delta = SourceCheckpointDelta::default();

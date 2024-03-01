@@ -803,21 +803,21 @@ where
             .ingest(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse> {
         self.inner
             .fetch(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse> {
         self.inner
             .tail(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
 }
 #[derive(Debug)]
@@ -843,7 +843,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
             .ingest(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     async fn fetch(
         &self,
@@ -854,7 +854,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
             .fetch(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     async fn tail(
         &self,
@@ -865,7 +865,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
             .tail(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
 }
 /// Generated client implementations.

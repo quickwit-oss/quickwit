@@ -162,7 +162,7 @@ impl DeleteTaskPipeline {
         );
         let index_config = self
             .metastore
-            .index_metadata(IndexMetadataRequest::for_index_uid(self.index_uid.clone()))
+            .index_metadata(IndexMetadataRequest::with_index_uid(self.index_uid.clone()))
             .await?
             .deserialize_index_metadata()?
             .into_index_config();
@@ -196,7 +196,7 @@ impl DeleteTaskPipeline {
         let index_pipeline_id = IndexingPipelineId {
             index_uid: self.index_uid.clone(),
             node_id: "unknown".to_string(),
-            pipeline_uid: PipelineUid::from_u128(0u128),
+            pipeline_uid: PipelineUid::for_test(0u128),
             source_id: "unknown".to_string(),
         };
 

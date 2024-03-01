@@ -444,7 +444,7 @@ async fn fault_tolerant_fetch_stream(
                     index_uid=%index_uid,
                     source_id=%source_id,
                     shard_id=%shard_id,
-                    "ingester `{ingester_id}` is not available: failing over to ingester `{failover_ingester_id}`"
+                    "ingester `{ingester_id}` is unavailable: failing over to ingester `{failover_ingester_id}`"
                 );
             } else {
                 error!(
@@ -452,13 +452,13 @@ async fn fault_tolerant_fetch_stream(
                     index_uid=%index_uid,
                     source_id=%source_id,
                     shard_id=%shard_id,
-                    "ingester `{ingester_id}` is not available: closing fetch stream"
+                    "ingester `{ingester_id}` is unavailable: closing fetch stream"
                 );
-                let ingest_error = IngestV2Error::IngesterUnavailable {
-                    ingester_id: ingester_id.clone(),
-                };
                 // Attempt to send the error to the consumer in a best-effort manner before
                 // returning.
+                let message = format!("ingester `{ingester_id}` is unavailable");
+                let ingest_error = IngestV2Error::Unavailable(message);
+
                 let fetch_stream_error = FetchStreamError {
                     index_uid,
                     source_id,
@@ -479,7 +479,7 @@ async fn fault_tolerant_fetch_stream(
         };
         let mut fetch_stream = match ingester.open_fetch_stream(open_fetch_stream_request).await {
             Ok(fetch_stream) => fetch_stream,
-            Err(shard_not_found_error @ IngestV2Error::ShardNotFound { .. }) => {
+            Err(not_found_error @ IngestV2Error::NotFound(_)) => {
                 error!(
                     client_id=%client_id,
                     index_uid=%index_uid,
@@ -491,7 +491,7 @@ async fn fault_tolerant_fetch_stream(
                     index_uid,
                     source_id,
                     shard_id,
-                    ingest_error: shard_not_found_error,
+                    ingest_error: not_found_error,
                 };
                 let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
                 from_position_exclusive.to_eof();
@@ -597,6 +597,7 @@ pub(super) mod tests {
     use bytes::Bytes;
     use quickwit_proto::ingest::ingester::IngesterServiceClient;
     use quickwit_proto::ingest::ShardState;
+    use quickwit_proto::metastore::EntityKind;
     use quickwit_proto::types::queue_id;
     use tokio::time::timeout;
 
@@ -1456,6 +1457,8 @@ pub(super) mod tests {
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let shard_id = ShardId::from(1);
+        let queue_id = queue_id(&index_uid, &source_id, &shard_id);
+        let queue_id_clone = queue_id.clone();
         let mut from_position_exclusive = Position::offset(0u64);
 
         let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
@@ -1474,9 +1477,7 @@ pub(super) mod tests {
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
-                Err(IngestV2Error::ShardNotFound {
-                    shard_id: ShardId::from(1),
-                })
+                Err(IngestV2Error::NotFound(EntityKind::Shard { queue_id }))
             });
         let ingester_0: IngesterServiceClient = ingester_mock_0.into();
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
@@ -1501,7 +1502,7 @@ pub(super) mod tests {
 
         assert!(matches!(
             fetch_stream_error.ingest_error,
-            IngestV2Error::ShardNotFound { shard_id } if shard_id == ShardId::from(1)
+            IngestV2Error::NotFound(EntityKind::Shard { queue_id }) if queue_id == queue_id_clone
         ));
         assert!(from_position_exclusive.is_eof());
     }

@@ -225,15 +225,14 @@ impl FileBackedIndex {
         &mut self,
         split_metadata: SplitMetadata,
     ) -> Result<(), MetastoreError> {
+        let split_id = split_metadata.split_id().to_string();
         // Check whether the split exists.
         // If the split exists, we check what state it is in. If it's anything other than `Staged`
         // something has gone very wrong and we should abort the operation.
-        if let Some(split) = self.splits.get(split_metadata.split_id()) {
+        if let Some(split) = self.splits.get(&split_id) {
             if split.split_state != SplitState::Staged {
-                let entity = EntityKind::Split {
-                    split_id: split.split_id().to_string(),
-                };
-                let message = "split is not staged".to_string();
+                let message = format!("split `{split_id}` is not staged");
+                let entity = EntityKind::Split { split_id };
                 return Err(MetastoreError::FailedPrecondition { entity, message });
             }
         }
@@ -363,7 +362,7 @@ impl FileBackedIndex {
                     let message = format!(
                         "publish token is required for publishing splits for source `{source_id}`"
                     );
-                    MetastoreError::InvalidArgument { message }
+                    MetastoreError::InvalidArgument(message)
                 })?;
                 self.try_apply_delta_v2(checkpoint_delta, publish_token)?;
             } else {

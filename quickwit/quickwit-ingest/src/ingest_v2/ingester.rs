@@ -55,6 +55,7 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::ingest::{
     CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardIds, ShardState,
 };
+use quickwit_proto::metastore::EntityKind;
 use quickwit_proto::types::{
     queue_id, split_queue_id, IndexUid, NodeId, Position, QueueId, ShardId, SourceId,
 };
@@ -374,12 +375,10 @@ impl Ingester {
             .try_send(open_message)
             .expect("channel should be open and have capacity");
 
-        let mut ingester =
-            self.ingester_pool
-                .get(&follower_id)
-                .ok_or(IngestV2Error::IngesterUnavailable {
-                    ingester_id: follower_id.clone(),
-                })?;
+        let mut ingester = self.ingester_pool.get(&follower_id).ok_or_else(|| {
+            let message = format!("ingester `{follower_id}` is unavailable");
+            IngestV2Error::Unavailable(message)
+        })?;
         let mut ack_replication_stream = ingester
             .open_replication_stream(syn_replication_stream)
             .await?;
@@ -855,9 +854,7 @@ impl Ingester {
             .await?
             .shards
             .get(&queue_id)
-            .ok_or(IngestV2Error::ShardNotFound {
-                shard_id: open_fetch_stream_request.shard_id().clone(),
-            })?
+            .ok_or_else(|| IngestV2Error::NotFound(EntityKind::Shard { queue_id }))?
             .shard_status_rx
             .clone();
         let mrecordlog = self.state.mrecordlog();
@@ -982,10 +979,9 @@ impl Ingester {
             return Ok(ping_response);
         };
         let follower_id: NodeId = follower_id.clone().into();
-        let mut ingester = self.ingester_pool.get(&follower_id).ok_or({
-            IngestV2Error::IngesterUnavailable {
-                ingester_id: follower_id,
-            }
+        let mut ingester = self.ingester_pool.get(&follower_id).ok_or_else(|| {
+            let message = format!("ingester `{follower_id}` is unavailable");
+            IngestV2Error::Unavailable(message)
         })?;
         ingester.ping(ping_request).await?;
         let ping_response = PingResponse {};
@@ -2361,7 +2357,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(error, IngestV2Error::ShardNotFound { shard_id } if shard_id == ShardId::from(1337))
+            matches!(error, IngestV2Error::NotFound(EntityKind::Shard { queue_id }) if queue_id == "test-index:test-source:1337")
         );
 
         let shard = Shard {

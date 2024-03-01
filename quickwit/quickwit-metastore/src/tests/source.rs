@@ -65,7 +65,7 @@ pub async fn test_metastore_add_source<MetastoreToTest: MetastoreServiceExt + De
 
     assert_eq!(
         metastore
-            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+            .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -80,7 +80,7 @@ pub async fn test_metastore_add_source<MetastoreToTest: MetastoreServiceExt + De
     metastore.add_source(add_source_request).await.unwrap();
 
     let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap()
         .deserialize_index_metadata()
@@ -166,7 +166,7 @@ pub async fn test_metastore_toggle_source<MetastoreToTest: MetastoreServiceExt +
         AddSourceRequest::try_from_source_config(index_uid.clone(), &source).unwrap();
     metastore.add_source(add_source_request).await.unwrap();
     let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap()
         .deserialize_index_metadata()
@@ -184,7 +184,7 @@ pub async fn test_metastore_toggle_source<MetastoreToTest: MetastoreServiceExt +
         .await
         .unwrap();
     let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap()
         .deserialize_index_metadata()
@@ -202,7 +202,7 @@ pub async fn test_metastore_toggle_source<MetastoreToTest: MetastoreServiceExt +
         .await
         .unwrap();
     let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap()
         .deserialize_index_metadata()
@@ -279,7 +279,7 @@ pub async fn test_metastore_delete_source<MetastoreToTest: MetastoreServiceExt +
         .unwrap();
 
     let sources = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap()
         .deserialize_index_metadata()
@@ -378,7 +378,7 @@ pub async fn test_metastore_reset_checkpoint<
             .unwrap();
     }
     assert!(!metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap()
         .deserialize_index_metadata()
@@ -395,7 +395,7 @@ pub async fn test_metastore_reset_checkpoint<
         .unwrap();
 
     let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap()
         .deserialize_index_metadata()
@@ -441,7 +441,7 @@ pub async fn test_metastore_reset_checkpoint<
         .unwrap();
 
     assert!(metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap()
         .deserialize_index_metadata()

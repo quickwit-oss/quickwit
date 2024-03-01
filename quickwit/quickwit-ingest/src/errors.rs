@@ -21,12 +21,13 @@ use std::io;
 
 use mrecordlog::error::*;
 use quickwit_actors::AskError;
+use quickwit_common::service_error::ProutServiceError;
 use quickwit_common::tower::BufferError;
 use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, thiserror::Error, Serialize)]
+#[derive(Debug, Clone, thiserror::Error, Serialize, Deserialize)]
 pub enum IngestServiceError {
     #[error("data corruption: {0}")]
     Corruption(String),
@@ -44,6 +45,37 @@ pub enum IngestServiceError {
     RateLimited,
     #[error("ingest service is unavailable")]
     Unavailable,
+}
+
+impl ProutServiceError for IngestServiceError {
+    fn grpc_status_code(&self) -> tonic::Code {
+        match self {
+            Self::Corruption { .. } => tonic::Code::Internal,
+            Self::IndexAlreadyExists { .. } => tonic::Code::AlreadyExists,
+            Self::IndexNotFound { .. } => tonic::Code::NotFound,
+            Self::Internal(_) => tonic::Code::Internal,
+            Self::InvalidPosition(_) => tonic::Code::FailedPrecondition,
+            Self::IoError { .. } => tonic::Code::Internal,
+            Self::RateLimited => tonic::Code::ResourceExhausted,
+            Self::Unavailable => tonic::Code::Unavailable,
+        }
+    }
+
+    fn new_internal(message: String) -> Self {
+        Self::Internal(message)
+    }
+
+    fn new_timeout(message: String) -> Self {
+        Self::Internal(message)
+    }
+
+    fn new_unavailable(_: String) -> Self {
+        Self::Unavailable
+    }
+
+    fn label_value(&self) -> &'static str {
+        "error"
+    }
 }
 
 impl From<AskError<IngestServiceError>> for IngestServiceError {
@@ -71,19 +103,14 @@ impl From<io::Error> for IngestServiceError {
     }
 }
 impl From<IngestV2Error> for IngestServiceError {
-    fn from(err: IngestV2Error) -> Self {
-        match err {
-            IngestV2Error::Internal(_) => IngestServiceError::Internal(err.to_string()),
-            IngestV2Error::IngesterUnavailable { ingester_id } => {
-                IngestServiceError::Internal(format!("ingester {} is unavailable", ingester_id))
+    fn from(error: IngestV2Error) -> Self {
+        match error {
+            IngestV2Error::Internal(message) => IngestServiceError::Internal(message),
+            IngestV2Error::NotFound(_) => IngestServiceError::Internal(format!("shard not found")),
+            IngestV2Error::Timeout(_) | IngestV2Error::Unavailable(_) => {
+                IngestServiceError::Unavailable
             }
-            IngestV2Error::ShardNotFound { shard_id } => IngestServiceError::Internal(format!(
-                "shard {} is not found in the ingester",
-                shard_id
-            )),
-            IngestV2Error::Timeout => IngestServiceError::Unavailable,
             IngestV2Error::TooManyRequests => IngestServiceError::RateLimited,
-            IngestV2Error::Transport(msg) => IngestServiceError::Internal(msg.to_string()),
         }
     }
 }

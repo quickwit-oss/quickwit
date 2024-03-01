@@ -133,10 +133,7 @@ where E: sqlx::Executor<'a, Database = Postgres> {
     )
     .bind(index_id)
     .fetch_optional(executor)
-    .await
-    .map_err(|error| MetastoreError::Db {
-        message: error.to_string(),
-    })?;
+    .await?;
     Ok(index_opt)
 }
 
@@ -158,10 +155,7 @@ where
     )
     .bind(index_uid.to_string())
     .fetch_optional(executor)
-    .await
-    .map_err(|error| MetastoreError::Db {
-        message: error.to_string(),
-    })?;
+    .await?;
     Ok(index_opt)
 }
 
@@ -223,7 +217,7 @@ async fn try_apply_delta_v2(
             || current_publish_token_opt.unwrap() != publish_token
         {
             let message = "failed to apply checkpoint delta: invalid publish token".to_string();
-            return Err(MetastoreError::InvalidArgument { message });
+            return Err(MetastoreError::InvalidArgument(message));
         }
         let partition_id = PartitionId::from(shard_id);
         let current_position = Position::from(current_position);
@@ -231,9 +225,7 @@ async fn try_apply_delta_v2(
     }
     current_checkpoint
         .try_apply_delta(checkpoint_delta)
-        .map_err(|error| MetastoreError::InvalidArgument {
-            message: error.to_string(),
-        })?;
+        .map_err(|error| MetastoreError::InvalidArgument(error.to_string()))?;
 
     let mut shard_ids = Vec::with_capacity(num_partitions);
     let mut new_positions = Vec::with_capacity(num_partitions);
@@ -312,12 +304,7 @@ where
     if !mutation_occurred {
         return Ok(mutation_occurred);
     }
-    let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
-        MetastoreError::JsonSerializeError {
-            struct_name: "IndexMetadata".to_string(),
-            message: error.to_string(),
-        }
-    })?;
+    let index_metadata_json = serde_utils::to_json_str(&index_metadata)?;
     let update_index_res = sqlx::query(
         r#"
         UPDATE indexes
@@ -353,20 +340,15 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> MetastoreResult<ListIndexesMetadataResponse> {
-        let sql =
-            build_index_id_patterns_sql_query(&request.index_id_patterns).map_err(|error| {
-                MetastoreError::Internal {
-                    message: "failed to build `list_indexes_metadatas` SQL query".to_string(),
-                    cause: error.to_string(),
-                }
-            })?;
+        let sql = build_index_id_patterns_sql_query(&request.index_id_patterns)
+            .map_err(|error| MetastoreError::Internal(error.to_string()))?;
         let pg_indexes = sqlx::query_as::<_, PgIndex>(&sql)
             .fetch_all(&self.connection_pool)
             .await?;
-        let indexes_metadata = pg_indexes
+        let indexes_metadata: Vec<IndexMetadata> = pg_indexes
             .into_iter()
             .map(|pg_index| pg_index.index_metadata())
-            .collect::<MetastoreResult<Vec<IndexMetadata>>>()?;
+            .collect::<MetastoreResult<_>>()?;
         let response = ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)?;
         Ok(response)
     }
@@ -416,7 +398,7 @@ impl MetastoreService for PostgresqlMetastore {
         // FIXME: This is not idempotent.
         if delete_result.rows_affected() == 0 {
             return Err(MetastoreError::NotFound(EntityKind::Index {
-                index_id: index_uid.index_id,
+                index_id: index_uid.index_id.clone(),
             }));
         }
         info!(index_id = index_uid.index_id, "deleted index successfully");
@@ -439,12 +421,7 @@ impl MetastoreService for PostgresqlMetastore {
         let mut maturity_timestamps = Vec::with_capacity(split_metadata_list.len());
 
         for split_metadata in split_metadata_list {
-            let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|error| {
-                MetastoreError::JsonSerializeError {
-                    struct_name: "SplitMetadata".to_string(),
-                    message: error.to_string(),
-                }
-            })?;
+            let split_metadata_json = serde_utils::to_json_str(&split_metadata)?;
             split_metadata_json_list.push(split_metadata_json);
 
             let time_range_start = split_metadata
@@ -542,7 +519,7 @@ impl MetastoreService for PostgresqlMetastore {
             let mut index_metadata = index_metadata(tx, &index_uid.index_id).await?;
             if index_metadata.index_uid != index_uid {
                 return Err(MetastoreError::NotFound(EntityKind::Index {
-                    index_id: index_uid.index_id,
+                    index_id: index_uid.index_id.clone(),
                 }));
             }
             if let Some(checkpoint_delta) = checkpoint_delta_opt {
@@ -554,7 +531,7 @@ impl MetastoreService for PostgresqlMetastore {
                             "publish token is required for publishing splits for source \
                              `{source_id}`"
                         );
-                        MetastoreError::InvalidArgument { message }
+                        MetastoreError::InvalidArgument(message)
                     })?;
                     try_apply_delta_v2(
                         tx,
@@ -570,7 +547,7 @@ impl MetastoreService for PostgresqlMetastore {
                         .try_apply_delta(checkpoint_delta)
                         .map_err(|error| {
                             let entity = EntityKind::CheckpointDelta {
-                                index_id: index_uid.index_id.to_string(),
+                                index_id: index_uid.index_id.clone(),
                                 source_id,
                             };
                             let message = error.to_string();
@@ -578,12 +555,7 @@ impl MetastoreService for PostgresqlMetastore {
                         })?;
                 }
             }
-            let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
-                MetastoreError::JsonSerializeError {
-                    struct_name: "IndexMetadata".to_string(),
-                    message: error.to_string(),
-                }
-            })?;
+            let index_metadata_json = serde_utils::to_json_str(&index_metadata)?;
 
             const PUBLISH_SPLITS_QUERY: &str = r#"
             -- Select the splits to update, regardless of their state.
@@ -719,24 +691,8 @@ impl MetastoreService for PostgresqlMetastore {
                 .map(|pg_splits_results| {
                     let mut splits = Vec::with_capacity(pg_splits_results.len());
                     for pg_split_result in pg_splits_results {
-                        let pg_split = match pg_split_result {
-                            Ok(pg_split) => pg_split,
-                            Err(error) => {
-                                return Err(MetastoreError::Internal {
-                                    message: "failed to fetch splits".to_string(),
-                                    cause: error.to_string(),
-                                })
-                            }
-                        };
-                        let split: Split = match pg_split.try_into() {
-                            Ok(split) => split,
-                            Err(error) => {
-                                return Err(MetastoreError::Internal {
-                                    message: "failed to convert `PgSplit` to `Split`".to_string(),
-                                    cause: error.to_string(),
-                                })
-                            }
-                        };
+                        let pg_split = pg_split_result?;
+                        let split: Split = pg_split.try_into()?;
                         splits.push(split);
                     }
                     ListSplitsResponse::try_from_splits(splits)
@@ -801,7 +757,7 @@ impl MetastoreService for PostgresqlMetastore {
                 .is_none()
         {
             return Err(MetastoreError::NotFound(EntityKind::Index {
-                index_id: index_uid.index_id,
+                index_id: index_uid.index_id.clone(),
             }));
         }
         info!(
@@ -884,7 +840,7 @@ impl MetastoreService for PostgresqlMetastore {
                 .is_none()
         {
             return Err(MetastoreError::NotFound(EntityKind::Index {
-                index_id: index_uid.index_id,
+                index_id: index_uid.index_id.clone(),
             }));
         }
         if !not_deletable_split_ids.is_empty() {
@@ -920,10 +876,8 @@ impl MetastoreService for PostgresqlMetastore {
         } else if let Some(index_id) = &request.index_id {
             index_opt(&self.connection_pool, index_id).await?
         } else {
-            return Err(MetastoreError::Internal {
-                message: "either `index_id` or `index_uid` must be set".to_string(),
-                cause: "missing index identifier".to_string(),
-            });
+            let message = "either `index_id` or `index_uid` must be set".to_string();
+            return Err(MetastoreError::Internal(message));
         };
         let index_metadata = response
             .ok_or({
@@ -1031,10 +985,7 @@ impl MetastoreService for PostgresqlMetastore {
         )
         .bind(request.index_uid().to_string())
         .fetch_one(&self.connection_pool)
-        .await
-        .map_err(|error| MetastoreError::Db {
-            message: error.to_string(),
-        })?;
+        .await?;
 
         Ok(LastDeleteOpstampResponse::new(max_opstamp as u64))
     }
@@ -1045,12 +996,7 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         delete_query: DeleteQuery,
     ) -> MetastoreResult<DeleteTask> {
-        let delete_query_json = serde_json::to_string(&delete_query).map_err(|error| {
-            MetastoreError::JsonSerializeError {
-                struct_name: "DeleteQuery".to_string(),
-                message: error.to_string(),
-            }
-        })?;
+        let delete_query_json = serde_utils::to_json_str(&delete_query)?;
         let (create_timestamp, opstamp): (sqlx::types::time::PrimitiveDateTime, i64) =
             sqlx::query_as(
                 r#"
@@ -1110,7 +1056,7 @@ impl MetastoreService for PostgresqlMetastore {
                 .is_none()
         {
             return Err(MetastoreError::NotFound(EntityKind::Index {
-                index_id: index_uid.index_id,
+                index_id: index_uid.index_id.clone(),
             }));
         }
         Ok(UpdateSplitsDeleteOpstampResponse {})
@@ -1291,7 +1237,7 @@ impl MetastoreService for PostgresqlMetastore {
             })
         {
             let message = "failed to delete shard ``: shard is not fully indexed".to_string();
-            return Err(MetastoreError::InvalidArgument { message });
+            return Err(MetastoreError::InvalidArgument(message));
         }
         Ok(EmptyResponse {})
     }
@@ -1310,14 +1256,13 @@ impl MetastoreService for PostgresqlMetastore {
         let index_template: IndexTemplate =
             serde_utils::from_json_str(&request.index_template_json)?;
 
-        index_template
-            .validate()
-            .map_err(|error| MetastoreError::InvalidArgument {
-                message: format!(
-                    "invalid index template `{}`: `{error}`",
-                    index_template.template_id
-                ),
-            })?;
+        index_template.validate().map_err(|error| {
+            let message = format!(
+                "invalid index template `{}`: `{error}`",
+                index_template.template_id
+            );
+            MetastoreError::InvalidArgument(message)
+        })?;
 
         let mut positive_patterns = Vec::new();
         let mut negative_patterns = Vec::new();
@@ -1512,12 +1457,8 @@ fn build_index_id_patterns_sql_query(index_id_patterns: &[String]) -> anyhow::Re
 
     let mut where_like_query = String::new();
     for (index_id_pattern_idx, index_id_pattern) in positive_patterns.iter().enumerate() {
-        validate_index_id_pattern(index_id_pattern, false).map_err(|error| {
-            MetastoreError::Internal {
-                message: "failed to build list indexes query".to_string(),
-                cause: error.to_string(),
-            }
-        })?;
+        validate_index_id_pattern(index_id_pattern, false)
+            .map_err(|error| MetastoreError::Internal(error.to_string()))?;
         if index_id_pattern_idx != 0 {
             where_like_query.push_str(" OR ");
         }
@@ -1530,12 +1471,8 @@ fn build_index_id_patterns_sql_query(index_id_patterns: &[String]) -> anyhow::Re
     }
     let mut negative_like_query = String::new();
     for index_id_pattern in negative_patterns.iter() {
-        validate_index_id_pattern(index_id_pattern, false).map_err(|error| {
-            MetastoreError::Internal {
-                message: "failed to build list indexes query".to_string(),
-                cause: error.to_string(),
-            }
-        })?;
+        validate_index_id_pattern(index_id_pattern, false)
+            .map_err(|error| MetastoreError::Internal(error.to_string()))?;
         negative_like_query.push_str(" AND ");
         if index_id_pattern.contains('*') {
             let sql_pattern = index_id_pattern.replace('*', "%");

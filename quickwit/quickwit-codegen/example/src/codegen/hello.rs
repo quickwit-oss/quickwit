@@ -744,7 +744,7 @@ where
             .hello(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn goodbye(
         &mut self,
@@ -754,7 +754,7 @@ where
             .goodbye(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn ping(
         &mut self,
@@ -766,9 +766,12 @@ where
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
                 let stream = quickwit_common::ServiceStream::from(streaming);
-                stream.map_err(|error| error.into())
+                stream
+                    .map_err(
+                        quickwit_common::service_error::grpc_status_to_service_error,
+                    )
             })
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn check_connectivity(&mut self) -> anyhow::Result<()> {
         if self.connection_addrs_rx.borrow().len() == 0 {
@@ -809,7 +812,7 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
             .hello(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     async fn goodbye(
         &self,
@@ -820,7 +823,7 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
             .goodbye(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     type PingStream = quickwit_common::ServiceStream<tonic::Result<PingResponse>>;
     async fn ping(
@@ -834,8 +837,13 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
                 quickwit_common::ServiceStream::from(streaming)
             })
             .await
-            .map(|stream| tonic::Response::new(stream.map_err(|error| error.into())))
-            .map_err(|error| error.into())
+            .map(|stream| tonic::Response::new(
+                stream
+                    .map_err(
+                        quickwit_common::service_error::service_errror_to_grpc_status,
+                    ),
+            ))
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
 }
 /// Generated client implementations.

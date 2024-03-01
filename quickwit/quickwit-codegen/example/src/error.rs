@@ -20,22 +20,50 @@
 use std::fmt;
 
 use quickwit_actors::AskError;
+use quickwit_common::service_error::ProutServiceError;
+use serde::{Deserialize, Serialize};
 
 // Service errors have to be handwritten before codegen.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
 pub enum HelloError {
     #[error("internal error: {0}")]
-    InternalError(String),
-    #[error("transport error: {0}")]
-    TransportError(#[from] tonic::Status),
+    Internal(String),
+    #[error("invalid argument: {0}")]
+    InvalidArgument(String),
+    #[error("request timed out: {0}")]
+    Timeout(String),
+    #[error("service unavailable: {0}")]
+    Unavailable(String),
 }
 
-// Service errors must implement `From<tonic::Status>` and `Into<tonic::Status>`.
-impl From<HelloError> for tonic::Status {
-    fn from(error: HelloError) -> Self {
-        match error {
-            HelloError::InternalError(message) => tonic::Status::internal(message),
-            HelloError::TransportError(status) => status,
+impl ProutServiceError for HelloError {
+    fn grpc_status_code(&self) -> tonic::Code {
+        match self {
+            Self::Internal(_) => tonic::Code::Internal,
+            Self::InvalidArgument(_) => tonic::Code::InvalidArgument,
+            Self::Timeout(_) => tonic::Code::DeadlineExceeded,
+            Self::Unavailable(_) => tonic::Code::Unavailable,
+        }
+    }
+
+    fn new_internal(message: String) -> Self {
+        Self::Internal(message)
+    }
+
+    fn new_timeout(message: String) -> Self {
+        Self::Timeout(message)
+    }
+
+    fn new_unavailable(message: String) -> Self {
+        Self::Unavailable(message)
+    }
+
+    fn label_value(&self) -> &'static str {
+        match self {
+            Self::Internal(_) => "internal",
+            Self::InvalidArgument(_) => "invalid_argument",
+            Self::Timeout(_) => "timeout",
+            Self::Unavailable(_) => "unavailable",
         }
     }
 }
@@ -44,6 +72,6 @@ impl<E> From<AskError<E>> for HelloError
 where E: fmt::Debug
 {
     fn from(error: AskError<E>) -> Self {
-        HelloError::InternalError(format!("{error:?}"))
+        HelloError::Internal(format!("{error:?}"))
     }
 }

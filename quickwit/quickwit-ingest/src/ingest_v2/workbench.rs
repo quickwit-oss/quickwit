@@ -150,8 +150,8 @@ impl IngestWorkbench {
     /// Marks a node as unavailable for the span of the workbench.
     ///
     /// Remaining attempts will treat the node as if it was not in the ingester pool.
-    pub fn record_transport_error(&mut self, subrequest_id: SubrequestId) {
-        self.record_failure(subrequest_id, SubworkbenchFailure::Transport);
+    pub fn record_ingester_unavailable(&mut self, subrequest_id: SubrequestId) {
+        self.record_failure(subrequest_id, SubworkbenchFailure::Unavailable);
     }
 
     pub fn record_persist_failure(&mut self, persist_failure: &PersistFailure) {
@@ -215,9 +215,10 @@ impl IngestWorkbench {
 pub(super) enum SubworkbenchFailure {
     IndexNotFound,
     SourceNotFound,
+    ShardNotFound,
     NoShardsAvailable,
-    // Transport error: we failed to reach the ingester.
-    Transport,
+    // The ingester could not be reached: it is no longer in the ingester pool
+    Unavailable,
     // This is an error supplied by the ingester.
     Persist(PersistFailureReason),
     Internal(String),
@@ -230,9 +231,9 @@ impl SubworkbenchFailure {
             Self::SourceNotFound => IngestFailureReason::SourceNotFound,
             Self::Internal(_) => IngestFailureReason::Internal,
             Self::NoShardsAvailable => IngestFailureReason::NoShardsAvailable,
-            // In our last attempt, we did not manage to reach the ingester.
-            // We can consider that as a no shards available.
-            Self::Transport => IngestFailureReason::NoShardsAvailable,
+            // In our last attempt, we could not reach the ingester or the shard was not found.
+            // We can consider those failures as a no shards available.
+            Self::Unavailable | Self::ShardNotFound => IngestFailureReason::NoShardsAvailable,
             Self::Persist(persist_failure_reason) => (*persist_failure_reason).into(),
         }
     }
@@ -267,11 +268,13 @@ impl IngestSubworkbench {
         match self.last_failure_opt {
             Some(SubworkbenchFailure::IndexNotFound) => false,
             Some(SubworkbenchFailure::SourceNotFound) => false,
+            //
+            Some(SubworkbenchFailure::ShardNotFound) => true,
             Some(SubworkbenchFailure::Internal(_)) => true,
-            // No need to retry no shards were available.
-            Some(SubworkbenchFailure::NoShardsAvailable) => false,
+            //
+            Some(SubworkbenchFailure::NoShardsAvailable) => true,
             Some(SubworkbenchFailure::Persist(_)) => true,
-            Some(SubworkbenchFailure::Transport) => true,
+            Some(SubworkbenchFailure::Unavailable) => true,
             None => true,
         }
     }
@@ -293,7 +296,7 @@ mod tests {
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 
-        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Transport);
+        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Unavailable);
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 

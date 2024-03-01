@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_common::service_error::ProutServiceError;
 use thiserror;
 
 include!("../codegen/quickwit/quickwit.cluster.rs");
@@ -25,18 +26,40 @@ pub type ClusterResult<T> = std::result::Result<T, ClusterError>;
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ClusterError {
-    #[error("an internal error occurred: {0}")]
+    #[error("internal error: {0}")]
     Internal(String),
+    #[error("request timed out: {0}")]
+    Timeout(String),
+    #[error("service unavailable: {0}")]
+    Unavailable(String),
 }
 
-impl From<ClusterError> for tonic::Status {
-    fn from(cluster_error: ClusterError) -> Self {
-        tonic::Status::internal(cluster_error.to_string())
+impl ProutServiceError for ClusterError {
+    fn grpc_status_code(&self) -> tonic::Code {
+        match self {
+            Self::Internal(_) => tonic::Code::Internal,
+            Self::Timeout(_) => tonic::Code::DeadlineExceeded,
+            Self::Unavailable(_) => tonic::Code::Unavailable,
+        }
     }
-}
 
-impl From<tonic::Status> for ClusterError {
-    fn from(status: tonic::Status) -> Self {
-        ClusterError::Internal(status.message().to_string())
+    fn new_internal(message: String) -> Self {
+        Self::Internal(message)
+    }
+
+    fn new_timeout(message: String) -> Self {
+        Self::Timeout(message)
+    }
+
+    fn new_unavailable(message: String) -> Self {
+        Self::Unavailable(message)
+    }
+
+    fn label_value(&self) -> &'static str {
+        match self {
+            ClusterError::Internal(_) => "internal",
+            ClusterError::Timeout(_) => "timeout",
+            ClusterError::Unavailable(_) => "unavailable",
+        }
     }
 }

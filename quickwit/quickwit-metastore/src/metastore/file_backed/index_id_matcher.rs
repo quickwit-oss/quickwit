@@ -52,7 +52,7 @@ impl IndexIdMatcher {
             let message = "failed to build index ID matcher: at least one positive index ID \
                            pattern must be provided"
                 .to_string();
-            return Err(MetastoreError::InvalidArgument { message });
+            return Err(MetastoreError::InvalidArgument(message));
         }
         let positive_matcher = build_regex_set(&positive_patterns)?;
         let negative_matcher = build_regex_set(&negative_patterns)?;
@@ -77,14 +77,14 @@ fn build_regex_set(patterns: &[&str]) -> MetastoreResult<RegexSet> {
         }
         validate_index_id_pattern(pattern, false).map_err(|error| {
             let message = format!("failed to build index ID matcher: {error}");
-            MetastoreError::InvalidArgument { message }
+            MetastoreError::InvalidArgument(message)
         })?;
     }
     let regexes = patterns.iter().map(|pattern| build_regex(pattern));
 
     let regex_set = RegexSet::new(regexes).map_err(|error| {
         let message = format!("failed to build index ID matcher: {error}");
-        MetastoreError::InvalidArgument { message }
+        MetastoreError::InvalidArgument(message)
     })?;
     Ok(regex_set)
 }

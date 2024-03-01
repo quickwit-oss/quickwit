@@ -270,7 +270,7 @@ pub async fn run_index_checklist(
     }
     checks.push(("metastore", metastore.check_connectivity().await));
     let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await?
         .deserialize_index_metadata()?;
     let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;

@@ -578,7 +578,7 @@ async fn test_delete_index_cli_dry_run() {
     // On dry run index should still exist
     let mut metastore = refresh_metastore(metastore).await.unwrap();
     metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap();
     assert!(metastore.index_exists(&index_id).await.unwrap());
@@ -594,7 +594,7 @@ async fn test_delete_index_cli_dry_run() {
     // On dry run index should still exist
     let mut metastore = refresh_metastore(metastore).await.unwrap();
     metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap();
     assert!(metastore.index_exists(&index_id).await.unwrap());

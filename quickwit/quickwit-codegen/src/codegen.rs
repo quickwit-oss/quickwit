@@ -1165,7 +1165,7 @@ fn generate_grpc_client_adapter_methods(context: &CodegenContext) -> TokenStream
                 {
                     let streaming: tonic::Streaming<_> = response.into_inner();
                     let stream = quickwit_common::ServiceStream::from(streaming);
-                    stream.map_err(|error| error.into())
+                    stream.map_err(quickwit_common::service_error::grpc_status_to_service_error)
                 }
             }
         } else {
@@ -1177,7 +1177,7 @@ fn generate_grpc_client_adapter_methods(context: &CodegenContext) -> TokenStream
                     .#method_name(request)
                     .await
                     .map(#into_response_type)
-                    .map_err(|error| error.into())
+                    .map_err(quickwit_common::service_error::grpc_status_to_service_error)
             }
         };
         stream.extend(method);
@@ -1250,7 +1250,7 @@ fn generate_grpc_server_adapter_methods(context: &CodegenContext) -> TokenStream
         };
         let into_response_type = if syn_method.server_streaming {
             quote! {
-                |stream| tonic::Response::new(stream.map_err(|error| error.into()))
+                |stream| tonic::Response::new(stream.map_err(quickwit_common::service_error::service_errror_to_grpc_status))
             }
         } else {
             quote! { tonic::Response::new }
@@ -1264,7 +1264,7 @@ fn generate_grpc_server_adapter_methods(context: &CodegenContext) -> TokenStream
                     .#method_name(#method_arg)
                     .await
                     .map(#into_response_type)
-                    .map_err(|error| error.into())
+                    .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
             }
         };
         stream.extend(method);

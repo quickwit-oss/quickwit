@@ -25,6 +25,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
+use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
@@ -292,19 +293,18 @@ impl IngestRouter {
                         );
                     }
                     match persist_error {
-                        IngestV2Error::Transport(_) => {
+                        IngestV2Error::Unavailable(_) => {
                             workbench
                                 .unavailable_leaders
                                 .insert(persist_summary.leader_id);
                             for subrequest_id in persist_summary.subrequest_ids {
-                                workbench.record_transport_error(subrequest_id);
+                                workbench.record_ingester_unavailable(subrequest_id);
                             }
                         }
-                        IngestV2Error::TooManyRequests
-                        | IngestV2Error::Internal(_)
-                        | IngestV2Error::ShardNotFound { .. }
-                        | IngestV2Error::IngesterUnavailable { .. }
-                        | IngestV2Error::Timeout => {
+                        IngestV2Error::Internal(_)
+                        | IngestV2Error::NotFound(_)
+                        | IngestV2Error::Timeout(_)
+                        | IngestV2Error::TooManyRequests => {
                             for subrequest_id in persist_summary.subrequest_ids {
                                 workbench.record_internal_error(
                                     subrequest_id,
@@ -340,8 +340,12 @@ impl IngestRouter {
         self.populate_routing_table_debounced(workbench, debounced_request)
             .await;
 
-        // List of subrequest IDs for which no shards were available to route the subrequests to.
-        let mut unavailable_subrequest_ids = Vec::new();
+        // List of subrequest IDs for which no shards is available to route the subrequests to.
+        let mut no_shards_available_subrequest_ids = Vec::new();
+
+        // List of subrequest IDs for which the leader of the shards to route the subrequests to is
+        // unavailable, i.e. not in the pool.
+        let mut ingester_unavailable_subrequest_ids = Vec::new();
 
         let mut per_leader_persist_subrequests: HashMap<&LeaderId, Vec<PersistSubrequest>> =
             HashMap::new();
@@ -358,7 +362,7 @@ impl IngestRouter {
                 .find_entry(&subrequest.index_id, &subrequest.source_id)
                 .and_then(|entry| entry.next_open_shard_round_robin(&self.ingester_pool))
             else {
-                unavailable_subrequest_ids.push(subrequest.subrequest_id);
+                no_shards_available_subrequest_ids.push(subrequest.subrequest_id);
                 continue;
             };
             let persist_subrequest = PersistSubrequest {
@@ -382,7 +386,7 @@ impl IngestRouter {
                 .map(|subrequest| subrequest.subrequest_id)
                 .collect();
             let Some(mut ingester) = self.ingester_pool.get(&leader_id) else {
-                unavailable_subrequest_ids.extend(subrequest_ids);
+                ingester_unavailable_subrequest_ids.extend(subrequest_ids);
                 continue;
             };
             let persist_summary = PersistRequestSummary {
@@ -400,15 +404,24 @@ impl IngestRouter {
                     ingester.persist(persist_request),
                 )
                 .await
-                .unwrap_or_else(|_| Err(IngestV2Error::Timeout));
+                .unwrap_or_else(|_| {
+                    let message = format!(
+                        "persist request timed out after {}",
+                        PERSIST_REQUEST_TIMEOUT.pretty_display()
+                    );
+                    Err(IngestV2Error::Timeout(message))
+                });
                 (persist_summary, persist_result)
             };
             persist_futures.push(persist_future);
         }
         drop(state_guard);
 
-        for subrequest_id in unavailable_subrequest_ids {
+        for subrequest_id in no_shards_available_subrequest_ids {
             workbench.record_no_shards_available(subrequest_id);
+        }
+        for subrequest_id in ingester_unavailable_subrequest_ids {
+            workbench.record_ingester_unavailable(subrequest_id);
         }
         self.process_persist_results(workbench, persist_futures)
             .await;
@@ -438,7 +451,13 @@ impl IngestRouter {
             self.retry_batch_persist(ingest_request, MAX_PERSIST_ATTEMPTS),
         )
         .await
-        .map_err(|_| IngestV2Error::Timeout)?
+        .map_err(|_| {
+            let message = format!(
+                "ingest request timed out after {}",
+                timeout_duration.pretty_display()
+            );
+            IngestV2Error::Timeout(message)
+        })?
     }
 }
 
@@ -1118,7 +1137,8 @@ mod tests {
                 leader_id: "test-ingester-0".into(),
                 subrequest_ids: vec![0],
             };
-            let persist_result = Err::<_, IngestV2Error>(IngestV2Error::Timeout);
+            let persist_result =
+                Err::<_, IngestV2Error>(IngestV2Error::Timeout("persist timeout".to_string()));
             (persist_summary, persist_result)
         });
         router
@@ -1140,8 +1160,9 @@ mod tests {
                 leader_id: "test-ingester-1".into(),
                 subrequest_ids: vec![1],
             };
-            let persist_result =
-                Err::<_, IngestV2Error>(IngestV2Error::Transport("transport error".to_string()));
+            let persist_result = Err::<_, IngestV2Error>(IngestV2Error::Unavailable(
+                "connection refused".to_string(),
+            ));
             (persist_summary, persist_result)
         });
         router
@@ -1158,7 +1179,7 @@ mod tests {
         let subworkbench = workbench.subworkbenches.get(&1).unwrap();
         assert!(matches!(
             subworkbench.last_failure_opt,
-            Some(SubworkbenchFailure::Transport)
+            Some(SubworkbenchFailure::Unavailable)
         ));
     }
 

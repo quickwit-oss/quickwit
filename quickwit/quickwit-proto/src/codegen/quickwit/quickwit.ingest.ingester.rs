@@ -2147,7 +2147,7 @@ where
             .persist(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn open_replication_stream(
         &mut self,
@@ -2159,9 +2159,12 @@ where
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
                 let stream = quickwit_common::ServiceStream::from(streaming);
-                stream.map_err(|error| error.into())
+                stream
+                    .map_err(
+                        quickwit_common::service_error::grpc_status_to_service_error,
+                    )
             })
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn open_fetch_stream(
         &mut self,
@@ -2173,9 +2176,12 @@ where
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
                 let stream = quickwit_common::ServiceStream::from(streaming);
-                stream.map_err(|error| error.into())
+                stream
+                    .map_err(
+                        quickwit_common::service_error::grpc_status_to_service_error,
+                    )
             })
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn open_observation_stream(
         &mut self,
@@ -2187,9 +2193,12 @@ where
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
                 let stream = quickwit_common::ServiceStream::from(streaming);
-                stream.map_err(|error| error.into())
+                stream
+                    .map_err(
+                        quickwit_common::service_error::grpc_status_to_service_error,
+                    )
             })
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn init_shards(
         &mut self,
@@ -2199,7 +2208,7 @@ where
             .init_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn retain_shards(
         &mut self,
@@ -2209,7 +2218,7 @@ where
             .retain_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn truncate_shards(
         &mut self,
@@ -2219,7 +2228,7 @@ where
             .truncate_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn close_shards(
         &mut self,
@@ -2229,7 +2238,7 @@ where
             .close_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn ping(
         &mut self,
@@ -2239,7 +2248,7 @@ where
             .ping(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
     async fn decommission(
         &mut self,
@@ -2249,7 +2258,7 @@ where
             .decommission(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::grpc_status_to_service_error)
     }
 }
 #[derive(Debug)]
@@ -2276,7 +2285,7 @@ for IngesterServiceGrpcServerAdapter {
             .persist(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     type OpenReplicationStreamStream = quickwit_common::ServiceStream<
         tonic::Result<AckReplicationMessage>,
@@ -2292,8 +2301,13 @@ for IngesterServiceGrpcServerAdapter {
                 quickwit_common::ServiceStream::from(streaming)
             })
             .await
-            .map(|stream| tonic::Response::new(stream.map_err(|error| error.into())))
-            .map_err(|error| error.into())
+            .map(|stream| tonic::Response::new(
+                stream
+                    .map_err(
+                        quickwit_common::service_error::service_errror_to_grpc_status,
+                    ),
+            ))
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     type OpenFetchStreamStream = quickwit_common::ServiceStream<
         tonic::Result<FetchMessage>,
@@ -2306,8 +2320,13 @@ for IngesterServiceGrpcServerAdapter {
             .clone()
             .open_fetch_stream(request.into_inner())
             .await
-            .map(|stream| tonic::Response::new(stream.map_err(|error| error.into())))
-            .map_err(|error| error.into())
+            .map(|stream| tonic::Response::new(
+                stream
+                    .map_err(
+                        quickwit_common::service_error::service_errror_to_grpc_status,
+                    ),
+            ))
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     type OpenObservationStreamStream = quickwit_common::ServiceStream<
         tonic::Result<ObservationMessage>,
@@ -2320,8 +2339,13 @@ for IngesterServiceGrpcServerAdapter {
             .clone()
             .open_observation_stream(request.into_inner())
             .await
-            .map(|stream| tonic::Response::new(stream.map_err(|error| error.into())))
-            .map_err(|error| error.into())
+            .map(|stream| tonic::Response::new(
+                stream
+                    .map_err(
+                        quickwit_common::service_error::service_errror_to_grpc_status,
+                    ),
+            ))
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     async fn init_shards(
         &self,
@@ -2332,7 +2356,7 @@ for IngesterServiceGrpcServerAdapter {
             .init_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     async fn retain_shards(
         &self,
@@ -2343,7 +2367,7 @@ for IngesterServiceGrpcServerAdapter {
             .retain_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     async fn truncate_shards(
         &self,
@@ -2354,7 +2378,7 @@ for IngesterServiceGrpcServerAdapter {
             .truncate_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     async fn close_shards(
         &self,
@@ -2365,7 +2389,7 @@ for IngesterServiceGrpcServerAdapter {
             .close_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     async fn ping(
         &self,
@@ -2376,7 +2400,7 @@ for IngesterServiceGrpcServerAdapter {
             .ping(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
     async fn decommission(
         &self,
@@ -2387,7 +2411,7 @@ for IngesterServiceGrpcServerAdapter {
             .decommission(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(quickwit_common::service_error::service_errror_to_grpc_status)
     }
 }
 /// Generated client implementations.

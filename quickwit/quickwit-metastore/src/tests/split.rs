@@ -100,7 +100,7 @@ pub async fn test_metastore_publish_splits_empty_splits_array_is_allowed<
             .unwrap();
 
         let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+            .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -744,7 +744,7 @@ pub async fn test_metastore_publish_splits_concurrency<
     try_join_all(join_handles).await.unwrap();
 
     let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap()
         .deserialize_index_metadata()

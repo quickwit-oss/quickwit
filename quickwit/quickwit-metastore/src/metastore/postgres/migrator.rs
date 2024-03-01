@@ -38,8 +38,6 @@ pub(super) async fn run_migrations(pool: &Pool<Postgres>) -> MetastoreResult<()>
     tx.rollback().await?;
     error!(error=%migrate_error, "failed to run PostgreSQL migrations");
 
-    Err(MetastoreError::Internal {
-        message: "failed to run PostgreSQL migrations".to_string(),
-        cause: migrate_error.to_string(),
-    })
+    let message = format!("failed to run PostgreSQL migrations: {migrate_error}");
+    Err(MetastoreError::Internal(message))
 }

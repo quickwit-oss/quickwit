@@ -5621,6 +5621,7 @@ dependencies = [
  "anyhow",
  "async-speed-limit",
  "async-trait",
+ "bytes",
  "bytesize",
  "dyn-clone",
  "env_logger",

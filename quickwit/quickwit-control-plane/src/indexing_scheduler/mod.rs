@@ -516,19 +516,19 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(10u128)),
+                pipeline_uid: Some(PipelineUid::for_test(10u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1b = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(11u128)),
+                pipeline_uid: Some(PipelineUid::for_test(11u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(20u128)),
+                pipeline_uid: Some(PipelineUid::for_test(20u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -548,13 +548,13 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+                pipeline_uid: Some(PipelineUid::for_test(1u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+                pipeline_uid: Some(PipelineUid::for_test(2u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -580,13 +580,13 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+                pipeline_uid: Some(PipelineUid::for_test(1u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+                pipeline_uid: Some(PipelineUid::for_test(2u128)),
                 index_uid: Some(index_uid2.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -620,19 +620,19 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1a = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(10u128)),
+                pipeline_uid: Some(PipelineUid::for_test(10u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1b = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(11u128)),
+                pipeline_uid: Some(PipelineUid::for_test(11u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1c = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(12u128)),
+                pipeline_uid: Some(PipelineUid::for_test(12u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),

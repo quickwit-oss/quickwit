@@ -58,9 +58,7 @@ pub(super) async fn establish_connection(
         .await
         .map_err(|error| {
             error!(connection_uri=%connection_uri, error=?error, "failed to establish connection to database");
-            MetastoreError::Connection {
-                message: error.to_string(),
-            }
+            MetastoreError::from(error)
         })
 }
 

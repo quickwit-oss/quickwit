@@ -218,19 +218,21 @@ fn into_metastore_error(
     operation_name: &str,
 ) -> MetastoreError {
     match storage_error.kind() {
-        StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
-            message: format!(
-                "failed to access manifest file located at `{uri}/{}`: unauthorized",
+        StorageErrorKind::Unauthorized => {
+            let message = format!(
+                "failed to {operation_name} manifest file located at `{uri}/{}`: unauthorized \
+                 access",
                 path.display()
-            ),
-        },
-        _ => MetastoreError::Internal {
-            message: format!(
-                "failed to {operation_name} manifest file located at `{uri}/{}`",
+            );
+            MetastoreError::Forbidden(message)
+        }
+        _ => {
+            let message = format!(
+                "failed to {operation_name} manifest file located at `{uri}/{}`: {storage_error}",
                 path.display()
-            ),
-            cause: storage_error.to_string(),
-        },
+            );
+            MetastoreError::Internal(message)
+        }
     }
 }
 

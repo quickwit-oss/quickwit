@@ -409,13 +409,11 @@ fn convert_metastore_error<T>(
         | MetastoreError::FailedPrecondition { .. }
         | MetastoreError::Forbidden { .. }
         | MetastoreError::InvalidArgument { .. }
-        | MetastoreError::JsonDeserializeError { .. }
-        | MetastoreError::JsonSerializeError { .. }
-        | MetastoreError::NotFound(_) => true,
-        MetastoreError::Connection { .. }
-        | MetastoreError::Db { .. }
+        | MetastoreError::NotFound(_)
+        | MetastoreError::Serde(_) => true,
+        MetastoreError::Db { .. }
         | MetastoreError::Internal { .. }
-        | MetastoreError::Io { .. }
+        | MetastoreError::Timeout { .. }
         | MetastoreError::Unavailable(_) => false,
     };
     if is_transaction_certainly_aborted {
@@ -753,9 +751,9 @@ fn apply_index_template_match(
         serde_utils::from_json_str(&index_template_match.index_template_json)?;
     let index_config = index_template
         .apply_template(index_template_match.index_id, default_index_root_uri)
-        .map_err(|error| MetastoreError::Internal {
-            message: "failed to apply index template".to_string(),
-            cause: error.to_string(),
+        .map_err(|error| {
+            let message = format!("failed to apply index template: {error}");
+            MetastoreError::Internal(message)
         })?;
     Ok(index_config)
 }
@@ -1287,9 +1285,7 @@ mod tests {
         );
         mock_metastore.expect_create_index().times(1).return_once(
             |_create_index_request: CreateIndexRequest| {
-                Err(MetastoreError::Connection {
-                    message: "Fake connection error.".to_string(),
-                })
+                Err(MetastoreError::Internal("metastore error".to_string()))
             },
         );
 

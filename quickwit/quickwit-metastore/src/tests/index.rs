@@ -60,7 +60,7 @@ pub async fn test_metastore_create_index<
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
     let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap()
         .deserialize_index_metadata()
@@ -106,7 +106,7 @@ pub async fn test_metastore_create_index_with_sources<
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
     let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap()
         .deserialize_index_metadata()
@@ -180,7 +180,7 @@ pub async fn test_metastore_index_metadata<
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
     let error = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap_err();
     assert!(matches!(
@@ -197,7 +197,7 @@ pub async fn test_metastore_index_metadata<
         .clone();
 
     let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .index_metadata(IndexMetadataRequest::with_index_id(index_id.to_string()))
         .await
         .unwrap()
         .deserialize_index_metadata()

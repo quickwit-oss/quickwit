@@ -52,7 +52,7 @@ pub(crate) const STREAM_SPLITS_CHUNK_SIZE: usize = 100;
 pub trait MetastoreServiceExt: MetastoreService {
     /// Returns whether the index `index_id` exists in the metastore.
     async fn index_exists(&mut self, index_id: &str) -> MetastoreResult<bool> {
-        let request = IndexMetadataRequest::for_index_id(index_id.to_string());
+        let request = IndexMetadataRequest::with_index_id(index_id.to_string());
         match self.index_metadata(request).await {
             Ok(_) => Ok(true),
             Err(MetastoreError::NotFound { .. }) => Ok(false),
@@ -467,10 +467,9 @@ impl ListSplitsQuery {
     /// Returns an error if the list is empty.
     pub fn try_from_index_uids(index_uids: Vec<IndexUid>) -> MetastoreResult<Self> {
         if index_uids.is_empty() {
-            return Err(MetastoreError::Internal {
-                message: "ListSplitQuery should define at least one index uid".to_string(),
-                cause: "".to_string(),
-            });
+            return Err(MetastoreError::Internal(
+                "ListSplitQuery should define at least one index uid".to_string(),
+            ));
         }
         Ok(Self {
             index_uids,
