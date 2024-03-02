@@ -154,7 +154,23 @@ impl SortingFieldExtractorComponent {
     ///
     /// The function returns None if the sort key is a fast field, for which we have no value
     /// for the given doc_id, or we sort by DocId.
+    #[inline]
     fn extract_typed_sort_value_opt(&self, doc_id: DocId, score: Score) -> Option<SortValue> {
+        match self {
+            SortingFieldExtractorComponent::DocId => None,
+            SortingFieldExtractorComponent::FastField {
+                sort_column,
+                sort_field_type: _,
+                ..
+            } => sort_column.first(doc_id).map(SortValue::U64),
+            SortingFieldExtractorComponent::Score { .. } => Some(SortValue::F64(score as f64)),
+        }
+    }
+
+    #[inline]
+    /// Converts u64 fast field values to its correct type.
+    /// The conversion is delayed for performance reasons.
+    fn convert_to_sort_value(&self, sort_value: SortValue) -> SortValue {
         let map_fast_field_to_value = |fast_field_value, field_type| match field_type {
             SortFieldType::U64 => SortValue::U64(fast_field_value),
             SortFieldType::I64 => SortValue::I64(i64::from_u64(fast_field_value)),
@@ -162,17 +178,17 @@ impl SortingFieldExtractorComponent {
             SortFieldType::DateTime => SortValue::I64(i64::from_u64(fast_field_value)),
             SortFieldType::Bool => SortValue::Boolean(fast_field_value != 0u64),
         };
-
         match self {
-            SortingFieldExtractorComponent::DocId => None,
+            SortingFieldExtractorComponent::DocId => sort_value,
             SortingFieldExtractorComponent::FastField {
-                sort_column,
+                sort_column: _,
                 sort_field_type,
                 ..
-            } => sort_column
-                .first(doc_id)
-                .map(|field_val| map_fast_field_to_value(field_val, *sort_field_type)),
-            SortingFieldExtractorComponent::Score { .. } => Some(SortValue::F64(score as f64)),
+            } => match sort_value {
+                SortValue::U64(val) => map_fast_field_to_value(val, *sort_field_type),
+                _ => panic!("Internal error: Got non-U64 sort value for fast field."),
+            },
+            SortingFieldExtractorComponent::Score => sort_value,
         }
     }
 }
@@ -196,6 +212,7 @@ impl SortingFieldExtractorPair {
     ///
     /// See also [`SortingFieldExtractorComponent::extract_typed_sort_value_opt`] for more
     /// information.
+    #[inline]
     fn extract_typed_sort_value(
         &self,
         doc_id: DocId,
@@ -343,8 +360,8 @@ impl QuickwitSegmentCollector {
         }
 
         let hit = SegmentPartialHit {
-            sort_value: sort_value.map(Into::into),
-            sort_value2: sort_value2.map(Into::into),
+            sort_value,
+            sort_value2,
             doc_id,
         };
         self.top_k_hits.add_entry(hit);
@@ -367,14 +384,31 @@ struct SegmentPartialHit {
 }
 
 impl SegmentPartialHit {
-    fn into_partial_hit(self, split_id: String, segment_ord: SegmentOrdinal) -> PartialHit {
+    fn into_partial_hit(
+        self,
+        split_id: String,
+        segment_ord: SegmentOrdinal,
+        first: &SortingFieldExtractorComponent,
+        second: &Option<SortingFieldExtractorComponent>,
+    ) -> PartialHit {
         PartialHit {
-            sort_value: self.sort_value.map(|sort_value| SortByValue {
-                sort_value: Some(sort_value),
-            }),
-            sort_value2: self.sort_value2.map(|sort_value| SortByValue {
-                sort_value: Some(sort_value),
-            }),
+            sort_value: self
+                .sort_value
+                .map(|sort_value| first.convert_to_sort_value(sort_value))
+                .map(|sort_value| SortByValue {
+                    sort_value: Some(sort_value),
+                }),
+            sort_value2: self
+                .sort_value2
+                .map(|sort_value| {
+                    second
+                        .as_ref()
+                        .expect("Internal error: Got sort_value2, but no sort extractor")
+                        .convert_to_sort_value(sort_value)
+                })
+                .map(|sort_value| SortByValue {
+                    sort_value: Some(sort_value),
+                }),
             doc_id: self.doc_id,
             split_id,
             segment_ord,
@@ -411,7 +445,12 @@ impl SegmentCollector for QuickwitSegmentCollector {
             .finalize()
             .into_iter()
             .map(|segment_partial_hit: SegmentPartialHit| {
-                segment_partial_hit.into_partial_hit(self.split_id.clone(), self.segment_ord)
+                segment_partial_hit.into_partial_hit(
+                    self.split_id.clone(),
+                    self.segment_ord,
+                    &self.score_extractor.first,
+                    &self.score_extractor.second,
+                )
             })
             .collect();
 
