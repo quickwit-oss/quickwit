@@ -170,7 +170,7 @@ impl SortingFieldExtractorComponent {
     #[inline]
     /// Converts u64 fast field values to its correct type.
     /// The conversion is delayed for performance reasons.
-    fn convert_to_sort_value(&self, sort_value: SortValue) -> SortValue {
+    fn convert_u64_ff_val_to_sort_value(&self, sort_value: SortValue) -> SortValue {
         let map_fast_field_to_value = |fast_field_value, field_type| match field_type {
             SortFieldType::U64 => SortValue::U64(fast_field_value),
             SortFieldType::I64 => SortValue::I64(i64::from_u64(fast_field_value)),
@@ -181,12 +181,24 @@ impl SortingFieldExtractorComponent {
         match self {
             SortingFieldExtractorComponent::DocId => sort_value,
             SortingFieldExtractorComponent::FastField {
-                sort_column: _,
-                sort_field_type,
-                ..
+                sort_field_type, ..
             } => match sort_value {
                 SortValue::U64(val) => map_fast_field_to_value(val, *sort_field_type),
                 _ => panic!("Internal error: Got non-U64 sort value for fast field."),
+            },
+            SortingFieldExtractorComponent::Score => sort_value,
+        }
+    }
+    #[inline]
+    /// Converts fast field values into their u64 fast field representation.
+    fn convert_to_u64_ff_val(&self, sort_value: SortValue) -> SortValue {
+        match self {
+            SortingFieldExtractorComponent::DocId => sort_value,
+            SortingFieldExtractorComponent::FastField { .. } => match sort_value {
+                SortValue::U64(_val) => sort_value,
+                SortValue::I64(val) => SortValue::U64(val.to_u64()),
+                SortValue::F64(val) => SortValue::U64(val.to_u64()),
+                SortValue::Boolean(val) => SortValue::U64(val as u64),
             },
             SortingFieldExtractorComponent::Score => sort_value,
         }
@@ -394,7 +406,7 @@ impl SegmentPartialHit {
         PartialHit {
             sort_value: self
                 .sort_value
-                .map(|sort_value| first.convert_to_sort_value(sort_value))
+                .map(|sort_value| first.convert_u64_ff_val_to_sort_value(sort_value))
                 .map(|sort_value| SortByValue {
                     sort_value: Some(sort_value),
                 }),
@@ -404,7 +416,7 @@ impl SegmentPartialHit {
                     second
                         .as_ref()
                         .expect("Internal error: Got sort_value2, but no sort extractor")
-                        .convert_to_sort_value(sort_value)
+                        .convert_u64_ff_val_to_sort_value(sort_value)
                 })
                 .map(|sort_value| SortByValue {
                     sort_value: Some(sort_value),
@@ -675,6 +687,33 @@ impl Collector for QuickwitCollector {
             // This value isn't actually used.
             _ => Ordering::Equal,
         };
+        // Convert search_after into fast field u64
+        let mut search_after = self.search_after.clone();
+        if let Some(search_after) = &mut search_after {
+            search_after
+                .sort_value
+                .as_mut()
+                .and_then(|sort_value| sort_value.sort_value.as_mut())
+                .map(|sort_value| {
+                    *sort_value = score_extractor
+                        .first
+                        .convert_to_u64_ff_val(*sort_value)
+                        .into();
+                });
+
+            search_after
+                .sort_value2
+                .as_mut()
+                .and_then(|sort_value2| sort_value2.sort_value.as_mut())
+                .map(|sort_value| {
+                    *sort_value = score_extractor
+                        .second
+                        .as_ref()
+                        .expect("Internal error: Got sort_value2, but no sort extractor")
+                        .convert_to_u64_ff_val(*sort_value)
+                        .into();
+                });
+        }
         Ok(QuickwitSegmentCollector {
             num_hits: 0u64,
             split_id: self.split_id.clone(),
@@ -683,7 +722,7 @@ impl Collector for QuickwitCollector {
             segment_ord,
             timestamp_filter_opt,
             aggregation,
-            search_after: self.search_after.clone(),
+            search_after,
             precomp_search_after_order,
         })
     }
