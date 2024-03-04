@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
@@ -71,8 +71,8 @@ impl LocalShardPositionsUpdate {
 #[derive(Debug)]
 struct ClusterShardPositionsUpdate {
     pub source_uid: SourceUid,
-    // This list can be partial: not all shards for the source need to be listed here.
-    pub shard_positions: Vec<(ShardId, Position)>,
+    pub shard_id: ShardId,
+    pub position: Position,
 }
 
 impl Event for LocalShardPositionsUpdate {}
@@ -93,18 +93,19 @@ fn parse_shard_positions_from_kv(
     key: &str,
     value: &str,
 ) -> anyhow::Result<ClusterShardPositionsUpdate> {
-    let (index_uid_str, source_id) = key.rsplit_once(':').context("invalid key")?;
+    let (source_uid_str, shard_id_str) = key.rsplit_once(':').context("invalid key")?;
+    let shard_id = ShardId::from(shard_id_str);
+    let (index_uid_str, source_id) = source_uid_str.rsplit_once(':').context("invalid key")?;
     let index_uid = index_uid_str.parse()?;
     let source_uid = SourceUid {
         index_uid,
         source_id: source_id.to_string(),
     };
-    let shard_positions_map: HashMap<ShardId, Position> =
-        serde_json::from_str(value).context("failed to parse shard positions json")?;
-    let shard_positions = shard_positions_map.into_iter().collect();
+    let position = Position::from(value.to_string());
     Ok(ClusterShardPositionsUpdate {
         source_uid,
-        shard_positions,
+        shard_id,
+        position,
     })
 }
 
@@ -219,9 +220,10 @@ impl Handler<ClusterShardPositionsUpdate> for ShardPositionsService {
     ) -> Result<Self::Reply, ActorExitStatus> {
         let ClusterShardPositionsUpdate {
             source_uid,
-            shard_positions,
+            shard_id,
+            position,
         } = update;
-        let updated_shard_positions = self.apply_update(&source_uid, shard_positions);
+        let updated_shard_positions = self.apply_update(&source_uid, vec![(shard_id, position)]);
         debug!(updated_shard_positions=?updated_shard_positions, "cluster position update");
         if !updated_shard_positions.is_empty() {
             self.publish_shard_updates_to_event_broker(source_uid, updated_shard_positions);
@@ -248,7 +250,7 @@ impl Handler<LocalShardPositionsUpdate> for ShardPositionsService {
         if updated_shard_positions.is_empty() {
             return Ok(());
         }
-        self.publish_positions_into_chitchat(source_uid.clone())
+        self.publish_positions_into_chitchat(&source_uid, &updated_shard_positions)
             .await;
         self.publish_shard_updates_to_event_broker(source_uid, updated_shard_positions);
         Ok(())
@@ -256,19 +258,21 @@ impl Handler<LocalShardPositionsUpdate> for ShardPositionsService {
 }
 
 impl ShardPositionsService {
-    async fn publish_positions_into_chitchat(&self, source_uid: SourceUid) {
-        let Some(shard_positions) = self.shard_positions_per_source.get(&source_uid) else {
-            return;
-        };
+    async fn publish_positions_into_chitchat(
+        &self,
+        source_uid: &SourceUid,
+        shard_positions: &[(ShardId, Position)],
+    ) {
         let SourceUid {
             index_uid,
             source_id,
         } = &source_uid;
-        let key = format!("{SHARD_POSITIONS_PREFIX}{index_uid}:{source_id}");
-        let shard_positions_json = serde_json::to_string(&shard_positions).unwrap();
-        self.cluster
-            .set_self_key_value(key, shard_positions_json)
-            .await;
+        for (shard_id, position) in shard_positions {
+            let key = format!("{SHARD_POSITIONS_PREFIX}{index_uid}:{source_id}:{shard_id}");
+            self.cluster
+                .set_self_key_value(key, position.to_string())
+                .await;
+        }
     }
 
     fn publish_shard_updates_to_event_broker(
@@ -485,17 +489,15 @@ mod tests {
 
         let index_uid = IndexUid::new_with_random_ulid("index-test");
         let source_id = "test-source".to_string();
-        let key = format!("{SHARD_POSITIONS_PREFIX}{index_uid}:{source_id}");
+        let key_prefix = format!("{SHARD_POSITIONS_PREFIX}{index_uid}:{source_id}");
         let source_uid = SourceUid {
             index_uid,
             source_id,
         };
-        event_broker.publish(LocalShardPositionsUpdate::new(
-            source_uid.clone(),
-            Vec::new(),
-        ));
 
-        assert!(cluster.get_self_key_value(&key).await.is_none());
+        let shard_id1 = ShardId::from(1);
+        let shard_id2 = ShardId::from(2);
+        let shard_id3 = ShardId::from(3);
 
         {
             event_broker.publish(LocalShardPositionsUpdate::new(
@@ -503,39 +505,55 @@ mod tests {
                 vec![(ShardId::from(1), Position::Beginning)],
             ));
             tokio::time::sleep(Duration::from_secs(1)).await;
+            let key = format!("{key_prefix}:{shard_id1}");
             let value = cluster.get_self_key_value(&key).await.unwrap();
-            assert_eq!(&value, r#"{"00000000000000000001":""}"#);
+            assert_eq!(&value, "");
         }
         {
             event_broker.publish(LocalShardPositionsUpdate::new(
                 source_uid.clone(),
                 vec![
-                    (ShardId::from(1), Position::offset(1_000u64)),
-                    (ShardId::from(2), Position::offset(2_000u64)),
+                    (shard_id1.clone(), Position::offset(1_000u64)),
+                    (shard_id2.clone(), Position::offset(2_000u64)),
                 ],
             ));
             tokio::time::sleep(Duration::from_secs(1)).await;
-            let value = cluster.get_self_key_value(&key).await.unwrap();
-            assert_eq!(
-                &value,
-                r#"{"00000000000000000001":"00000000000000001000","00000000000000000002":"00000000000000002000"}"#
-            );
+            let value1 = cluster
+                .get_self_key_value(&format!("{key_prefix}:{shard_id1}"))
+                .await
+                .unwrap();
+            assert_eq!(&value1, "00000000000000001000");
+            let value2 = cluster
+                .get_self_key_value(&format!("{key_prefix}:{shard_id2}"))
+                .await
+                .unwrap();
+            assert_eq!(&value2, "00000000000000002000");
         }
         {
             event_broker.publish(LocalShardPositionsUpdate::new(
                 source_uid.clone(),
                 vec![
-                    (ShardId::from(1), Position::offset(999u64)),
-                    (ShardId::from(3), Position::offset(3_000u64)),
+                    (shard_id1.clone(), Position::offset(999u64)),
+                    (shard_id3.clone(), Position::offset(3_000u64)),
                 ],
             ));
             tokio::time::sleep(Duration::from_secs(1)).await;
-            let value = cluster.get_self_key_value(&key).await.unwrap();
+            let value1 = cluster
+                .get_self_key_value(&format!("{key_prefix}:{shard_id1}"))
+                .await
+                .unwrap();
             // We do not update the position that got lower, nor the position that disappeared
-            assert_eq!(
-                &value,
-                r#"{"00000000000000000001":"00000000000000001000","00000000000000000002":"00000000000000002000","00000000000000000003":"00000000000000003000"}"#
-            );
+            assert_eq!(&value1, "00000000000000001000");
+            let value2 = cluster
+                .get_self_key_value(&format!("{key_prefix}:{shard_id2}"))
+                .await
+                .unwrap();
+            assert_eq!(&value2, "00000000000000002000");
+            let value3 = cluster
+                .get_self_key_value(&format!("{key_prefix}:{shard_id3}"))
+                .await
+                .unwrap();
+            assert_eq!(&value3, "00000000000000003000");
         }
         universe.assert_quit().await;
     }
