@@ -155,3 +155,40 @@ impl ShardState {
         }
     }
 }
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ShardAccessibility {
+    Unspecified = 0,
+    /// The shard is readable but not writable.
+    Readable = 1,
+    /// The shard is readable AND writable.
+    ReadWritable = 2,
+    /// The shard is not accessible.
+    Inaccessible = 3,
+}
+impl ShardAccessibility {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ShardAccessibility::Unspecified => "SHARD_ACCESSIBILITY_UNSPECIFIED",
+            ShardAccessibility::Readable => "SHARD_ACCESSIBILITY_READABLE",
+            ShardAccessibility::ReadWritable => "SHARD_ACCESSIBILITY_READ_WRITABLE",
+            ShardAccessibility::Inaccessible => "SHARD_ACCESSIBILITY_INACCESSIBLE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SHARD_ACCESSIBILITY_UNSPECIFIED" => Some(Self::Unspecified),
+            "SHARD_ACCESSIBILITY_READABLE" => Some(Self::Readable),
+            "SHARD_ACCESSIBILITY_READ_WRITABLE" => Some(Self::ReadWritable),
+            "SHARD_ACCESSIBILITY_INACCESSIBLE" => Some(Self::Inaccessible),
+            _ => None,
+        }
+    }
+}

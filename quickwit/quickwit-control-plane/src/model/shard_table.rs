@@ -25,8 +25,8 @@ use std::time::Duration;
 use fnv::{FnvHashMap, FnvHashSet};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::ConstantRate;
-use quickwit_ingest::{RateMibPerSec, ShardInfo, ShardInfos};
-use quickwit_proto::ingest::{Shard, ShardState};
+use quickwit_ingest::{IngesterPool, RateMibPerSec, ShardInfo, ShardInfos};
+use quickwit_proto::ingest::{Shard, ShardAccessibility, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use tracing::{error, warn};
 
@@ -53,7 +53,18 @@ pub(crate) enum ScalingMode {
 #[derive(Debug, Clone)]
 pub(crate) struct ShardEntry {
     pub shard: Shard,
+    pub accessibility: ShardAccessibility,
     pub ingestion_rate: RateMibPerSec,
+}
+
+impl ShardEntry {
+    pub fn new(shard: Shard, accessibility: ShardAccessibility) -> Self {
+        Self {
+            shard,
+            accessibility,
+            ingestion_rate: RateMibPerSec::default(),
+        }
+    }
 }
 
 impl Deref for ShardEntry {
@@ -67,15 +78,6 @@ impl Deref for ShardEntry {
 impl DerefMut for ShardEntry {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.shard
-    }
-}
-
-impl From<Shard> for ShardEntry {
-    fn from(shard: Shard) -> Self {
-        Self {
-            shard,
-            ingestion_rate: RateMibPerSec::default(),
-        }
     }
 }
 
@@ -299,6 +301,7 @@ impl ShardTable {
         index_uid: &IndexUid,
         source_id: &SourceId,
         opened_shards: Vec<Shard>,
+        ingester_pool: &IngesterPool,
     ) {
         let source_uid = SourceUid {
             index_uid: index_uid.clone(),
@@ -328,10 +331,18 @@ impl ShardTable {
                 for opened_shard in opened_shards {
                     // We only insert shards that we don't know about because the control plane
                     // knows more about the state of the shards than the metastore.
-                    table_entry
+                    if let Entry::Vacant(vacant_entry) = table_entry
                         .shard_entries
                         .entry(opened_shard.shard_id().clone())
-                        .or_insert(opened_shard.into());
+                    {
+                        let accessibility = if ingester_pool.contains_key(opened_shard.leader_id) {
+                            ShardAccessibility::Readable
+                        } else {
+                            ShardAccessibility::Inaccessible
+                        };
+                        let shard_entry = ShardEntry::new(opened_shard, accessibility);
+                        entry.insert(shard_entry);
+                    };
                 }
             }
             // This should never happen if the control plane view is consistent with the state of

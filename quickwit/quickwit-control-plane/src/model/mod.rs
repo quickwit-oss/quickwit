@@ -29,7 +29,7 @@ use fnv::{FnvHashMap, FnvHashSet};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::Progress;
 use quickwit_config::SourceConfig;
-use quickwit_ingest::ShardInfos;
+use quickwit_ingest::{IngesterPool, ShardInfos};
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::Shard;
@@ -83,6 +83,7 @@ impl ControlPlaneModel {
     pub async fn load_from_metastore(
         &mut self,
         metastore: &mut MetastoreServiceClient,
+        ingester_pool: IngesterPool,
         progress: &Progress,
     ) -> ControlPlaneResult<()> {
         let now = Instant::now();

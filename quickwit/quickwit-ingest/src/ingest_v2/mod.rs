@@ -44,7 +44,7 @@ use fnv::FnvHashMap;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
-use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
+use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2, Shard, ShardAccessibility};
 use quickwit_proto::types::{IndexId, NodeId};
 use tracing::{error, info};
 
@@ -106,6 +106,21 @@ pub(crate) fn get_ingest_router_buffer_size() -> ByteSize {
             }
         })
         .unwrap_or(DEFAULT_INGEST_ROUTER_BUFFER_SIZE)
+}
+
+pub fn compute_shard_accessibility(
+    ingester_pool: &IngesterPool,
+    shard: &Shard,
+) -> ShardAccessibility {
+    let contains_leader = ingester_pool.contains_key(&shard.leader_id);
+    let contains_follower = shard.follower_id.as_ref().map_or(true, |follower_id| {
+        ingester_pool.contains_key(follower_id)
+    });
+    match (contains_leader, contains_follower) {
+        (true, true) => ShardAccessibility::ReadWritable,
+        (false, false) => ShardAccessibility::Inaccessible,
+        _ => ShardAccessibility::Readable,
+    }
 }
 
 /// Helper struct to build a [`DocBatchV2`]`.

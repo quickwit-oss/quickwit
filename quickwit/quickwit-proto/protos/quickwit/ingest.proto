@@ -69,6 +69,16 @@ enum ShardState {
   SHARD_STATE_CLOSED = 3;
 }
 
+enum ShardAccessibility {
+  SHARD_ACCESSIBILITY_UNSPECIFIED = 0;
+  // The shard is readable but not writable.
+  SHARD_ACCESSIBILITY_READABLE = 1;
+  // The shard is readable AND writable.
+  SHARD_ACCESSIBILITY_READ_WRITABLE = 2;
+  // The shard is not accessible.
+  SHARD_ACCESSIBILITY_INACCESSIBLE = 3;
+}
+
 message Shard {
   // Immutable fields
   quickwit.common.IndexUid index_uid = 1;
