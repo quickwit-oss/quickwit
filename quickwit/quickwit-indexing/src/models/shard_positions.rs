@@ -270,7 +270,7 @@ impl ShardPositionsService {
         for (shard_id, position) in shard_positions {
             let key = format!("{SHARD_POSITIONS_PREFIX}{index_uid}:{source_id}:{shard_id}");
             self.cluster
-                .set_self_key_value(key, position.to_string())
+                .set_self_key_value_delete_after_ttl(key, position)
                 .await;
         }
     }

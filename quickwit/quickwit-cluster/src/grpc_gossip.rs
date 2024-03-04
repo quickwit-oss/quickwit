@@ -130,10 +130,24 @@ async fn perform_grpc_gossip_rounds<Factory, Fut>(
             if chitchat_id == *self_chitchat_id {
                 continue;
             }
+            let now = tokio::time::Instant::now();
             let key_values = proto_node_state.key_values.into_iter().map(|key_value| {
+                let status: chitchat::DeletionStatus = match key_value.status() {
+                    quickwit_proto::cluster::DeletionStatus::Set => chitchat::DeletionStatus::Set,
+                    quickwit_proto::cluster::DeletionStatus::Deleted => {
+                        chitchat::DeletionStatus::Deleted(now)
+                    }
+                    quickwit_proto::cluster::DeletionStatus::DeleteAfterTtl => {
+                        chitchat::DeletionStatus::DeleteAfterTtl(now)
+                    }
+                };
                 (
                     key_value.key,
-                    VersionedValue::new(key_value.value, key_value.version, key_value.is_tombstone),
+                    VersionedValue {
+                        value: key_value.value,
+                        version: key_value.version,
+                        status,
+                    },
                 )
             });
             chitchat_guard.reset_node_state(
@@ -200,8 +214,8 @@ fn is_candidate_for_gossip(node_state: &NodeState) -> bool {
 mod tests {
     use chitchat::transport::ChannelTransport;
     use quickwit_proto::cluster::{
-        ChitchatId as ProtoChitchatId, FetchClusterStateResponse, MockClusterService,
-        NodeState as ProtoNodeState, VersionedKeyValue,
+        ChitchatId as ProtoChitchatId, DeletionStatus, FetchClusterStateResponse,
+        MockClusterService, NodeState as ProtoNodeState, VersionedKeyValue,
     };
 
     use super::*;
@@ -236,7 +250,8 @@ mod tests {
                                     key: "foo".to_string(),
                                     value: "bar".to_string(),
                                     version: 2,
-                                    is_tombstone: false,
+
+                                    status: DeletionStatus::Set as i32,
                                 }],
                                 max_version: 2,
                                 last_gc_version: 1,

@@ -78,13 +78,27 @@ impl ClusterService for Cluster {
                 generation_id: chitchat_id.generation_id,
                 gossip_advertise_addr: chitchat_id.gossip_advertise_addr.to_string(),
             };
+
             let key_values: Vec<VersionedKeyValue> = node_state
                 .key_values_including_deleted()
-                .map(|(key, versioned_value)| VersionedKeyValue {
-                    key: key.to_string(),
-                    value: versioned_value.value.clone(),
-                    version: versioned_value.version,
-                    is_tombstone: versioned_value.is_tombstone(),
+                .map(|(key, versioned_value)| {
+                    let key_value_status_proto = match versioned_value.status {
+                        chitchat::DeletionStatus::Set => {
+                            quickwit_proto::cluster::DeletionStatus::Set
+                        }
+                        chitchat::DeletionStatus::Deleted(_) => {
+                            quickwit_proto::cluster::DeletionStatus::Deleted
+                        }
+                        chitchat::DeletionStatus::DeleteAfterTtl(_) => {
+                            quickwit_proto::cluster::DeletionStatus::DeleteAfterTtl
+                        }
+                    };
+                    VersionedKeyValue {
+                        key: key.to_string(),
+                        value: versioned_value.value.clone(),
+                        version: versioned_value.version,
+                        status: key_value_status_proto as i32,
+                    }
                 })
                 .sorted_unstable_by_key(|key_value| key_value.version)
                 .collect();
