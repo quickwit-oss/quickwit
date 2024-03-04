@@ -9,7 +9,6 @@ json:
   index_id: test_index1
   doc_mapping:
     mode: dynamic
-sleep_after: 3
 ---
 engines:
   - quickwit
@@ -21,7 +20,6 @@ json:
   index_id: test_index2
   doc_mapping:
     mode: dynamic
-sleep_after: 3
 --- # create indices elasticsearch
 engines:
   - elasticsearch

@@ -29,7 +29,7 @@ json:
 ---
 method: POST
 endpoint: defaultsearchfields/ingest
-num_retries: 10
+#num_retries: 10
 params:
   commit: force
 ndjson:

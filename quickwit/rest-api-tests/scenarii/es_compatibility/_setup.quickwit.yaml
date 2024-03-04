@@ -36,7 +36,7 @@ json:
           indexed: true
         - name: public
           type: bool
-          fast: false          
+          fast: false
           indexed: true
         - name: created_at
           type: datetime
@@ -53,7 +53,7 @@ sleep_after: 3
 # Ingest documents
 method: POST
 endpoint: _bulk
-num_retries: 10
+# num_retries: 10
 params:
   refresh: "true"
 headers: {"Content-Type": "application/json", "content-encoding": "gzip"}
