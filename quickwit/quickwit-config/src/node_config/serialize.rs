@@ -411,24 +411,24 @@ impl RestConfigBuilder {
 
 #[cfg(any(test, feature = "testsuite"))]
 pub fn node_config_for_test() -> NodeConfig {
+    use quickwit_common::net::find_available_tcp_port;
+
     let enabled_services = QuickwitService::supported_services();
     let listen_address = Host::default();
-    let rest_listen_port = quickwit_common::net::find_available_tcp_port()
-        .expect("The OS should almost always find an available port.");
+    let rest_listen_port = find_available_tcp_port().expect("OS should find an available port");
     let rest_listen_addr = listen_address
         .with_port(rest_listen_port)
         .to_socket_addr()
-        .expect("The default host should be an IP address.");
+        .expect("default host should be an IP address");
     let gossip_listen_addr = listen_address
         .with_port(rest_listen_port)
         .to_socket_addr()
-        .expect("The default host should be an IP address.");
-    let grpc_listen_port = quickwit_common::net::find_available_tcp_port()
-        .expect("The OS should almost always find an available port.");
+        .expect("default host should be an IP address");
+    let grpc_listen_port = find_available_tcp_port().expect("OS should find an available port");
     let grpc_listen_addr = listen_address
         .with_port(grpc_listen_port)
         .to_socket_addr()
-        .expect("The default host should be an IP address.");
+        .expect("default host should be an IP address");
 
     let data_dir_uri = default_data_dir_uri().unwrap();
     let data_dir_path = data_dir_uri
