@@ -19,7 +19,7 @@
 
 use std::fmt;
 
-use crate::errors::CorruptedKey;
+use crate::error::CorruptedKey;
 
 #[derive(Clone, Copy, Default, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Position([u8; 8]);

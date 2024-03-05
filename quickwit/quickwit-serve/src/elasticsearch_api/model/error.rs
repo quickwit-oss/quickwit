@@ -52,7 +52,7 @@ impl ElasticsearchError {
 
 impl From<SearchError> for ElasticsearchError {
     fn from(search_error: SearchError) -> Self {
-        let status = search_error.error_code().to_http_status_code();
+        let status = search_error.error_code().http_status_code();
         // Fill only reason field to keep it simple.
         let reason = ErrorCause {
             reason: Some(search_error.to_string()),
@@ -72,7 +72,7 @@ impl From<SearchError> for ElasticsearchError {
 
 impl From<IngestServiceError> for ElasticsearchError {
     fn from(ingest_service_error: IngestServiceError) -> Self {
-        let status = ingest_service_error.error_code().to_http_status_code();
+        let status = ingest_service_error.error_code().http_status_code();
 
         let reason = ErrorCause {
             reason: Some(ingest_service_error.to_string()),
@@ -92,7 +92,7 @@ impl From<IngestServiceError> for ElasticsearchError {
 
 impl From<IngestV2Error> for ElasticsearchError {
     fn from(ingest_error: IngestV2Error) -> Self {
-        let status = ingest_error.error_code().to_http_status_code();
+        let status = ingest_error.error_code().http_status_code();
 
         let reason = ErrorCause {
             reason: Some(ingest_error.to_string()),
@@ -112,7 +112,7 @@ impl From<IngestV2Error> for ElasticsearchError {
 
 impl From<IndexServiceError> for ElasticsearchError {
     fn from(ingest_error: IndexServiceError) -> Self {
-        let status = ingest_error.error_code().to_http_status_code();
+        let status = ingest_error.error_code().http_status_code();
 
         let reason = ErrorCause {
             reason: Some(ingest_error.to_string()),

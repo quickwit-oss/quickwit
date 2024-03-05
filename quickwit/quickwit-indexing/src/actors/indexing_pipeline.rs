@@ -658,9 +658,7 @@ mod tests {
                     );
                 }
                 num_fails -= 1;
-                Err(MetastoreError::Connection {
-                    message: "MetastoreError Alarm".to_string(),
-                })
+                Err(MetastoreError::Timeout("timeout error".to_string()))
             });
         metastore
             .expect_last_delete_opstamp()
@@ -700,7 +698,7 @@ mod tests {
             index_uid: IndexUid::for_test("test-index", 2),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_uid: PipelineUid::from_u128(0u128),
+            pipeline_uid: PipelineUid::for_test(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
@@ -808,7 +806,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_uid: PipelineUid::from_u128(0u128),
+            pipeline_uid: PipelineUid::for_test(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
@@ -885,7 +883,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_uid: PipelineUid::from_u128(0u128),
+            pipeline_uid: PipelineUid::for_test(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
@@ -1004,7 +1002,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_uid: PipelineUid::from_u128(0u128),
+            pipeline_uid: PipelineUid::for_test(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),

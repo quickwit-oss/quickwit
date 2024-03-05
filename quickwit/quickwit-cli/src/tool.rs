@@ -475,7 +475,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .ask_for_res(SpawnPipeline {
             index_id: args.index_id.clone(),
             source_config,
-            pipeline_uid: PipelineUid::from_u128(0u128),
+            pipeline_uid: PipelineUid::new(),
         })
         .await?;
     let merge_pipeline_handle = indexing_server_mailbox
@@ -615,7 +615,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             },
-            pipeline_uid: PipelineUid::from_u128(0u128),
+            pipeline_uid: PipelineUid::new(),
         })
         .await?;
     let pipeline_handle: ActorHandle<MergePipeline> = indexing_service_mailbox

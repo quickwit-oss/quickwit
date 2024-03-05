@@ -174,7 +174,7 @@ impl TestSandbox {
             .ask_for_res(SpawnPipeline {
                 index_id: self.index_uid.index_id.to_string(),
                 source_config,
-                pipeline_uid: PipelineUid::from_u128(0u128),
+                pipeline_uid: PipelineUid::for_test(0u128),
             })
             .await?;
         let pipeline_handle = self
