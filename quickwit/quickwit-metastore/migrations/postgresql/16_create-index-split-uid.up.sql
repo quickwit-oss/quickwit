@@ -1,1 +1,1 @@
-CREATE INDEX IF NOT EXISTS index_splits_index_uid ON splits USING HASH(index_uid);
+CREATE INDEX IF NOT EXISTS splits_index_uid_idx ON splits USING HASH(index_uid);

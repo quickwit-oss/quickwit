@@ -1,1 +1,1 @@
-DROP INDEX IF EXISTS index_splits_index_uid;
+DROP INDEX IF EXISTS splits_index_uid_idx;
