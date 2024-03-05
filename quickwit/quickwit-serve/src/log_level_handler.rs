@@ -34,6 +34,7 @@ pub fn log_level_handler(
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path("log_level")
+        .and(warp::get().or(warp::post()).unify())
         .and(warp::path::end())
         .and(with_arg(env_filter_reload_fn))
         .and(warp::query::<EnvFilter>())

@@ -45,7 +45,7 @@ pub fn setup_logging_and_tracing(
     {
         if std::env::var_os(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY).is_some() {
             console_subscriber::init();
-            return Ok(());
+            return Ok(quickwit_serve::do_nothing_env_filter_reload_fn());
         }
     }
     let env_filter = env::var("RUST_LOG")
