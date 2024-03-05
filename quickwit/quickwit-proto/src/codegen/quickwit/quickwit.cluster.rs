@@ -486,7 +486,7 @@ where
             .fetch_cluster_state(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
 }
 #[derive(Debug)]
@@ -513,7 +513,7 @@ for ClusterServiceGrpcServerAdapter {
             .fetch_cluster_state(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
 }
 /// Generated client implementations.

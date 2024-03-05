@@ -18,9 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use hyper::header::CONTENT_TYPE;
-use hyper::http::{status, HeaderValue};
-use hyper::{Body, Response};
-use quickwit_proto::{ServiceError, ServiceErrorCode};
+use hyper::http::HeaderValue;
+use hyper::{Body, Response, StatusCode};
+use quickwit_proto::ServiceError;
 use serde::{self, Serialize};
 use warp::Reply;
 
@@ -33,20 +33,8 @@ pub(crate) struct RestApiError {
     // For now, we want to keep [`RestApiError`] as simple as possible
     // and return just a message.
     #[serde(skip_serializing)]
-    pub service_code: ServiceErrorCode,
+    pub status_code: StatusCode,
     pub message: String,
-}
-
-impl ServiceError for RestApiError {
-    fn error_code(&self) -> ServiceErrorCode {
-        self.service_code
-    }
-}
-
-impl ToString for RestApiError {
-    fn to_string(&self) -> String {
-        self.message.clone()
-    }
 }
 
 /// Makes a JSON API response from a result.
@@ -57,27 +45,27 @@ pub(crate) fn into_rest_api_response<T: serde::Serialize, E: ServiceError>(
     body_format: BodyFormat,
 ) -> RestApiResponse {
     let rest_api_result = result.map_err(|error| RestApiError {
-        service_code: error.error_code(),
+        status_code: error.error_code().http_status_code(),
         message: error.to_string(),
     });
     let status_code = match &rest_api_result {
-        Ok(_) => status::StatusCode::OK,
-        Err(error) => error.error_code().to_http_status_code(),
+        Ok(_) => StatusCode::OK,
+        Err(error) => error.status_code,
     };
-    RestApiResponse::new(&rest_api_result, status_code, &body_format)
+    RestApiResponse::new(&rest_api_result, status_code, body_format)
 }
 
 /// A JSON reply for the REST API.
 pub struct RestApiResponse {
-    status_code: status::StatusCode,
+    status_code: StatusCode,
     inner: Result<Vec<u8>, ()>,
 }
 
 impl RestApiResponse {
     pub fn new<T: serde::Serialize, E: serde::Serialize>(
         result: &Result<T, E>,
-        status_code: status::StatusCode,
-        body_format: &BodyFormat,
+        status_code: StatusCode,
+        body_format: BodyFormat,
     ) -> Self {
         let inner = body_format.result_to_vec(result);
         RestApiResponse { status_code, inner }
@@ -97,7 +85,7 @@ impl Reply for RestApiResponse {
                 response
             }
             Err(()) => warp::reply::json(&RestApiError {
-                service_code: ServiceErrorCode::Internal,
+                status_code: StatusCode::INTERNAL_SERVER_ERROR,
                 message: JSON_SERIALIZATION_ERROR.to_string(),
             })
             .into_response(),

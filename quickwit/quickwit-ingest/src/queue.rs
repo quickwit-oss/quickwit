@@ -230,7 +230,7 @@ mod tests {
     use tokio::sync::watch;
 
     use super::Queues;
-    use crate::errors::IngestServiceError;
+    use crate::error::IngestServiceError;
     use crate::IngestApiService;
 
     const TEST_QUEUE_ID: &str = "my-queue";

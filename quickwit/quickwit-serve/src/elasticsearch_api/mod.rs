@@ -122,7 +122,7 @@ fn make_elastic_api_response<T: serde::Serialize>(
         Ok(_) => StatusCode::OK,
         Err(error) => error.status,
     };
-    RestApiResponse::new(&elasticsearch_result, status_code, &body_format)
+    RestApiResponse::new(&elasticsearch_result, status_code, body_format)
 }
 
 #[cfg(test)]

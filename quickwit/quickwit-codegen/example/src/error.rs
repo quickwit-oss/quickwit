@@ -20,23 +20,46 @@
 use std::fmt;
 
 use quickwit_actors::AskError;
+use quickwit_proto::error::GrpcServiceError;
+pub use quickwit_proto::error::{grpc_error_to_grpc_status, grpc_status_to_service_error};
+use quickwit_proto::{ServiceError, ServiceErrorCode};
+use serde::{Deserialize, Serialize};
 
 // Service errors have to be handwritten before codegen.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
 pub enum HelloError {
     #[error("internal error: {0}")]
-    InternalError(String),
-    #[error("transport error: {0}")]
-    TransportError(#[from] tonic::Status),
+    Internal(String),
+    #[error("invalid argument: {0}")]
+    InvalidArgument(String),
+    #[error("request timed out: {0}")]
+    Timeout(String),
+    #[error("service unavailable: {0}")]
+    Unavailable(String),
 }
 
-// Service errors must implement `From<tonic::Status>` and `Into<tonic::Status>`.
-impl From<HelloError> for tonic::Status {
-    fn from(error: HelloError) -> Self {
-        match error {
-            HelloError::InternalError(message) => tonic::Status::internal(message),
-            HelloError::TransportError(status) => status,
+impl ServiceError for HelloError {
+    fn error_code(&self) -> ServiceErrorCode {
+        match self {
+            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::InvalidArgument(_) => ServiceErrorCode::BadRequest,
+            Self::Timeout(_) => ServiceErrorCode::Timeout,
+            Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
+    }
+}
+
+impl GrpcServiceError for HelloError {
+    fn new_internal(message: String) -> Self {
+        Self::Internal(message)
+    }
+
+    fn new_timeout(message: String) -> Self {
+        Self::Timeout(message)
+    }
+
+    fn new_unavailable(message: String) -> Self {
+        Self::Unavailable(message)
     }
 }
 
@@ -44,6 +67,6 @@ impl<E> From<AskError<E>> for HelloError
 where E: fmt::Debug
 {
     fn from(error: AskError<E>) -> Self {
-        HelloError::InternalError(format!("{error:?}"))
+        HelloError::Internal(format!("{error:?}"))
     }
 }

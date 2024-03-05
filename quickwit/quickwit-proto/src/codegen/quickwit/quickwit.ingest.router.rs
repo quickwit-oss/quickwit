@@ -549,7 +549,7 @@ where
             .ingest(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
 }
 #[derive(Debug)]
@@ -576,7 +576,7 @@ for IngestRouterServiceGrpcServerAdapter {
             .ingest(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
 }
 /// Generated client implementations.

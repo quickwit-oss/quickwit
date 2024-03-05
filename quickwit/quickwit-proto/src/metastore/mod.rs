@@ -23,7 +23,7 @@ use quickwit_common::retry::Retryable;
 use serde::{Deserialize, Serialize};
 
 use crate::types::{IndexId, IndexUid, QueueId, ShardId, SourceId, SplitId};
-use crate::{ServiceError, ServiceErrorCode};
+use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 pub mod events;
 
@@ -33,6 +33,7 @@ pub type MetastoreResult<T> = Result<T, MetastoreError>;
 
 /// Lists the object types stored and managed by the metastore.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EntityKind {
     /// A checkpoint delta.
     CheckpointDelta {
@@ -141,10 +142,13 @@ pub enum MetastoreError {
         message: String,
     },
 
-    #[error("{0} do(es) not exist")]
+    #[error("{0} not found")]
     NotFound(EntityKind),
 
-    #[error("metastore unavailable: {0}")]
+    #[error("request timed out: {0}")]
+    Timeout(String),
+
+    #[error("service unavailable: {0}")]
     Unavailable(String),
 }
 
@@ -157,40 +161,40 @@ impl From<sqlx::Error> for MetastoreError {
     }
 }
 
-impl From<tonic::Status> for MetastoreError {
-    fn from(status: tonic::Status) -> Self {
-        serde_json::from_str(status.message()).unwrap_or_else(|_| MetastoreError::Internal {
-            message: "failed to deserialize metastore error".to_string(),
-            cause: status.message().to_string(),
-        })
-    }
-}
-
-impl From<MetastoreError> for tonic::Status {
-    fn from(metastore_error: MetastoreError) -> Self {
-        let grpc_status_code = metastore_error.error_code().to_grpc_status_code();
-        let message_json = serde_json::to_string(&metastore_error)
-            .unwrap_or_else(|_| format!("original metastore error: {metastore_error}"));
-        tonic::Status::new(grpc_status_code, message_json)
-    }
-}
-
 impl ServiceError for MetastoreError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::AlreadyExists { .. } => ServiceErrorCode::AlreadyExists,
+            Self::AlreadyExists(_) => ServiceErrorCode::AlreadyExists,
             Self::Connection { .. } => ServiceErrorCode::Internal,
             Self::Db { .. } => ServiceErrorCode::Internal,
             Self::FailedPrecondition { .. } => ServiceErrorCode::BadRequest,
-            Self::Forbidden { .. } => ServiceErrorCode::MethodNotAllowed,
+            Self::Forbidden { .. } => ServiceErrorCode::Forbidden,
             Self::Internal { .. } => ServiceErrorCode::Internal,
             Self::InvalidArgument { .. } => ServiceErrorCode::BadRequest,
             Self::Io { .. } => ServiceErrorCode::Internal,
             Self::JsonDeserializeError { .. } => ServiceErrorCode::Internal,
             Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
-            Self::NotFound { .. } => ServiceErrorCode::NotFound,
+            Self::NotFound(_) => ServiceErrorCode::NotFound,
+            Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
+    }
+}
+
+impl GrpcServiceError for MetastoreError {
+    fn new_internal(message: String) -> Self {
+        Self::Internal {
+            message,
+            cause: "".to_string(),
+        }
+    }
+
+    fn new_timeout(message: String) -> Self {
+        Self::Timeout(message)
+    }
+
+    fn new_unavailable(message: String) -> Self {
+        Self::Unavailable(message)
     }
 }
 
@@ -198,10 +202,7 @@ impl Retryable for MetastoreError {
     fn is_retryable(&self) -> bool {
         matches!(
             self,
-            MetastoreError::Connection { .. }
-                | MetastoreError::Db { .. }
-                | MetastoreError::Io { .. }
-                | MetastoreError::Internal { .. }
+            Self::Connection { .. } | Self::Db { .. } | Self::Io { .. } | Self::Internal { .. }
         )
     }
 }

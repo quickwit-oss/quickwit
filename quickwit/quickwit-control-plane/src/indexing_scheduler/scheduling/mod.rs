@@ -747,11 +747,11 @@ mod tests {
             &source_uid,
             &[
                 (
-                    PipelineUid::from_u128(1u128),
+                    PipelineUid::for_test(1u128),
                     &[ShardId::from(1), ShardId::from(2)],
                 ),
                 (
-                    PipelineUid::from_u128(2u128),
+                    PipelineUid::for_test(2u128),
                     &[ShardId::from(3), ShardId::from(4), ShardId::from(5)],
                 ),
             ],
@@ -950,7 +950,7 @@ mod tests {
     #[test]
     fn test_group_shards_into_pipeline_single_small_pipeline() {
         let source_uid = source_id();
-        let pipeline_uid = PipelineUid::from_u128(1u128);
+        let pipeline_uid = PipelineUid::for_test(1u128);
         let indexing_tasks = group_shards_into_pipelines_aux(
             &source_uid,
             &[12],

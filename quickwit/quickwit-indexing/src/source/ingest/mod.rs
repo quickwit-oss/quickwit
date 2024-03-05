@@ -282,7 +282,7 @@ impl IngestSource {
         if assigned_shard.status == IndexingStatus::Complete {
             return Ok(());
         }
-        if let IngestV2Error::ShardNotFound { .. } = fetch_stream_error.ingest_error {
+        if let IngestV2Error::NotFound(_) = fetch_stream_error.ingest_error {
             batch_builder.checkpoint_delta.record_partition_delta(
                 assigned_shard.partition_id.clone(),
                 assigned_shard.current_position_inclusive.clone(),
@@ -576,7 +576,7 @@ impl Source for IngestSource {
                 ))
                 .await
             {
-                if let IngestV2Error::ShardNotFound { .. } = error {
+                if let IngestV2Error::NotFound(_) = error {
                     error!("failed to subscribe to shard `{shard_id}`: shard not found");
                     current_position_inclusive.to_eof();
                     IndexingStatus::NotFound
@@ -661,7 +661,7 @@ mod tests {
         FetchMessage, IngesterServiceClient, TruncateShardsResponse,
     };
     use quickwit_proto::ingest::{IngestV2Error, MRecordBatch, Shard, ShardState};
-    use quickwit_proto::metastore::AcquireShardsResponse;
+    use quickwit_proto::metastore::{AcquireShardsResponse, EntityKind};
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_storage::StorageResolver;
     use tokio::sync::mpsc::error::TryRecvError;
@@ -1536,9 +1536,10 @@ mod tests {
                 assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::Beginning);
 
-                Err(IngestV2Error::ShardNotFound {
-                    shard_id: ShardId::from(1),
-                })
+                let entity_kind = EntityKind::Shard {
+                    queue_id: request.queue_id(),
+                };
+                Err(IngestV2Error::NotFound(entity_kind))
             });
 
         let ingester_0: IngesterServiceClient = ingester_mock_0.into();

@@ -55,6 +55,7 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::ingest::{
     CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardIds, ShardState,
 };
+use quickwit_proto::metastore::EntityKind;
 use quickwit_proto::types::{
     queue_id, split_queue_id, IndexUid, NodeId, Position, QueueId, ShardId, SourceId,
 };
@@ -855,8 +856,9 @@ impl Ingester {
             .await?
             .shards
             .get(&queue_id)
-            .ok_or(IngestV2Error::ShardNotFound {
-                shard_id: open_fetch_stream_request.shard_id().clone(),
+            .ok_or_else(|| {
+                let entity_kind = EntityKind::Shard { queue_id };
+                IngestV2Error::NotFound(entity_kind)
             })?
             .shard_status_rx
             .clone();
@@ -2361,7 +2363,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(error, IngestV2Error::ShardNotFound { shard_id } if shard_id == ShardId::from(1337))
+            matches!(error, IngestV2Error::NotFound(EntityKind::Shard { queue_id }) if queue_id.ends_with("1337"))
         );
 
         let shard = Shard {

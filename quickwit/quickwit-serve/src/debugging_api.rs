@@ -52,6 +52,6 @@ pub async fn debugging_handler(
         &debug_info,
         // TODO error code on error
         hyper::StatusCode::OK,
-        &crate::format::BodyFormat::PrettyJson,
+        crate::format::BodyFormat::PrettyJson,
     )
 }

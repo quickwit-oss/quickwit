@@ -172,7 +172,7 @@ impl SourceRuntimeArgs {
             node_id: "test-node".to_string(),
             index_uid,
             source_id: source_config.source_id.clone(),
-            pipeline_uid: PipelineUid::from_u128(0u128),
+            pipeline_uid: PipelineUid::for_test(0u128),
         };
         Arc::new(SourceRuntimeArgs {
             pipeline_id,
