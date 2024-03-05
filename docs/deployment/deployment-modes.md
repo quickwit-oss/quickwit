@@ -19,7 +19,7 @@ This deployment mode is the simplest way to get started with Quickwit. Launch al
 
 ## Cluster mode (multi-node)
 
-You can deploy Quickwit on multiple nodes. We provide a [Helm chart](kubernetes.md) to help you deploy Quickwit on Kubernetes. In cluster mode, you must store your index data on a shared storage backend such as Amazon S3 or MinIO.
+You can deploy Quickwit on multiple nodes. We provide a [Helm chart](./kubernetes/helm.md) to help you deploy Quickwit on Kubernetes. In cluster mode, you must store your index data on a shared storage backend such as Amazon S3 or MinIO.
 
 ## One indexer, multiple searchers
 

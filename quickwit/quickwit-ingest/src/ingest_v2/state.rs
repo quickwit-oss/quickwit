@@ -25,7 +25,6 @@ use std::time::{Duration, Instant};
 
 use fnv::FnvHashMap;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
-use mrecordlog::MultiRecordLog;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
@@ -39,6 +38,7 @@ use super::models::IngesterShard;
 use super::rate_meter::RateMeter;
 use super::replication::{ReplicationStreamTaskHandle, ReplicationTaskHandle};
 use crate::ingest_v2::mrecordlog_utils::{force_delete_queue, queue_position_range};
+use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{FollowerId, LeaderId};
 
 /// Stores the state of the ingester and attempts to prevent deadlocks by exposing an API that
@@ -51,7 +51,7 @@ use crate::{FollowerId, LeaderId};
 pub(super) struct IngesterState {
     // `inner` is a mutex because it's almost always accessed mutably.
     inner: Arc<Mutex<InnerIngesterState>>,
-    mrecordlog: Arc<RwLock<Option<MultiRecordLog>>>,
+    mrecordlog: Arc<RwLock<Option<MultiRecordLogAsync>>>,
     pub status_rx: watch::Receiver<IngesterStatus>,
 }
 
@@ -136,7 +136,7 @@ impl IngesterState {
         let now = Instant::now();
 
         info!("opening WAL located at `{}`", wal_dir_path.display());
-        let open_result = MultiRecordLog::open_with_prefs(
+        let open_result = MultiRecordLogAsync::open_with_prefs(
             wal_dir_path,
             mrecordlog::SyncPolicy::OnDelay(Duration::from_secs(5)),
         )
@@ -265,7 +265,7 @@ impl IngesterState {
 
     // Leaks the mrecordlog lock for use in fetch tasks. It's safe to do so because fetch tasks
     // never attempt to lock the inner state.
-    pub fn mrecordlog(&self) -> Arc<RwLock<Option<MultiRecordLog>>> {
+    pub fn mrecordlog(&self) -> Arc<RwLock<Option<MultiRecordLogAsync>>> {
         self.mrecordlog.clone()
     }
 
@@ -304,7 +304,7 @@ impl DerefMut for PartiallyLockedIngesterState<'_> {
 
 pub(super) struct FullyLockedIngesterState<'a> {
     pub inner: MutexGuard<'a, InnerIngesterState>,
-    pub mrecordlog: RwLockMappedWriteGuard<'a, MultiRecordLog>,
+    pub mrecordlog: RwLockMappedWriteGuard<'a, MultiRecordLogAsync>,
 }
 
 impl fmt::Debug for FullyLockedIngesterState<'_> {
@@ -403,7 +403,7 @@ impl FullyLockedIngesterState<'_> {
 #[derive(Clone)]
 pub(super) struct WeakIngesterState {
     inner: Weak<Mutex<InnerIngesterState>>,
-    mrecordlog: Weak<RwLock<Option<MultiRecordLog>>>,
+    mrecordlog: Weak<RwLock<Option<MultiRecordLogAsync>>>,
     status_rx: watch::Receiver<IngesterStatus>,
 }
 

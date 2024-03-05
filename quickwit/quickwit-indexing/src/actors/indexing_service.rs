@@ -88,8 +88,8 @@ impl Display for MergePipelineId {
     }
 }
 
-impl<'a> From<&'a IndexingPipelineId> for MergePipelineId {
-    fn from(pipeline_id: &'a IndexingPipelineId) -> Self {
+impl From<&IndexingPipelineId> for MergePipelineId {
+    fn from(pipeline_id: &IndexingPipelineId) -> Self {
         MergePipelineId {
             index_uid: pipeline_id.index_uid.clone(),
             source_id: pipeline_id.source_id.clone(),
@@ -644,7 +644,6 @@ impl IndexingService {
                 }
             }
         }
-
         // If at least one ingest source has been removed, the related index has possibly been
         // deleted. Thus we run a garbage collect to remove queues of potentially deleted
         // indexes.

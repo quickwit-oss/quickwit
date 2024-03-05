@@ -51,7 +51,7 @@ impl Default for IngestV2Metrics {
             ),
             wal_acquire_lock_requests_in_flight: new_gauge_vec(
                 "wal_acquire_lock_requests_in_flight",
-                "Number of acquire lock requests in flight.",
+                "Number of acquire lock requests in-flight.",
                 "ingest",
                 &[],
                 ["operation", "type"],

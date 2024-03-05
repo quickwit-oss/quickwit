@@ -53,11 +53,14 @@ impl From<Shard> for RoutingEntry {
 /// The set of shards the router is aware of for the given index and source.
 #[derive(Debug, Default)]
 pub(super) struct RoutingTableEntry {
-    /// The index UID of the shards.
+    /// Index UID of the shards.
     pub index_uid: IndexUid,
+    /// Source ID of the shards.
     pub source_id: SourceId,
+    /// Shards located on this node.
     pub local_shards: Vec<RoutingEntry>,
     pub local_round_robin_idx: AtomicUsize,
+    /// Shards located on remote nodes.
     pub remote_shards: Vec<RoutingEntry>,
     pub remote_round_robin_idx: AtomicUsize,
 }
@@ -89,11 +92,8 @@ impl RoutingTableEntry {
             index_uid,
             source_id,
             local_shards,
-            // local_shard_ids_range_opt,
-            local_round_robin_idx: AtomicUsize::default(),
             remote_shards,
-            // remote_shard_ids_range_opt,
-            remote_round_robin_idx: AtomicUsize::default(),
+            ..Default::default()
         }
     }
 
@@ -101,10 +101,7 @@ impl RoutingTableEntry {
         Self {
             index_uid,
             source_id,
-            local_shards: Vec::new(),
-            local_round_robin_idx: AtomicUsize::default(),
-            remote_shards: Vec::new(),
-            remote_round_robin_idx: AtomicUsize::default(),
+            ..Default::default()
         }
     }
 
@@ -453,11 +450,6 @@ impl RoutingTable {
         if let Some(entry) = self.table.get_mut(&key) {
             entry.delete_shards(index_uid, shard_ids);
         }
-    }
-
-    #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
-        self.table.is_empty()
     }
 
     #[cfg(test)]

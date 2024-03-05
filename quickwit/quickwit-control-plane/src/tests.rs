@@ -84,12 +84,15 @@ pub fn test_indexer_change_stream(
                     if node.enabled_services().contains(&QuickwitService::Indexer) =>
                 {
                     let node_id = node.node_id().to_string();
+                    let generation_id = node.chitchat_id().generation_id;
                     let indexing_tasks = node.indexing_tasks().to_vec();
                     let client_mailbox = indexing_clients.get(&node_id).unwrap().clone();
                     let client = IndexingServiceClient::from_mailbox(client_mailbox);
                     Some(Change::Insert(
-                        node_id,
+                        node_id.clone(),
                         IndexerNodeInfo {
+                            node_id: NodeId::from(node_id),
+                            generation_id,
                             client,
                             indexing_tasks,
                             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),

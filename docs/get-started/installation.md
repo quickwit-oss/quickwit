@@ -17,7 +17,7 @@ Quickwit compiles to a single binary and we provide different methods to install
 
 - Linux/MacOS binaries that you can [download manually](#download) or with the [install script](#install-script)
 - [Docker image](#use-the-docker-image)
-- [Helm chart](/docs/deployment/kubernetes.md)
+- [Helm chart](../deployment/kubernetes/helm.md)
 
 ## Prerequisites
 

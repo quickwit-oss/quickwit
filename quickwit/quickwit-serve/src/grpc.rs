@@ -126,7 +126,7 @@ pub(crate) async fn start_grpc_server(
     // Mount gRPC OpenTelemetry OTLP services if present.
     let otlp_trace_grpc_service =
         if let Some(otlp_traces_service) = services.otlp_traces_service_opt.clone() {
-            enabled_grpc_services.insert("otlp-trace");
+            enabled_grpc_services.insert("otlp-traces");
             let trace_service = TraceServiceServer::new(otlp_traces_service)
                 .accept_compressed(CompressionEncoding::Gzip);
             Some(trace_service)
@@ -135,7 +135,7 @@ pub(crate) async fn start_grpc_server(
         };
     let otlp_log_grpc_service =
         if let Some(otlp_logs_service) = services.otlp_logs_service_opt.clone() {
-            enabled_grpc_services.insert("otlp-log");
+            enabled_grpc_services.insert("otlp-logs");
             let logs_service = LogsServiceServer::new(otlp_logs_service)
                 .accept_compressed(CompressionEncoding::Gzip);
             Some(logs_service)

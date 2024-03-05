@@ -128,11 +128,12 @@ indexer:
 #   max_queue_disk_usage: 4GiB
 #
 # -------------------------------- Searcher settings --------------------------------
-#
+# 
 # searcher:
 #   fast_field_cache_capacity: 1G
 #   split_footer_cache_capacity: 500M
 #   max_num_concurrent_split_streams: 100
+#   partial_request_cache_capacity: 64M
 #   max_num_concurrent_split_searches: 100
 #
 # -------------------------------- Jaeger settings --------------------------------

@@ -31,7 +31,6 @@ use fnv::FnvHashMap;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use mrecordlog::error::CreateQueueError;
-use mrecordlog::MultiRecordLog;
 use quickwit_cluster::Cluster;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
@@ -79,6 +78,7 @@ use super::replication::{
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use super::IngesterPool;
 use crate::metrics::INGEST_METRICS;
+use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{estimate_size, with_lock_metrics, FollowerId};
 
 /// Minimum interval between two reset shards operations.
@@ -174,7 +174,7 @@ impl Ingester {
     async fn init_primary_shard(
         &self,
         state: &mut InnerIngesterState,
-        mrecordlog: &mut MultiRecordLog,
+        mrecordlog: &mut MultiRecordLogAsync,
         shard: Shard,
         now: Instant,
     ) -> IngestV2Result<()> {
@@ -675,10 +675,13 @@ impl Ingester {
             for subrequest in local_persist_subrequests {
                 let queue_id = subrequest.queue_id;
 
+                let batch_num_bytes = subrequest.doc_batch.num_bytes() as u64;
+                let batch_num_docs = subrequest.doc_batch.num_docs() as u64;
+
                 let append_result = append_non_empty_doc_batch(
                     &mut state_guard.mrecordlog,
                     &queue_id,
-                    &subrequest.doc_batch,
+                    subrequest.doc_batch,
                     force_commit,
                 )
                 .await;
@@ -729,8 +732,6 @@ impl Ingester {
                     .expect("primary shard should exist")
                     .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
-                let batch_num_bytes = subrequest.doc_batch.num_bytes() as u64;
-                let batch_num_docs = subrequest.doc_batch.num_docs() as u64;
                 INGEST_METRICS.ingested_num_bytes.inc_by(batch_num_bytes);
                 INGEST_METRICS.ingested_num_docs.inc_by(batch_num_docs);
 
@@ -1213,7 +1214,6 @@ mod tests {
     use super::*;
     use crate::ingest_v2::broadcast::ShardInfos;
     use crate::ingest_v2::fetch::tests::{into_fetch_eof, into_fetch_payload};
-    use crate::ingest_v2::test_utils::MultiRecordLogTestExt;
     use crate::ingest_v2::DEFAULT_IDLE_SHARD_TIMEOUT;
     use crate::MRecord;
 
@@ -2633,12 +2633,11 @@ mod tests {
                 assert_eq!(request.shard_ids.len(), 1);
                 assert_eq!(request.shard_ids[0].index_uid(), &("test-index", 0));
                 assert_eq!(request.shard_ids[0].source_id, "test-source");
-                request.shard_ids[0].shard_ids.sort();
+                request.shard_ids[0].shard_ids.sort_unstable();
                 assert_eq!(
                     request.shard_ids[0].shard_ids,
                     [ShardId::from(1), ShardId::from(2)]
                 );
-
                 let response = AdviseResetShardsResponse {
                     shards_to_delete: vec![ShardIds {
                         index_uid: Some(IndexUid::for_test("test-index", 0)),

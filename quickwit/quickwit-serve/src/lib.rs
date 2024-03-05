@@ -30,6 +30,7 @@ mod index_api;
 mod indexing_api;
 mod ingest_api;
 mod jaeger_api;
+mod log_level_handler;
 mod metrics;
 mod metrics_api;
 mod node_info_handler;
@@ -131,6 +132,12 @@ const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_
 const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
 const DISABLE_DELETE_TASK_SERVICE_ENV_KEY: &str = "QW_DISABLE_DELETE_TASK_SERVICE";
 
+pub type EnvFilterReloadFn = Arc<dyn Fn(&str) -> anyhow::Result<()> + Send + Sync>;
+
+pub fn do_nothing_env_filter_reload_fn() -> EnvFilterReloadFn {
+    Arc::new(|_| Ok(()))
+}
+
 fn get_metastore_client_max_concurrency() -> usize {
     std::env::var(METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY).ok()
         .and_then(|metastore_client_max_concurrency_str| {
@@ -186,6 +193,8 @@ struct QuickwitServices {
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
     pub search_service: Arc<dyn SearchService>,
+
+    pub env_filter_reload_fn: EnvFilterReloadFn,
 
     /// The control plane listens to various events.
     /// We must maintain a reference to the subscription handles to continue receiving
@@ -359,6 +368,7 @@ pub async fn serve_quickwit(
     metastore_resolver: MetastoreResolver,
     storage_resolver: StorageResolver,
     shutdown_signal: BoxFutureInfaillible<()>,
+    env_filter_reload_fn: EnvFilterReloadFn,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
     let cluster = start_cluster_service(&node_config).await?;
 
@@ -627,6 +637,7 @@ pub async fn serve_quickwit(
         otlp_logs_service_opt,
         otlp_traces_service_opt,
         search_service,
+        env_filter_reload_fn,
     });
     // Setup and start gRPC server.
     let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel::<()>();
@@ -726,6 +737,7 @@ async fn setup_ingest_v2(
 ) -> anyhow::Result<(IngestRouterServiceClient, Option<IngesterServiceClient>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
+    let content_length_limit = node_config.ingest_api_config.content_length_limit;
     let replication_factor = node_config
         .ingest_api_config
         .replication_factor()
@@ -748,8 +760,7 @@ async fn setup_ingest_v2(
     // We compute the burst limit as something a bit larger than the content length limit, because
     // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
     // line length is prefixed.
-    let burst_limit = (node_config.ingest_api_config.content_length_limit.as_u64() * 3 / 2)
-        .clamp(10_000_000, 200_000_000);
+    let burst_limit = (content_length_limit.as_u64() * 3 / 2).clamp(10_000_000, 200_000_000);
     let rate_limiter_settings = RateLimiterSettings {
         burst_limit,
         ..Default::default()
@@ -993,8 +1004,10 @@ fn setup_indexer_pool(
                             .stack_layer(layers)
                             .build_from_mailbox(indexing_service_mailbox);
                         let change = Change::Insert(
-                            node_id,
+                            node_id.clone(),
                             IndexerNodeInfo {
+                                node_id: NodeId::from(node_id),
+                                generation_id: node.chitchat_id().generation_id,
                                 client,
                                 indexing_tasks,
                                 indexing_capacity,
@@ -1010,8 +1023,10 @@ fn setup_indexer_pool(
                                 max_message_size,
                             );
                         let change = Change::Insert(
-                            node_id,
+                            node_id.clone(),
                             IndexerNodeInfo {
+                                node_id: NodeId::from(node_id),
+                                generation_id: node.chitchat_id().generation_id,
                                 client,
                                 indexing_tasks,
                                 indexing_capacity,
