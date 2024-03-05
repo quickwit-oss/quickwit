@@ -70,8 +70,8 @@ impl From<ControlPlaneError> for MetastoreError {
     fn from(error: ControlPlaneError) -> Self {
         match error {
             ControlPlaneError::Internal(message) => MetastoreError::Internal {
-                message: "an internal metastore error occurred".to_string(),
-                cause: message,
+                message,
+                cause: "".to_string(),
             },
             ControlPlaneError::Metastore(error) => error,
             ControlPlaneError::Timeout(message) => MetastoreError::Timeout(message),
