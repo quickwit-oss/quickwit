@@ -27,7 +27,7 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
-use quickwit_serve::{serve_quickwit, BuildInfo};
+use quickwit_serve::{serve_quickwit, BuildInfo, EnvFilterReloadFn};
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tokio::signal;
 use tracing::{debug, info};
@@ -74,7 +74,7 @@ impl RunCliCommand {
         })
     }
 
-    pub async fn execute(&self) -> anyhow::Result<()> {
+    pub async fn execute(&self, env_filter_reload_fn: EnvFilterReloadFn) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
         let version_text = BuildInfo::get_version_text();
         info!("quickwit version: {version_text}");
@@ -115,6 +115,7 @@ impl RunCliCommand {
             metastore_resolver,
             storage_resolver,
             shutdown_signal,
+            env_filter_reload_fn,
         )
         .await;
         let return_code = match serve_result {

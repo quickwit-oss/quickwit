@@ -158,7 +158,10 @@ impl TestEnv {
             services: Some(QuickwitService::supported_services()),
         };
         tokio::spawn(async move {
-            if let Err(error) = run_command.execute().await {
+            if let Err(error) = run_command
+                .execute(quickwit_serve::do_nothing_env_filter_reload_fn())
+                .await
+            {
                 error!(err=?error, "failed to start a quickwit server");
             }
         });
