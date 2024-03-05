@@ -80,7 +80,7 @@ license = "AGPL-3.0-or-later"
 
 [workspace.dependencies]
 anyhow = "1"
-arc-swap = "1.6"
+arc-swap = "1.7"
 assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"

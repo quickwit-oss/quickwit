@@ -42,6 +42,7 @@ use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
+use crate::log_level_handler::log_level_handler;
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
@@ -171,6 +172,9 @@ fn api_v1_routes(
                 BuildInfo::get(),
                 RuntimeInfo::get(),
                 quickwit_services.node_config.clone(),
+            ))
+            .or(log_level_handler(
+                quickwit_services.env_filter_reload_fn.clone(),
             ))
             .or(indexing_get_handler(
                 quickwit_services.indexing_service_opt.clone(),
@@ -630,6 +634,7 @@ mod tests {
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
             jaeger_service_opt: None,
+            env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
         };
 
         let handler = api_v1_routes(Arc::new(quickwit_services))
