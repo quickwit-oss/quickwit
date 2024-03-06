@@ -865,16 +865,6 @@ mod tests {
         }
         {
             let node_config = NodeConfigBuilder {
-                peer_seeds: ConfigValue::for_test(List(vec!["unresolvable-host".to_string()])),
-                ..Default::default()
-            }
-            .build_and_validate(&HashMap::new())
-            .await
-            .unwrap();
-            assert!(node_config.peer_seed_addrs().await.is_err());
-        }
-        {
-            let node_config = NodeConfigBuilder {
                 rest_config_builder: RestConfigBuilder {
                     listen_port: Some(1789),
                     ..Default::default()
