@@ -22,7 +22,6 @@ mod scheduling;
 use std::cmp::Ordering;
 use std::fmt;
 use std::num::NonZeroU32;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use fnv::{FnvHashMap, FnvHashSet};
@@ -57,64 +56,6 @@ pub struct IndexingSchedulerState {
     pub last_applied_plan_timestamp: Option<Instant>,
 }
 
-
-pub struct ChangeTracker {
-    generation_processed_tx: Arc<Mutex<tokio::sync::watch::Sender<usize>>>,
-    generation_processed_rx: tokio::sync::watch::Receiver<usize>,
-    generation: usize,
-}
-
-impl Default for ChangeTracker {
-    fn default() -> Self {
-        let (generation_processed_tx, generation_processed_rx) = tokio::sync::watch::channel(0);
-        ChangeTracker {
-            generation_processed_tx: Arc::new(Mutex::new(generation_processed_tx)),
-            generation_processed_rx,
-            generation: 1,
-        }
-    }
-}
-
-impl ChangeTracker {
-    pub fn current_generation_processed_waiter(&mut self) -> impl std::future::Future<Output = ()> {
-        let mut generation_processed_rx = self.generation_processed_rx.clone();
-        let current_generation = self.generation;
-        async move {
-            loop {
-                if *generation_processed_rx.borrow() >= current_generation {
-                    return;
-                }
-                if generation_processed_rx.changed().await.is_err() {
-                    return;
-                }
-            }
-        }
-    }
-
-    pub fn start_process_generation(&mut self) -> Arc<NotifyChangeOnDrop> {
-        let generation = self.generation;
-        self.generation += 1;
-        Arc::new(NotifyChangeOnDrop {
-            generation,
-            generation_processed_tx: self.generation_processed_tx.clone(),
-        })
-    }
-}
-
-pub struct NotifyChangeOnDrop {
-    generation: usize,
-    generation_processed_tx: Arc<Mutex<tokio::sync::watch::Sender<usize>>>,
-}
-
-impl Drop for NotifyChangeOnDrop {
-    fn drop(&mut self) {
-        let generation_processed_tx = self.generation_processed_tx.lock().unwrap();
-        if self.generation < *generation_processed_tx.borrow() {
-            return;
-        }
-        let _ = generation_processed_tx.send(self.generation);
-    }
-}
 /// The [`IndexingScheduler`] is responsible for listing indexing tasks and assiging them to
 /// indexers.
 /// We call this duty `scheduling`. Contrary to what the name suggests, most indexing tasks are
@@ -159,7 +100,6 @@ pub struct IndexingScheduler {
     self_node_id: NodeId,
     indexer_pool: IndexerPool,
     state: IndexingSchedulerState,
-    pub(crate) next_rebuild_tracker: ChangeTracker,
 }
 
 impl fmt::Debug for IndexingScheduler {
@@ -247,7 +187,6 @@ impl IndexingScheduler {
             self_node_id,
             indexer_pool,
             state: IndexingSchedulerState::default(),
-            next_rebuild_tracker: ChangeTracker::default(),
         }
     }
 
@@ -262,8 +201,6 @@ impl IndexingScheduler {
     // `ControlPlane::rebuild_indexing_plan_debounced`.
     pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
         crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
-
-        let notify_on_drop = self.next_rebuild_tracker.start_process_generation();
 
         let sources = get_sources_to_schedule(model);
 
@@ -302,7 +239,7 @@ impl IndexingScheduler {
                 return;
             }
         }
-        self.apply_physical_indexing_plan(&indexers, new_physical_plan, Some(notify_on_drop));
+        self.apply_physical_indexing_plan(&indexers, new_physical_plan);
         self.state.num_schedule_indexing_plan += 1;
     }
 
@@ -346,7 +283,7 @@ impl IndexingScheduler {
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
-            self.apply_physical_indexing_plan(&indexers, last_applied_plan.clone(), None);
+            self.apply_physical_indexing_plan(&indexers, last_applied_plan.clone());
         }
     }
 
@@ -358,14 +295,12 @@ impl IndexingScheduler {
         &mut self,
         indexers: &[IndexerNodeInfo],
         new_physical_plan: PhysicalIndexingPlan,
-        notify_on_drop: Option<Arc<NotifyChangeOnDrop>>
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
         for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer() {
             // We don't want to block on a slow indexer so we apply this change asynchronously
             // TODO not blocking is cool, but we need to make sure there is not accumulation
             // possible here.
-            let notify_on_drop = notify_on_drop.clone();
             tokio::spawn({
                 let indexer = indexers
                     .iter()
@@ -387,7 +322,6 @@ impl IndexingScheduler {
                             "failed to apply indexing plan to indexer"
                         );
                     }
-                    drop(notify_on_drop);
                 }
             });
         }

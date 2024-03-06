@@ -16,6 +16,7 @@ json:
         - name: created_at
           type: datetime
           fast: true
+sleep_after: 3
 ---
 # Create index
 method: POST
@@ -35,7 +36,7 @@ json:
           indexed: true
         - name: public
           type: bool
-          fast: false
+          fast: false          
           indexed: true
         - name: created_at
           type: datetime
@@ -47,11 +48,14 @@ json:
       fast:
         normalizer: lowercase
       record: position
+sleep_after: 3
 ---
 # Ingest documents
 method: POST
 endpoint: _bulk
+num_retries: 10
 params:
   refresh: "true"
 headers: {"Content-Type": "application/json", "content-encoding": "gzip"}
 body_from_file: gharchive-bulk.json.gz
+sleep_after: 3

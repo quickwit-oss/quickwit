@@ -14,10 +14,12 @@ json:
     dynamic_mapping:
       tokenizer: default
       fast: true
+sleep_after: 3
 ---
 # Ingest documents
 method: POST
 endpoint: sortorder/ingest
+num_retries: 10
 params:
   commit: force
 ndjson:

@@ -25,9 +25,10 @@ use std::time::Duration;
 use anyhow::Context;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
-use futures::{Future, StreamExt};
+use futures::StreamExt;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, DeferableReplyHandler, Handler, Mailbox, Supervisor, Universe, WeakMailbox
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, Supervisor, Universe,
+    WeakMailbox,
 };
 use quickwit_cluster::{
     ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory, ClusterNode,
@@ -95,7 +96,6 @@ pub struct ControlPlane {
     model: ControlPlaneModel,
     rebuild_plan_debouncer: Debouncer,
 }
-
 
 impl fmt::Debug for ControlPlane {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -165,7 +165,7 @@ impl Actor for ControlPlane {
             .await
             .context("failed to initialize the model")?;
 
-        let _ = self.rebuild_plan_debounced(ctx);
+        self.rebuild_plan_debounced(ctx);
 
         self.ingest_controller.sync_with_all_ingesters(&self.model);
 
@@ -313,15 +313,9 @@ impl ControlPlane {
     ///
     /// This method includes some debouncing logic. Every call will be followed by a cooldown
     /// period.
-    ///
-    /// This method returns a future that can awaited to ensure that the relevant rebuild plan
-    /// operation has been executed.
-    fn rebuild_plan_debounced(&mut self, ctx: &ActorContext<Self>) -> impl Future<Output = ()> {
-        let current_generation_processed_waiter =
-            self.indexing_scheduler.next_rebuild_tracker.current_generation_processed_waiter();
+    fn rebuild_plan_debounced(&mut self, ctx: &ActorContext<Self>) {
         self.rebuild_plan_debouncer
             .self_send_with_cooldown::<RebuildPlan>(ctx);
-        current_generation_processed_waiter
     }
 }
 
@@ -376,7 +370,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
             ctx.progress(),
         )
         .await?;
-        let _ = self.rebuild_plan_debounced(ctx);
+        self.rebuild_plan_debounced(ctx);
         Ok(())
     }
 }
@@ -452,22 +446,17 @@ fn convert_metastore_error<T>(
 // This handler is a metastore call proxied through the control plane: we must first forward the
 // request to the metastore, and then act on the event.
 #[async_trait]
-impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
+impl Handler<CreateIndexRequest> for ControlPlane {
     type Reply = ControlPlaneResult<CreateIndexResponse>;
 
-
-    async fn handle_message(
+    async fn handle(
         &mut self,
         request: CreateIndexRequest,
-        reply: impl FnOnce(Self::Reply) + Send + Sync + 'static,
         ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
+    ) -> Result<Self::Reply, ActorExitStatus> {
         let response = match self.metastore.create_index(request).await {
             Ok(response) => response,
-            Err(metastore_error) => {
-                reply(convert_metastore_error(metastore_error)?);
-                return Ok(());
-            },
+            Err(metastore_error) => return convert_metastore_error(metastore_error),
         };
         let index_metadata: IndexMetadata =
             match serde_utils::from_json_str(&response.index_metadata_json) {
@@ -483,16 +472,9 @@ impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
         self.model.add_index(index_metadata);
 
         if should_rebuild_plan {
-            let wait_for_debounced = self.rebuild_plan_debounced(ctx);
-            tokio::task::spawn(async move {
-                wait_for_debounced.await;
-                reply(Ok(response));
-            });
-        } else {
-            reply(Ok(response));
+            self.rebuild_plan_debounced(ctx);
         }
-
-        Ok(())
+        Ok(Ok(response))
     }
 }
 
@@ -526,7 +508,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        let _ = self.rebuild_plan_debounced(ctx);
+        self.rebuild_plan_debounced(ctx);
 
         let response = EmptyResponse {};
         Ok(Ok(response))
@@ -562,7 +544,7 @@ impl Handler<AddSourceRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        let _ = self.rebuild_plan_debounced(ctx);
+        self.rebuild_plan_debounced(ctx);
 
         let response = EmptyResponse {};
         Ok(Ok(response))
@@ -590,7 +572,7 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         let mutation_occured = self.model.toggle_source(&index_uid, &source_id, enable)?;
 
         if mutation_occured {
-            let _ = self.rebuild_plan_debounced(ctx);
+            self.rebuild_plan_debounced(ctx);
         }
         Ok(Ok(EmptyResponse {}))
     }
@@ -638,7 +620,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
 
         self.model.delete_source(&source_uid);
 
-        let _ = self.rebuild_plan_debounced(ctx);
+        self.rebuild_plan_debounced(ctx);
         let response = EmptyResponse {};
 
         Ok(Ok(response))
@@ -674,7 +656,7 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
                 return Ok(Err(control_plane_error));
             }
         };
-        let _ = self.rebuild_plan_debounced(ctx);
+        self.rebuild_plan_debounced(ctx);
         Ok(Ok(response))
     }
 }
@@ -708,7 +690,7 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
         self.ingest_controller
             .handle_local_shards_update(local_shards_update, &mut self.model, ctx.progress())
             .await;
-        let _ = self.rebuild_plan_debounced(ctx);
+        self.rebuild_plan_debounced(ctx);
         Ok(Ok(()))
     }
 }

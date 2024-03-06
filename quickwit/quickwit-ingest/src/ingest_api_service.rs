@@ -27,7 +27,7 @@ use quickwit_actors::{
 };
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::tower::Cost;
-use tracing::{error, info};
+use tracing::info;
 use ulid::Ulid;
 
 use crate::metrics::INGEST_METRICS;
@@ -153,7 +153,6 @@ impl IngestApiService {
             .find(|index_id| !self.queues.queue_exists(index_id));
 
         if let Some(index_id) = first_non_existing_queue_opt {
-            error!(index_id=%index_id, "failed to find index");
             return Err(IngestServiceError::IndexNotFound {
                 index_id: index_id.to_string(),
             });
