@@ -39,7 +39,6 @@ pub struct SmaRateEstimator {
 struct InnerSmaRateEstimator {
     anchor: Instant,
     buckets: Box<[Bucket]>,
-    bucket_period_secs: u64,
     bucket_period_millis: u64,
     num_buckets: u64,
     period: Duration,
@@ -49,6 +48,14 @@ struct InnerSmaRateEstimator {
 impl SmaRateEstimator {
     /// Creates a new simple moving average rate estimator.
     ///
+    /// The rate returned is the rate measured over the last `n - 1` buckets. The
+    /// ongoing bucket is not taken in account.
+    /// In other words, we are returning a rolling average that spans over a period
+    /// of `num_buckets * bucket_period`.
+    ///
+    /// The `period` argument is just a `scaling unit`. A period of 1s means that the
+    /// the number returned by `work` is expressed in `bytes / second`.
+    ///
     /// This rate estimator is bucket-based and outputs the average rate of work over the previous
     /// closed `n-1` buckets.
     ///
@@ -56,7 +63,7 @@ impl SmaRateEstimator {
     ///
     /// This function panics if `bucket_period` is < 1s  or `period` is < 1ms.
     pub fn new(num_buckets: NonZeroUsize, bucket_period: Duration, period: Duration) -> Self {
-        assert!(bucket_period.as_secs() > 0);
+        assert!(bucket_period.as_millis() >= 100);
         assert!(period.as_millis() > 0);
 
         let mut buckets = Vec::with_capacity(num_buckets.get());
@@ -66,7 +73,6 @@ impl SmaRateEstimator {
         let inner = InnerSmaRateEstimator {
             anchor: Instant::now(),
             buckets: buckets.into_boxed_slice(),
-            bucket_period_secs: bucket_period.as_secs(),
             bucket_period_millis: bucket_period.as_millis() as u64,
             num_buckets: num_buckets.get() as u64,
             period,
@@ -95,8 +101,8 @@ impl Rate for SmaRateEstimator {
     /// `n-1` buckets and dividing it by the duration of the `n-1` periods.
     fn work(&self) -> u64 {
         let now = Instant::now();
-        let elapsed = now.duration_since(self.inner.anchor).as_secs();
-        let current_bucket_ord = elapsed / self.inner.bucket_period_secs;
+        let elapsed = now.duration_since(self.inner.anchor).as_millis() as u64;
+        let current_bucket_ord = elapsed / self.inner.bucket_period_millis;
         let current_bucket_idx = (current_bucket_ord % self.inner.num_buckets) as usize;
         let cumulative_work: u64 = self
             .inner
@@ -107,7 +113,8 @@ impl Rate for SmaRateEstimator {
             .map(|(_, bucket)| bucket.work())
             .sum();
         let num_bucket = self.inner.num_buckets - 1;
-        cumulative_work * self.inner.period_millis / self.inner.bucket_period_millis / num_bucket
+        (cumulative_work * self.inner.period_millis)
+            / (self.inner.bucket_period_millis * num_bucket)
     }
 
     fn period(&self) -> Duration {
@@ -117,9 +124,9 @@ impl Rate for SmaRateEstimator {
 
 impl RateEstimator for SmaRateEstimator {
     fn update(&mut self, _started_at: Instant, ended_at: Instant, work: u64) {
-        let elapsed = ended_at.duration_since(self.inner.anchor).as_secs();
+        let elapsed = ended_at.duration_since(self.inner.anchor).as_millis() as u64;
         let num_buckets = self.inner.num_buckets;
-        let bucket_ord = elapsed / self.inner.bucket_period_secs;
+        let bucket_ord = elapsed / self.inner.bucket_period_millis;
         let bucket_idx = bucket_ord % num_buckets;
         let bucket_color = ((bucket_ord / num_buckets) & 1) << 63;
         let bucket = &self.inner.buckets[bucket_idx as usize];
