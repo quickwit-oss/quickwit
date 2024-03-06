@@ -64,7 +64,7 @@ See details in the [dynamic mode section](#dynamic-mode).
 If `mode` is set to `strict` on the other hand, documents containing fields
 that are not defined in the mapping will be entirely discarded.
 
-Finally the last possible for `mode` is `lenient`. In lenient mode, fields that are not present in the field mapping will simply be ignored.
+Finally the last possible value for `mode` is `lenient`. In lenient mode, fields that are not present in the field mapping will simply be ignored.
 
 ## The dynamic mode: schemaless with a partial schema {#dynamic-mode}
 
