@@ -418,7 +418,7 @@ impl IngestRouter {
         &mut self,
         ingest_request: IngestRequestV2,
         max_num_attempts: usize,
-    ) -> IngestV2Result<IngestResponseV2> {
+    ) -> IngestResponseV2 {
         let commit_type = ingest_request.commit_type();
         let mut workbench = IngestWorkbench::new(ingest_request.subrequests, max_num_attempts);
         while !workbench.is_complete() {
@@ -438,7 +438,7 @@ impl IngestRouter {
             self.retry_batch_persist(ingest_request, MAX_PERSIST_ATTEMPTS),
         )
         .await
-        .map_err(|_| IngestV2Error::Timeout)?
+        .map_err(|_| IngestV2Error::Timeout)
     }
 }
 
