@@ -26,7 +26,6 @@ use quickwit_proto::ingest::ingester::{PersistFailure, PersistFailureReason, Per
 use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
-use quickwit_proto::ingest::IngestV2Result;
 use quickwit_proto::types::{NodeId, SubrequestId};
 use tracing::warn;
 
@@ -163,7 +162,7 @@ impl IngestWorkbench {
         self.record_failure(subrequest_id, SubworkbenchFailure::Internal(error_message));
     }
 
-    pub fn into_ingest_response(self) -> IngestV2Result<IngestResponseV2> {
+    pub fn into_ingest_response(self) -> IngestResponseV2 {
         let num_subworkbenches = self.subworkbenches.len();
         let mut successes = Vec::with_capacity(self.num_successes);
         let mut failures = Vec::with_capacity(num_subworkbenches - self.num_successes);
@@ -188,10 +187,10 @@ impl IngestWorkbench {
             }
         }
         assert_eq!(successes.len() + failures.len(), num_subworkbenches);
-        Ok(IngestResponseV2 {
+        IngestResponseV2 {
             successes,
             failures,
-        })
+        }
     }
 
     #[cfg(test)]
