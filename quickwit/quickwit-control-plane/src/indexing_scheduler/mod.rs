@@ -17,11 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod change_tracker;
 mod scheduling;
 
 use std::cmp::Ordering;
 use std::fmt;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fnv::{FnvHashMap, FnvHashSet};
@@ -36,6 +38,7 @@ use serde::Serialize;
 use tracing::{debug, info, warn};
 
 use crate::indexing_plan::PhysicalIndexingPlan;
+use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
 use crate::model::ControlPlaneModel;
 use crate::{IndexerNodeInfo, IndexerPool};
@@ -100,6 +103,7 @@ pub struct IndexingScheduler {
     self_node_id: NodeId,
     indexer_pool: IndexerPool,
     state: IndexingSchedulerState,
+    pub(crate) next_rebuild_tracker: RebuildNotifier,
 }
 
 impl fmt::Debug for IndexingScheduler {
@@ -187,6 +191,7 @@ impl IndexingScheduler {
             self_node_id,
             indexer_pool,
             state: IndexingSchedulerState::default(),
+            next_rebuild_tracker: RebuildNotifier::default(),
         }
     }
 
@@ -201,6 +206,8 @@ impl IndexingScheduler {
     // `ControlPlane::rebuild_indexing_plan_debounced`.
     pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
         crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
+
+        let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
 
         let sources = get_sources_to_schedule(model);
 
@@ -239,7 +246,7 @@ impl IndexingScheduler {
                 return;
             }
         }
-        self.apply_physical_indexing_plan(&indexers, new_physical_plan);
+        self.apply_physical_indexing_plan(&indexers, new_physical_plan, Some(notify_on_drop));
         self.state.num_schedule_indexing_plan += 1;
     }
 
@@ -283,7 +290,7 @@ impl IndexingScheduler {
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
-            self.apply_physical_indexing_plan(&indexers, last_applied_plan.clone());
+            self.apply_physical_indexing_plan(&indexers, last_applied_plan.clone(), None);
         }
     }
 
@@ -295,12 +302,14 @@ impl IndexingScheduler {
         &mut self,
         indexers: &[IndexerNodeInfo],
         new_physical_plan: PhysicalIndexingPlan,
+        notify_on_drop: Option<Arc<NotifyChangeOnDrop>>,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
         for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer() {
             // We don't want to block on a slow indexer so we apply this change asynchronously
             // TODO not blocking is cool, but we need to make sure there is not accumulation
             // possible here.
+            let notify_on_drop = notify_on_drop.clone();
             tokio::spawn({
                 let indexer = indexers
                     .iter()
@@ -322,6 +331,7 @@ impl IndexingScheduler {
                             "failed to apply indexing plan to indexer"
                         );
                     }
+                    drop(notify_on_drop);
                 }
             });
         }
