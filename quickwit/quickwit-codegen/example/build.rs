@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -26,7 +26,7 @@ fn main() {
         .with_result_type_path("crate::HelloResult")
         .with_error_type_path("crate::HelloError")
         .generate_extra_service_methods()
-        .generate_prom_labels_for_requests()
+        .generate_rpc_name_impls()
         .run()
         .unwrap();
 }

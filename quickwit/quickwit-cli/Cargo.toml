@@ -1,13 +1,15 @@
 [package]
 name = "quickwit-cli"
-version = "0.6.5-dev"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "AGPL-3.0-or-later"                               # For a commercial, license, contact hello@quickwit.io
-description = "Quickwit is a cost-efficient search engine."
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+description = "Command line interface for launching and managing Quickwit clusters"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
 default-run = "quickwit"
 
 [[bin]]
@@ -21,9 +23,9 @@ path = "src/generate_markdown.rs"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-bytesize = { workspace = true }
 bytes = { workspace = true }
-chitchat = { workspace = true }
+bytesize = { workspace = true }
+chrono = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
 console-subscriber = { workspace = true, optional = true }
@@ -32,6 +34,7 @@ futures = { workspace = true }
 humantime = { workspace = true }
 indicatif = { workspace = true }
 itertools = { workspace = true }
+numfmt = { workspace = true }
 once_cell = { workspace = true }
 openssl-probe = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
@@ -85,7 +88,8 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
 ci-test = []
 openssl-support = ["openssl-probe"]
-tokio-console = ["console-subscriber"]
+# Requires to enable tokio unstable via RUSTFLAGS="--cfg tokio_unstable"
+tokio-console = ["console-subscriber", "quickwit-common/named_tasks"]
 release-feature-set = [
   "jemalloc",
   "openssl-support",
@@ -93,7 +97,8 @@ release-feature-set = [
   "quickwit-indexing/kinesis",
   "quickwit-indexing/pulsar",
   "quickwit-indexing/vrl",
-  "quickwit-metastore/azure",
+  "quickwit-storage/azure",
+  "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
   "quickwit-doc-mapper/multilang",
 ]
@@ -104,7 +109,8 @@ release-feature-vendored-set = [
   "quickwit-indexing/pulsar",
   "quickwit-indexing/vrl",
   "quickwit-indexing/vendored-kafka",
-  "quickwit-metastore/azure",
+  "quickwit-storage/azure",
+  "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
   "quickwit-doc-mapper/multilang",
 ]
@@ -115,7 +121,8 @@ release-macos-feature-vendored-set = [
   "quickwit-indexing/pulsar",
   "quickwit-indexing/vrl",
   "quickwit-indexing/vendored-kafka-macos",
-  "quickwit-metastore/azure",
+  "quickwit-storage/azure",
+  "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
   "quickwit-doc-mapper/multilang",
 ]

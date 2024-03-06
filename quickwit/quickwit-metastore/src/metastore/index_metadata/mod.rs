@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -73,7 +73,7 @@ impl IndexMetadata {
     /// An incarnation id of `0` will be used to complete the index id into a index uuid.
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
-        let index_uid = IndexUid::from_parts(index_id, "0");
+        let index_uid = IndexUid::from_parts(index_id, 0);
         let mut index_metadata = IndexMetadata::new(IndexConfig::for_test(index_id, index_uri));
         index_metadata.index_uid = index_uid;
         index_metadata
@@ -99,7 +99,7 @@ impl IndexMetadata {
         &self.index_config().index_uri
     }
 
-    /// Adds a source to the index. Returns an error if the source_id already exists.
+    /// Adds a source to the index. Returns an error if the source already exists.
     pub fn add_source(&mut self, source_config: SourceConfig) -> MetastoreResult<()> {
         match self.sources.entry(source_config.source_id.clone()) {
             Entry::Occupied(_) => Err(MetastoreError::AlreadyExists(EntityKind::Source {
@@ -145,7 +145,7 @@ impl TestableForRegression for IndexMetadata {
         let delta = SourceCheckpointDelta::from_partition_delta(
             PartitionId::from(0i64),
             Position::Beginning,
-            Position::from(42u64),
+            Position::offset(42u64),
         )
         .unwrap();
         source_checkpoint.try_apply_delta(delta).unwrap();
@@ -166,8 +166,8 @@ impl TestableForRegression for IndexMetadata {
         index_metadata
     }
 
-    fn test_equality(&self, other: &Self) {
-        self.index_config().test_equality(other.index_config());
+    fn assert_equality(&self, other: &Self) {
+        self.index_config().assert_equality(other.index_config());
         assert_eq!(self.checkpoint, other.checkpoint);
         assert_eq!(self.create_timestamp, other.create_timestamp);
         assert_eq!(self.sources, other.sources);

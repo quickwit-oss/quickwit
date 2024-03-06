@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -114,7 +114,7 @@ impl RetentionPolicyExecutor {
             let index_uid = index_metadata.index_uid.clone();
             let index_config = index_metadata.into_index_config();
             // We only care about indexes with a retention policy configured.
-            let retention_policy = match &index_config.retention_policy {
+            let retention_policy = match &index_config.retention_policy_opt {
                 Some(policy) => policy,
                 None => {
                     // Remove the index from the cache if it exist.
@@ -138,7 +138,7 @@ impl RetentionPolicyExecutor {
                 // Inserts & schedule the index's first retention policy execution.
                 self.index_configs
                     .insert(index_config.index_id.clone(), index_config);
-                ctx.schedule_self_msg(next_interval, message).await;
+                ctx.schedule_self_msg(next_interval, message);
             } else {
                 error!(index_id=%index_config.index_id, "Couldn't extract the index next schedule time.")
             }
@@ -177,7 +177,7 @@ impl Handler<Loop> for RetentionPolicyExecutor {
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         self.handle_refresh_loop(ctx).await;
-        ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
+        ctx.schedule_self_msg(RUN_INTERVAL, Loop);
         Ok(())
     }
 }
@@ -191,19 +191,19 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         message: Execute,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        info!(index_id=%message.index_uid.index_id(), "retention-policy-execute-operation");
+        info!(index_id=%message.index_uid.index_id, "retention-policy-execute-operation");
         self.counters.num_execution_passes += 1;
 
-        let index_config = match self.index_configs.get(message.index_uid.index_id()) {
+        let index_config = match self.index_configs.get(&message.index_uid.index_id) {
             Some(config) => config,
             None => {
-                debug!(index_id=%message.index_uid.index_id(), "the index might have been deleted");
+                debug!(index_id=%message.index_uid.index_id, "the index might have been deleted");
                 return Ok(());
             }
         };
 
         let retention_policy = index_config
-            .retention_policy
+            .retention_policy_opt
             .as_ref()
             .expect("Expected index to have retention policy configure.");
 
@@ -217,19 +217,19 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         match execution_result {
             Ok(splits) => self.counters.num_expired_splits += splits.len(),
             Err(error) => {
-                error!(index_id=%message.index_uid.index_id(), error=?error, "Failed to execute the retention policy on the index.")
+                error!(index_id=%message.index_uid.index_id, error=?error, "Failed to execute the retention policy on the index.")
             }
         }
 
         if let Ok(next_interval) = retention_policy.duration_until_next_evaluation() {
             info!(index_id=?index_config.index_id, scheduled_in=?next_interval, "retention-policy-schedule-operation");
-            ctx.schedule_self_msg(next_interval, message).await;
+            ctx.schedule_self_msg(next_interval, message);
         } else {
             // Since we have failed to schedule next execution for this index,
             // we remove it from the cache for it to be retried next time it gets
             // added back by the RetentionPolicyExecutor cache refresh loop.
-            self.index_configs.remove(message.index_uid.index_id());
-            error!(index_id=%message.index_uid.index_id(), "couldn't extract the index next schedule interval");
+            self.index_configs.remove(&message.index_uid.index_id);
+            error!(index_id=%message.index_uid.index_id, "couldn't extract the index next schedule interval");
         }
         Ok(())
     }
@@ -254,6 +254,7 @@ mod tests {
 
     use mockall::Sequence;
     use quickwit_actors::Universe;
+    use quickwit_common::ServiceStream;
     use quickwit_config::RetentionPolicy;
     use quickwit_metastore::{
         IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata,
@@ -280,7 +281,7 @@ mod tests {
             let indexes_set: HashSet<_> = self
                 .index_configs
                 .values()
-                .map(|im| (&im.index_id, &im.retention_policy))
+                .map(|im| (&im.index_id, &im.retention_policy_opt))
                 .collect();
 
             let expected_indexes: Vec<IndexConfig> = make_indexes(&message.0)
@@ -289,7 +290,7 @@ mod tests {
                 .collect();
             let expected_indexes_set: HashSet<_> = expected_indexes
                 .iter()
-                .map(|im| (&im.index_id, &im.retention_policy))
+                .map(|im| (&im.index_id, &im.retention_policy_opt))
                 .collect();
             assert_eq!(
                 indexes_set, expected_indexes_set,
@@ -299,15 +300,15 @@ mod tests {
         }
     }
 
-    const SCHEDULE_EXPR: &str = "hourly";
+    const EVALUATION_SCHEDULE: &str = "hourly";
 
     fn make_index(index_id: &str, retention_period_opt: Option<&str>) -> IndexConfig {
         let mut index = IndexConfig::for_test(index_id, &format!("ram://indexes/{index_id}"));
         if let Some(retention_period) = retention_period_opt {
-            index.retention_policy = Some(RetentionPolicy::new(
-                retention_period.to_string(),
-                SCHEDULE_EXPR.to_string(),
-            ))
+            index.retention_policy_opt = Some(RetentionPolicy {
+                retention_period: retention_period.to_string(),
+                evaluation_schedule: EVALUATION_SCHEDULE.to_string(),
+            })
         }
         index
     }
@@ -337,7 +338,11 @@ mod tests {
     // Uses the retention policy scheduler to calculate
     // how much time to advance for the execution to take place.
     fn shift_time_by() -> Duration {
-        let scheduler = RetentionPolicy::new("".to_string(), SCHEDULE_EXPR.to_string());
+        let scheduler = RetentionPolicy {
+            retention_period: "".to_string(),
+            evaluation_schedule: EVALUATION_SCHEDULE.to_string(),
+        };
+
         scheduler.duration_until_next_evaluation().unwrap() + Duration::from_secs(1)
     }
 
@@ -349,7 +354,7 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(..)
-            .returning(|_| Ok(ListSplitsResponse::empty()));
+            .returning(|_| Ok(ServiceStream::empty()));
         mock_metastore
             .expect_list_indexes_metadata()
             .times(1)
@@ -461,7 +466,7 @@ mod tests {
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert_eq!(query.split_states, &[SplitState::Published]);
-                let splits = match query.index_uids[0].index_id() {
+                let splits = match query.index_uids[0].index_id.as_ref() {
                     "index-1" => {
                         vec![
                             make_split("split-1", Some(1000..=5000)),
@@ -472,15 +477,16 @@ mod tests {
                     "index-2" => Vec::new(),
                     unknown => panic!("Unknown index: `{unknown}`."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
             });
 
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(1..=3)
             .returning(|mark_splits_for_deletion_request| {
-                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid.clone().into();
-                assert_eq!(index_uid.index_id(), "index-1");
+                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid().clone();
+                assert_eq!(index_uid.index_id, "index-1");
                 assert_eq!(
                     mark_splits_for_deletion_request.split_ids,
                     ["split-1", "split-2"]

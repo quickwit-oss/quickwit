@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -35,8 +35,9 @@ mod routing_expression;
 pub mod tag_pruning;
 
 pub use default_doc_mapper::{
-    analyze_text, DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, Mode, ModeType,
-    QuickwitJsonOptions, TokenizerConfig, TokenizerEntry,
+    analyze_text, BinaryFormat, DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry,
+    FieldMappingType, Mode, ModeType, QuickwitBytesOptions, QuickwitJsonOptions, TokenizerConfig,
+    TokenizerEntry,
 };
 use default_doc_mapper::{
     FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionSchema,
@@ -46,6 +47,7 @@ use default_doc_mapper::{
 pub use doc_mapper::{DocMapper, JsonObject, NamedField, TermRange, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
 use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
+pub use routing_expression::RoutingExpr;
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";
@@ -60,9 +62,12 @@ const QW_RESERVED_FIELD_NAMES: &[&str] = &[
     FIELD_PRESENCE_FIELD_NAME,
 ];
 
+/// Cardinality of a field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum Cardinality {
+pub enum Cardinality {
+    /// Single-valued field.
     SingleValue,
+    /// Multivalued field.
     MultiValues,
 }
 

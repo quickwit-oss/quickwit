@@ -17,7 +17,7 @@ Quickwit compiles to a single binary and we provide different methods to install
 
 - Linux/MacOS binaries that you can [download manually](#download) or with the [install script](#install-script)
 - [Docker image](#use-the-docker-image)
-- [Helm chart](/docs/deployment/kubernetes.md)
+- [Helm chart](../deployment/kubernetes/helm.md)
 
 ## Prerequisites
 
@@ -43,13 +43,13 @@ Downloads `.tar.gz`:
 <!-- Bellow is the set of links to edit when a new version is released -->
 <RenderIf condition={useDocsVersion().version != 'current'}>
 
-version: 0.6.1 - [Release notes](https://github.com/quickwit-oss/quickwit/releases/tag/v0.6.1) - [Changelog](https://github.com/quickwit-oss/quickwit/blob/main/CHANGELOG.md)
+version: 0.7.1 - [Release notes](https://github.com/quickwit-oss/quickwit/releases/tag/v0.7.1) - [Changelog](https://github.com/quickwit-oss/quickwit/blob/main/CHANGELOG.md)
 License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
-- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.6.1/quickwit-v0.6.1-aarch64-unknown-linux-gnu.tar.gz)
-- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.6.1/quickwit-v0.6.1-x86_64-unknown-linux-gnu.tar.gz)
-- [macOS aarch64](https://github.com/quickwit-oss/quickwit/releases/download/v0.6.1/quickwit-v0.6.1-aarch64-apple-darwin.tar.gz)
-- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.6.1/quickwit-v0.6.1-x86_64-apple-darwin.tar.gz)
+- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.7.1/quickwit-v0.7.1-aarch64-unknown-linux-gnu.tar.gz)
+- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.7.1/quickwit-v0.7.1-x86_64-unknown-linux-gnu.tar.gz)
+- [macOS aarch64](https://github.com/quickwit-oss/quickwit/releases/download/v0.7.1/quickwit-v0.7.1-aarch64-apple-darwin.tar.gz)
+- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.7.1/quickwit-v0.7.1-x86_64-apple-darwin.tar.gz)
 
 </RenderIf>
 

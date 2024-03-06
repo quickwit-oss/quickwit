@@ -33,7 +33,7 @@ describe('Home navigation', () => {
     cy.get('span').should('contain.text', 'cluster_id');
   });
   it('Should display otel logs index page', () => {
-    cy.visit('http://127.0.0.1:7280/ui/indexes/otel-logs-v0_6');
+    cy.visit('http://127.0.0.1:7280/ui/indexes/otel-logs-v0_7');
     cy.get('a')
         .should('be.visible')
         .should('contain.text', 'Indexes')

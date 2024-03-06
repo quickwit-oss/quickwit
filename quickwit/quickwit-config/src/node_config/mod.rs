@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -28,6 +28,8 @@ use std::time::Duration;
 
 use anyhow::{bail, ensure};
 use bytesize::ByteSize;
+use http::HeaderMap;
+use once_cell::sync::Lazy;
 use quickwit_common::net::HostAddr;
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
@@ -43,6 +45,45 @@ pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct RestConfig {
+    pub listen_addr: SocketAddr,
+    pub cors_allow_origins: Vec<String>,
+    #[serde(with = "http_serde::header_map")]
+    pub extra_headers: HeaderMap,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GrpcConfig {
+    #[serde(default = "GrpcConfig::default_max_message_size")]
+    pub max_message_size: ByteSize,
+}
+
+impl GrpcConfig {
+    fn default_max_message_size() -> ByteSize {
+        ByteSize::mib(20)
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.max_message_size >= ByteSize::mb(1),
+            "max gRPC message size (`grpc.max_message_size`) must be at least 1MB, got `{}`",
+            self.max_message_size
+        );
+        Ok(())
+    }
+}
+
+impl Default for GrpcConfig {
+    fn default() -> Self {
+        Self {
+            max_message_size: Self::default_max_message_size(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IndexerConfig {
     #[serde(default = "IndexerConfig::default_split_store_max_num_bytes")]
     pub split_store_max_num_bytes: ByteSize,
@@ -50,6 +91,15 @@ pub struct IndexerConfig {
     pub split_store_max_num_splits: usize,
     #[serde(default = "IndexerConfig::default_max_concurrent_split_uploads")]
     pub max_concurrent_split_uploads: usize,
+    /// Limits the IO throughput of the `SplitDownloader` and the `MergeExecutor`.
+    /// On hardware where IO is constrained, it makes sure that Merges (a batch operation)
+    /// does not starve indexing itself (as it is a latency sensitive operation).
+    #[serde(default)]
+    pub max_merge_write_throughput: Option<ByteSize>,
+    /// Maximum number of merge or delete operation that can be executed concurrently.
+    /// (defaults to num_cpu / 2).
+    #[serde(default = "IndexerConfig::default_merge_concurrency")]
+    pub merge_concurrency: NonZeroUsize,
     /// Enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry
     /// Protocol (OTLP).
     #[serde(default = "IndexerConfig::default_enable_otlp_endpoint")]
@@ -81,11 +131,15 @@ impl IndexerConfig {
     }
 
     pub fn default_split_store_max_num_bytes() -> ByteSize {
-        ByteSize::gb(100)
+        ByteSize::gib(100)
     }
 
     pub fn default_split_store_max_num_splits() -> usize {
         1_000
+    }
+
+    pub fn default_merge_concurrency() -> NonZeroUsize {
+        NonZeroUsize::new(num_cpus::get() / 2).unwrap_or(NonZeroUsize::new(1).unwrap())
     }
 
     fn default_cpu_capacity() -> CpuCapacity {
@@ -102,6 +156,8 @@ impl IndexerConfig {
             split_store_max_num_splits: 3,
             max_concurrent_split_uploads: 4,
             cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
+            max_merge_write_throughput: None,
+            merge_concurrency: NonZeroUsize::new(3).unwrap(),
         };
         Ok(indexer_config)
     }
@@ -116,6 +172,8 @@ impl Default for IndexerConfig {
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             cpu_capacity: Self::default_cpu_capacity(),
+            merge_concurrency: Self::default_merge_concurrency(),
+            max_merge_write_throughput: None,
         }
     }
 }
@@ -128,6 +186,8 @@ pub struct SplitCacheLimits {
     pub max_num_splits: NonZeroU32,
     #[serde(default = "SplitCacheLimits::default_num_concurrent_downloads")]
     pub num_concurrent_downloads: NonZeroU32,
+    #[serde(default = "SplitCacheLimits::default_max_file_descriptors")]
+    pub max_file_descriptors: NonZeroU32,
 }
 
 impl SplitCacheLimits {
@@ -138,15 +198,9 @@ impl SplitCacheLimits {
     fn default_num_concurrent_downloads() -> NonZeroU32 {
         NonZeroU32::new(1).unwrap()
     }
-}
 
-impl Default for SplitCacheLimits {
-    fn default() -> SplitCacheLimits {
-        SplitCacheLimits {
-            max_num_bytes: ByteSize::gb(1),
-            max_num_splits: NonZeroU32::new(100).unwrap(),
-            num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
-        }
+    fn default_max_file_descriptors() -> NonZeroU32 {
+        NonZeroU32::new(100).unwrap()
     }
 }
 
@@ -182,6 +236,34 @@ impl Default for SearcherConfig {
     }
 }
 
+impl SearcherConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if let Some(split_cache_limits) = self.split_cache {
+            if self.max_num_concurrent_split_searches
+                > split_cache_limits.max_file_descriptors.get() as usize
+            {
+                anyhow::bail!(
+                    "max_num_concurrent_split_searches ({}) must be lower or equal to \
+                     split_cache.max_file_descriptors ({})",
+                    self.max_num_concurrent_split_searches,
+                    split_cache_limits.max_file_descriptors
+                );
+            }
+            if self.max_num_concurrent_split_streams
+                > split_cache_limits.max_file_descriptors.get() as usize
+            {
+                anyhow::bail!(
+                    "max_num_concurrent_split_streams ({}) must be lower or equal to \
+                     split_cache.max_file_descriptors ({})",
+                    self.max_num_concurrent_split_streams,
+                    split_cache_limits.max_file_descriptors
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct IngestApiConfig {
@@ -200,6 +282,12 @@ impl Default for IngestApiConfig {
             content_length_limit: ByteSize::mib(10),
         }
     }
+}
+
+/// Returns true if the ingest API v2 is enabled.
+pub fn enable_ingest_v2() -> bool {
+    static ENABLE_INGEST_V2: Lazy<bool> = Lazy::new(|| env::var("QW_ENABLE_INGEST_V2").is_ok());
+    *ENABLE_INGEST_V2
 }
 
 impl IngestApiConfig {
@@ -226,6 +314,17 @@ impl IngestApiConfig {
 
     fn validate(&self) -> anyhow::Result<()> {
         self.replication_factor()?;
+        ensure!(
+            self.max_queue_disk_usage > ByteSize::mib(256),
+            "max_queue_disk_usage must be at least 256 MiB, got `{}`",
+            self.max_queue_disk_usage
+        );
+        ensure!(
+            self.max_queue_disk_usage >= self.max_queue_memory_usage,
+            "max_queue_disk_usage ({}) must be at least max_queue_memory_usage ({})",
+            self.max_queue_disk_usage,
+            self.max_queue_memory_usage
+        );
         Ok(())
     }
 }
@@ -304,16 +403,17 @@ pub struct NodeConfig {
     pub cluster_id: String,
     pub node_id: String,
     pub enabled_services: HashSet<QuickwitService>,
-    pub rest_listen_addr: SocketAddr,
     pub gossip_listen_addr: SocketAddr,
     pub grpc_listen_addr: SocketAddr,
     pub gossip_advertise_addr: SocketAddr,
     pub grpc_advertise_addr: SocketAddr,
+    pub gossip_interval: Duration,
     pub peer_seeds: Vec<String>,
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,
     pub default_index_root_uri: Uri,
-    pub rest_cors_allow_origins: Vec<String>,
+    pub rest_config: RestConfig,
+    pub grpc_config: GrpcConfig,
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
     pub indexer_config: IndexerConfig,
@@ -368,9 +468,9 @@ impl NodeConfig {
     }
 
     pub fn redact(&mut self) {
+        self.metastore_configs.redact();
         self.metastore_uri.redact();
         self.storage_configs.redact();
-        self.metastore_configs.redact();
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -383,10 +483,11 @@ impl NodeConfig {
 mod tests {
     use quickwit_proto::indexing::CpuCapacity;
 
+    use super::*;
     use crate::IndexerConfig;
 
     #[test]
-    fn test_index_config_serialization() {
+    fn test_indexer_config_serialization() {
         {
             let indexer_config: IndexerConfig = serde_json::from_str(r#"{}"#).unwrap();
             assert_eq!(&indexer_config, &IndexerConfig::default());
@@ -412,6 +513,23 @@ mod tests {
         }
         {
             let indexer_config: IndexerConfig =
+                serde_yaml::from_str(r#"merge_concurrency: 5"#).unwrap();
+            assert_eq!(
+                indexer_config.merge_concurrency,
+                NonZeroUsize::new(5).unwrap()
+            );
+            let indexer_config_json = serde_json::to_value(&indexer_config).unwrap();
+            assert_eq!(
+                indexer_config_json
+                    .get("merge_concurrency")
+                    .unwrap()
+                    .as_u64()
+                    .unwrap(),
+                5
+            );
+        }
+        {
+            let indexer_config: IndexerConfig =
                 serde_yaml::from_str(r#"cpu_capacity: 1500m"#).unwrap();
             assert_eq!(
                 indexer_config.cpu_capacity,
@@ -427,5 +545,64 @@ mod tests {
                 "1500m"
             );
         }
+    }
+    #[test]
+    fn test_validate_ingest_api_config() {
+        {
+            let indexer_config: IngestApiConfig = serde_yaml::from_str(
+                r#"
+                    max_queue_disk_usage: 100M
+                "#,
+            )
+            .unwrap();
+            assert_eq!(
+                indexer_config.validate().unwrap_err().to_string(),
+                "max_queue_disk_usage must be at least 256 MiB, got `100.0 MB`"
+            );
+        }
+        {
+            let indexer_config: IngestApiConfig = serde_yaml::from_str(
+                r#"
+                    max_queue_memory_usage: 600M
+                    max_queue_disk_usage: 500M
+                "#,
+            )
+            .unwrap();
+            assert_eq!(
+                indexer_config.validate().unwrap_err().to_string(),
+                "max_queue_disk_usage (500.0 MB) must be at least max_queue_memory_usage (600.0 \
+                 MB)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_grpc_config_serialization() {
+        let grpc_config: GrpcConfig = serde_json::from_str(r#"{}"#).unwrap();
+        assert_eq!(
+            grpc_config.max_message_size,
+            GrpcConfig::default().max_message_size
+        );
+
+        let grpc_config: GrpcConfig = serde_yaml::from_str(
+            r#"
+                max_message_size: 4MiB
+            "#,
+        )
+        .unwrap();
+        assert_eq!(grpc_config.max_message_size, ByteSize::mib(4));
+    }
+
+    #[test]
+    fn test_grpc_config_validate() {
+        let grpc_config = GrpcConfig {
+            max_message_size: ByteSize::mb(1),
+        };
+        assert!(grpc_config.validate().is_ok());
+
+        let grpc_config = GrpcConfig {
+            max_message_size: ByteSize::kb(1),
+        };
+        assert!(grpc_config.validate().is_err());
     }
 }

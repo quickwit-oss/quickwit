@@ -1,13 +1,14 @@
 [package]
 name = "quickwit-jaeger"
-version = "0.6.5-dev"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
-description = "Quickwit Jaeger"
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+description = "Jaeger storage backend"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
@@ -38,11 +39,12 @@ tempfile = { workspace = true }
 time = { workspace = true }
 
 quickwit-actors = { workspace = true }
-quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true }
+quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-opentelemetry = { workspace = true, features = ["testsuite"] }
 quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 

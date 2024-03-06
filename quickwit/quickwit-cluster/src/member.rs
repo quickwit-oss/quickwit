@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -18,26 +18,23 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
+use std::mem::size_of;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
-use anyhow::{anyhow, Context};
-use chitchat::{ChitchatId, NodeState};
-use itertools::Itertools;
+use anyhow::Context;
+use chitchat::{ChitchatId, NodeState, Version};
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
 use quickwit_proto::types::NodeId;
 use tracing::{error, warn};
 
+use crate::cluster::parse_indexing_tasks;
 use crate::{GenerationId, QuickwitService};
 
 // Keys used to store member's data in chitchat state.
 pub(crate) const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
 pub(crate) const ENABLED_SERVICES_KEY: &str = "enabled_services";
 pub(crate) const PIPELINE_METRICS_PREFIX: &str = "pipeline_metrics:";
-
-// An indexing task key is formatted as
-// `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`.
-pub(crate) const INDEXING_TASK_PREFIX: &str = "indexing_task:";
 
 // Readiness key and values used to store node's readiness in Chitchat state.
 pub(crate) const READINESS_KEY: &str = "readiness";
@@ -50,6 +47,8 @@ pub(crate) trait NodeStateExt {
     fn grpc_advertise_addr(&self) -> anyhow::Result<SocketAddr>;
 
     fn is_ready(&self) -> bool;
+
+    fn size_bytes(&self) -> usize;
 }
 
 impl NodeStateExt for NodeState {
@@ -69,6 +68,15 @@ impl NodeStateExt for NodeState {
         self.get(READINESS_KEY)
             .map(|health_value| health_value == READINESS_VALUE_READY)
             .unwrap_or(false)
+    }
+
+    // TODO: Expose more accurate size of the state in Chitchat.
+    fn size_bytes(&self) -> usize {
+        const SIZE_OF_VERSION: usize = size_of::<Version>();
+        const SIZE_OF_TOMBSTONE: usize = size_of::<u64>();
+        self.key_values_including_deleted()
+            .map(|(key, value)| key.len() + value.value.len() + SIZE_OF_VERSION + SIZE_OF_TOMBSTONE)
+            .sum()
     }
 }
 
@@ -146,7 +154,7 @@ pub(crate) fn build_cluster_member(
             parse_enabled_services_str(enabled_services_str, &chitchat_id.node_id)
         })?;
     let grpc_advertise_addr = node_state.grpc_advertise_addr()?;
-    let indexing_tasks = parse_indexing_tasks(node_state, &chitchat_id.node_id);
+    let indexing_tasks = parse_indexing_tasks(node_state);
     let indexing_cpu_capacity = parse_indexing_cpu_capacity(node_state);
     let member = ClusterMember {
         node_id: chitchat_id.node_id.into(),
@@ -159,47 +167,6 @@ pub(crate) fn build_cluster_member(
         indexing_cpu_capacity,
     };
     Ok(member)
-}
-
-// Parses indexing task key into the IndexingTask.
-fn parse_indexing_task_key(key: &str) -> anyhow::Result<IndexingTask> {
-    let reminder = key.strip_prefix(INDEXING_TASK_PREFIX).ok_or_else(|| {
-        anyhow!(
-            "indexing task must contain the delimiter character `:`: `{}`",
-            key
-        )
-    })?;
-    IndexingTask::try_from(reminder)
-}
-
-/// Parses indexing tasks serialized in keys formatted as
-/// `INDEXING_TASK_PREFIX:index_id:index_incarnation:source_id`. Malformed keys and values are
-/// ignored, just warnings are emitted.
-pub(crate) fn parse_indexing_tasks(node_state: &NodeState, node_id: &str) -> Vec<IndexingTask> {
-    node_state
-        .iter_prefix(INDEXING_TASK_PREFIX)
-        .map(|(key, versioned_value)| {
-            let indexing_task = parse_indexing_task_key(key)?;
-            let num_tasks: usize = versioned_value.value.parse()?;
-            Ok((0..num_tasks).map(move |_| indexing_task.clone()))
-        })
-        .flatten_ok()
-        .filter_map(
-            |indexing_task_parsing_result: anyhow::Result<IndexingTask>| {
-                match indexing_task_parsing_result {
-                    Ok(indexing_task) => Some(indexing_task),
-                    Err(error) => {
-                        warn!(
-                            node_id=%node_id,
-                            error=%error,
-                            "Malformated indexing task key and value on node."
-                        );
-                        None
-                    }
-                }
-            },
-        )
-        .collect()
 }
 
 fn parse_enabled_services_str(

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -18,32 +18,31 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::iter::once;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytesize::ByteSize;
 use futures::{Future, StreamExt};
 use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{
     ack_replication_message, syn_replication_message, AckReplicationMessage, IngesterStatus,
-    ReplicateFailure, ReplicateFailureReason, ReplicateRequest, ReplicateResponse,
-    ReplicateSuccess, SynReplicationMessage,
+    InitReplicaRequest, InitReplicaResponse, ReplicateFailure, ReplicateFailureReason,
+    ReplicateRequest, ReplicateResponse, ReplicateSubrequest, ReplicateSuccess,
+    SynReplicationMessage,
 };
-use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
+use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardState};
 use quickwit_proto::types::{NodeId, Position};
 use tokio::sync::mpsc::error::TryRecvError;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{error, warn};
 
-use super::ingester::IngesterState;
 use super::models::IngesterShard;
 use super::mrecord::MRecord;
 use super::mrecordlog_utils::check_enough_capacity;
-use crate::estimate_size;
-use crate::ingest_v2::models::IngesterShardType;
+use super::state::IngesterState;
+use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::metrics::INGEST_METRICS;
+use crate::{estimate_size, with_lock_metrics};
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
 
@@ -54,7 +53,67 @@ const REPLICATION_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "tests
     Duration::from_secs(3)
 };
 
-type OneShotReplicateRequest = (ReplicateRequest, oneshot::Sender<ReplicateResponse>);
+/// A replication request is sent by the leader to its follower to update the state of a replica
+/// shard.
+#[derive(Debug)]
+pub(super) enum ReplicationRequest {
+    Init(InitReplicaRequest),
+    Replicate(ReplicateRequest),
+}
+
+impl ReplicationRequest {
+    fn replication_seqno(&self) -> ReplicationSeqNo {
+        match self {
+            ReplicationRequest::Init(init_replica_request) => {
+                init_replica_request.replication_seqno
+            }
+            ReplicationRequest::Replicate(replicate_request) => replicate_request.replication_seqno,
+        }
+    }
+
+    fn set_replication_seqno(&mut self, replication_seqno: ReplicationSeqNo) {
+        match self {
+            ReplicationRequest::Init(init_replica_request) => {
+                init_replica_request.replication_seqno = replication_seqno
+            }
+            ReplicationRequest::Replicate(replicate_request) => {
+                replicate_request.replication_seqno = replication_seqno
+            }
+        }
+    }
+
+    fn into_syn_replication_message(self) -> SynReplicationMessage {
+        match self {
+            ReplicationRequest::Init(init_replica_request) => {
+                SynReplicationMessage::new_init_replica_request(init_replica_request)
+            }
+            ReplicationRequest::Replicate(replicate_request) => {
+                SynReplicationMessage::new_replicate_request(replicate_request)
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(super) enum ReplicationResponse {
+    Init(InitReplicaResponse),
+    Replicate(ReplicateResponse),
+}
+
+impl ReplicationResponse {
+    fn replication_seqno(&self) -> ReplicationSeqNo {
+        match self {
+            ReplicationResponse::Init(init_replica_response) => {
+                init_replica_response.replication_seqno
+            }
+            ReplicationResponse::Replicate(replicate_response) => {
+                replicate_response.replication_seqno
+            }
+        }
+    }
+}
+
+type OneShotReplicationRequest = (ReplicationRequest, oneshot::Sender<ReplicationResponse>);
 
 /// Replication sequence number.
 type ReplicationSeqNo = u64;
@@ -63,7 +122,7 @@ type ReplicationSeqNo = u64;
 pub(super) struct ReplicationStreamTask {
     leader_id: NodeId,
     follower_id: NodeId,
-    replicate_request_queue_rx: mpsc::Receiver<OneShotReplicateRequest>,
+    replication_request_rx: mpsc::Receiver<OneShotReplicationRequest>,
     syn_replication_stream_tx: mpsc::Sender<SynReplicationMessage>,
     ack_replication_stream: ServiceStream<IngestV2Result<AckReplicationMessage>>,
 }
@@ -76,13 +135,13 @@ impl ReplicationStreamTask {
         syn_replication_stream_tx: mpsc::Sender<SynReplicationMessage>,
         ack_replication_stream: ServiceStream<IngestV2Result<AckReplicationMessage>>,
     ) -> ReplicationStreamTaskHandle {
-        let (replicate_request_queue_tx, replicate_request_queue_rx) =
-            mpsc::channel::<OneShotReplicateRequest>(3);
+        let (replication_request_tx, replication_request_rx) =
+            mpsc::channel::<OneShotReplicationRequest>(3);
 
         let replication_stream_task = Self {
             leader_id,
             follower_id,
-            replicate_request_queue_rx,
+            replication_request_rx,
             syn_replication_stream_tx,
             ack_replication_stream,
         };
@@ -90,8 +149,7 @@ impl ReplicationStreamTask {
             replication_stream_task.run();
 
         ReplicationStreamTaskHandle {
-            replicate_request_queue_tx,
-            replication_seqno_sequence: AtomicU64::default(),
+            replication_request_tx,
             enqueue_syn_requests_join_handle,
             dequeue_ack_responses_join_handle,
         }
@@ -103,9 +161,6 @@ impl ReplicationStreamTask {
     /// processed and returned in the same order. Conceptually, it is akin to "zipping" the SYN and
     /// ACK replication streams together.
     fn run(mut self) -> (JoinHandle<()>, JoinHandle<()>) {
-        let leader_id = self.leader_id.clone();
-        let follower_id = self.follower_id.clone();
-
         // Response sequencer channel. It ensures that requests and responses are processed and
         // returned in the same order.
         //
@@ -117,31 +172,25 @@ impl ReplicationStreamTask {
         // This loop enqueues SYN replication requests into the SYN replication stream and passes
         // the one-shot response sender to the "dequeue" loop via the sequencer channel.
         let enqueue_syn_requests_fut = async move {
-            while let Some((replicate_request, oneshot_replicate_response_tx)) =
-                self.replicate_request_queue_rx.recv().await
+            let mut replication_seqno = ReplicationSeqNo::default();
+            while let Some((mut replication_request, oneshot_replication_response_tx)) =
+                self.replication_request_rx.recv().await
             {
-                assert_eq!(
-                    replicate_request.leader_id, leader_id,
-                    "expected leader ID `{}`, got `{}`",
-                    leader_id, replicate_request.leader_id
-                );
-                assert_eq!(
-                    replicate_request.follower_id, follower_id,
-                    "expected follower ID `{}`, got `{}`",
-                    follower_id, replicate_request.follower_id
-                );
+                replication_request.set_replication_seqno(replication_seqno);
+                replication_seqno += 1;
+
                 if response_sequencer_tx
                     .send((
-                        replicate_request.replication_seqno,
-                        oneshot_replicate_response_tx,
+                        replication_request.replication_seqno(),
+                        oneshot_replication_response_tx,
                     ))
                     .is_err()
                 {
                     // The response sequencer receiver was dropped.
                     return;
                 }
-                let syn_replication_message =
-                    SynReplicationMessage::new_replicate_request(replicate_request);
+                let syn_replication_message = replication_request.into_syn_replication_message();
+
                 if self
                     .syn_replication_stream_tx
                     .send(syn_replication_message)
@@ -164,26 +213,40 @@ impl ReplicationStreamTask {
                         return;
                     }
                 };
-                let replicate_response = into_replicate_response(ack_replication_message);
-
-                let oneshot_replicate_response_tx = match response_sequencer_rx.try_recv() {
-                    Ok((replication_seqno, oneshot_replicate_response_tx)) => {
-                        if replicate_response.replication_seqno != replication_seqno {
+                let replication_response = match ack_replication_message.message {
+                    Some(ack_replication_message::Message::InitResponse(init_replica_response)) => {
+                        ReplicationResponse::Init(init_replica_response)
+                    }
+                    Some(ack_replication_message::Message::ReplicateResponse(
+                        replicate_response,
+                    )) => ReplicationResponse::Replicate(replicate_response),
+                    Some(ack_replication_message::Message::OpenResponse(_)) => {
+                        warn!("received unexpected ACK replication message");
+                        continue;
+                    }
+                    None => {
+                        warn!("received empty ACK replication message");
+                        continue;
+                    }
+                };
+                let oneshot_replication_response_tx = match response_sequencer_rx.try_recv() {
+                    Ok((replication_seqno, oneshot_replication_response_tx)) => {
+                        if replication_response.replication_seqno() != replication_seqno {
                             error!(
                                 "received out-of-order replication response: expected replication \
                                  seqno `{}`, got `{}`; closing replication stream from leader \
                                  `{}` to follower `{}`",
                                 replication_seqno,
-                                replicate_response.replication_seqno,
+                                replication_response.replication_seqno(),
                                 self.leader_id,
                                 self.follower_id,
                             );
                             return;
                         }
-                        oneshot_replicate_response_tx
+                        oneshot_replication_response_tx
                     }
                     Err(TryRecvError::Empty) => {
-                        panic!("the response sequencer should not be empty");
+                        panic!("response sequencer should not be empty");
                     }
                     Err(TryRecvError::Disconnected) => {
                         // The response sequencer sender was dropped.
@@ -192,7 +255,7 @@ impl ReplicationStreamTask {
                 };
                 // We intentionally ignore the error here. It is the responsibility of the
                 // `replicate` method to surface it.
-                let _ = oneshot_replicate_response_tx.send(replicate_response);
+                let _ = oneshot_replication_response_tx.send(replication_response);
             }
             // The ACK replication stream was closed.
         };
@@ -204,42 +267,18 @@ impl ReplicationStreamTask {
 }
 
 pub(super) struct ReplicationStreamTaskHandle {
-    replication_seqno_sequence: AtomicU64,
-    replicate_request_queue_tx: mpsc::Sender<OneShotReplicateRequest>,
+    replication_request_tx: mpsc::Sender<OneShotReplicationRequest>,
     enqueue_syn_requests_join_handle: JoinHandle<()>,
     dequeue_ack_responses_join_handle: JoinHandle<()>,
 }
 
 impl ReplicationStreamTaskHandle {
-    /// Enqueues a replication request into the replication stream and waits for the response. Times
-    /// out after [`REPLICATION_REQUEST_TIMEOUT`] seconds.
-    pub fn replicate(
-        &self,
-        replicate_request: ReplicateRequest,
-    ) -> impl Future<Output = Result<ReplicateResponse, ReplicationError>> + Send + 'static {
-        let (oneshot_replicate_response_tx, oneshot_replicate_response_rx) = oneshot::channel();
-        let replicate_request_queue_tx = self.replicate_request_queue_tx.clone();
-
-        let send_recv_fut = async move {
-            replicate_request_queue_tx
-                .send((replicate_request, oneshot_replicate_response_tx))
-                .await
-                .map_err(|_| ReplicationError::Closed)?;
-            let replicate_response = oneshot_replicate_response_rx
-                .await
-                .map_err(|_| ReplicationError::Closed)?;
-            Ok(replicate_response)
-        };
-        async {
-            tokio::time::timeout(REPLICATION_REQUEST_TIMEOUT, send_recv_fut)
-                .await
-                .map_err(|_| ReplicationError::Timeout)?
+    /// Returns a [`ReplicationClient`] that can be used to enqueue replication requests
+    /// into the replication stream.
+    pub fn replication_client(&self) -> ReplicationClient {
+        ReplicationClient {
+            replication_request_tx: self.replication_request_tx.clone(),
         }
-    }
-
-    pub fn next_replication_seqno(&self) -> ReplicationSeqNo {
-        self.replication_seqno_sequence
-            .fetch_add(1, Ordering::Relaxed)
     }
 }
 
@@ -250,7 +289,7 @@ impl Drop for ReplicationStreamTaskHandle {
     }
 }
 
-/// Error returned by [`ReplicationClient::replicate`].
+/// Error returned by the [`ReplicationClient`].
 #[derive(Debug, Clone, Copy, thiserror::Error)]
 #[error("failed to replicate records from leader to follower")]
 pub(super) enum ReplicationError {
@@ -262,11 +301,104 @@ pub(super) enum ReplicationError {
     Timeout,
 }
 
+// DO NOT derive or implement `Clone` for this object.
+#[derive(Debug)]
+pub(super) struct ReplicationClient {
+    replication_request_tx: mpsc::Sender<OneShotReplicationRequest>,
+}
+
+/// Single-use client that enqueues replication requests into the replication stream.
+///
+/// The `init_replica`, `replicate`, and `submit` methods take `self` instead of `&self`
+/// to produce 'static futures and enforce single-use semantics.
+impl ReplicationClient {
+    /// Enqueues an init replica request into the replication stream and waits for the response.
+    /// Times out after [`REPLICATION_REQUEST_TIMEOUT`] seconds.
+    pub fn init_replica(
+        self,
+        replica_shard: Shard,
+    ) -> impl Future<Output = Result<InitReplicaResponse, ReplicationError>> + Send + 'static {
+        let init_replica_request = InitReplicaRequest {
+            replica_shard: Some(replica_shard),
+            replication_seqno: 0, // replication number are generated further down
+        };
+        let replication_request = ReplicationRequest::Init(init_replica_request);
+
+        async {
+            self.submit(replication_request)
+                .await
+                .map(|replication_response| {
+                    if let ReplicationResponse::Init(init_replica_response) = replication_response {
+                        init_replica_response
+                    } else {
+                        panic!("response should be an init replica response")
+                    }
+                })
+        }
+    }
+
+    /// Enqueues a replicate request into the replication stream and waits for the response. Times
+    /// out after [`REPLICATION_REQUEST_TIMEOUT`] seconds.
+    pub fn replicate(
+        self,
+        leader_id: NodeId,
+        follower_id: NodeId,
+        subrequests: Vec<ReplicateSubrequest>,
+        commit_type: CommitTypeV2,
+    ) -> impl Future<Output = Result<ReplicateResponse, ReplicationError>> + Send + 'static {
+        let replicate_request = ReplicateRequest {
+            leader_id: leader_id.into(),
+            follower_id: follower_id.into(),
+            subrequests,
+            commit_type: commit_type as i32,
+            replication_seqno: 0, // replication number are generated further down
+        };
+        let replication_request = ReplicationRequest::Replicate(replicate_request);
+
+        async {
+            self.submit(replication_request)
+                .await
+                .map(|replication_response| {
+                    if let ReplicationResponse::Replicate(replicate_response) = replication_response
+                    {
+                        replicate_response
+                    } else {
+                        panic!("response should be a replicate response")
+                    }
+                })
+        }
+    }
+
+    /// Submits a replication request to the replication stream and waits for the response.
+    fn submit(
+        self,
+        replication_request: ReplicationRequest,
+    ) -> impl Future<Output = Result<ReplicationResponse, ReplicationError>> + Send + 'static {
+        let (oneshot_replication_response_tx, oneshot_replication_response_rx) = oneshot::channel();
+
+        let send_recv_fut = async move {
+            self.replication_request_tx
+                .send((replication_request, oneshot_replication_response_tx))
+                .await
+                .map_err(|_| ReplicationError::Closed)?;
+            let replicate_response = oneshot_replication_response_rx
+                .await
+                .map_err(|_| ReplicationError::Closed)?;
+            Ok(replicate_response)
+        };
+        async {
+            tokio::time::timeout(REPLICATION_REQUEST_TIMEOUT, send_recv_fut)
+                .await
+                .map_err(|_| ReplicationError::Timeout)?
+        }
+    }
+}
+
 /// Replication task executed for each replication stream.
 pub(super) struct ReplicationTask {
     leader_id: NodeId,
     follower_id: NodeId,
-    state: Arc<RwLock<IngesterState>>,
+    state: IngesterState,
     syn_replication_stream: ServiceStream<SynReplicationMessage>,
     ack_replication_stream_tx: mpsc::UnboundedSender<IngestV2Result<AckReplicationMessage>>,
     current_replication_seqno: ReplicationSeqNo,
@@ -278,7 +410,7 @@ impl ReplicationTask {
     pub fn spawn(
         leader_id: NodeId,
         follower_id: NodeId,
-        state: Arc<RwLock<IngesterState>>,
+        state: IngesterState,
         syn_replication_stream: ServiceStream<SynReplicationMessage>,
         ack_replication_stream_tx: mpsc::UnboundedSender<IngestV2Result<AckReplicationMessage>>,
         disk_capacity: ByteSize,
@@ -296,6 +428,52 @@ impl ReplicationTask {
         };
         let join_handle = tokio::spawn(async move { replication_task.run().await });
         ReplicationTaskHandle { join_handle }
+    }
+
+    async fn init_replica(
+        &mut self,
+        init_replica_request: InitReplicaRequest,
+    ) -> IngestV2Result<InitReplicaResponse> {
+        if init_replica_request.replication_seqno != self.current_replication_seqno {
+            return Err(IngestV2Error::Internal(format!(
+                "received out-of-order replication request: expected replication seqno `{}`, got \
+                 `{}`",
+                self.current_replication_seqno, init_replica_request.replication_seqno
+            )));
+        }
+        self.current_replication_seqno += 1;
+
+        let Some(replica_shard) = init_replica_request.replica_shard else {
+            warn!("received empty init replica request");
+
+            return Err(IngestV2Error::Internal(
+                "init replica request is empty".to_string(),
+            ));
+        };
+        let queue_id = replica_shard.queue_id();
+
+        let mut state_guard =
+            with_lock_metrics!(self.state.lock_fully(), "init_replica", "write").await?;
+
+        state_guard
+            .mrecordlog
+            .create_queue(&queue_id)
+            .await
+            .expect("TODO: Handle IO error");
+
+        let replica_shard = IngesterShard::new_replica(
+            replica_shard.leader_id.into(),
+            ShardState::Open,
+            Position::Beginning,
+            Position::Beginning,
+            Instant::now(),
+        );
+        state_guard.shards.insert(queue_id, replica_shard);
+
+        let init_replica_response = InitReplicaResponse {
+            replication_seqno: init_replica_request.replication_seqno,
+        };
+        Ok(init_replica_response)
     }
 
     async fn replicate(
@@ -329,9 +507,10 @@ impl ReplicationTask {
         let mut replicate_successes = Vec::with_capacity(replicate_request.subrequests.len());
         let mut replicate_failures = Vec::new();
 
-        let mut state_guard = self.state.write().await;
+        let mut state_guard =
+            with_lock_metrics!(self.state.lock_fully(), "replicate", "write").await?;
 
-        if state_guard.status != IngesterStatus::Ready {
+        if state_guard.status() != IngesterStatus::Ready {
             replicate_failures.reserve_exact(replicate_request.subrequests.len());
 
             for subrequest in replicate_request.subrequests {
@@ -352,37 +531,26 @@ impl ReplicationTask {
             };
             return Ok(replicate_response);
         }
+        let now = Instant::now();
+
         for subrequest in replicate_request.subrequests {
             let queue_id = subrequest.queue_id();
-            let from_position_exclusive = subrequest.from_position_exclusive();
-            let to_position_inclusive = subrequest.to_position_inclusive();
+            let from_position_exclusive = subrequest.from_position_exclusive().clone();
 
-            let replica_shard: &IngesterShard = if from_position_exclusive == Position::Beginning {
-                // Initialize the replica shard and corresponding mrecordlog queue.
-                state_guard
-                    .mrecordlog
-                    .create_queue(&queue_id)
-                    .await
-                    .expect("TODO");
-                let leader_id: NodeId = replicate_request.leader_id.clone().into();
-                let shard = IngesterShard::new_replica(
-                    leader_id,
-                    ShardState::Open,
-                    Position::Beginning,
-                    Position::Beginning,
-                );
-                state_guard.shards.entry(queue_id.clone()).or_insert(shard)
-            } else {
-                state_guard
-                    .shards
-                    .get(&queue_id)
-                    .expect("replica shard should be initialized")
+            let Some(shard) = state_guard.shards.get(&queue_id) else {
+                let replicate_failure = ReplicateFailure {
+                    subrequest_id: subrequest.subrequest_id,
+                    index_uid: subrequest.index_uid,
+                    source_id: subrequest.source_id,
+                    shard_id: subrequest.shard_id,
+                    reason: ReplicateFailureReason::ShardNotFound as i32,
+                };
+                replicate_failures.push(replicate_failure);
+                continue;
             };
-            assert!(matches!(
-                replica_shard.shard_type,
-                IngesterShardType::Replica { .. }
-            ));
-            if replica_shard.shard_state.is_closed() {
+            assert!(shard.is_replica());
+
+            if shard.is_closed() {
                 let replicate_failure = ReplicateFailure {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
@@ -393,7 +561,7 @@ impl ReplicationTask {
                 replicate_failures.push(replicate_failure);
                 continue;
             }
-            if replica_shard.replication_position_inclusive != from_position_exclusive {
+            if shard.replication_position_inclusive != from_position_exclusive {
                 // TODO
             }
             let doc_batch = match subrequest.doc_batch {
@@ -407,33 +575,40 @@ impl ReplicationTask {
                         source_id: subrequest.source_id,
                         shard_id: subrequest.shard_id,
                         replication_position_inclusive: Some(
-                            replica_shard.replication_position_inclusive.clone(),
+                            shard.replication_position_inclusive.clone(),
                         ),
                     };
                     replicate_successes.push(replicate_success);
                     continue;
                 }
             };
+
+            let batch_num_bytes = doc_batch.num_bytes() as u64;
+            let batch_num_docs = doc_batch.num_docs() as u64;
+
             let requested_capacity = estimate_size(&doc_batch);
 
-            if let Err(error) = check_enough_capacity(
+            let current_usage = match check_enough_capacity(
                 &state_guard.mrecordlog,
                 self.disk_capacity,
                 self.memory_capacity,
                 requested_capacity,
             ) {
-                warn!("failed to replicate records: {error}");
+                Ok(usage) => usage,
+                Err(error) => {
+                    warn!("failed to replicate records: {error}");
 
-                let replicate_failure = ReplicateFailure {
-                    subrequest_id: subrequest.subrequest_id,
-                    index_uid: subrequest.index_uid,
-                    source_id: subrequest.source_id,
-                    shard_id: subrequest.shard_id,
-                    reason: ReplicateFailureReason::ResourceExhausted as i32,
-                };
-                replicate_failures.push(replicate_failure);
-                continue;
-            }
+                    let replicate_failure = ReplicateFailure {
+                        subrequest_id: subrequest.subrequest_id,
+                        index_uid: subrequest.index_uid,
+                        source_id: subrequest.source_id,
+                        shard_id: subrequest.shard_id,
+                        reason: ReplicateFailureReason::ResourceExhausted as i32,
+                    };
+                    replicate_failures.push(replicate_failure);
+                    continue;
+                }
+            };
             let current_position_inclusive: Position = if force_commit {
                 let encoded_mrecords = doc_batch
                     .docs()
@@ -452,9 +627,18 @@ impl ReplicationTask {
                     .await
                     .expect("TODO")
             }
-            .into();
-            let batch_num_bytes = doc_batch.num_bytes() as u64;
-            let batch_num_docs = doc_batch.num_docs() as u64;
+            .map(Position::offset)
+            .expect("records should not be empty");
+
+            let new_disk_usage = current_usage.disk + requested_capacity;
+            let new_memory_usage = current_usage.memory + requested_capacity;
+
+            INGEST_V2_METRICS
+                .wal_disk_usage_bytes
+                .set(new_disk_usage.as_u64() as i64);
+            INGEST_V2_METRICS
+                .wal_memory_usage_bytes
+                .set(new_memory_usage.as_u64() as i64);
 
             INGEST_METRICS
                 .replicated_num_bytes_total
@@ -463,17 +647,12 @@ impl ReplicationTask {
                 .replicated_num_docs_total
                 .inc_by(batch_num_docs);
 
-            if current_position_inclusive != to_position_inclusive {
-                return Err(IngestV2Error::Internal(format!(
-                    "bad replica position: expected {to_position_inclusive:?}, got \
-                     {current_position_inclusive:?}"
-                )));
-            }
             let replica_shard = state_guard
                 .shards
                 .get_mut(&queue_id)
                 .expect("replica shard should be initialized");
-            replica_shard.set_replication_position_inclusive(current_position_inclusive.clone());
+            replica_shard
+                .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
             let replicate_success = ReplicateSuccess {
                 subrequest_id: subrequest.subrequest_id,
@@ -497,11 +676,23 @@ impl ReplicationTask {
 
     async fn run(&mut self) -> IngestV2Result<()> {
         while let Some(syn_replication_message) = self.syn_replication_stream.next().await {
-            let replicate_request = into_replicate_request(syn_replication_message);
-            let ack_replication_message = self
-                .replicate(replicate_request)
-                .await
-                .map(AckReplicationMessage::new_replicate_response);
+            let ack_replication_message = match syn_replication_message.message {
+                Some(syn_replication_message::Message::OpenRequest(_)) => {
+                    panic!("TODO: this should not happen, internal error");
+                }
+                Some(syn_replication_message::Message::InitRequest(init_replica_request)) => self
+                    .init_replica(init_replica_request)
+                    .await
+                    .map(AckReplicationMessage::new_init_replica_response),
+                Some(syn_replication_message::Message::ReplicateRequest(replicate_request)) => self
+                    .replicate(replicate_request)
+                    .await
+                    .map(AckReplicationMessage::new_replicate_response),
+                None => {
+                    warn!("received empty SYN replication message");
+                    continue;
+                }
+            };
             if self
                 .ack_replication_stream_tx
                 .send(ack_replication_message)
@@ -524,41 +715,71 @@ impl Drop for ReplicationTaskHandle {
     }
 }
 
-fn into_replicate_request(syn_replication_message: SynReplicationMessage) -> ReplicateRequest {
-    if let Some(syn_replication_message::Message::ReplicateRequest(replicate_request)) =
-        syn_replication_message.message
-    {
-        return replicate_request;
-    };
-    panic!("SYN replication message should be a replicate request")
-}
-
-fn into_replicate_response(ack_replication_message: AckReplicationMessage) -> ReplicateResponse {
-    if let Some(ack_replication_message::Message::ReplicateResponse(replicate_response)) =
-        ack_replication_message.message
-    {
-        return replicate_response;
-    };
-    panic!("ACK replication message should be a replicate response")
-}
-
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
 
-    use mrecordlog::MultiRecordLog;
-    use quickwit_proto::ingest::ingester::{
-        ObservationMessage, ReplicateSubrequest, ReplicateSuccess,
-    };
-    use quickwit_proto::ingest::DocBatchV2;
-    use quickwit_proto::types::queue_id;
-    use tokio::sync::watch;
+    use quickwit_proto::ingest::ingester::{ReplicateSubrequest, ReplicateSuccess};
+    use quickwit_proto::ingest::{DocBatchV2, Shard};
+    use quickwit_proto::types::{queue_id, IndexUid, ShardId};
 
     use super::*;
-    use crate::ingest_v2::test_utils::MultiRecordLogTestExt;
+
+    fn into_init_replica_request(
+        syn_replication_message: SynReplicationMessage,
+    ) -> InitReplicaRequest {
+        let Some(syn_replication_message::Message::InitRequest(init_replica_request)) =
+            syn_replication_message.message
+        else {
+            panic!(
+                "expected init replica SYN message, got `{:?}`",
+                syn_replication_message.message
+            );
+        };
+        init_replica_request
+    }
+
+    fn into_replicate_request(syn_replication_message: SynReplicationMessage) -> ReplicateRequest {
+        let Some(syn_replication_message::Message::ReplicateRequest(replicate_request)) =
+            syn_replication_message.message
+        else {
+            panic!(
+                "expected replicate SYN message, got `{:?}`",
+                syn_replication_message.message
+            );
+        };
+        replicate_request
+    }
+
+    fn into_init_replica_response(
+        ack_replication_message: AckReplicationMessage,
+    ) -> InitReplicaResponse {
+        let Some(ack_replication_message::Message::InitResponse(init_replica_response)) =
+            ack_replication_message.message
+        else {
+            panic!(
+                "expected init replica ACK message, got `{:?}`",
+                ack_replication_message.message
+            );
+        };
+        init_replica_response
+    }
+
+    fn into_replicate_response(
+        ack_replication_message: AckReplicationMessage,
+    ) -> ReplicateResponse {
+        let Some(ack_replication_message::Message::ReplicateResponse(replicate_response)) =
+            ack_replication_message.message
+        else {
+            panic!(
+                "expected replicate ACK message, got `{:?}`",
+                ack_replication_message.message
+            );
+        };
+        replicate_response
+    }
 
     #[tokio::test]
-    async fn test_replication_stream_task() {
+    async fn test_replication_stream_task_init() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
         let (syn_replication_stream_tx, mut syn_replication_stream_rx) = mpsc::channel(5);
@@ -571,17 +792,73 @@ mod tests {
             ack_replication_stream,
         );
         let dummy_replication_task_future = async move {
-            while let Some(sync_replication_message) = syn_replication_stream_rx.recv().await {
-                let replicate_request = sync_replication_message.into_replicate_request().unwrap();
+            while let Some(syn_replication_message) = syn_replication_stream_rx.recv().await {
+                let init_replica_request = into_init_replica_request(syn_replication_message);
+                let init_replica_response = InitReplicaResponse {
+                    replication_seqno: init_replica_request.replication_seqno,
+                };
+                let ack_replication_message =
+                    AckReplicationMessage::new_init_replica_response(init_replica_response);
+                ack_replication_stream_tx
+                    .send(Ok(ack_replication_message))
+                    .await
+                    .unwrap();
+            }
+        };
+        tokio::spawn(dummy_replication_task_future);
+
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let replica_shard = Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(1)),
+            shard_state: ShardState::Open as i32,
+            leader_id: "test-leader".to_string(),
+            follower_id: Some("test-follower".to_string()),
+            ..Default::default()
+        };
+        let init_replica_response = replication_stream_task_handle
+            .replication_client()
+            .init_replica(replica_shard)
+            .await
+            .unwrap();
+        assert_eq!(init_replica_response.replication_seqno, 0);
+    }
+
+    #[tokio::test]
+    async fn test_replication_stream_task_replicate() {
+        let leader_id: NodeId = "test-leader".into();
+        let follower_id: NodeId = "test-follower".into();
+        let (syn_replication_stream_tx, mut syn_replication_stream_rx) = mpsc::channel(5);
+        let (ack_replication_stream_tx, ack_replication_stream) =
+            ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
+        let replication_stream_task_handle = ReplicationStreamTask::spawn(
+            leader_id.clone(),
+            follower_id.clone(),
+            syn_replication_stream_tx,
+            ack_replication_stream,
+        );
+        let dummy_replication_task_future = async move {
+            while let Some(syn_replication_message) = syn_replication_stream_rx.recv().await {
+                let replicate_request = into_replicate_request(syn_replication_message);
                 let replicate_successes = replicate_request
                     .subrequests
                     .iter()
-                    .map(|subrequest| ReplicateSuccess {
-                        subrequest_id: subrequest.subrequest_id,
-                        index_uid: subrequest.index_uid.clone(),
-                        source_id: subrequest.source_id.clone(),
-                        shard_id: subrequest.shard_id,
-                        replication_position_inclusive: Some(subrequest.to_position_inclusive()),
+                    .map(|subrequest| {
+                        let batch_len = subrequest.doc_batch.as_ref().unwrap().num_docs();
+                        let replication_position_inclusive = subrequest
+                            .from_position_exclusive()
+                            .as_usize()
+                            .map_or(batch_len - 1, |pos| pos + batch_len);
+                        ReplicateSuccess {
+                            subrequest_id: subrequest.subrequest_id,
+                            index_uid: subrequest.index_uid.clone(),
+                            source_id: subrequest.source_id.clone(),
+                            shard_id: subrequest.shard_id.clone(),
+                            replication_position_inclusive: Some(Position::offset(
+                                replication_position_inclusive,
+                            )),
+                        }
                     })
                     .collect::<Vec<_>>();
 
@@ -601,66 +878,76 @@ mod tests {
         };
         tokio::spawn(dummy_replication_task_future);
 
-        let replicate_request = ReplicateRequest {
-            leader_id: "test-leader".to_string(),
-            follower_id: "test-follower".to_string(),
-            commit_type: CommitTypeV2::Auto as i32,
-            subrequests: vec![
-                ReplicateSubrequest {
-                    subrequest_id: 0,
-                    index_uid: "test-index:0".to_string(),
-                    source_id: "test-source".to_string(),
-                    shard_id: 1,
-                    doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
-                    from_position_exclusive: None,
-                    to_position_inclusive: Some(Position::from(0u64)),
-                },
-                ReplicateSubrequest {
-                    subrequest_id: 1,
-                    index_uid: "test-index:0".to_string(),
-                    source_id: "test-source".to_string(),
-                    shard_id: 2,
-                    doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
-                    from_position_exclusive: None,
-                    to_position_inclusive: Some(Position::from(1u64)),
-                },
-                ReplicateSubrequest {
-                    subrequest_id: 2,
-                    index_uid: "test-index:1".to_string(),
-                    source_id: "test-source".to_string(),
-                    shard_id: 1,
-                    doc_batch: Some(DocBatchV2::for_test(["test-qux", "test-doc-tux"])),
-                    from_position_exclusive: Some(Position::from(0u64)),
-                    to_position_inclusive: Some(Position::from(2u64)),
-                },
-            ],
-            replication_seqno: replication_stream_task_handle.next_replication_seqno(),
-        };
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);
+
+        let subrequests = vec![
+            ReplicateSubrequest {
+                subrequest_id: 0,
+                index_uid: Some(index_uid.clone()),
+                source_id: "test-source".to_string(),
+                shard_id: Some(ShardId::from(1)),
+                doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
+                from_position_exclusive: Some(Position::Beginning),
+            },
+            ReplicateSubrequest {
+                subrequest_id: 1,
+                index_uid: Some(index_uid.clone()),
+                source_id: "test-source".to_string(),
+                shard_id: Some(ShardId::from(2)),
+                doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
+                from_position_exclusive: Some(Position::Beginning),
+            },
+            ReplicateSubrequest {
+                subrequest_id: 2,
+                index_uid: Some(index_uid2.clone()),
+                source_id: "test-source".to_string(),
+                shard_id: Some(ShardId::from(1)),
+                doc_batch: Some(DocBatchV2::for_test(["test-qux", "test-doc-tux"])),
+                from_position_exclusive: Some(Position::offset(0u64)),
+            },
+        ];
         let replicate_response = replication_stream_task_handle
-            .replicate(replicate_request)
+            .replication_client()
+            .replicate(
+                leader_id.clone(),
+                follower_id.clone(),
+                subrequests,
+                CommitTypeV2::Auto,
+            )
             .await
             .unwrap();
         assert_eq!(replicate_response.follower_id, "test-follower");
         assert_eq!(replicate_response.successes.len(), 3);
         assert_eq!(replicate_response.failures.len(), 0);
+        assert_eq!(replicate_response.replication_seqno, 0);
 
         let replicate_success_0 = &replicate_response.successes[0];
-        assert_eq!(replicate_success_0.index_uid, "test-index:0");
+        assert_eq!(replicate_success_0.index_uid(), &index_uid);
         assert_eq!(replicate_success_0.source_id, "test-source");
-        assert_eq!(replicate_success_0.shard_id, 1);
-        assert_eq!(replicate_success_0.replication_position_inclusive(), 0u64);
+        assert_eq!(replicate_success_0.shard_id(), ShardId::from(1));
+        assert_eq!(
+            replicate_success_0.replication_position_inclusive(),
+            Position::offset(0u64)
+        );
 
         let replicate_success_1 = &replicate_response.successes[1];
-        assert_eq!(replicate_success_1.index_uid, "test-index:0");
+        assert_eq!(replicate_success_1.index_uid(), &index_uid);
         assert_eq!(replicate_success_1.source_id, "test-source");
-        assert_eq!(replicate_success_1.shard_id, 2);
-        assert_eq!(replicate_success_1.replication_position_inclusive(), 1u64);
+        assert_eq!(replicate_success_1.shard_id(), ShardId::from(2));
+        assert_eq!(
+            replicate_success_1.replication_position_inclusive(),
+            Position::offset(1u64)
+        );
 
         let replicate_success_2 = &replicate_response.successes[2];
-        assert_eq!(replicate_success_2.index_uid, "test-index:1");
+        assert_eq!(replicate_success_2.index_uid(), &index_uid2);
         assert_eq!(replicate_success_2.source_id, "test-source");
-        assert_eq!(replicate_success_2.shard_id, 1);
-        assert_eq!(replicate_success_2.replication_position_inclusive(), 2u64);
+        assert_eq!(replicate_success_2.shard_id(), ShardId::from(1));
+        assert_eq!(
+            replicate_success_2.replication_position_inclusive(),
+            Position::offset(2u64)
+        );
     }
 
     #[tokio::test]
@@ -671,18 +958,19 @@ mod tests {
         let (_ack_replication_stream_tx, ack_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let replication_stream_task_handle = ReplicationStreamTask::spawn(
-            leader_id,
-            follower_id,
+            leader_id.clone(),
+            follower_id.clone(),
             syn_replication_stream_tx,
             ack_replication_stream,
         );
-        let replicate_request = ReplicateRequest {
-            leader_id: "test-leader".to_string(),
-            follower_id: "test-follower".to_string(),
-            ..Default::default()
-        };
         let timeout_error = replication_stream_task_handle
-            .replicate(replicate_request.clone())
+            .replication_client()
+            .replicate(
+                leader_id.clone(),
+                follower_id.clone(),
+                Vec::new(),
+                CommitTypeV2::Auto,
+            )
             .await
             .unwrap_err();
         assert!(matches!(timeout_error, ReplicationError::Timeout));
@@ -692,7 +980,8 @@ mod tests {
             .abort();
 
         let closed_error = replication_stream_task_handle
-            .replicate(replicate_request)
+            .replication_client()
+            .replicate(leader_id, follower_id, Vec::new(), CommitTypeV2::Auto)
             .await
             .unwrap_err();
 
@@ -703,18 +992,7 @@ mod tests {
     async fn test_replication_task_happy_path() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_limiters: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
+        let (_temp_dir, state) = IngesterState::for_test().await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -732,6 +1010,109 @@ mod tests {
             disk_capacity,
             memory_capacity,
         );
+
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);
+
+        // Init shard 01.
+        let init_replica_request = InitReplicaRequest {
+            replica_shard: Some(Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: "test-source".to_string(),
+                shard_id: Some(ShardId::from(1)),
+                shard_state: ShardState::Open as i32,
+                leader_id: "test-leader".to_string(),
+                follower_id: Some("test-follower".to_string()),
+                ..Default::default()
+            }),
+            replication_seqno: 0,
+        };
+        let syn_replication_message =
+            SynReplicationMessage::new_init_replica_request(init_replica_request);
+        syn_replication_stream_tx
+            .send(syn_replication_message)
+            .await
+            .unwrap();
+        let ack_replication_message = ack_replication_stream.next().await.unwrap().unwrap();
+        let init_replica_response = into_init_replica_response(ack_replication_message);
+        assert_eq!(init_replica_response.replication_seqno, 0);
+
+        // Init shard 02.
+        let init_replica_request = InitReplicaRequest {
+            replica_shard: Some(Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: "test-source".to_string(),
+                shard_id: Some(ShardId::from(2)),
+                shard_state: ShardState::Open as i32,
+                leader_id: "test-leader".to_string(),
+                follower_id: Some("test-follower".to_string()),
+                ..Default::default()
+            }),
+            replication_seqno: 1,
+        };
+        let syn_replication_message =
+            SynReplicationMessage::new_init_replica_request(init_replica_request);
+        syn_replication_stream_tx
+            .send(syn_replication_message)
+            .await
+            .unwrap();
+        let ack_replication_message = ack_replication_stream.next().await.unwrap().unwrap();
+        let init_replica_response = into_init_replica_response(ack_replication_message);
+        assert_eq!(init_replica_response.replication_seqno, 1);
+
+        // Init shard 11.
+        let init_replica_request = InitReplicaRequest {
+            replica_shard: Some(Shard {
+                index_uid: Some(index_uid2.clone()),
+                source_id: "test-source".to_string(),
+                shard_id: Some(ShardId::from(1)),
+                shard_state: ShardState::Open as i32,
+                leader_id: "test-leader".to_string(),
+                follower_id: Some("test-follower".to_string()),
+                ..Default::default()
+            }),
+            replication_seqno: 2,
+        };
+        let syn_replication_message =
+            SynReplicationMessage::new_init_replica_request(init_replica_request);
+        syn_replication_stream_tx
+            .send(syn_replication_message)
+            .await
+            .unwrap();
+        let ack_replication_message = ack_replication_stream.next().await.unwrap().unwrap();
+        let init_replica_response = into_init_replica_response(ack_replication_message);
+        assert_eq!(init_replica_response.replication_seqno, 2);
+
+        let state_guard = state.lock_fully().await.unwrap();
+
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+
+        let replica_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
+        replica_shard_01.assert_is_replica();
+        replica_shard_01.assert_is_open();
+        replica_shard_01.assert_replication_position(Position::Beginning);
+        replica_shard_01.assert_truncation_position(Position::Beginning);
+
+        assert!(state_guard.mrecordlog.queue_exists(&queue_id_01));
+
+        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
+
+        let replica_shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
+        replica_shard_02.assert_is_replica();
+        replica_shard_02.assert_is_open();
+        replica_shard_02.assert_replication_position(Position::Beginning);
+        replica_shard_02.assert_truncation_position(Position::Beginning);
+
+        let queue_id_11 = queue_id(&index_uid2, "test-source", &ShardId::from(1));
+
+        let replica_shard_11 = state_guard.shards.get(&queue_id_11).unwrap();
+        replica_shard_11.assert_is_replica();
+        replica_shard_11.assert_is_open();
+        replica_shard_11.assert_replication_position(Position::Beginning);
+        replica_shard_11.assert_truncation_position(Position::Beginning);
+
+        drop(state_guard);
+
         let replicate_request = ReplicateRequest {
             leader_id: "test-leader".to_string(),
             follower_id: "test-follower".to_string(),
@@ -739,33 +1120,30 @@ mod tests {
             subrequests: vec![
                 ReplicateSubrequest {
                     subrequest_id: 0,
-                    index_uid: "test-index:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
-                    from_position_exclusive: None,
-                    to_position_inclusive: Some(Position::from(0u64)),
+                    from_position_exclusive: Some(Position::Beginning),
                 },
                 ReplicateSubrequest {
                     subrequest_id: 1,
-                    index_uid: "test-index:0".to_string(),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: 2,
+                    shard_id: Some(ShardId::from(2)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
-                    from_position_exclusive: None,
-                    to_position_inclusive: Some(Position::from(1u64)),
+                    from_position_exclusive: Some(Position::Beginning),
                 },
                 ReplicateSubrequest {
                     subrequest_id: 2,
-                    index_uid: "test-index:1".to_string(),
+                    index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-qux", "test-doc-tux"])),
-                    from_position_exclusive: None,
-                    to_position_inclusive: Some(Position::from(1u64)),
+                    from_position_exclusive: Some(Position::Beginning),
                 },
             ],
-            replication_seqno: 0,
+            replication_seqno: 3,
         };
         let syn_replication_message =
             SynReplicationMessage::new_replicate_request(replicate_request);
@@ -779,42 +1157,46 @@ mod tests {
         assert_eq!(replicate_response.follower_id, "test-follower");
         assert_eq!(replicate_response.successes.len(), 3);
         assert_eq!(replicate_response.failures.len(), 0);
+        assert_eq!(replicate_response.replication_seqno, 3);
 
         let replicate_success_0 = &replicate_response.successes[0];
-        assert_eq!(replicate_success_0.index_uid, "test-index:0");
+        assert_eq!(replicate_success_0.index_uid(), &index_uid);
         assert_eq!(replicate_success_0.source_id, "test-source");
-        assert_eq!(replicate_success_0.shard_id, 1);
-        assert_eq!(replicate_success_0.replication_position_inclusive(), 0u64);
+        assert_eq!(replicate_success_0.shard_id(), ShardId::from(1));
+        assert_eq!(
+            replicate_success_0.replication_position_inclusive(),
+            Position::offset(0u64)
+        );
 
         let replicate_success_1 = &replicate_response.successes[1];
-        assert_eq!(replicate_success_1.index_uid, "test-index:0");
+        assert_eq!(replicate_success_1.index_uid(), &index_uid);
         assert_eq!(replicate_success_1.source_id, "test-source");
-        assert_eq!(replicate_success_1.shard_id, 2);
-        assert_eq!(replicate_success_1.replication_position_inclusive(), 1u64);
+        assert_eq!(replicate_success_1.shard_id(), ShardId::from(2));
+        assert_eq!(
+            replicate_success_1.replication_position_inclusive(),
+            Position::offset(1u64)
+        );
 
         let replicate_success_2 = &replicate_response.successes[2];
-        assert_eq!(replicate_success_2.index_uid, "test-index:1");
+        assert_eq!(replicate_success_2.index_uid(), &index_uid2);
         assert_eq!(replicate_success_2.source_id, "test-source");
-        assert_eq!(replicate_success_2.shard_id, 1);
-        assert_eq!(replicate_success_2.replication_position_inclusive(), 1u64);
+        assert_eq!(replicate_success_2.shard_id(), ShardId::from(1));
+        assert_eq!(
+            replicate_success_2.replication_position_inclusive(),
+            Position::offset(1u64)
+        );
 
-        let state_guard = state.read().await;
-
-        let queue_id_01 = queue_id("test-index:0", "test-source", 1);
+        let state_guard = state.lock_fully().await.unwrap();
 
         state_guard
             .mrecordlog
             .assert_records_eq(&queue_id_01, .., &[(0, "\0\0test-doc-foo")]);
-
-        let queue_id_02 = queue_id("test-index:0", "test-source", 2);
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_02,
             ..,
             &[(0, "\0\0test-doc-bar"), (1, "\0\0test-doc-baz")],
         );
-
-        let queue_id_11 = queue_id("test-index:1", "test-source", 1);
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_11,
@@ -829,14 +1211,13 @@ mod tests {
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![ReplicateSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-moo"])),
-                from_position_exclusive: Some(Position::from(0u64)),
-                to_position_inclusive: Some(Position::from(1u64)),
+                from_position_exclusive: Some(Position::offset(0u64)),
             }],
-            replication_seqno: 1,
+            replication_seqno: 4,
         };
         let syn_replication_message =
             SynReplicationMessage::new_replicate_request(replicate_request);
@@ -850,14 +1231,18 @@ mod tests {
         assert_eq!(replicate_response.follower_id, "test-follower");
         assert_eq!(replicate_response.successes.len(), 1);
         assert_eq!(replicate_response.failures.len(), 0);
+        assert_eq!(replicate_response.replication_seqno, 4);
 
         let replicate_success_0 = &replicate_response.successes[0];
-        assert_eq!(replicate_success_0.index_uid, "test-index:0");
+        assert_eq!(replicate_success_0.index_uid(), &index_uid);
         assert_eq!(replicate_success_0.source_id, "test-source");
-        assert_eq!(replicate_success_0.shard_id, 1);
-        assert_eq!(replicate_success_0.replication_position_inclusive(), 1u64);
+        assert_eq!(replicate_success_0.shard_id(), ShardId::from(1));
+        assert_eq!(
+            replicate_success_0.replication_position_inclusive(),
+            Position::offset(1u64)
+        );
 
-        let state_guard = state.read().await;
+        let state_guard = state.lock_fully().await.unwrap();
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_01,
@@ -870,18 +1255,7 @@ mod tests {
     async fn test_replication_task_shard_closed() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_limiters: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
+        let (_temp_dir, state) = IngesterState::for_test().await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -900,16 +1274,19 @@ mod tests {
             memory_capacity,
         );
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", 1);
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let replica_shard = IngesterShard::new_replica(
             leader_id,
             ShardState::Closed,
             Position::Beginning,
             Position::Beginning,
+            Instant::now(),
         );
         state
-            .write()
+            .lock_fully()
             .await
+            .unwrap()
             .shards
             .insert(queue_id_01.clone(), replica_shard);
 
@@ -919,12 +1296,11 @@ mod tests {
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![ReplicateSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
-                from_position_exclusive: Position::from(0u64).into(),
-                to_position_inclusive: Some(Position::from(1u64)),
+                from_position_exclusive: Position::offset(0u64).into(),
             }],
             replication_seqno: 0,
         };
@@ -942,9 +1318,9 @@ mod tests {
         assert_eq!(replicate_response.failures.len(), 1);
 
         let replicate_failure = &replicate_response.failures[0];
-        assert_eq!(replicate_failure.index_uid, "test-index:0");
+        assert_eq!(replicate_failure.index_uid(), &index_uid);
         assert_eq!(replicate_failure.source_id, "test-source");
-        assert_eq!(replicate_failure.shard_id, 1);
+        assert_eq!(replicate_failure.shard_id(), ShardId::from(1));
         assert_eq!(
             replicate_failure.reason(),
             ReplicateFailureReason::ShardClosed
@@ -955,18 +1331,7 @@ mod tests {
     async fn test_replication_task_resource_exhausted() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
-        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
-        let state = Arc::new(RwLock::new(IngesterState {
-            mrecordlog,
-            shards: HashMap::new(),
-            rate_limiters: HashMap::new(),
-            replication_streams: HashMap::new(),
-            replication_tasks: HashMap::new(),
-            status: IngesterStatus::Ready,
-            observation_tx,
-        }));
+        let (_temp_dir, state) = IngesterState::for_test().await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -976,7 +1341,7 @@ mod tests {
         let memory_capacity = ByteSize(0);
 
         let _replication_task_handle = ReplicationTask::spawn(
-            leader_id,
+            leader_id.clone(),
             follower_id,
             state.clone(),
             syn_replication_stream,
@@ -984,18 +1349,34 @@ mod tests {
             disk_capacity,
             memory_capacity,
         );
+
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let replica_shard = IngesterShard::new_replica(
+            leader_id,
+            ShardState::Open,
+            Position::Beginning,
+            Position::Beginning,
+            Instant::now(),
+        );
+        state
+            .lock_fully()
+            .await
+            .unwrap()
+            .shards
+            .insert(queue_id_01.clone(), replica_shard);
+
         let replicate_request = ReplicateRequest {
             leader_id: "test-leader".to_string(),
             follower_id: "test-follower".to_string(),
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![ReplicateSubrequest {
                 subrequest_id: 0,
-                index_uid: "test-index:0".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
-                from_position_exclusive: None,
-                to_position_inclusive: Some(Position::from(0u64)),
+                from_position_exclusive: Some(Position::Beginning),
             }],
             replication_seqno: 0,
         };
@@ -1013,9 +1394,9 @@ mod tests {
         assert_eq!(replicate_response.failures.len(), 1);
 
         let replicate_failure_0 = &replicate_response.failures[0];
-        assert_eq!(replicate_failure_0.index_uid, "test-index:0");
+        assert_eq!(replicate_failure_0.index_uid(), &index_uid);
         assert_eq!(replicate_failure_0.source_id, "test-source");
-        assert_eq!(replicate_failure_0.shard_id, 1);
+        assert_eq!(replicate_failure_0.shard_id(), ShardId::from(1));
         assert_eq!(
             replicate_failure_0.reason(),
             ReplicateFailureReason::ResourceExhausted

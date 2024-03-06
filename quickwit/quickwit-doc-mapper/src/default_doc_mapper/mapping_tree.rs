@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -61,7 +61,7 @@ impl LeafType {
                 if let JsonValue::String(text) = json_val {
                     Ok(TantivyValue::Str(text))
                 } else {
-                    Err(format!("expected JSON string, got `{json_val}`"))
+                    Err(format!("expected string, got `{json_val}`"))
                 }
             }
             LeafType::I64(numeric_options) => i64::from_json(json_val, numeric_options.coerce),
@@ -71,7 +71,7 @@ impl LeafType {
                 if let JsonValue::Bool(val) = json_val {
                     Ok(TantivyValue::Bool(val))
                 } else {
-                    Err(format!("expected bool value, got `{json_val}`"))
+                    Err(format!("expected boolean, got `{json_val}`"))
                 }
             }
             LeafType::IpAddr(_) => {
@@ -81,7 +81,7 @@ impl LeafType {
                         .into_ipv6_addr();
                     Ok(TantivyValue::IpAddr(ipv6_value))
                 } else {
-                    Err(format!("expected string value, got `{json_val}`"))
+                    Err(format!("expected string, got `{json_val}`"))
                 }
             }
             LeafType::DateTime(date_time_options) => date_time_options.parse_json(json_val),
@@ -95,7 +95,7 @@ impl LeafType {
                             .collect(),
                     ))
                 } else {
-                    Err(format!("expected JSON object  got `{json_val}`"))
+                    Err(format!("expected object, got `{json_val}`"))
                 }
             }
         }
@@ -1021,7 +1021,7 @@ mod tests {
         assert!(err.contains("failed to parse IP address `foo`"));
 
         let err = typ.value_from_json(json!(1200)).err().unwrap();
-        assert!(err.contains("expected string value, got `1200`"));
+        assert!(err.contains("expected string, got `1200`"));
     }
 
     #[test]
@@ -1120,7 +1120,7 @@ mod tests {
     fn test_parse_text_number_should_error() {
         let typ = LeafType::Text(QuickwitTextOptions::default());
         let err = typ.value_from_json(json!(2u64)).err().unwrap();
-        assert_eq!(err, "expected JSON string, got `2`");
+        assert_eq!(err, "expected string, got `2`");
     }
 
     #[test]

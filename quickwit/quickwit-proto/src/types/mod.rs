@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -24,21 +24,24 @@ use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::str::FromStr;
 
-use serde::{Deserialize, Deserializer, Serialize};
-use thiserror::Error;
+use serde::{Deserialize, Serialize};
 pub use ulid::Ulid;
 
+mod index_uid;
+mod pipeline_uid;
 mod position;
+mod shard_id;
 
+pub use index_uid::IndexUid;
+pub use pipeline_uid::PipelineUid;
 pub use position::Position;
+pub use shard_id::ShardId;
 
 pub type IndexId = String;
 
 pub type SourceId = String;
 
 pub type SplitId = String;
-
-pub type ShardId = u64;
 
 pub type SubrequestId = u32;
 
@@ -48,140 +51,20 @@ pub type PublishToken = String;
 /// Uniquely identifies a shard and its underlying mrecordlog queue.
 pub type QueueId = String; // <index_uid>/<source_id>/<shard_id>
 
-pub fn queue_id(index_uid: &str, source_id: &str, shard_id: u64) -> QueueId {
-    format!("{}/{}/{}", index_uid, source_id, shard_id)
+pub fn queue_id(index_uid: &IndexUid, source_id: &str, shard_id: &ShardId) -> QueueId {
+    format!("{index_uid}/{source_id}/{shard_id}")
 }
 
 pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
     let mut parts = queue_id.split('/');
     let index_uid = parts.next()?;
     let source_id = parts.next()?;
-    let shard_id = parts.next()?.parse::<u64>().ok()?;
-    Some((index_uid.into(), source_id.to_string(), shard_id))
-}
-
-/// Index identifiers that uniquely identify not only the index, but also
-/// its incarnation allowing to distinguish between deleted and recreated indexes.
-/// It is represented as a string in index_id:incarnation_id format.
-#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub struct IndexUid(String);
-
-// It is super lame, but for backward compatibility reasons we accept having a missing ulid part.
-// TODO DEPRECATED ME and remove
-impl<'de> Deserialize<'de> for IndexUid {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
-        let index_uid_str: String = String::deserialize(deserializer)?;
-        if !index_uid_str.contains(':') {
-            return Ok(IndexUid::from_parts(&index_uid_str, ""));
-        }
-        let index_uid = IndexUid::from(index_uid_str);
-        Ok(index_uid)
-    }
-}
-
-impl fmt::Display for IndexUid {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl IndexUid {
-    /// Creates a new index uid from index_id.
-    /// A random ULID will be used as incarnation
-    pub fn new_with_random_ulid(index_id: &str) -> Self {
-        Self::from_parts(index_id, Ulid::new().to_string())
-    }
-
-    /// TODO: Remove when Trinity lands their refactor for #3943.
-    pub fn new_2(index_id: impl Into<String>, incarnation_id: impl Into<Ulid>) -> Self {
-        Self(format!("{}:{}", index_id.into(), incarnation_id.into()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn from_parts(index_id: &str, incarnation_id: impl Display) -> Self {
-        assert!(!index_id.contains(':'), "index ID may not contain `:`");
-        Self(format!("{index_id}:{incarnation_id}"))
-    }
-
-    pub fn index_id(&self) -> &str {
-        self.0.split(':').next().unwrap()
-    }
-
-    pub fn incarnation_id(&self) -> &str {
-        if let Some(incarnation_id) = self.0.split(':').nth(1) {
-            incarnation_id
-        } else {
-            ""
-        }
-    }
-
-    pub fn parse(index_uid_str: String) -> Result<IndexUid, InvalidIndexUid> {
-        let count_colon = index_uid_str
-            .as_bytes()
-            .iter()
-            .copied()
-            .filter(|c| *c == b':')
-            .count();
-        if count_colon != 1 {
-            return Err(InvalidIndexUid {
-                invalid_index_uid_str: index_uid_str,
-            });
-        }
-        Ok(IndexUid(index_uid_str))
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl From<IndexUid> for String {
-    fn from(val: IndexUid) -> Self {
-        val.0
-    }
-}
-
-#[derive(Error, Debug)]
-#[error("invalid index uid `{invalid_index_uid_str}`")]
-pub struct InvalidIndexUid {
-    pub invalid_index_uid_str: String,
-}
-
-impl From<&str> for IndexUid {
-    fn from(index_uid: &str) -> Self {
-        IndexUid::from(index_uid.to_string())
-    }
-}
-
-// TODO remove me and only keep `TryFrom` implementation.
-impl From<String> for IndexUid {
-    fn from(index_uid: String) -> IndexUid {
-        match IndexUid::parse(index_uid) {
-            Ok(index_uid) => index_uid,
-            Err(invalid_index_uid) => {
-                panic!(
-                    "invalid index uid {}",
-                    invalid_index_uid.invalid_index_uid_str
-                );
-            }
-        }
-    }
-}
-
-impl PartialEq<&str> for IndexUid {
-    fn eq(&self, other: &&str) -> bool {
-        self.0 == *other
-    }
-}
-
-impl PartialEq<String> for IndexUid {
-    fn eq(&self, other: &String) -> bool {
-        self.0 == *other
-    }
+    let shard_id = parts.next()?;
+    Some((
+        index_uid.parse().ok()?,
+        source_id.to_string(),
+        ShardId::from(shard_id),
+    ))
 }
 
 /// It can however appear only once in a given index.
@@ -216,12 +99,6 @@ impl NodeId {
     /// Takes ownership of the underlying [`String`], consuming `self`.
     pub fn take(self) -> String {
         self.0
-    }
-}
-
-impl AsRef<str> for NodeId {
-    fn as_ref(&self) -> &str {
-        self.as_str()
     }
 }
 
@@ -394,27 +271,33 @@ mod tests {
     #[test]
     fn test_queue_id() {
         assert_eq!(
-            queue_id("test-index:0", "test-source", 1),
-            "test-index:0/test-source/1"
+            queue_id(
+                &IndexUid::for_test("test-index", 0),
+                "test-source",
+                &ShardId::from(1u64)
+            ),
+            "test-index:00000000000000000000000000/test-source/00000000000000000001"
         );
     }
 
     #[test]
     fn test_split_queue_id() {
-        let splits = split_queue_id("test-index:0");
+        let splits = split_queue_id("test-index:00000000000000000000000000");
         assert!(splits.is_none());
 
-        let splits = split_queue_id("test-index:0/test-source");
+        let splits = split_queue_id("test-index:00000000000000000000000000/test-source");
         assert!(splits.is_none());
 
-        let splits = split_queue_id("test-index:0/test-source/a");
-        assert!(splits.is_none());
-
-        let (index_uid, source_id, shard_id) =
-            split_queue_id("test-index:0/test-source/1").unwrap();
-        assert_eq!(index_uid, "test-index:0");
+        let (index_uid, source_id, shard_id) = split_queue_id(
+            "test-index:00000000000000000000000000/test-source/00000000000000000001",
+        )
+        .unwrap();
+        assert_eq!(
+            &index_uid.to_string(),
+            "test-index:00000000000000000000000000"
+        );
         assert_eq!(source_id, "test-source");
-        assert_eq!(shard_id, 1);
+        assert_eq!(shard_id, ShardId::from(1u64));
     }
 
     #[test]

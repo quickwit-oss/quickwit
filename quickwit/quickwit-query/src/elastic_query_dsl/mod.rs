@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -55,6 +55,7 @@ fn default_max_expansions() -> u32 {
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone, Copy, Default)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct MatchAllQuery {
     pub boost: Option<NotNaNf32>,
 }

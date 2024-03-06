@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -72,6 +72,7 @@ mod source_factory;
 mod vec_source;
 mod void_source;
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -96,7 +97,7 @@ use quickwit_ingest::IngesterPool;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
-use quickwit_proto::types::{IndexUid, ShardId};
+use quickwit_proto::types::{IndexUid, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
@@ -148,15 +149,15 @@ impl SourceRuntimeArgs {
     }
 
     pub fn index_id(&self) -> &str {
-        self.pipeline_id.index_uid.index_id()
+        &self.pipeline_id.index_uid.index_id
     }
 
     pub fn source_id(&self) -> &str {
         &self.pipeline_id.source_id
     }
 
-    pub fn pipeline_ord(&self) -> usize {
-        self.pipeline_id.pipeline_ord
+    pub fn pipeline_uid(&self) -> PipelineUid {
+        self.pipeline_id.pipeline_uid
     }
 
     #[cfg(test)]
@@ -171,7 +172,7 @@ impl SourceRuntimeArgs {
             node_id: "test-node".to_string(),
             index_uid,
             source_id: source_config.source_id.clone(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         Arc::new(SourceRuntimeArgs {
             pipeline_id,
@@ -199,16 +200,16 @@ pub type SourceContext = ActorContext<SourceActor>;
 /// as follow:
 ///
 /// ```ignore
-/// # fn whatever() -> anyhow::Result<()>
-/// source.initialize(ctx)?;
-/// let exit_status = loop {
-///   if let Err(exit_status) = source.emit_batches()? {
-///      break exit_status;
-////  }
-/// };
-/// source.finalize(exit_status)?;
-/// # Ok(())
-/// # }
+/// fn whatever() -> anyhow::Result<()> {
+///     source.initialize(ctx)?;
+///     let exit_status = loop {
+///         if let Err(exit_status) = source.emit_batches()? {
+///             break exit_status;
+///         }
+///     };
+///     source.finalize(exit_status)?;
+///     Ok(())
+/// }
 /// ```
 #[async_trait]
 pub trait Source: Send + 'static {
@@ -238,7 +239,7 @@ pub trait Source: Send + 'static {
     /// plane.
     async fn assign_shards(
         &mut self,
-        _assignement: Assignment,
+        _shard_ids: BTreeSet<ShardId>,
         _doc_processor_mailbox: &Mailbox<DocProcessor>,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
@@ -299,7 +300,7 @@ struct Loop;
 
 #[derive(Debug)]
 pub struct Assignment {
-    pub shard_ids: Vec<ShardId>,
+    pub shard_ids: BTreeSet<ShardId>,
 }
 
 #[derive(Debug)]
@@ -356,7 +357,7 @@ impl Handler<Loop> for SourceActor {
             ctx.send_self_message(Loop).await?;
             return Ok(());
         }
-        ctx.schedule_self_msg(wait_for, Loop).await;
+        ctx.schedule_self_msg(wait_for, Loop);
         Ok(())
     }
 }
@@ -367,12 +368,12 @@ impl Handler<AssignShards> for SourceActor {
 
     async fn handle(
         &mut self,
-        message: AssignShards,
+        assign_shards_message: AssignShards,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        let AssignShards(assignment) = message;
+        let AssignShards(Assignment { shard_ids }) = assign_shards_message;
         self.source
-            .assign_shards(assignment, &self.doc_processor_mailbox, ctx)
+            .assign_shards(shard_ids, &self.doc_processor_mailbox, ctx)
             .await?;
         Ok(())
     }

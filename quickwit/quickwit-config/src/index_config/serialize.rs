@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -22,28 +22,30 @@ use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use super::validate_index_config;
 use crate::{
-    build_doc_mapper, validate_identifier, ConfigFormat, DocMapping, IndexConfig, IndexingSettings,
-    RetentionPolicy, SearchSettings,
+    validate_identifier, ConfigFormat, DocMapping, IndexConfig, IndexingSettings, RetentionPolicy,
+    SearchSettings,
 };
 
 /// Alias for the latest serialization format.
-type IndexConfigForSerialization = IndexConfigV0_6;
+type IndexConfigForSerialization = IndexConfigV0_7;
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedIndexConfig {
-    #[serde(rename = "0.6")]
+    #[serde(rename = "0.7")]
     // Retro compatibility
     #[serde(alias = "0.4")]
     #[serde(alias = "0.5")]
-    V0_6(IndexConfigV0_6),
+    #[serde(alias = "0.6")]
+    V0_7(IndexConfigV0_7),
 }
 
 impl From<VersionedIndexConfig> for IndexConfigForSerialization {
     fn from(versioned_config: VersionedIndexConfig) -> IndexConfigForSerialization {
         match versioned_config {
-            VersionedIndexConfig::V0_6(v0_6) => v0_6,
+            VersionedIndexConfig::V0_7(v0_6) => v0_6,
         }
     }
 }
@@ -57,7 +59,7 @@ pub fn load_index_config_from_user_config(
 ) -> anyhow::Result<IndexConfig> {
     let versioned_index_config: VersionedIndexConfig = config_format.parse(config_content)?;
     let index_config_for_serialization: IndexConfigForSerialization = versioned_index_config.into();
-    index_config_for_serialization.validate_and_build(Some(default_index_root_uri))
+    index_config_for_serialization.build_and_validate(Some(default_index_root_uri))
 }
 
 impl IndexConfigForSerialization {
@@ -65,60 +67,49 @@ impl IndexConfigForSerialization {
         &self,
         default_index_root_uri_opt: Option<&Uri>,
     ) -> anyhow::Result<Uri> {
-        if let Some(index_uri) = self.index_uri.as_ref() {
+        if let Some(index_uri) = &self.index_uri {
             return Ok(index_uri.clone());
         }
         let default_index_root_uri = default_index_root_uri_opt.context("missing `index_uri`")?;
         let index_uri: Uri = default_index_root_uri.join(&self.index_id)
             .context("failed to create default index URI. this should never happen! please, report on https://github.com/quickwit-oss/quickwit/issues")?;
         info!(
-            index_id = %self.index_id,
-            index_uri = %index_uri,
-            "Index config does not specify `index_uri`, falling back to default value.",
+            index_id=%self.index_id,
+            index_uri=%index_uri,
+            "index config does not specify `index_uri`, falling back to default value",
         );
         Ok(index_uri)
     }
 
-    pub fn validate_and_build(
+    pub fn build_and_validate(
         self,
         default_index_root_uri: Option<&Uri>,
     ) -> anyhow::Result<IndexConfig> {
-        validate_identifier("Index ID", &self.index_id)?;
+        validate_identifier("index", &self.index_id)?;
 
         let index_uri = self.index_uri_or_fallback_to_default(default_index_root_uri)?;
 
-        if let Some(retention_policy) = &self.retention_policy {
-            retention_policy.validate()?;
-
-            if self.doc_mapping.timestamp_field.is_none() {
-                anyhow::bail!(
-                    "failed to validate index config. the retention policy requires a timestamp \
-                     field, but the indexing settings do not declare one"
-                );
-            }
-        }
-
-        // Note: this needs a deep refactoring to separate the doc mapping configuration,
-        // and doc mapper implementations.
-        // TODO see if we should store the byproducton the IndexConfig.
-        build_doc_mapper(&self.doc_mapping, &self.search_settings)?;
-
-        self.indexing_settings.merge_policy.validate()?;
-
-        Ok(IndexConfig {
+        let index_config = IndexConfig {
             index_id: self.index_id,
             index_uri,
             doc_mapping: self.doc_mapping,
             indexing_settings: self.indexing_settings,
             search_settings: self.search_settings,
-            retention_policy: self.retention_policy,
-        })
+            retention_policy_opt: self.retention_policy_opt,
+        };
+        validate_index_config(
+            &index_config.doc_mapping,
+            &index_config.indexing_settings,
+            &index_config.search_settings,
+            &index_config.retention_policy_opt,
+        )?;
+        Ok(index_config)
     }
 }
 
 impl From<IndexConfig> for VersionedIndexConfig {
     fn from(index_config: IndexConfig) -> Self {
-        VersionedIndexConfig::V0_6(index_config.into())
+        VersionedIndexConfig::V0_7(index_config.into())
     }
 }
 
@@ -127,14 +118,14 @@ impl TryFrom<VersionedIndexConfig> for IndexConfig {
 
     fn try_from(versioned_index_config: VersionedIndexConfig) -> anyhow::Result<Self> {
         match versioned_index_config {
-            VersionedIndexConfig::V0_6(v0_6) => v0_6.validate_and_build(None),
+            VersionedIndexConfig::V0_7(v0_6) => v0_6.build_and_validate(None),
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct IndexConfigV0_6 {
+pub struct IndexConfigV0_7 {
     pub index_id: String,
     #[schema(value_type = String)]
     #[serde(default)]
@@ -146,18 +137,18 @@ pub struct IndexConfigV0_6 {
     pub search_settings: SearchSettings,
     #[serde(rename = "retention")]
     #[serde(default)]
-    pub retention_policy: Option<RetentionPolicy>,
+    pub retention_policy_opt: Option<RetentionPolicy>,
 }
 
-impl From<IndexConfig> for IndexConfigV0_6 {
+impl From<IndexConfig> for IndexConfigV0_7 {
     fn from(index_config: IndexConfig) -> Self {
-        IndexConfigV0_6 {
+        IndexConfigV0_7 {
             index_id: index_config.index_id,
             index_uri: Some(index_config.index_uri),
             doc_mapping: index_config.doc_mapping,
             indexing_settings: index_config.indexing_settings,
             search_settings: index_config.search_settings,
-            retention_policy: index_config.retention_policy,
+            retention_policy_opt: index_config.retention_policy_opt,
         }
     }
 }
@@ -199,7 +190,7 @@ mod test {
         invalid_index_config.indexing_settings.merge_policy =
             MergePolicyConfig::StableLog(stable_log_merge_policy_config);
         let validation_err = invalid_index_config
-            .validate_and_build(None)
+            .build_and_validate(None)
             .unwrap_err()
             .to_string();
         assert_eq!(
@@ -214,21 +205,21 @@ mod test {
         // Not yet invalid, but we modify it right after this.
         let mut invalid_index_config: IndexConfigForSerialization =
             minimal_index_config_for_serialization();
-        invalid_index_config.retention_policy = Some(RetentionPolicy {
+        invalid_index_config.retention_policy_opt = Some(RetentionPolicy {
             retention_period: "90 days".to_string(),
             evaluation_schedule: "hourly".to_string(),
         });
         let validation_err = invalid_index_config
-            .validate_and_build(None)
+            .build_and_validate(None)
             .unwrap_err()
             .to_string();
-        assert!(validation_err.contains("the retention policy requires a timestamp field"));
+        assert!(validation_err.contains("retention policy requires a timestamp field"));
     }
 
     #[test]
     fn test_minimal_index_config_missing_root_uri_no_default_uri() {
         let config_yaml = r#"
-            version: 0.6
+            version: 0.7
             index_id: hdfs-logs
             doc_mapping: {}
         "#;
@@ -240,7 +231,7 @@ mod test {
     #[test]
     fn test_minimal_index_config_missing_root_uri_with_default_index_root_uri() {
         let config_yaml = r#"
-            version: 0.6
+            version: 0.7
             index_id: hdfs-logs
             doc_mapping: {}
         "#;

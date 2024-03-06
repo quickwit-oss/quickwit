@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,7 +20,7 @@
 #[cfg(any(test, feature = "testsuite"))]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Context;
@@ -33,7 +33,7 @@ use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tantivy::directory::{Advice, MmapDirectory};
 use tantivy::Directory;
 use time::OffsetDateTime;
-use tracing::{info, info_span, instrument, Instrument};
+use tracing::{debug, info_span, instrument, Instrument};
 
 use super::LocalSplitStore;
 use crate::get_tantivy_directory_from_split_bundle;
@@ -66,18 +66,6 @@ struct InnerIndexingSplitStore {
     /// The remote storage.
     remote_storage: Arc<dyn Storage>,
     local_split_store: Arc<LocalSplitStore>,
-}
-
-pub struct WeakIndexingSplitStore {
-    inner: Weak<InnerIndexingSplitStore>,
-}
-
-impl WeakIndexingSplitStore {
-    pub fn upgrade(&self) -> Option<IndexingSplitStore> {
-        self.inner
-            .upgrade()
-            .map(|inner| IndexingSplitStore { inner })
-    }
 }
 
 impl IndexingSplitStore {
@@ -152,7 +140,7 @@ impl IndexingSplitStore {
         let split_size_in_megabytes = split_num_bytes as f32 / 1_000_000f32;
         let throughput_mb_s = split_size_in_megabytes / elapsed_secs;
 
-        info!(
+        debug!(
             split_size_in_megabytes = %split_size_in_megabytes,
             num_docs = %split.num_docs,
             elapsed_secs = %elapsed_secs,
@@ -162,7 +150,7 @@ impl IndexingSplitStore {
         );
 
         if !is_mature {
-            info!("store-in-cache");
+            debug!("store-in-cache");
             if self
                 .inner
                 .local_split_store
@@ -224,12 +212,6 @@ impl IndexingSplitStore {
             .instrument(info_span!("fetch_split_from_remote_storage", path=?path))
             .await?;
         get_tantivy_directory_from_split_bundle(&dest_filepath)
-    }
-
-    pub fn downgrade(&self) -> WeakIndexingSplitStore {
-        WeakIndexingSplitStore {
-            inner: Arc::downgrade(&self.inner),
-        }
     }
 
     /// Takes a snapshot of the cache view (only used for testing).
@@ -358,7 +340,11 @@ mod tests {
                 .store_split(
                     &split_metadata1,
                     &split_path,
-                    Box::new(SplitPayloadBuilder::get_split_payload(&[], &[5, 5, 5])?),
+                    Box::new(SplitPayloadBuilder::get_split_payload(
+                        &[],
+                        &[],
+                        &[5, 5, 5],
+                    )?),
                 )
                 .await?;
             assert!(!split_path.try_exists()?);
@@ -383,7 +369,11 @@ mod tests {
                 .store_split(
                     &split_metadata2,
                     &split_path,
-                    Box::new(SplitPayloadBuilder::get_split_payload(&[], &[5, 5, 5])?),
+                    Box::new(SplitPayloadBuilder::get_split_payload(
+                        &[],
+                        &[],
+                        &[5, 5, 5],
+                    )?),
                 )
                 .await?;
             assert!(!split_path.try_exists()?);

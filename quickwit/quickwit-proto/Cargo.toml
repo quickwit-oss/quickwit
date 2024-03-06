@@ -1,23 +1,24 @@
 [package]
 name = "quickwit-proto"
-version = "0.6.5-dev"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
-description = "Quickwit's protos"
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
+bytesize = { workspace = true }
 bytestring = { workspace = true }
 dyn-clone = { workspace = true }
+futures = { workspace = true, optional = true }
 http = { workspace = true }
 hyper = { workspace = true }
-futures = { workspace = true, optional = true }
 mockall = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
 prost = { workspace = true }
@@ -33,13 +34,14 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
+zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
 
 [dev-dependencies]
-mockall = { workspace = true }
 futures = { workspace = true }
+mockall = { workspace = true }
 
 [build-dependencies]
 glob = "0.3.1"
@@ -49,5 +51,5 @@ tonic-build = { workspace = true }
 quickwit-codegen = { workspace = true }
 
 [features]
-postgres = [ "sqlx" ]
-testsuite = [ "mockall", "futures" ]
+postgres = ["sqlx"]
+testsuite = ["mockall", "futures"]

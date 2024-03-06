@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -19,16 +19,17 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::fmt::Formatter;
-use std::marker::PhantomData;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::sync::Mutex as TokioMutex;
+use tracing::warn;
 
 use crate::type_map::TypeMap;
+
+const EVENT_SUBSCRIPTION_CALLBACK_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub trait Event: fmt::Debug + Clone + Send + Sync + 'static {}
 
@@ -37,34 +38,14 @@ pub trait EventSubscriber<E>: Send + Sync + 'static {
     async fn handle_event(&mut self, event: E);
 }
 
-struct ClosureSubscriber<E, F> {
-    callback: Arc<F>,
-    _phantom: PhantomData<E>,
-}
-
-impl<E, F> Clone for ClosureSubscriber<E, F> {
-    fn clone(&self) -> Self {
-        ClosureSubscriber {
-            callback: self.callback.clone(),
-            _phantom: self._phantom,
-        }
-    }
-}
-
-impl<E, F> fmt::Debug for ClosureSubscriber<E, F> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("ClosureSubscriber")
-            .field("callback", &std::any::type_name::<F>())
-            .finish()
-    }
-}
-
 #[async_trait]
-impl<E: Sync + Send + 'static, F: Fn(E) + Sync + Send + 'static> EventSubscriber<E>
-    for ClosureSubscriber<E, F>
+impl<E, F> EventSubscriber<E> for F
+where
+    E: Event,
+    F: Fn(E) + Send + Sync + 'static,
 {
     async fn handle_event(&mut self, event: E) {
-        (self.callback)(event);
+        (self)(event);
     }
 }
 
@@ -90,15 +71,18 @@ struct InnerEventBroker {
 }
 
 impl EventBroker {
-    /// Subscribes to an event type.
-    #[must_use]
-    pub fn subscribe<E>(&self, subscriber: impl EventSubscriber<E>) -> EventSubscriptionHandle
-    where E: Event {
+    // The point of this private method is to allow the public subscribe method to have only one
+    // generic argument and avoid the ugly `::<E, _>` syntax.
+    fn subscribe_aux<E, S>(&self, subscriber: S, with_timeout: bool) -> EventSubscriptionHandle
+    where
+        E: Event,
+        S: EventSubscriber<E> + Send + Sync + 'static,
+    {
         let mut subscriptions = self
             .inner
             .subscriptions
             .lock()
-            .expect("the lock should not be poisoned");
+            .expect("lock should not be poisoned");
 
         if !subscriptions.contains::<EventSubscriptions<E>>() {
             subscriptions.insert::<EventSubscriptions<E>>(HashMap::new());
@@ -108,13 +92,17 @@ impl EventBroker {
             .subscription_sequence
             .fetch_add(1, Ordering::Relaxed);
 
+        let subscriber_name = std::any::type_name::<S>();
         let subscription = EventSubscription {
+            subscriber_name,
             subscriber: Arc::new(TokioMutex::new(Box::new(subscriber))),
+            with_timeout,
         };
         let typed_subscriptions = subscriptions
             .get_mut::<EventSubscriptions<E>>()
-            .expect("The subscription map should exist.");
+            .expect("subscription map should exist");
         typed_subscriptions.insert(subscription_id, subscription);
+
         EventSubscriptionHandle {
             subscription_id,
             broker: Arc::downgrade(&self.inner),
@@ -122,7 +110,7 @@ impl EventBroker {
                 let mut subscriptions = broker
                     .subscriptions
                     .lock()
-                    .expect("the lock should not be poisoned");
+                    .expect("lock should not be poisoned");
                 if let Some(typed_subscriptions) = subscriptions.get_mut::<EventSubscriptions<E>>()
                 {
                     typed_subscriptions.remove(&subscription_id);
@@ -131,19 +119,32 @@ impl EventBroker {
         }
     }
 
-    /// Subscribes to an event with a callback function.
+    /// Subscribes to an event type.
+    ///
+    /// The callback should be as light as possible.
+    ///
+    /// # Disclaimer
+    ///
+    /// If the callback takes more than `EVENT_SUBSCRIPTION_CALLBACK_TIMEOUT` to execute,
+    /// the callback future will be aborted.
     #[must_use]
-    pub fn subscribe_fn<E>(
+    pub fn subscribe<E>(&self, subscriber: impl EventSubscriber<E>) -> EventSubscriptionHandle
+    where E: Event {
+        self.subscribe_aux(subscriber, true)
+    }
+
+    /// Subscribes to an event type.
+    ///
+    /// The callback should be as light as possible.
+    #[must_use]
+    pub fn subscribe_without_timeout<E>(
         &self,
-        callback_fn: impl Fn(E) + Sync + Send + 'static,
+        subscriber: impl EventSubscriber<E>,
     ) -> EventSubscriptionHandle
     where
         E: Event,
     {
-        self.subscribe(ClosureSubscriber {
-            callback: Arc::new(callback_fn),
-            _phantom: Default::default(),
-        })
+        self.subscribe_aux(subscriber, false)
     }
 
     /// Publishes an event.
@@ -153,25 +154,79 @@ impl EventBroker {
             .inner
             .subscriptions
             .lock()
-            .expect("the lock should not be poisoned");
-
+            .expect("lock should not be poisoned");
         if let Some(typed_subscriptions) = subscriptions.get::<EventSubscriptions<E>>() {
             for subscription in typed_subscriptions.values() {
-                let event = event.clone();
-                let subscriber_clone = subscription.subscriber.clone();
-                tokio::spawn(tokio::time::timeout(Duration::from_secs(600), async move {
-                    let mut subscriber_lock = subscriber_clone.lock().await;
-                    subscriber_lock.handle_event(event).await;
-                }));
+                subscription.trigger(event.clone());
             }
         }
     }
 }
 
 struct EventSubscription<E> {
+    // We put that in the subscription in order to avoid having to take the lock
+    // to access it.
+    subscriber_name: &'static str,
     subscriber: Arc<TokioMutex<Box<dyn EventSubscriber<E>>>>,
+    with_timeout: bool,
 }
 
+impl<E: Event> EventSubscription<E> {
+    /// Call the callback associated with the subscription.
+    fn trigger(&self, event: E) {
+        if self.with_timeout {
+            self.trigger_abort_on_timeout(event);
+        } else {
+            self.trigger_just_log_on_timeout(event)
+        }
+    }
+
+    /// Spawns a task to run the given subscription.
+    ///
+    /// Just logs a warning if it took more than `EVENT_SUBSCRIPTION_CALLBACK_TIMEOUT`
+    /// for the future to execute.
+    fn trigger_just_log_on_timeout(&self, event: E) {
+        let subscriber_name = self.subscriber_name;
+        let subscriber = self.subscriber.clone();
+        // This task is just here to log a warning if the callback takes too long to execute.
+        let log_timeout_task_handle = tokio::task::spawn(async move {
+            tokio::time::sleep(EVENT_SUBSCRIPTION_CALLBACK_TIMEOUT).await;
+            let event_name = std::any::type_name::<E>();
+            warn!(
+                "{subscriber_name}'s handler for {event_name} did not finished within {}ms",
+                EVENT_SUBSCRIPTION_CALLBACK_TIMEOUT.as_millis()
+            );
+        });
+        tokio::task::spawn(async move {
+            subscriber.lock().await.handle_event(event).await;
+            // The callback has terminated, let's abort the timeout task.
+            log_timeout_task_handle.abort();
+        });
+    }
+
+    /// Spawns a task to run the given subscription.
+    ///
+    /// Aborts the future execution and logs a warning if it takes more than
+    /// `EVENT_SUBSCRIPTION_CALLBACK_TIMEOUT`.
+    fn trigger_abort_on_timeout(&self, event: E) {
+        let subscriber_name = self.subscriber_name;
+        let subscriber = self.subscriber.clone();
+        let fut = async move {
+            if tokio::time::timeout(EVENT_SUBSCRIPTION_CALLBACK_TIMEOUT, async {
+                subscriber.lock().await.handle_event(event).await
+            })
+            .await
+            .is_err()
+            {
+                let event_name = std::any::type_name::<E>();
+                warn!("{subscriber_name}'s handler for {event_name} timed out, abort");
+            }
+        };
+        tokio::task::spawn(fut);
+    }
+}
+
+#[derive(Clone)]
 pub struct EventSubscriptionHandle {
     subscription_id: usize,
     broker: Weak<InnerEventBroker>,
@@ -181,8 +236,8 @@ pub struct EventSubscriptionHandle {
 impl EventSubscriptionHandle {
     pub fn cancel(self) {}
 
-    /// By default, dropping an event cancels the subscription.
-    /// `forever` consumes the handle and avoid drop
+    /// By default, dropping a subscription handle cancels the subscription.
+    /// `forever` consumes the handle and avoids cancelling the subscription on drop.
     pub fn forever(mut self) {
         self.broker = Weak::new();
     }
@@ -251,7 +306,7 @@ mod tests {
     async fn test_event_broker_handle_drop() {
         let event_broker = EventBroker::default();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        drop(event_broker.subscribe_fn::<MyEvent>(move |event| {
+        drop(event_broker.subscribe(move |event: MyEvent| {
             tx.send(event.value).unwrap();
         }));
         event_broker.publish(MyEvent { value: 42 });
@@ -263,7 +318,7 @@ mod tests {
         let event_broker = EventBroker::default();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         event_broker
-            .subscribe_fn::<MyEvent>(move |event| {
+            .subscribe(move |event: MyEvent| {
                 tx.send(event.value).unwrap();
             })
             .cancel();
@@ -276,7 +331,7 @@ mod tests {
         let event_broker = EventBroker::default();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         event_broker
-            .subscribe_fn::<MyEvent>(move |event| {
+            .subscribe(move |event: MyEvent| {
                 tx.send(event.value).unwrap();
             })
             .forever();

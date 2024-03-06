@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -26,11 +26,11 @@ use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{IndexUid, PublishToken};
 use tantivy::directory::MmapDirectory;
-use tantivy::{IndexBuilder, TrackedObject};
+use tantivy::IndexBuilder;
 use tracing::{instrument, Span};
 
 use crate::controlled_directory::ControlledDirectory;
-use crate::merge_policy::MergeOperation;
+use crate::merge_policy::MergeTask;
 use crate::models::{PublishLock, SplitAttrs};
 use crate::new_split_id;
 
@@ -120,10 +120,10 @@ impl IndexedSplitBuilder {
     #[instrument(name="serialize_split",
         skip_all,
         fields(
-            index_id=%self.split_attrs.pipeline_id.index_uid.index_id(),
+            index_id=%self.split_attrs.pipeline_id.index_uid.index_id,
             source_id=%self.split_attrs.pipeline_id.source_id,
             node_id=%self.split_attrs.pipeline_id.node_id,
-            pipeline_id=%self.split_attrs.pipeline_id.pipeline_ord,
+            pipeline_uid=%self.split_attrs.pipeline_id.pipeline_uid,
             split_id=%self.split_attrs.split_id,
             partition_id=%self.split_attrs.partition_id,
             num_docs=%self.split_attrs.num_docs,
@@ -157,11 +157,11 @@ pub struct IndexedSplitBatch {
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
     pub publish_token_opt: Option<PublishToken>,
-    /// A [`MergeOperation`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
+    /// A [`MergeTask`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
     /// in the `MergePipeline` or `DeleteTaskPipeline`.
     /// See planners docs to understand the usage.
     /// If `None`, the split batch was built in the `IndexingPipeline`.
-    pub merge_operation_opt: Option<TrackedObject<MergeOperation>>,
+    pub merge_task_opt: Option<MergeTask>,
     pub batch_parent_span: Span,
 }
 

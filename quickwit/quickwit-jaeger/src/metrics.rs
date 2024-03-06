@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -35,37 +35,43 @@ impl Default for JaegerServiceMetrics {
             requests_total: new_counter_vec(
                 "requests_total",
                 "Number of requests",
-                "quickwit_jaeger",
+                "jaeger",
+                &[],
                 ["operation", "index"],
             ),
             request_errors_total: new_counter_vec(
                 "request_errors_total",
                 "Number of failed requests",
-                "quickwit_jaeger",
+                "jaeger",
+                &[],
                 ["operation", "index"],
             ),
             request_duration_seconds: new_histogram_vec(
                 "request_duration_seconds",
                 "Duration of requests",
-                "quickwit_jaeger",
+                "jaeger",
+                &[],
                 ["operation", "index", "error"],
             ),
             fetched_traces_total: new_counter_vec(
                 "fetched_traces_total",
                 "Number of traces retrieved from storage",
-                "quickwit_jaeger",
+                "jaeger",
+                &[],
                 ["operation", "index"],
             ),
             fetched_spans_total: new_counter_vec(
                 "fetched_spans_total",
                 "Number of spans retrieved from storage",
-                "quickwit_jaeger",
+                "jaeger",
+                &[],
                 ["operation", "index"],
             ),
             transferred_bytes_total: new_counter_vec(
                 "transferred_bytes_total",
                 "Number of bytes transferred",
-                "quickwit_jaeger",
+                "jaeger",
+                &[],
                 ["operation", "index"],
             ),
         }

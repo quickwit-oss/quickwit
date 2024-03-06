@@ -1,13 +1,14 @@
 [package]
 name = "quickwit-integration-tests"
-version = "0.6.5-dev"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
-description = "Quickwit's integration tests"
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+description = "Integration tests runner and repository"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 
@@ -25,6 +26,7 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
+tonic = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
@@ -32,10 +34,10 @@ quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
-quickwit-janitor = { workspace = true, features= ["testsuite"] }
+quickwit-janitor = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
-quickwit-search = { workspace = true, features = ["testsuite"] }
-quickwit-storage = { workspace = true, features = ["testsuite"] }
-quickwit-rest-client = { workspace = true }
-quickwit-serve = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-rest-client = { workspace = true }
+quickwit-search = { workspace = true, features = ["testsuite"] }
+quickwit-serve = { workspace = true }
+quickwit-storage = { workspace = true, features = ["testsuite"] }

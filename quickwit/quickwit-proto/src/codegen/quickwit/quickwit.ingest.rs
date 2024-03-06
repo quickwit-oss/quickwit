@@ -24,12 +24,12 @@ pub struct MRecordBatch {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Shard {
     /// Immutable fields
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "3")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     /// The node ID of the ingester to which all the write requests for this shard should be sent to.
     #[prost(string, tag = "4")]
     pub leader_id: ::prost::alloc::string::String,
@@ -56,12 +56,32 @@ pub struct Shard {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ShardIds {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, repeated, tag = "3")]
-    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardIdPositions {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "3")]
+    pub shard_positions: ::prost::alloc::vec::Vec<ShardIdPosition>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardIdPosition {
+    #[prost(message, optional, tag = "1")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
+    #[prost(message, optional, tag = "2")]
+    pub publish_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -108,7 +128,7 @@ pub enum ShardState {
     /// The ingester hosting the shard is unavailable.
     Unavailable = 2,
     /// The shard is closed and cannot be written to.
-    /// It can be safely deleted if the publish position is superior or equal to the replication position.
+    /// It can be safely deleted if the publish position is superior or equal to `~eof`.
     Closed = 3,
 }
 impl ShardState {

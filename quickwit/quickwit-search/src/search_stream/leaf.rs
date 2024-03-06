@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -23,7 +23,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use futures::{FutureExt, StreamExt};
-use quickwit_common::PrettySample;
+use quickwit_common::pretty::PrettySample;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::search::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
@@ -184,6 +184,7 @@ async fn leaf_search_stream_single_split(
     let fast_field_names =
         request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref());
     warmup_info.fast_field_names.extend(fast_field_names);
+    warmup_info.simplify();
 
     warmup(&searcher, &warmup_info).await?;
 
@@ -451,7 +452,7 @@ mod tests {
 
     use itertools::Itertools;
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
+    use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt};
     use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
     use quickwit_query::query_ast::qast_json_helper;
     use serde_json::json;
@@ -502,7 +503,9 @@ mod tests {
             .metastore()
             .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
             .await?
-            .deserialize_splits()?;
+            .collect_splits()
+            .await
+            .unwrap();
         let splits_offsets = splits
             .into_iter()
             .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
@@ -579,7 +582,8 @@ mod tests {
             .metastore()
             .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
             .await?
-            .deserialize_splits()?;
+            .collect_splits()
+            .await?;
         let splits_offsets = splits
             .into_iter()
             .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
@@ -635,7 +639,8 @@ mod tests {
             .metastore()
             .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
             .await?
-            .deserialize_splits()?;
+            .collect_splits()
+            .await?;
         let splits_offsets = splits
             .into_iter()
             .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
@@ -724,7 +729,8 @@ mod tests {
             .metastore()
             .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
             .await?
-            .deserialize_splits()?;
+            .collect_splits()
+            .await?;
         let splits_offsets = splits
             .into_iter()
             .map(|split| extract_split_and_footer_offsets(&split.split_metadata))

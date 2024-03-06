@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -109,7 +109,7 @@ impl Handler<Loop> for PingSender {
         if self.num_ping_emitted == 10 {
             return Err(ActorExitStatus::Success);
         }
-        ctx.schedule_self_msg(Duration::from_secs(1), Loop).await;
+        ctx.schedule_self_msg(Duration::from_secs(1), Loop);
         Ok(())
     }
 }

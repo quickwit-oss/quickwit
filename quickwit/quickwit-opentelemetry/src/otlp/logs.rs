@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -30,20 +30,24 @@ use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_serv
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::{
     ExportLogsPartialSuccess, ExportLogsServiceRequest, ExportLogsServiceResponse,
 };
+use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
-use super::{is_zero, parse_log_record_body, SpanId, TraceId};
+use super::{
+    extract_otel_index_id_from_metadata, is_zero, parse_log_record_body, OtelSignal, SpanId,
+    TraceId,
+};
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
-pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0_6";
+pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0_7";
 
 const OTEL_LOGS_INDEX_CONFIG: &str = r#"
-version: 0.6
+version: 0.7
 
 index_id: ${INDEX_ID}
 
@@ -64,6 +68,7 @@ doc_mapping:
     - name: service_name
       type: text
       tokenizer: raw
+      fast: true
     - name: severity_text
       type: text
       tokenizer: raw
@@ -83,8 +88,12 @@ doc_mapping:
       indexed: false
     - name: trace_id
       type: bytes
+      input_format: hex
+      output_format: hex
     - name: span_id
       type: bytes
+      input_format: hex
+      output_format: hex
     - name: trace_flags
       type: u64
       indexed: false
@@ -231,7 +240,8 @@ impl OtlpGrpcLogsService {
     async fn export_inner(
         &mut self,
         request: ExportLogsServiceRequest,
-        labels: [&'static str; 4],
+        index_id: IndexId,
+        labels: [&str; 4],
     ) -> Result<ExportLogsServiceResponse, Status> {
         let ParsedLogRecords {
             doc_batch,
@@ -240,7 +250,7 @@ impl OtlpGrpcLogsService {
             error_message,
         } = tokio::task::spawn_blocking({
             let parent_span = RuntimeSpan::current();
-            || Self::parse_logs(request, parent_span)
+            || Self::parse_logs(request, parent_span, index_id)
         })
         .await
         .map_err(|join_error| {
@@ -276,6 +286,7 @@ impl OtlpGrpcLogsService {
     fn parse_logs(
         request: ExportLogsServiceRequest,
         parent_span: RuntimeSpan,
+        index_id: IndexId,
     ) -> Result<ParsedLogRecords, Status> {
         let mut log_records = BTreeSet::new();
         let mut num_log_records = 0;
@@ -382,7 +393,7 @@ impl OtlpGrpcLogsService {
                 }
             }
         }
-        let mut doc_batch = DocBatchBuilder::new(OTEL_LOGS_INDEX_ID.to_string()).json_writer();
+        let mut doc_batch = DocBatchBuilder::new(index_id).json_writer();
         for log_record in log_records {
             if let Err(error) = doc_batch.ingest_doc(&log_record.0) {
                 error!(error=?error, "failed to JSON serialize span");
@@ -418,27 +429,29 @@ impl OtlpGrpcLogsService {
     async fn export_instrumented(
         &mut self,
         request: ExportLogsServiceRequest,
+        index_id: IndexId,
     ) -> Result<ExportLogsServiceResponse, Status> {
         let start = std::time::Instant::now();
 
-        let labels = ["logs", OTEL_LOGS_INDEX_ID, "grpc", "protobuf"];
+        let labels = ["logs", &index_id, "grpc", "protobuf"];
 
         OTLP_SERVICE_METRICS
             .requests_total
             .with_label_values(labels)
             .inc();
-        let (export_res, is_error) = match self.export_inner(request, labels).await {
-            ok @ Ok(_) => (ok, "false"),
-            err @ Err(_) => {
-                OTLP_SERVICE_METRICS
-                    .request_errors_total
-                    .with_label_values(labels)
-                    .inc();
-                (err, "true")
-            }
-        };
+        let (export_res, is_error) =
+            match self.export_inner(request, index_id.clone(), labels).await {
+                ok @ Ok(_) => (ok, "false"),
+                err @ Err(_) => {
+                    OTLP_SERVICE_METRICS
+                        .request_errors_total
+                        .with_label_values(labels)
+                        .inc();
+                    (err, "true")
+                }
+            };
         let elapsed = start.elapsed().as_secs_f64();
-        let labels = ["logs", OTEL_LOGS_INDEX_ID, "grpc", "protobuf", is_error];
+        let labels = ["logs", &index_id, "grpc", "protobuf", is_error];
         OTLP_SERVICE_METRICS
             .request_duration_seconds
             .with_label_values(labels)
@@ -455,9 +468,10 @@ impl LogsService for OtlpGrpcLogsService {
         &self,
         request: Request<ExportLogsServiceRequest>,
     ) -> Result<Response<ExportLogsServiceResponse>, Status> {
+        let index_id = extract_otel_index_id_from_metadata(request.metadata(), OtelSignal::Logs)?;
         let request = request.into_inner();
         self.clone()
-            .export_instrumented(request)
+            .export_instrumented(request, index_id)
             .await
             .map(Response::new)
     }
@@ -482,7 +496,8 @@ mod tests {
         let mut metastore = metastore_for_test();
         let index_config =
             OtlpGrpcLogsService::index_config(&Uri::for_test("ram:///indexes")).unwrap();
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         metastore.create_index(create_index_request).await.unwrap();
     }
 }

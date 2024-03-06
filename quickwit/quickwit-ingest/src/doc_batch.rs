@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -211,20 +211,25 @@ impl JsonDocBatchBuilder {
 
 impl DocBatch {
     /// Returns an iterator over the document payloads within a doc_batch.
-    pub fn iter(&self) -> impl Iterator<Item = DocCommand<Bytes>> + '_ {
-        self.iter_raw().map(DocCommand::read)
+    #[allow(clippy::should_implement_trait)]
+    pub fn into_iter(self) -> impl Iterator<Item = DocCommand<Bytes>> {
+        self.into_iter_raw().map(DocCommand::read)
     }
 
     /// Returns an iterator over the document payloads within a doc_batch.
-    pub fn iter_raw(&self) -> impl Iterator<Item = Bytes> + '_ {
-        self.doc_lengths
-            .iter()
-            .cloned()
-            .scan(0, |current_offset, doc_num_bytes| {
+    pub fn into_iter_raw(self) -> impl Iterator<Item = Bytes> {
+        let DocBatch {
+            doc_buffer,
+            doc_lengths,
+            ..
+        } = self;
+        doc_lengths
+            .into_iter()
+            .scan(0, move |current_offset, doc_num_bytes| {
                 let start = *current_offset;
                 let end = start + doc_num_bytes as usize;
                 *current_offset = end;
-                Some(self.doc_buffer.slice(start..end))
+                Some(doc_buffer.slice(start..end))
             })
     }
 
@@ -341,7 +346,7 @@ mod tests {
         assert_eq!(batch.num_docs(), 4);
         assert_eq!(batch.num_bytes(), 5 + 1 + 5 + 4);
 
-        let mut iter = batch.iter();
+        let mut iter = batch.clone().into_iter();
         assert!(commands_eq(
             iter.next().unwrap(),
             DocCommand::Ingest {
@@ -367,7 +372,7 @@ mod tests {
         assert!(iter.next().is_none());
 
         let mut copied_batch = DocBatchBuilder::new("test".to_string());
-        for raw_buf in batch.iter_raw() {
+        for raw_buf in batch.clone().into_iter_raw() {
             copied_batch.command_from_buf(raw_buf);
         }
         let copied_batch = copied_batch.build();
@@ -389,7 +394,7 @@ mod tests {
         assert_eq!(batch.num_docs(), 3);
         assert_eq!(batch.num_bytes(), 12 + 12 + 3);
 
-        let mut iter = batch.iter();
+        let mut iter = batch.into_iter();
         assert!(commands_eq(
             iter.next().unwrap(),
             DocCommand::Ingest {

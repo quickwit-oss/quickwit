@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -22,10 +22,11 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::{self};
 use quickwit_config::IndexConfig;
+use quickwit_indexing::actors::MergeSchedulerService;
 use quickwit_metastore::{IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
@@ -61,6 +62,7 @@ pub struct DeleteTaskService {
     pipeline_handles_by_index_uid: HashMap<IndexUid, ActorHandle<DeleteTaskPipeline>>,
     max_concurrent_split_uploads: usize,
     event_broker: EventBroker,
+    merge_scheduler_service: Mailbox<MergeSchedulerService>,
 }
 
 impl DeleteTaskService {
@@ -70,6 +72,7 @@ impl DeleteTaskService {
         storage_resolver: StorageResolver,
         data_dir_path: PathBuf,
         max_concurrent_split_uploads: usize,
+        merge_scheduler_service: Mailbox<MergeSchedulerService>,
         event_broker: EventBroker,
     ) -> anyhow::Result<Self> {
         let delete_service_task_path = data_dir_path.join(DELETE_SERVICE_TASK_DIR_NAME);
@@ -82,6 +85,7 @@ impl DeleteTaskService {
             delete_service_task_dir,
             pipeline_handles_by_index_uid: Default::default(),
             max_concurrent_split_uploads,
+            merge_scheduler_service,
             event_broker,
         })
     }
@@ -132,7 +136,7 @@ impl DeleteTaskService {
         // Remove pipelines on deleted indexes.
         for deleted_index_uid in pipeline_index_uids.difference(&index_uids) {
             info!(
-                deleted_index_id = deleted_index_uid.index_id(),
+                deleted_index_id = deleted_index_uid.index_id,
                 "Remove deleted index from delete task pipelines."
             );
             let pipeline_handle = self
@@ -147,12 +151,9 @@ impl DeleteTaskService {
         for index_uid in index_uids.difference(&pipeline_index_uids) {
             let index_config = index_config_by_index_id
                 .remove(index_uid)
-                .expect("Index metadata must be present.");
+                .expect("index metadata should be present");
             if self.spawn_pipeline(index_config, ctx).await.is_err() {
-                warn!(
-                    "Failed to spawn delete pipeline for {}",
-                    index_uid.index_id()
-                );
+                warn!("failed to spawn delete pipeline for {}", index_uid.index_id);
             }
         }
 
@@ -180,6 +181,7 @@ impl DeleteTaskService {
             index_storage,
             self.delete_service_task_dir.clone(),
             self.max_concurrent_split_uploads,
+            self.merge_scheduler_service.clone(),
             self.event_broker.clone(),
         );
         let (_pipeline_mailbox, pipeline_handler) = ctx.spawn_actor().spawn(pipeline);
@@ -205,14 +207,14 @@ impl Handler<UpdatePipelines> for DeleteTaskService {
         if let Err(error) = result {
             error!(error=%error, "delete task pipelines update failed");
         }
-        ctx.schedule_self_msg(UPDATE_PIPELINES_INTERVAL, UpdatePipelines)
-            .await;
+        ctx.schedule_self_msg(UPDATE_PIPELINES_INTERVAL, UpdatePipelines);
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use quickwit_actors::Universe;
     use quickwit_common::pubsub::EventBroker;
     use quickwit_indexing::TestSandbox;
     use quickwit_proto::metastore::{
@@ -243,26 +245,26 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
+        let universe: &Universe = test_sandbox.universe();
         let delete_task_service = DeleteTaskService::new(
             metastore.clone(),
             search_job_placer,
             StorageResolver::unconfigured(),
             data_dir_path,
             4,
+            universe.get_or_spawn_one(),
             EventBroker::default(),
         )
         .await
         .unwrap();
-        let (_delete_task_service_mailbox, delete_task_service_handler) = test_sandbox
-            .universe()
-            .spawn_builder()
-            .spawn(delete_task_service);
+        let (_delete_task_service_mailbox, delete_task_service_handler) =
+            universe.spawn_builder().spawn(delete_task_service);
         let state = delete_task_service_handler
             .process_pending_and_observe()
             .await;
         assert_eq!(state.num_running_pipelines, 1);
         let delete_query = DeleteQuery {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             start_timestamp: None,
             end_timestamp: None,
             query_ast: r#"{"type": "MatchAll"}"#.to_string(),
@@ -280,36 +282,24 @@ mod tests {
         );
         metastore
             .delete_index(DeleteIndexRequest {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
             })
             .await
             .unwrap();
-        test_sandbox
-            .universe()
-            .sleep(UPDATE_PIPELINES_INTERVAL * 2)
-            .await;
+        universe.sleep(UPDATE_PIPELINES_INTERVAL * 2).await;
         let state_after_deletion = delete_task_service_handler
             .process_pending_and_observe()
             .await;
         assert_eq!(state_after_deletion.num_running_pipelines, 0);
-        assert!(test_sandbox
-            .universe()
-            .get_one::<DeleteTaskService>()
-            .is_some());
-        let actors_observations = test_sandbox
-            .universe()
-            .observe(UPDATE_PIPELINES_INTERVAL)
-            .await;
+        assert!(universe.get_one::<DeleteTaskService>().is_some());
+        let actors_observations = universe.observe(UPDATE_PIPELINES_INTERVAL).await;
         assert!(
             actors_observations
                 .into_iter()
                 .any(|observation| observation.type_name
                     == std::any::type_name::<DeleteTaskService>())
         );
-        assert!(test_sandbox
-            .universe()
-            .get_one::<DeleteTaskService>()
-            .is_some());
+        assert!(universe.get_one::<DeleteTaskService>().is_some());
         test_sandbox.assert_quit().await;
         Ok(())
     }

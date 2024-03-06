@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -23,7 +23,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Supervisor, SupervisorState,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, Supervisor,
+    SupervisorState,
 };
 use quickwit_common::io::IoControls;
 use quickwit_common::pubsub::EventBroker;
@@ -31,15 +32,15 @@ use quickwit_common::temp_dir::{self};
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_indexing::actors::{
-    MergeExecutor, MergeSplitDownloader, Packager, Publisher, PublisherCounters, Uploader,
-    UploaderCounters, UploaderType,
+    MergeExecutor, MergeSchedulerService, MergeSplitDownloader, Packager, Publisher,
+    PublisherCounters, Uploader, UploaderCounters, UploaderType,
 };
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, PipelineUid};
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::Storage;
 use serde::Serialize;
@@ -86,6 +87,7 @@ pub struct DeleteTaskPipeline {
     handles: Option<DeletePipelineHandle>,
     max_concurrent_split_uploads: usize,
     state: DeleteTaskPipelineState,
+    merge_scheduler_service: Mailbox<MergeSchedulerService>,
     event_broker: EventBroker,
 }
 
@@ -127,6 +129,7 @@ impl Actor for DeleteTaskPipeline {
 }
 
 impl DeleteTaskPipeline {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         index_uid: IndexUid,
         metastore: MetastoreServiceClient,
@@ -134,6 +137,7 @@ impl DeleteTaskPipeline {
         index_storage: Arc<dyn Storage>,
         delete_service_task_dir: PathBuf,
         max_concurrent_split_uploads: usize,
+        merge_scheduler_service: Mailbox<MergeSchedulerService>,
         event_broker: EventBroker,
     ) -> Self {
         Self {
@@ -145,15 +149,16 @@ impl DeleteTaskPipeline {
             handles: Default::default(),
             max_concurrent_split_uploads,
             state: DeleteTaskPipelineState::default(),
+            merge_scheduler_service,
             event_broker,
         }
     }
 
     pub async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         info!(
-            index_id=%self.index_uid.index_id(),
+            index_id=%self.index_uid.index_id,
             root_dir=%self.delete_service_task_dir.to_str().unwrap(),
-            "Spawning delete tasks pipeline.",
+            "spawning delete tasks pipeline",
         );
         let index_config = self
             .metastore
@@ -191,22 +196,15 @@ impl DeleteTaskPipeline {
         let index_pipeline_id = IndexingPipelineId {
             index_uid: self.index_uid.clone(),
             node_id: "unknown".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
             source_id: "unknown".to_string(),
         };
-        let throughput_limit: f64 = index_config
-            .indexing_settings
-            .resources
-            .max_merge_write_throughput
-            .as_ref()
-            .map(|bytes_per_sec| bytes_per_sec.as_u64() as f64)
-            .unwrap_or(f64::INFINITY);
-        let delete_executor_io_controls = IoControls::default()
-            .set_throughput_limit(throughput_limit)
-            .set_index_and_component(self.index_uid.index_id(), "deleter");
+
+        let delete_executor_io_controls = IoControls::default().set_component("deleter");
+
         let split_download_io_controls = delete_executor_io_controls
             .clone()
-            .set_index_and_component(self.index_uid.index_id(), "split_downloader_delete");
+            .set_component("split_downloader_delete");
         let delete_executor = MergeExecutor::new(
             index_pipeline_id,
             self.metastore.clone(),
@@ -217,8 +215,8 @@ impl DeleteTaskPipeline {
         let (delete_executor_mailbox, task_executor_supervisor_handler) =
             ctx.spawn_actor().supervise(delete_executor);
         let scratch_directory = temp_dir::Builder::default()
-            .join(self.index_uid.index_id())
-            .join(self.index_uid.incarnation_id())
+            .join(&self.index_uid.index_id)
+            .join(&self.index_uid.incarnation_id.to_string())
             .tempdir_in(&self.delete_service_task_dir)?;
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory,
@@ -237,6 +235,7 @@ impl DeleteTaskPipeline {
             self.metastore.clone(),
             self.search_job_placer.clone(),
             downloader_mailbox,
+            self.merge_scheduler_service.clone(),
         );
         let (_, task_planner_supervisor_handler) = ctx.spawn_actor().supervise(task_planner);
         self.handles = Some(DeletePipelineHandle {
@@ -270,16 +269,15 @@ impl Handler<Observe> for DeleteTaskPipeline {
             handles.uploader.refresh_observe();
             handles.publisher.refresh_observe();
             self.state = DeleteTaskPipelineState {
-                delete_task_planner: handles.delete_task_planner.last_observation(),
-                downloader: handles.downloader.last_observation(),
-                delete_task_executor: handles.delete_task_executor.last_observation(),
-                packager: handles.packager.last_observation(),
-                uploader: handles.uploader.last_observation(),
-                publisher: handles.publisher.last_observation(),
+                delete_task_planner: handles.delete_task_planner.last_observation().clone(),
+                downloader: handles.downloader.last_observation().clone(),
+                delete_task_executor: handles.delete_task_executor.last_observation().clone(),
+                packager: handles.packager.last_observation().clone(),
+                uploader: handles.uploader.last_observation().clone(),
+                publisher: handles.publisher.last_observation().clone(),
             }
         }
-        ctx.schedule_self_msg(OBSERVE_PIPELINE_INTERVAL, Observe)
-            .await;
+        ctx.schedule_self_msg(OBSERVE_PIPELINE_INTERVAL, Observe);
         Ok(())
     }
 }
@@ -287,11 +285,12 @@ impl Handler<Observe> for DeleteTaskPipeline {
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
-    use quickwit_actors::Handler;
+    use quickwit_actors::{Handler, Universe};
     use quickwit_common::pubsub::EventBroker;
     use quickwit_common::temp_dir::TempDirectory;
+    use quickwit_indexing::actors::MergeSchedulerService;
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt, SplitState};
+    use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitState};
     use quickwit_proto::metastore::{DeleteQuery, ListSplitsRequest, MetastoreService};
     use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{
@@ -344,6 +343,8 @@ mod tests {
         )
         .await
         .unwrap();
+        let universe: &Universe = test_sandbox.universe();
+        let merge_scheduler_service = universe.get_or_spawn_one::<MergeSchedulerService>();
         let index_uid = test_sandbox.index_uid();
         let docs = vec![
             serde_json::json!({"body": "info", "ts": 0 }),
@@ -354,7 +355,7 @@ mod tests {
         let mut metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 start_timestamp: None,
                 end_timestamp: None,
                 query_ast: quickwit_query::query_ast::qast_json_helper("body:delete", &[]),
@@ -394,19 +395,16 @@ mod tests {
             test_sandbox.storage(),
             delete_service_task_dir.path().into(),
             4,
+            merge_scheduler_service,
             EventBroker::default(),
         );
 
-        let (pipeline_mailbox, pipeline_handler) =
-            test_sandbox.universe().spawn_builder().spawn(pipeline);
+        let (pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         // Ensure that the message sent by initialize method is processed.
         let _ = pipeline_handler.process_pending_and_observe().await.state;
         // Pipeline will first fail and we need to wait a OBSERVE_PIPELINE_INTERVAL * some number
         // for the pipeline state to be updated.
-        test_sandbox
-            .universe()
-            .sleep(OBSERVE_PIPELINE_INTERVAL * 3)
-            .await;
+        universe.sleep(OBSERVE_PIPELINE_INTERVAL * 5).await;
         let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
         assert_eq!(pipeline_state.delete_task_planner.metrics.num_errors, 1);
         assert_eq!(pipeline_state.downloader.metrics.num_errors, 0);
@@ -420,7 +418,8 @@ mod tests {
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
             .await
             .unwrap()
-            .deserialize_splits()
+            .collect_splits()
+            .await
             .unwrap();
         assert_eq!(splits.len(), 2);
         let published_split = splits
@@ -447,6 +446,8 @@ mod tests {
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
             .await
             .unwrap();
+        let universe: &Universe = test_sandbox.universe();
+        let merge_scheduler_mailbox = universe.get_or_spawn_one::<MergeSchedulerService>();
         let metastore = test_sandbox.metastore();
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
@@ -475,16 +476,13 @@ mod tests {
             test_sandbox.storage(),
             delete_service_task_dir.path().into(),
             4,
+            merge_scheduler_mailbox,
             EventBroker::default(),
         );
 
-        let (_pipeline_mailbox, pipeline_handler) =
-            test_sandbox.universe().spawn_builder().spawn(pipeline);
+        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         pipeline_handler.quit().await;
-        let observations = test_sandbox
-            .universe()
-            .observe(OBSERVE_PIPELINE_INTERVAL)
-            .await;
+        let observations = universe.observe(OBSERVE_PIPELINE_INTERVAL).await;
         assert!(observations.into_iter().all(
             |observation| observation.type_name != std::any::type_name::<DeleteTaskPipeline>()
         ));

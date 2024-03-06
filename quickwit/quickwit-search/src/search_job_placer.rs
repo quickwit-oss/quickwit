@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -305,17 +305,17 @@ mod tests {
                 (
                     expected_searcher_addr_1,
                     vec![
-                        SearchJob::for_test("split6", 6),
-                        SearchJob::for_test("split3", 3),
-                        SearchJob::for_test("split1", 1),
+                        SearchJob::for_test("split5", 5),
+                        SearchJob::for_test("split4", 4),
+                        SearchJob::for_test("split2", 2),
                     ],
                 ),
                 (
                     expected_searcher_addr_2,
                     vec![
-                        SearchJob::for_test("split5", 5),
-                        SearchJob::for_test("split4", 4),
-                        SearchJob::for_test("split2", 2),
+                        SearchJob::for_test("split6", 6),
+                        SearchJob::for_test("split3", 3),
+                        SearchJob::for_test("split1", 1),
                     ],
                 ),
             ];

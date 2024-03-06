@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -35,7 +35,7 @@ use serde::{de, Deserialize, Deserializer};
 ///
 /// We don't use untagged enum to support this, in order to keep good errors.
 ///
-/// The code below is adapted from solution described here: https://serde.rs/string-or-struct.html
+/// The code below is adapted from solution described here: <https://serde.rs/string-or-struct.html>
 #[derive(Deserialize)]
 #[serde(transparent)]
 pub(crate) struct StringOrStructForSerialization<T>

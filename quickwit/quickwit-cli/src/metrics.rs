@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -30,7 +30,8 @@ impl Default for CliMetrics {
             thread_unpark_duration_microseconds: new_histogram_vec(
                 "thread_unpark_duration_microseconds",
                 "Duration for which a thread of the main tokio runtime is unparked.",
-                "quickwit_cli",
+                "cli",
+                &[],
                 [],
             ),
         }

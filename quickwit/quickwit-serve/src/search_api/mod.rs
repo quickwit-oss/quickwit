@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -21,7 +21,7 @@ mod grpc_adapter;
 mod rest_handler;
 
 pub use self::grpc_adapter::GrpcSearchAdapter;
-pub(crate) use self::rest_handler::extract_index_id_patterns;
+pub(crate) use self::rest_handler::{extract_index_id_patterns, extract_index_id_patterns_default};
 pub use self::rest_handler::{
     search_get_handler, search_post_handler, search_request_from_api_request,
     search_stream_handler, SearchApi, SearchRequestQueryString, SortBy,
@@ -32,7 +32,9 @@ mod tests {
     use std::net::SocketAddr;
     use std::sync::Arc;
 
+    use bytesize::ByteSize;
     use futures::TryStreamExt;
+    use quickwit_common::ServiceStream;
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, ListSplitsResponseExt};
     use quickwit_proto::metastore::{
@@ -83,7 +85,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore.expect_index_metadata().returning(move |_| {
-            Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
+            Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
         metastore.expect_list_splits().returning(move |_| {
             let splits = vec![
@@ -94,7 +96,8 @@ mod tests {
                     .with_index_uid(&index_uid)
                     .build(),
             ];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits)]))
         });
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -126,7 +129,10 @@ mod tests {
         start_test_server(grpc_addr, Arc::new(mock_search_service)).await?;
 
         let searcher_pool = SearcherPool::default();
-        searcher_pool.insert(grpc_addr, create_search_client_from_grpc_addr(grpc_addr));
+        searcher_pool.insert(
+            grpc_addr,
+            create_search_client_from_grpc_addr(grpc_addr, ByteSize::mib(1)),
+        );
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let stream = root_search_stream(

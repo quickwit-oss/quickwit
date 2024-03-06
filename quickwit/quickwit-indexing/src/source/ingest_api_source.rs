@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -166,15 +166,16 @@ impl Source for IngestApiSource {
             return Ok(INGEST_API_POLLING_COOL_DOWN);
         };
 
+        let batch_num_docs = doc_batch.num_docs();
         // TODO use a timestamp (in the raw doc batch) given by at ingest time to be more accurate.
         let mut raw_doc_batch = RawDocBatch::with_capacity(doc_batch.num_docs());
-        for doc in doc_batch.iter() {
+        for doc in doc_batch.into_iter() {
             match doc {
                 DocCommand::Ingest { payload } => raw_doc_batch.docs.push(payload),
                 DocCommand::Commit => raw_doc_batch.force_commit = true,
             }
         }
-        let current_offset = first_position + doc_batch.num_docs() as u64 - 1;
+        let current_offset = first_position + batch_num_docs as u64 - 1;
         let partition_id = self.partition_id.clone();
         raw_doc_batch
             .checkpoint_delta
@@ -182,9 +183,9 @@ impl Source for IngestApiSource {
                 partition_id,
                 self.counters
                     .previous_offset
-                    .map(Position::from)
-                    .unwrap_or(Position::Beginning),
-                Position::from(current_offset),
+                    .map(Position::offset)
+                    .unwrap_or_default(),
+                Position::offset(current_offset),
             )
             .map_err(anyhow::Error::from)?;
 
@@ -408,8 +409,8 @@ mod tests {
         let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
         let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             partition_id.clone(),
-            Position::from(0u64),
-            Position::from(1200u64),
+            Position::offset(0u64),
+            Position::offset(1200u64),
         )
         .unwrap();
         checkpoint.try_apply_delta(checkpoint_delta).unwrap();
@@ -686,7 +687,7 @@ mod tests {
 
         let partition_id = ingest_api_service.ask(GetPartitionId).await?.into();
         let mut source_checkpoint = SourceCheckpoint::default();
-        source_checkpoint.add_partition(partition_id, Position::from(10u64));
+        source_checkpoint.add_partition(partition_id, Position::offset(10u64));
         let ingest_api_source = IngestApiSource::try_new(ctx, source_checkpoint).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),

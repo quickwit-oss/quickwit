@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -79,13 +79,13 @@ async fn get_liveness(
 
     if let Some(indexer_service) = indexer_service_opt {
         if !indexer_service.ask(Healthz).await.unwrap_or(false) {
-            error!("the indexer service is unhealthy");
+            error!("indexer service is unhealthy");
             is_live = false;
         }
     }
     if let Some(janitor_service) = janitor_service_opt {
         if !janitor_service.ask(Healthz).await.unwrap_or(false) {
-            error!("the janitor service is unhealthy");
+            error!("janitor service is unhealthy");
             is_live = false;
         }
     }
@@ -120,8 +120,7 @@ async fn get_readiness(cluster: Cluster) -> impl warp::Reply {
 #[cfg(test)]
 mod tests {
 
-    use chitchat::transport::ChannelTransport;
-    use quickwit_cluster::create_cluster_for_test;
+    use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
 
     #[tokio::test]
     async fn test_rest_search_api_health_checks() {

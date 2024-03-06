@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -46,13 +46,13 @@ pub struct StrptimeParser {
 impl FromStr for StrptimeParser {
     type Err = String;
 
-    fn from_str(strptime_format_str: &str) -> Result<Self, Self::Err> {
+    fn from_str(strptime_format: &str) -> Result<Self, Self::Err> {
         StrptimeParser::try_new(
-            strptime_format_str.to_string(),
-            strptime_format_str.to_lowercase().contains("%z"),
+            strptime_format.to_string(),
+            strptime_format.to_lowercase().contains("%z"),
             |strptime_format: &String| {
-                parse_to_format_item(strptime_format).map_err(|err| {
-                    format!("invalid format specification `{strptime_format}`. error: {err}.")
+                parse_to_format_item(strptime_format).map_err(|error| {
+                    format!("invalid strptime format `{strptime_format}`: {error}")
                 })
             },
         )
@@ -70,7 +70,7 @@ impl StrptimeParser {
             .is_empty()
         {
             anyhow::bail!(
-                "datetime string `{}` does not match format `{}`",
+                "datetime string `{}` does not match strptime format `{}`",
                 date_time_str,
                 self.borrow_strptime_format()
             );
@@ -447,10 +447,10 @@ mod tests {
             parser.parse_date_time("2021-01-01").unwrap(),
             datetime!(2021-01-01 00:00:00 UTC)
         );
-        let error_str = parser.parse_date_time("2021-01-01TABC").unwrap_err();
+        let error = parser.parse_date_time("2021-01-01TABC").unwrap_err();
         assert_eq!(
-            error_str,
-            "datetime string `2021-01-01TABC` does not match format `%Y-%m-%d`"
+            error,
+            "datetime string `2021-01-01TABC` does not match strptime format `%Y-%m-%d`"
         );
     }
 }

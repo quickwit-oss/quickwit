@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -29,6 +29,7 @@ use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
 use tracing::info;
 
+use crate::actors::MergeSchedulerService;
 pub use crate::actors::{
     IndexingError, IndexingPipeline, IndexingPipelineParams, IndexingService, PublisherType,
     Sequencer, SplitsUpdateMailbox,
@@ -70,13 +71,15 @@ pub async fn start_indexing_service(
     num_blocking_threads: usize,
     cluster: Cluster,
     metastore: MetastoreServiceClient,
-    ingest_api_service: Mailbox<IngestApiService>,
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("starting indexer service");
-
+    let ingest_api_service_mailbox = universe.get_one::<IngestApiService>();
+    let (merge_scheduler_mailbox, _) = universe.spawn_builder().spawn(MergeSchedulerService::new(
+        config.indexer_config.merge_concurrency.get(),
+    ));
     // Spawn indexing service.
     let indexing_service = IndexingService::new(
         config.node_id.clone(),
@@ -85,13 +88,13 @@ pub async fn start_indexing_service(
         num_blocking_threads,
         cluster,
         metastore.clone(),
-        Some(ingest_api_service),
+        ingest_api_service_mailbox,
+        merge_scheduler_mailbox,
         ingester_pool,
         storage_resolver,
         event_broker,
     )
     .await?;
     let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);
-
     Ok(indexing_service)
 }

@@ -3,6 +3,20 @@ method: DELETE
 endpoint: gharchive
 status_code: null
 ---
+# empty index
+method: PUT
+endpoint: empty_index
+json: {
+  "mappings": {
+    "properties": {
+      "created_at": {
+        "type": "date",
+        "store": true
+      }
+    }
+  }
+}
+---
 # Create index
 method: PUT
 endpoint: gharchive
@@ -88,6 +102,6 @@ method: POST
 endpoint: _bulk
 params:
   refresh: "true"
-headers: {"Content-Type": "application/json"}
+headers: {"Content-Type": "application/json", "content-encoding": "gzip"}
 body_from_file: gharchive-bulk.json.gz
 

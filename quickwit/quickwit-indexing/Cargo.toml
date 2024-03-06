@@ -1,26 +1,27 @@
 [package]
 name = "quickwit-indexing"
-version = "0.6.5-dev"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
-description = "Quickwit indexing"
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+description = "Indexing service implementation"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 aws-config = { workspace = true, optional = true }
-aws-smithy-client = { workspace = true, optional = true }
 aws-sdk-kinesis = { workspace = true, optional = true }
+aws-smithy-client = { workspace = true, optional = true }
 
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
+async-compression = { workspace = true }
 async-trait = { workspace = true }
 backoff = { workspace = true, optional = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
-chitchat = { workspace = true }
 fail = { workspace = true }
 flume = { workspace = true }
 fnv = { workspace = true }
@@ -50,6 +51,7 @@ tracing = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
 vrl = { workspace = true, optional = true }
+zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }
@@ -65,15 +67,31 @@ quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
 
 [features]
-gcp-pubsub = ["dep:google-cloud-pubsub", "dep:google-cloud-default", "dep:google-cloud-googleapis", "dep:google-cloud-auth", "dep:google-cloud-gax"]
+gcp-pubsub = [
+  "dep:google-cloud-auth",
+  "dep:google-cloud-default",
+  "dep:google-cloud-gax",
+  "dep:google-cloud-googleapis",
+  "dep:google-cloud-pubsub",
+]
 gcp-pubsub-emulator-tests = []
 kafka = ["rdkafka", "backoff"]
 kafka-broker-tests = []
-kinesis = ["aws-config", "aws-smithy-client", "aws-sdk-kinesis", "quickwit-aws/kinesis"]
+kinesis = [
+  "aws-config",
+  "aws-smithy-client",
+  "aws-sdk-kinesis",
+  "quickwit-aws/kinesis",
+]
 kinesis-localstack-tests = []
 pulsar = ["dep:pulsar"]
 pulsar-broker-tests = []
-vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored", "rdkafka/gssapi-vendored"]
+vendored-kafka = [
+  "kafka",
+  "libz-sys/static",
+  "openssl/vendored",
+  "rdkafka/gssapi-vendored",
+]
 vendored-kafka-macos = ["kafka", "libz-sys/static", "openssl/vendored"]
 testsuite = [
   "quickwit-actors/testsuite",
@@ -97,6 +115,7 @@ quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
+quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-ingest = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }

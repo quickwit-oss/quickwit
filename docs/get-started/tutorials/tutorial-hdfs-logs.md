@@ -3,7 +3,7 @@ title: Index a logging dataset locally
 description: Index log entries on a local machine.
 tags: [self-hosted, setup]
 icon_url: /img/quickwit-icon.svg
-sidebar_position: 1
+sidebar_position: 3
 ---
 
 import Tabs from '@theme/Tabs';
@@ -84,7 +84,7 @@ The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning]
 Check out the [index config docs](../../configuration/index-config) for more details.
 
 ```yaml title="hdfs-logs-index.yaml"
-version: 0.6
+version: 0.7
 
 index_id: hdfs-logs
 

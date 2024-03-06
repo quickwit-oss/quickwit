@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -39,6 +39,7 @@ use quickwit_proto::metastore::{
     DeleteTask, ListDeleteTasksRequest, MarkSplitsForDeletionRequest, MetastoreService,
     MetastoreServiceClient,
 };
+use quickwit_proto::types::PipelineUid;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use tantivy::directory::{Advice, DirectoryClone, MmapDirectory, RamDirectory};
@@ -84,19 +85,19 @@ impl Actor for MergeExecutor {
 impl Handler<MergeScratch> for MergeExecutor {
     type Reply = ();
 
-    #[instrument(level = "info", name = "merge_executor", parent = merge_scratch.merge_operation.merge_parent_span.id(), skip_all)]
+    #[instrument(level = "info", name = "merge_executor", parent = merge_scratch.merge_task.merge_parent_span.id(), skip_all)]
     async fn handle(
         &mut self,
         merge_scratch: MergeScratch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let start = Instant::now();
-        let merge_op = merge_scratch.merge_operation;
-        let indexed_split_opt: Option<IndexedSplit> = match merge_op.operation_type {
+        let merge_task = merge_scratch.merge_task;
+        let indexed_split_opt: Option<IndexedSplit> = match merge_task.operation_type {
             MergeOperationType::Merge => Some(
                 self.process_merge(
-                    merge_op.merge_split_id.clone(),
-                    merge_op.splits.clone(),
+                    merge_task.merge_split_id.clone(),
+                    merge_task.splits.clone(),
                     merge_scratch.tantivy_dirs,
                     merge_scratch.merge_scratch_directory,
                     ctx,
@@ -105,14 +106,14 @@ impl Handler<MergeScratch> for MergeExecutor {
             ),
             MergeOperationType::DeleteAndMerge => {
                 assert_eq!(
-                    merge_op.splits.len(),
+                    merge_task.splits.len(),
                     1,
                     "Delete tasks can be applied only on one split."
                 );
                 assert_eq!(merge_scratch.tantivy_dirs.len(), 1);
-                let split_with_docs_to_delete = merge_op.splits[0].clone();
+                let split_with_docs_to_delete = merge_task.splits[0].clone();
                 self.process_delete_and_merge(
-                    merge_op.merge_split_id.clone(),
+                    merge_task.merge_split_id.clone(),
                     split_with_docs_to_delete,
                     merge_scratch.tantivy_dirs,
                     merge_scratch.merge_scratch_directory,
@@ -125,7 +126,7 @@ impl Handler<MergeScratch> for MergeExecutor {
             info!(
                 merged_num_docs = %indexed_split.split_attrs.num_docs,
                 elapsed_secs = %start.elapsed().as_secs_f32(),
-                operation_type = %merge_op.operation_type,
+                operation_type = %merge_task.operation_type,
                 "merge-operation-success"
             );
             ctx.send_message(
@@ -135,8 +136,8 @@ impl Handler<MergeScratch> for MergeExecutor {
                     checkpoint_delta_opt: Default::default(),
                     publish_lock: PublishLock::default(),
                     publish_token_opt: None,
-                    batch_parent_span: merge_op.merge_parent_span.clone(),
-                    merge_operation_opt: Some(merge_op),
+                    batch_parent_span: merge_task.merge_parent_span.clone(),
+                    merge_task_opt: Some(merge_task),
                 },
             )
             .await?;
@@ -431,7 +432,7 @@ impl MergeExecutor {
         let index_pipeline_id = IndexingPipelineId {
             index_uid: split.index_uid,
             node_id: split.node_id.clone(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::new(),
             source_id: split.source_id.clone(),
         };
         let indexed_split = IndexedSplit {
@@ -559,16 +560,16 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::split_file;
     use quickwit_metastore::{
-        ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, StageSplitsRequestExt,
+        ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata, StageSplitsRequestExt,
     };
     use quickwit_proto::metastore::{
         DeleteQuery, ListSplitsRequest, PublishSplitsRequest, StageSplitsRequest,
     };
     use serde_json::Value as JsonValue;
-    use tantivy::{Document, Inventory, ReloadPolicy, TantivyDocument};
+    use tantivy::{Document, ReloadPolicy, TantivyDocument};
 
     use super::*;
-    use crate::merge_policy::MergeOperation;
+    use crate::merge_policy::{MergeOperation, MergeTask};
     use crate::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
 
     #[tokio::test]
@@ -591,7 +592,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         for split_id in 0..4 {
             let single_doc = std::iter::once(
@@ -605,7 +606,8 @@ mod tests {
             .list_splits(list_splits_request)
             .await
             .unwrap()
-            .deserialize_splits_metadata()
+            .collect_splits_metadata()
+            .await
             .unwrap();
         assert_eq!(split_metas.len(), 4);
         let merge_scratch_directory = TempDirectory::for_test();
@@ -621,11 +623,10 @@ mod tests {
                 .await?;
             tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap())
         }
-        let merge_ops_inventory = Inventory::new();
-        let merge_operation =
-            merge_ops_inventory.track(MergeOperation::new_merge_operation(split_metas));
+        let merge_operation = MergeOperation::new_merge_operation(split_metas);
+        let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
         let merge_scratch = MergeScratch {
-            merge_operation,
+            merge_task,
             tantivy_dirs,
             merge_scratch_directory,
             downloaded_splits_directory,
@@ -715,42 +716,39 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
             node_id: "unknown".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
             source_id: "unknown".to_string(),
         };
         test_sandbox.add_documents(docs).await?;
         let mut metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
                 start_timestamp: None,
                 end_timestamp: None,
                 query_ast: quickwit_query::query_ast::qast_json_helper(delete_query, &["body"]),
             })
             .await?;
-        let split = metastore
+        let splits = metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
-            .deserialize_splits()
-            .unwrap()
-            .into_iter()
-            .next()
+            .collect_splits()
+            .await
             .unwrap();
+
         // We want to test a delete on a split with num_merge_ops > 0.
-        let mut new_split_metadata = split.split_metadata.clone();
+        let mut new_split_metadata = splits[0].split_metadata.clone();
         new_split_metadata.split_id = new_split_id();
         new_split_metadata.num_merge_ops = 1;
-        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
-            index_uid.clone(),
-            new_split_metadata.clone(),
-        )
-        .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &new_split_metadata)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
         let publish_splits_request = PublishSplitsRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             staged_split_ids: vec![new_split_metadata.split_id.to_string()],
-            replaced_split_ids: vec![split.split_metadata.split_id.to_string()],
+            replaced_split_ids: vec![splits[0].split_metadata.split_id.to_string()],
             index_checkpoint_delta_json_opt: None,
             publish_token_opt: None,
         };
@@ -763,7 +761,7 @@ mod tests {
         let merge_scratch_directory = TempDirectory::for_test();
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits-")?;
-        let split_filename = split_file(split.split_metadata.split_id());
+        let split_filename = split_file(splits[0].split_metadata.split_id());
         let new_split_filename = split_file(new_split_metadata.split_id());
         let dest_filepath = downloaded_splits_directory.path().join(&new_split_filename);
         test_sandbox
@@ -771,12 +769,10 @@ mod tests {
             .copy_to_file(Path::new(&split_filename), &dest_filepath)
             .await?;
         let tantivy_dir = get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap();
-        let merge_ops_inventory = Inventory::new();
-        let merge_operation = merge_ops_inventory.track(
-            MergeOperation::new_delete_and_merge_operation(new_split_metadata),
-        );
+        let merge_operation = MergeOperation::new_delete_and_merge_operation(new_split_metadata);
+        let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
         let merge_scratch = MergeScratch {
-            merge_operation,
+            merge_task,
             tantivy_dirs: vec![tantivy_dir],
             merge_scratch_directory,
             downloaded_splits_directory,
@@ -845,7 +841,8 @@ mod tests {
                 .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
                 .await
                 .unwrap()
-                .deserialize_splits()
+                .collect_splits()
+                .await
                 .unwrap()
                 .into_iter()
                 .all(

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -22,7 +22,7 @@ use std::fmt;
 use quickwit_common::retry::Retryable;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{IndexId, IndexUid, QueueId, SourceId, SplitId};
+use crate::types::{IndexId, IndexUid, QueueId, ShardId, SourceId, SplitId};
 use crate::{ServiceError, ServiceErrorCode};
 
 pub mod events;
@@ -73,6 +73,11 @@ pub enum EntityKind {
         /// Split IDs.
         split_ids: Vec<SplitId>,
     },
+    /// An index template.
+    IndexTemplate {
+        /// Index template ID.
+        template_id: String,
+    },
 }
 
 impl fmt::Display for EntityKind {
@@ -91,6 +96,9 @@ impl fmt::Display for EntityKind {
             } => write!(f, "source `{index_id}/{source_id}`"),
             EntityKind::Split { split_id } => write!(f, "split `{split_id}`"),
             EntityKind::Splits { split_ids } => write!(f, "splits `{}`", split_ids.join(", ")),
+            EntityKind::IndexTemplate { template_id } => {
+                write!(f, "index template `{}`", template_id)
+            }
         }
     }
 }
@@ -111,9 +119,6 @@ pub enum MetastoreError {
 
     #[error("access forbidden: {message}")]
     Forbidden { message: String },
-
-    #[error("control plane state is inconsistent with that of the metastore")]
-    InconsistentControlPlaneState,
 
     #[error("internal error: {message}; cause: `{cause}`")]
     Internal { message: String, cause: String },
@@ -178,7 +183,6 @@ impl ServiceError for MetastoreError {
             Self::Db { .. } => ServiceErrorCode::Internal,
             Self::FailedPrecondition { .. } => ServiceErrorCode::BadRequest,
             Self::Forbidden { .. } => ServiceErrorCode::MethodNotAllowed,
-            Self::InconsistentControlPlaneState { .. } => ServiceErrorCode::BadRequest,
             Self::Internal { .. } => ServiceErrorCode::Internal,
             Self::InvalidArgument { .. } => ServiceErrorCode::BadRequest,
             Self::Io { .. } => ServiceErrorCode::Internal,
@@ -231,7 +235,7 @@ impl IndexMetadataRequest {
 
     pub fn for_index_uid(index_uid: IndexUid) -> Self {
         Self {
-            index_uid: Some(index_uid.into()),
+            index_uid: Some(index_uid),
             index_id: None,
         }
     }
@@ -242,8 +246,7 @@ impl IndexMetadataRequest {
         if let Some(index_id) = &self.index_id {
             Ok(index_id.to_string())
         } else if let Some(index_uid) = &self.index_uid {
-            let index_uid: IndexUid = index_uid.clone().into();
-            Ok(index_uid.index_id().to_string())
+            Ok(index_uid.index_id.to_string())
         } else {
             Err(MetastoreError::Internal {
                 message: "index_id or index_uid must be set".to_string(),
@@ -280,12 +283,28 @@ impl ListDeleteTasksRequest {
 }
 
 pub mod serde_utils {
+    use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
+    use serde_json::Value as JsonValue;
 
     use super::{MetastoreError, MetastoreResult};
 
+    pub fn from_json_bytes<'de, T: Deserialize<'de>>(value_bytes: &'de [u8]) -> MetastoreResult<T> {
+        serde_json::from_slice(value_bytes).map_err(|error| MetastoreError::JsonDeserializeError {
+            struct_name: std::any::type_name::<T>().to_string(),
+            message: error.to_string(),
+        })
+    }
+
     pub fn from_json_str<'de, T: Deserialize<'de>>(value_str: &'de str) -> MetastoreResult<T> {
         serde_json::from_str(value_str).map_err(|error| MetastoreError::JsonDeserializeError {
+            struct_name: std::any::type_name::<T>().to_string(),
+            message: error.to_string(),
+        })
+    }
+
+    pub fn from_json_value<T: DeserializeOwned>(value: JsonValue) -> MetastoreResult<T> {
+        serde_json::from_value(value).map_err(|error| MetastoreError::JsonDeserializeError {
             struct_name: std::any::type_name::<T>().to_string(),
             message: error.to_string(),
         })
@@ -297,6 +316,20 @@ pub mod serde_utils {
             message: error.to_string(),
         })
     }
+
+    pub fn to_json_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, MetastoreError> {
+        serde_json::to_vec(value).map_err(|error| MetastoreError::JsonSerializeError {
+            struct_name: std::any::type_name::<T>().to_string(),
+            message: error.to_string(),
+        })
+    }
+
+    pub fn to_json_bytes_pretty<T: Serialize>(value: &T) -> Result<Vec<u8>, MetastoreError> {
+        serde_json::to_vec_pretty(value).map_err(|error| MetastoreError::JsonSerializeError {
+            struct_name: std::any::type_name::<T>().to_string(),
+            message: error.to_string(),
+        })
+    }
 }
 
 impl ListIndexesMetadataRequest {
@@ -304,5 +337,13 @@ impl ListIndexesMetadataRequest {
         ListIndexesMetadataRequest {
             index_id_patterns: vec!["*".to_string()],
         }
+    }
+}
+
+impl OpenShardsSubrequest {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
     }
 }

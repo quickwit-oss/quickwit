@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,7 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use hyper::header::CONTENT_TYPE;
+use quickwit_config::ConfigFormat;
 use serde::{self, Deserialize, Serialize, Serializer};
+use thiserror::Error;
 use warp::{Filter, Rejection};
 
 /// Body output format used for the REST API.
@@ -43,13 +46,12 @@ impl BodyFormat {
 
     fn value_to_vec(&self, value: &impl serde::Serialize) -> Result<Vec<u8>, ()> {
         match &self {
-            Self::Json => serde_json::to_vec(value).map_err(|_| {
-                tracing::error!("the response serialization failed");
-            }),
-            Self::PrettyJson => serde_json::to_vec_pretty(value).map_err(|_| {
-                tracing::error!("the response serialization failed");
-            }),
+            Self::Json => serde_json::to_vec(value),
+            Self::PrettyJson => serde_json::to_vec_pretty(value),
         }
+        .map_err(|_| {
+            tracing::error!("response serialization failed");
+        })
     }
 }
 
@@ -83,4 +85,33 @@ pub(crate) fn extract_format_from_qs(
 ) -> impl Filter<Extract = (BodyFormat,), Error = Rejection> + Clone {
     serde_qs::warp::query::<FormatQueryString>(serde_qs::Config::default())
         .map(|format_qs: FormatQueryString| format_qs.format)
+}
+
+#[derive(Debug, Error)]
+#[error(
+    "request's content-type is not supported: supported media types are `application/json`, \
+     `application/toml`, and `application/yaml`"
+)]
+pub(crate) struct UnsupportedMediaType;
+
+impl warp::reject::Reject for UnsupportedMediaType {}
+
+pub(crate) fn extract_config_format(
+) -> impl Filter<Extract = (ConfigFormat,), Error = Rejection> + Copy {
+    warp::filters::header::optional::<mime_guess::Mime>(CONTENT_TYPE.as_str()).and_then(
+        |mime_opt: Option<mime_guess::Mime>| {
+            if let Some(mime) = mime_opt {
+                let config_format = match mime.subtype().as_str() {
+                    "json" => ConfigFormat::Json,
+                    "toml" => ConfigFormat::Toml,
+                    "yaml" => ConfigFormat::Yaml,
+                    _ => {
+                        return futures::future::err(warp::reject::custom(UnsupportedMediaType));
+                    }
+                };
+                return futures::future::ok(config_format);
+            }
+            futures::future::ok(ConfigFormat::Json)
+        },
+    )
 }

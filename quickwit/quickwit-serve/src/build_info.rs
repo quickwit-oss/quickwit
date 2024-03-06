@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -80,6 +80,17 @@ impl BuildInfo {
                 version,
             }
         })
+    }
+
+    pub fn get_version_text() -> String {
+        let build_info = Self::get();
+        format!(
+            "{} ({} {} {})",
+            build_info.cargo_pkg_version,
+            build_info.build_target,
+            build_info.commit_date,
+            build_info.commit_short_hash
+        )
     }
 }
 

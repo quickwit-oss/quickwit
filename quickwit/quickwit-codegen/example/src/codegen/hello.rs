@@ -44,15 +44,20 @@ pub struct PingResponse {
 #[allow(unused_imports)]
 use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
-use quickwit_common::metrics::{PrometheusLabels, OwnedPrometheusLabels};
-impl PrometheusLabels<1> for HelloRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("hello")])
+use quickwit_common::tower::RpcName;
+impl RpcName for HelloRequest {
+    fn rpc_name() -> &'static str {
+        "hello"
     }
 }
-impl PrometheusLabels<1> for GoodbyeRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("goodbye")])
+impl RpcName for GoodbyeRequest {
+    fn rpc_name() -> &'static str {
+        "goodbye"
+    }
+}
+impl RpcName for PingRequest {
+    fn rpc_name() -> &'static str {
+        "ping"
     }
 }
 pub type HelloStream<T> = quickwit_common::ServiceStream<crate::HelloResult<T>>;
@@ -102,32 +107,35 @@ impl HelloClient {
     }
     pub fn as_grpc_service(
         &self,
+        max_message_size: bytesize::ByteSize,
     ) -> hello_grpc_server::HelloGrpcServer<HelloGrpcServerAdapter> {
         let adapter = HelloGrpcServerAdapter::new(self.clone());
         hello_grpc_server::HelloGrpcServer::new(adapter)
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024)
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
-        let adapter = HelloGrpcClientAdapter::new(
-            hello_grpc_client::HelloGrpcClient::new(channel),
-            connection_keys_watcher,
-        );
+        let client = hello_grpc_client::HelloGrpcClient::new(channel)
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
+        let adapter = HelloGrpcClientAdapter::new(client, connection_keys_watcher);
         Self::new(adapter)
     }
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> HelloClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let client = hello_grpc_client::HelloGrpcClient::new(balance_channel)
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024);
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = HelloGrpcClientAdapter::new(client, connection_keys_watcher);
         Self::new(adapter)
     }
@@ -138,8 +146,8 @@ impl HelloClient {
     {
         HelloClient::new(HelloMailbox::new(mailbox))
     }
-    pub fn tower() -> HelloTowerBlockBuilder {
-        HelloTowerBlockBuilder::default()
+    pub fn tower() -> HelloTowerLayerStack {
+        HelloTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn mock() -> MockHello {
@@ -270,9 +278,9 @@ impl tower::Service<quickwit_common::ServiceStream<PingRequest>> for Box<dyn Hel
         Box::pin(fut)
     }
 }
-/// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
+/// A tower service stack is a set of tower services.
 #[derive(Debug)]
-struct HelloTowerBlock {
+struct HelloTowerServiceStack {
     inner: Box<dyn Hello>,
     hello_svc: quickwit_common::tower::BoxService<
         HelloRequest,
@@ -290,7 +298,7 @@ struct HelloTowerBlock {
         crate::HelloError,
     >,
 }
-impl Clone for HelloTowerBlock {
+impl Clone for HelloTowerServiceStack {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -301,7 +309,7 @@ impl Clone for HelloTowerBlock {
     }
 }
 #[async_trait::async_trait]
-impl Hello for HelloTowerBlock {
+impl Hello for HelloTowerServiceStack {
     async fn hello(
         &mut self,
         request: HelloRequest,
@@ -327,52 +335,171 @@ impl Hello for HelloTowerBlock {
         self.inner.endpoints()
     }
 }
+type HelloLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<HelloRequest, HelloResponse, crate::HelloError>,
+    HelloRequest,
+    HelloResponse,
+    crate::HelloError,
+>;
+type GoodbyeLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        GoodbyeRequest,
+        GoodbyeResponse,
+        crate::HelloError,
+    >,
+    GoodbyeRequest,
+    GoodbyeResponse,
+    crate::HelloError,
+>;
+type PingLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        quickwit_common::ServiceStream<PingRequest>,
+        HelloStream<PingResponse>,
+        crate::HelloError,
+    >,
+    quickwit_common::ServiceStream<PingRequest>,
+    HelloStream<PingResponse>,
+    crate::HelloError,
+>;
 #[derive(Debug, Default)]
-pub struct HelloTowerBlockBuilder {
-    #[allow(clippy::type_complexity)]
-    hello_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn Hello>,
-            HelloRequest,
-            HelloResponse,
-            crate::HelloError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    goodbye_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn Hello>,
-            GoodbyeRequest,
-            GoodbyeResponse,
-            crate::HelloError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    ping_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn Hello>,
-            quickwit_common::ServiceStream<PingRequest>,
-            HelloStream<PingResponse>,
-            crate::HelloError,
-        >,
-    >,
+pub struct HelloTowerLayerStack {
+    hello_layers: Vec<HelloLayer>,
+    goodbye_layers: Vec<GoodbyeLayer>,
+    ping_layers: Vec<PingLayer>,
 }
-impl HelloTowerBlockBuilder {
-    pub fn shared_layer<L>(mut self, layer: L) -> Self
+impl HelloTowerLayerStack {
+    pub fn stack_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn Hello>> + Clone + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    HelloRequest,
+                    HelloResponse,
+                    crate::HelloError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                HelloRequest,
+                HelloResponse,
+                crate::HelloError,
+            >,
+        >>::Service: tower::Service<
+                HelloRequest,
+                Response = HelloResponse,
+                Error = crate::HelloError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                HelloRequest,
+                HelloResponse,
+                crate::HelloError,
+            >,
+        >>::Service as tower::Service<HelloRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GoodbyeRequest,
+                    GoodbyeResponse,
+                    crate::HelloError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GoodbyeRequest,
+                GoodbyeResponse,
+                crate::HelloError,
+            >,
+        >>::Service: tower::Service<
+                GoodbyeRequest,
+                Response = GoodbyeResponse,
+                Error = crate::HelloError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GoodbyeRequest,
+                GoodbyeResponse,
+                crate::HelloError,
+            >,
+        >>::Service as tower::Service<GoodbyeRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    quickwit_common::ServiceStream<PingRequest>,
+                    HelloStream<PingResponse>,
+                    crate::HelloError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                quickwit_common::ServiceStream<PingRequest>,
+                HelloStream<PingResponse>,
+                crate::HelloError,
+            >,
+        >>::Service: tower::Service<
+                quickwit_common::ServiceStream<PingRequest>,
+                Response = HelloStream<PingResponse>,
+                Error = crate::HelloError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                quickwit_common::ServiceStream<PingRequest>,
+                HelloStream<PingResponse>,
+                crate::HelloError,
+            >,
+        >>::Service as tower::Service<
+            quickwit_common::ServiceStream<PingRequest>,
+        >>::Future: Send + 'static,
+    {
+        self.hello_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.goodbye_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.ping_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self
+    }
+    pub fn stack_hello_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    HelloRequest,
+                    HelloResponse,
+                    crate::HelloError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 HelloRequest,
                 Response = HelloResponse,
                 Error = crate::HelloError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<HelloRequest>>::Future: Send + 'static,
+    {
+        self.hello_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_goodbye_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GoodbyeRequest,
+                    GoodbyeResponse,
+                    crate::HelloError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 GoodbyeRequest,
                 Response = GoodbyeResponse,
                 Error = crate::HelloError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<GoodbyeRequest>>::Future: Send + 'static,
+    {
+        self.goodbye_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_ping_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    quickwit_common::ServiceStream<PingRequest>,
+                    HelloStream<PingResponse>,
+                    crate::HelloError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 quickwit_common::ServiceStream<PingRequest>,
                 Response = HelloStream<PingResponse>,
@@ -382,50 +509,7 @@ impl HelloTowerBlockBuilder {
             quickwit_common::ServiceStream<PingRequest>,
         >>::Future: Send + 'static,
     {
-        self.hello_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.goodbye_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.ping_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn hello_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn Hello>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                HelloRequest,
-                Response = HelloResponse,
-                Error = crate::HelloError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<HelloRequest>>::Future: Send + 'static,
-    {
-        self.hello_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn goodbye_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn Hello>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                GoodbyeRequest,
-                Response = GoodbyeResponse,
-                Error = crate::HelloError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<GoodbyeRequest>>::Future: Send + 'static,
-    {
-        self.goodbye_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn ping_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn Hello>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                quickwit_common::ServiceStream<PingRequest>,
-                Response = HelloStream<PingResponse>,
-                Error = crate::HelloError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            quickwit_common::ServiceStream<PingRequest>,
-        >>::Future: Send + 'static,
-    {
-        self.ping_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.ping_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> HelloClient
@@ -438,15 +522,21 @@ impl HelloTowerBlockBuilder {
         self,
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> HelloClient {
-        self.build_from_boxed(Box::new(HelloClient::from_channel(addr, channel)))
+        self.build_from_boxed(
+            Box::new(HelloClient::from_channel(addr, channel, max_message_size)),
+        )
     }
     pub fn build_from_balance_channel(
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> HelloClient {
         self.build_from_boxed(
-            Box::new(HelloClient::from_balance_channel(balance_channel)),
+            Box::new(
+                HelloClient::from_balance_channel(balance_channel, max_message_size),
+            ),
         )
     }
     pub fn build_from_mailbox<A>(
@@ -460,28 +550,37 @@ impl HelloTowerBlockBuilder {
         self.build_from_boxed(Box::new(HelloMailbox::new(mailbox)))
     }
     fn build_from_boxed(self, boxed_instance: Box<dyn Hello>) -> HelloClient {
-        let hello_svc = if let Some(layer) = self.hello_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let goodbye_svc = if let Some(layer) = self.goodbye_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let ping_svc = if let Some(layer) = self.ping_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let tower_block = HelloTowerBlock {
+        let hello_svc = self
+            .hello_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let goodbye_svc = self
+            .goodbye_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let ping_svc = self
+            .ping_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let tower_svc_stack = HelloTowerServiceStack {
             inner: boxed_instance.clone(),
             hello_svc,
             goodbye_svc,
             ping_svc,
         };
-        HelloClient::new(tower_block)
+        HelloClient::new(tower_svc_stack)
     }
 }
 #[derive(Debug, Clone)]

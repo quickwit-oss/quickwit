@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -23,9 +23,9 @@ use base64::Engine;
 use futures::future::ready;
 use futures::{Future, StreamExt};
 use quickwit_proto::search::{
-    FetchDocsRequest, FetchDocsResponse, GetKvRequest, LeafListTermsRequest, LeafListTermsResponse,
-    LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest, LeafSearchStreamResponse,
-    PutKvRequest,
+    FetchDocsRequest, FetchDocsResponse, GetKvRequest, LeafListFieldsRequest, LeafListTermsRequest,
+    LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest,
+    LeafSearchStreamResponse, ListFieldsResponse, PutKvRequest,
 };
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tokio::sync::mpsc::error::SendError;
@@ -110,6 +110,15 @@ impl ClusterClient {
             response_res = merge_leaf_search_results(response_res, retry_result);
         }
         response_res
+    }
+
+    /// Leaf search with retry on another node client.
+    pub async fn leaf_list_fields(
+        &self,
+        request: LeafListFieldsRequest,
+        mut client: SearchServiceClient,
+    ) -> crate::Result<ListFieldsResponse> {
+        client.leaf_list_fields(request.clone()).await
     }
 
     /// Leaf search stream with retry on another node client.
@@ -700,23 +709,24 @@ mod tests {
     #[tokio::test]
     async fn test_put_kv_happy_path() {
         // 3 servers 1, 2, 3
-        // Targetted key has affinity [1, 2, 3].
+        // Targetted key has affinity [2, 3, 1].
         //
-        // Put on 1 and 2 is successful
-        // Get succeeds on 1.
-        let mut mock_search_service_1 = MockSearchService::new();
-        mock_search_service_1
-            .expect_put_kv()
-            .once()
-            .returning(|_put_req: quickwit_proto::search::PutKvRequest| {});
-        mock_search_service_1.expect_get_kv().once().returning(
-            |_get_req: quickwit_proto::search::GetKvRequest| Some(b"my_payload".to_vec()),
-        );
+        // Put on 2 and 3 is successful
+        // Get succeeds on 2.
+        let mock_search_service_1 = MockSearchService::new();
         let mut mock_search_service_2 = MockSearchService::new();
-        mock_search_service_2
-            .expect_put_kv()
-            .once()
-            .returning(|_put_req: quickwit_proto::search::PutKvRequest| {});
+        mock_search_service_2.expect_put_kv().once().returning(
+            |put_req: quickwit_proto::search::PutKvRequest| {
+                assert_eq!(put_req.key, b"my_key");
+                assert_eq!(put_req.payload, b"my_payload");
+            },
+        );
+        mock_search_service_2.expect_get_kv().once().returning(
+            |get_req: quickwit_proto::search::GetKvRequest| {
+                assert_eq!(get_req.key, b"my_key");
+                Some(b"my_payload".to_vec())
+            },
+        );
         let mut mock_search_service_3 = MockSearchService::new();
         // Due to the buffered call it is possible for the
         // put request to 3 to be emitted too.
@@ -744,32 +754,38 @@ mod tests {
     #[tokio::test]
     async fn test_put_kv_failing_get() {
         // 3 servers 1, 2, 3
-        // Targetted key has affinity [1, 2, 3].
+        // Targetted key has affinity [2, 3, 1].
         //
-        // Put on 1 and 2 is successful
-        // Get fails on 1.
-        // Get succeeds on 2.
-        let mut mock_search_service_1 = MockSearchService::new();
-        mock_search_service_1
-            .expect_put_kv()
-            .once()
-            .returning(|_put_req: quickwit_proto::search::PutKvRequest| {});
-        mock_search_service_1
-            .expect_get_kv()
-            .once()
-            .returning(|_get_req: quickwit_proto::search::GetKvRequest| None);
+        // Put on 2 and 3 is successful
+        // Get fails on 2.
+        // Get succeeds on 3.
+        let mock_search_service_1 = MockSearchService::new();
         let mut mock_search_service_2 = MockSearchService::new();
-        mock_search_service_2
-            .expect_put_kv()
-            .once()
-            .returning(|_put_req: quickwit_proto::search::PutKvRequest| {});
+        mock_search_service_2.expect_put_kv().once().returning(
+            |put_req: quickwit_proto::search::PutKvRequest| {
+                assert_eq!(put_req.key, b"my_key");
+                assert_eq!(put_req.payload, b"my_payload");
+            },
+        );
         mock_search_service_2.expect_get_kv().once().returning(
-            |_get_req: quickwit_proto::search::GetKvRequest| Some(b"my_payload".to_vec()),
+            |get_req: quickwit_proto::search::GetKvRequest| {
+                assert_eq!(get_req.key, b"my_key");
+                None
+            },
         );
         let mut mock_search_service_3 = MockSearchService::new();
-        mock_search_service_3
-            .expect_put_kv()
-            .returning(|_leaf_search_req: quickwit_proto::search::PutKvRequest| {});
+        mock_search_service_3.expect_put_kv().once().returning(
+            |put_req: quickwit_proto::search::PutKvRequest| {
+                assert_eq!(put_req.key, b"my_key");
+                assert_eq!(put_req.payload, b"my_payload");
+            },
+        );
+        mock_search_service_3.expect_get_kv().once().returning(
+            |get_req: quickwit_proto::search::GetKvRequest| {
+                assert_eq!(get_req.key, b"my_key");
+                Some(b"my_payload".to_vec())
+            },
+        );
         let searcher_pool = searcher_pool_for_test([
             ("127.0.0.1:1001", mock_search_service_1),
             ("127.0.0.1:1002", mock_search_service_2),

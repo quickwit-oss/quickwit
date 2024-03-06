@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -18,18 +18,21 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 pub mod control_plane;
-pub(crate) mod control_plane_model;
 pub mod indexing_plan;
 pub mod indexing_scheduler;
 pub mod ingest;
 pub(crate) mod metrics;
+pub(crate) mod model;
 
 use quickwit_common::tower::Pool;
 use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask};
+use quickwit_proto::types::NodeId;
 
 /// Indexer-node specific information stored in the pool of available indexer nodes
 #[derive(Debug, Clone)]
 pub struct IndexerNodeInfo {
+    pub node_id: NodeId,
+    pub generation_id: u64,
     pub client: IndexingServiceClient,
     pub indexing_tasks: Vec<IndexingTask>,
     pub indexing_capacity: CpuCapacity,
@@ -37,5 +40,6 @@ pub struct IndexerNodeInfo {
 
 pub type IndexerPool = Pool<String, IndexerNodeInfo>;
 
+mod debouncer;
 #[cfg(test)]
 mod tests;

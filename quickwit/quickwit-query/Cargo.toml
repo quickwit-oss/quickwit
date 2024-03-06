@@ -1,20 +1,21 @@
 [package]
 name = "quickwit-query"
-version = "0.6.5-dev"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
-description = "Quickwit's query DSL"
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+description = "Query DSL definition and parsing"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
 base64 = { workspace = true }
 fnv = { workspace = true }
 hex = { workspace = true }
-lindera-core = { workspace = true, optional = true}
+lindera-core = { workspace = true, optional = true }
 lindera-dictionary = { workspace = true, optional = true }
 lindera-tokenizer = { workspace = true, optional = true }
 once_cell = { workspace = true }

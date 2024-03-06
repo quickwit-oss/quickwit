@@ -1,0 +1,17 @@
+version: 0.7
+
+index_id: fluentbit-logs
+
+doc_mapping:
+  mode: dynamic
+  field_mappings:
+    - name: timestamp
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      fast: true
+  timestamp_field: timestamp
+
+indexing_settings:
+  commit_timeout_secs: 10

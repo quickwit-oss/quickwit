@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::{Duration, Instant};
+
 use quickwit_proto::ingest::ShardState;
 use quickwit_proto::types::{NodeId, Position};
 use tokio::sync::watch;
@@ -31,6 +33,9 @@ pub(super) enum IngesterShardType {
     Solo,
 }
 
+/// Status of a shard: state + position of the last record written.
+pub(super) type ShardStatus = (ShardState, Position);
+
 #[derive(Debug)]
 pub(super) struct IngesterShard {
     pub shard_type: IngesterShardType,
@@ -39,8 +44,10 @@ pub(super) struct IngesterShard {
     pub replication_position_inclusive: Position,
     /// Position up to which the shard has been truncated.
     pub truncation_position_inclusive: Position,
-    pub new_records_tx: watch::Sender<()>,
-    pub new_records_rx: watch::Receiver<()>,
+    pub shard_status_tx: watch::Sender<ShardStatus>,
+    pub shard_status_rx: watch::Receiver<ShardStatus>,
+    /// Instant at which the shard was last written to.
+    pub last_write_instant: Instant,
 }
 
 impl IngesterShard {
@@ -49,15 +56,18 @@ impl IngesterShard {
         shard_state: ShardState,
         replication_position_inclusive: Position,
         truncation_position_inclusive: Position,
+        now: Instant,
     ) -> Self {
-        let (new_records_tx, new_records_rx) = watch::channel(());
+        let shard_status = (shard_state, replication_position_inclusive.clone());
+        let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
         Self {
             shard_type: IngesterShardType::Primary { follower_id },
             shard_state,
             replication_position_inclusive,
             truncation_position_inclusive,
-            new_records_tx,
-            new_records_rx,
+            shard_status_tx,
+            shard_status_rx,
+            last_write_instant: now,
         }
     }
 
@@ -66,15 +76,18 @@ impl IngesterShard {
         shard_state: ShardState,
         replication_position_inclusive: Position,
         truncation_position_inclusive: Position,
+        now: Instant,
     ) -> Self {
-        let (new_records_tx, new_records_rx) = watch::channel(());
+        let shard_status = (shard_state, replication_position_inclusive.clone());
+        let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
         Self {
             shard_type: IngesterShardType::Replica { leader_id },
             shard_state,
             replication_position_inclusive,
             truncation_position_inclusive,
-            new_records_tx,
-            new_records_rx,
+            shard_status_tx,
+            shard_status_rx,
+            last_write_instant: now,
         }
     }
 
@@ -82,31 +95,76 @@ impl IngesterShard {
         shard_state: ShardState,
         replication_position_inclusive: Position,
         truncation_position_inclusive: Position,
+        now: Instant,
     ) -> Self {
-        let (new_records_tx, new_records_rx) = watch::channel(());
+        let shard_status = (shard_state, replication_position_inclusive.clone());
+        let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
         Self {
             shard_type: IngesterShardType::Solo,
             shard_state,
             replication_position_inclusive,
             truncation_position_inclusive,
-            new_records_tx,
-            new_records_rx,
+            shard_status_tx,
+            shard_status_rx,
+            last_write_instant: now,
         }
     }
 
-    pub fn notify_new_records(&mut self) {
-        // `new_records_tx` is guaranteed to be open because `self` also holds a receiver.
-        self.new_records_tx
-            .send(())
+    pub fn follower_id_opt(&self) -> Option<&NodeId> {
+        match &self.shard_type {
+            IngesterShardType::Primary { follower_id } => Some(follower_id),
+            IngesterShardType::Replica { .. } => None,
+            IngesterShardType::Solo => None,
+        }
+    }
+
+    pub fn close(&mut self) {
+        self.shard_state = ShardState::Closed;
+        self.notify_shard_status();
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.shard_state.is_closed()
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.shard_state.is_open()
+    }
+
+    pub fn is_idle(&self, now: Instant, idle_timeout: Duration) -> bool {
+        now.duration_since(self.last_write_instant) >= idle_timeout
+    }
+
+    pub fn is_indexed(&self) -> bool {
+        self.shard_state.is_closed() && self.truncation_position_inclusive.is_eof()
+    }
+
+    pub fn is_replica(&self) -> bool {
+        matches!(self.shard_type, IngesterShardType::Replica { .. })
+    }
+
+    pub fn notify_shard_status(&self) {
+        // `shard_status_tx` is guaranteed to be open because `self` also holds a receiver.
+        let shard_status = (
+            self.shard_state,
+            self.replication_position_inclusive.clone(),
+        );
+        self.shard_status_tx
+            .send(shard_status)
             .expect("channel should be open");
     }
 
-    pub fn set_replication_position_inclusive(&mut self, replication_position_inclusive: Position) {
+    pub fn set_replication_position_inclusive(
+        &mut self,
+        replication_position_inclusive: Position,
+        now: Instant,
+    ) {
         if self.replication_position_inclusive == replication_position_inclusive {
             return;
         }
         self.replication_position_inclusive = replication_position_inclusive;
-        self.notify_new_records();
+        self.last_write_instant = now;
+        self.notify_shard_status();
     }
 }
 
@@ -141,12 +199,7 @@ mod tests {
         }
 
         #[track_caller]
-        pub fn assert_replication_position(
-            &self,
-            expected_replication_position: impl Into<Position>,
-        ) {
-            let expected_replication_position = expected_replication_position.into();
-
+        pub fn assert_replication_position(&self, expected_replication_position: Position) {
             assert_eq!(
                 self.replication_position_inclusive, expected_replication_position,
                 "expected replication position at `{:?}`, got `{:?}`",
@@ -155,12 +208,7 @@ mod tests {
         }
 
         #[track_caller]
-        pub fn assert_truncation_position(
-            &self,
-            expected_truncation_position: impl Into<Position>,
-        ) {
-            let expected_truncation_position = expected_truncation_position.into();
-
+        pub fn assert_truncation_position(&self, expected_truncation_position: Position) {
             assert_eq!(
                 self.truncation_position_inclusive, expected_truncation_position,
                 "expected truncation position at `{:?}`, got `{:?}`",
@@ -174,43 +222,69 @@ mod tests {
         let primary_shard = IngesterShard::new_primary(
             "test-follower".into(),
             ShardState::Closed,
-            Position::from(42u64),
-            Position::Eof,
+            Position::offset(42u64),
+            Position::Beginning,
+            Instant::now(),
         );
         assert!(matches!(
-            primary_shard.shard_type,
-            IngesterShardType::Primary { .. }
+            &primary_shard.shard_type,
+            IngesterShardType::Primary { follower_id } if *follower_id == "test-follower"
         ));
+        assert!(!primary_shard.is_replica());
         assert_eq!(primary_shard.shard_state, ShardState::Closed);
-        assert_eq!(primary_shard.truncation_position_inclusive, Position::Eof);
         assert_eq!(
             primary_shard.replication_position_inclusive,
-            Position::from(42u64)
+            Position::offset(42u64)
+        );
+        assert_eq!(
+            primary_shard.truncation_position_inclusive,
+            Position::Beginning
         );
     }
 
     #[test]
     fn test_new_replica_shard() {
-        let solo_shard = IngesterShard::new_solo(ShardState::Closed, 42u64.into(), Position::Eof);
-        assert_eq!(solo_shard.shard_type, IngesterShardType::Solo);
-        assert_eq!(solo_shard.shard_state, ShardState::Closed);
-        assert_eq!(solo_shard.truncation_position_inclusive, Position::Eof);
+        let replica_shard = IngesterShard::new_replica(
+            "test-leader".into(),
+            ShardState::Closed,
+            Position::offset(42u64),
+            Position::Beginning,
+            Instant::now(),
+        );
+        assert!(matches!(
+            &replica_shard.shard_type,
+            IngesterShardType::Replica { leader_id } if *leader_id == "test-leader"
+        ));
+        assert!(replica_shard.is_replica());
+        assert_eq!(replica_shard.shard_state, ShardState::Closed);
         assert_eq!(
-            solo_shard.replication_position_inclusive,
-            Position::from(42u64)
+            replica_shard.replication_position_inclusive,
+            Position::offset(42u64)
+        );
+        assert_eq!(
+            replica_shard.truncation_position_inclusive,
+            Position::Beginning
         );
     }
 
     #[test]
     fn test_new_solo_shard() {
-        let solo_shard =
-            IngesterShard::new_solo(ShardState::Closed, Position::from(42u64), Position::Eof);
+        let solo_shard = IngesterShard::new_solo(
+            ShardState::Closed,
+            Position::offset(42u64),
+            Position::Beginning,
+            Instant::now(),
+        );
         assert_eq!(solo_shard.shard_type, IngesterShardType::Solo);
+        assert!(!solo_shard.is_replica());
         assert_eq!(solo_shard.shard_state, ShardState::Closed);
-        assert_eq!(solo_shard.truncation_position_inclusive, Position::Eof);
         assert_eq!(
             solo_shard.replication_position_inclusive,
-            Position::from(42u64)
+            Position::offset(42u64)
+        );
+        assert_eq!(
+            solo_shard.truncation_position_inclusive,
+            Position::Beginning
         );
     }
 }

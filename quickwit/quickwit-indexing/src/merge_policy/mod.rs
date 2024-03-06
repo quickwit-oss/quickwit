@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -22,6 +22,7 @@ mod nop_merge_policy;
 mod stable_log_merge_policy;
 
 use std::fmt;
+use std::ops::Deref;
 use std::sync::Arc;
 
 pub(crate) use const_write_amplification::ConstWriteAmplificationMergePolicy;
@@ -32,8 +33,10 @@ use quickwit_config::IndexingSettings;
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use serde::Serialize;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
+use tantivy::TrackedObject;
 use tracing::{info_span, Span};
 
+use crate::actors::MergePermit;
 use crate::new_split_id;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -45,6 +48,37 @@ pub enum MergeOperationType {
 impl fmt::Display for MergeOperationType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+
+pub struct MergeTask {
+    pub merge_operation: TrackedObject<MergeOperation>,
+    pub(crate) _merge_permit: MergePermit,
+}
+
+impl MergeTask {
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn from_merge_operation_for_test(merge_operation: MergeOperation) -> MergeTask {
+        let inventory = tantivy::Inventory::default();
+        let tracked_merge_operation = inventory.track(merge_operation);
+        MergeTask {
+            merge_operation: tracked_merge_operation,
+            _merge_permit: MergePermit::for_test(),
+        }
+    }
+}
+
+impl fmt::Debug for MergeTask {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.merge_operation.as_ref().fmt(f)
+    }
+}
+
+impl Deref for MergeTask {
+    type Target = MergeOperation;
+
+    fn deref(&self) -> &Self::Target {
+        self.merge_operation.as_ref()
     }
 }
 
@@ -68,6 +102,13 @@ impl MergeOperation {
             splits,
             operation_type: MergeOperationType::Merge,
         }
+    }
+
+    pub fn total_num_bytes(&self) -> u64 {
+        self.splits
+            .iter()
+            .map(|split: &SplitMetadata| split.footer_offsets.end)
+            .sum()
     }
 
     pub fn new_delete_and_merge_operation(split: SplitMetadata) -> Self {
@@ -170,13 +211,14 @@ pub mod tests {
     use proptest::prelude::*;
     use quickwit_actors::Universe;
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use rand::seq::SliceRandom;
-    use tantivy::TrackedObject;
     use time::OffsetDateTime;
 
     use super::*;
-    use crate::actors::{merge_split_attrs, MergePlanner, MergeSplitDownloader};
+    use crate::actors::{
+        merge_split_attrs, MergePlanner, MergeSchedulerService, MergeSplitDownloader,
+    };
     use crate::models::{create_split_metadata, NewSplits};
 
     fn pow_of_10(n: usize) -> usize {
@@ -335,7 +377,7 @@ pub mod tests {
             index_uid: IndexUid::new_with_random_ulid("test_index"),
             source_id: "test_source".to_string(),
             node_id: "test_node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         let split_attrs = merge_split_attrs(merged_split_id, &pipeline_id, splits);
         create_split_metadata(merge_policy, &split_attrs, tags, 0..0)
@@ -360,19 +402,20 @@ pub mod tests {
         check_final_configuration: CheckFn,
     ) -> anyhow::Result<Vec<SplitMetadata>> {
         let universe = Universe::new();
-        let (merge_op_mailbox, merge_op_inbox) =
+        let (merge_task_mailbox, merge_task_inbox) =
             universe.create_test_mailbox::<MergeSplitDownloader>();
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_planner = MergePlanner::new(
             pipeline_id,
             Vec::new(),
             merge_policy.clone(),
-            merge_op_mailbox,
+            merge_task_mailbox,
+            universe.get_or_spawn_one::<MergeSchedulerService>(),
         );
         let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
         let (merge_planner_mailbox, merge_planner_handler) =
@@ -388,12 +431,11 @@ pub mod tests {
             loop {
                 let obs = merge_planner_handler.process_pending_and_observe().await;
                 assert_eq!(obs.obs_type, quickwit_actors::ObservationType::Alive);
-                let merge_ops =
-                    merge_op_inbox.drain_for_test_typed::<TrackedObject<MergeOperation>>();
-                if merge_ops.is_empty() {
+                let merge_tasks = merge_task_inbox.drain_for_test_typed::<MergeTask>();
+                if merge_tasks.is_empty() {
                     break;
                 }
-                let new_splits: Vec<SplitMetadata> = merge_ops
+                let new_splits: Vec<SplitMetadata> = merge_tasks
                     .into_iter()
                     .map(|merge_op| apply_merge(&merge_policy, &mut split_index, &merge_op))
                     .collect();

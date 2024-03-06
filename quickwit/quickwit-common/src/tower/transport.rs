@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -193,7 +193,7 @@ pub async fn make_channel(socket_addr: SocketAddr) -> Channel {
         .authority(socket_addr.to_string())
         .path_and_query("/")
         .build()
-        .expect("The provided arguments should be valid.");
+        .expect("provided arguments should be valid");
     Endpoint::from(uri)
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(30))

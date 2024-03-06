@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -89,12 +89,13 @@ impl RetryParams {
     /// Panics if `num_attempts` is zero.
     pub fn compute_delay(&self, num_attempts: usize) -> Duration {
         assert!(num_attempts > 0, "num_attempts should be greater than zero");
-
-        let delay_ms = self.base_delay.as_millis() as u64 * 2u64.pow(num_attempts as u32 - 1);
-        let ceil_delay_ms = delay_ms.min(self.max_delay.as_millis() as u64);
-        let half_delay_ms = ceil_delay_ms / 2;
-        let jitter_range = 0..half_delay_ms + 1;
-        let jittered_delay_ms = half_delay_ms + rand::thread_rng().gen_range(jitter_range);
+        let num_attempts = num_attempts.min(32);
+        let delay_ms = (self.base_delay.as_millis() as u64)
+            .saturating_mul(2u64.saturating_pow(num_attempts as u32 - 1));
+        let capped_delay_ms = delay_ms.min(self.max_delay.as_millis() as u64);
+        let half_delay_ms = (capped_delay_ms + 1) / 2;
+        let jitter_range = half_delay_ms..capped_delay_ms + 1;
+        let jittered_delay_ms = rand::thread_rng().gen_range(jitter_range);
         Duration::from_millis(jittered_delay_ms)
     }
 
@@ -257,5 +258,31 @@ mod tests {
             .chain(Some(Ok(())))
             .collect();
         assert_eq!(simulate_retries(retry_sequence).await, Ok(()));
+    }
+
+    fn test_retry_delay_does_not_overflow_aux(retry_params: RetryParams) {
+        for i in 1..100 {
+            let delay = retry_params.compute_delay(i);
+            assert!(delay <= retry_params.max_delay);
+            if retry_params.base_delay <= retry_params.max_delay {
+                assert!(delay * 2 >= retry_params.base_delay);
+            }
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn test_retry_delay_does_not_overflow(
+            max_attempts in 1..1_000usize,
+            base_delay in 0..1_000u64,
+            max_delay in 0..60_000u64,
+        ) {
+            let retry_params = RetryParams {
+                max_attempts,
+                base_delay: Duration::from_millis(base_delay),
+                max_delay: Duration::from_millis(max_delay),
+            };
+            test_retry_delay_does_not_overflow_aux(retry_params);
+        }
     }
 }

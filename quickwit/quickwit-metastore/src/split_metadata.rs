@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -133,8 +133,9 @@ pub struct SplitMetadata {
     /// this split.
     pub num_merge_ops: usize,
 }
+
 impl fmt::Debug for SplitMetadata {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut debug_struct = f.debug_struct("SplitMetadata");
         debug_struct.field("split_id", &self.split_id);
         debug_struct.field("index_uid", &self.index_uid);
@@ -219,8 +220,8 @@ impl SplitMetadata {
 
     #[cfg(any(test, feature = "testsuite"))]
     /// Returns an instance of `SplitMetadata` for testing.
-    pub fn for_test(split_id: String) -> Self {
-        Self {
+    pub fn for_test(split_id: String) -> SplitMetadata {
+        SplitMetadata {
             split_id,
             ..Default::default()
         }
@@ -283,7 +284,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
         }
     }
 
-    fn test_equality(&self, other: &Self) {
+    fn assert_equality(&self, other: &Self) {
         assert_eq!(self, other);
     }
 }
@@ -424,9 +425,9 @@ mod tests {
             num_merge_ops: 0,
         };
 
-        let expected_output = "SplitMetadata { split_id: \"split-1\", index_uid: \
-                               IndexUid(\"00000000-0000-0000-0000-000000000000:\
-                               00000000000000000000000000\"), partition_id: 0, source_id: \
+        let expected_output = "SplitMetadata { split_id: \"split-1\", index_uid: IndexUid { \
+                               index_id: \"00000000-0000-0000-0000-000000000000\", \
+                               incarnation_id: Ulid(0) }, partition_id: 0, source_id: \
                                \"source-1\", node_id: \"node-1\", num_docs: 100, \
                                uncompressed_docs_size_in_bytes: 1024, time_range: Some(0..=100), \
                                create_timestamp: 1629867600, maturity: Mature, tags: \

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,15 +20,16 @@
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use chitchat::transport::ChannelTransport;
 use fnv::FnvHashMap;
 use futures::{Stream, StreamExt};
 use quickwit_actors::{Inbox, Mailbox, Observe, Universe};
-use quickwit_cluster::{create_cluster_for_test, Cluster, ClusterChange};
+use quickwit_cluster::{create_cluster_for_test, ChannelTransport, Cluster, ClusterChange};
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::tower::{Change, Pool};
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams};
+use quickwit_config::{
+    ClusterConfig, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
+};
 use quickwit_indexing::IndexingService;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
@@ -83,12 +84,15 @@ pub fn test_indexer_change_stream(
                     if node.enabled_services().contains(&QuickwitService::Indexer) =>
                 {
                     let node_id = node.node_id().to_string();
+                    let generation_id = node.chitchat_id().generation_id;
                     let indexing_tasks = node.indexing_tasks().to_vec();
                     let client_mailbox = indexing_clients.get(&node_id).unwrap().clone();
                     let client = IndexingServiceClient::from_mailbox(client_mailbox);
                     Some(Change::Insert(
-                        node_id,
+                        node_id.clone(),
                         IndexerNodeInfo {
+                            node_id: NodeId::from(node_id),
+                            generation_id,
                             client,
                             indexing_tasks,
                             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
@@ -130,7 +134,6 @@ async fn start_control_plane(
 
     let indexer_pool = Pool::default();
     let ingester_pool = Pool::default();
-    let change_stream = cluster.ready_nodes_change_stream().await;
     let mut indexing_clients = FnvHashMap::default();
 
     for indexer in indexers {
@@ -138,18 +141,22 @@ async fn start_control_plane(
         indexing_clients.insert(indexer.self_node_id().to_string(), indexing_service_mailbox);
         indexer_inboxes.push(indexing_service_inbox);
     }
-    let indexer_change_stream = test_indexer_change_stream(change_stream, indexing_clients);
+    let indexer_change_stream =
+        test_indexer_change_stream(cluster.change_stream(), indexing_clients);
     indexer_pool.listen_for_changes(indexer_change_stream);
+
+    let mut cluster_config = ClusterConfig::for_test();
+    cluster_config.cluster_id = cluster.cluster_id().to_string();
 
     let self_node_id: NodeId = cluster.self_node_id().to_string().into();
     let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
         universe,
-        cluster.cluster_id().to_string(),
+        cluster_config,
         self_node_id,
+        cluster,
         indexer_pool,
         ingester_pool,
         MetastoreServiceClient::from(metastore),
-        1,
     );
 
     (indexer_inboxes, control_plane_mailbox)

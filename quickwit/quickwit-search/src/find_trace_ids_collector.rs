@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -186,8 +186,7 @@ fn merge_segment_fruits(mut segment_fruits: Vec<Vec<Span>>, num_traces: usize) -
     let mut seen_trace_ids: FnvHashSet<TraceId> = FnvHashSet::default();
 
     for span in segment_fruits.into_iter().kmerge() {
-        if !seen_trace_ids.contains(&span.trace_id) {
-            seen_trace_ids.insert(span.trace_id);
+        if seen_trace_ids.insert(span.trace_id) {
             spans.push(span);
 
             if spans.len() == num_traces {
@@ -227,7 +226,7 @@ impl SegmentCollector for FindTraceIdsSegmentCollector {
     }
 
     fn harvest(self) -> Self::Fruit {
-        let mut buffer = Vec::with_capacity(TraceId::BASE64_LENGTH);
+        let mut buffer = Vec::with_capacity(TraceId::HEX_LENGTH);
         self.select_trace_ids
             .harvest()
             .into_iter()
@@ -327,7 +326,6 @@ impl SelectTraceIds {
             return;
         }
         self.select();
-
         for trace_id in self.select_workbench.drain(..self.num_traces) {
             self.dedup_workbench
                 .insert(trace_id.term_ord, trace_id.span_timestamp);

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -75,7 +75,7 @@ export function IndexSummary({ index }: { index: Index }) {
           {dayjs
             .unix(index.metadata.create_timestamp)
             .utc()
-            .format("YYYY/MM/DD HH:MM")}
+            .format("YYYY/MM/DD HH:mm")}
         </IndexRow>
         <IndexRow title="URI:">{index.metadata.index_config.index_uri}</IndexRow>
         <IndexRow title="Number of published documents:">

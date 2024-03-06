@@ -63,3 +63,19 @@ expected:
       - _source:
           actor:
             id: 5688
+---
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
+    _doc: {}
+expected:
+  hits:
+    total:
+      value: 100
+      relation: eq
+    hits:
+      - _source:
+          actor:
+            id: 1762355

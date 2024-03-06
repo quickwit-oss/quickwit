@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -232,12 +232,30 @@ mod tests {
                 "2012-05-21 12:09:14 -03:00",
                 datetime!(2012-05-21 15:09:14 UTC),
             ),
+            (
+                "%Y-%m-%d %H:%M:%S.%f",
+                "2024-01-31 18:40:19.950",
+                datetime!(2024-01-31 18:40:19.950000000 UTC),
+            ),
+            (
+                "%Y-%m-%d %H:%M:%S.%f",
+                "2024-01-31 18:40:19.950188",
+                datetime!(2024-01-31 18:40:19.950188000 UTC),
+            ),
+            (
+                "%Y-%m-%d %H:%M:%S.%f",
+                "2024-01-31 18:40:19.950188123",
+                datetime!(2024-01-31 18:40:19.950188123 UTC),
+            ),
         ];
         for (fmt, date_time_str, expected) in test_data {
             let parser = StrptimeParser::from_str(fmt).unwrap();
             let result = parser.parse_date_time(date_time_str);
             if let Err(error) = &result {
-                panic!("Failed to parse: {date_time_str} {fmt} {error}")
+                panic!(
+                    "failed to parse `{date_time_str}` using the following strptime format \
+                     `{fmt}`: {error}"
+                )
             }
             assert_eq!(result.unwrap(), expected);
         }

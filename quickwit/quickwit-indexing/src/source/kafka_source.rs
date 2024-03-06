@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -323,7 +323,7 @@ impl KafkaSource {
                 )
             })?
             .clone();
-        let current_position = Position::from(offset);
+        let current_position = Position::offset(offset);
         let previous_position = self
             .state
             .current_positions
@@ -384,7 +384,7 @@ impl KafkaSource {
                         .expect("Kafka offset should be stored as i64");
                     Offset::Offset(offset + 1)
                 }
-                Position::Eof => {
+                Position::Eof(_) => {
                     panic!("position of a Kafka partition should never be EOF")
                 }
             };
@@ -542,13 +542,8 @@ impl Source for KafkaSource {
     fn observable_state(&self) -> JsonValue {
         let assigned_partitions: Vec<&i32> =
             self.state.assigned_partitions.keys().sorted().collect();
-        let current_positions: Vec<(&i32, &str)> = self
-            .state
-            .current_positions
-            .iter()
-            .map(|(partition, position)| (partition, position.as_str()))
-            .sorted()
-            .collect();
+        let current_positions: Vec<(&i32, &Position)> =
+            self.state.current_positions.iter().sorted().collect();
         json!({
             "index_id": self.ctx.index_id(),
             "source_id": self.ctx.source_id(),
@@ -638,7 +633,7 @@ fn previous_position_for_offset(offset: i64) -> Position {
     if offset == 0 {
         Position::Beginning
     } else {
-        Position::from(offset - 1)
+        Position::offset(offset - 1)
     }
 }
 
@@ -939,13 +934,14 @@ mod kafka_broker_tests {
     ) -> IndexUid {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(index_id, &index_uri);
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
 
         if partition_deltas.is_empty() {
             return index_uid;
@@ -953,22 +949,23 @@ mod kafka_broker_tests {
         let split_id = new_split_id();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
         let stage_splits_request =
-            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let mut source_delta = SourceCheckpointDelta::default();
-        for (partition_id, from_position, to_position) in partition_deltas {
+        for (partition_id, from_position, to_position) in partition_deltas.iter().copied() {
             source_delta
                 .record_partition_delta(
-                    (*partition_id).into(),
+                    partition_id.into(),
                     {
-                        if *from_position < 0 {
+                        if from_position < 0 {
                             Position::Beginning
                         } else {
-                            (*from_position).into()
+                            Position::offset(from_position as u64)
                         }
                     },
-                    (*to_position).into(),
+                    Position::offset(to_position as u64),
                 )
                 .unwrap();
         }
@@ -978,7 +975,7 @@ mod kafka_broker_tests {
         };
         let checkpoint_delta_json = serde_json::to_string(&checkpoint_delta).unwrap();
         let publish_splits_request = PublishSplitsRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             index_checkpoint_delta_json_opt: Some(checkpoint_delta_json),
             staged_split_ids: vec![split_id.clone()],
             replaced_split_ids: Vec::new(),
@@ -1044,7 +1041,7 @@ mod kafka_broker_tests {
         assert_eq!(batch.num_bytes, 0);
         assert_eq!(
             kafka_source.state.current_positions.get(&1).unwrap(),
-            &Position::from(0u64)
+            &Position::offset(0u64)
         );
         assert_eq!(kafka_source.state.num_bytes_processed, 7);
         assert_eq!(kafka_source.state.num_messages_processed, 1);
@@ -1066,7 +1063,7 @@ mod kafka_broker_tests {
         assert_eq!(batch.num_bytes, 8);
         assert_eq!(
             kafka_source.state.current_positions.get(&1).unwrap(),
-            &Position::from(1u64)
+            &Position::offset(1u64)
         );
         assert_eq!(kafka_source.state.num_bytes_processed, 15);
         assert_eq!(kafka_source.state.num_messages_processed, 2);
@@ -1088,7 +1085,7 @@ mod kafka_broker_tests {
         assert_eq!(batch.num_bytes, 16);
         assert_eq!(
             kafka_source.state.current_positions.get(&2).unwrap(),
-            &Position::from(42u64)
+            &Position::offset(42u64)
         );
         assert_eq!(kafka_source.state.num_bytes_processed, 23);
         assert_eq!(kafka_source.state.num_messages_processed, 3);
@@ -1096,10 +1093,14 @@ mod kafka_broker_tests {
 
         let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
         expected_checkpoint_delta
-            .record_partition_delta(partition_id_1, Position::Beginning, Position::from(1u64))
+            .record_partition_delta(partition_id_1, Position::Beginning, Position::offset(1u64))
             .unwrap();
         expected_checkpoint_delta
-            .record_partition_delta(partition_id_2, Position::from(41u64), Position::from(42u64))
+            .record_partition_delta(
+                partition_id_2,
+                Position::offset(41u64),
+                Position::offset(42u64),
+            )
             .unwrap();
         assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
 
@@ -1166,7 +1167,7 @@ mod kafka_broker_tests {
             kafka_source.state.assigned_partitions,
             expected_assigned_partitions
         );
-        let expected_current_positions = HashMap::from_iter([(2, Position::from(42u64))]);
+        let expected_current_positions = HashMap::from_iter([(2, Position::offset(42u64))]);
         assert_eq!(
             kafka_source.state.current_positions,
             expected_current_positions
@@ -1322,7 +1323,9 @@ mod kafka_broker_tests {
 
         let checkpoint: SourceCheckpoint = [(0u64, 1u64), (1u64, 2u64)]
             .into_iter()
-            .map(|(partition_id, offset)| (PartitionId::from(partition_id), Position::from(offset)))
+            .map(|(partition_id, offset)| {
+                (PartitionId::from(partition_id), Position::offset(offset))
+            })
             .collect();
         kafka_source.truncate(checkpoint).unwrap();
 
@@ -1465,7 +1468,7 @@ mod kafka_broker_tests {
                 expected_checkpoint_delta.record_partition_delta(
                     PartitionId::from(partition),
                     Position::Beginning,
-                    Position::from(2u64),
+                    Position::offset(2u64),
                 )?;
             }
             assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
@@ -1527,13 +1530,13 @@ mod kafka_broker_tests {
             let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
             expected_checkpoint_delta.record_partition_delta(
                 PartitionId::from(0u64),
-                Position::from(0u64),
-                Position::from(2u64),
+                Position::offset(0u64),
+                Position::offset(2u64),
             )?;
             expected_checkpoint_delta.record_partition_delta(
                 PartitionId::from(2u64),
                 Position::Beginning,
-                Position::from(2u64),
+                Position::offset(2u64),
             )?;
             assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta,);
 

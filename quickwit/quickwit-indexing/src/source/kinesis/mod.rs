@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -39,7 +39,7 @@ pub(super) async fn check_connectivity(params: KinesisSourceParams) -> anyhow::R
     };
     let shards = list_shards(&kinesis_client, &retry_params, &params.stream_name, Some(1)).await?;
 
-    if let Some(shard_id) = shards.get(0).and_then(|s| s.shard_id()) {
+    if let Some(shard_id) = shards.first().and_then(|s| s.shard_id()) {
         let shard_iterator_opt = get_shard_iterator(
             &kinesis_client,
             &retry_params,

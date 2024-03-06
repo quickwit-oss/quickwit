@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_actors::AskError;
+use quickwit_common::tower::RpcName;
 use thiserror;
 
 use crate::metastore::MetastoreError;
@@ -35,6 +36,12 @@ pub enum ControlPlaneError {
     Metastore(#[from] MetastoreError),
     #[error("control plane is unavailable: {0}")]
     Unavailable(String),
+}
+
+impl ControlPlaneError {
+    pub fn label_value(&self) -> &'static str {
+        "error"
+    }
 }
 
 impl From<ControlPlaneError> for MetastoreError {
@@ -91,5 +98,23 @@ impl ServiceError for ControlPlaneError {
             Self::Metastore(error) => error.error_code(),
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
+    }
+}
+
+impl RpcName for GetOrCreateOpenShardsRequest {
+    fn rpc_name() -> &'static str {
+        "get_or_create_open_shards"
+    }
+}
+
+impl RpcName for AdviseResetShardsRequest {
+    fn rpc_name() -> &'static str {
+        "advise_reset_shards"
+    }
+}
+
+impl RpcName for GetDebugStateRequest {
+    fn rpc_name() -> &'static str {
+        "get_debug_state"
     }
 }

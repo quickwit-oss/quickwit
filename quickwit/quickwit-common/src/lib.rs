@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -28,15 +28,17 @@ mod kill_switch;
 pub mod metrics;
 pub mod net;
 mod path_hasher;
+pub mod pretty;
 mod progress;
 pub mod pubsub;
 pub mod rand;
+pub mod rate_limited_tracing;
+pub mod rate_limiter;
 pub mod rendezvous_hasher;
 pub mod retry;
 pub mod runtimes;
 pub mod shared_consts;
 pub mod sorted_iter;
-
 pub mod stream_utils;
 pub mod temp_dir;
 #[cfg(any(test, feature = "testsuite"))]
@@ -47,6 +49,7 @@ pub mod uri;
 
 use std::env;
 use std::fmt::{Debug, Display};
+use std::future::Future;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
@@ -148,31 +151,14 @@ macro_rules! ignore_error_kind {
     };
 }
 
-pub struct PrettySample<'a, T>(&'a [T], usize);
-
-impl<'a, T> PrettySample<'a, T> {
-    pub fn new(slice: &'a [T], sample_size: usize) -> Self {
-        Self(slice, sample_size)
-    }
-}
-
-impl<T> Debug for PrettySample<'_, T>
-where T: Debug
-{
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "[")?;
-        for (i, item) in self.0.iter().enumerate() {
-            if i == self.1 {
-                write!(formatter, ", and {} more", self.0.len() - i)?;
-                break;
-            }
-            if i > 0 {
-                write!(formatter, ", ")?;
-            }
-            write!(formatter, "{item:?}")?;
-        }
-        write!(formatter, "]")?;
-        Ok(())
+#[inline]
+pub const fn div_ceil_u32(lhs: u32, rhs: u32) -> u32 {
+    let d = lhs / rhs;
+    let r = lhs % rhs;
+    if r > 0 {
+        d + 1
+    } else {
+        d
     }
 }
 
@@ -185,6 +171,75 @@ pub const fn div_ceil(lhs: i64, rhs: i64) -> i64 {
     } else {
         d
     }
+}
+
+// The following are helpers to build named tasks.
+//
+// Named tasks require the tokio feature `tracing` to be enabled.
+// If the `named_tasks` feature is disabled, this is no-op.
+//
+// By default, these function will just ignore the name passed and just act
+// like a regular call to `tokio::spawn`.
+//
+// If the user compiles `quickwit-cli` with the `tokio-console` feature,
+// then tasks will automatically be named. This is not just "visual sugar".
+//
+// Without names, tasks will only show their spawn site on tokio-console.
+// This is a catastrophy for actors who all share the same spawn site.
+//
+// # Naming
+//
+// Actors will get named after their type, which is fine.
+// For other tasks, please use `snake_case`.
+
+#[cfg(not(all(tokio_unstable, feature = "named_tasks")))]
+pub fn spawn_named_task<F>(future: F, _name: &'static str) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::task::spawn(future)
+}
+
+#[cfg(not(all(tokio_unstable, feature = "named_tasks")))]
+pub fn spawn_named_task_on<F>(
+    future: F,
+    _name: &'static str,
+    runtime: &tokio::runtime::Handle,
+) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    runtime.spawn(future)
+}
+
+#[cfg(all(tokio_unstable, feature = "named_tasks"))]
+pub fn spawn_named_task<F>(future: F, name: &'static str) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::task::Builder::new()
+        .name(name)
+        .spawn(future)
+        .unwrap()
+}
+
+#[cfg(all(tokio_unstable, feature = "named_tasks"))]
+pub fn spawn_named_task_on<F>(
+    future: F,
+    name: &'static str,
+    runtime: &tokio::runtime::Handle,
+) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::task::Builder::new()
+        .name(name)
+        .spawn_on(future, runtime)
+        .unwrap()
 }
 
 #[cfg(test)]
@@ -226,24 +281,6 @@ mod tests {
     }
 
     #[test]
-    fn test_pretty_sample() {
-        let pretty_sample = PrettySample::<'_, usize>::new(&[], 2);
-        assert_eq!(format!("{pretty_sample:?}"), "[]");
-
-        let pretty_sample = PrettySample::new(&[1], 2);
-        assert_eq!(format!("{pretty_sample:?}"), "[1]");
-
-        let pretty_sample = PrettySample::new(&[1, 2], 2);
-        assert_eq!(format!("{pretty_sample:?}"), "[1, 2]");
-
-        let pretty_sample = PrettySample::new(&[1, 2, 3], 2);
-        assert_eq!(format!("{pretty_sample:?}"), "[1, 2, and 1 more]");
-
-        let pretty_sample = PrettySample::new(&[1, 2, 3, 4], 2);
-        assert_eq!(format!("{pretty_sample:?}"), "[1, 2, and 2 more]");
-    }
-
-    #[test]
     fn test_div_ceil() {
         assert_eq!(div_ceil(5, 1), 5);
         assert_eq!(div_ceil(5, 2), 3);
@@ -267,5 +304,16 @@ mod tests {
         assert_eq!(div_ceil(-5, -1), 5);
         assert_eq!(div_ceil(-5, -2), 3);
         assert_eq!(div_ceil(-6, -2), 3);
+    }
+
+    #[test]
+    fn test_div_ceil_u32() {
+        assert_eq!(div_ceil_u32(5, 1), 5);
+        assert_eq!(div_ceil_u32(5, 2), 3);
+        assert_eq!(div_ceil_u32(6, 2), 3);
+        assert_eq!(div_ceil_u32(3, 3), 1);
+        assert_eq!(div_ceil_u32(2, 3), 1);
+        assert_eq!(div_ceil_u32(1, 3), 1);
+        assert_eq!(div_ceil_u32(0, 3), 0);
     }
 }

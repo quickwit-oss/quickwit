@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -23,13 +23,12 @@ use std::sync::Arc;
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
-use once_cell::sync::Lazy;
+use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::search::{CountHits, OutputFormat, SortField, SortOrder};
 use quickwit_proto::ServiceError;
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
-use regex::Regex;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use tracing::info;
@@ -37,7 +36,7 @@ use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
-use crate::json_api_response::make_json_api_response;
+use crate::rest_api_response::into_rest_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
 use crate::{with_arg, BodyFormat};
 
@@ -56,24 +55,33 @@ use crate::{with_arg, BodyFormat};
 )]
 pub struct SearchApi;
 
-// Matches index patterns separated by commas or its URL encoded version '%2C'.
-static COMMA_SEPARATED_INDEX_PATTERNS_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r",|%2C").expect("the regular expression should compile"));
+pub(crate) async fn extract_index_id_patterns_default() -> Result<Vec<String>, Rejection> {
+    let index_id_patterns = Vec::new();
+    Ok(index_id_patterns)
+}
 
 pub(crate) async fn extract_index_id_patterns(
-    comma_separated_index_patterns: String,
+    comma_separated_index_id_patterns: String,
 ) -> Result<Vec<String>, Rejection> {
-    let mut index_ids_patterns = Vec::new();
-    for index_id_pattern in
-        COMMA_SEPARATED_INDEX_PATTERNS_REGEX.split(&comma_separated_index_patterns)
-    {
-        validate_index_id_pattern(index_id_pattern).map_err(|error| {
-            warp::reject::custom(crate::rest::InvalidArgument(error.to_string()))
-        })?;
-        index_ids_patterns.push(index_id_pattern.to_string());
+    let percent_decoded_comma_separated_index_id_patterns =
+        percent_decode_str(&comma_separated_index_id_patterns)
+            .decode_utf8()
+            .map_err(|error| {
+                let message = format!(
+                    "failed to percent decode comma-separated index ID patterns \
+                     `{comma_separated_index_id_patterns}`: {error}"
+                );
+                crate::rest::InvalidArgument(message)
+            })?;
+    let mut index_id_patterns = Vec::new();
+
+    for index_id_pattern in percent_decoded_comma_separated_index_id_patterns.split(',') {
+        validate_index_id_pattern(index_id_pattern, true)
+            .map_err(|error| crate::rest::InvalidArgument(error.to_string()))?;
+        index_id_patterns.push(index_id_pattern.to_string());
     }
-    assert!(!index_ids_patterns.is_empty());
-    Ok(index_ids_patterns)
+    assert!(!index_id_patterns.is_empty());
+    Ok(index_id_patterns)
 }
 
 #[derive(Debug, Default, Eq, PartialEq, Deserialize, utoipa::ToSchema)]
@@ -108,6 +116,7 @@ impl From<String> for SortBy {
             let sort_field = SortField {
                 field_name,
                 sort_order: sort_order as i32,
+                sort_datetime_format: None,
             };
             sort_fields.push(sort_field);
         }
@@ -316,7 +325,7 @@ async fn search(
     info!(request =? search_request, "search");
     let body_format = search_request.format;
     let result = search_endpoint(index_id_patterns, search_request, &*search_service).await;
-    make_json_api_response(result, body_format)
+    into_rest_api_response(result, body_format)
 }
 
 #[utoipa::path(
@@ -537,16 +546,16 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            extract_index_id_patterns("my-index-1,my-index-2".to_string())
+            extract_index_id_patterns("my-index-1,my-index-2%2A".to_string())
                 .await
                 .unwrap(),
-            vec!["my-index-1".to_string(), "my-index-2".to_string()]
+            vec!["my-index-1".to_string(), "my-index-2*".to_string()]
         );
         assert_eq!(
-            extract_index_id_patterns("my-index-1%2Cmy-index-2".to_string())
+            extract_index_id_patterns("my-index-1%2Cmy-index-%2A".to_string())
                 .await
                 .unwrap(),
-            vec!["my-index-1".to_string(), "my-index-2".to_string()]
+            vec!["my-index-1".to_string(), "my-index-*".to_string()]
         );
         extract_index_id_patterns("".to_string()).await.unwrap_err();
         extract_index_id_patterns(" ".to_string())
@@ -655,7 +664,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             rejection.0,
-            "index ID pattern `quickwit-demo-index**` is invalid. patterns must not contain \
+            "index ID pattern `quickwit-demo-index**` is invalid: patterns must not contain \
              multiple consecutive `*`"
         );
     }
@@ -791,6 +800,7 @@ mod tests {
                 vec![SortField {
                     field_name: "field1".to_string(),
                     sort_order: SortOrder::Desc as i32,
+                    sort_datetime_format: None,
                 }],
             ),
             (
@@ -798,6 +808,7 @@ mod tests {
                 vec![SortField {
                     field_name: "field1".to_string(),
                     sort_order: SortOrder::Desc as i32,
+                    sort_datetime_format: None,
                 }],
             ),
             (
@@ -805,6 +816,7 @@ mod tests {
                 vec![SortField {
                     field_name: "field1".to_string(),
                     sort_order: SortOrder::Asc as i32,
+                    sort_datetime_format: None,
                 }],
             ),
             (
@@ -812,6 +824,7 @@ mod tests {
                 vec![SortField {
                     field_name: "_score".to_string(),
                     sort_order: SortOrder::Desc as i32,
+                    sort_datetime_format: None,
                 }],
             ),
             (
@@ -819,6 +832,7 @@ mod tests {
                 vec![SortField {
                     field_name: "_score".to_string(),
                     sort_order: SortOrder::Asc as i32,
+                    sort_datetime_format: None,
                 }],
             ),
             (
@@ -826,6 +840,7 @@ mod tests {
                 vec![SortField {
                     field_name: "_score".to_string(),
                     sort_order: SortOrder::Desc as i32,
+                    sort_datetime_format: None,
                 }],
             ),
             (
@@ -834,10 +849,12 @@ mod tests {
                     SortField {
                         field_name: "field1".to_string(),
                         sort_order: SortOrder::Desc as i32,
+                        sort_datetime_format: None,
                     },
                     SortField {
                         field_name: "field2".to_string(),
                         sort_order: SortOrder::Desc as i32,
+                        sort_datetime_format: None,
                     },
                 ],
             ),
@@ -847,10 +864,12 @@ mod tests {
                     SortField {
                         field_name: "field1".to_string(),
                         sort_order: SortOrder::Desc as i32,
+                        sort_datetime_format: None,
                     },
                     SortField {
                         field_name: "field2".to_string(),
                         sort_order: SortOrder::Asc as i32,
+                        sort_datetime_format: None,
                     },
                 ],
             ),
@@ -860,10 +879,12 @@ mod tests {
                     SortField {
                         field_name: "field1".to_string(),
                         sort_order: SortOrder::Asc as i32,
+                        sort_datetime_format: None,
                     },
                     SortField {
                         field_name: "field2".to_string(),
                         sort_order: SortOrder::Desc as i32,
+                        sort_datetime_format: None,
                     },
                 ],
             ),
@@ -898,6 +919,7 @@ mod tests {
             &[SortField {
                 field_name: "fiel1".to_string(),
                 sort_order: SortOrder::Desc as i32,
+                sort_datetime_format: None,
             }],
         );
     }

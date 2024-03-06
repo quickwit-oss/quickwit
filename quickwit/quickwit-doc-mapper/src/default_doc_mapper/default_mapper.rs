@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -38,7 +38,6 @@ use super::field_mapping_entry::RAW_TOKENIZER_NAME;
 use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{build_mapping_tree, MappingNode};
 use crate::default_doc_mapper::FieldMappingType;
-pub use crate::default_doc_mapper::QuickwitJsonOptions;
 use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
@@ -220,7 +219,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             let (default_search_field, _json_path) = schema
                 .find_field_with_default(default_search_field_name, dynamic_field)
                 .with_context(|| {
-                    format!("Unknown default search field: `{default_search_field_name}`")
+                    format!("unknown default search field `{default_search_field_name}`")
                 })?;
             if !schema.get_field_entry(default_search_field).is_indexed() {
                 bail!("default search field `{default_search_field_name}` is not indexed",);
@@ -824,10 +823,7 @@ mod tests {
         let error = result.unwrap_err();
         assert_eq!(
             error,
-            DocParsingError::ValueError(
-                "body".to_owned(),
-                "expected JSON string, got `1`".to_owned()
-            )
+            DocParsingError::ValueError("body".to_owned(), "expected string, got `1`".to_owned())
         );
         Ok(())
     }

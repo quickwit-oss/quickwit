@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -152,6 +152,7 @@ mod tests {
     use std::str::FromStr;
     use std::sync::atomic::Ordering;
 
+    use bytesize::ByteSize;
     use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
     use quickwit_common::tower::{BalanceChannel, Change};
     use tokio::sync::mpsc::error::TrySendError;
@@ -163,6 +164,8 @@ mod tests {
     use crate::hello::MockHello;
     use crate::hello_grpc_client::HelloGrpcClient;
     use crate::{CounterLayer, GoodbyeRequest, GoodbyeResponse};
+
+    const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
 
     #[tokio::test]
     async fn test_hello_codegen() {
@@ -270,7 +273,7 @@ mod tests {
             "127.0.0.1:6666".parse().unwrap(),
             Endpoint::from_static("http://127.0.0.1:6666").connect_lazy(),
         );
-        let mut grpc_client = HelloClient::from_balance_channel(channel);
+        let mut grpc_client = HelloClient::from_balance_channel(channel, MAX_GRPC_MESSAGE_SIZE);
 
         assert_eq!(
             grpc_client
@@ -319,7 +322,8 @@ mod tests {
 
         // The connectivity check fails if there is no client behind the channel.
         let (balance_channel, _): (BalanceChannel<SocketAddr>, _) = BalanceChannel::new();
-        let mut grpc_client = HelloClient::from_balance_channel(balance_channel);
+        let mut grpc_client =
+            HelloClient::from_balance_channel(balance_channel, MAX_GRPC_MESSAGE_SIZE);
         assert_eq!(
             grpc_client
                 .check_connectivity()
@@ -469,55 +473,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_hello_codegen_tower_layers() {
+    async fn test_hello_codegen_tower_stack_layers() {
+        let layer = CounterLayer::default();
         let hello_layer = CounterLayer::default();
         let goodbye_layer = CounterLayer::default();
         let ping_layer = CounterLayer::default();
 
         let mut hello_tower = HelloClient::tower()
-            .hello_layer(hello_layer.clone())
-            .goodbye_layer(goodbye_layer.clone())
-            .ping_layer(ping_layer.clone())
-            .build(HelloImpl);
-
-        hello_tower
-            .hello(HelloRequest {
-                name: "Tower".to_string(),
-            })
-            .await
-            .unwrap();
-
-        hello_tower
-            .goodbye(GoodbyeRequest {
-                name: "Tower".to_string(),
-            })
-            .await
-            .unwrap();
-
-        let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);
-        let mut pong_stream = hello_tower.ping(ping_stream).await.unwrap();
-
-        ping_stream_tx
-            .try_send(PingRequest {
-                name: "Tower".to_string(),
-            })
-            .unwrap();
-        assert_eq!(
-            pong_stream.next().await.unwrap().unwrap().message,
-            "Pong, Tower!"
-        );
-
-        assert_eq!(hello_layer.counter.load(Ordering::Relaxed), 1);
-        assert_eq!(goodbye_layer.counter.load(Ordering::Relaxed), 1);
-        assert_eq!(ping_layer.counter.load(Ordering::Relaxed), 1);
-    }
-
-    #[tokio::test]
-    async fn test_hello_codegen_tower_shared_layer() {
-        let layer = CounterLayer::default();
-
-        let mut hello_tower = HelloClient::tower()
-            .shared_layer(layer.clone())
+            .stack_layer(layer.clone())
+            .stack_hello_layer(hello_layer.clone())
+            .stack_goodbye_layer(goodbye_layer.clone())
+            .stack_ping_layer(ping_layer.clone())
             .build(HelloImpl);
 
         hello_tower
@@ -548,6 +514,9 @@ mod tests {
         );
 
         assert_eq!(layer.counter.load(Ordering::Relaxed), 3);
+        assert_eq!(hello_layer.counter.load(Ordering::Relaxed), 1);
+        assert_eq!(goodbye_layer.counter.load(Ordering::Relaxed), 1);
+        assert_eq!(ping_layer.counter.load(Ordering::Relaxed), 1);
     }
 
     #[tokio::test]
@@ -556,7 +525,7 @@ mod tests {
             "127.0.0.1:7777".parse().unwrap(),
             Endpoint::from_static("http://127.0.0.1:7777").connect_lazy(),
         );
-        HelloClient::from_balance_channel(balance_channed);
+        HelloClient::from_balance_channel(balance_channed, MAX_GRPC_MESSAGE_SIZE);
     }
 
     #[tokio::test]

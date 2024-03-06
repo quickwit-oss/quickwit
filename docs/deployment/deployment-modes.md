@@ -19,7 +19,7 @@ This deployment mode is the simplest way to get started with Quickwit. Launch al
 
 ## Cluster mode (multi-node)
 
-You can deploy Quickwit on multiple nodes. We provide a [Helm chart](kubernetes.md) to help you deploy Quickwit on Kubernetes. In cluster mode, you must store your index data on a shared storage backend such as Amazon S3 or MinIO.
+You can deploy Quickwit on multiple nodes. We provide a [Helm chart](./kubernetes/helm.md) to help you deploy Quickwit on Kubernetes. In cluster mode, you must store your index data on a shared storage backend such as Amazon S3 or MinIO.
 
 ## One indexer, multiple searchers
 
@@ -28,7 +28,7 @@ One indexer running on a small instance (4 vCPUs) can ingest documents at a thro
 ## Multiple indexers, multiple searchers
 
 Indexing a single [data source](../configuration/source-config.md) on several indexers is only possible with a [Kafka source](../configuration/source-config.md#kafka-source).
-Support for native distributed indexing is planned for Quickwit 0.7 (Q4). Stay tuned!
+Support for native distributed indexing is planned for Quickwit 0.8 (Q2). Stay tuned!
 
 ## File-backed metastore limitations
 

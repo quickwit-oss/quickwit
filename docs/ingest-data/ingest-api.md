@@ -22,12 +22,12 @@ First, let's create a schemaless index.
 ```bash
 # Create the index config file.
 cat << EOF > stackoverflow-schemaless-config.yaml
-version: 0.6
+version: 0.7
 index_id: stackoverflow-schemaless
 doc_mapping:
   mode: dynamic
 indexing_settings:
-  commit_timeout_secs: 1
+  commit_timeout_secs: 30
 EOF
 # Use the CLI to create the index...
 ./quickwit index create --index-config stackoverflow-schemaless-config.yaml

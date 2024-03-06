@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -205,19 +205,19 @@ mod tests {
     #[test]
     fn test_diff() {
         {
-            let left: BTreeSet<u64> = vec![].into_iter().collect();
-            let right: BTreeSet<u64> = vec![].into_iter().collect();
+            let left: BTreeSet<u64> = Vec::new().into_iter().collect();
+            let right: BTreeSet<u64> = Vec::new().into_iter().collect();
             let diff: Vec<_> = left.iter().diff(right.iter()).collect();
-            assert_eq!(diff, vec![]);
+            assert_eq!(diff, Vec::new());
         }
         {
             let left: BTreeSet<_> = vec![1].into_iter().collect();
-            let right: BTreeSet<_> = vec![].into_iter().collect();
+            let right: BTreeSet<_> = Vec::new().into_iter().collect();
             let diff: Vec<_> = left.iter().diff(right.iter()).collect();
             assert_eq!(diff, vec![Diff::Removed(&1)]);
         }
         {
-            let left: BTreeSet<_> = vec![].into_iter().collect();
+            let left: BTreeSet<_> = Vec::new().into_iter().collect();
             let right: BTreeSet<_> = vec![1].into_iter().collect();
             let diff: Vec<_> = left.iter().diff(right.iter()).collect();
             assert_eq!(diff, vec![Diff::Added(&1)]);
@@ -250,19 +250,19 @@ mod tests {
     #[test]
     fn test_diff_by_key() {
         {
-            let left: BTreeMap<u64, u64> = vec![].into_iter().collect();
-            let right: BTreeMap<u64, u64> = vec![].into_iter().collect();
+            let left: BTreeMap<u64, u64> = Vec::new().into_iter().collect();
+            let right: BTreeMap<u64, u64> = Vec::new().into_iter().collect();
             let key_diff: Vec<_> = left.iter().diff_by_key(right.iter()).collect();
-            assert_eq!(key_diff, vec![]);
+            assert_eq!(key_diff, Vec::new());
         }
         {
             let left: BTreeMap<_, _> = vec![(1, 1)].into_iter().collect();
-            let right: BTreeMap<_, &'static str> = vec![].into_iter().collect();
+            let right: BTreeMap<_, &'static str> = Vec::new().into_iter().collect();
             let key_diff: Vec<_> = left.iter().diff_by_key(right.iter()).collect();
             assert_eq!(key_diff, vec![KeyDiff::Removed(&1, &1)]);
         }
         {
-            let left: BTreeMap<_, usize> = vec![].into_iter().collect();
+            let left: BTreeMap<_, usize> = Vec::new().into_iter().collect();
             let right: BTreeMap<_, _> = vec![(1, "a")].into_iter().collect();
             let key_diff: Vec<_> = left.iter().diff_by_key(right.iter()).collect();
             assert_eq!(key_diff, vec![KeyDiff::Added(&1, &"a")]);

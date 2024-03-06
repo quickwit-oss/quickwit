@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,7 +20,6 @@
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
-use bytes::Bytes;
 use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
 use itertools::Itertools;
@@ -330,11 +329,13 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
     println!("❯ Creating source...");
     let storage_resolver = StorageResolver::unconfigured();
     let source_config_content = load_file(&storage_resolver, &args.source_config_uri).await?;
+    let source_config_str: &str = std::str::from_utf8(&source_config_content)
+        .with_context(|| format!("source config is not utf-8: {}", args.source_config_uri))?;
     let config_format = ConfigFormat::sniff_from_uri(&args.source_config_uri)?;
     let qw_client = args.client_args.client();
     qw_client
         .sources(&args.index_id)
-        .create(Bytes::from(source_config_content.to_vec()), config_format)
+        .create(source_config_str, config_format)
         .await?;
     println!("{} Source successfully created.", "✔".color(GREEN_COLOR));
     Ok(())
@@ -433,7 +434,7 @@ where
         .iter()
         .map(|(partition_id, position)| CheckpointRow {
             partition_id: partition_id.0.to_string(),
-            offset: position.as_str().to_string(),
+            offset: position.to_string(),
         })
         .sorted_by(|left, right| left.partition_id.cmp(&right.partition_id));
     let checkpoint_table = make_table("Checkpoint", checkpoint_rows, false);
@@ -734,7 +735,9 @@ mod tests {
 
         let checkpoint: SourceCheckpoint = vec![("shard-000", ""), ("shard-001", "1234567890")]
             .into_iter()
-            .map(|(partition_id, offset)| (PartitionId::from(partition_id), Position::from(offset)))
+            .map(|(partition_id, offset)| {
+                (PartitionId::from(partition_id), Position::offset(offset))
+            })
             .collect();
         let sources = vec![SourceConfig {
             source_id: "foo-source".to_string(),

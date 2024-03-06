@@ -10,14 +10,17 @@ pub struct ApplyIndexingPlanRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexingTask {
     /// The tasks's index UID.
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     /// The task's source ID.
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
+    /// pipeline id
+    #[prost(message, optional, tag = "4")]
+    pub pipeline_uid: ::core::option::Option<crate::types::PipelineUid>,
     /// The shards assigned to the indexer.
-    #[prost(uint64, repeated, tag = "3")]
-    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -62,36 +65,44 @@ impl IndexingServiceClient {
     }
     pub fn as_grpc_service(
         &self,
+        max_message_size: bytesize::ByteSize,
     ) -> indexing_service_grpc_server::IndexingServiceGrpcServer<
         IndexingServiceGrpcServerAdapter,
     > {
         let adapter = IndexingServiceGrpcServerAdapter::new(self.clone());
         indexing_service_grpc_server::IndexingServiceGrpcServer::new(adapter)
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024)
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
+        let client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
+                channel,
+            )
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = IndexingServiceGrpcClientAdapter::new(
-            indexing_service_grpc_client::IndexingServiceGrpcClient::new(channel),
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)
     }
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> IndexingServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
                 balance_channel,
             )
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024);
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = IndexingServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
@@ -105,8 +116,8 @@ impl IndexingServiceClient {
     {
         IndexingServiceClient::new(IndexingServiceMailbox::new(mailbox))
     }
-    pub fn tower() -> IndexingServiceTowerBlockBuilder {
-        IndexingServiceTowerBlockBuilder::default()
+    pub fn tower() -> IndexingServiceTowerLayerStack {
+        IndexingServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn mock() -> MockIndexingService {
@@ -166,9 +177,9 @@ impl tower::Service<ApplyIndexingPlanRequest> for Box<dyn IndexingService> {
         Box::pin(fut)
     }
 }
-/// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
+/// A tower service stack is a set of tower services.
 #[derive(Debug)]
-struct IndexingServiceTowerBlock {
+struct IndexingServiceTowerServiceStack {
     inner: Box<dyn IndexingService>,
     apply_indexing_plan_svc: quickwit_common::tower::BoxService<
         ApplyIndexingPlanRequest,
@@ -176,7 +187,7 @@ struct IndexingServiceTowerBlock {
         crate::indexing::IndexingError,
     >,
 }
-impl Clone for IndexingServiceTowerBlock {
+impl Clone for IndexingServiceTowerServiceStack {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -185,7 +196,7 @@ impl Clone for IndexingServiceTowerBlock {
     }
 }
 #[async_trait::async_trait]
-impl IndexingService for IndexingServiceTowerBlock {
+impl IndexingService for IndexingServiceTowerServiceStack {
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
@@ -193,38 +204,62 @@ impl IndexingService for IndexingServiceTowerBlock {
         self.apply_indexing_plan_svc.ready().await?.call(request).await
     }
 }
-#[derive(Debug, Default)]
-pub struct IndexingServiceTowerBlockBuilder {
-    #[allow(clippy::type_complexity)]
-    apply_indexing_plan_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IndexingService>,
-            ApplyIndexingPlanRequest,
-            ApplyIndexingPlanResponse,
-            crate::indexing::IndexingError,
-        >,
+type ApplyIndexingPlanLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ApplyIndexingPlanRequest,
+        ApplyIndexingPlanResponse,
+        crate::indexing::IndexingError,
     >,
+    ApplyIndexingPlanRequest,
+    ApplyIndexingPlanResponse,
+    crate::indexing::IndexingError,
+>;
+#[derive(Debug, Default)]
+pub struct IndexingServiceTowerLayerStack {
+    apply_indexing_plan_layers: Vec<ApplyIndexingPlanLayer>,
 }
-impl IndexingServiceTowerBlockBuilder {
-    pub fn shared_layer<L>(mut self, layer: L) -> Self
+impl IndexingServiceTowerLayerStack {
+    pub fn stack_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IndexingService>> + Clone + Send + Sync + 'static,
-        L::Service: tower::Service<
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ApplyIndexingPlanRequest,
+                    ApplyIndexingPlanResponse,
+                    crate::indexing::IndexingError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ApplyIndexingPlanRequest,
+                ApplyIndexingPlanResponse,
+                crate::indexing::IndexingError,
+            >,
+        >>::Service: tower::Service<
                 ApplyIndexingPlanRequest,
                 Response = ApplyIndexingPlanResponse,
                 Error = crate::indexing::IndexingError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<ApplyIndexingPlanRequest>>::Future: Send + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ApplyIndexingPlanRequest,
+                ApplyIndexingPlanResponse,
+                crate::indexing::IndexingError,
+            >,
+        >>::Service as tower::Service<ApplyIndexingPlanRequest>>::Future: Send + 'static,
     {
-        self
-            .apply_indexing_plan_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.apply_indexing_plan_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
-    pub fn apply_indexing_plan_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_apply_indexing_plan_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IndexingService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ApplyIndexingPlanRequest,
+                    ApplyIndexingPlanResponse,
+                    crate::indexing::IndexingError,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 ApplyIndexingPlanRequest,
                 Response = ApplyIndexingPlanResponse,
@@ -232,10 +267,8 @@ impl IndexingServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<ApplyIndexingPlanRequest>>::Future: Send + 'static,
     {
-        self
-            .apply_indexing_plan_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.apply_indexing_plan_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> IndexingServiceClient
@@ -248,17 +281,26 @@ impl IndexingServiceTowerBlockBuilder {
         self,
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> IndexingServiceClient {
         self.build_from_boxed(
-            Box::new(IndexingServiceClient::from_channel(addr, channel)),
+            Box::new(
+                IndexingServiceClient::from_channel(addr, channel, max_message_size),
+            ),
         )
     }
     pub fn build_from_balance_channel(
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> IndexingServiceClient {
         self.build_from_boxed(
-            Box::new(IndexingServiceClient::from_balance_channel(balance_channel)),
+            Box::new(
+                IndexingServiceClient::from_balance_channel(
+                    balance_channel,
+                    max_message_size,
+                ),
+            ),
         )
     }
     pub fn build_from_mailbox<A>(
@@ -275,17 +317,19 @@ impl IndexingServiceTowerBlockBuilder {
         self,
         boxed_instance: Box<dyn IndexingService>,
     ) -> IndexingServiceClient {
-        let apply_indexing_plan_svc = if let Some(layer) = self.apply_indexing_plan_layer
-        {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let tower_block = IndexingServiceTowerBlock {
+        let apply_indexing_plan_svc = self
+            .apply_indexing_plan_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let tower_svc_stack = IndexingServiceTowerServiceStack {
             inner: boxed_instance.clone(),
             apply_indexing_plan_svc,
         };
-        IndexingServiceClient::new(tower_block)
+        IndexingServiceClient::new(tower_svc_stack)
     }
 }
 #[derive(Debug, Clone)]

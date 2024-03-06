@@ -9,7 +9,7 @@
 #
 # Config file format version.
 #
-version: 0.6
+version: 0.7
 #
 # Node ID. Must be unique within a cluster. If not set, a random node ID is generated on each startup.
 #
@@ -32,7 +32,17 @@ version: 0.6
 #   2. pass `0.0.0.0` and let Quickwit do its best to discover the node's IP (see `advertise_address`)
 #
 # listen_address: 127.0.0.1
-# rest_listen_port: 7280
+#
+# rest:
+#   listen_port: 7280
+#   cors_allow_origins:
+#     - "http://localhost:3000"
+#   extra_headers:
+#     x-header-1: header-value-1
+#     x-header-2: header-value-2
+#
+# grpc:
+#   max_message_size: 10 MiB
 #
 # IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs.
 # The environment variable `QW_ADVERTISE_ADDRESS` can also be used to override this value.
@@ -96,7 +106,11 @@ version: 0.6
 #
 # metastore:
 #   postgres:
-#     max_num_connections: 20
+#     min_connections: 0
+#     max_connections: 10
+#     acquire_connection_timeout: 10s
+#     idle_connection_timeout: 10min
+#     max_connection_lifetime: 30min
 #
 # -------------------------------- Indexer settings --------------------------------
 
@@ -114,11 +128,12 @@ indexer:
 #   max_queue_disk_usage: 4GiB
 #
 # -------------------------------- Searcher settings --------------------------------
-#
+# 
 # searcher:
 #   fast_field_cache_capacity: 1G
 #   split_footer_cache_capacity: 500M
 #   max_num_concurrent_split_streams: 100
+#   partial_request_cache_capacity: 64M
 #   max_num_concurrent_split_searches: 100
 #
 # -------------------------------- Jaeger settings --------------------------------

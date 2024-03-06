@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -337,7 +337,7 @@ fn msg_id_to_position(msg: &MessageIdData) -> Position {
     // in order to re-construct the message ID in order to send back to pulsar.
     // The ledger_id, entry_id and the batch_index form a unique composite key which will
     // prevent the remaining parts of the ID from interfering with the sorting.
-    let id_str = format!(
+    let position_str = format!(
         "{:0>20},{:0>20},{},{},{}",
         msg.ledger_id,
         msg.entry_id,
@@ -356,12 +356,14 @@ fn msg_id_to_position(msg: &MessageIdData) -> Position {
             .unwrap_or_default(),
     );
 
-    Position::from(id_str)
+    Position::from(position_str)
 }
 
-fn msg_id_from_position(pos: &Position) -> Option<MessageIdData> {
-    let id_str = pos.as_str();
-    let mut parts = id_str.split(',');
+fn msg_id_from_position(position: &Position) -> Option<MessageIdData> {
+    let Position::Offset(offset) = position else {
+        return None;
+    };
+    let mut parts = offset.as_str().split(',');
 
     let ledger_id = parts.next()?.parse::<u64>().ok()?;
     let entry_id = parts.next()?.parse::<u64>().ok()?;
@@ -460,7 +462,7 @@ mod pulsar_broker_tests {
         ($($partition:expr => $position:expr $(,)?)*) => {{
             let mut positions = BTreeMap::new();
             $(
-                positions.insert(PartitionId::from($partition), Position::from($position));
+                positions.insert(PartitionId::from($partition), Position::offset($position));
             )*
             positions
         }};
@@ -473,7 +475,7 @@ mod pulsar_broker_tests {
                 checkpoint.record_partition_delta(
                     PartitionId::from($partition),
                     Position::Beginning,
-                    Position::from($position),
+                    $position,
                 ).unwrap();
             )*
             checkpoint
@@ -488,13 +490,14 @@ mod pulsar_broker_tests {
     ) -> IndexUid {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(index_id, &index_uri);
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
 
         if partition_deltas.is_empty() {
             return index_uid;
@@ -502,7 +505,8 @@ mod pulsar_broker_tests {
         let split_id = new_split_id();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
         let stage_splits_request =
-            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
+                .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let mut source_delta = SourceCheckpointDelta::default();
@@ -520,7 +524,7 @@ mod pulsar_broker_tests {
             source_delta,
         };
         let publish_splits_request = PublishSplitsRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             staged_split_ids: vec![split_id.clone()],
             replaced_split_ids: Vec::new(),
             index_checkpoint_delta_json_opt: Some(
@@ -756,7 +760,7 @@ mod pulsar_broker_tests {
 
         let position = msg_id_to_position(&populated_id);
         assert_eq!(
-            position.as_str(),
+            position.to_string(),
             format!("{:0>20},{:0>20},{:010},,{:010}", 1, 134, 3, 6)
         );
         let retrieved_id = msg_id_from_position(&position)
@@ -777,7 +781,7 @@ mod pulsar_broker_tests {
 
         let position = msg_id_to_position(&partitioned_id);
         assert_eq!(
-            position.as_str(),
+            position.to_string(),
             format!("{:0>20},{:0>20},{:010},{:010},{:010}", 1, 134, 3, 5, 6)
         );
         let retrieved_id = msg_id_from_position(&position)
@@ -798,7 +802,7 @@ mod pulsar_broker_tests {
 
         let position = msg_id_to_position(&sparse_id);
         assert_eq!(
-            position.as_str(),
+            position.to_string(),
             format!("{:0>20},{:0>20},,,{:010}", 1, 4, 0)
         );
         let retrieved_id = msg_id_from_position(&position)
@@ -844,7 +848,7 @@ mod pulsar_broker_tests {
         assert_eq!(batch.num_bytes, 0);
         assert!(batch.docs.is_empty());
 
-        let position = Position::from(1u64); // Used for testing simplicity.
+        let position = Position::offset(1u64); // Used for testing simplicity.
         let mut batch = BatchBuilder::default();
         let doc = Bytes::from_static(b"some-demo-data");
         pulsar_source
@@ -861,7 +865,7 @@ mod pulsar_broker_tests {
         assert_eq!(batch.num_bytes, 14);
         assert_eq!(batch.docs.len(), 1);
 
-        let position = Position::from(4u64); // Used for testing simplicity.
+        let position = Position::offset(4u64); // Used for testing simplicity.
         let mut batch = BatchBuilder::default();
         let doc = Bytes::from_static(b"some-demo-data-2");
         pulsar_source
@@ -881,8 +885,8 @@ mod pulsar_broker_tests {
         expected_checkpoint_delta
             .record_partition_delta(
                 PartitionId::from(topic.as_str()),
-                Position::from(1u64),
-                Position::from(4u64),
+                Position::offset(1u64),
+                Position::offset(4u64),
             )
             .unwrap();
         assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);

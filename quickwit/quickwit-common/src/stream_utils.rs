@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -21,16 +21,42 @@ use std::any::TypeId;
 use std::fmt;
 use std::pin::Pin;
 
-use futures::{stream, Stream, TryStreamExt};
+use futures::{stream, Stream, StreamExt, TryStreamExt};
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream, WatchStream};
 use tracing::warn;
+
+use crate::tower::RpcName;
 
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + Unpin + 'static>>;
 
 /// A stream impl for code-generated services with streaming endpoints.
 pub struct ServiceStream<T> {
     inner: BoxStream<T>,
+}
+
+impl<T> ServiceStream<T>
+where T: Send + 'static
+{
+    pub fn new(inner: BoxStream<T>) -> Self {
+        Self { inner }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            inner: Box::pin(stream::empty()),
+        }
+    }
+
+    pub fn map<F, U>(self, f: F) -> ServiceStream<U>
+    where
+        F: FnMut(T) -> U + Send + 'static,
+        U: Send + 'static,
+    {
+        ServiceStream {
+            inner: Box::pin(self.inner.map(f)),
+        }
+    }
 }
 
 impl<T> fmt::Debug for ServiceStream<T>
@@ -157,5 +183,38 @@ where T: Send + 'static
         Self {
             inner: Box::pin(message_stream),
         }
+    }
+}
+
+#[cfg(any(test, feature = "testsuite"))]
+impl<T> From<Vec<T>> for ServiceStream<T>
+where T: Send + 'static
+{
+    fn from(values: Vec<T>) -> Self {
+        Self {
+            inner: Box::pin(stream::iter(values)),
+        }
+    }
+}
+
+impl<T> RpcName for ServiceStream<T>
+where T: RpcName
+{
+    fn rpc_name() -> &'static str {
+        T::rpc_name()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_service_stream_map() {
+        let mapped_values = ServiceStream::from(vec![0, 1, 2, 3])
+            .map(|x| x * 2)
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(mapped_values, vec![0, 2, 4, 6]);
     }
 }

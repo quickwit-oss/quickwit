@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -132,6 +132,7 @@ fn jobs_to_leaf_request(
 #[cfg(test)]
 mod tests {
 
+    use quickwit_common::ServiceStream;
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, ListSplitsResponseExt};
     use quickwit_proto::metastore::{IndexMetadataResponse, ListSplitsResponse};
@@ -155,13 +156,14 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         mock_metastore.expect_index_metadata().returning(move |_| {
-            Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
+            Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
         mock_metastore.expect_list_splits().returning(move |_| {
             let splits = vec![MockSplitBuilder::new("split1")
                 .with_index_uid(&index_uid)
                 .build()];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits)]))
         });
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -212,13 +214,14 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         mock_metastore.expect_index_metadata().returning(move |_| {
-            Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
+            Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
         mock_metastore.expect_list_splits().returning(move |_| {
             let splits = vec![MockSplitBuilder::new("split1")
                 .with_index_uid(&index_uid)
                 .build()];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits)]))
         });
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -267,7 +270,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         mock_metastore.expect_index_metadata().returning(move |_| {
-            Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
+            Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
         mock_metastore.expect_list_splits().returning(move |_| {
             let splits = vec![
@@ -278,7 +281,8 @@ mod tests {
                     .with_index_uid(&index_uid)
                     .build(),
             ];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits)]))
         });
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -327,13 +331,14 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         mock_metastore.expect_index_metadata().returning(move |_| {
-            Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
+            Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
         mock_metastore.expect_list_splits().returning(move |_| {
             let splits = vec![MockSplitBuilder::new("split")
                 .with_index_uid(&index_uid)
                 .build()];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits)]))
         });
 
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);

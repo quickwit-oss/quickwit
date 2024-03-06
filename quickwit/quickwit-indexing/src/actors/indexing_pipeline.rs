@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -37,6 +38,7 @@ use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
     IndexMetadataRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
 };
+use quickwit_proto::types::ShardId;
 use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
@@ -50,7 +52,9 @@ use crate::actors::uploader::UploaderType;
 use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
 use crate::models::IndexingStatistics;
-use crate::source::{quickwit_supported_sources, AssignShards, SourceActor, SourceRuntimeArgs};
+use crate::source::{
+    quickwit_supported_sources, AssignShards, Assignment, SourceActor, SourceRuntimeArgs,
+};
 use crate::split_store::IndexingSplitStore;
 use crate::SplitsUpdateMailbox;
 
@@ -119,6 +123,10 @@ pub struct IndexingPipeline {
     handles_opt: Option<IndexingPipelineHandles>,
     // Killswitch used for the actors in the pipeline. This is not the supervisor killswitch.
     kill_switch: KillSwitch,
+    // The set of shard is something that can change dynamically without necessarily
+    // requiring a respawn of the pipeline.
+    // We keep the list of shards here however, to reassign them after a respawn.
+    shard_ids: BTreeSet<ShardId>,
 }
 
 #[async_trait]
@@ -146,19 +154,20 @@ impl Actor for IndexingPipeline {
     ) -> anyhow::Result<()> {
         // We update the observation to ensure our last "black box" observation
         // is up to date.
-        self.perform_observe(ctx).await;
+        self.perform_observe(ctx);
         Ok(())
     }
 }
 
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
-        Self {
+        IndexingPipeline {
             params,
             previous_generations_statistics: Default::default(),
             handles_opt: None,
             kill_switch: KillSwitch::default(),
             statistics: IndexingStatistics::default(),
+            shard_ids: Default::default(),
         }
     }
 
@@ -237,7 +246,7 @@ impl IndexingPipeline {
         self.statistics.generation
     }
 
-    async fn perform_observe(&mut self, ctx: &ActorContext<Self>) {
+    fn perform_observe(&mut self, ctx: &ActorContext<Self>) {
         let Some(handles) = &self.handles_opt else {
             return;
         };
@@ -258,6 +267,7 @@ impl IndexingPipeline {
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
         let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
         self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
+        self.statistics.shard_ids = self.shard_ids.clone();
         ctx.observe(self);
     }
 
@@ -280,8 +290,7 @@ impl IndexingPipeline {
             Health::FailureOrUnhealthy => {
                 self.terminate().await;
                 let first_retry_delay = wait_duration_before_retry(0);
-                ctx.schedule_self_msg(first_retry_delay, Spawn { retry_count: 0 })
-                    .await;
+                ctx.schedule_self_msg(first_retry_delay, Spawn { retry_count: 0 });
             }
             Health::Success => {
                 return Err(ActorExitStatus::Success);
@@ -296,22 +305,26 @@ impl IndexingPipeline {
         level="info",
         skip_all,
         fields(
-            index=%self.params.pipeline_id.index_uid.index_id(),
+            index=%self.params.pipeline_id.index_uid.index_id,
             gen=self.generation()
         ))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         let _spawn_pipeline_permit = ctx
             .protect_future(SPAWN_PIPELINE_SEMAPHORE.acquire())
             .await
-            .expect("The semaphore should not be closed.");
+            .expect("semaphore should not be closed");
+
         self.statistics.num_spawn_attempts += 1;
-        let index_id = self.params.pipeline_id.index_uid.index_id();
-        let source_id = self.params.pipeline_id.source_id.as_str();
         self.kill_switch = ctx.kill_switch().child();
+
+        let index_id = &self.params.pipeline_id.index_uid.index_id;
+        let source_id = &self.params.pipeline_id.source_id;
+
         info!(
-            index_id=%index_id,
-            source_id=%source_id,
-            pipeline_ord=%self.params.pipeline_id.pipeline_ord,
+            index_id,
+            source_id,
+            pipeline_uid=%self.params.pipeline_id.pipeline_uid,
+            root_dir=%self.params.indexing_directory.path().display(),
             "spawning indexing pipeline",
         );
         let (source_mailbox, source_inbox) = ctx
@@ -331,7 +344,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "publisher"]),
+                    .with_label_values(["publisher"]),
             )
             .spawn(publisher);
 
@@ -341,7 +354,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "sequencer"]),
+                    .with_label_values(["sequencer"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(sequencer);
@@ -361,7 +374,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "uploader"]),
+                    .with_label_values(["uploader"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(uploader);
@@ -396,7 +409,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "indexer"]),
+                    .with_label_values(["indexer"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(indexer);
@@ -414,7 +427,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "doc_processor"]),
+                    .with_label_values(["doc_processor"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(doc_processor);
@@ -453,6 +466,10 @@ impl IndexingPipeline {
             .set_mailboxes(source_mailbox, source_inbox)
             .set_kill_switch(self.kill_switch.clone())
             .spawn(actor_source);
+        let assign_shards_message = AssignShards(Assignment {
+            shard_ids: self.shard_ids.clone(),
+        });
+        source_mailbox.send_message(assign_shards_message).await?;
 
         // Increment generation once we are sure there will be no spawning error.
         self.previous_generations_statistics = self.statistics.clone();
@@ -494,10 +511,9 @@ impl Handler<SuperviseLoop> for IndexingPipeline {
         supervise_loop_token: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.perform_observe(ctx).await;
+        self.perform_observe(ctx);
         self.perform_health_check(ctx).await?;
-        ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token)
-            .await;
+        ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token);
         Ok(())
     }
 }
@@ -529,8 +545,7 @@ impl Handler<Spawn> for IndexingPipeline {
                 Spawn {
                     retry_count: spawn.retry_count + 1,
                 },
-            )
-            .await;
+            );
         }
         Ok(())
     }
@@ -542,16 +557,24 @@ impl Handler<AssignShards> for IndexingPipeline {
 
     async fn handle(
         &mut self,
-        message: AssignShards,
-        _ctx: &ActorContext<Self>,
+        assign_shards_message: AssignShards,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        self.shard_ids = assign_shards_message.0.shard_ids.clone();
+        // If the pipeline is running, we forward the message to its source.
+        // If it is not, it will be respawned soon, and the shards will be assigned afterward.
         if let Some(handles) = &mut self.handles_opt {
             info!(
-                shard_ids=?message.0.shard_ids,
-                "assigning shards to indexing pipeline."
+                shard_ids=?assign_shards_message.0.shard_ids,
+                "assigning shards to indexing pipeline"
             );
-            handles.source_mailbox.send_message(message).await?;
+            handles
+                .source_mailbox
+                .send_message(assign_shards_message)
+                .await?;
         }
+        // We perform observe to make sure the set of shard ids is up to date.
+        self.perform_observe(ctx);
         Ok(())
     }
 }
@@ -590,15 +613,15 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{Command, Universe};
+    use quickwit_common::ServiceStream;
     use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-    use quickwit_metastore::{IndexMetadata, ListSplitsResponseExt, PublishSplitsRequestExt};
+    use quickwit_metastore::{IndexMetadata, PublishSplitsRequestExt};
     use quickwit_proto::metastore::{
-        EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, ListSplitsResponse,
-        MetastoreError,
+        EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, MetastoreError,
     };
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
@@ -617,7 +640,8 @@ mod tests {
 
     async fn test_indexing_pipeline_num_fails_before_success(
         mut num_fails: usize,
-    ) -> anyhow::Result<bool> {
+        test_file: &str,
+    ) -> anyhow::Result<()> {
         let universe = Universe::new();
         let mut metastore = MetastoreServiceClient::mock();
         metastore
@@ -630,7 +654,7 @@ mod tests {
                     let index_metadata =
                         IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
                     return Ok(
-                        IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap(),
+                        IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap(),
                     );
                 }
                 num_fails -= 1;
@@ -647,7 +671,10 @@ mod tests {
         metastore
             .expect_stage_splits()
             .withf(|stage_splits_request| -> bool {
-                stage_splits_request.index_uid == "test-index:11111111111111111111111111"
+                stage_splits_request.index_uid()
+                    == &"test-index:00000000000000000000000002"
+                        .parse::<IndexUid>()
+                        .unwrap()
             })
             .returning(|_| Ok(EmptyResponse {}));
         metastore
@@ -657,7 +684,10 @@ mod tests {
                     .deserialize_index_checkpoint()
                     .unwrap()
                     .unwrap();
-                publish_splits_request.index_uid == "test-index:11111111111111111111111111"
+                publish_splits_request.index_uid()
+                    == &"test-index:00000000000000000000000002"
+                        .parse::<IndexUid>()
+                        .unwrap()
                     && checkpoint_delta.source_id == "test-source"
                     && publish_splits_request.staged_split_ids.len() == 1
                     && publish_splits_request.replaced_split_ids.is_empty()
@@ -667,17 +697,17 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
         let node_id = "test-node";
         let pipeline_id = IndexingPipelineId {
-            index_uid: "test-index:11111111111111111111111111".to_string().into(),
+            index_uid: IndexUid::for_test("test-index", 2),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
-            source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
+            source_params: SourceParams::file(PathBuf::from(test_file)),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
@@ -709,23 +739,32 @@ mod tests {
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1 + num_fails);
-        Ok(pipeline_exit_status.is_success())
+        assert!(pipeline_exit_status.is_success());
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_indexing_pipeline_retry_0() -> anyhow::Result<()> {
-        test_indexing_pipeline_num_fails_before_success(0).await?;
-        Ok(())
+        test_indexing_pipeline_num_fails_before_success(0, "data/test_corpus.json").await
     }
 
     #[tokio::test]
     async fn test_indexing_pipeline_retry_1() -> anyhow::Result<()> {
-        test_indexing_pipeline_num_fails_before_success(1).await?;
-        Ok(())
+        test_indexing_pipeline_num_fails_before_success(1, "data/test_corpus.json").await
     }
 
     #[tokio::test]
-    async fn test_indexing_pipeline_simple() -> anyhow::Result<()> {
+    async fn test_indexing_pipeline_retry_0_gz() -> anyhow::Result<()> {
+        test_indexing_pipeline_num_fails_before_success(0, "data/test_corpus.json.gz").await
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_retry_1_gz() -> anyhow::Result<()> {
+        test_indexing_pipeline_num_fails_before_success(1, "data/test_corpus.json.gz").await
+    }
+
+    async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 1);
         let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
@@ -735,28 +774,27 @@ mod tests {
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
+        let index_uid_clone = index_uid.clone();
         metastore
             .expect_last_delete_opstamp()
-            .withf(|last_delete_opstamp| {
-                last_delete_opstamp.index_uid == "test-index:11111111111111111111111111"
-            })
+            .withf(move |last_delete_opstamp| last_delete_opstamp.index_uid() == &index_uid_clone)
             .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
+        let index_uid_clone = index_uid.clone();
         metastore
             .expect_stage_splits()
-            .withf(|stage_splits_request| {
-                stage_splits_request.index_uid == "test-index:11111111111111111111111111"
-            })
+            .withf(move |stage_splits_request| stage_splits_request.index_uid() == &index_uid_clone)
             .returning(|_| Ok(EmptyResponse {}));
+        let index_uid_clone = index_uid.clone();
         metastore
             .expect_publish_splits()
-            .withf(|publish_splits_request| -> bool {
+            .withf(move |publish_splits_request| -> bool {
                 let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
                     .deserialize_index_checkpoint()
                     .unwrap()
                     .unwrap();
-                publish_splits_request.index_uid == "test-index:11111111111111111111111111"
+                publish_splits_request.index_uid() == &index_uid_clone
                     && publish_splits_request.staged_split_ids.len() == 1
                     && publish_splits_request.replaced_split_ids.is_empty()
                     && checkpoint_delta.source_id == "test-source"
@@ -767,17 +805,17 @@ mod tests {
         let universe = Universe::new();
         let node_id = "test-node";
         let pipeline_id = IndexingPipelineId {
-            index_uid: "test-index:11111111111111111111111111".to_string().into(),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
-            source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
+            source_params: SourceParams::file(PathBuf::from(test_file)),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
@@ -815,6 +853,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_indexing_pipeline_simple() -> anyhow::Result<()> {
+        indexing_pipeline_simple("data/test_corpus.json").await
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_simple_gz() -> anyhow::Result<()> {
+        indexing_pipeline_simple("data/test_corpus.json.gz").await
+    }
+
+    #[tokio::test]
     async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
@@ -825,11 +873,11 @@ mod tests {
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         mock_metastore
             .expect_list_splits()
-            .returning(|_| Ok(ListSplitsResponse::empty()));
+            .returning(|_| Ok(ServiceStream::empty()));
         let universe = Universe::with_accelerated_time();
         let node_id = "test-node";
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
@@ -837,7 +885,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
@@ -859,7 +907,8 @@ mod tests {
             split_store: split_store.clone(),
             merge_policy: default_merge_policy(),
             max_concurrent_split_uploads: 2,
-            merge_max_io_num_bytes_per_sec: None,
+            merge_io_throughput_limiter_opt: None,
+            merge_scheduler_service: universe.get_or_spawn_one(),
             event_broker: Default::default(),
         };
         let merge_pipeline = MergePipeline::new(merge_pipeline_params, universe.spawn_ctx());
@@ -911,8 +960,8 @@ mod tests {
         panic!("Pipeline was apparently not restarted.");
     }
 
-    #[tokio::test]
-    async fn test_indexing_pipeline_all_failures_handling() -> anyhow::Result<()> {
+    async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 2);
         let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
@@ -922,26 +971,26 @@ mod tests {
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
+        let index_uid_clone = index_uid.clone();
         metastore
             .expect_last_delete_opstamp()
-            .withf(|last_delete_opstamp| {
-                last_delete_opstamp.index_uid == "test-index:11111111111111111111111111"
-            })
+            .withf(move |last_delete_opstamp| last_delete_opstamp.index_uid() == &index_uid_clone)
             .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
         metastore
             .expect_stage_splits()
             .never()
             .returning(|_| Ok(EmptyResponse {}));
+        let index_uid_clone = index_uid.clone();
         metastore
             .expect_publish_splits()
-            .withf(|publish_splits_request| -> bool {
+            .withf(move |publish_splits_request| -> bool {
                 let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
                     .deserialize_index_checkpoint()
                     .unwrap()
                     .unwrap();
-                publish_splits_request.index_uid == "test-index:11111111111111111111111111"
+                publish_splits_request.index_uid() == &index_uid_clone
                     && publish_splits_request.staged_split_ids.is_empty()
                     && publish_splits_request.replaced_split_ids.is_empty()
                     && checkpoint_delta.source_id == "test-source"
@@ -952,17 +1001,17 @@ mod tests {
         let universe = Universe::new();
         let node_id = "test-node";
         let pipeline_id = IndexingPipelineId {
-            index_uid: "test-index:11111111111111111111111111".to_string().into(),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
-            source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
+            source_params: SourceParams::file(PathBuf::from(test_file)),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
@@ -1020,5 +1069,15 @@ mod tests {
         );
         universe.assert_quit().await;
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_all_failures_handling() -> anyhow::Result<()> {
+        indexing_pipeline_all_failures_handling("data/test_corpus.json").await
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_all_failures_handling_gz() -> anyhow::Result<()> {
+        indexing_pipeline_all_failures_handling("data/test_corpus.json.gz").await
     }
 }

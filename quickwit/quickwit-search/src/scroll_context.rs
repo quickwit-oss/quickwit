@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -59,11 +59,6 @@ pub(crate) struct ScrollContext {
 }
 
 impl ScrollContext {
-    /// Returns true if the current page in cache is incomplete.
-    pub fn last_page_in_cache(&self) -> bool {
-        self.cached_partial_hits.len() < SCROLL_BATCH_LEN
-    }
-
     /// Returns as many results in cache.
     pub fn get_cached_partial_hits(&self, doc_range: Range<u64>) -> &[PartialHit] {
         if doc_range.end <= doc_range.start {
@@ -85,6 +80,13 @@ impl ScrollContext {
         &truncated_partial_hits[..num_partial_hits]
     }
 
+    /// Clear cache if it wouldn't be useful, i.e. if page size is greater than SCROLL_BATCH_LEN
+    pub fn clear_cache_if_unneeded(&mut self) {
+        if self.search_request.max_hits > SCROLL_BATCH_LEN as u64 {
+            self.cached_partial_hits.clear();
+        }
+    }
+
     pub fn serialize(&self) -> Vec<u8> {
         let uncompressed_payload = serde_json::to_string(self).unwrap();
         uncompressed_payload.as_bytes().to_vec()
@@ -101,14 +103,11 @@ impl ScrollContext {
     pub async fn load_batch_starting_at(
         &mut self,
         start_offset: u64,
+        previous_last_hit: PartialHit,
         cluster_client: &ClusterClient,
         searcher_context: &SearcherContext,
     ) -> crate::Result<bool> {
-        if self.cached_partial_hits_start_offset <= start_offset && self.last_page_in_cache() {
-            return Ok(false);
-        }
-        self.search_request.max_hits = SCROLL_BATCH_LEN as u64;
-        self.search_request.start_offset = start_offset;
+        self.search_request.search_after = Some(previous_last_hit);
         let leaf_search_response: LeafSearchResponse = crate::root::search_partial_hits_phase(
             searcher_context,
             &self.indexes_metas_for_leaf_search,
@@ -149,31 +148,42 @@ impl MiniKV {
     }
 }
 
-#[derive(Serialize, Deserialize, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
 pub(crate) struct ScrollKeyAndStartOffset {
     scroll_ulid: Ulid,
     pub(crate) start_offset: u64,
+    // this is set to zero if there are no more documents
     pub(crate) max_hits_per_page: u32,
+    pub(crate) search_after: PartialHit,
 }
 
 impl ScrollKeyAndStartOffset {
     pub fn new_with_start_offset(
         start_offset: u64,
         max_hits_per_page: u32,
+        search_after: PartialHit,
     ) -> ScrollKeyAndStartOffset {
         let scroll_ulid: Ulid = Ulid::new();
+        // technically we could only initialize search_after on first call to next_page, and use
+        // default() before, but that feels like partial initialization.
         ScrollKeyAndStartOffset {
             scroll_ulid,
             start_offset,
             max_hits_per_page,
+            search_after,
         }
     }
 
-    pub fn next_page(mut self, found_hits_in_current_page: u64) -> ScrollKeyAndStartOffset {
+    pub fn next_page(
+        mut self,
+        found_hits_in_current_page: u64,
+        last_hit: PartialHit,
+    ) -> ScrollKeyAndStartOffset {
         self.start_offset += found_hits_in_current_page;
         if found_hits_in_current_page < self.max_hits_per_page as u64 {
             self.max_hits_per_page = 0;
         }
+        self.search_after = last_hit;
         self
     }
 
@@ -184,10 +194,12 @@ impl ScrollKeyAndStartOffset {
 
 impl ToString for ScrollKeyAndStartOffset {
     fn to_string(&self) -> String {
-        let mut payload = [0u8; 28];
+        let mut payload = vec![0u8; 28];
         payload[..16].copy_from_slice(&u128::from(self.scroll_ulid).to_le_bytes());
         payload[16..24].copy_from_slice(&self.start_offset.to_le_bytes());
         payload[24..28].copy_from_slice(&self.max_hits_per_page.to_le_bytes());
+        serde_json::to_writer(&mut payload, &self.search_after)
+            .expect("serializing PartialHit should never fail");
         BASE64_STANDARD.encode(payload)
     }
 }
@@ -199,8 +211,8 @@ impl FromStr for ScrollKeyAndStartOffset {
         let base64_decoded: Vec<u8> = BASE64_STANDARD
             .decode(scroll_id_str)
             .map_err(|_| "scroll id is invalid base64.")?;
-        if base64_decoded.len() != 16 + 8 + 4 {
-            return Err("scroll id payload is not 8 bytes long");
+        if base64_decoded.len() <= 16 + 8 + 4 {
+            return Err("scroll id payload is truncated");
         }
         let (scroll_ulid_bytes, from_bytes, max_hits_bytes) = (
             &base64_decoded[..16],
@@ -210,10 +222,13 @@ impl FromStr for ScrollKeyAndStartOffset {
         let scroll_ulid = u128::from_le_bytes(scroll_ulid_bytes.try_into().unwrap()).into();
         let from = u64::from_le_bytes(from_bytes.try_into().unwrap());
         let max_hits = u32::from_le_bytes(max_hits_bytes.try_into().unwrap());
+        let search_after =
+            serde_json::from_slice(&base64_decoded[28..]).map_err(|_| "scroll id is malformed")?;
         Ok(ScrollKeyAndStartOffset {
             scroll_ulid,
             start_offset: from,
             max_hits_per_page: max_hits,
+            search_after,
         })
     }
 }
@@ -222,11 +237,20 @@ impl FromStr for ScrollKeyAndStartOffset {
 mod tests {
     use std::str::FromStr;
 
+    use quickwit_proto::search::PartialHit;
+
     use crate::scroll_context::ScrollKeyAndStartOffset;
 
     #[test]
     fn test_scroll_id() {
-        let scroll = ScrollKeyAndStartOffset::new_with_start_offset(10, 100);
+        let partial_hit = PartialHit {
+            sort_value: None,
+            sort_value2: None,
+            split_id: "split".to_string(),
+            segment_ord: 1,
+            doc_id: 2,
+        };
+        let scroll = ScrollKeyAndStartOffset::new_with_start_offset(10, 100, partial_hit);
         let scroll_str = scroll.to_string();
         let ser_deser_scroll = ScrollKeyAndStartOffset::from_str(&scroll_str).unwrap();
         assert_eq!(scroll, ser_deser_scroll);

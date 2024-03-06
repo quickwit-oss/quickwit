@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -24,13 +24,16 @@ use quickwit_common::uri::Uri;
 use quickwit_proto::control_plane::{ControlPlaneService, ControlPlaneServiceClient};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
-    CreateIndexResponse, DeleteIndexRequest, DeleteQuery, DeleteShardsRequest,
-    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
+    CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
+    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteSourceRequest,
+    DeleteSplitsRequest, DeleteTask, EmptyResponse, FindIndexTemplateMatchesRequest,
+    FindIndexTemplateMatchesResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
     IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
-    ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse,
-    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardsRequest,
+    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
+    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
+    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult,
+    MetastoreService, MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest,
     OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
     ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
@@ -144,7 +147,7 @@ impl MetastoreService for ControlPlaneMetastore {
     async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
-    ) -> MetastoreResult<ListSplitsResponse> {
+    ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         self.metastore.list_splits(request).await
     }
 
@@ -232,7 +235,44 @@ impl MetastoreService for ControlPlaneMetastore {
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> MetastoreResult<DeleteShardsResponse> {
+    ) -> MetastoreResult<EmptyResponse> {
         self.metastore.delete_shards(request).await
+    }
+
+    // Index Template API
+
+    async fn create_index_template(
+        &mut self,
+        request: CreateIndexTemplateRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.metastore.create_index_template(request).await
+    }
+
+    async fn get_index_template(
+        &mut self,
+        request: GetIndexTemplateRequest,
+    ) -> MetastoreResult<GetIndexTemplateResponse> {
+        self.metastore.get_index_template(request).await
+    }
+
+    async fn find_index_template_matches(
+        &mut self,
+        request: FindIndexTemplateMatchesRequest,
+    ) -> MetastoreResult<FindIndexTemplateMatchesResponse> {
+        self.metastore.find_index_template_matches(request).await
+    }
+
+    async fn list_index_templates(
+        &mut self,
+        request: ListIndexTemplatesRequest,
+    ) -> MetastoreResult<ListIndexTemplatesResponse> {
+        self.metastore.list_index_templates(request).await
+    }
+
+    async fn delete_index_templates(
+        &mut self,
+        request: DeleteIndexTemplatesRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.metastore.delete_index_templates(request).await
     }
 }

@@ -11,7 +11,7 @@ fmt:
 
 fix:
 	@echo "Running cargo clippy --fix"
-	@cargo clippy --fix --all-features --allow-dirty --allow-staged
+	@cargo clippy --workspace --all-features --tests --fix --allow-dirty --allow-staged
 	@$(MAKE) fmt
 
 # Usage:

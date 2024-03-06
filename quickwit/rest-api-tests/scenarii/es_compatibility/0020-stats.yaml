@@ -1,0 +1,94 @@
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "gharchive/_stats"
+expected:
+  _all:
+    primaries:
+      docs:
+        count: 100
+      store: 
+        size_in_bytes: 
+          $expect: "val > 278300"
+    total:
+      segments:
+        count: 1
+      docs:
+        count: 100
+  indices: 
+    gharchive:
+      primaries:
+        docs:
+          count: 100
+        store: 
+          size_in_bytes: 
+            $expect: "val > 278300"
+      total:
+        segments:
+          count: 1
+        docs:
+          count: 100
+---
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "ghar*/_stats"
+expected:
+  _all:
+    primaries:
+      docs:
+        count: 100
+    total:
+      segments:
+        count: 1
+      docs:
+        count: 100
+  indices: 
+    gharchive:
+      primaries:
+        docs:
+          count: 100
+      total:
+        segments:
+          count: 1
+        docs:
+          count: 100
+---
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: "_stats"
+expected:
+  _all:
+    primaries:
+      docs:
+        count: 100
+    total:
+      segments:
+        count: 1
+      docs:
+        count: 100
+  indices: 
+    gharchive:
+      primaries:
+        docs:
+          count: 100
+      total:
+        segments:
+          count: 1
+        docs:
+          count: 100
+    empty_index:
+      primaries:
+        docs:
+          count: 0
+      total:
+        segments:
+          count: 0
+        docs:
+          count: 0
+
+

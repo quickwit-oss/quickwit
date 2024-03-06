@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -27,6 +27,7 @@ mod ingest_service;
 mod ingest_v2;
 mod memory_capacity;
 mod metrics;
+mod mrecordlog_async;
 mod notifications;
 mod position;
 mod queue;
@@ -120,6 +121,32 @@ impl CommitType {
             CommitType::Auto => None,
             CommitType::WaitFor => Some(&[("commit", "wait_for")]),
             CommitType::Force => Some(&[("commit", "force")]),
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! with_lock_metrics {
+    ($future:expr, $($label:tt),*) => {
+        {
+            $crate::ingest_v2::metrics::INGEST_V2_METRICS
+                .wal_acquire_lock_requests_in_flight
+                .with_label_values([$($label),*])
+                .inc();
+
+            let now = std::time::Instant::now();
+            let guard = $future;
+
+            $crate::ingest_v2::metrics::INGEST_V2_METRICS
+                .wal_acquire_lock_requests_in_flight
+                .with_label_values([$($label),*])
+                .dec();
+            $crate::ingest_v2::metrics::INGEST_V2_METRICS
+                .wal_acquire_lock_request_duration_secs
+                .with_label_values([$($label),*])
+                .observe(now.elapsed().as_secs_f64());
+
+            guard
         }
     }
 }

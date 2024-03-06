@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -39,6 +39,7 @@ use tantivy::Term;
 
 use super::*;
 use crate::find_trace_ids_collector::Span;
+use crate::list_terms::leaf_list_terms;
 use crate::service::SearcherContext;
 use crate::single_node_search;
 
@@ -386,6 +387,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         sort_fields: vec![SortField {
             field_name: "ts".to_string(),
             sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
         }],
         ..Default::default()
     };
@@ -409,6 +411,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         sort_fields: vec![SortField {
             field_name: "ts".to_string(),
             sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
         }],
         ..Default::default()
     };
@@ -431,6 +434,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         sort_fields: vec![SortField {
             field_name: "ts".to_string(),
             sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
         }],
         ..Default::default()
     };
@@ -476,7 +480,7 @@ async fn test_single_node_without_timestamp_with_query_start_timestamp_enabled(
     let start_timestamp = OffsetDateTime::now_utc().unix_timestamp();
     for i in 0..30 {
         let body = format!("info @ t:{}", i + 1);
-        docs.push(json!({"body": body}));
+        docs.push(json!({ "body": body }));
     }
     test_sandbox.add_documents(docs).await?;
 
@@ -575,6 +579,7 @@ async fn single_node_search_sort_by_field(
         sort_fields: vec![SortField {
             field_name: sort_by_field.to_string(),
             sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
         }],
         ..Default::default()
     };
@@ -600,7 +605,7 @@ async fn single_node_search_sort_by_field(
         }
         Err(err) => {
             test_sandbox.assert_quit().await;
-            Err(err).map_err(anyhow::Error::from)
+            Err(anyhow::Error::from(err))
         }
     }
 }
@@ -660,6 +665,7 @@ async fn test_sort_bm25() {
             sort_fields: vec![SortField {
                 field_name: "_score".to_string(),
                 sort_order: SortOrder::Desc as i32,
+                sort_datetime_format: None,
             }],
             ..Default::default()
         };
@@ -752,6 +758,7 @@ async fn test_sort_by_static_and_dynamic_field() {
             sort_fields: vec![SortField {
                 field_name: sort_field.to_string(),
                 sort_order: order as i32,
+                sort_datetime_format: None,
             }],
             ..Default::default()
         };
@@ -850,10 +857,12 @@ async fn test_sort_by_2_field() {
                     SortField {
                         field_name: sort_field1.to_string(),
                         sort_order: order1 as i32,
+                        sort_datetime_format: None,
                     },
                     SortField {
                         field_name: sort_field2.to_string(),
                         sort_order: order2 as i32,
+                        sort_datetime_format: None,
                     },
                 ],
                 ..Default::default()
@@ -932,6 +941,7 @@ async fn test_single_node_invalid_sorting_with_query() {
         sort_fields: vec![SortField {
             field_name: "description".to_string(),
             sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
         }],
         ..Default::default()
     };
@@ -1029,14 +1039,15 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
         .await
         .unwrap()
-        .deserialize_splits()
+        .collect_splits()
+        .await
         .unwrap();
     let splits_offsets: Vec<_> = splits
         .into_iter()
         .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
         .collect();
     let request = Arc::new(SearchRequest {
-        index_id_patterns: vec![test_sandbox.index_uid().index_id().to_string()],
+        index_id_patterns: vec![test_sandbox.index_uid().index_id.to_string()],
         query_ast: qast_json_helper(query, &[]),
         max_hits: 100,
         ..Default::default()
@@ -1667,7 +1678,9 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         .metastore()
         .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
         .await?
-        .deserialize_splits()?;
+        .collect_splits()
+        .await
+        .unwrap();
     let splits_offsets: Vec<_> = splits
         .into_iter()
         .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
@@ -1676,7 +1689,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
 
     {
         let request = ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id().to_string(),
+            index_id_patterns: vec![test_sandbox.index_uid().index_id.to_string()],
             field: "title".to_string(),
             start_key: None,
             end_key: None,
@@ -1697,7 +1710,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id().to_string(),
+            index_id_patterns: vec![test_sandbox.index_uid().index_id.to_string()],
             field: "title".to_string(),
             start_key: None,
             end_key: None,
@@ -1718,7 +1731,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id().to_string(),
+            index_id_patterns: vec![test_sandbox.index_uid().index_id.to_string()],
             field: "title".to_string(),
             start_key: Some("casper".as_bytes().to_vec()),
             end_key: None,
@@ -1739,7 +1752,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id().to_string(),
+            index_id_patterns: vec![test_sandbox.index_uid().index_id.to_string()],
             field: "title".to_string(),
             start_key: None,
             end_key: Some("casper".as_bytes().to_vec()),
@@ -1770,6 +1783,8 @@ async fn test_single_node_find_trace_ids_collector() {
               - name: trace_id
                 type: bytes
                 fast: true
+                input_format: hex
+                output_format: hex
               - name: span_timestamp_secs
                 type: datetime
                 fast: true

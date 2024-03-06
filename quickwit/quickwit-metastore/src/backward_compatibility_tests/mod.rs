@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -25,7 +25,8 @@ use quickwit_config::TestableForRegression;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::file_backed_metastore::file_backed_index::FileBackedIndex;
+use crate::file_backed::file_backed_index::FileBackedIndex;
+use crate::file_backed::manifest::Manifest;
 use crate::{IndexMetadata, SplitMetadata};
 
 /// In order to avoid confusion, we need to make sure that the
@@ -45,7 +46,7 @@ use crate::{IndexMetadata, SplitMetadata};
 ///     #[serde(rename="0.2")]
 ///     V0_2(MyResourceV1) //< there was no change in this version.
 /// }
-const GLOBAL_QUICKWIT_RESOURCE_VERSION: &str = "0.6";
+const GLOBAL_QUICKWIT_RESOURCE_VERSION: &str = "0.7";
 
 /// This test makes sure that the resource is using the current `GLOBAL_QUICKWIT_RESOURCE_VERSION`.
 fn test_global_version<T: Serialize>(serializable: &T) -> anyhow::Result<()> {
@@ -76,7 +77,7 @@ where T: TestableForRegression + std::fmt::Debug {
     let expected: T = deserialize_json_file(Path::new(&expected_path))?;
     println!("---\nTest equality of {:?}", expected);
     println!("---\nwith {:?}", deserialized);
-    deserialized.test_equality(&expected);
+    deserialized.assert_equality(&expected);
     Ok(())
 }
 
@@ -218,4 +219,9 @@ fn test_index_metadata_backward_compatibility() {
 #[test]
 fn test_file_backed_index_backward_compatibility() {
     test_json_backward_compatibility_helper::<FileBackedIndex>("file-backed-index").unwrap();
+}
+
+#[test]
+fn test_file_backed_metastore_manifest_backward_compatibility() {
+    test_json_backward_compatibility_helper::<Manifest>("manifest").unwrap();
 }

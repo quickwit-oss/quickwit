@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -29,11 +29,11 @@ use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
-    FetchDocsRequest, FetchDocsResponse, GetKvRequest, Hit, LeafListTermsRequest,
-    LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest,
-    LeafSearchStreamResponse, ListTermsRequest, ListTermsResponse, PutKvRequest,
-    ReportSplitsRequest, ReportSplitsResponse, ScrollRequest, SearchRequest, SearchResponse,
-    SearchStreamRequest, SnippetRequest,
+    FetchDocsRequest, FetchDocsResponse, GetKvRequest, Hit, LeafListFieldsRequest,
+    LeafListTermsRequest, LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse,
+    LeafSearchStreamRequest, LeafSearchStreamResponse, ListFieldsRequest, ListFieldsResponse,
+    ListTermsRequest, ListTermsResponse, PutKvRequest, ReportSplitsRequest, ReportSplitsResponse,
+    ScrollRequest, SearchRequest, SearchResponse, SearchStreamRequest, SnippetRequest,
 };
 use quickwit_storage::{
     MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
@@ -43,13 +43,13 @@ use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::leaf_cache::LeafSearchCache;
-use crate::root::{fetch_docs_phase, get_snippet_request};
+use crate::list_fields::{leaf_list_fields, root_list_fields};
+use crate::list_fields_cache::ListFieldsCache;
+use crate::list_terms::{leaf_list_terms, root_list_terms};
+use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_stream::{leaf_search_stream, root_search_stream};
-use crate::{
-    fetch_docs, leaf_list_terms, leaf_search, root_list_terms, root_search, ClusterClient,
-    SearchError,
-};
+use crate::{fetch_docs, leaf_search, root_search, ClusterClient, SearchError};
 
 #[derive(Clone)]
 /// The search service implementation.
@@ -136,6 +136,18 @@ pub trait SearchService: 'static + Send + Sync {
     /// Indexers call report_splits to inform searchers node about the presence of a split, which
     /// would then be considered as a candidate for the searcher split cache.
     async fn report_splits(&self, report_splits: ReportSplitsRequest) -> ReportSplitsResponse;
+
+    /// Return the list of fields for a given or multiple indices.
+    async fn root_list_fields(
+        &self,
+        list_fields: ListFieldsRequest,
+    ) -> crate::Result<ListFieldsResponse>;
+
+    /// Return the list of fields for one index.
+    async fn leaf_list_fields(
+        &self,
+        list_fields: LeafListFieldsRequest,
+    ) -> crate::Result<ListFieldsResponse>;
 }
 
 impl SearchServiceImpl {
@@ -314,6 +326,36 @@ impl SearchService for SearchServiceImpl {
         }
         ReportSplitsResponse {}
     }
+
+    async fn root_list_fields(
+        &self,
+        list_fields_req: ListFieldsRequest,
+    ) -> crate::Result<ListFieldsResponse> {
+        root_list_fields(
+            list_fields_req,
+            &self.cluster_client,
+            self.metastore.clone(),
+        )
+        .await
+    }
+
+    async fn leaf_list_fields(
+        &self,
+        list_fields_req: LeafListFieldsRequest,
+    ) -> crate::Result<ListFieldsResponse> {
+        let index_uri = Uri::from_str(&list_fields_req.index_uri)?;
+        let storage = self.storage_resolver.resolve(&index_uri).await?;
+        let index_id = list_fields_req.index_id;
+        let split_ids = list_fields_req.split_offsets;
+        leaf_list_fields(
+            index_id,
+            storage,
+            &self.searcher_context,
+            &split_ids[..],
+            &list_fields_req.fields,
+        )
+        .await
+    }
 }
 
 pub(crate) async fn scroll(
@@ -338,25 +380,39 @@ pub(crate) async fn scroll(
     let mut partial_hits = Vec::new();
     let mut scroll_context_modified = false;
 
-    loop {
-        let current_doc = start_doc + partial_hits.len() as u64;
-        partial_hits
-            .extend_from_slice(scroll_context.get_cached_partial_hits(current_doc..end_doc));
-        if partial_hits.len() as u64 >= scroll_context.max_hits_per_page {
-            break;
-        }
-        let cursor: u64 = start_doc + partial_hits.len() as u64;
-        if !scroll_context
-            .load_batch_starting_at(cursor, cluster_client, searcher_context)
-            .await?
-        {
-            break;
-        }
+    let cached_results = scroll_context.get_cached_partial_hits(start_doc..end_doc);
+    partial_hits.extend_from_slice(cached_results);
+    if (partial_hits.len() as u64) < current_scroll.max_hits_per_page as u64 {
+        let search_after = partial_hits
+            .last()
+            .cloned()
+            .unwrap_or_else(|| current_scroll.search_after.clone());
+        let cursor = start_doc + partial_hits.len() as u64;
+        scroll_context
+            .load_batch_starting_at(cursor, search_after, cluster_client, searcher_context)
+            .await?;
+        partial_hits.extend_from_slice(scroll_context.get_cached_partial_hits(cursor..end_doc));
         scroll_context_modified = true;
     }
 
+    // Fetch the actual documents.
+    let hits: Vec<Hit> = fetch_docs_phase(
+        &scroll_context.indexes_metas_for_leaf_search,
+        &partial_hits[..],
+        &scroll_context.split_metadatas[..],
+        &scroll_context.search_request,
+        cluster_client,
+    )
+    .await?;
+
+    let next_scroll_id = current_scroll.next_page(
+        hits.len() as u64,
+        partial_hits.last().cloned().unwrap_or_default(),
+    );
+
     if let Some(scroll_ttl_secs) = scroll_request.scroll_ttl_secs {
         if scroll_context_modified {
+            scroll_context.clear_cache_if_unneeded();
             let payload = scroll_context.serialize();
             let scroll_ttl = Duration::from_secs(scroll_ttl_secs as u64);
             cluster_client
@@ -365,26 +421,11 @@ pub(crate) async fn scroll(
         }
     }
 
-    let snippet_request: Option<SnippetRequest> =
-        get_snippet_request(&scroll_context.search_request);
-
-    // Fetch the actual documents.
-    let hits: Vec<Hit> = fetch_docs_phase(
-        &scroll_context.indexes_metas_for_leaf_search,
-        &partial_hits[..],
-        &scroll_context.split_metadatas[..],
-        snippet_request,
-        cluster_client,
-    )
-    .await?;
-
-    let next_scroll_id = Some(current_scroll.next_page(hits.len() as u64));
-
     Ok(SearchResponse {
         hits,
         num_hits: scroll_context.total_num_hits,
         elapsed_time_micros: start.elapsed().as_micros() as u64,
-        scroll_id: next_scroll_id.as_ref().map(ToString::to_string),
+        scroll_id: Some(next_scroll_id.to_string()),
         errors: Vec::new(),
         aggregation: None,
     })
@@ -407,6 +448,8 @@ pub struct SearcherContext {
     pub leaf_search_cache: LeafSearchCache,
     /// Search split cache. `None` if no split cache is configured.
     pub split_cache_opt: Option<Arc<SplitCache>>,
+    /// List fields cache. Caches the list fields response for a given split.
+    pub list_fields_cache: ListFieldsCache,
 }
 
 impl std::fmt::Debug for SearcherContext {
@@ -445,6 +488,8 @@ impl SearcherContext {
         let storage_long_term_cache = Arc::new(QuickwitCache::new(fast_field_cache_capacity));
         let leaf_search_cache =
             LeafSearchCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
+        let list_fields_cache =
+            ListFieldsCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
 
         Self {
             searcher_config,
@@ -453,6 +498,7 @@ impl SearcherContext {
             split_footer_cache: global_split_footer_cache,
             split_stream_semaphore,
             leaf_search_cache,
+            list_fields_cache,
             split_cache_opt,
         }
     }

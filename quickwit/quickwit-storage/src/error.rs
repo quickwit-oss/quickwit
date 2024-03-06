@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -29,7 +29,7 @@ use thiserror::Error;
 /// Storage error kind.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum StorageErrorKind {
-    /// The target index does not exist.
+    /// The target file does not exist.
     NotFound,
     /// The request credentials do not allow for this operation.
     Unauthorized,
@@ -51,7 +51,7 @@ pub enum StorageResolverError {
     #[error("invalid storage config: `{0}`")]
     InvalidConfig(String),
 
-    /// The URI does not contain sufficient information to connect to the storage.
+    /// The URI is malformed or does not contain sufficient information to connect to the storage.
     #[error("invalid storage URI: `{0}`")]
     InvalidUri(String),
 
@@ -61,8 +61,8 @@ pub enum StorageResolverError {
 
     /// The URI is valid, and is meant to be handled by this resolver,
     /// but the resolver failed to actually connect to the storage.
-    /// e.g. Connection error, credential error, incompatible version,
-    /// internal error in third party etc.
+    /// e.g. connection error, credentials error, incompatible version,
+    /// internal error in third party, etc.
     #[error("failed to open storage {kind:?}: {message}")]
     FailedToOpenStorage {
         kind: crate::StorageErrorKind,

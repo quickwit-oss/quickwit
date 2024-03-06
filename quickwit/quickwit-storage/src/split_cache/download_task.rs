@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -18,34 +18,15 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::num::NonZeroU32;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_common::split_file;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use tracing::{error, instrument};
-use ulid::Ulid;
 
-use crate::split_cache::split_table::{CandidateSplit, DownloadOpportunity, SplitTable};
-use crate::StorageResolver;
-
-/// Removes the evicted split files from the file system.
-/// This function just logs errors, and swallows them.
-///
-/// At this point, the disk space is already accounted as released,
-/// so the error could result in a "disk space leak".
-#[instrument]
-pub(crate) fn delete_evicted_splits(root_path: &Path, splits_to_delete: &[Ulid]) {
-    for &split_to_delete in splits_to_delete {
-        let split_file_path = root_path.join(split_file(split_to_delete));
-        if let Err(_io_err) = std::fs::remove_file(&split_file_path) {
-            // This is an pretty critical error. The split size is not tracked anymore at this
-            // point.
-            error!(path=%split_file_path.display(), "failed to remove split file from cache directory. This is critical as the file is now not taken in account in the cache size limits");
-        }
-    }
-}
+use crate::split_cache::split_table::{CandidateSplit, DownloadOpportunity};
+use crate::{SplitCache, StorageResolver};
 
 async fn download_split(
     root_path: &Path,
@@ -68,9 +49,8 @@ async fn download_split(
 
 async fn perform_eviction_and_download(
     download_opportunity: DownloadOpportunity,
-    root_path: PathBuf,
+    split_cache: Arc<SplitCache>,
     storage_resolver: StorageResolver,
-    shared_split_table: Arc<Mutex<SplitTable>>,
     _download_permit: OwnedSemaphorePermit,
 ) -> anyhow::Result<()> {
     let DownloadOpportunity {
@@ -79,20 +59,20 @@ async fn perform_eviction_and_download(
     } = download_opportunity;
     let split_ulid = split_to_download.split_ulid;
     // tokio io runs on `spawn_blocking` threads anyway.
-    let root_path_clone = root_path.clone();
+    let split_cache_clone = split_cache.clone();
     let _ = tokio::task::spawn_blocking(move || {
-        delete_evicted_splits(&root_path_clone, &splits_to_delete[..]);
+        split_cache_clone.evict(&splits_to_delete[..]);
     })
     .await;
-    let num_bytes = download_split(&root_path, &split_to_download, storage_resolver).await?;
-    let mut shared_split_table_lock = shared_split_table.lock().unwrap();
+    let num_bytes =
+        download_split(&split_cache.root_path, &split_to_download, storage_resolver).await?;
+    let mut shared_split_table_lock = split_cache.split_table.lock().unwrap();
     shared_split_table_lock.register_as_downloaded(split_ulid, num_bytes);
     Ok(())
 }
 
 pub(crate) fn spawn_download_task(
-    root_path: PathBuf,
-    shared_split_table: Arc<Mutex<SplitTable>>,
+    split_cache: Arc<SplitCache>,
     storage_resolver: StorageResolver,
     num_concurrent_downloads: NonZeroU32,
 ) {
@@ -100,16 +80,17 @@ pub(crate) fn spawn_download_task(
     tokio::task::spawn(async move {
         loop {
             let download_permit = Semaphore::acquire_owned(semaphore.clone()).await.unwrap();
-            let download_opportunity_opt = shared_split_table
+            let download_opportunity_opt = split_cache
+                .split_table
                 .lock()
                 .unwrap()
                 .find_download_opportunity();
             if let Some(download_opportunity) = download_opportunity_opt {
+                let split_cache_clone = split_cache.clone();
                 tokio::task::spawn(perform_eviction_and_download(
                     download_opportunity,
-                    root_path.clone(),
+                    split_cache_clone,
                     storage_resolver.clone(),
-                    shared_split_table.clone(),
                     download_permit,
                 ));
             } else {

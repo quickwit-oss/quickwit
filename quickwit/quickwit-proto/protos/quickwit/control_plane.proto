@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -21,6 +21,8 @@ syntax = "proto3";
 
 package quickwit.control_plane;
 
+import "quickwit/common.proto";
+import "quickwit/indexing.proto";
 import "quickwit/ingest.proto";
 import "quickwit/metastore.proto";
 
@@ -59,6 +61,12 @@ service ControlPlaneService {
   // Returns the list of open shards for one or several sources. If the control plane is not able to find any
   // for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
   rpc GetOrCreateOpenShards(GetOrCreateOpenShardsRequest) returns (GetOrCreateOpenShardsResponse);
+
+  // Asks the control plane whether the shards listed in the request should be deleted or truncated.
+  rpc AdviseResetShards(AdviseResetShardsRequest) returns (AdviseResetShardsResponse);
+
+  // Return some innerstate of the control plane meant to assist debugging.
+  rpc GetDebugState(GetDebugStateRequest) returns (GetDebugStateResponse);
 }
 
 // Shard API
@@ -66,6 +74,10 @@ service ControlPlaneService {
 message GetOrCreateOpenShardsRequest {
   repeated GetOrCreateOpenShardsSubrequest subrequests = 1;
   repeated quickwit.ingest.ShardIds closed_shards = 2;
+  // The control plane should return shards that are not present on the supplied leaders.
+  //
+  // The control plane does not change the status of those leaders just from this signal.
+  // It will check the status of its own ingester pool.
   repeated string unavailable_leaders = 3;
 }
 
@@ -82,7 +94,7 @@ message GetOrCreateOpenShardsResponse {
 
 message GetOrCreateOpenShardsSuccess {
   uint32 subrequest_id = 1;
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   repeated quickwit.ingest.Shard open_shards = 4;
 }
@@ -98,4 +110,31 @@ message GetOrCreateOpenShardsFailure {
   string index_id = 2;
   string source_id = 3;
   GetOrCreateOpenShardsFailureReason reason = 4;
+}
+
+message GetDebugStateRequest {
+}
+
+message GetDebugStateResponse {
+  repeated ShardTableEntry shard_table = 1;
+  repeated PhysicalIndexingPlanEntry physical_index_plan = 2;
+}
+
+message ShardTableEntry {
+  string source_id = 1;
+  repeated quickwit.ingest.Shard shards = 2;
+}
+
+message PhysicalIndexingPlanEntry {
+  string node_id = 1;
+  repeated quickwit.indexing.IndexingTask tasks = 2;
+}
+
+message AdviseResetShardsRequest {
+  repeated quickwit.ingest.ShardIds shard_ids = 1;
+}
+
+message AdviseResetShardsResponse {
+  repeated quickwit.ingest.ShardIds shards_to_delete = 1;
+  repeated quickwit.ingest.ShardIdPositions shards_to_truncate = 2;
 }

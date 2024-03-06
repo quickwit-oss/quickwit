@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -28,9 +28,9 @@ use quickwit_config::{MetastoreBackend, MetastoreConfig, MetastoreConfigs};
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
 
-use crate::metastore::file_backed_metastore::FileBackedMetastoreFactory;
+use crate::metastore::file_backed::FileBackedMetastoreFactory;
 #[cfg(feature = "postgres")]
-use crate::metastore::postgresql_metastore::PostgresqlMetastoreFactory;
+use crate::metastore::postgres::PostgresqlMetastoreFactory;
 use crate::{MetastoreFactory, MetastoreResolverError};
 
 type FactoryAndConfig = (Box<dyn MetastoreFactory>, MetastoreConfig);
@@ -62,6 +62,7 @@ impl MetastoreResolver {
     ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
         let backend = match uri.protocol() {
             Protocol::Azure => MetastoreBackend::File,
+            Protocol::Google => MetastoreBackend::File,
             Protocol::File => MetastoreBackend::File,
             Protocol::Ram => MetastoreBackend::File,
             Protocol::S3 => MetastoreBackend::File,
@@ -129,14 +130,14 @@ impl MetastoreResolver {
             builder = builder.register(
                 UnsupportedMetastore::new(
                     MetastoreBackend::PostgreSQL,
-                    "Quickwit was compiled without the `postgres` feature.",
+                    "Quickwit was compiled without the `postgres` feature",
                 ),
                 PostgresMetastoreConfig::default().into(),
             );
         }
         builder
             .build()
-            .expect("Metastore factory and config backends should match.")
+            .expect("metastore factory and config backends should match")
     }
 }
 
@@ -162,7 +163,7 @@ impl MetastoreResolverBuilder {
         for (metastore_factory, metastore_config) in self.per_protocol_factories.values() {
             ensure!(
                 metastore_factory.backend() == metastore_config.backend(),
-                "Metastore factory and config backends do not match: {:?} vs. {:?}",
+                "metastore factory and config backends do not match: {:?} vs. {:?}",
                 metastore_factory.backend(),
                 metastore_config.backend(),
             );

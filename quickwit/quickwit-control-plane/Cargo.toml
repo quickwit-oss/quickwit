@@ -1,19 +1,21 @@
 [package]
 name = "quickwit-control-plane"
-version = "0.6.5-dev"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
-description = "Core crate of quickwit"
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+description = "Control plane service implementation"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-fnv = { workspace = true }
 dyn-clone = { workspace = true }
+fnv = { workspace = true }
+futures = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
@@ -30,8 +32,10 @@ tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
+ulid = { workspace = true }
 
 quickwit-actors = { workspace = true }
+quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
@@ -44,7 +48,6 @@ mockall = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }
 
-chitchat = { workspace = true }
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
@@ -53,9 +56,6 @@ quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
-
-[build-dependencies]
-quickwit-codegen = { workspace = true }
 
 [features]
 testsuite = ["mockall"]

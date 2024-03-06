@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,12 +17,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use super::Bytes;
-
 include!("../codegen/quickwit/quickwit.ingest.router.rs");
 
+impl IngestRequestV2 {
+    pub fn num_bytes(&self) -> usize {
+        self.subrequests
+            .iter()
+            .map(|subrequest| subrequest.num_bytes())
+            .sum()
+    }
+}
+
 impl IngestSubrequest {
-    pub fn docs(&self) -> impl Iterator<Item = Bytes> + '_ {
-        self.doc_batch.iter().flat_map(|doc_batch| doc_batch.docs())
+    pub fn num_bytes(&self) -> usize {
+        self.doc_batch
+            .as_ref()
+            .map(|doc_batch| doc_batch.doc_buffer.len())
+            .unwrap_or(0)
     }
 }

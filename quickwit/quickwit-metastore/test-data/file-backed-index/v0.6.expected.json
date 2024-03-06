@@ -118,7 +118,7 @@
           "message"
         ]
       },
-      "version": "0.6"
+      "version": "0.7"
     },
     "index_uid": "my-index:00000000000000000000000000",
     "sources": [
@@ -137,25 +137,10 @@
           "script": ".message = downcase(string!(.message))",
           "timezone": "UTC"
         },
-        "version": "0.6"
+        "version": "0.7"
       }
     ],
-    "version": "0.6"
-  },
-  "shards": {
-    "_ingest-source": {
-      "next_shard_id": 2,
-      "shards": [
-        {
-          "follower_id": "follower-ingester",
-          "index_uid": "my-index:00000000000000000000000000",
-          "leader_id": "leader-ingester",
-          "shard_id": 1,
-          "shard_state": 0,
-          "source_id": "_ingest-source"
-        }
-      ]
-    }
+    "version": "0.7"
   },
   "splits": [
     {
@@ -188,8 +173,8 @@
       },
       "uncompressed_docs_size_in_bytes": 234234,
       "update_timestamp": 1789,
-      "version": "0.6"
+      "version": "0.7"
     }
   ],
-  "version": "0.6"
+  "version": "0.7"
 }

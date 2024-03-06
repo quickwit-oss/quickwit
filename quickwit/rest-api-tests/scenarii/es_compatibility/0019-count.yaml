@@ -1,0 +1,10 @@
+endpoint: "gharchive/_count"
+params:
+  q: type:PushEvent
+expected:
+  count: 60
+---
+endpoint: "gharchive/_count"
+expected:
+  count: 100
+

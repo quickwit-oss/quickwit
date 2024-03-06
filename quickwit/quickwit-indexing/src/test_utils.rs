@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -23,9 +23,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use chitchat::transport::ChannelTransport;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::create_cluster_for_test;
+use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
@@ -39,7 +38,7 @@ use quickwit_metastore::{
     CreateIndexRequestExt, MetastoreResolver, Split, SplitMetadata, SplitState,
 };
 use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, PipelineUid};
 use quickwit_storage::{Storage, StorageResolver};
 use serde_json::Value as JsonValue;
 
@@ -102,14 +101,15 @@ impl TestSandbox {
         let mut metastore = metastore_resolver
             .resolve(&Uri::for_test(METASTORE_URI))
             .await?;
-        let create_index_request = CreateIndexRequest::try_from_index_config(index_config.clone())?;
+        let create_index_request = CreateIndexRequest::try_from_index_config(&index_config)?;
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await?
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
         let storage = storage_resolver.resolve(&index_uri).await?;
         let universe = Universe::with_accelerated_time();
+        let merge_scheduler_mailbox = universe.get_or_spawn_one();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
         let ingest_api_service =
             init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default()).await?;
@@ -121,6 +121,7 @@ impl TestSandbox {
             cluster,
             metastore.clone(),
             Some(ingest_api_service),
+            merge_scheduler_mailbox,
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
@@ -156,7 +157,7 @@ impl TestSandbox {
             .collect();
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let source_config = SourceConfig {
-            source_id: self.index_uid.index_id().to_string(),
+            source_id: self.index_uid.index_id.to_string(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
@@ -171,9 +172,9 @@ impl TestSandbox {
         let pipeline_id = self
             .indexing_service
             .ask_for_res(SpawnPipeline {
-                index_id: self.index_uid.index_id().to_string(),
+                index_id: self.index_uid.index_id.to_string(),
                 source_config,
-                pipeline_ord: 0,
+                pipeline_uid: PipelineUid::from_u128(0u128),
             })
             .await?;
         let pipeline_handle = self
@@ -238,10 +239,7 @@ pub struct MockSplitBuilder {
 impl MockSplitBuilder {
     pub fn new(split_id: &str) -> Self {
         Self {
-            split_metadata: mock_split_meta(
-                split_id,
-                &IndexUid::from_parts("test-index", "000000"),
-            ),
+            split_metadata: mock_split_meta(split_id, &IndexUid::from_parts("test-index", 0)),
         }
     }
 
@@ -282,7 +280,7 @@ pub fn mock_split_meta(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
+    use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt};
     use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
 
     use super::TestSandbox;
@@ -313,7 +311,8 @@ mod tests {
                     ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap(),
                 )
                 .await?
-                .deserialize_splits()?;
+                .collect_splits()
+                .await?;
             assert_eq!(splits.len(), 1);
             test_sandbox.add_documents(vec![
             serde_json::json!({"title": "Byzantine-Ottoman wars", "body": "...", "url": "http://biz-ottoman"}),
@@ -325,7 +324,8 @@ mod tests {
                     ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap(),
                 )
                 .await?
-                .deserialize_splits()?;
+                .collect_splits()
+                .await?;
             assert_eq!(splits.len(), 2);
         }
         test_sandbox.assert_quit().await;

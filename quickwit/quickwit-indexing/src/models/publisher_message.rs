@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -23,10 +23,9 @@ use itertools::Itertools;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::types::{IndexUid, PublishToken};
-use tantivy::TrackedObject;
 use tracing::Span;
 
-use crate::merge_policy::MergeOperation;
+use crate::merge_policy::MergeTask;
 use crate::models::PublishLock;
 
 pub struct SplitsUpdate {
@@ -36,11 +35,11 @@ pub struct SplitsUpdate {
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
     pub publish_token_opt: Option<PublishToken>,
-    /// A [`MergeOperation`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
+    /// A [`MergeTask`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
     /// in the `MergePipeline` or `DeleteTaskPipeline`.
     /// See planners docs to understand the usage.
     /// If `None`, the split batch was built in the `IndexingPipeline`.
-    pub merge_operation: Option<TrackedObject<MergeOperation>>,
+    pub merge_task: Option<MergeTask>,
     pub parent_span: Span,
 }
 
@@ -52,7 +51,7 @@ impl fmt::Debug for SplitsUpdate {
             .map(|split| split.split_id())
             .join(",");
         f.debug_struct("SplitsUpdate")
-            .field("index_id", &self.index_uid.index_id())
+            .field("index_id", &self.index_uid.index_id)
             .field("new_splits", &new_split_ids)
             .field("checkpoint_delta", &self.checkpoint_delta_opt)
             .finish()

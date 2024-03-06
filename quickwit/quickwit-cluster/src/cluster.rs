@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,6 +20,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Debug, Display};
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -27,45 +28,45 @@ use anyhow::Context;
 use chitchat::transport::Transport;
 use chitchat::{
     spawn_chitchat, Chitchat, ChitchatConfig, ChitchatHandle, ChitchatId, ClusterStateSnapshot,
-    FailureDetectorConfig, NodeState,
+    FailureDetectorConfig, KeyChangeEvent, ListenerHandle, NodeState,
 };
-use futures::Stream;
 use itertools::Itertools;
 use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{NodeId, PipelineUid, ShardId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use tokio::time::timeout;
-use tokio_stream::wrappers::{UnboundedReceiverStream, WatchStream};
+use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
-use crate::change::{compute_cluster_change_events, ClusterChange};
+use crate::change::{compute_cluster_change_events, ClusterChange, ClusterChangeStreamFactory};
+use crate::grpc_gossip::spawn_catchup_callback_task;
 use crate::member::{
     build_cluster_member, ClusterMember, NodeStateExt, ENABLED_SERVICES_KEY,
-    GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX, PIPELINE_METRICS_PREFIX, READINESS_KEY,
-    READINESS_VALUE_NOT_READY, READINESS_VALUE_READY,
+    GRPC_ADVERTISE_ADDR_KEY, PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
+    READINESS_VALUE_READY,
 };
-use crate::ClusterNode;
+use crate::metrics::spawn_metrics_task;
+use crate::{ClusterChangeStream, ClusterNode};
 
-const GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_millis(25)
+const MARKED_FOR_DELETION_GRACE_PERIOD: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(2_500) // 2.5 secs
 } else {
-    Duration::from_secs(1)
+    Duration::from_secs(3_600 * 2) // 2 hours.
 };
 
-const MARKED_FOR_DELETION_GRACE_PERIOD: usize = if cfg!(any(test, feature = "testsuite")) {
-    100 // ~ HEARTBEAT * 100 = 2.5 seconds.
-} else {
-    5_000 // ~ HEARTBEAT * 5_000 ~ 4 hours.
-};
+// An indexing task key is formatted as
+// `{INDEXING_TASK_PREFIX}{PIPELINE_ULID}`.
+const INDEXING_TASK_PREFIX: &str = "indexer.task:";
 
 #[derive(Clone)]
 pub struct Cluster {
     cluster_id: String,
     self_chitchat_id: ChitchatId,
     /// Socket address (UDP) the node listens on for receiving gossip messages.
-    gossip_listen_addr: SocketAddr,
+    pub gossip_listen_addr: SocketAddr,
+    gossip_interval: Duration,
     inner: Arc<RwLock<InnerCluster>>,
 }
 
@@ -80,6 +81,7 @@ impl Debug for Cluster {
                 "gossip_advertise_addr",
                 &self.self_chitchat_id.gossip_advertise_addr,
             )
+            .field("gossip_interval", &self.gossip_interval)
             .finish()
     }
 }
@@ -110,38 +112,48 @@ impl Cluster {
         self_node: ClusterMember,
         gossip_listen_addr: SocketAddr,
         peer_seed_addrs: Vec<String>,
+        gossip_interval: Duration,
         failure_detector_config: FailureDetectorConfig,
         transport: &dyn Transport,
     ) -> anyhow::Result<Self> {
         info!(
             cluster_id=%cluster_id,
             node_id=%self_node.node_id,
+            generation_id=self_node.generation_id.as_u64(),
             enabled_services=?self_node.enabled_services,
             gossip_listen_addr=%gossip_listen_addr,
             gossip_advertise_addr=%self_node.gossip_advertise_addr,
             grpc_advertise_addr=%self_node.grpc_advertise_addr,
             peer_seed_addrs=%peer_seed_addrs.join(", "),
-            "Joining cluster."
+            "joining cluster"
         );
+        // Set up catchup callback and extra liveness predicate functions.
+        let (catchup_callback_tx, catchup_callback_rx) = watch::channel(());
+        let catchup_callback = move || {
+            let _ = catchup_callback_tx.send(());
+        };
+        let extra_liveness_predicate = |node_state: &NodeState| {
+            [ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY]
+                .iter()
+                .all(|key| node_state.contains_key(key))
+        };
         let chitchat_config = ChitchatConfig {
             cluster_id: cluster_id.clone(),
             chitchat_id: self_node.chitchat_id(),
             listen_addr: gossip_listen_addr,
             seed_nodes: peer_seed_addrs,
             failure_detector_config,
-            gossip_interval: GOSSIP_INTERVAL,
+            gossip_interval,
             marked_for_deletion_grace_period: MARKED_FOR_DELETION_GRACE_PERIOD,
+            catchup_callback: Some(Box::new(catchup_callback)),
+            extra_liveness_predicate: Some(Box::new(extra_liveness_predicate)),
         };
         let chitchat_handle = spawn_chitchat(
             chitchat_config,
             vec![
                 (
                     ENABLED_SERVICES_KEY.to_string(),
-                    self_node
-                        .enabled_services
-                        .iter()
-                        .map(|service| service.as_str())
-                        .join(","),
+                    self_node.enabled_services.iter().join(","),
                 ),
                 (
                     GRPC_ADVERTISE_ADDR_KEY.to_string(),
@@ -157,10 +169,25 @@ impl Cluster {
         .await?;
 
         let chitchat = chitchat_handle.chitchat();
-        let live_nodes_stream = chitchat.lock().await.live_nodes_watcher();
+        let chitchat_guard = chitchat.lock().await;
+        let live_nodes_rx = chitchat_guard.live_nodes_watcher();
+        let live_nodes_stream = chitchat_guard.live_nodes_watch_stream();
         let (ready_members_tx, ready_members_rx) = watch::channel(Vec::new());
-
         spawn_ready_members_task(cluster_id.clone(), live_nodes_stream, ready_members_tx);
+        drop(chitchat_guard);
+
+        let weak_chitchat = Arc::downgrade(&chitchat);
+        spawn_metrics_task(weak_chitchat.clone(), self_node.chitchat_id());
+
+        spawn_catchup_callback_task(
+            cluster_id.clone(),
+            self_node.chitchat_id(),
+            weak_chitchat,
+            live_nodes_rx,
+            catchup_callback_rx.clone(),
+        )
+        .await;
+
         let inner = InnerCluster {
             cluster_id: cluster_id.clone(),
             self_chitchat_id: self_node.chitchat_id(),
@@ -173,9 +200,10 @@ impl Cluster {
             cluster_id,
             self_chitchat_id: self_node.chitchat_id(),
             gossip_listen_addr,
+            gossip_interval,
             inner: Arc::new(RwLock::new(inner)),
         };
-        spawn_ready_nodes_change_stream_task(cluster.clone()).await;
+        spawn_change_stream_task(cluster.clone()).await;
         Ok(cluster)
     }
 
@@ -190,20 +218,23 @@ impl Cluster {
     }
 
     /// Returns a stream of changes affecting the set of ready nodes in the cluster.
-    pub async fn ready_nodes_change_stream(&self) -> impl Stream<Item = ClusterChange> {
-        // The subscriber channel must be unbounded because we do no want to block when sending the
-        // events.
-        let (change_stream_tx, change_stream_rx) = mpsc::unbounded_channel();
-        let mut inner = self.inner.write().await;
-        for node in inner.live_nodes.values() {
-            if node.is_ready() {
-                change_stream_tx
-                    .send(ClusterChange::Add(node.clone()))
-                    .expect("The receiver end of the channel should be open.");
+    pub fn change_stream(&self) -> ClusterChangeStream {
+        let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
+        let inner = self.inner.clone();
+        // We spawn a task so the signature of this function is sync.
+        let future = async move {
+            let mut inner = inner.write().await;
+            for node in inner.live_nodes.values() {
+                if node.is_ready() {
+                    change_stream_tx
+                        .send(ClusterChange::Add(node.clone()))
+                        .expect("receiver end of the channel should be open");
+                }
             }
-        }
-        inner.change_stream_subscribers.push(change_stream_tx);
-        UnboundedReceiverStream::new(change_stream_rx)
+            inner.change_stream_subscribers.push(change_stream_tx);
+        };
+        tokio::spawn(future);
+        change_stream
     }
 
     /// Returns whether the self node is ready.
@@ -245,7 +276,29 @@ impl Cluster {
             .await
             .self_node_state()
             .get_versioned(key)
+            .filter(|versioned_value| !versioned_value.is_tombstone())
             .map(|versioned_value| versioned_value.value.clone())
+    }
+
+    pub async fn remove_self_key(&self, key: &str) {
+        self.chitchat()
+            .await
+            .lock()
+            .await
+            .self_node_state()
+            .mark_for_deletion(key)
+    }
+
+    pub async fn subscribe(
+        &self,
+        key_prefix: &str,
+        callback: impl Fn(KeyChangeEvent) + Send + Sync + 'static,
+    ) -> ListenerHandle {
+        self.chitchat()
+            .await
+            .lock()
+            .await
+            .subscribe_event(key_prefix, callback)
     }
 
     /// Waits until the predicate holds true for the set of ready members.
@@ -308,7 +361,7 @@ impl Cluster {
             "Leaving the cluster."
         );
         self.set_self_node_readiness(false).await;
-        tokio::time::sleep(GOSSIP_INTERVAL * 2).await;
+        tokio::time::sleep(self.gossip_interval * 2).await;
     }
 
     /// This exposes in chitchat some metrics about the CPU usage of cooperative pipelines.
@@ -349,25 +402,18 @@ impl Cluster {
         let chitchat = self.chitchat().await;
         let mut chitchat_guard = chitchat.lock().await;
         let node_state = chitchat_guard.self_node_state();
-        let mut current_indexing_tasks_keys: HashSet<String> = node_state
-            .iter_prefix(INDEXING_TASK_PREFIX)
-            .map(|(key, _)| key.to_string())
-            .collect();
-        for (indexing_task, indexing_tasks_group) in
-            indexing_tasks.iter().group_by(|&task| task).into_iter()
-        {
-            let key = format!("{INDEXING_TASK_PREFIX}{indexing_task}");
-            current_indexing_tasks_keys.remove(&key);
-            node_state.set(key, indexing_tasks_group.count().to_string());
-        }
-        for obsolete_task_key in current_indexing_tasks_keys {
-            node_state.mark_for_deletion(&obsolete_task_key);
-        }
+        set_indexing_tasks_in_node_state(indexing_tasks, node_state);
         Ok(())
     }
 
-    async fn chitchat(&self) -> Arc<Mutex<Chitchat>> {
+    pub async fn chitchat(&self) -> Arc<Mutex<Chitchat>> {
         self.inner.read().await.chitchat_handle.chitchat()
+    }
+}
+
+impl ClusterChangeStreamFactory for Cluster {
+    fn create(&self) -> ClusterChangeStream {
+        self.change_stream()
     }
 }
 
@@ -407,7 +453,88 @@ fn spawn_ready_members_task(
     tokio::spawn(fut);
 }
 
-async fn spawn_ready_nodes_change_stream_task(cluster: Cluster) {
+/// Parses indexing tasks from the chitchat node state.
+pub fn parse_indexing_tasks(node_state: &NodeState) -> Vec<IndexingTask> {
+    node_state
+        .iter_prefix(INDEXING_TASK_PREFIX)
+        .flat_map(|(key, versioned_value)| {
+            // We want to skip the tombstoned keys.
+            if !versioned_value.is_tombstone() {
+                Some((key, versioned_value.value.as_str()))
+            } else {
+                None
+            }
+        })
+        .flat_map(|(key, value)| {
+            let indexing_task_opt = chitchat_kv_to_indexing_task(key, value);
+            if indexing_task_opt.is_none() {
+                warn!(key=%key, value=%value, "failed to parse indexing task from chitchat kv");
+            }
+            indexing_task_opt
+        })
+        .collect()
+}
+
+/// Writes the given indexing tasks in the given node state.
+///
+/// If previous indexing tasks were present in the node state but were not in the given tasks, they
+/// are marked for deletion.
+pub(crate) fn set_indexing_tasks_in_node_state(
+    indexing_tasks: &[IndexingTask],
+    node_state: &mut NodeState,
+) {
+    let mut current_indexing_tasks_keys: HashSet<String> = node_state
+        .iter_prefix(INDEXING_TASK_PREFIX)
+        .map(|(key, _)| key.to_string())
+        .collect();
+    for indexing_task in indexing_tasks {
+        let (key, value) = indexing_task_to_chitchat_kv(indexing_task);
+        current_indexing_tasks_keys.remove(&key);
+        node_state.set(key, value);
+    }
+    for obsolete_task_key in current_indexing_tasks_keys {
+        node_state.mark_for_deletion(&obsolete_task_key);
+    }
+}
+
+fn indexing_task_to_chitchat_kv(indexing_task: &IndexingTask) -> (String, String) {
+    let IndexingTask {
+        index_uid: _,
+        source_id,
+        shard_ids,
+        pipeline_uid: _,
+    } = indexing_task;
+    let index_uid = indexing_task.index_uid();
+    let key = format!("{INDEXING_TASK_PREFIX}{}", indexing_task.pipeline_uid());
+    let shard_ids_str = shard_ids.iter().sorted().join(",");
+    let value = format!("{index_uid}:{source_id}:{shard_ids_str}");
+    (key, value)
+}
+
+fn parse_shard_ids_str(shard_ids_str: &str) -> Vec<ShardId> {
+    shard_ids_str
+        .split(',')
+        .filter(|shard_id_str| !shard_id_str.is_empty())
+        .map(ShardId::from)
+        .collect()
+}
+
+fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> {
+    let pipeline_uid_str = key.strip_prefix(INDEXING_TASK_PREFIX)?;
+    let pipeline_uid = PipelineUid::from_str(pipeline_uid_str).ok()?;
+    let (source_uid, shards_str) = value.rsplit_once(':')?;
+    let (index_uid, source_id) = source_uid.rsplit_once(':')?;
+    let index_uid = index_uid.parse().ok()?;
+    let shard_ids = parse_shard_ids_str(shards_str);
+    Some(IndexingTask {
+        index_uid: Some(index_uid),
+        source_id: source_id.to_string(),
+        pipeline_uid: Some(pipeline_uid),
+        shard_ids,
+    })
+}
+
+async fn spawn_change_stream_task(cluster: Cluster) {
     let cluster_guard = cluster.inner.read().await;
     let cluster_id = cluster_guard.cluster_id.clone();
     let self_chitchat_id = cluster_guard.self_chitchat_id.clone();
@@ -417,10 +544,10 @@ async fn spawn_ready_nodes_change_stream_task(cluster: Cluster) {
     drop(cluster);
 
     let mut previous_live_node_states = BTreeMap::new();
-    let mut live_nodes_watcher = chitchat.lock().await.live_nodes_watcher();
+    let mut live_nodes_watch_stream = chitchat.lock().await.live_nodes_watch_stream();
 
     let future = async move {
-        while let Some(new_live_node_states) = live_nodes_watcher.next().await {
+        while let Some(new_live_node_states) = live_nodes_watch_stream.next().await {
             let Some(cluster) = weak_cluster.upgrade() else {
                 break;
             };
@@ -520,7 +647,8 @@ pub fn grpc_addr_from_listen_addr_for_test(listen_addr: SocketAddr) -> SocketAdd
 
 #[cfg(any(test, feature = "testsuite"))]
 pub async fn create_cluster_for_test_with_id(
-    node_id: u16,
+    node_id: NodeId,
+    gossip_advertise_port: u16,
     cluster_id: String,
     peer_seed_addrs: Vec<String>,
     enabled_services: &HashSet<quickwit_config::service::QuickwitService>,
@@ -528,8 +656,7 @@ pub async fn create_cluster_for_test_with_id(
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
     use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
-    let gossip_advertise_addr: SocketAddr = ([127, 0, 0, 1], node_id).into();
-    let node_id: NodeId = format!("node_{node_id}").into();
+    let gossip_advertise_addr: SocketAddr = ([127, 0, 0, 1], gossip_advertise_port).into();
     let self_node = ClusterMember {
         node_id,
         generation_id: crate::GenerationId(1),
@@ -546,6 +673,7 @@ pub async fn create_cluster_for_test_with_id(
         self_node,
         gossip_advertise_addr,
         peer_seed_addrs,
+        Duration::from_millis(25),
         failure_detector_config,
         transport,
     )
@@ -559,7 +687,7 @@ pub async fn create_cluster_for_test_with_id(
 fn create_failure_detector_config_for_test() -> FailureDetectorConfig {
     FailureDetectorConfig {
         phi_threshold: 5.0,
-        initial_interval: GOSSIP_INTERVAL,
+        initial_interval: Duration::from_millis(25),
         ..Default::default()
     }
 }
@@ -572,19 +700,21 @@ pub async fn create_cluster_for_test(
     transport: &dyn Transport,
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
-    use std::str::FromStr;
     use std::sync::atomic::{AtomicU16, Ordering};
 
     use quickwit_config::service::QuickwitService;
 
-    static NODE_AUTO_INCREMENT: AtomicU16 = AtomicU16::new(1u16);
-    let node_id = NODE_AUTO_INCREMENT.fetch_add(1, Ordering::Relaxed);
+    static GOSSIP_ADVERTISE_PORT_SEQUENCE: AtomicU16 = AtomicU16::new(1u16);
+    let gossip_advertise_port = GOSSIP_ADVERTISE_PORT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let node_id: NodeId = format!("node-{}", gossip_advertise_port).into();
+
     let enabled_services = enabled_services
         .iter()
         .map(|service_str| QuickwitService::from_str(service_str))
         .collect::<Result<HashSet<_>, _>>()?;
     let cluster = create_cluster_for_test_with_id(
         node_id,
+        gossip_advertise_port,
         "test-cluster".to_string(),
         seeds,
         &enabled_services,
@@ -606,6 +736,7 @@ mod tests {
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::indexing::IndexingTask;
+    use quickwit_proto::types::IndexUid;
     use rand::Rng;
 
     use super::*;
@@ -686,7 +817,7 @@ mod tests {
     async fn test_cluster_multiple_nodes() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let node_1 = create_cluster_for_test(Vec::new(), &[], &transport, true).await?;
-        let node_1_change_stream = node_1.ready_nodes_change_stream().await;
+        let node_1_change_stream = node_1.change_stream();
 
         let peer_seeds = vec![node_1.gossip_listen_addr.to_string()];
         let node_2 = create_cluster_for_test(peer_seeds, &[], &transport, true).await?;
@@ -796,8 +927,16 @@ mod tests {
         )
         .await
         .unwrap();
-        let indexing_task = IndexingTask {
-            index_uid: "index-1:11111111111111111111111111".to_string(),
+        let index_uid: IndexUid = IndexUid::for_test("index-1", 1);
+        let indexing_task1 = IndexingTask {
+            pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+            index_uid: Some(index_uid.clone()),
+            source_id: "source-1".to_string(),
+            shard_ids: Vec::new(),
+        };
+        let indexing_task2 = IndexingTask {
+            pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+            index_uid: Some(index_uid.clone()),
             source_id: "source-1".to_string(),
             shard_ids: Vec::new(),
         };
@@ -805,7 +944,7 @@ mod tests {
             .set_self_key_value(GRPC_ADVERTISE_ADDR_KEY, "127.0.0.1:1001")
             .await;
         cluster2
-            .update_self_node_indexing_tasks(&[indexing_task.clone(), indexing_task.clone()])
+            .update_self_node_indexing_tasks(&[indexing_task1.clone(), indexing_task2.clone()])
             .await
             .unwrap();
         cluster1
@@ -834,9 +973,10 @@ mod tests {
             member_node_2.enabled_services,
             HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Metastore].into_iter())
         );
+
         assert_eq!(
-            member_node_2.indexing_tasks,
-            vec![indexing_task.clone(), indexing_task.clone()]
+            &member_node_2.indexing_tasks,
+            &[indexing_task1, indexing_task2]
         );
     }
 
@@ -869,11 +1009,16 @@ mod tests {
         let mut random_generator = rand::thread_rng();
         // TODO: increase it back to 1000 when https://github.com/quickwit-oss/chitchat/issues/81 is fixed
         let indexing_tasks = (0..500)
-            .map(|_| {
+            .map(|pipeline_id| {
                 let index_id = random_generator.gen_range(0..=10_000);
                 let source_id = random_generator.gen_range(0..=100);
                 IndexingTask {
-                    index_uid: format!("index-{index_id}:11111111111111111111111111"),
+                    pipeline_uid: Some(PipelineUid::from_u128(pipeline_id as u128)),
+                    index_uid: Some(
+                        format!("index-{index_id}:11111111111111111111111111")
+                            .parse()
+                            .unwrap(),
+                    ),
                     source_id: format!("source-{source_id}"),
                     shard_ids: Vec::new(),
                 }
@@ -894,8 +1039,8 @@ mod tests {
                         indexing_tasks_clone.clone(),
                     )
                 },
-                Duration::from_secs(4),
-                Duration::from_millis(500),
+                Duration::from_secs(5),
+                Duration::from_millis(100),
             )
             .await
             .unwrap();
@@ -982,19 +1127,19 @@ mod tests {
             let chitchat_handle = node.inner.read().await.chitchat_handle.chitchat();
             let mut chitchat_guard = chitchat_handle.lock().await;
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}my_good_index:my_source:11111111111111111111111111"),
-                "2".to_string(),
+                format!("{INDEXING_TASK_PREFIX}01BX5ZZKBKACTAV9WEVGEMMVS0"),
+                "my_index:00000000000000000000000000:my_source:1,3".to_string(),
             );
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}my_bad_index:my_source:11111111111111111111111111"),
-                "malformatted value".to_string(),
+                format!("{INDEXING_TASK_PREFIX}01BX5ZZKBKACTAV9WEVGEMMVS1"),
+                "my_index-00000000000000000000000000-my_source:3,5".to_string(),
             );
         }
         node.wait_for_ready_members(|members| members.len() == 1, Duration::from_secs(5))
             .await
             .unwrap();
         let ready_members = node.ready_members().await;
-        assert_eq!(ready_members[0].indexing_tasks.len(), 2);
+        assert_eq!(ready_members[0].indexing_tasks.len(), 1);
     }
 
     #[tokio::test]
@@ -1003,7 +1148,8 @@ mod tests {
         let transport = ChannelTransport::default();
 
         let cluster1a = create_cluster_for_test_with_id(
-            11u16,
+            "node-11".into(),
+            11,
             "cluster1".to_string(),
             Vec::new(),
             &HashSet::default(),
@@ -1012,7 +1158,8 @@ mod tests {
         )
         .await?;
         let cluster2a = create_cluster_for_test_with_id(
-            21u16,
+            "node-21".into(),
+            21,
             "cluster2".to_string(),
             vec![cluster1a.gossip_listen_addr.to_string()],
             &HashSet::default(),
@@ -1021,6 +1168,7 @@ mod tests {
         )
         .await?;
         let cluster1b = create_cluster_for_test_with_id(
+            "node-12".into(),
             12,
             "cluster1".to_string(),
             vec![
@@ -1033,6 +1181,7 @@ mod tests {
         )
         .await?;
         let cluster2b = create_cluster_for_test_with_id(
+            "node-22".into(),
             22,
             "cluster2".to_string(),
             vec![
@@ -1079,5 +1228,130 @@ mod tests {
         assert_eq!(members_b, expected_members_b);
 
         Ok(())
+    }
+
+    fn test_serialize_indexing_tasks_aux(
+        indexing_tasks: &[IndexingTask],
+        node_state: &mut NodeState,
+    ) {
+        set_indexing_tasks_in_node_state(indexing_tasks, node_state);
+        let ser_deser_indexing_tasks = parse_indexing_tasks(node_state);
+        assert_eq!(indexing_tasks, ser_deser_indexing_tasks);
+    }
+
+    #[test]
+    fn test_serialize_indexing_tasks() {
+        let mut node_state = NodeState::for_test();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        test_serialize_indexing_tasks_aux(&[], &mut node_state);
+        test_serialize_indexing_tasks_aux(
+            &[IndexingTask {
+                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+                index_uid: Some(index_uid.clone()),
+                source_id: "my-source1".to_string(),
+                shard_ids: vec![ShardId::from(1), ShardId::from(2)],
+            }],
+            &mut node_state,
+        );
+        // change in the set of shards
+        test_serialize_indexing_tasks_aux(
+            &[IndexingTask {
+                pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+                index_uid: Some(index_uid.clone()),
+                source_id: "my-source1".to_string(),
+                shard_ids: vec![ShardId::from(1), ShardId::from(2), ShardId::from(3)],
+            }],
+            &mut node_state,
+        );
+        test_serialize_indexing_tasks_aux(
+            &[
+                IndexingTask {
+                    pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "my-source1".to_string(),
+                    shard_ids: vec![ShardId::from(1), ShardId::from(2)],
+                },
+                IndexingTask {
+                    pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "my-source1".to_string(),
+                    shard_ids: vec![ShardId::from(3), ShardId::from(4)],
+                },
+            ],
+            &mut node_state,
+        );
+        // different index.
+        test_serialize_indexing_tasks_aux(
+            &[
+                IndexingTask {
+                    pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "my-source1".to_string(),
+                    shard_ids: vec![ShardId::from(1), ShardId::from(2)],
+                },
+                IndexingTask {
+                    pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+                    index_uid: Some(IndexUid::for_test("test-index2", 0)),
+                    source_id: "my-source1".to_string(),
+                    shard_ids: vec![ShardId::from(3), ShardId::from(4)],
+                },
+            ],
+            &mut node_state,
+        );
+        // same index, different source.
+        test_serialize_indexing_tasks_aux(
+            &[
+                IndexingTask {
+                    pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "my-source1".to_string(),
+                    shard_ids: vec![ShardId::from(1), ShardId::from(2)],
+                },
+                IndexingTask {
+                    pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "my-source2".to_string(),
+                    shard_ids: vec![ShardId::from(3), ShardId::from(4)],
+                },
+            ],
+            &mut node_state,
+        );
+    }
+
+    #[test]
+    fn test_parse_shard_ids_str() {
+        assert!(parse_shard_ids_str("").is_empty());
+        assert!(parse_shard_ids_str(",").is_empty());
+        assert_eq!(
+            parse_shard_ids_str("00000000000000000012,"),
+            [ShardId::from(12)]
+        );
+        assert_eq!(
+            parse_shard_ids_str("00000000000000000012,00000000000000000023,"),
+            [ShardId::from(12), ShardId::from(23)]
+        );
+    }
+
+    #[test]
+    fn test_parse_chitchat_kv() {
+        assert!(
+            chitchat_kv_to_indexing_task("invalidulid", "my_index:uid:my_source:1,3").is_none()
+        );
+        let task = super::chitchat_kv_to_indexing_task(
+            "indexer.task:01BX5ZZKBKACTAV9WEVGEMMVS0",
+            "my_index:00000000000000000000000000:my_source:00000000000000000001,\
+             00000000000000000003",
+        )
+        .unwrap();
+        assert_eq!(
+            task.pipeline_uid(),
+            PipelineUid::from_str("01BX5ZZKBKACTAV9WEVGEMMVS0").unwrap()
+        );
+        assert_eq!(
+            &task.index_uid().to_string(),
+            "my_index:00000000000000000000000000"
+        );
+        assert_eq!(&task.source_id, "my_source");
+        assert_eq!(&task.shard_ids, &[ShardId::from(1), ShardId::from(3)]);
     }
 }

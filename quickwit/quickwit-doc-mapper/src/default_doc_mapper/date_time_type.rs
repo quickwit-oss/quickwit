@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -345,7 +345,7 @@ mod tests {
             let error = serde_json::from_str::<InputFormats>(input_formats_json)
                 .unwrap_err()
                 .to_string();
-            assert!(error.contains("invalid format specification"));
+            assert!(error.contains("invalid strptime format"));
         }
     }
 

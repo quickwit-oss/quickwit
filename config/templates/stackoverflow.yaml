@@ -1,0 +1,36 @@
+version: 0.7
+
+template_id: stackoverflow
+
+index_id_patterns:
+  - stackoverflow*
+
+description: Index config template for the Stackoverflow tutorial (quickwit.io/docs/get-started/quickstart)
+
+priority: 0
+
+doc_mapping:
+  field_mappings:
+    - name: title
+      type: text
+      tokenizer: default
+      record: position
+      stored: true
+    - name: body
+      type: text
+      tokenizer: default
+      record: position
+      stored: true
+    - name: creationDate
+      type: datetime
+      fast: true
+      input_formats:
+        - rfc3339
+      fast_precision: seconds
+  timestamp_field: creationDate
+
+search_settings:
+  default_search_fields: [title, body]
+
+indexing_settings:
+  commit_timeout_secs: 10

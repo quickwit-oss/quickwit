@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -56,6 +56,7 @@ qw_env_vars!(
     QW_REST_LISTEN_PORT,
     QW_GOSSIP_LISTEN_PORT,
     QW_GRPC_LISTEN_PORT,
+    QW_GOSSIP_INTERVAL_MS,
     QW_PEER_SEEDS,
     QW_DATA_DIR,
     QW_METASTORE_URI,

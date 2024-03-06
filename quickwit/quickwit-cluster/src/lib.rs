@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -21,22 +21,34 @@
 
 mod change;
 mod cluster;
+mod grpc_gossip;
+mod grpc_service;
 mod member;
+mod metrics;
 mod node;
 
-#[cfg(any(test, feature = "testsuite"))]
+use std::net::SocketAddr;
+
+use async_trait::async_trait;
 pub use chitchat::transport::ChannelTransport;
-use chitchat::transport::UdpTransport;
-use chitchat::FailureDetectorConfig;
+use chitchat::transport::{Socket, Transport, UdpSocket};
+use chitchat::{ChitchatMessage, Serializable};
+pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
+pub use grpc_service::cluster_grpc_server;
+use quickwit_common::metrics::IntCounter;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::types::NodeId;
 use time::OffsetDateTime;
 
-pub use crate::change::ClusterChange;
 #[cfg(any(test, feature = "testsuite"))]
-pub use crate::cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test};
+pub use crate::change::for_test::*;
+pub use crate::change::{ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory};
+#[cfg(any(test, feature = "testsuite"))]
+pub use crate::cluster::{
+    create_cluster_for_test, create_cluster_for_test_with_id, grpc_addr_from_listen_addr_for_test,
+};
 pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 pub use crate::member::{ClusterMember, INDEXING_CPU_CAPACITY_KEY};
 pub use crate::node::ClusterNode;
@@ -57,6 +69,57 @@ impl GenerationId {
 impl From<u64> for GenerationId {
     fn from(generation_id: u64) -> Self {
         Self(generation_id)
+    }
+}
+
+struct CountingUdpTransport;
+
+struct CountingUdpSocket {
+    socket: UdpSocket,
+    gossip_recv: IntCounter,
+    gossip_recv_bytes: IntCounter,
+    gossip_send: IntCounter,
+    gossip_send_bytes: IntCounter,
+}
+
+#[async_trait]
+impl Socket for CountingUdpSocket {
+    async fn send(&mut self, to: SocketAddr, msg: ChitchatMessage) -> anyhow::Result<()> {
+        let msg_len = msg.serialized_len() as u64;
+        self.socket.send(to, msg).await?;
+        self.gossip_send.inc();
+        self.gossip_send_bytes.inc_by(msg_len);
+        Ok(())
+    }
+
+    async fn recv(&mut self) -> anyhow::Result<(SocketAddr, ChitchatMessage)> {
+        let (socket_addr, msg) = self.socket.recv().await?;
+        self.gossip_recv.inc();
+        let msg_len = msg.serialized_len() as u64;
+        self.gossip_recv_bytes.inc_by(msg_len);
+        Ok((socket_addr, msg))
+    }
+}
+
+#[async_trait]
+impl Transport for CountingUdpTransport {
+    async fn open(&self, listen_addr: SocketAddr) -> anyhow::Result<Box<dyn Socket>> {
+        let socket = UdpSocket::open(listen_addr).await?;
+        Ok(Box::new(CountingUdpSocket {
+            socket,
+            gossip_recv: crate::metrics::CLUSTER_METRICS
+                .gossip_recv_messages_total
+                .clone(),
+            gossip_recv_bytes: crate::metrics::CLUSTER_METRICS
+                .gossip_recv_bytes_total
+                .clone(),
+            gossip_send: crate::metrics::CLUSTER_METRICS
+                .gossip_sent_messages_total
+                .clone(),
+            gossip_send_bytes: crate::metrics::CLUSTER_METRICS
+                .gossip_sent_bytes_total
+                .clone(),
+        }))
     }
 }
 
@@ -89,8 +152,9 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         self_node,
         gossip_listen_addr,
         peer_seed_addrs,
+        node_config.gossip_interval,
         FailureDetectorConfig::default(),
-        &UdpTransport,
+        &CountingUdpTransport,
     )
     .await?;
     if node_config

@@ -14,7 +14,7 @@
 </p>
 
 <h2 align="center">
-Sub-second search & analytics engine on cloud storage
+Cloud-native search engine for observability (logs, traces, and soon metrics!). An open-source alternative to Datadog, Elasticsearch,  Loki, and Tempo.
 </h2>
 
 <h4 align="center">
@@ -26,7 +26,19 @@ Sub-second search & analytics engine on cloud storage
 </h4>
 <br/>
 
-<b>We just released Quickwit 0.6! Read the [blog post](https://quickwit.io/blog/quickwit-0.6) to learn about the latest powerful features!</b>
+<b>We just released Quickwit 0.7! Read the [blog post](https://quickwit.io/blog/quickwit-0.7) to learn about the latest powerful features!</b>
+
+### **Quickwit is the fastest search engine on cloud storage. It's the perfect fit for observability use cases**
+
+- [Log management](https://quickwit.io/docs/log-management/overview)
+- [Distributed tracing](https://quickwit.io/docs/distributed-tracing/overview)
+- Metrics support is on the roadmap
+
+### 🚀 Quickstart
+
+- [Search and analytics on StackOverflow dataset](https://quickwit.io/docs/get-started/quickstart)
+- [Tracing analytics with Grafana](https://quickwit.io/docs/get-started/tutorials/trace-analytics-with-grafana)
+- [Tracing with Jaeger](https://quickwit.io/docs/get-started/tutorials/tutorial-jaeger)
 
 <br/>
 
@@ -35,25 +47,18 @@ Sub-second search & analytics engine on cloud storage
 
 <br/>
 
-### **Quickwit is the fastest search engine on cloud storage. It is a great fit for:**
-
-- [Log management](https://quickwit.io/docs/log-management/overview)
-- [Distributed traces](https://quickwit.io/docs/distributed-tracing/overview)
-- Any immutable data: conversational data (emails, texts, messaging platforms) & event-based analytics
-… and more!
-
 # 💡 Features
 
 - Full-text search and aggregation queries
-- Elasticsearch query language support
-- Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, …)
-- Decoupled compute and storage, stateless indexers & searchers
-- [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing
-- Schemaless analytics
-- [Grafana data source](https://github.com/quickwit-oss/quickwit-datasource)
+- Elasticsearch-compatible API, use Quickwit with any Elasticsearch or OpenSearch client
 - [Jaeger-native](https://quickwit.io/docs/distributed-tracing/plug-quickwit-to-jaeger)
 - OTEL-native for [logs](https://quickwit.io/docs/log-management/overview) and [traces](https://quickwit.io/docs/distributed-tracing/overview)
-- Kubernetes ready - See our [helm-chart](https://quickwit.io/docs/deployment/kubernetes)
+- [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing
+- Schemaless analytics
+- Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, Google Cloud Storage, …)
+- Decoupled compute and storage, stateless indexers & searchers
+- [Grafana data source](https://github.com/quickwit-oss/quickwit-datasource)
+- Kubernetes ready - See our [helm-chart](https://quickwit.io/docs/deployment/kubernetes/helm)
 - RESTful API
 
 ## Enterprise ready
@@ -63,10 +68,6 @@ Sub-second search & analytics engine on cloud storage
 - Retention policies
 - Delete tasks (for GDPR use cases)
 - Distributed and highly available* engine that scales out in seconds (*HA indexing only with Kafka)
-
-# 🚀 Quickstart
-
-For a quick guide on how to install Quickwit, start a server, add documents to index, and search them - check out our [Quickstart](https://quickwit.io/docs/get-started/quickstart) guide.
 
 # 📑 Architecture overview
 
@@ -106,9 +107,19 @@ For a quick guide on how to install Quickwit, start a server, add documents to i
 
 # 🙋 FAQ
 
-### How can I switch from Elasticsearch to Quickwit?
+### How can I switch from Elasticsearch or Opensearch to Quickwit?
 
-Quickwit has an Elasticsearch-compatible Ingest-API to make it easier to migrate your log shippers (Vector, Fluent Bit, Syslog, ...) to Quickwit. However, we only support [ES aggregation DSL](https://quickwit.io/docs/reference/aggregation), the query DSL support is planned for Q2 2023.
+Quickwit supports a large subset of Elasticsearch/Opensearch API.
+
+For instance, it has a ES-compatible ingest API to make it easier to migrate your log shippers (Vector, Fluent Bit, Syslog, ...) to Quickwit.
+
+On the search-side, the most popular Elasticsearch endpoints, query DSL, and even aggregations are supported.
+
+The list of available endpoints and queries is available [here](https://quickwit.io/docs/reference/es_compatible_api), while the list of supported aggregations is available [here](https://quickwit.io/docs/reference/aggregation).
+
+Let us know if part of the API you are using is missing!
+
+If the client you are using is refusing to connect to Quickwit due to missing headers, you can use the `extra_headers` option in the [node configuration](https://quickwit.io/docs/configuration/node-config#rest-configuration) to impersonate any compatible version of Elasticsearch or Opensearch.
 
 ### How is Quickwit different from traditional search engines like Elasticsearch or Solr?
 
@@ -136,12 +147,14 @@ Our business model relies on our commercial license. There is no plan to become 
 
 We are always thrilled to receive contributions: code, documentation, issues, or feedback. Here's how you can help us build the future of log management:
 
-- Check out the [GitHub issues labeled "Good first issue"](https://github.com/quickwit-oss/quickwit/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) for a great place to start.
-- Familiarize yourself with our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md).
-- Delve into our [contributing guide](CONTRIBUTING.md).
-- [Create a fork of Quickwit](https://github.com/quickwit-oss/quickwit/fork) and submit your pull request!
+- Start by checking out the [GitHub issues labeled "Good first issue"](https://github.com/quickwit-oss/quickwit/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). These are a great place for newcomers to contribute.
+- Read our [Contributor Covenant Code of Conduct](./CODE_OF_CONDUCT.md) to understand our community standards.
+- [Create a fork of Quickwit](https://github.com/quickwit-oss/quickwit/fork) to have your own copy of the repository where you can make changes.
+- To understand how to contribute, read our [contributing guide](./CONTRIBUTING.md).
+- Set up your development environment following our [development setup guide](./CONTRIBUTING.md#development).
+- Once you've made your changes and tested them, you can contribute by [submitting a pull request](./CONTRIBUTING.md#submitting-a-pr).
 
-✨ And to thank you for your contributions, claim your swag by emailing us at hello@quickwit.io.
+✨ After your contributions are accepted, don't forget to claim your swag by emailing us at hello@quickwit.io. Thank you for contributing!
 
 # 💬 Join Our Community
 

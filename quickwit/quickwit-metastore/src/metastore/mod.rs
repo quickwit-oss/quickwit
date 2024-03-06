@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,29 +17,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub mod file_backed_metastore;
+pub mod file_backed;
 pub(crate) mod index_metadata;
 #[cfg(feature = "postgres")]
-pub mod postgresql_metastore;
-#[cfg(feature = "postgres")]
-mod postgresql_model;
+pub mod postgres;
 
 pub mod control_plane_metastore;
 
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
+use futures::TryStreamExt;
 pub use index_metadata::IndexMetadata;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
-use quickwit_common::tower::PrometheusMetricsLayer;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
-    serde_utils, AddSourceRequest, CreateIndexRequest, DeleteTask, IndexMetadataRequest,
-    IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse,
-    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
-    PublishSplitsRequest, StageSplitsRequest,
+    serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask,
+    IndexMetadataRequest, IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsRequest,
+    ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    MetastoreServiceStream, PublishSplitsRequest, StageSplitsRequest,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use time::OffsetDateTime;
@@ -47,16 +44,8 @@ use time::OffsetDateTime;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{Split, SplitMetadata, SplitState};
 
-static METASTORE_METRICS_LAYER: Lazy<PrometheusMetricsLayer<1>> =
-    Lazy::new(|| PrometheusMetricsLayer::new("metastore", ["request"]));
-
-pub(crate) fn instrument_metastore(
-    metastore_impl: impl MetastoreService,
-) -> MetastoreServiceClient {
-    MetastoreServiceClient::tower()
-        .shared_layer(METASTORE_METRICS_LAYER.clone())
-        .build(metastore_impl)
-}
+/// Splits batch size returned by the stream splits API
+pub(crate) const STREAM_SPLITS_CHUNK_SIZE: usize = 100;
 
 /// An extended trait for [`MetastoreService`].
 #[async_trait]
@@ -74,25 +63,96 @@ pub trait MetastoreServiceExt: MetastoreService {
 
 impl MetastoreServiceExt for MetastoreServiceClient {}
 
+/// Helper trait to collect splits from a [`MetastoreServiceStream<ListSplitsResponse>`].
+#[async_trait]
+pub trait MetastoreServiceStreamSplitsExt {
+    /// Collects all splits from a [`MetastoreServiceStream<ListSplitsResponse>`].
+    async fn collect_splits(mut self) -> MetastoreResult<Vec<Split>>;
+
+    /// Collects all splits metadata from a [`MetastoreServiceStream<ListSplitsResponse>`].
+    async fn collect_splits_metadata(mut self) -> MetastoreResult<Vec<SplitMetadata>>;
+
+    /// Collects all splits IDs from a [`MetastoreServiceStream<ListSplitsResponse>`].
+    async fn collect_split_ids(mut self) -> MetastoreResult<Vec<SplitId>>;
+}
+
+#[async_trait]
+impl MetastoreServiceStreamSplitsExt for MetastoreServiceStream<ListSplitsResponse> {
+    async fn collect_splits(mut self) -> MetastoreResult<Vec<Split>> {
+        let mut all_splits = Vec::new();
+        while let Some(list_splits_response) = self.try_next().await? {
+            let splits = list_splits_response.deserialize_splits()?;
+            all_splits.extend(splits);
+        }
+        Ok(all_splits)
+    }
+
+    async fn collect_splits_metadata(mut self) -> MetastoreResult<Vec<SplitMetadata>> {
+        let mut all_splits_metadata = Vec::new();
+        while let Some(list_splits_response) = self.try_next().await? {
+            let splits_metadata = list_splits_response.deserialize_splits_metadata()?;
+            all_splits_metadata.extend(splits_metadata);
+        }
+        Ok(all_splits_metadata)
+    }
+
+    async fn collect_split_ids(mut self) -> MetastoreResult<Vec<SplitId>> {
+        let mut all_splits = Vec::new();
+        while let Some(list_splits_response) = self.try_next().await? {
+            let splits = list_splits_response.deserialize_split_ids()?;
+            all_splits.extend(splits);
+        }
+        Ok(all_splits)
+    }
+}
+
 /// Helper trait to build a [`CreateIndexRequest`] and deserialize its payload.
 pub trait CreateIndexRequestExt {
     /// Creates a new [`CreateIndexRequest`] from an [`IndexConfig`].
-    fn try_from_index_config(index_config: IndexConfig) -> MetastoreResult<CreateIndexRequest>;
+    fn try_from_index_config(index_config: &IndexConfig) -> MetastoreResult<CreateIndexRequest>;
 
     /// Deserializes the `index_config_json` field of a [`CreateIndexRequest`] into an
     /// [`IndexConfig`].
     fn deserialize_index_config(&self) -> MetastoreResult<IndexConfig>;
+
+    /// Deserializes the `source_configs_json` field of a [`CreateIndexRequest`] into an
+    /// `Vec` of [`SourceConfig`].
+    fn deserialize_source_configs(&self) -> MetastoreResult<Vec<SourceConfig>>;
 }
 
 impl CreateIndexRequestExt for CreateIndexRequest {
-    fn try_from_index_config(index_config: IndexConfig) -> MetastoreResult<CreateIndexRequest> {
-        let index_config_json = serde_utils::to_json_str(&index_config)?;
-        let request = Self { index_config_json };
+    fn try_from_index_config(index_config: &IndexConfig) -> MetastoreResult<CreateIndexRequest> {
+        let index_config_json = serde_utils::to_json_str(index_config)?;
+        let source_configs_json = Vec::new();
+        let request = Self {
+            index_config_json,
+            source_configs_json,
+        };
         Ok(request)
     }
 
     fn deserialize_index_config(&self) -> MetastoreResult<IndexConfig> {
         serde_utils::from_json_str(&self.index_config_json)
+    }
+
+    fn deserialize_source_configs(&self) -> MetastoreResult<Vec<SourceConfig>> {
+        self.source_configs_json
+            .iter()
+            .map(|source_config_json| serde_utils::from_json_str(source_config_json))
+            .collect()
+    }
+}
+
+/// Helper trait to deserialize the payload of a [`CreateIndexResponse`].
+pub trait CreateIndexResponseExt {
+    /// Deserializes the `index_metadata_json` field of a [`CreateIndexResponse`] into an
+    /// [`IndexMetadata`].
+    fn deserialize_index_metadata(&self) -> MetastoreResult<IndexMetadata>;
+}
+
+impl CreateIndexResponseExt for CreateIndexResponse {
+    fn deserialize_index_metadata(&self) -> MetastoreResult<IndexMetadata> {
+        serde_utils::from_json_str(&self.index_metadata_json)
     }
 }
 
@@ -100,7 +160,7 @@ impl CreateIndexRequestExt for CreateIndexRequest {
 pub trait IndexMetadataResponseExt {
     /// Creates a new [`IndexMetadataResponse`] from an [`IndexMetadata`].
     fn try_from_index_metadata(
-        index_metadata: IndexMetadata,
+        index_metadata: &IndexMetadata,
     ) -> MetastoreResult<IndexMetadataResponse>;
 
     /// Deserializes the `index_metadata_serialized_json` field of a [`IndexMetadataResponse`] into
@@ -109,8 +169,8 @@ pub trait IndexMetadataResponseExt {
 }
 
 impl IndexMetadataResponseExt for IndexMetadataResponse {
-    fn try_from_index_metadata(index_metadata: IndexMetadata) -> MetastoreResult<Self> {
-        let index_metadata_serialized_json = serde_utils::to_json_str(&index_metadata)?;
+    fn try_from_index_metadata(index_metadata: &IndexMetadata) -> MetastoreResult<Self> {
+        let index_metadata_serialized_json = serde_utils::to_json_str(index_metadata)?;
         let request = Self {
             index_metadata_serialized_json,
         };
@@ -165,7 +225,7 @@ pub trait AddSourceRequestExt {
     /// Creates a new [`AddSourceRequest`] from a [`SourceConfig`].
     fn try_from_source_config(
         index_uid: impl Into<IndexUid>,
-        source_config: SourceConfig,
+        source_config: &SourceConfig,
     ) -> MetastoreResult<AddSourceRequest>;
 
     /// Deserializes the `source_config_json` field of a [`AddSourceRequest`] into a
@@ -176,7 +236,7 @@ pub trait AddSourceRequestExt {
 impl AddSourceRequestExt for AddSourceRequest {
     fn try_from_source_config(
         index_uid: impl Into<IndexUid>,
-        source_config: SourceConfig,
+        source_config: &SourceConfig,
     ) -> MetastoreResult<AddSourceRequest> {
         let source_config_json = serde_utils::to_json_str(&source_config)?;
         let request = Self {
@@ -196,7 +256,7 @@ pub trait StageSplitsRequestExt {
     /// Creates a new [`StageSplitsRequest`] from a [`SplitMetadata`].
     fn try_from_split_metadata(
         index_uid: impl Into<IndexUid>,
-        split_metadata: SplitMetadata,
+        split_metadata: &SplitMetadata,
     ) -> MetastoreResult<StageSplitsRequest>;
 
     /// Creates a new [`StageSplitsRequest`] from a list of [`SplitMetadata`].
@@ -213,7 +273,7 @@ pub trait StageSplitsRequestExt {
 impl StageSplitsRequestExt for StageSplitsRequest {
     fn try_from_split_metadata(
         index_uid: impl Into<IndexUid>,
-        split_metadata: SplitMetadata,
+        split_metadata: &SplitMetadata,
     ) -> MetastoreResult<StageSplitsRequest> {
         let split_metadata_list_serialized_json = serde_utils::to_json_str(&[split_metadata])?;
         let request = Self {
@@ -248,7 +308,7 @@ pub trait ListSplitsRequestExt {
 
     /// Creates a new [`ListSplitsRequest`] from a [`ListSplitsQuery`].
     fn try_from_list_splits_query(
-        list_splits_query: ListSplitsQuery,
+        list_splits_query: &ListSplitsQuery,
     ) -> MetastoreResult<ListSplitsRequest>;
 
     /// Deserializes the `query_json` field of a [`ListSplitsRequest`] into a [`ListSplitsQuery`].
@@ -258,11 +318,11 @@ pub trait ListSplitsRequestExt {
 impl ListSplitsRequestExt for ListSplitsRequest {
     fn try_from_index_uid(index_uid: IndexUid) -> MetastoreResult<ListSplitsRequest> {
         let list_splits_query = ListSplitsQuery::for_index(index_uid);
-        Self::try_from_list_splits_query(list_splits_query)
+        Self::try_from_list_splits_query(&list_splits_query)
     }
 
     fn try_from_list_splits_query(
-        list_splits_query: ListSplitsQuery,
+        list_splits_query: &ListSplitsQuery,
     ) -> MetastoreResult<ListSplitsRequest> {
         let query_json = serde_utils::to_json_str(&list_splits_query)?;
         let request = Self { query_json };
@@ -753,12 +813,12 @@ mod tests {
     #[test]
     fn test_list_splits_response_empty() {
         let response = ListSplitsResponse::empty();
-        assert_eq!(response.deserialize_splits().unwrap(), vec![]);
+        assert_eq!(response.deserialize_splits().unwrap(), Vec::new());
     }
 
     #[test]
     fn test_list_indexes_metadata_empty() {
         let response = ListIndexesMetadataResponse::empty();
-        assert_eq!(response.deserialize_indexes_metadata().unwrap(), vec![]);
+        assert_eq!(response.deserialize_indexes_metadata().unwrap(), Vec::new());
     }
 }

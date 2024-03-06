@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
+use std::sync::Arc;
 
 use anyhow::Context;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
@@ -25,7 +26,7 @@ use opentelemetry::sdk::trace::BatchConfig;
 use opentelemetry::sdk::{trace, Resource};
 use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
-use quickwit_serve::BuildInfo;
+use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use tracing::Level;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
@@ -39,20 +40,21 @@ pub fn setup_logging_and_tracing(
     level: Level,
     ansi_colors: bool,
     build_info: &BuildInfo,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<EnvFilterReloadFn> {
     #[cfg(feature = "tokio-console")]
     {
         if std::env::var_os(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY).is_some() {
             console_subscriber::init();
-            return Ok(());
+            return Ok(quickwit_serve::do_nothing_env_filter_reload_fn());
         }
     }
     let env_filter = env::var("RUST_LOG")
         .map(|_| EnvFilter::from_default_env())
-        .or_else(|_| EnvFilter::try_new(format!("quickwit={level}")))
-        .context("Failed to set up tracing env filter.")?;
+        .or_else(|_| EnvFilter::try_new(format!("quickwit={level},tantivy=WARN")))
+        .context("failed to set up tracing env filter")?;
     global::set_text_map_propagator(TraceContextPropagator::new());
-    let registry = tracing_subscriber::registry().with(env_filter);
+    let (reloadable_env_filter, reload_handle) = tracing_subscriber::reload::Layer::new(env_filter);
+    let registry = tracing_subscriber::registry().with(reloadable_env_filter);
     let event_format = tracing_subscriber::fmt::format()
         .with_target(true)
         .with_timer(
@@ -82,7 +84,7 @@ pub fn setup_logging_and_tracing(
             .with_trace_config(trace_config)
             .with_batch_config(batch_config)
             .install_batch(opentelemetry::runtime::Tokio)
-            .context("Failed to initialize OpenTelemetry OTLP exporter.")?;
+            .context("failed to initialize OpenTelemetry OTLP exporter")?;
         registry
             .with(tracing_opentelemetry::layer().with_tracer(tracer))
             .with(
@@ -91,7 +93,7 @@ pub fn setup_logging_and_tracing(
                     .with_ansi(ansi_colors),
             )
             .try_init()
-            .context("Failed to set up tracing.")?;
+            .context("failed to register tracing subscriber")?;
     } else {
         registry
             .with(
@@ -100,7 +102,11 @@ pub fn setup_logging_and_tracing(
                     .with_ansi(ansi_colors),
             )
             .try_init()
-            .context("Failed to set up tracing.")?;
+            .context("failed to register tracing subscriber")?;
     }
-    Ok(())
+    Ok(Arc::new(move |env_filter_def: &str| {
+        let new_env_filter = EnvFilter::try_new(env_filter_def)?;
+        reload_handle.reload(new_env_filter)?;
+        Ok(())
+    }))
 }

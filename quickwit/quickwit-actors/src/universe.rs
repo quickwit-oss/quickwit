@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -87,6 +87,16 @@ impl Universe {
 
     pub fn get_one<A: Actor>(&self) -> Option<Mailbox<A>> {
         self.spawn_ctx.registry.get_one::<A>()
+    }
+
+    pub fn get_or_spawn_one<A: Actor + Default>(&self) -> Mailbox<A> {
+        if let Some(actor_mailbox) = self.spawn_ctx.registry.get_one::<A>() {
+            actor_mailbox
+        } else {
+            let actor_default = A::default();
+            let (mailbox, _handler) = self.spawn_builder().spawn(actor_default);
+            mailbox
+        }
     }
 
     pub async fn observe(&self, timeout: Duration) -> Vec<ActorObservation> {
@@ -192,7 +202,7 @@ mod tests {
             ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
-            ctx.schedule_self_msg(Duration::from_secs(60), Loop).await;
+            ctx.schedule_self_msg(Duration::from_secs(60), Loop);
             Ok(())
         }
     }

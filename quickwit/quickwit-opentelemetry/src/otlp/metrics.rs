@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -35,37 +35,43 @@ impl Default for OtlpServiceMetrics {
             requests_total: new_counter_vec(
                 "requests_total",
                 "Number of requests",
-                "quickwit_otlp",
+                "otlp",
+                &[],
                 ["service", "index", "transport", "format"],
             ),
             request_errors_total: new_counter_vec(
                 "request_errors_total",
                 "Number of failed requests",
-                "quickwit_otlp",
+                "otlp",
+                &[],
                 ["service", "index", "transport", "format"],
             ),
             request_duration_seconds: new_histogram_vec(
                 "request_duration_seconds",
                 "Duration of requests",
-                "quickwit_otlp",
+                "otlp",
+                &[],
                 ["service", "index", "transport", "format", "error"],
             ),
             ingested_log_records_total: new_counter_vec(
                 "ingested_log_records_total",
                 "Number of log records ingested",
-                "quickwit_otlp",
+                "otlp",
+                &[],
                 ["service", "index", "transport", "format"],
             ),
             ingested_spans_total: new_counter_vec(
                 "ingested_spans_total",
                 "Number of spans ingested",
-                "quickwit_otlp",
+                "otlp",
+                &[],
                 ["service", "index", "transport", "format"],
             ),
             ingested_bytes_total: new_counter_vec(
                 "ingested_bytes_total",
                 "Number of bytes ingested",
-                "quickwit_otlp",
+                "otlp",
+                &[],
                 ["service", "index", "transport", "format"],
             ),
         }

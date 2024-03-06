@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -31,7 +31,7 @@ use serde::Deserialize;
 use warp::{Filter, Rejection};
 
 use crate::format::extract_format_from_qs;
-use crate::json_api_response::make_json_api_response;
+use crate::rest_api_response::into_rest_api_response;
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
@@ -72,7 +72,7 @@ pub fn get_delete_tasks_handler(
         .and(with_arg(metastore))
         .then(get_delete_tasks)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[utoipa::path(
@@ -120,7 +120,7 @@ pub fn post_delete_tasks_handler(
         .and(with_arg(metastore))
         .then(post_delete_request)
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(into_rest_api_response)
 }
 
 #[utoipa::path(
@@ -157,7 +157,7 @@ pub async fn post_delete_request(
         JanitorError::Internal("failed to serialized delete query ast".to_string())
     })?;
     let delete_query = DeleteQuery {
-        index_uid: index_uid.to_string(),
+        index_uid: Some(index_uid),
         start_timestamp: delete_request.start_timestamp,
         end_timestamp: delete_request.end_timestamp,
         query_ast: query_ast_json,
@@ -217,10 +217,7 @@ mod tests {
         let created_delete_task: DeleteTask = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(created_delete_task.opstamp, 1);
         let created_delete_query = created_delete_task.delete_query.unwrap();
-        assert_eq!(
-            created_delete_query.index_uid,
-            test_sandbox.index_uid().to_string()
-        );
+        assert_eq!(created_delete_query.index_uid(), &test_sandbox.index_uid());
         assert_eq!(
             created_delete_query.query_ast,
             r#"{"type":"full_text","field":"body","text":"myterm","params":{"mode":{"type":"phrase_fallback_to_intersection"}}}"#

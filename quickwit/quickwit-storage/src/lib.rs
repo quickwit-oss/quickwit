@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -32,6 +32,7 @@
 //! - The `BundleStorage` bundles together multiple files into a single file.
 mod cache;
 mod debouncer;
+mod file_descriptor_cache;
 mod metrics;
 mod storage;
 pub use debouncer::AsyncDebouncer;
@@ -43,8 +44,11 @@ pub use self::storage::Storage;
 
 mod bundle_storage;
 mod error;
+
 mod local_file_storage;
 mod object_storage;
+#[cfg(feature = "gcs")]
+mod opendal_storage;
 mod payload;
 mod prefix_storage;
 mod ram_storage;
@@ -71,6 +75,10 @@ pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
+#[cfg(all(feature = "gcs", feature = "integration-testsuite"))]
+pub use self::opendal_storage::new_emulated_google_cloud_storage;
+#[cfg(feature = "gcs")]
+pub use self::opendal_storage::GoogleCloudStorageFactory;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]
@@ -357,7 +365,7 @@ pub(crate) mod test_suite {
         let mut happy_byte_stream = storage
             .get_slice_stream(test_path, Range { start: 7, end: 12 })
             .await?;
-        let mut happy_bytes_read = vec![];
+        let mut happy_bytes_read = Vec::new();
         happy_byte_stream.read_to_end(&mut happy_bytes_read).await?;
         assert_eq!(happy_bytes_read.as_slice(), &data[7..12]);
         Ok(())

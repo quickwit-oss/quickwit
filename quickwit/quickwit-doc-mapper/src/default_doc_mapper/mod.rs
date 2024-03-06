@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -32,13 +32,15 @@ use regex::Regex;
 pub use self::default_mapper::DefaultDocMapper;
 pub use self::default_mapper_builder::{DefaultDocMapperBuilder, Mode, ModeType};
 pub use self::field_mapping_entry::{
-    FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions, QuickwitJsonOptions,
-    QuickwitNumericOptions, QuickwitTextNormalizer, QuickwitTextOptions, TextIndexingOptions,
+    BinaryFormat, FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions, QuickwitJsonOptions,
+    QuickwitTextNormalizer,
 };
 pub(crate) use self::field_mapping_entry::{
     FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
 };
-pub(crate) use self::field_mapping_type::FieldMappingType;
+#[cfg(all(test, feature = "multilang"))]
+pub(crate) use self::field_mapping_entry::{QuickwitTextOptions, TextIndexingOptions};
+pub use self::field_mapping_type::FieldMappingType;
 pub use self::tokenizer_entry::{analyze_text, TokenizerConfig, TokenizerEntry};
 pub(crate) use self::tokenizer_entry::{
     NgramTokenizerOption, RegexTokenizerOption, TokenFilterType, TokenizerType,
@@ -46,17 +48,17 @@ pub(crate) use self::tokenizer_entry::{
 use crate::QW_RESERVED_FIELD_NAMES;
 
 /// Regular expression validating a field mapping name.
-pub const FIELD_MAPPING_NAME_PATTERN: &str = r"^[_\-a-zA-Z][_\.\-a-zA-Z0-9]{0,254}$";
+pub const FIELD_MAPPING_NAME_PATTERN: &str = r"^[@$_\-a-zA-Z][@$_/\.\-a-zA-Z0-9]{0,254}$";
 
 /// Validates a field mapping name.
-/// Returns `Ok(())` if the name can be used for a field mapping. Does not check for reserved field
-/// mapping names such as `_source`.
+/// Returns `Ok(())` if the name can be used for a field mapping.
 ///
 /// A field mapping name:
-/// - may only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, hyphens
-///   `-`, and underscores `_`;
+/// - can only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, `.`,
+///   hyphens `-`, underscores `_`, at `@` and dollar `$` signs;
 /// - must not start with a dot or a digit;
-/// - must be different from Quickwit's reserved field mapping names `_source`, `_dynamic`;
+/// - must be different from Quickwit's reserved field mapping names `_source`, `_dynamic`,
+///   `_field_presence`;
 /// - must not be longer than 255 characters.
 pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<()> {
     static FIELD_MAPPING_NAME_PTN: Lazy<Regex> =
@@ -146,6 +148,8 @@ mod tests {
         assert!(validate_field_mapping_name("my-field").is_ok());
         assert!(validate_field_mapping_name("my.field").is_ok());
         assert!(validate_field_mapping_name("my_field").is_ok());
+        assert!(validate_field_mapping_name("$my_field@").is_ok());
+        assert!(validate_field_mapping_name("my/field").is_ok());
         assert!(validate_field_mapping_name(&"a".repeat(255)).is_ok());
     }
 }

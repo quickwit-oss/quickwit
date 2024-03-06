@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -64,7 +64,7 @@ WORDWITHCONSECUTIVEUPPERCASE2 = "3"
 
 fn process_tokens(analyzer: &mut TextAnalyzer, text: &str) -> Vec<Token> {
     let mut token_stream = analyzer.token_stream(text);
-    let mut tokens: Vec<Token> = vec![];
+    let mut tokens: Vec<Token> = Vec::new();
     token_stream.process(&mut |token: &Token| tokens.push(token.clone()));
     tokens
 }

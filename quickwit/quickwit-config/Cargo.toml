@@ -1,13 +1,14 @@
 [package]
 name = "quickwit-config"
-version = "0.6.5-dev"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "AGPL-3.0-or-later"                           # For a commercial license, contact hello@quickwit.io
-description = "Quickwit configuration"
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+description = "Define and manage Quickwit configuration objects"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
@@ -16,6 +17,8 @@ bytesize = { workspace = true }
 chrono = { workspace = true }
 cron = { workspace = true }
 enum-iterator = { workspace = true }
+http = { workspace = true }
+http-serde = { workspace = true }
 humantime = { workspace = true }
 itertools = { workspace = true }
 json_comments = { workspace = true }

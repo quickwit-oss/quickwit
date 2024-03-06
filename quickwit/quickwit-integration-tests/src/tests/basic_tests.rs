@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -42,21 +42,17 @@ fn get_ndjson_filepath(ndjson_dataset_filename: &str) -> String {
 async fn test_ui_redirect_on_get() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
-    assert!(sandbox
-        .indexer_rest_client
-        .node_health()
-        .is_ready()
-        .await
-        .unwrap());
-
     let node_config = sandbox.node_configs.first().unwrap();
     let client = hyper::Client::builder()
         .pool_idle_timeout(Duration::from_secs(30))
         .http2_only(true)
         .build_http();
-    let root_uri = format!("http://{}/", node_config.node_config.rest_listen_addr)
-        .parse::<hyper::Uri>()
-        .unwrap();
+    let root_uri = format!(
+        "http://{}/",
+        node_config.node_config.rest_config.listen_addr
+    )
+    .parse::<hyper::Uri>()
+    .unwrap();
     let response = client.get(root_uri.clone()).await.unwrap();
     assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
     let post_request = Request::builder()
@@ -73,12 +69,6 @@ async fn test_ui_redirect_on_get() {
 async fn test_standalone_server() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
-    assert!(sandbox
-        .indexer_rest_client
-        .node_health()
-        .is_ready()
-        .await
-        .unwrap());
     {
         // The indexing service should be running.
         let counters = sandbox
@@ -97,14 +87,13 @@ async fn test_standalone_server() {
             .indexes()
             .create(
                 r#"
-                version: 0.6
+                version: 0.7
                 index_id: my-new-index
                 doc_mapping:
                   field_mappings:
                   - name: body
                     type: text
-                "#
-                .into(),
+                "#,
                 quickwit_config::ConfigFormat::Yaml,
                 false,
             )
@@ -167,7 +156,7 @@ async fn test_multi_nodes_cluster() {
         .indexes()
         .create(
             r#"
-            version: 0.6
+            version: 0.7
             index_id: my-new-multi-node-index
             doc_mapping:
               field_mappings:
@@ -175,8 +164,7 @@ async fn test_multi_nodes_cluster() {
                 type: text
             indexing_settings:
               commit_timeout_secs: 1
-            "#
-            .into(),
+            "#,
             quickwit_config::ConfigFormat::Yaml,
             false,
         )

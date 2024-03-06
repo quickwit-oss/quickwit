@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -152,6 +152,10 @@ where
         self.heap.len() >= self.k
     }
 
+    pub fn max_len(&self) -> usize {
+        self.k
+    }
+
     /// Try to add new entries, if they are better than the current worst.
     pub fn add_entries(&mut self, mut items: impl Iterator<Item = T>) {
         if self.k == 0 {
@@ -209,7 +213,7 @@ mod tests {
         assert_eq!(&top_k, &[2u32, 2, 1]);
         let top_k = super::top_k(vec![1u32, 2, 2].into_iter(), 4, |n| *n);
         assert_eq!(&top_k, &[2u32, 2, 1]);
-        let top_k: Vec<u32> = super::top_k(vec![].into_iter(), 4, |n| *n);
+        let top_k: Vec<u32> = super::top_k(Vec::new().into_iter(), 4, |n| *n);
         assert!(top_k.is_empty());
     }
 

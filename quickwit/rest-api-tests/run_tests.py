@@ -48,13 +48,9 @@ def run_step(step, previous_result):
             methods = [methods]
         for method in methods:
             result = run_request_step(method, step, previous_result)
+    if "sleep_after" in step:
+        time.sleep(step["sleep_after"])
     return result
-
-def load_data(path):
-    if path.endswith("gz"):
-        return gzip.open(path, 'rb').read()
-    else:
-        return open(path, 'rb').read()
 
 def run_request_with_retry(run_req, expected_status_code=None, num_retries=10, wait_time=0.5):
     for try_number in range(num_retries + 1):
@@ -65,7 +61,7 @@ def run_request_with_retry(run_req, expected_status_code=None, num_retries=10, w
         if try_number < num_retries:
             print("Retrying...")
             time.sleep(wait_time)
-    raise Exception("Wrong status code. Got %s, expected %s" % (r.status_code, expected_status_code))
+    raise Exception("Wrong status code. Got %s, expected %s, url %s" % (r.status_code, expected_status_code, run_req().url))
 
 
 def resolve_previous_result(c, previous_result):
@@ -98,7 +94,8 @@ def run_request_step(method, step, previous_result):
     body_from_file = step.get("body_from_file", None)
     if body_from_file is not None:
         body_from_file = osp.join(step["cwd"], body_from_file)
-        kvargs["data"] = load_data(body_from_file)
+        kvargs["data"] = open(body_from_file, 'rb').read()
+
     kvargs = resolve_previous_result(kvargs, previous_result)
     ndjson = step.get("ndjson", None)
     if ndjson is not None:

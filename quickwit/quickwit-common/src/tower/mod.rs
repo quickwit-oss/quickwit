@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -41,7 +41,7 @@ pub use change::Change;
 pub use estimate_rate::{EstimateRate, EstimateRateLayer};
 pub use event_listener::{EventListener, EventListenerLayer};
 use futures::Future;
-pub use metrics::{PrometheusMetrics, PrometheusMetricsLayer};
+pub use metrics::{GrpcMetrics, GrpcMetricsLayer, RpcName};
 pub use pool::Pool;
 pub use rate::{ConstantRate, Rate};
 pub use rate_estimator::{RateEstimator, SmaRateEstimator};

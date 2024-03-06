@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,48 +17,84 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use bytesize::ByteSize;
-use mrecordlog::error::{AppendError, MissingQueue};
-use mrecordlog::MultiRecordLog;
-use quickwit_proto::types::{Position, QueueId};
-use tracing::warn;
+use std::io;
+use std::iter::once;
+use std::ops::RangeInclusive;
 
-use super::mrecord::is_eof_mrecord;
+use bytesize::ByteSize;
+use fail::fail_point;
+use mrecordlog::error::{AppendError, DeleteQueueError};
+use quickwit_proto::ingest::DocBatchV2;
+use quickwit_proto::types::{Position, QueueId};
+
+use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::MRecord;
 
-/// Appends an EOF record to the queue if it is empty or the last record is not an EOF
-/// record.
-pub(super) async fn append_eof_record_if_necessary(
-    mrecordlog: &mut MultiRecordLog,
+#[derive(Debug, thiserror::Error)]
+pub(super) enum AppendDocBatchError {
+    #[error("IO error: {0}")]
+    Io(#[from] io::Error),
+    #[error("WAL queue `{0}` not found")]
+    QueueNotFound(QueueId),
+}
+
+/// Appends a non-empty document batch to the WAL queue `queue_id`.
+///
+/// # Panics
+///
+/// Panics if `doc_batch` is empty.
+pub(super) async fn append_non_empty_doc_batch(
+    mrecordlog: &mut MultiRecordLogAsync,
     queue_id: &QueueId,
-) {
-    let should_append_eof_record = match mrecordlog.last_record(queue_id) {
-        Ok(Some((_, last_mrecord))) => !is_eof_mrecord(&last_mrecord),
-        Ok(None) => true,
-        Err(MissingQueue(_)) => {
-            warn!("failed to append EOF record to queue `{queue_id}`: queue does not exist");
-            return;
-        }
-    };
-    if should_append_eof_record {
-        match mrecordlog
-            .append_record(queue_id, None, MRecord::Eof.encode())
+    doc_batch: DocBatchV2,
+    force_commit: bool,
+) -> Result<Position, AppendDocBatchError> {
+    let append_result = if force_commit {
+        let encoded_mrecords = doc_batch
+            .docs()
+            .map(|doc| MRecord::Doc(doc).encode())
+            .chain(once(MRecord::Commit.encode()));
+        fail_point!("ingester:append_records", |_| {
+            let io_error = io::Error::from(io::ErrorKind::PermissionDenied);
+            Err(AppendDocBatchError::Io(io_error))
+        });
+        mrecordlog
+            .append_records(queue_id, None, encoded_mrecords)
             .await
-        {
-            Ok(_) | Err(AppendError::MissingQueue(_)) => {}
-            Err(error) => {
-                warn!("failed to append EOF record to queue `{queue_id}`: {error}");
-            }
+    } else {
+        let encoded_mrecords = doc_batch.docs().map(|doc| MRecord::Doc(doc).encode());
+        fail_point!("ingester:append_records", |_| {
+            let io_error = io::Error::from(io::ErrorKind::PermissionDenied);
+            Err(AppendDocBatchError::Io(io_error))
+        });
+        mrecordlog
+            .append_records(queue_id, None, encoded_mrecords)
+            .await
+    };
+    match append_result {
+        Ok(Some(offset)) => Ok(Position::offset(offset)),
+        Ok(None) => panic!("`doc_batch` should not be empty"),
+        Err(AppendError::IoError(io_error)) => Err(AppendDocBatchError::Io(io_error)),
+        Err(AppendError::MissingQueue(queue_id)) => {
+            Err(AppendDocBatchError::QueueNotFound(queue_id))
+        }
+        Err(AppendError::Past) => {
+            panic!("`append_records` should be called with `position_opt: None`")
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct MRecordLogUsage {
+    pub disk: ByteSize,
+    pub memory: ByteSize,
 }
 
 /// Error returned when the mrecordlog does not have enough capacity to store some records.
 #[derive(Debug, Clone, Copy, thiserror::Error)]
 pub(super) enum NotEnoughCapacityError {
     #[error(
-        "write-ahead log is full, capacity: usage: {usage}, capacity: {capacity}, requested: \
-         {requested}"
+        "write-ahead log is full, capacity: {capacity}, usage: {usage}, requested: {requested}"
     )]
     Disk {
         usage: ByteSize,
@@ -66,7 +102,7 @@ pub(super) enum NotEnoughCapacityError {
         requested: ByteSize,
     },
     #[error(
-        "write-ahead log memory buffer is full, usage: {usage}, capacity: {capacity}, requested: \
+        "write-ahead log memory buffer is full: capacity: {capacity}, usage: {usage}, requested: \
          {requested}"
     )]
     Memory {
@@ -78,11 +114,11 @@ pub(super) enum NotEnoughCapacityError {
 
 /// Checks whether the log has enough capacity to store some records.
 pub(super) fn check_enough_capacity(
-    mrecordlog: &MultiRecordLog,
+    mrecordlog: &MultiRecordLogAsync,
     disk_capacity: ByteSize,
     memory_capacity: ByteSize,
     requested_capacity: ByteSize,
-) -> Result<(), NotEnoughCapacityError> {
+) -> Result<MRecordLogUsage, NotEnoughCapacityError> {
     let disk_usage = ByteSize(mrecordlog.disk_usage() as u64);
 
     if disk_usage + requested_capacity > disk_capacity {
@@ -101,69 +137,109 @@ pub(super) fn check_enough_capacity(
             requested: requested_capacity,
         });
     }
-    Ok(())
+    let usage = MRecordLogUsage {
+        disk: disk_usage,
+        memory: memory_usage,
+    };
+    Ok(usage)
 }
 
-/// Returns the position up to which the queue has been truncated (inclusive) taking into account
-/// `Eof` records. Returns `None` if the queue does not exist.
-pub(super) fn get_truncation_position(
-    mrecordlog: &MultiRecordLog,
+/// Deletes a queue from the WAL. Returns without error if the queue does not exist.
+pub async fn force_delete_queue(
+    mrecordlog: &mut MultiRecordLogAsync,
     queue_id: &QueueId,
-) -> Option<Position> {
-    let Ok(mut mrecords) = mrecordlog.range(queue_id, ..) else {
-        return None;
-    };
-    let position_opt = if let Some((position, mrecord)) = mrecords.next() {
-        if is_eof_mrecord(&mrecord) {
-            return Some(Position::Eof);
-        }
-        position.checked_sub(1)
-    } else {
-        // The queue exists and is empty. The last position should give us the truncation position.
-        mrecordlog
-            .last_position(queue_id)
-            .expect("queue should exist")
-    };
-    Some(position_opt.map(Position::from).unwrap_or_default())
+) -> io::Result<()> {
+    match mrecordlog.delete_queue(queue_id).await {
+        Ok(_) | Err(DeleteQueueError::MissingQueue(_)) => Ok(()),
+        Err(DeleteQueueError::IoError(error)) => Err(error),
+    }
+}
+
+/// Returns the first and last position of the records currently stored in the queue. Returns `None`
+/// if the queue does not exist or is empty.
+pub(super) fn queue_position_range(
+    mrecordlog: &MultiRecordLogAsync,
+    queue_id: &QueueId,
+) -> Option<RangeInclusive<u64>> {
+    let first_position = mrecordlog
+        .range(queue_id, ..)
+        .ok()?
+        .next()
+        .map(|record| record.position)?;
+
+    let last_position = mrecordlog
+        .last_record(queue_id)
+        .ok()?
+        .map(|record| record.position)?;
+
+    Some(first_position..=last_position)
 }
 
 #[cfg(test)]
 mod tests {
-    use bytes::Bytes;
-
     use super::*;
 
     #[tokio::test]
-    async fn test_append_eof_record_if_necessary() {
+    async fn test_append_non_empty_doc_batch() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mut mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let mut mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
 
-        append_eof_record_if_necessary(&mut mrecordlog, &"queue-not-found".to_string()).await;
+        let queue_id = "test-queue".to_string();
+        let doc_batch = DocBatchV2::for_test(["test-doc-foo"]);
 
-        mrecordlog.create_queue("test-queue").await.unwrap();
-        append_eof_record_if_necessary(&mut mrecordlog, &"test-queue".to_string()).await;
+        let append_error =
+            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), false)
+                .await
+                .unwrap_err();
 
-        let (last_position, last_record) = mrecordlog.last_record("test-queue").unwrap().unwrap();
-        assert_eq!(last_position, 0);
-        assert!(is_eof_mrecord(&last_record));
+        assert!(matches!(
+            append_error,
+            AppendDocBatchError::QueueNotFound(..)
+        ));
 
-        append_eof_record_if_necessary(&mut mrecordlog, &"test-queue".to_string()).await;
-        let (last_position, last_record) = mrecordlog.last_record("test-queue").unwrap().unwrap();
-        assert_eq!(last_position, 0);
-        assert!(is_eof_mrecord(&last_record));
+        mrecordlog.create_queue(&queue_id).await.unwrap();
 
-        mrecordlog.truncate("test-queue", 0).await.unwrap();
+        let position =
+            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), false)
+                .await
+                .unwrap();
+        assert_eq!(position, Position::offset(0u64));
 
-        append_eof_record_if_necessary(&mut mrecordlog, &"test-queue".to_string()).await;
-        let (last_position, last_record) = mrecordlog.last_record("test-queue").unwrap().unwrap();
-        assert_eq!(last_position, 1);
-        assert!(is_eof_mrecord(&last_record));
+        let position =
+            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), true)
+                .await
+                .unwrap();
+        assert_eq!(position, Position::offset(2u64));
+    }
+
+    // This test should be run manually and independently of other tests with the `fail/failpoints`
+    // feature enabled.
+    #[tokio::test]
+    #[ignore]
+    async fn test_append_non_empty_doc_batch_io_error() {
+        let scenario = fail::FailScenario::setup();
+        fail::cfg("ingester:append_records", "return").unwrap();
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
+
+        let queue_id = "test-queue".to_string();
+        mrecordlog.create_queue(&queue_id).await.unwrap();
+
+        let doc_batch = DocBatchV2::for_test(["test-doc-foo"]);
+        let append_error = append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch, false)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(append_error, AppendDocBatchError::Io(..)));
+
+        scenario.teardown();
     }
 
     #[tokio::test]
     async fn test_check_enough_capacity() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
 
         let disk_error =
             check_enough_capacity(&mrecordlog, ByteSize(0), ByteSize(0), ByteSize(12)).unwrap_err();
@@ -183,42 +259,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_truncation_position() {
+    async fn test_append_queue_position_range() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mut mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
-        let queue_id = "test-queue".to_string();
+        let mut mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
 
-        let truncation_position = get_truncation_position(&mrecordlog, &queue_id);
-        assert!(truncation_position.is_none());
+        assert!(queue_position_range(&mrecordlog, &"queue-not-found".to_string()).is_none());
 
-        mrecordlog.create_queue(&queue_id).await.unwrap();
-        let truncation_position = get_truncation_position(&mrecordlog, &queue_id).unwrap();
-        assert_eq!(truncation_position, Position::Beginning);
+        mrecordlog.create_queue("test-queue").await.unwrap();
+        assert!(queue_position_range(&mrecordlog, &"test-queue".to_string()).is_none());
 
         mrecordlog
-            .append_record(&queue_id, None, Bytes::from_static(b"test-record-foo"))
+            .append_records("test-queue", None, std::iter::once(&b"test-doc-foo"[..]))
             .await
             .unwrap();
-        mrecordlog
-            .append_record(&queue_id, None, Bytes::from_static(b"test-record-bar"))
-            .await
-            .unwrap();
-        let truncation_position = get_truncation_position(&mrecordlog, &queue_id).unwrap();
-        assert_eq!(truncation_position, Position::Beginning);
-
-        mrecordlog.truncate(&queue_id, 0).await.unwrap();
-        let truncation_position = get_truncation_position(&mrecordlog, &queue_id).unwrap();
-        assert_eq!(truncation_position, Position::from(0u64));
-
-        mrecordlog.truncate(&queue_id, 1).await.unwrap();
-        let truncation_position = get_truncation_position(&mrecordlog, &queue_id).unwrap();
-        assert_eq!(truncation_position, Position::from(1u64));
+        let position_range = queue_position_range(&mrecordlog, &"test-queue".to_string()).unwrap();
+        assert_eq!(position_range, 0..=0);
 
         mrecordlog
-            .append_record(&queue_id, None, MRecord::Eof.encode())
+            .append_records("test-queue", None, std::iter::once(&b"test-doc-bar"[..]))
             .await
             .unwrap();
-        let truncation_position = get_truncation_position(&mrecordlog, &queue_id).unwrap();
-        assert_eq!(truncation_position, Position::Eof);
+        let position_range = queue_position_range(&mrecordlog, &"test-queue".to_string()).unwrap();
+        assert_eq!(position_range, 0..=1);
+
+        mrecordlog.truncate("test-queue", 0).await.unwrap();
+        let position_range = queue_position_range(&mrecordlog, &"test-queue".to_string()).unwrap();
+        assert_eq!(position_range, 1..=1);
     }
 }

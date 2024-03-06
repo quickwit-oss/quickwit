@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -21,7 +21,6 @@ use std::mem;
 
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
-use quickwit_macros_impl::derive_prometheus_labels_impl;
 use quote::quote;
 use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
@@ -29,11 +28,6 @@ use syn::{
     parenthesized, Attribute, Error, Field, Fields, FieldsNamed, Ident, ItemStruct, Meta, Path,
     Token, Visibility,
 };
-
-#[proc_macro_derive(PrometheusLabels, attributes(prometheus_label))]
-pub fn derive_prometheus_labels(input: TokenStream) -> TokenStream {
-    derive_prometheus_labels_impl(input.into()).into()
-}
 
 #[proc_macro_attribute]
 pub fn serde_multikey(attr: TokenStream, item: TokenStream) -> TokenStream {

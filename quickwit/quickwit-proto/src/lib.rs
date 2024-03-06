@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -31,9 +31,11 @@ use tonic::Status;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+pub mod cluster;
 pub mod control_plane;
 pub use {bytes, tonic};
 pub mod error;
+mod getters;
 pub mod indexing;
 pub mod ingest;
 pub mod metastore;
@@ -129,9 +131,8 @@ impl TryFrom<metastore::DeleteQuery> for search::SearchRequest {
     type Error = anyhow::Error;
 
     fn try_from(delete_query: metastore::DeleteQuery) -> anyhow::Result<Self> {
-        let index_uid: types::IndexUid = delete_query.index_uid.into();
         Ok(Self {
-            index_id_patterns: vec![index_uid.index_id().to_string()],
+            index_id_patterns: vec![delete_query.index_uid().index_id.to_string()],
             query_ast: delete_query.query_ast,
             start_timestamp: delete_query.start_timestamp,
             end_timestamp: delete_query.end_timestamp,
