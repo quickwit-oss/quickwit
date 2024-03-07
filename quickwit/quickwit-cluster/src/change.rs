@@ -201,6 +201,16 @@ async fn compute_cluster_change_events_on_updated(
     previous_nodes: &mut BTreeMap<NodeId, ClusterNode>,
 ) -> Option<ClusterChange> {
     let previous_node = previous_nodes.get(&updated_chitchat_id.node_id)?.clone();
+
+    if previous_node.chitchat_id().generation_id > updated_chitchat_id.generation_id {
+        warn!(
+            node_id=%updated_chitchat_id.node_id,
+            generation_id=%updated_chitchat_id.generation_id,
+            "node `{}` update with a lower generation ID will be ignored",
+            updated_chitchat_id.node_id
+        );
+        return None;
+    }
     let previous_channel = previous_node.channel();
     let is_self_node = self_chitchat_id == updated_chitchat_id;
     let updated_node = try_new_node_with_channel(
