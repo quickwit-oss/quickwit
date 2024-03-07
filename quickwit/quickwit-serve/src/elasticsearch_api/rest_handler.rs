@@ -742,13 +742,19 @@ async fn es_compat_index_multi_search(
         .into_iter()
         .map(|(search_request, append_shard_doc)| {
             let search_service = &search_service;
+            let _source_excludes = multi_search_params._source_excludes.clone();
+            let _source_includes = multi_search_params._source_includes.clone();
             async move {
                 let start_instant = Instant::now();
                 let search_response: SearchResponse =
                     search_service.clone().root_search(search_request).await?;
                 let elapsed = start_instant.elapsed();
-                let mut search_response_rest: ElasticsearchResponse =
-                    convert_to_es_search_response(search_response, append_shard_doc, None, None);
+                let mut search_response_rest: ElasticsearchResponse = convert_to_es_search_response(
+                    search_response,
+                    append_shard_doc,
+                    _source_excludes,
+                    _source_includes,
+                );
                 search_response_rest.took = elapsed.as_millis() as u32;
                 Ok::<_, ElasticsearchError>(search_response_rest)
             }

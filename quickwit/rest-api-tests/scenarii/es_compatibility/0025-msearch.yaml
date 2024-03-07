@@ -21,3 +21,40 @@ expected:
     - hits:
         total:
           value: 2
+--- # _source_excludes
+endpoint: "_msearch"
+method: POST
+params:
+  _source_excludes: ["actor"]
+ndjson: 
+  - {"index":"gharchive"}
+  - {"query" : {"match_all" : {}}, "size": 1}
+expected:
+  responses:
+    - hits:
+        total:
+          value: 100
+          relation: eq
+        hits:
+          - _source:
+              $expect: "not 'actor' in val" 
+--- # _source_includes
+endpoint: "_msearch"
+method: POST
+params:
+  _source_includes: ["actor"]
+ndjson: 
+  - {"index":"gharchive"}
+  - {"query" : {"match_all" : {}}, "size": 1}
+expected:
+  responses:
+    - hits:
+        total:
+          value: 100
+          relation: eq
+        hits:
+          - _source:
+              $expect: "len(val) == 1" # Contains only 'actor'
+              actor:
+                id: 5688
+
