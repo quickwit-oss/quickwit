@@ -28,13 +28,13 @@ use quickwit_ingest::{
     GetPartitionId, IngestApiService, SuggestTruncateRequest,
 };
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
+use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
-use super::{Source, SourceActor, SourceContext, TypedSourceFactory};
+use super::{BatchBuilder, Source, SourceActor, SourceContext, TypedSourceFactory};
 use crate::actors::DocProcessor;
-use crate::models::RawDocBatch;
 use crate::source::SourceRuntimeArgs;
 
 /// Wait time for SourceActor before pooling for new documents.
@@ -168,16 +168,17 @@ impl Source for IngestApiSource {
 
         let batch_num_docs = doc_batch.num_docs();
         // TODO use a timestamp (in the raw doc batch) given by at ingest time to be more accurate.
-        let mut raw_doc_batch = RawDocBatch::with_capacity(doc_batch.num_docs());
+        let mut batch_builder =
+            BatchBuilder::with_capacity(doc_batch.num_docs(), SourceType::IngestV1);
         for doc in doc_batch.into_iter() {
             match doc {
-                DocCommand::Ingest { payload } => raw_doc_batch.docs.push(payload),
-                DocCommand::Commit => raw_doc_batch.force_commit = true,
+                DocCommand::Ingest { payload } => batch_builder.add_doc(payload),
+                DocCommand::Commit => batch_builder.force_commit(),
             }
         }
         let current_offset = first_position + batch_num_docs as u64 - 1;
         let partition_id = self.partition_id.clone();
-        raw_doc_batch
+        batch_builder
             .checkpoint_delta
             .record_partition_delta(
                 partition_id,
@@ -189,8 +190,8 @@ impl Source for IngestApiSource {
             )
             .map_err(anyhow::Error::from)?;
 
-        self.update_counters(current_offset, raw_doc_batch.docs.len() as u64);
-        ctx.send_message(batch_sink, raw_doc_batch).await?;
+        self.update_counters(current_offset, batch_builder.docs.len() as u64);
+        ctx.send_message(batch_sink, batch_builder.build()).await?;
         Ok(Duration::default())
     }
 
@@ -251,6 +252,7 @@ mod tests {
     use quickwit_proto::types::IndexUid;
 
     use super::*;
+    use crate::models::RawDocBatch;
     use crate::source::SourceActor;
 
     fn make_ingest_request(

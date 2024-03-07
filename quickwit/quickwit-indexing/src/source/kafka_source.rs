@@ -31,7 +31,7 @@ use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_metastore::IndexMetadataResponseExt;
-use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService};
+use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, SourceType};
 use quickwit_proto::types::{IndexUid, Position};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
@@ -475,7 +475,7 @@ impl Source for KafkaSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
-        let mut batch = BatchBuilder::default();
+        let mut batch_builder = BatchBuilder::new(SourceType::Kafka);
         let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
@@ -484,13 +484,13 @@ impl Source for KafkaSource {
                 event_opt = self.events_rx.recv() => {
                     let event = event_opt.ok_or_else(|| ActorExitStatus::from(anyhow!("consumer was dropped")))?;
                     match event {
-                        KafkaEvent::Message(message) => self.process_message(message, &mut batch).await?,
+                        KafkaEvent::Message(message) => self.process_message(message, &mut batch_builder).await?,
                         KafkaEvent::AssignPartitions { partitions, assignment_tx} => self.process_assign_partitions(ctx, &partitions, assignment_tx).await?,
-                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, doc_processor_mailbox, &mut batch, ack_tx).await?,
+                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, doc_processor_mailbox, &mut batch_builder, ack_tx).await?,
                         KafkaEvent::PartitionEOF(partition) => self.process_partition_eof(partition),
                         KafkaEvent::Error(error) => Err(ActorExitStatus::from(error))?,
                     }
-                    if batch.num_bytes >= BATCH_NUM_BYTES_LIMIT {
+                    if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
                         break;
                     }
                 }
@@ -500,13 +500,14 @@ impl Source for KafkaSource {
             }
             ctx.record_progress();
         }
-        if !batch.checkpoint_delta.is_empty() {
+        if !batch_builder.checkpoint_delta.is_empty() {
             debug!(
-                num_docs=%batch.docs.len(),
-                num_bytes=%batch.num_bytes,
+                num_docs=%batch_builder.docs.len(),
+                num_bytes=%batch_builder.num_bytes,
                 num_millis=%now.elapsed().as_millis(),
-                "Sending doc batch to indexer.");
-            let message = batch.build();
+                "sending doc batch to indexer"
+            );
+            let message = batch_builder.build();
             ctx.send_message(doc_processor_mailbox, message).await?;
         }
         if self.should_exit() {
@@ -1024,7 +1025,7 @@ mod kafka_broker_tests {
         assert_eq!(kafka_source.state.num_messages_processed, 0);
         assert_eq!(kafka_source.state.num_invalid_messages, 0);
 
-        let mut batch = BatchBuilder::default();
+        let mut batch_builder = BatchBuilder::new(SourceType::Kafka);
 
         let message = KafkaMessage {
             doc_opt: None,
@@ -1033,12 +1034,12 @@ mod kafka_broker_tests {
             offset: 0,
         };
         kafka_source
-            .process_message(message, &mut batch)
+            .process_message(message, &mut batch_builder)
             .await
             .unwrap();
 
-        assert_eq!(batch.docs.len(), 0);
-        assert_eq!(batch.num_bytes, 0);
+        assert_eq!(batch_builder.docs.len(), 0);
+        assert_eq!(batch_builder.num_bytes, 0);
         assert_eq!(
             kafka_source.state.current_positions.get(&1).unwrap(),
             &Position::offset(0u64)
@@ -1054,13 +1055,13 @@ mod kafka_broker_tests {
             offset: 1,
         };
         kafka_source
-            .process_message(message, &mut batch)
+            .process_message(message, &mut batch_builder)
             .await
             .unwrap();
 
-        assert_eq!(batch.docs.len(), 1);
-        assert_eq!(batch.docs[0], "test-doc");
-        assert_eq!(batch.num_bytes, 8);
+        assert_eq!(batch_builder.docs.len(), 1);
+        assert_eq!(batch_builder.docs[0], "test-doc");
+        assert_eq!(batch_builder.num_bytes, 8);
         assert_eq!(
             kafka_source.state.current_positions.get(&1).unwrap(),
             &Position::offset(1u64)
@@ -1076,13 +1077,13 @@ mod kafka_broker_tests {
             offset: 42,
         };
         kafka_source
-            .process_message(message, &mut batch)
+            .process_message(message, &mut batch_builder)
             .await
             .unwrap();
 
-        assert_eq!(batch.docs.len(), 2);
-        assert_eq!(batch.docs[1], "test-doc");
-        assert_eq!(batch.num_bytes, 16);
+        assert_eq!(batch_builder.docs.len(), 2);
+        assert_eq!(batch_builder.docs[1], "test-doc");
+        assert_eq!(batch_builder.num_bytes, 16);
         assert_eq!(
             kafka_source.state.current_positions.get(&2).unwrap(),
             &Position::offset(42u64)
@@ -1102,7 +1103,7 @@ mod kafka_broker_tests {
                 Position::offset(42u64),
             )
             .unwrap();
-        assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
+        assert_eq!(batch_builder.checkpoint_delta, expected_checkpoint_delta);
 
         // Message from unassigned partition
         let message = KafkaMessage {
@@ -1112,7 +1113,7 @@ mod kafka_broker_tests {
             offset: 42,
         };
         kafka_source
-            .process_message(message, &mut batch)
+            .process_message(message, &mut batch_builder)
             .await
             .unwrap_err();
     }
@@ -1212,20 +1213,20 @@ mod kafka_broker_tests {
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
         let (ack_tx, ack_rx) = oneshot::channel();
 
-        let mut batch = BatchBuilder::default();
-        batch.add_doc(Bytes::from_static(b"test-doc"));
+        let mut batch_builder = BatchBuilder::new(SourceType::Kafka);
+        batch_builder.add_doc(Bytes::from_static(b"test-doc"));
 
         let publish_lock = kafka_source.publish_lock.clone();
         assert!(publish_lock.is_alive());
         assert_eq!(kafka_source.state.num_rebalances, 0);
 
         kafka_source
-            .process_revoke_partitions(&ctx, &indexer_mailbox, &mut batch, ack_tx)
+            .process_revoke_partitions(&ctx, &indexer_mailbox, &mut batch_builder, ack_tx)
             .await
             .unwrap();
 
         ack_rx.await.unwrap();
-        assert!(batch.docs.is_empty());
+        assert!(batch_builder.docs.is_empty());
         assert!(publish_lock.is_dead());
 
         assert_eq!(kafka_source.state.num_rebalances, 1);

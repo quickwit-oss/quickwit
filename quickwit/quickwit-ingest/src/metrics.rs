@@ -51,7 +51,12 @@ impl Default for IngestMetrics {
                 "Total number of docs replicated.",
                 "ingest",
             ),
-            queue_count: new_gauge("queue_count", "Number of queues currently active", "ingest"),
+            queue_count: new_gauge(
+                "queue_count",
+                "Number of queues currently active",
+                "ingest",
+                &[],
+            ),
         }
     }
 }

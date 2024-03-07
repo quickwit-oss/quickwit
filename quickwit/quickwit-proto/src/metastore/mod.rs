@@ -212,12 +212,12 @@ impl SourceType {
         match self {
             SourceType::Cli => "ingest-cli",
             SourceType::File => "file",
-            SourceType::GcpPubsub => "gcp_pubsub",
             SourceType::IngestV1 => "ingest-api",
             SourceType::IngestV2 => "ingest",
             SourceType::Kafka => "kafka",
             SourceType::Kinesis => "kinesis",
             SourceType::Nats => "nats",
+            SourceType::PubSub => "pubsub",
             SourceType::Pulsar => "pulsar",
             SourceType::Unspecified => "unspecified",
             SourceType::Vec => "vec",

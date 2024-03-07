@@ -53,10 +53,10 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 pub use source_config::{
-    load_source_config_from_user_config, FileSourceParams, GcpPubSubSourceParams,
-    KafkaSourceParams, KinesisSourceParams, PulsarSourceAuth, PulsarSourceParams, RegionOrEndpoint,
-    SourceConfig, SourceInputFormat, SourceParams, TransformConfig, VecSourceParams,
-    VoidSourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
+    load_source_config_from_user_config, FileSourceParams, KafkaSourceParams, KinesisSourceParams,
+    PubSubSourceParams, PulsarSourceAuth, PulsarSourceParams, RegionOrEndpoint, SourceConfig,
+    SourceInputFormat, SourceParams, TransformConfig, VecSourceParams, VoidSourceParams,
+    CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
 };
 use tracing::warn;
 
@@ -95,7 +95,7 @@ pub use crate::storage_config::{
     SourceInputFormat,
     SourceParams,
     FileSourceParams,
-    GcpPubSubSourceParams,
+    PubSubSourceParams,
     KafkaSourceParams,
     KinesisSourceParams,
     PulsarSourceParams,

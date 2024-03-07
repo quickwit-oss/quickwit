@@ -90,13 +90,14 @@ use once_cell::sync::OnceCell;
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
+use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_proto::metastore::{MetastoreServiceClient, SourceType};
 use quickwit_proto::types::{IndexUid, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
@@ -379,13 +380,14 @@ impl Handler<AssignShards> for SourceActor {
     }
 }
 
+// TODO: Use `SourceType` instead of `&str``.
 pub fn quickwit_supported_sources() -> &'static SourceLoader {
     static SOURCE_LOADER: OnceCell<SourceLoader> = OnceCell::new();
     SOURCE_LOADER.get_or_init(|| {
         let mut source_factory = SourceLoader::default();
         source_factory.add_source("file", FileSourceFactory);
         #[cfg(feature = "gcp-pubsub")]
-        source_factory.add_source("gcp_pubsub", GcpPubSubSourceFactory);
+        source_factory.add_source("pubsub", GcpPubSubSourceFactory);
         source_factory.add_source("ingest-api", IngestApiSourceFactory);
         source_factory.add_source("ingest", IngestSourceFactory);
         #[cfg(feature = "kafka")]
@@ -463,27 +465,57 @@ impl Handler<SuggestTruncate> for SourceActor {
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let SuggestTruncate(checkpoint) = suggest_truncate;
-        if let Err(err) = self.source.suggest_truncate(checkpoint, ctx).await {
+
+        if let Err(error) = self.source.suggest_truncate(checkpoint, ctx).await {
             // Failing to process suggest truncate does not
             // kill the source nor the indexing pipeline, but we log the error.
-            error!(err=?err, "suggest-truncate-error");
+            error!(%error, "failed to process suggest truncate");
         }
         Ok(())
     }
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct BatchBuilder {
+pub(super) struct BatchBuilder {
+    // Do not directly append documents to this vector; otherwise, in-flight metrics will be
+    // incorrect. Use `add_doc` instead.
     docs: Vec<Bytes>,
     num_bytes: u64,
     checkpoint_delta: SourceCheckpointDelta,
     force_commit: bool,
+    gauge_guard: GaugeGuard,
 }
 
 impl BatchBuilder {
+    pub fn new(source_type: SourceType) -> Self {
+        Self::with_capacity(0, source_type)
+    }
+
+    pub fn with_capacity(capacity: usize, source_type: SourceType) -> Self {
+        let gauge = match source_type {
+            SourceType::File => &MEMORY_METRICS.in_flight_data.sources.file,
+            SourceType::IngestV2 => &MEMORY_METRICS.in_flight_data.sources.ingest,
+            SourceType::Kafka => &MEMORY_METRICS.in_flight_data.sources.kafka,
+            SourceType::Kinesis => &MEMORY_METRICS.in_flight_data.sources.kinesis,
+            SourceType::PubSub => &MEMORY_METRICS.in_flight_data.sources.pubsub,
+            SourceType::Pulsar => &MEMORY_METRICS.in_flight_data.sources.pulsar,
+            _ => &MEMORY_METRICS.in_flight_data.sources.other,
+        };
+        let gauge_guard = GaugeGuard::from_gauge(gauge, 0);
+
+        Self {
+            docs: Vec::with_capacity(capacity),
+            num_bytes: 0,
+            checkpoint_delta: SourceCheckpointDelta::default(),
+            force_commit: false,
+            gauge_guard,
+        }
+    }
+
     pub fn add_doc(&mut self, doc: Bytes) {
-        self.num_bytes += doc.len() as u64;
+        let num_bytes = doc.len();
         self.docs.push(doc);
+        self.gauge_guard.add(num_bytes as i64);
+        self.num_bytes += num_bytes as u64;
     }
 
     pub fn force_commit(&mut self) {
@@ -491,18 +523,15 @@ impl BatchBuilder {
     }
 
     pub fn build(self) -> RawDocBatch {
-        RawDocBatch {
-            docs: self.docs,
-            checkpoint_delta: self.checkpoint_delta,
-            force_commit: self.force_commit,
-        }
+        RawDocBatch::new(self.docs, self.checkpoint_delta, self.force_commit)
     }
 
     #[cfg(feature = "kafka")]
     pub fn clear(&mut self) {
         self.docs.clear();
-        self.num_bytes = 0;
         self.checkpoint_delta = SourceCheckpointDelta::default();
+        self.gauge_guard.sub(self.num_bytes as i64);
+        self.num_bytes = 0;
     }
 }
 

@@ -31,13 +31,14 @@ use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::uri::Uri;
 use quickwit_config::FileSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
+use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tracing::info;
 
+use super::BatchBuilder;
 use crate::actors::DocProcessor;
-use crate::models::RawDocBatch;
 use crate::source::{Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
 
 /// Number of bytes after which a new batch is cut.
@@ -73,7 +74,8 @@ impl Source for FileSource {
         // We collect batches of documents before sending them to the indexer.
         let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_LIMIT;
         let mut reached_eof = false;
-        let mut doc_batch = RawDocBatch::default();
+        let mut batch_builder = BatchBuilder::new(SourceType::File);
+
         while self.counters.current_offset < limit_num_bytes {
             let mut doc_line = String::new();
             // guard the zone in case of slow read, such as reading from someone
@@ -86,18 +88,18 @@ impl Source for FileSource {
                 reached_eof = true;
                 break;
             }
-            doc_batch.docs.push(Bytes::from(doc_line));
+            batch_builder.add_doc(Bytes::from(doc_line));
             self.counters.current_offset += num_bytes as u64;
             self.counters.num_lines_processed += 1;
         }
-        if !doc_batch.docs.is_empty() {
+        if !batch_builder.docs.is_empty() {
             if let Some(filepath) = &self.params.filepath {
                 let filepath_str = filepath
                     .to_str()
                     .context("path is invalid utf-8")?
                     .to_string();
                 let partition_id = PartitionId::from(filepath_str);
-                doc_batch
+                batch_builder
                     .checkpoint_delta
                     .record_partition_delta(
                         partition_id,
@@ -107,7 +109,8 @@ impl Source for FileSource {
                     .unwrap();
             }
             self.counters.previous_offset = self.counters.current_offset;
-            ctx.send_message(doc_processor_mailbox, doc_batch).await?;
+            ctx.send_message(doc_processor_mailbox, batch_builder.build())
+                .await?;
         }
         if reached_eof {
             info!("EOF");
@@ -246,6 +249,7 @@ mod tests {
     use quickwit_proto::types::IndexUid;
 
     use super::*;
+    use crate::models::RawDocBatch;
     use crate::source::SourceActor;
 
     #[tokio::test]

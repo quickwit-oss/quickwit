@@ -55,6 +55,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use bytesize::ByteSize;
+pub(crate) use decompression::Body;
 pub use format::BodyFormat;
 use futures::StreamExt;
 use itertools::Itertools;
