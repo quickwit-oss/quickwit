@@ -1,0 +1,23 @@
+endpoint: "_msearch"
+method: POST
+ndjson: 
+  - {"index":"gharchive"}
+  - {"query" : {"match" : { "type": "PushEvent"}}, "size": 0}
+expected:
+  responses:
+    - hits:
+        total:
+          value: 60
+---
+endpoint: "_msearch"
+method: POST
+params:
+  extra_filters: "type:PushEvent,actor.login:jadonk"
+ndjson: 
+  - {"index":"gharchive"}
+  - {"query" : {"match" : { "type": "PushEvent"}}, "size": 0}
+expected:
+  responses:
+    - hits:
+        total:
+          value: 2

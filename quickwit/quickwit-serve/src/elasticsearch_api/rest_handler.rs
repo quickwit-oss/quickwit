@@ -722,7 +722,16 @@ async fn es_compat_index_multi_search(
                     ))
                 })
             })?;
-        let search_query_params = SearchQueryParams::from(request_header);
+        let mut search_query_params = SearchQueryParams::from(request_header);
+        if let Some(_source_excludes) = &multi_search_params._source_excludes {
+            search_query_params._source_excludes = Some(_source_excludes.to_vec());
+        }
+        if let Some(_source_includes) = &multi_search_params._source_includes {
+            search_query_params._source_includes = Some(_source_includes.to_vec());
+        }
+        if let Some(extra_filters) = &multi_search_params.extra_filters {
+            search_query_params.extra_filters = Some(extra_filters.to_vec());
+        }
         let es_request =
             build_request_for_es_api(index_ids_patterns, search_query_params, search_body)?;
         search_requests.push(es_request);
