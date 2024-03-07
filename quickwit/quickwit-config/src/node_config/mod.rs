@@ -458,6 +458,9 @@ impl NodeConfig {
             }
             peer_seed_addrs.push(peer_seed_addr.to_string())
         }
+        if !self.peer_seeds.is_empty() && peer_seed_addrs.is_empty() {
+            warn!("failed to resolve all the peer seed addresses")
+        }
         Ok(peer_seed_addrs)
     }
 
