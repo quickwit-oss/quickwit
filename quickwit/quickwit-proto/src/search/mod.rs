@@ -183,7 +183,7 @@ impl PartialOrd for SortValue {
 impl std::hash::Hash for SortValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         let this = self.normalize();
-        core::mem::discriminant(&this).hash(state);
+        std::mem::discriminant(&this).hash(state);
         match this {
             SortValue::U64(number) => {
                 number.hash(state);
