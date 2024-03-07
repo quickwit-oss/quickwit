@@ -40,7 +40,7 @@ use quickwit_proto::types::IndexUid;
 use quickwit_query::query_ast::{query_ast_from_user_text, QueryAst};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{info, warn};
 use warp::{Filter, Rejection};
 
 use crate::format::{extract_config_format, extract_format_from_qs};
@@ -66,6 +66,17 @@ use crate::with_arg;
     components(schemas(ToggleSource, SplitsForDeletion, IndexStats))
 )]
 pub struct IndexApi;
+
+fn log_failure<T, E: std::fmt::Display>(
+    message: &'static str,
+) -> impl Fn(Result<T, E>) -> Result<T, E> + Clone {
+    move |result| {
+        if let Err(err) = &result {
+            warn!("{message}: {err}");
+        };
+        result
+    }
+}
 
 pub fn index_management_handlers(
     index_service: IndexService,
@@ -471,6 +482,7 @@ fn create_index_handler(
         .and(with_arg(index_service))
         .and(with_arg(node_config))
         .then(create_index)
+        .map(log_failure("failed to create index"))
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
 }
@@ -594,6 +606,7 @@ fn create_source_handler(
         .and(warp::filters::body::bytes())
         .and(with_arg(index_service))
         .then(create_source)
+        .map(log_failure("failed to create source"))
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
 }
