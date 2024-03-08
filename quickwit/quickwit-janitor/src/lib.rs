@@ -51,6 +51,7 @@ pub async fn start_janitor_service(
     search_job_placer: SearchJobPlacer,
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
+    run_delete_task_service: bool,
 ) -> anyhow::Result<Mailbox<JanitorService>> {
     info!("starting janitor service");
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_resolver.clone());
@@ -59,17 +60,23 @@ pub async fn start_janitor_service(
     let retention_policy_executor = RetentionPolicyExecutor::new(metastore.clone());
     let (_, retention_policy_executor_handle) =
         universe.spawn_builder().spawn(retention_policy_executor);
-    let delete_task_service = DeleteTaskService::new(
-        metastore,
-        search_job_placer,
-        storage_resolver,
-        config.data_dir_path.clone(),
-        config.indexer_config.max_concurrent_split_uploads,
-        universe.get_or_spawn_one::<MergeSchedulerService>(),
-        event_broker,
-    )
-    .await?;
-    let (_, delete_task_service_handle) = universe.spawn_builder().spawn(delete_task_service);
+    let delete_task_service_handle = if run_delete_task_service {
+        let delete_task_service = DeleteTaskService::new(
+            metastore,
+            search_job_placer,
+            storage_resolver,
+            config.data_dir_path.clone(),
+            config.indexer_config.max_concurrent_split_uploads,
+            universe.get_or_spawn_one::<MergeSchedulerService>(),
+            event_broker,
+        )
+        .await?;
+        let (_, delete_task_service_handle) = universe.spawn_builder().spawn(delete_task_service);
+        Some(delete_task_service_handle)
+    } else {
+        tracing::warn!("delete task service is disabled: delete queries will not be processed");
+        None
+    };
 
     let janitor_service = JanitorService::new(
         delete_task_service_handle,

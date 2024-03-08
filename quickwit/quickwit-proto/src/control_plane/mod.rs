@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_actors::AskError;
+use quickwit_common::tower::RpcName;
 use thiserror;
 
 use crate::metastore::MetastoreError;
@@ -97,5 +98,23 @@ impl ServiceError for ControlPlaneError {
             Self::Metastore(error) => error.error_code(),
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
+    }
+}
+
+impl RpcName for GetOrCreateOpenShardsRequest {
+    fn rpc_name() -> &'static str {
+        "get_or_create_open_shards"
+    }
+}
+
+impl RpcName for AdviseResetShardsRequest {
+    fn rpc_name() -> &'static str {
+        "advise_reset_shards"
+    }
+}
+
+impl RpcName for GetDebugStateRequest {
+    fn rpc_name() -> &'static str {
+        "get_debug_state"
     }
 }

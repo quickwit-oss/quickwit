@@ -24,9 +24,7 @@ use quickwit_common::metrics::{
 };
 
 pub(super) struct IngestV2Metrics {
-    pub grpc_requests_total: IntCounterVec<4>,
-    pub grpc_requests_in_flight: IntGaugeVec<3>,
-    pub grpc_request_duration_secs: HistogramVec<4>,
+    pub reset_shards_operations_total: IntCounterVec<1>,
     pub shards: IntGaugeVec<2>,
     pub wal_acquire_lock_requests_in_flight: IntGaugeVec<2>,
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
@@ -37,51 +35,43 @@ pub(super) struct IngestV2Metrics {
 impl Default for IngestV2Metrics {
     fn default() -> Self {
         Self {
-            grpc_requests_total: new_counter_vec(
-                "grpc_requests_total",
-                "Total number of gRPC requests processed.",
-                "quickwit_ingest",
-                ["component", "kind", "operation", "status"],
-            ),
-            grpc_requests_in_flight: new_gauge_vec(
-                "grpc_requests_in_flight",
-                "Number of gRPC requests in flight.",
-                "quickwit_ingest",
-                ["component", "kind", "operation"],
-            ),
-            grpc_request_duration_secs: new_histogram_vec(
-                "grpc_request_duration_secs",
-                "Duration of gRPC requests in seconds.",
-                "quickwit_ingest",
-                ["component", "kind", "operation", "status"],
+            reset_shards_operations_total: new_counter_vec(
+                "reset_shards_operations_total",
+                "Total number of reset shards operations performed.",
+                "ingest",
+                &[],
+                ["status"],
             ),
             shards: new_gauge_vec(
                 "shards",
                 "Number of shards.",
-                "quickwit_ingest",
+                "ingest",
+                &[],
                 ["state", "index_id"],
             ),
             wal_acquire_lock_requests_in_flight: new_gauge_vec(
                 "wal_acquire_lock_requests_in_flight",
-                "Number of acquire lock requests in flight.",
-                "quickwit_ingest",
+                "Number of acquire lock requests in-flight.",
+                "ingest",
+                &[],
                 ["operation", "type"],
             ),
             wal_acquire_lock_request_duration_secs: new_histogram_vec(
                 "wal_acquire_lock_request_duration_secs",
                 "Duration of acquire lock requests in seconds.",
-                "quickwit_ingest",
+                "ingest",
+                &[],
                 ["operation", "type"],
             ),
             wal_disk_usage_bytes: new_gauge(
                 "wal_disk_usage_bytes",
-                "Disk usage of the write-ahead log in bytes.",
-                "quickwit_ingest",
+                "WAL disk usage in bytes.",
+                "ingest",
             ),
             wal_memory_usage_bytes: new_gauge(
                 "wal_memory_usage_bytes",
-                "Memory usage of the write-ahead log in bytes.",
-                "quickwit_ingest",
+                "WAL memory usage in bytes.",
+                "ingest",
             ),
         }
     }

@@ -18,11 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
+use std::mem::size_of;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
 use anyhow::Context;
-use chitchat::{ChitchatId, NodeState};
+use chitchat::{ChitchatId, NodeState, Version};
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
 use quickwit_proto::types::NodeId;
 use tracing::{error, warn};
@@ -46,6 +47,8 @@ pub(crate) trait NodeStateExt {
     fn grpc_advertise_addr(&self) -> anyhow::Result<SocketAddr>;
 
     fn is_ready(&self) -> bool;
+
+    fn size_bytes(&self) -> usize;
 }
 
 impl NodeStateExt for NodeState {
@@ -65,6 +68,15 @@ impl NodeStateExt for NodeState {
         self.get(READINESS_KEY)
             .map(|health_value| health_value == READINESS_VALUE_READY)
             .unwrap_or(false)
+    }
+
+    // TODO: Expose more accurate size of the state in Chitchat.
+    fn size_bytes(&self) -> usize {
+        const SIZE_OF_VERSION: usize = size_of::<Version>();
+        const SIZE_OF_TOMBSTONE: usize = size_of::<u64>();
+        self.key_values_including_deleted()
+            .map(|(key, value)| key.len() + value.value.len() + SIZE_OF_VERSION + SIZE_OF_TOMBSTONE)
+            .sum()
     }
 }
 

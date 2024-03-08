@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_actors::ActorContext;
-use quickwit_common::PrettySample;
+use quickwit_common::pretty::PrettySample;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
@@ -70,7 +70,7 @@ pub async fn run_execute_retention_policy(
             .map(|split_metadata| split_metadata.split_id)
             .collect();
         warn!(
-            index_id=%index_uid.index_id(),
+            index_id=%index_uid.index_id,
             split_ids=?PrettySample::new(&ignored_split_ids, 5),
             "Retention policy could not be applied to {} splits because they lack a timestamp range.",
             ignored_split_ids.len()
@@ -85,7 +85,7 @@ pub async fn run_execute_retention_policy(
         .map(|split_metadata| split_metadata.split_id.to_string())
         .collect();
     info!(
-        index_id=%index_uid.index_id(),
+        index_id=%index_uid.index_id,
         split_ids=?PrettySample::new(&expired_split_ids, 5),
         "Marking {} splits for deletion based on retention policy.",
         expired_split_ids.len()

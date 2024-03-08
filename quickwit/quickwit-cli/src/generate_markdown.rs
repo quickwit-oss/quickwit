@@ -24,11 +24,7 @@ use toml::Value;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let build_info = BuildInfo::get();
-    let version_text = format!(
-        "{} ({} {})",
-        build_info.cargo_pkg_version, build_info.cargo_pkg_version, build_info.commit_date,
-    );
+    let version_text = BuildInfo::get_version_text();
     let app = build_cli()
         .version(version_text)
         .disable_help_subcommand(true);
@@ -143,7 +139,7 @@ fn markdown_for_command_helper(
             println!("| Option | Description | Default |");
             println!("|-----------------|-------------|--------:|");
             for arg in arguments {
-                let default = if let Some(val) = arg.get_default_values().get(0) {
+                let default = if let Some(val) = arg.get_default_values().first() {
                     format!("`{}`", val.to_str().unwrap())
                 } else {
                     "".to_string()

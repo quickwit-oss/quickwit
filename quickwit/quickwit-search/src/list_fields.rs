@@ -164,7 +164,7 @@ fn merge_same_field_group(
     }
 }
 
-/// Merge iterators of ListFieldsEntryResponse into a Vec<ListFieldsEntryResponse>.
+/// Merge iterators of ListFieldsEntryResponse into a `Vec<ListFieldsEntryResponse>`.
 ///
 /// The iterators need to be sorted by (field_name, fieldtype)
 fn merge_leaf_list_fields(
@@ -293,7 +293,7 @@ pub async fn root_list_fields(
         resolve_index_patterns(&list_fields_req.index_id_patterns[..], &mut metastore).await?;
     // The request contains a wildcard, but couldn't find any index.
     if indexes_metadata.is_empty() {
-        return Ok(ListFieldsResponse { fields: vec![] });
+        return Ok(ListFieldsResponse { fields: Vec::new() });
     }
     let index_uid_to_index_meta: HashMap<IndexUid, IndexMetasForLeafSearch> = indexes_metadata
         .iter()
@@ -313,8 +313,14 @@ pub async fn root_list_fields(
         .into_iter()
         .map(|index_metadata| index_metadata.index_uid)
         .collect();
-    let split_metadatas: Vec<SplitMetadata> =
-        list_relevant_splits(index_uids, None, None, None, &mut metastore).await?;
+    let split_metadatas: Vec<SplitMetadata> = list_relevant_splits(
+        index_uids,
+        list_fields_req.start_timestamp,
+        list_fields_req.end_timestamp,
+        None,
+        &mut metastore,
+    )
+    .await?;
 
     // Build requests for each index id
     let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();

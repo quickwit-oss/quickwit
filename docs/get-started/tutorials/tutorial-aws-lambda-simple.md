@@ -138,6 +138,6 @@ Congratz! You finished this tutorial! You can level up with the following tutori
 
 ## Next steps
 
-- [Advanced Lambda tutorial](../../guides/e2e-serverless-aws-lambda) which covers an end-to-end use cases
+- [Search log service on AWS](/blog/log-search-service-for-under-7-dollars) which covers an end-to-end use case.
 - [Search REST API](../../reference/rest-api)
 - [Query language](../../reference/query-language)

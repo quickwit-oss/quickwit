@@ -377,7 +377,7 @@ async fn searcher_for_test(
     let grpc_advertise_addr = cluster
         .ready_members()
         .await
-        .get(0)
+        .first()
         .unwrap()
         .grpc_advertise_addr;
     let searcher_client =
@@ -402,8 +402,8 @@ async fn setup_traces_index(
         .create_index(create_index_request)
         .await
         .unwrap()
-        .index_uid
-        .into();
+        .index_uid()
+        .clone();
     let source_config = SourceConfig::ingest_api_default();
     let add_source_request =
         AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();

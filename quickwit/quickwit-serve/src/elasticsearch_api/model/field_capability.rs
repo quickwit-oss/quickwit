@@ -42,6 +42,12 @@ pub struct FieldCapabilityQueryParams {
     pub fields: Option<Vec<String>>,
     #[serde(default)]
     pub ignore_unavailable: Option<bool>,
+    /// Non-ES Parameter. If set, restricts splits to documents with a `time_range.start >=
+    /// start_timestamp`.
+    pub start_timestamp: Option<i64>,
+    /// Non-ES Parameter. If set, restricts splits to documents with a `time_range.end <
+    /// end_timestamp``.
+    pub end_timestamp: Option<i64>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
@@ -186,5 +192,7 @@ pub fn build_list_field_request_for_es_api(
     Ok(quickwit_proto::search::ListFieldsRequest {
         index_id_patterns,
         fields: search_params.fields.unwrap_or_default(),
+        start_timestamp: search_params.start_timestamp,
+        end_timestamp: search_params.end_timestamp,
     })
 }

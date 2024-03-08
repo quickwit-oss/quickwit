@@ -26,8 +26,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Prost + tonic + Quickwit codegen for control plane, indexing, metastore, ingest and search
     // services.
     //
-    // Control plane.
+    // Cluster service.
     Codegen::builder()
+        .with_protos(&["protos/quickwit/cluster.proto"])
+        .with_output_dir("src/codegen/quickwit")
+        .with_result_type_path("crate::cluster::ClusterResult")
+        .with_error_type_path("crate::cluster::ClusterError")
+        .generate_rpc_name_impls()
+        .run()
+        .unwrap();
+
+    // Control plane.
+    let mut prost_config = prost_build::Config::default();
+    prost_config.extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid");
+
+    Codegen::builder()
+        .with_prost_config(prost_config)
         .with_protos(&["protos/quickwit/control_plane.proto"])
         .with_includes(&["protos"])
         .with_output_dir("src/codegen/quickwit")
@@ -43,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".quickwit.indexing.PipelineUid",
             "crate::types::PipelineUid",
         )
+        .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId");
 
     Codegen::builder()
@@ -59,7 +74,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut prost_config = prost_build::Config::default();
     prost_config
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
+        .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
         .field_attribute("DeleteQuery.index_uid", "#[serde(alias = \"index_id\")]")
+        .field_attribute("DeleteQuery.index_uid", "#[schema(value_type = String)]")
         .field_attribute("DeleteQuery.query_ast", "#[serde(alias = \"query\")]")
         .field_attribute(
             "DeleteQuery.start_timestamp",
@@ -78,7 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_result_type_path("crate::metastore::MetastoreResult")
         .with_error_type_path("crate::metastore::MetastoreError")
         .generate_extra_service_methods()
-        .generate_prom_labels_for_requests()
+        .generate_rpc_name_impls()
         .run()
         .unwrap();
 
@@ -92,6 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .extern_path(".quickwit.ingest.Position", "crate::types::Position")
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
+        .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
         .type_attribute("Shard", "#[derive(Eq)]")
         .field_attribute(
             "Shard.follower_id",
@@ -120,6 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_output_dir("src/codegen/quickwit")
         .with_result_type_path("crate::ingest::IngestV2Result")
         .with_error_type_path("crate::ingest::IngestV2Error")
+        .generate_rpc_name_impls()
         .run()
         .unwrap();
 

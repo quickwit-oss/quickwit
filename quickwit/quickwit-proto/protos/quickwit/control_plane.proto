@@ -21,6 +21,7 @@ syntax = "proto3";
 
 package quickwit.control_plane;
 
+import "quickwit/common.proto";
 import "quickwit/indexing.proto";
 import "quickwit/ingest.proto";
 import "quickwit/metastore.proto";
@@ -61,6 +62,9 @@ service ControlPlaneService {
   // for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
   rpc GetOrCreateOpenShards(GetOrCreateOpenShardsRequest) returns (GetOrCreateOpenShardsResponse);
 
+  // Asks the control plane whether the shards listed in the request should be deleted or truncated.
+  rpc AdviseResetShards(AdviseResetShardsRequest) returns (AdviseResetShardsResponse);
+
   // Return some innerstate of the control plane meant to assist debugging.
   rpc GetDebugState(GetDebugStateRequest) returns (GetDebugStateResponse);
 }
@@ -90,7 +94,7 @@ message GetOrCreateOpenShardsResponse {
 
 message GetOrCreateOpenShardsSuccess {
   uint32 subrequest_id = 1;
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   repeated quickwit.ingest.Shard open_shards = 4;
 }
@@ -124,4 +128,13 @@ message ShardTableEntry {
 message PhysicalIndexingPlanEntry {
   string node_id = 1;
   repeated quickwit.indexing.IndexingTask tasks = 2;
+}
+
+message AdviseResetShardsRequest {
+  repeated quickwit.ingest.ShardIds shard_ids = 1;
+}
+
+message AdviseResetShardsResponse {
+  repeated quickwit.ingest.ShardIds shards_to_delete = 1;
+  repeated quickwit.ingest.ShardIdPositions shards_to_truncate = 2;
 }

@@ -79,6 +79,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         self_node,
         config.gossip_advertise_addr,
         Vec::new(),
+        config.gossip_interval,
         FailureDetectorConfig::default(),
         &ChannelTransport::default(),
     )

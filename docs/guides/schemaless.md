@@ -53,19 +53,24 @@ search_settings:
   default_search_fields: [severity, message]
 
 indexing_settings:
-  commit_timeout_secs: 5
+  commit_timeout_secs: 30
 ```
 
 The `mode` attribute controls what should be done if an ingested document
-contains a field that is not defined in the document mapping. By default, it takes the `lenient` value. In `lenient` mode, the fields that do not appear in the document mapping will simply be ignored.
+contains a field that is not defined in the document mapping. By default, your index is in the `dynamic` mode. In `dynamic` mode, the fields that do not appear in the document mapping will be indexed in a schemaless fashion.
+See details in the [dynamic mode section](#dynamic-mode).
+
 
 If `mode` is set to `strict` on the other hand, documents containing fields
 that are not defined in the mapping will be entirely discarded.
 
-## Schemaless with a partial schema
+Finally the last possible value for `mode` is `lenient`. In lenient mode, fields that are not present in the field mapping will simply be ignored.
 
-`mode` can take another value: `dynamic`.
+## The dynamic mode: schemaless with a partial schema {#dynamic-mode}
+
+`mode` can take the value: `dynamic`.
 When set to dynamic, all extra fields will actually be mapped using a catch-all configuration.
+
 By default, this catch-all configuration indexes and stores all of these fields, but this can be configured by setting the [`dynamic_mapping` attribute](../configuration/index-config#mode).
 A minimalist, yet perfectly valid and useful index configuration is then:
 
@@ -136,7 +141,7 @@ doc_mapping:
   timestamp_field: timestamp
 
 indexing_settings:
-  commit_timeout_secs: 5  # <--- Your document will be searchable ~5 seconds after you ingest them.
+  commit_timeout_secs: 30  # <--- Your document will be searchable ~30 seconds after you ingest them.
 ```
 
 Our index is now ready to handle queries like this:
@@ -170,7 +175,7 @@ doc_mapping:
   timestamp_field: timestamp
 
 indexing_settings:
-  commit_timeout_secs: 5
+  commit_timeout_secs: 30
 EOF
 
 # Create index.
@@ -256,7 +261,7 @@ search_settings:
   default_search_fields: [SeverityText, Body, Attributes, Resource]
 
 indexing_settings:
-  commit_timeout_secs: 5
+  commit_timeout_secs: 10
 ```
 
 We can now naturally search our logs with the following query:

@@ -35,7 +35,7 @@ use serde::{de, Deserialize, Deserializer};
 ///
 /// We don't use untagged enum to support this, in order to keep good errors.
 ///
-/// The code below is adapted from solution described here: https://serde.rs/string-or-struct.html
+/// The code below is adapted from solution described here: <https://serde.rs/string-or-struct.html>
 #[derive(Deserialize)]
 #[serde(transparent)]
 pub(crate) struct StringOrStructForSerialization<T>

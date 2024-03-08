@@ -21,6 +21,7 @@ syntax = "proto3";
 
 package quickwit.ingest.ingester;
 
+import "quickwit/common.proto";
 import "quickwit/ingest.proto";
 
 service IngesterService {
@@ -59,7 +60,7 @@ service IngesterService {
 }
 
 message RetainShardsForSource {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   repeated quickwit.ingest.ShardId shard_ids = 3;
 }
@@ -79,7 +80,7 @@ message PersistRequest {
 
 message PersistSubrequest {
   uint32 subrequest_id = 1;
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.DocBatchV2 doc_batch = 5;
@@ -93,7 +94,7 @@ message PersistResponse {
 
 message PersistSuccess {
   uint32 subrequest_id = 1;
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.Position replication_position_inclusive = 5;
@@ -109,7 +110,7 @@ enum PersistFailureReason {
 
 message PersistFailure {
   uint32 subrequest_id = 1;
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   quickwit.ingest.ShardId shard_id = 4;
   PersistFailureReason reason = 5;
@@ -163,7 +164,7 @@ message ReplicateRequest {
 
 message ReplicateSubrequest {
   uint32 subrequest_id = 1;
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.Position from_position_exclusive = 5;
@@ -180,7 +181,7 @@ message ReplicateResponse {
 
 message ReplicateSuccess {
   uint32 subrequest_id = 1;
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.Position replication_position_inclusive = 5;
@@ -196,7 +197,7 @@ enum ReplicateFailureReason {
 
 message ReplicateFailure {
   uint32 subrequest_id = 1;
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   quickwit.ingest.ShardId shard_id = 4;
   ReplicateFailureReason reason = 5;
@@ -208,7 +209,7 @@ message TruncateShardsRequest {
 }
 
 message TruncateShardsSubrequest {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   quickwit.ingest.ShardId shard_id = 3;
   // The position up to which the shard should be truncated (inclusive).
@@ -221,7 +222,7 @@ message TruncateShardsResponse {
 
 message OpenFetchStreamRequest {
   string client_id = 1;
-  string index_uid = 2;
+  quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.Position from_position_exclusive = 5;
@@ -235,7 +236,7 @@ message FetchMessage {
 }
 
 message FetchPayload {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   quickwit.ingest.ShardId shard_id = 3;
   quickwit.ingest.MRecordBatch mrecord_batch = 4;
@@ -244,7 +245,7 @@ message FetchPayload {
 }
 
 message FetchEof {
-  string index_uid = 1;
+  quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   quickwit.ingest.ShardId shard_id = 3;
   quickwit.ingest.Position eof_position = 4;
@@ -283,15 +284,19 @@ message OpenObservationStreamRequest {
 
 enum IngesterStatus {
   INGESTER_STATUS_UNSPECIFIED = 0;
+  // The ingester is live but not ready yet to accept requests.
+  INGESTER_STATUS_INITIALIZING = 1;
   // The ingester is ready and accepts read and write requests.
-  INGESTER_STATUS_READY = 1;
+  INGESTER_STATUS_READY = 2;
   // The ingester is being decommissioned. It accepts read requests but rejects write requests
   // (open shards, persist, and replicate requests). It will transition to `Decommissioned` once
   // all shards are fully indexed.
-  INGESTER_STATUS_DECOMMISSIONING = 2;
+  INGESTER_STATUS_DECOMMISSIONING = 3;
   // The ingester no longer accepts read and write requests. It does not hold any data and can
   // be safely removed from the cluster.
-  INGESTER_STATUS_DECOMMISSIONED = 3;
+  INGESTER_STATUS_DECOMMISSIONED = 4;
+  // The ingester failed to initialize and is not ready to accept requests.
+  INGESTER_STATUS_FAILED = 5;
 }
 
 message ObservationMessage {

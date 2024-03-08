@@ -149,7 +149,7 @@ impl SourceRuntimeArgs {
     }
 
     pub fn index_id(&self) -> &str {
-        self.pipeline_id.index_uid.index_id()
+        &self.pipeline_id.index_uid.index_id
     }
 
     pub fn source_id(&self) -> &str {
@@ -200,16 +200,16 @@ pub type SourceContext = ActorContext<SourceActor>;
 /// as follow:
 ///
 /// ```ignore
-/// # fn whatever() -> anyhow::Result<()>
-/// source.initialize(ctx)?;
-/// let exit_status = loop {
-///   if let Err(exit_status) = source.emit_batches()? {
-///      break exit_status;
-////  }
-/// };
-/// source.finalize(exit_status)?;
-/// # Ok(())
-/// # }
+/// fn whatever() -> anyhow::Result<()> {
+///     source.initialize(ctx)?;
+///     let exit_status = loop {
+///         if let Err(exit_status) = source.emit_batches()? {
+///             break exit_status;
+///         }
+///     };
+///     source.finalize(exit_status)?;
+///     Ok(())
+/// }
 /// ```
 #[async_trait]
 pub trait Source: Send + 'static {

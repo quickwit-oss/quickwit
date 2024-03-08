@@ -1,13 +1,14 @@
 [package]
 name = "quickwit-control-plane"
-version = "0.7.1"
-authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2021"
-license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
-description = "Core crate of quickwit"
-repository = "https://github.com/quickwit-oss/quickwit"
-homepage = "https://quickwit.io/"
-documentation = "https://quickwit.io/docs/"
+description = "Control plane service implementation"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
@@ -34,6 +35,7 @@ tracing = { workspace = true }
 ulid = { workspace = true }
 
 quickwit-actors = { workspace = true }
+quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
@@ -54,9 +56,6 @@ quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
-
-[build-dependencies]
-quickwit-codegen = { workspace = true }
 
 [features]
 testsuite = ["mockall"]

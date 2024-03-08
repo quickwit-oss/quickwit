@@ -30,7 +30,7 @@ impl Default for RestMetrics {
             http_requests_total: new_counter(
                 "http_requests_total",
                 "Total number of HTTP requests received",
-                "quickwit",
+                "",
             ),
         }
     }

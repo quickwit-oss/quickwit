@@ -208,19 +208,19 @@ mod tests {
         let export_logs_request = ExportLogsServiceRequest {
             resource_logs: vec![ResourceLogs {
                 resource: Some(Resource {
-                    attributes: vec![],
+                    attributes: Vec::new(),
                     dropped_attributes_count: 0,
                 }),
                 scope_logs: vec![ScopeLogs {
                     log_records: vec![LogRecord {
                         body: None,
-                        attributes: vec![],
+                        attributes: Vec::new(),
                         dropped_attributes_count: 0,
                         time_unix_nano: 1704036033047000000,
                         severity_number: 0,
                         severity_text: "ERROR".to_string(),
-                        span_id: vec![],
-                        trace_id: vec![],
+                        span_id: Vec::new(),
+                        trace_id: Vec::new(),
                         flags: 0,
                         observed_time_unix_nano: 0,
                     }],

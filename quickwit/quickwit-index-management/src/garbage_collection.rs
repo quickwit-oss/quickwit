@@ -23,7 +23,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::Future;
-use quickwit_common::{PrettySample, Progress, ServiceStream};
+use quickwit_common::pretty::PrettySample;
+use quickwit_common::{Progress, ServiceStream};
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitInfo,
     SplitMetadata, SplitState,
@@ -297,7 +298,7 @@ pub async fn delete_splits_from_storage_and_metastore(
                 .collect::<Vec<_>>();
             error!(
                 error=?bulk_delete_error.error,
-                index_id=index_uid.index_id(),
+                index_id=index_uid.index_id,
                 "Failed to delete split file(s) {:?} from storage.",
                 PrettySample::new(&failed_split_paths, 5),
             );
@@ -310,7 +311,7 @@ pub async fn delete_splits_from_storage_and_metastore(
             .map(|split_info| split_info.split_id.to_string())
             .collect();
         let delete_splits_request = DeleteSplitsRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             split_ids: split_ids.clone(),
         };
         let metastore_result =
@@ -319,7 +320,7 @@ pub async fn delete_splits_from_storage_and_metastore(
         if let Err(metastore_error) = metastore_result {
             error!(
                 error=?metastore_error,
-                index_id=index_uid.index_id(),
+                index_id=index_uid.index_id,
                 "failed to delete split(s) {:?} from metastore",
                 PrettySample::new(&split_ids, 5),
             );
@@ -380,8 +381,8 @@ mod tests {
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
 
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
@@ -480,8 +481,8 @@ mod tests {
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
 
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
@@ -607,8 +608,8 @@ mod tests {
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
 
         let split_id = "test-delete-splits-happy--split";
         let split_metadata = SplitMetadata {
@@ -710,8 +711,8 @@ mod tests {
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
 
         let split_id_0 = "test-delete-splits-storage-error--split-0";
         let split_metadata_0 = SplitMetadata {

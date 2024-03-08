@@ -32,6 +32,7 @@
 //! - The `BundleStorage` bundles together multiple files into a single file.
 mod cache;
 mod debouncer;
+mod file_descriptor_cache;
 mod metrics;
 mod storage;
 pub use debouncer::AsyncDebouncer;
@@ -364,7 +365,7 @@ pub(crate) mod test_suite {
         let mut happy_byte_stream = storage
             .get_slice_stream(test_path, Range { start: 7, end: 12 })
             .await?;
-        let mut happy_bytes_read = vec![];
+        let mut happy_bytes_read = Vec::new();
         happy_byte_stream.read_to_end(&mut happy_bytes_read).await?;
         assert_eq!(happy_bytes_read.as_slice(), &data[7..12]);
         Ok(())

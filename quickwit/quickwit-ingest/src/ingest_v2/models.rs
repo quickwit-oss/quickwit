@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::{Duration, Instant};
+
 use quickwit_proto::ingest::ShardState;
 use quickwit_proto::types::{NodeId, Position};
 use tokio::sync::watch;
@@ -44,6 +46,8 @@ pub(super) struct IngesterShard {
     pub truncation_position_inclusive: Position,
     pub shard_status_tx: watch::Sender<ShardStatus>,
     pub shard_status_rx: watch::Receiver<ShardStatus>,
+    /// Instant at which the shard was last written to.
+    pub last_write_instant: Instant,
 }
 
 impl IngesterShard {
@@ -52,6 +56,7 @@ impl IngesterShard {
         shard_state: ShardState,
         replication_position_inclusive: Position,
         truncation_position_inclusive: Position,
+        now: Instant,
     ) -> Self {
         let shard_status = (shard_state, replication_position_inclusive.clone());
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
@@ -62,6 +67,7 @@ impl IngesterShard {
             truncation_position_inclusive,
             shard_status_tx,
             shard_status_rx,
+            last_write_instant: now,
         }
     }
 
@@ -70,6 +76,7 @@ impl IngesterShard {
         shard_state: ShardState,
         replication_position_inclusive: Position,
         truncation_position_inclusive: Position,
+        now: Instant,
     ) -> Self {
         let shard_status = (shard_state, replication_position_inclusive.clone());
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
@@ -80,6 +87,7 @@ impl IngesterShard {
             truncation_position_inclusive,
             shard_status_tx,
             shard_status_rx,
+            last_write_instant: now,
         }
     }
 
@@ -87,6 +95,7 @@ impl IngesterShard {
         shard_state: ShardState,
         replication_position_inclusive: Position,
         truncation_position_inclusive: Position,
+        now: Instant,
     ) -> Self {
         let shard_status = (shard_state, replication_position_inclusive.clone());
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
@@ -97,15 +106,8 @@ impl IngesterShard {
             truncation_position_inclusive,
             shard_status_tx,
             shard_status_rx,
+            last_write_instant: now,
         }
-    }
-
-    pub fn is_indexed(&self) -> bool {
-        self.shard_state.is_closed() && self.truncation_position_inclusive.is_eof()
-    }
-
-    pub fn is_replica(&self) -> bool {
-        matches!(self.shard_type, IngesterShardType::Replica { .. })
     }
 
     pub fn follower_id_opt(&self) -> Option<&NodeId> {
@@ -114,6 +116,31 @@ impl IngesterShard {
             IngesterShardType::Replica { .. } => None,
             IngesterShardType::Solo => None,
         }
+    }
+
+    pub fn close(&mut self) {
+        self.shard_state = ShardState::Closed;
+        self.notify_shard_status();
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.shard_state.is_closed()
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.shard_state.is_open()
+    }
+
+    pub fn is_idle(&self, now: Instant, idle_timeout: Duration) -> bool {
+        now.duration_since(self.last_write_instant) >= idle_timeout
+    }
+
+    pub fn is_indexed(&self) -> bool {
+        self.shard_state.is_closed() && self.truncation_position_inclusive.is_eof()
+    }
+
+    pub fn is_replica(&self) -> bool {
+        matches!(self.shard_type, IngesterShardType::Replica { .. })
     }
 
     pub fn notify_shard_status(&self) {
@@ -127,11 +154,16 @@ impl IngesterShard {
             .expect("channel should be open");
     }
 
-    pub fn set_replication_position_inclusive(&mut self, replication_position_inclusive: Position) {
+    pub fn set_replication_position_inclusive(
+        &mut self,
+        replication_position_inclusive: Position,
+        now: Instant,
+    ) {
         if self.replication_position_inclusive == replication_position_inclusive {
             return;
         }
         self.replication_position_inclusive = replication_position_inclusive;
+        self.last_write_instant = now;
         self.notify_shard_status();
     }
 }
@@ -192,6 +224,7 @@ mod tests {
             ShardState::Closed,
             Position::offset(42u64),
             Position::Beginning,
+            Instant::now(),
         );
         assert!(matches!(
             &primary_shard.shard_type,
@@ -216,6 +249,7 @@ mod tests {
             ShardState::Closed,
             Position::offset(42u64),
             Position::Beginning,
+            Instant::now(),
         );
         assert!(matches!(
             &replica_shard.shard_type,
@@ -239,6 +273,7 @@ mod tests {
             ShardState::Closed,
             Position::offset(42u64),
             Position::Beginning,
+            Instant::now(),
         );
         assert_eq!(solo_shard.shard_type, IngesterShardType::Solo);
         assert!(!solo_shard.is_replica());

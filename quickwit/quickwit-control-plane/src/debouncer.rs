@@ -40,15 +40,6 @@ pub struct Debouncer {
     cooldown_state: Arc<Mutex<DebouncerState>>,
 }
 
-impl Debouncer {
-    pub fn new(cooldown_period: Duration) -> Debouncer {
-        Debouncer {
-            cooldown_period,
-            cooldown_state: Arc::new(Mutex::new(DebouncerState::NoCooldown)),
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum DebouncerState {
     /// More than `cooldown_period` has elapsed since we last emitted an event.
@@ -81,7 +72,15 @@ enum Transition {
     Emit,
 }
 
+#[allow(dead_code)]
 impl Debouncer {
+    pub fn new(cooldown_period: Duration) -> Debouncer {
+        Debouncer {
+            cooldown_period,
+            cooldown_state: Arc::new(Mutex::new(DebouncerState::NoCooldown)),
+        }
+    }
+
     /// Updates the state according to the transition, and returns the state before the transition.
     /// The entire transition is atomic.
     fn accept_transition(&self, transition: Transition) -> DebouncerState {

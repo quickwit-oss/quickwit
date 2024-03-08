@@ -39,8 +39,8 @@ pub struct GetOrCreateOpenShardsResponse {
 pub struct GetOrCreateOpenShardsSuccess {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "4")]
@@ -89,6 +89,22 @@ pub struct PhysicalIndexingPlanEntry {
     pub node_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub tasks: ::prost::alloc::vec::Vec<super::indexing::IndexingTask>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AdviseResetShardsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub shard_ids: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AdviseResetShardsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub shards_to_delete: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
+    #[prost(message, repeated, tag = "2")]
+    pub shards_to_truncate: ::prost::alloc::vec::Vec<super::ingest::ShardIdPositions>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -171,6 +187,11 @@ pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sy
         &mut self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse>;
+    /// Asks the control plane whether the shards listed in the request should be deleted or truncated.
+    async fn advise_reset_shards(
+        &mut self,
+        request: AdviseResetShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse>;
     /// Return some innerstate of the control plane meant to assist debugging.
     async fn get_debug_state(
         &mut self,
@@ -302,6 +323,12 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
         self.inner.get_or_create_open_shards(request).await
     }
+    async fn advise_reset_shards(
+        &mut self,
+        request: AdviseResetShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
+        self.inner.advise_reset_shards(request).await
+    }
     async fn get_debug_state(
         &mut self,
         request: GetDebugStateRequest,
@@ -365,6 +392,12 @@ pub mod control_plane_service_mock {
             super::GetOrCreateOpenShardsResponse,
         > {
             self.inner.lock().await.get_or_create_open_shards(request).await
+        }
+        async fn advise_reset_shards(
+            &mut self,
+            request: super::AdviseResetShardsRequest,
+        ) -> crate::control_plane::ControlPlaneResult<super::AdviseResetShardsResponse> {
+            self.inner.lock().await.advise_reset_shards(request).await
         }
         async fn get_debug_state(
             &mut self,
@@ -486,6 +519,22 @@ impl tower::Service<GetOrCreateOpenShardsRequest> for Box<dyn ControlPlaneServic
         Box::pin(fut)
     }
 }
+impl tower::Service<AdviseResetShardsRequest> for Box<dyn ControlPlaneService> {
+    type Response = AdviseResetShardsResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: AdviseResetShardsRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.advise_reset_shards(request).await };
+        Box::pin(fut)
+    }
+}
 impl tower::Service<GetDebugStateRequest> for Box<dyn ControlPlaneService> {
     type Response = GetDebugStateResponse;
     type Error = crate::control_plane::ControlPlaneError;
@@ -536,6 +585,11 @@ struct ControlPlaneServiceTowerServiceStack {
         GetOrCreateOpenShardsResponse,
         crate::control_plane::ControlPlaneError,
     >,
+    advise_reset_shards_svc: quickwit_common::tower::BoxService<
+        AdviseResetShardsRequest,
+        AdviseResetShardsResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
     get_debug_state_svc: quickwit_common::tower::BoxService<
         GetDebugStateRequest,
         GetDebugStateResponse,
@@ -552,6 +606,7 @@ impl Clone for ControlPlaneServiceTowerServiceStack {
             toggle_source_svc: self.toggle_source_svc.clone(),
             delete_source_svc: self.delete_source_svc.clone(),
             get_or_create_open_shards_svc: self.get_or_create_open_shards_svc.clone(),
+            advise_reset_shards_svc: self.advise_reset_shards_svc.clone(),
             get_debug_state_svc: self.get_debug_state_svc.clone(),
         }
     }
@@ -595,6 +650,12 @@ impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
         self.get_or_create_open_shards_svc.ready().await?.call(request).await
+    }
+    async fn advise_reset_shards(
+        &mut self,
+        request: AdviseResetShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
+        self.advise_reset_shards_svc.ready().await?.call(request).await
     }
     async fn get_debug_state(
         &mut self,
@@ -663,6 +724,16 @@ type GetOrCreateOpenShardsLayer = quickwit_common::tower::BoxLayer<
     GetOrCreateOpenShardsResponse,
     crate::control_plane::ControlPlaneError,
 >;
+type AdviseResetShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        AdviseResetShardsRequest,
+        AdviseResetShardsResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    AdviseResetShardsRequest,
+    AdviseResetShardsResponse,
+    crate::control_plane::ControlPlaneError,
+>;
 type GetDebugStateLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         GetDebugStateRequest,
@@ -681,6 +752,7 @@ pub struct ControlPlaneServiceTowerLayerStack {
     toggle_source_layers: Vec<ToggleSourceLayer>,
     delete_source_layers: Vec<DeleteSourceLayer>,
     get_or_create_open_shards_layers: Vec<GetOrCreateOpenShardsLayer>,
+    advise_reset_shards_layers: Vec<AdviseResetShardsLayer>,
     get_debug_state_layers: Vec<GetDebugStateLayer>,
 }
 impl ControlPlaneServiceTowerLayerStack {
@@ -850,6 +922,31 @@ impl ControlPlaneServiceTowerLayerStack {
         >>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
+                    AdviseResetShardsRequest,
+                    AdviseResetShardsResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                AdviseResetShardsRequest,
+                AdviseResetShardsResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                AdviseResetShardsRequest,
+                Response = AdviseResetShardsResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                AdviseResetShardsRequest,
+                AdviseResetShardsResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<AdviseResetShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
                     GetDebugStateRequest,
                     GetDebugStateResponse,
                     crate::control_plane::ControlPlaneError,
@@ -885,6 +982,8 @@ impl ControlPlaneServiceTowerLayerStack {
         self.delete_source_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.get_or_create_open_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.advise_reset_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.get_debug_state_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -1017,6 +1116,26 @@ impl ControlPlaneServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_advise_reset_shards_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    AdviseResetShardsRequest,
+                    AdviseResetShardsResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                AdviseResetShardsRequest,
+                Response = AdviseResetShardsResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<AdviseResetShardsRequest>>::Future: Send + 'static,
+    {
+        self.advise_reset_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn stack_get_debug_state_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<
@@ -1130,6 +1249,14 @@ impl ControlPlaneServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(boxed_instance.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let advise_reset_shards_svc = self
+            .advise_reset_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let get_debug_state_svc = self
             .get_debug_state_layers
             .into_iter()
@@ -1146,6 +1273,7 @@ impl ControlPlaneServiceTowerLayerStack {
             toggle_source_svc,
             delete_source_svc,
             get_or_create_open_shards_svc,
+            advise_reset_shards_svc,
             get_debug_state_svc,
         };
         ControlPlaneServiceClient::new(tower_svc_stack)
@@ -1278,6 +1406,15 @@ where
             >,
         >
         + tower::Service<
+            AdviseResetShardsRequest,
+            Response = AdviseResetShardsResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                AdviseResetShardsResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >
+        + tower::Service<
             GetDebugStateRequest,
             Response = GetDebugStateResponse,
             Error = crate::control_plane::ControlPlaneError,
@@ -1323,6 +1460,12 @@ where
         &mut self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
+        self.call(request).await
+    }
+    async fn advise_reset_shards(
+        &mut self,
+        request: AdviseResetShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
         self.call(request).await
     }
     async fn get_debug_state(
@@ -1428,6 +1571,16 @@ where
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
     }
+    async fn advise_reset_shards(
+        &mut self,
+        request: AdviseResetShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
+        self.inner
+            .advise_reset_shards(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
     async fn get_debug_state(
         &mut self,
         request: GetDebugStateRequest,
@@ -1516,6 +1669,17 @@ for ControlPlaneServiceGrpcServerAdapter {
         self.inner
             .clone()
             .get_or_create_open_shards(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn advise_reset_shards(
+        &self,
+        request: tonic::Request<AdviseResetShardsRequest>,
+    ) -> Result<tonic::Response<AdviseResetShardsResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .advise_reset_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(|error| error.into())
@@ -1810,6 +1974,37 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Asks the control plane whether the shards listed in the request should be deleted or truncated.
+        pub async fn advise_reset_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AdviseResetShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AdviseResetShardsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/AdviseResetShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "AdviseResetShards",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Return some innerstate of the control plane meant to assist debugging.
         pub async fn get_debug_state(
             &mut self,
@@ -1897,6 +2092,14 @@ pub mod control_plane_service_grpc_server {
             request: tonic::Request<super::GetOrCreateOpenShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetOrCreateOpenShardsResponse>,
+            tonic::Status,
+        >;
+        /// Asks the control plane whether the shards listed in the request should be deleted or truncated.
+        async fn advise_reset_shards(
+            &self,
+            request: tonic::Request<super::AdviseResetShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AdviseResetShardsResponse>,
             tonic::Status,
         >;
         /// Return some innerstate of the control plane meant to assist debugging.
@@ -2264,6 +2467,52 @@ pub mod control_plane_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetOrCreateOpenShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/AdviseResetShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct AdviseResetShardsSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<super::AdviseResetShardsRequest>
+                    for AdviseResetShardsSvc<T> {
+                        type Response = super::AdviseResetShardsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AdviseResetShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).advise_reset_shards(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = AdviseResetShardsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

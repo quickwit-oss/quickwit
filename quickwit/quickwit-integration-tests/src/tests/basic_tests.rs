@@ -42,13 +42,6 @@ fn get_ndjson_filepath(ndjson_dataset_filename: &str) -> String {
 async fn test_ui_redirect_on_get() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
-    assert!(sandbox
-        .indexer_rest_client
-        .node_health()
-        .is_ready()
-        .await
-        .unwrap());
-
     let node_config = sandbox.node_configs.first().unwrap();
     let client = hyper::Client::builder()
         .pool_idle_timeout(Duration::from_secs(30))
@@ -76,12 +69,6 @@ async fn test_ui_redirect_on_get() {
 async fn test_standalone_server() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
-    assert!(sandbox
-        .indexer_rest_client
-        .node_health()
-        .is_ready()
-        .await
-        .unwrap());
     {
         // The indexing service should be running.
         let counters = sandbox

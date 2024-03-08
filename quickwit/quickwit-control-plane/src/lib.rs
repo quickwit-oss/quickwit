@@ -26,10 +26,13 @@ pub(crate) mod model;
 
 use quickwit_common::tower::Pool;
 use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask};
+use quickwit_proto::types::NodeId;
 
 /// Indexer-node specific information stored in the pool of available indexer nodes
 #[derive(Debug, Clone)]
 pub struct IndexerNodeInfo {
+    pub node_id: NodeId,
+    pub generation_id: u64,
     pub client: IndexingServiceClient,
     pub indexing_tasks: Vec<IndexingTask>,
     pub indexing_capacity: CpuCapacity,

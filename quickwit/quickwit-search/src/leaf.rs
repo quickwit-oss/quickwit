@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use futures::future::try_join_all;
-use quickwit_common::PrettySample;
+use quickwit_common::pretty::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
@@ -396,7 +396,7 @@ async fn leaf_search_single_split(
 /// or applying date range when the range covers the entire split.
 fn rewrite_request(search_request: &mut SearchRequest, split: &SplitIdAndFooterOffsets) {
     if search_request.max_hits == 0 {
-        search_request.sort_fields = vec![];
+        search_request.sort_fields = Vec::new();
     }
     rewrite_start_end_time_bounds(
         &mut search_request.start_timestamp,

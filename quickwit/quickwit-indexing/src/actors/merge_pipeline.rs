@@ -38,6 +38,7 @@ use quickwit_proto::metastore::{
     ListSplitsRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
 };
 use time::OffsetDateTime;
+use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
 use super::MergeSchedulerService;
@@ -48,6 +49,11 @@ use crate::actors::{MergeExecutor, MergePlanner, Packager, Publisher, Uploader, 
 use crate::merge_policy::MergePolicy;
 use crate::models::MergeStatistics;
 use crate::split_store::IndexingSplitStore;
+
+/// Spawning a merge pipeline puts a lot of pressure on the metastore so
+/// we rely on this semaphore to limit the number of merge pipelines that can be spawned
+/// concurrently.
+static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 
 #[derive(Debug)]
 struct ObserveLoop;
@@ -206,18 +212,23 @@ impl MergePipeline {
     }
 
     // TODO: Should return an error saying whether we can retry or not.
-    #[instrument(name="spawn_merge_pipeline", level="info", skip_all, fields(index=%self.params.pipeline_id.index_uid.index_id(), gen=self.generation()))]
+    #[instrument(name="spawn_merge_pipeline", level="info", skip_all, fields(index=self.params.pipeline_id.index_uid.index_id, gen=self.generation()))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
+        let _spawn_pipeline_permit = ctx
+            .protect_future(SPAWN_PIPELINE_SEMAPHORE.acquire())
+            .await
+            .expect("semaphore should not be closed");
+
         self.statistics.num_spawn_attempts += 1;
         self.kill_switch = ctx.kill_switch().child();
 
         info!(
-            index_id=%self.params.pipeline_id.index_uid.index_id(),
+            index_id=%self.params.pipeline_id.index_uid.index_id,
             source_id=%self.params.pipeline_id.source_id,
             pipeline_uid=%self.params.pipeline_id.pipeline_uid,
             root_dir=%self.params.indexing_directory.path().display(),
             merge_policy=?self.params.merge_policy,
-            "spawn merge pipeline",
+            "spawning merge pipeline",
         );
         let query = ListSplitsQuery::for_index(self.params.pipeline_id.index_uid.clone())
             .with_split_state(SplitState::Published)

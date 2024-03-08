@@ -76,13 +76,19 @@ environment:
 
 # Quickwit configuration
 config:
-  # No metastore configuration.
-  # By default, metadata is stored on the local disk of the metastore instance.
-  # Everything will be lost after a metastore restart.
-  s3:
-    region: ${AWS_REGION}
-    access_key: ${AWS_ACCESS_KEY_ID}
-    secret_key: ${AWS_SECRET_ACCESS_KEY}
+  storage:
+    s3:
+      region: ${AWS_REGION}
+      access_key_id: ${AWS_ACCESS_KEY_ID}
+      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+      # If you are not on AWS S3, you can define a flavor (gcs, minio, garage...)
+      # and additional variables for your object storage.
+      # flavor: gcs
+      # endpoint: https://storage.googleapis.com
+
+  # Metastore on S3.
+  metastore_uri: ${DEFAULT_INDEX_ROOT_URI}
+
   default_index_root_uri: ${DEFAULT_INDEX_ROOT_URI}
 
   # Indexer settings
@@ -209,3 +215,20 @@ helm uninstall quickwit
 # Delete namespace
 kubectl delete namespace qw-tutorial
 ```
+
+Finally, you need to delete three JSON files created by Quickwit on your object storage:
+
+```bash
+# if your version <= 0.7.1
+aws s3 rm ${DEFAULT_INDEX_ROOT_URI}/indexes_states.json
+# if your version > 0.7.1
+aws s3 rm ${DEFAULT_INDEX_ROOT_URI}/manifest.json
+# the metastore file of the logs index
+aws s3 rm ${DEFAULT_INDEX_ROOT_URI}/otel-logs-v0_7/metastore.json
+# the metastore file of the traces index
+aws s3 rm ${DEFAULT_INDEX_ROOT_URI}/otel-traces-v0_7/metastore.json
+```
+
+## Next step
+
+Follow our [tutorial](../../get-started/tutorials/trace-analytics-with-grafana.md) to install Quickwit Grafana plugin to explore your logs, create dashboards and alerts.

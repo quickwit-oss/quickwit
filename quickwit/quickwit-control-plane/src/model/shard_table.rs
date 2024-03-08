@@ -137,7 +137,7 @@ impl ShardTable {
         let shards_removed = self
             .table_entries
             .iter()
-            .filter(|(source_uid, _)| source_uid.index_uid.index_id() == index_id)
+            .filter(|(source_uid, _)| source_uid.index_uid.index_id == index_id)
             .flat_map(|(source_uid, shard_table_entry)| {
                 shard_table_entry
                     .shard_entries
@@ -148,7 +148,7 @@ impl ShardTable {
             remove_shard_from_ingesters_internal(source_uid, shard, &mut self.ingester_shards);
         }
         self.table_entries
-            .retain(|source_uid, _| source_uid.index_uid.index_id() != index_id);
+            .retain(|source_uid, _| source_uid.index_uid.index_id != index_id);
         self.check_invariant();
     }
 
@@ -165,7 +165,7 @@ impl ShardTable {
         for (source_uid, shard_table_entry) in &self.table_entries {
             for (shard_id, shard_entry) in &shard_table_entry.shard_entries {
                 debug_assert_eq!(shard_id, shard_entry.shard.shard_id());
-                debug_assert_eq!(source_uid.index_uid.as_str(), &shard_entry.shard.index_uid);
+                debug_assert_eq!(&source_uid.index_uid, shard_entry.shard.index_uid());
                 for node in shard_entry.shard.ingesters() {
                     shard_sets_in_shard_table.insert((node, source_uid, shard_id));
                 }
@@ -230,8 +230,7 @@ impl ShardTable {
             if !previous_table_entry.is_empty() {
                 error!(
                     "shard table entry for index `{}` and source `{}` already exists",
-                    index_uid.index_id(),
-                    source_id
+                    index_uid.index_id, source_id
                 );
             }
         }
@@ -278,10 +277,20 @@ impl ShardTable {
     }
 
     /// Lists the shards of a given source. Returns `None` if the source does not exist.
-    pub fn list_shards(&self, source_uid: &SourceUid) -> Option<impl Iterator<Item = &ShardEntry>> {
+    pub fn get_shards(&self, source_uid: &SourceUid) -> Option<&FnvHashMap<ShardId, ShardEntry>> {
         self.table_entries
             .get(source_uid)
-            .map(|table_entry| table_entry.shard_entries.values())
+            .map(|table_entry| &table_entry.shard_entries)
+    }
+
+    /// Lists the shards of a given source. Returns `None` if the source does not exist.
+    pub fn get_shards_mut(
+        &mut self,
+        source_uid: &SourceUid,
+    ) -> Option<&mut FnvHashMap<ShardId, ShardEntry>> {
+        self.table_entries
+            .get_mut(source_uid)
+            .map(|table_entry| &mut table_entry.shard_entries)
     }
 
     /// Inserts the shards into the shard table.
@@ -296,12 +305,12 @@ impl ShardTable {
             source_id: source_id.clone(),
         };
         for shard in &opened_shards {
-            if shard.index_uid != source_uid.index_uid.as_str()
-                || shard.source_id != source_uid.source_id
+            if shard.index_uid() != &source_uid.index_uid || shard.source_id != source_uid.source_id
             {
                 panic!(
                     "shard source UID `{}/{}` does not match source UID `{source_uid}`",
-                    shard.index_uid, shard.source_id,
+                    shard.index_uid(),
+                    shard.source_id,
                 );
             }
         }
@@ -528,14 +537,14 @@ mod tests {
         let mut shard_table = ShardTable::default();
         shard_table.delete_index("test-index");
 
-        let index_uid_0: IndexUid = "test-index-foo:0".into();
+        let index_uid_0: IndexUid = IndexUid::for_test("test-index-foo", 0);
         let source_id_0 = "test-source-0".to_string();
         shard_table.add_source(&index_uid_0, &source_id_0);
 
         let source_id_1 = "test-source-1".to_string();
         shard_table.add_source(&index_uid_0, &source_id_1);
 
-        let index_uid_1: IndexUid = "test-index-bar:1".into();
+        let index_uid_1: IndexUid = IndexUid::for_test("test-index-bar", 1);
         shard_table.add_source(&index_uid_1, &source_id_0);
 
         shard_table.delete_index("test-index-foo");
@@ -549,7 +558,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_add_source() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -566,7 +575,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_list_shards() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
         let source_uid = SourceUid {
             index_uid: index_uid.clone(),
@@ -574,11 +583,11 @@ mod tests {
         };
         let mut shard_table = ShardTable::default();
 
-        assert!(shard_table.list_shards(&source_uid).is_none());
+        assert!(shard_table.get_shards(&source_uid).is_none());
 
         shard_table.add_source(&index_uid, &source_id);
-        let shards = shard_table.list_shards(&source_uid).unwrap();
-        assert_eq!(shards.count(), 0);
+        let shards = shard_table.get_shards(&source_uid).unwrap();
+        assert_eq!(shards.len(), 0);
 
         let shard_01 = Shard {
             index_uid: index_uid.clone().into(),
@@ -590,13 +599,13 @@ mod tests {
         };
         shard_table.insert_shards(&index_uid, &source_id, vec![shard_01]);
 
-        let shards = shard_table.list_shards(&source_uid).unwrap();
-        assert_eq!(shards.count(), 1);
+        let shards = shard_table.get_shards(&source_uid).unwrap();
+        assert_eq!(shards.len(), 1);
     }
 
     #[test]
     fn test_shard_table_insert_newly_opened_shards() {
-        let index_uid_0: IndexUid = "test-index:0".into();
+        let index_uid_0: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -661,7 +670,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_find_open_shards() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -729,34 +738,34 @@ mod tests {
 
     #[test]
     fn test_shard_table_update_shards() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
 
         let shard_01 = Shard {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
         let shard_02 = Shard {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(2)),
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
         let shard_03 = Shard {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(3)),
             shard_state: ShardState::Unavailable as i32,
             ..Default::default()
         };
         let shard_04 = Shard {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(4)),
             shard_state: ShardState::Open as i32,
@@ -803,8 +812,9 @@ mod tests {
         assert_eq!(shard_stats.avg_ingestion_rate, 1.5);
 
         let shard_entries: Vec<ShardEntry> = shard_table
-            .list_shards(&source_uid)
+            .get_shards(&source_uid)
             .unwrap()
+            .values()
             .cloned()
             .sorted_unstable_by(|left, right| left.shard.shard_id.cmp(&right.shard.shard_id))
             .collect();
@@ -832,8 +842,8 @@ mod tests {
 
     #[test]
     fn test_shard_table_close_shards() {
-        let index_uid_0: IndexUid = "test-index:0".into();
-        let index_uid_1: IndexUid = "test-index:1".into();
+        let index_uid_0: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid_1: IndexUid = IndexUid::for_test("test-index", 1);
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -884,8 +894,8 @@ mod tests {
     fn test_shard_table_delete_shards() {
         let mut shard_table = ShardTable::default();
 
-        let index_uid_0: IndexUid = "test-index:0".into();
-        let index_uid_1: IndexUid = "test-index:1".into();
+        let index_uid_0: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid_1: IndexUid = IndexUid::for_test("test-index", 1);
         let source_id = "test-source".to_string();
 
         let shard_01 = Shard {
@@ -942,7 +952,7 @@ mod tests {
     fn test_shard_table_acquire_scaling_up_permits() {
         let mut shard_table = ShardTable::default();
 
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         let source_uid = SourceUid {
@@ -978,7 +988,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_acquire_scaling_down_permits() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -1018,7 +1028,7 @@ mod tests {
     fn test_shard_table_release_scaling_up_permits() {
         let mut shard_table = ShardTable::default();
 
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         shard_table.add_source(&index_uid, &source_id);
@@ -1054,7 +1064,7 @@ mod tests {
     fn test_shard_table_release_scaling_down_permits() {
         let mut shard_table = ShardTable::default();
 
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
 
         shard_table.add_source(&index_uid, &source_id);

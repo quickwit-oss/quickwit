@@ -142,9 +142,9 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                 // Note that we keep all shards, including Closed shards:
                 // A closed shards still needs to be indexed.
                 let shard_ids: Vec<ShardId> = model
-                    .list_shards_for_source(&source_uid)
+                    .get_shards_for_source(&source_uid)
                     .expect("source should exist")
-                    .map(|shard| shard.shard_id())
+                    .keys()
                     .cloned()
                     .collect();
                 if shard_ids.is_empty() {
@@ -204,13 +204,13 @@ impl IndexingScheduler {
 
         let sources = get_sources_to_schedule(model);
 
-        let mut indexers: Vec<(String, IndexerNodeInfo)> = self.get_indexers_from_indexer_pool();
+        let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
 
         let indexer_id_to_cpu_capacities: FnvHashMap<String, CpuCapacity> = indexers
             .iter()
-            .filter_map(|(indexer_id, indexer_node_info)| {
-                if indexer_node_info.indexing_capacity.cpu_millis() > 0 {
-                    Some((indexer_id.to_string(), indexer_node_info.indexing_capacity))
+            .filter_map(|indexer| {
+                if indexer.indexing_capacity.cpu_millis() > 0 {
+                    Some((indexer.node_id.to_string(), indexer.indexing_capacity))
                 } else {
                     None
                 }
@@ -239,7 +239,7 @@ impl IndexingScheduler {
                 return;
             }
         }
-        self.apply_physical_indexing_plan(&mut indexers, new_physical_plan);
+        self.apply_physical_indexing_plan(&indexers, new_physical_plan);
         self.state.num_schedule_indexing_plan += 1;
     }
 
@@ -267,12 +267,10 @@ impl IndexingScheduler {
             }
         }
 
-        let mut indexers: Vec<(String, IndexerNodeInfo)> = self.get_indexers_from_indexer_pool();
+        let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
         let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
             .iter()
-            .map(|(indexer_id, indexer_node_info)| {
-                (indexer_id.clone(), indexer_node_info.indexing_tasks.clone())
-            })
+            .map(|indexer| (indexer.node_id.to_string(), indexer.indexing_tasks.clone()))
             .collect();
 
         let indexing_plans_diff = get_indexing_plans_diff(
@@ -285,17 +283,17 @@ impl IndexingScheduler {
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
-            self.apply_physical_indexing_plan(&mut indexers, last_applied_plan.clone());
+            self.apply_physical_indexing_plan(&indexers, last_applied_plan.clone());
         }
     }
 
-    fn get_indexers_from_indexer_pool(&self) -> Vec<(String, IndexerNodeInfo)> {
-        self.indexer_pool.pairs()
+    fn get_indexers_from_indexer_pool(&self) -> Vec<IndexerNodeInfo> {
+        self.indexer_pool.values()
     }
 
     fn apply_physical_indexing_plan(
         &mut self,
-        indexers: &mut [(String, IndexerNodeInfo)],
+        indexers: &[IndexerNodeInfo],
         new_physical_plan: PhysicalIndexingPlan,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
@@ -306,19 +304,23 @@ impl IndexingScheduler {
             tokio::spawn({
                 let indexer = indexers
                     .iter()
-                    .find(|indexer| &indexer.0 == node_id)
+                    .find(|indexer| indexer.node_id == *node_id)
                     .expect("This should never happen as the plan was built from these indexers.")
                     .clone();
                 let indexing_tasks = indexing_tasks.clone();
                 async move {
                     if let Err(error) = indexer
-                        .1
                         .client
                         .clone()
                         .apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks })
                         .await
                     {
-                        warn!(error=%error, node_id=indexer.0, "failed to apply indexing plan to indexer");
+                        warn!(
+                            error=%error,
+                            node_id=%indexer.node_id,
+                            generation_id=indexer.generation_id,
+                            "failed to apply indexing plan to indexer"
+                        );
                     }
                 }
             });
@@ -492,6 +494,7 @@ fn get_indexing_tasks_diff<'a>(
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
+    use std::str::FromStr;
 
     use proptest::{prop_compose, proptest};
     use quickwit_config::{IndexConfig, KafkaSourceParams, SourceConfig, SourceParams};
@@ -501,6 +504,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_indexing_plans_diff() {
+        let index_uid = IndexUid::from_str("index-1:11111111111111111111111111").unwrap();
+        let index_uid2 = IndexUid::from_str("index-2:11111111111111111111111111").unwrap();
         {
             let running_plan = FnvHashMap::default();
             let desired_plan = FnvHashMap::default();
@@ -512,19 +517,19 @@ mod tests {
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(10u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1b = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(11u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(20u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
             };
@@ -544,13 +549,13 @@ mod tests {
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(1u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(2u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
             };
@@ -576,13 +581,13 @@ mod tests {
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(1u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(2u128)),
-                index_uid: "index-2:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid2.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
             };
@@ -616,19 +621,19 @@ mod tests {
             let mut desired_plan = FnvHashMap::default();
             let task_1a = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(10u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1b = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(11u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1c = IndexingTask {
                 pipeline_uid: Some(PipelineUid::from_u128(12u128)),
-                index_uid: "index-1:11111111111111111111111111".to_string(),
+                index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
@@ -751,7 +756,7 @@ mod tests {
             )
             .unwrap();
         let shard = Shard {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             source_id: "ingest_v2".to_string(),
             shard_id: Some(ShardId::from(17)),
             shard_state: ShardState::Open as i32,
@@ -765,11 +770,11 @@ mod tests {
     #[test]
     fn test_build_physical_indexing_plan_simple() {
         let source_1 = SourceUid {
-            index_uid: IndexUid::from_parts("index-1", "000"),
+            index_uid: IndexUid::from_parts("index-1", 0),
             source_id: "source1".to_string(),
         };
         let source_2 = SourceUid {
-            index_uid: IndexUid::from_parts("index-2", "000"),
+            index_uid: IndexUid::from_parts("index-2", 0),
             source_id: "source2".to_string(),
         };
         let sources = vec![
@@ -808,7 +813,7 @@ mod tests {
                     .collect();
             let mut model = ControlPlaneModel::default();
             for index_uid in index_uids {
-                let index_config = IndexConfig::for_test(index_uid.index_id(), &format!("ram://test/{index_uid}"));
+                let index_config = IndexConfig::for_test(&index_uid.index_id, &format!("ram://test/{index_uid}"));
                 model.add_index(IndexMetadata::new_with_index_uid(index_uid, index_config));
             }
             for (index_uid, source_config) in &index_id_sources {
@@ -843,7 +848,7 @@ mod tests {
     prop_compose! {
       fn gen_kafka_source()
         (index_idx in 0usize..100usize, desired_num_pipelines in 1usize..51usize, max_num_pipelines_per_indexer in 1usize..5usize) -> (IndexUid, SourceConfig) {
-          let index_uid = IndexUid::from_parts(&format!("index-id-{index_idx}"), "" /* this is the index uid */);
+          let index_uid = IndexUid::from_parts(&format!("index-id-{index_idx}"), 0 /* this is the index uid */);
           let source_id = quickwit_common::rand::append_random_suffix("kafka-source");
           (index_uid, SourceConfig {
               source_id,

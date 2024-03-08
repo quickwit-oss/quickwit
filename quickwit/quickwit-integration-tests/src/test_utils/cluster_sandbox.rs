@@ -21,7 +21,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::future;
 use itertools::Itertools;
@@ -164,6 +164,7 @@ impl ClusterSandbox {
                         metastore_resolver,
                         storage_resolver,
                         shutdown_signal,
+                        quickwit_serve::do_nothing_env_filter_reload_fn(),
                     )
                     .await?;
                     Result::<_, anyhow::Error>::Ok(result)
@@ -212,6 +213,7 @@ impl ClusterSandbox {
     }
 
     pub fn enable_ingest_v2(&mut self) {
+        self.indexer_rest_client.enable_ingest_v2();
         self.searcher_rest_client.enable_ingest_v2();
     }
 
@@ -220,7 +222,28 @@ impl ClusterSandbox {
         let temp_dir = tempfile::tempdir()?;
         let services = QuickwitService::supported_services();
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[services]);
-        Self::start_cluster_with_configs(temp_dir, node_configs).await
+        let sandbox = Self::start_cluster_with_configs(temp_dir, node_configs).await?;
+
+        let now = Instant::now();
+        let mut tick = tokio::time::interval(Duration::from_millis(100));
+
+        loop {
+            tick.tick().await;
+
+            if now.elapsed() > Duration::from_secs(5) {
+                panic!("standlone node timed out");
+            }
+            if sandbox
+                .indexer_rest_client
+                .node_health()
+                .is_ready()
+                .await
+                .unwrap_or(false)
+            {
+                break;
+            }
+        }
+        Ok(sandbox)
     }
 
     pub async fn start_cluster_with_otlp_service(

@@ -56,6 +56,6 @@ endpoint: _bulk
 num_retries: 10
 params:
   refresh: "true"
-headers: {"Content-Type": "application/json"}
+headers: {"Content-Type": "application/json", "content-encoding": "gzip"}
 body_from_file: gharchive-bulk.json.gz
 sleep_after: 3

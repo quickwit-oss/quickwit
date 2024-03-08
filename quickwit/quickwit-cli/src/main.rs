@@ -42,11 +42,7 @@ async fn main_impl() -> anyhow::Result<()> {
     openssl_probe::init_ssl_cert_env_vars();
 
     let about_text = about_text();
-    let build_info = BuildInfo::get();
-    let version_text = format!(
-        "{} ({} {})",
-        build_info.version, build_info.commit_short_hash, build_info.build_date
-    );
+    let version_text = BuildInfo::get_version_text();
 
     let app = build_cli().about(about_text).version(version_text);
     let matches = app.get_matches();
@@ -54,8 +50,8 @@ async fn main_impl() -> anyhow::Result<()> {
 
     let command = match CliCommand::parse_cli_args(matches) {
         Ok(command) => command,
-        Err(err) => {
-            eprintln!("Failed to parse command arguments: {err:?}");
+        Err(error) => {
+            eprintln!("failed to parse command line arguments: {error:?}");
             std::process::exit(1);
         }
     };
@@ -63,9 +59,11 @@ async fn main_impl() -> anyhow::Result<()> {
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
-    setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
-    let return_code: i32 = if let Err(err) = command.execute().await {
-        eprintln!("{} Command failed: {:?}\n", "✘".color(RED_COLOR), err);
+    let build_info = BuildInfo::get();
+    let env_filter_reload_fn =
+        setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
+    let return_code: i32 = if let Err(err) = command.execute(env_filter_reload_fn).await {
+        eprintln!("{} command failed: {:?}\n", "✘".color(RED_COLOR), err);
         1
     } else {
         0

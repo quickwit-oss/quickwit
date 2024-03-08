@@ -136,7 +136,7 @@ impl DeleteTaskService {
         // Remove pipelines on deleted indexes.
         for deleted_index_uid in pipeline_index_uids.difference(&index_uids) {
             info!(
-                deleted_index_id = deleted_index_uid.index_id(),
+                deleted_index_id = deleted_index_uid.index_id,
                 "Remove deleted index from delete task pipelines."
             );
             let pipeline_handle = self
@@ -151,12 +151,9 @@ impl DeleteTaskService {
         for index_uid in index_uids.difference(&pipeline_index_uids) {
             let index_config = index_config_by_index_id
                 .remove(index_uid)
-                .expect("Index metadata must be present.");
+                .expect("index metadata should be present");
             if self.spawn_pipeline(index_config, ctx).await.is_err() {
-                warn!(
-                    "Failed to spawn delete pipeline for {}",
-                    index_uid.index_id()
-                );
+                warn!("failed to spawn delete pipeline for {}", index_uid.index_id);
             }
         }
 
@@ -267,7 +264,7 @@ mod tests {
             .await;
         assert_eq!(state.num_running_pipelines, 1);
         let delete_query = DeleteQuery {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             start_timestamp: None,
             end_timestamp: None,
             query_ast: r#"{"type": "MatchAll"}"#.to_string(),
@@ -285,7 +282,7 @@ mod tests {
         );
         metastore
             .delete_index(DeleteIndexRequest {
-                index_uid: index_uid.to_string(),
+                index_uid: Some(index_uid.clone()),
             })
             .await
             .unwrap();

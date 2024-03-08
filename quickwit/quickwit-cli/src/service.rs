@@ -21,15 +21,16 @@ use std::collections::HashSet;
 use std::str::FromStr;
 
 use clap::{arg, ArgAction, ArgMatches, Command};
+use futures::future::select;
 use itertools::Itertools;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
-use quickwit_serve::serve_quickwit;
+use quickwit_serve::{serve_quickwit, BuildInfo, EnvFilterReloadFn};
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tokio::signal;
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::{config_cli_arg, get_resolvers, load_node_config, start_actor_runtimes};
 
@@ -73,15 +74,17 @@ impl RunCliCommand {
         })
     }
 
-    pub async fn execute(&self) -> anyhow::Result<()> {
+    pub async fn execute(&self, env_filter_reload_fn: EnvFilterReloadFn) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
+        let version_text = BuildInfo::get_version_text();
+        info!("quickwit version: {version_text}");
         let mut node_config = load_node_config(&self.config_uri).await?;
         let (storage_resolver, metastore_resolver) =
             get_resolvers(&node_config.storage_configs, &node_config.metastore_configs);
         crate::busy_detector::set_enabled(true);
 
         if let Some(services) = &self.services {
-            tracing::info!(services = %services.iter().join(", "), "setting services from override");
+            info!(services = %services.iter().join(", "), "setting services from override");
             node_config.enabled_services = services.clone();
         }
         let telemetry_handle_opt =
@@ -90,10 +93,21 @@ impl RunCliCommand {
         // TODO move in serve quickwit?
         let runtimes_config = RuntimesConfig::default();
         start_actor_runtimes(runtimes_config, &node_config.enabled_services)?;
-        let shutdown_signal = Box::pin(async move {
-            signal::ctrl_c()
-                .await
-                .expect("Registering a signal handler for SIGINT should not fail.");
+        let shutdown_signal = Box::pin(async {
+            select(
+                Box::pin(async {
+                    signal::ctrl_c()
+                        .await
+                        .expect("registering a signal handler for SIGINT should not fail");
+                }),
+                Box::pin(async {
+                    signal::unix::signal(signal::unix::SignalKind::terminate())
+                        .expect("registering a signal handler for SIGTERM should not fail")
+                        .recv()
+                        .await;
+                }),
+            )
+            .await;
         });
         let serve_result = serve_quickwit(
             node_config,
@@ -101,6 +115,7 @@ impl RunCliCommand {
             metastore_resolver,
             storage_resolver,
             shutdown_signal,
+            env_filter_reload_fn,
         )
         .await;
         let return_code = match serve_result {

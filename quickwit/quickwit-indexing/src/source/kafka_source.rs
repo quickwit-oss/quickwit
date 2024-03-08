@@ -542,13 +542,8 @@ impl Source for KafkaSource {
     fn observable_state(&self) -> JsonValue {
         let assigned_partitions: Vec<&i32> =
             self.state.assigned_partitions.keys().sorted().collect();
-        let current_positions: Vec<(&i32, &Position)> = self
-            .state
-            .current_positions
-            .iter()
-            .map(|(partition, position)| (partition, position))
-            .sorted()
-            .collect();
+        let current_positions: Vec<(&i32, &Position)> =
+            self.state.current_positions.iter().sorted().collect();
         json!({
             "index_id": self.ctx.index_id(),
             "source_id": self.ctx.source_id(),
@@ -945,8 +940,8 @@ mod kafka_broker_tests {
             .create_index(create_index_request)
             .await
             .unwrap()
-            .index_uid
-            .into();
+            .index_uid()
+            .clone();
 
         if partition_deltas.is_empty() {
             return index_uid;
@@ -980,7 +975,7 @@ mod kafka_broker_tests {
         };
         let checkpoint_delta_json = serde_json::to_string(&checkpoint_delta).unwrap();
         let publish_splits_request = PublishSplitsRequest {
-            index_uid: index_uid.to_string(),
+            index_uid: Some(index_uid.clone()),
             index_checkpoint_delta_json_opt: Some(checkpoint_delta_json),
             staged_split_ids: vec![split_id.clone()],
             replaced_split_ids: Vec::new(),

@@ -2,10 +2,15 @@ import json
 import os
 import random
 import time
+import gzip
+import random
 
 import boto3
 
 s3 = boto3.client("s3")
+
+with gzip.open("wordlist.json.gz", "r") as f:
+    words: list[str] = json.loads(f.read())
 
 
 def lambda_handler(event, context):
@@ -18,13 +23,15 @@ def lambda_handler(event, context):
             "name": f"Item {i}",
             "price": round(random.uniform(1, 100), 2),
             "quantity": random.randint(1, 10),
-            "description": f"This is a description for Item {i}.",
+            "description": " ".join(random.choices(words, k=8)),
         }
         data.append(item)
-    json_data = "\n".join([json.dumps(d) for d in data])
-    key = int(base_time)
+
+    json_str = "\n".join(json.dumps(d) for d in data)
+    json_gz = gzip.compress(json_str.encode(), compresslevel=6)
+
     s3.put_object(
         Bucket=os.environ["BUCKET_NAME"],
-        Key=f"{os.environ['PREFIX']}/{key}",
-        Body=json_data,
+        Key=f"{os.environ['PREFIX']}/{int(base_time)}.gz",
+        Body=json_gz,
     )

@@ -27,7 +27,6 @@ use quickwit_proto::metastore::MetastoreServiceClient;
 use tokio::sync::Mutex;
 use tracing::debug;
 
-use crate::metastore::instrument_metastore;
 use crate::{MetastoreFactory, MetastoreResolverError, PostgresqlMetastore};
 
 #[derive(Clone, Default)]
@@ -90,10 +89,10 @@ impl MetastoreFactory for PostgresqlMetastoreFactory {
         })?;
         let postgresql_metastore = PostgresqlMetastore::new(postgresql_metastore_config, uri)
             .await
+            .map(MetastoreServiceClient::new)
             .map_err(MetastoreResolverError::Initialization)?;
-        let instrumented_metastore = instrument_metastore(postgresql_metastore);
         let unique_metastore_for_uri = self
-            .cache_metastore(uri.clone(), instrumented_metastore)
+            .cache_metastore(uri.clone(), postgresql_metastore)
             .await;
         Ok(unique_metastore_for_uri)
     }

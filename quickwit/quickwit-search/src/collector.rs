@@ -304,7 +304,8 @@ pub struct QuickwitSegmentCollector {
     timestamp_filter_opt: Option<TimestampFilter>,
     aggregation: Option<AggregationSegmentCollectors>,
     search_after: Option<PartialHit>,
-    split_search_after_order: Ordering,
+    // Precomputed order for search_after for split_id and segment_ord
+    precomp_search_after_order: Ordering,
 }
 
 impl QuickwitSegmentCollector {
@@ -330,8 +331,9 @@ impl QuickwitSegmentCollector {
                 // default
                 let order = orders.order1;
                 cmp_result = cmp_result
-                    .then(self.split_search_after_order)
-                    .then_with(|| order.compare(&self.segment_ord, &search_after.segment_ord))
+                    .then(self.precomp_search_after_order)
+                    // We compare doc_id only if sort_value1, sort_value2, split_id and segment_ord
+                    // are equal.
                     .then_with(|| order.compare(&doc_id, &search_after.doc_id))
             }
 
@@ -626,17 +628,13 @@ impl Collector for QuickwitCollector {
         let score_extractor = get_score_extractor(&self.sort_by, segment_reader)?;
         let (order1, order2) = self.sort_by.sort_orders();
         let sort_key_mapper = HitSortingMapper { order1, order2 };
-        let split_search_after_order = if let Some(search_after) = &self.search_after {
-            if !search_after.split_id.is_empty() {
-                order1.compare(&self.split_id, &search_after.split_id)
-            } else {
-                // so we don't reject document based on their split_id if we don't have one in
-                // search_after
-                Ordering::Greater
-            }
-        } else {
-            // this value isn't actually used.
-            Ordering::Equal
+        // Precompute the order for search_after if split_id is set
+        let precomp_search_after_order = match &self.search_after {
+            Some(search_after) if !search_after.split_id.is_empty() => order1
+                .compare(&self.split_id, &search_after.split_id)
+                .then_with(|| order1.compare(&segment_ord, &search_after.segment_ord)),
+            // This value isn't actually used.
+            _ => Ordering::Equal,
         };
         Ok(QuickwitSegmentCollector {
             num_hits: 0u64,
@@ -647,7 +645,7 @@ impl Collector for QuickwitCollector {
             timestamp_filter_opt,
             aggregation,
             search_after: self.search_after.clone(),
-            split_search_after_order,
+            precomp_search_after_order,
         })
     }
 

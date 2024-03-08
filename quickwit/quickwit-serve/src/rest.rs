@@ -34,6 +34,7 @@ use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
 use crate::debugging_api::debugging_handler;
+use crate::decompression::{CorruptedData, UnsupportedEncoding};
 use crate::delete_task_api::delete_task_api_handlers;
 use crate::elasticsearch_api::elastic_api_handlers;
 use crate::health_check_api::health_check_handlers;
@@ -41,6 +42,7 @@ use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
+use crate::log_level_handler::log_level_handler;
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
@@ -171,6 +173,9 @@ fn api_v1_routes(
                 RuntimeInfo::get(),
                 quickwit_services.node_config.clone(),
             ))
+            .or(log_level_handler(
+                quickwit_services.env_filter_reload_fn.clone(),
+            ))
             .or(indexing_get_handler(
                 quickwit_services.indexing_service_opt.clone(),
             ))
@@ -206,6 +211,7 @@ fn api_v1_routes(
                 quickwit_services.ingest_service.clone(),
                 quickwit_services.ingest_router_service.clone(),
                 quickwit_services.metastore_client.clone(),
+                quickwit_services.index_manager.clone(),
             ))
             .or(index_template_api_handlers(
                 quickwit_services.metastore_client.clone(),
@@ -271,6 +277,16 @@ fn get_status_with_error(rejection: Rejection) -> RestApiError {
     } else if let Some(error) = rejection.find::<warp::reject::UnsupportedMediaType>() {
         RestApiError {
             service_code: ServiceErrorCode::UnsupportedMediaType,
+            message: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<UnsupportedEncoding>() {
+        RestApiError {
+            service_code: ServiceErrorCode::UnsupportedMediaType,
+            message: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<CorruptedData>() {
+        RestApiError {
+            service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::InvalidQuery>() {
@@ -618,6 +634,7 @@ mod tests {
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
             jaeger_service_opt: None,
+            env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
         };
 
         let handler = api_v1_routes(Arc::new(quickwit_services))

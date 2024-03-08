@@ -571,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "testsuite")]
+    #[cfg(feature = "multilang")]
     fn test_doc_mapper_query_with_multilang_field() {
         use quickwit_query::query_ast::TermQuery;
         use tantivy::schema::IndexRecordOption;
@@ -599,7 +599,7 @@ mod tests {
             name: "multilang".to_string(),
             config: TokenizerConfig {
                 tokenizer_type: TokenizerType::Multilang,
-                filters: vec![],
+                filters: Vec::new(),
             },
         });
         let doc_mapper = doc_mapper_builder.try_build().unwrap();

@@ -33,7 +33,7 @@ index_id: stackoverflow-schemaless
 doc_mapping:
   mode: dynamic
 indexing_settings:
-  commit_timeout_secs: 1
+  commit_timeout_secs: 30
 EOF
 
 ./quickwit index create --index-config stackoverflow-schemaless-config.yaml

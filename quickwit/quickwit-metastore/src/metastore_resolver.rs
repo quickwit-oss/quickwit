@@ -62,6 +62,7 @@ impl MetastoreResolver {
     ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
         let backend = match uri.protocol() {
             Protocol::Azure => MetastoreBackend::File,
+            Protocol::Google => MetastoreBackend::File,
             Protocol::File => MetastoreBackend::File,
             Protocol::Ram => MetastoreBackend::File,
             Protocol::S3 => MetastoreBackend::File,

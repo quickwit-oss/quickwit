@@ -22,9 +22,10 @@ use std::path::Path;
 
 use bytes::Buf;
 use mrecordlog::error::CreateQueueError;
-use mrecordlog::MultiRecordLog;
+use mrecordlog::Record;
 use quickwit_actors::ActorContext;
 
+use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{
     DocBatchBuilder, FetchResponse, IngestApiService, IngestServiceError, ListQueuesResponse,
 };
@@ -35,13 +36,13 @@ const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
 const QUICKWIT_CF_PREFIX: &str = ".queue_";
 
 pub struct Queues {
-    record_log: MultiRecordLog,
+    record_log: MultiRecordLogAsync,
 }
 
 impl Queues {
     pub async fn open(queues_dir_path: &Path) -> crate::Result<Queues> {
         tokio::fs::create_dir_all(queues_dir_path).await.unwrap();
-        let record_log = MultiRecordLog::open(queues_dir_path).await?;
+        let record_log = MultiRecordLogAsync::open(queues_dir_path).await?;
         Ok(Queues { record_log })
     }
 
@@ -121,7 +122,9 @@ impl Queues {
         record: &[u8],
         ctx: &ActorContext<IngestApiService>,
     ) -> crate::Result<Option<u64>> {
-        self.append_batch(queue_id, std::iter::once(record), ctx)
+        use bytes::Bytes;
+
+        self.append_batch(queue_id, std::iter::once(Bytes::from(record.to_vec())), ctx)
             .await
     }
 
@@ -131,7 +134,7 @@ impl Queues {
     pub async fn append_batch<'a>(
         &mut self,
         queue_id: &str,
-        records_it: impl Iterator<Item = impl Buf>,
+        records_it: impl Iterator<Item = impl Buf> + Send + 'static,
         ctx: &ActorContext<IngestApiService>,
     ) -> crate::Result<Option<u64>> {
         let real_queue_id = format!("{QUICKWIT_CF_PREFIX}{queue_id}");
@@ -176,11 +179,11 @@ impl Queues {
         let mut num_bytes = 0;
         let mut first_key_opt = None;
 
-        for (pos, record) in records {
+        for Record { position, payload } in records {
             if first_key_opt.is_none() {
-                first_key_opt = Some(pos);
+                first_key_opt = Some(position);
             }
-            num_bytes += doc_batch.command_from_buf(record.as_ref());
+            num_bytes += doc_batch.command_from_buf(payload.as_ref());
             if num_bytes > size_limit {
                 break;
             }
@@ -272,7 +275,7 @@ mod tests {
             let fetch_resp = self.fetch(queue_id, start_after, None).unwrap();
             assert_eq!(fetch_resp.first_position, expected_first_pos_opt);
             let doc_batch = fetch_resp.doc_batch.unwrap();
-            let records: Vec<Bytes> = doc_batch.iter_raw().collect();
+            let records: Vec<Bytes> = doc_batch.clone().into_iter_raw().collect();
             assert_eq!(&records, expected);
         }
     }

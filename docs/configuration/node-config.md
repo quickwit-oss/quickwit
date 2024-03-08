@@ -139,14 +139,22 @@ metastore:
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `max_num_connections` | Determines the maximum number of concurrent connections to the database server. | `10` |
+| `min_connections` | Minimum number of connections to maintain in the pool at all times. | `0` |
+| `max_connections` | Maximum number of connections to maintain in the pool. | `10` |
+| `acquire_connection_timeout` | Maximum amount of time to spend waiting for an available connection before aborting a query. | `10s` |
+| `idle_connection_timeout` | Maximum idle duration before closing individual connections. | `10min` |
+| `max_connection_lifetime` | Maximum lifetime of individual connections. | `30min` |
 
 Example of a metastore configuration for PostgreSQL in YAML format:
 
 ```yaml
 metastore:
   postgres:
-    max_num_connections: 50
+    min_connections: 10
+    max_connections: 50
+    acquire_connection_timeout: 30s
+    idle_connection_timeout: 1h
+    max_connection_lifetime: 1d
 ```
 
 ## Indexer configuration
@@ -206,6 +214,7 @@ This section contains the configuration options for a Searcher.
 This section contains the configuration options for the searcher split cache.
 
 | Property | Description | Default value |
+| --- | --- | --- |
 | `max_num_bytes` | Maximum size in bytes allowed in the split cache. | `1G` |
 | `max_num_splits` | Maximum number of splits allowed in the split cache.   | `10000` |
 | `num_concurrent_downloads` | Maximum number of concurrent download of splits. | `1` |

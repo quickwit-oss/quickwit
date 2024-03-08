@@ -38,8 +38,8 @@ pub struct IngestResponseV2 {
 pub struct IngestSuccess {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(string, tag = "2")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
@@ -114,6 +114,12 @@ impl IngestFailureReason {
 #[allow(unused_imports)]
 use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
+use quickwit_common::tower::RpcName;
+impl RpcName for IngestRequestV2 {
+    fn rpc_name() -> &'static str {
+        "ingest"
+    }
+}
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait IngestRouterService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
