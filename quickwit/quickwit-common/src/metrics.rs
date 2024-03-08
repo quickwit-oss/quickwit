@@ -181,13 +181,13 @@ impl GaugeGuard {
     }
 
     pub fn add(&mut self, delta: i64) {
+        self.gauge.add(delta);
         self.delta += delta;
-        self.gauge.add(self.delta);
     }
 
     pub fn sub(&mut self, delta: i64) {
-        self.delta -= delta;
         self.gauge.sub(delta);
+        self.delta -= delta;
     }
 }
 
