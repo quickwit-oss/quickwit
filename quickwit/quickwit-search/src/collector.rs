@@ -150,27 +150,26 @@ enum SortingFieldExtractorComponent {
 }
 
 impl SortingFieldExtractorComponent {
-    /// Returns the sort value for the given element
+    /// Returns the sort value for the given element in its u64 representation. The returned u64
+    /// representation maintains the ordering of the original value.
     ///
     /// The function returns None if the sort key is a fast field, for which we have no value
     /// for the given doc_id, or we sort by DocId.
     #[inline]
-    fn extract_typed_sort_value_opt(&self, doc_id: DocId, score: Score) -> Option<SortValue> {
+    fn extract_typed_sort_value_opt(&self, doc_id: DocId, score: Score) -> Option<u64> {
         match self {
             SortingFieldExtractorComponent::DocId => None,
-            SortingFieldExtractorComponent::FastField {
-                sort_column,
-                sort_field_type,
-                ..
-            } => sort_column.first(doc_id).map(|val| SortValue::U64(val)),
-            SortingFieldExtractorComponent::Score { .. } => Some(SortValue::F64(score as f64)),
+            SortingFieldExtractorComponent::FastField { sort_column, .. } => {
+                sort_column.first(doc_id)
+            }
+            SortingFieldExtractorComponent::Score { .. } => Some((score as f64).to_u64()),
         }
     }
 
     #[inline]
     /// Converts u64 fast field values to its correct type.
     /// The conversion is delayed for performance reasons.
-    fn convert_u64_ff_val_to_sort_value(&self, sort_value: SortValue) -> SortValue {
+    fn convert_u64_ff_val_to_sort_value(&self, sort_value: u64) -> SortValue {
         let map_fast_field_to_value = |fast_field_value, field_type| match field_type {
             SortFieldType::U64 => SortValue::U64(fast_field_value),
             SortFieldType::I64 => SortValue::I64(i64::from_u64(fast_field_value)),
@@ -179,32 +178,40 @@ impl SortingFieldExtractorComponent {
             SortFieldType::Bool => SortValue::Boolean(fast_field_value != 0u64),
         };
         match self {
-            SortingFieldExtractorComponent::DocId => sort_value,
+            SortingFieldExtractorComponent::DocId => SortValue::U64(sort_value),
             SortingFieldExtractorComponent::FastField {
                 sort_field_type, ..
-            } => match sort_value {
-                SortValue::U64(val) => map_fast_field_to_value(val, *sort_field_type),
-                _ => panic!("Internal error: Got non-U64 sort value for fast field."),
-            },
-            SortingFieldExtractorComponent::Score => sort_value,
+            } => map_fast_field_to_value(sort_value, *sort_field_type),
+            SortingFieldExtractorComponent::Score => SortValue::F64(f64::from_u64(sort_value)),
         }
     }
-    #[inline]
     /// Converts fast field values into their u64 fast field representation.
     ///
-    /// Returns None if value is out of bounds of target value, so everything matches.
-    fn convert_to_u64_ff_val(&self, sort_value: SortValue) -> Option<SortValue> {
+    /// Returns None if value is out of bounds of target value.
+    /// None means that the search_after will be disabled as everything matches.
+    ///
+    /// What's currently missing is to signal that _nothing_ matches to generate an optimized
+    /// query.
+    #[inline]
+    fn convert_to_u64_ff_val(&self, sort_value: SortValue) -> Option<u64> {
         match self {
-            SortingFieldExtractorComponent::DocId => Some(sort_value),
+            SortingFieldExtractorComponent::DocId => match sort_value {
+                SortValue::U64(val) => Some(val),
+                _ => panic!("Internal error: Got non-U64 sort value for DocId."),
+            },
             SortingFieldExtractorComponent::FastField {
                 sort_field_type, ..
             } => {
                 // We need to convert a (potential user provided) value in the correct u64
                 // representation of the fast field.
-                // This requires this kind of weird conversion of first casting into the target type
+                // This requires this weird conversion of first casting into the target type
                 // (if possible) and then to its u64 presentation.
                 let val = match (sort_value, sort_field_type) {
+                    // Same field type, no conversion needed.
                     (SortValue::U64(val), SortFieldType::U64) => val,
+                    (SortValue::F64(val), SortFieldType::F64) => val.to_u64(),
+                    (SortValue::Boolean(val), SortFieldType::Bool) => val.to_u64(),
+                    (SortValue::I64(val), SortFieldType::I64) => val.to_u64(),
                     (SortValue::U64(mut val), SortFieldType::I64) => {
                         // Add a limit to avoid overflow.
                         val = val.min(i64::MAX as u64);
@@ -216,6 +223,7 @@ impl SortingFieldExtractorComponent {
                         val = val.min(i64::MAX as u64);
                         DateTime::from_timestamp_nanos(val as i64).to_u64()
                     }
+                    // questionable number into boolean conversions
                     (SortValue::U64(val), SortFieldType::Bool) => (val != 0).to_u64(),
                     (SortValue::I64(val), SortFieldType::Bool) => (val != 0).to_u64(),
                     (SortValue::F64(val), SortFieldType::Bool) => (val != 0.0).to_u64(),
@@ -225,7 +233,6 @@ impl SortingFieldExtractorComponent {
                         }
                         val as u64
                     }
-                    (SortValue::I64(val), SortFieldType::I64) => val.to_u64(),
                     (SortValue::I64(val), SortFieldType::F64) => (val as f64).to_u64(),
                     (SortValue::I64(val), SortFieldType::DateTime) => {
                         DateTime::from_timestamp_nanos(val).to_u64()
@@ -235,20 +242,27 @@ impl SortingFieldExtractorComponent {
                     }
                     (SortValue::F64(val), SortFieldType::U64) => {
                         if val < 0.0 {
-                            return None; // all values match
+                            return None;
                         }
                         (val.floor() as u64).to_u64()
                     }
-                    (SortValue::F64(val), SortFieldType::I64) => (val as i64).to_u64(),
-                    (SortValue::F64(val), SortFieldType::F64) => val.to_u64(),
-                    (SortValue::Boolean(val), SortFieldType::Bool) => val.to_u64(),
+                    (SortValue::F64(val), SortFieldType::I64) => {
+                        if val < i64::MIN as f64 {
+                            return None;
+                        }
+                        (val as i64).to_u64()
+                    }
                     // Disable search after for bool conversion into other types
-                    // Maybe we could disable the search, as this doesn't make sense?
+                    // So it would be a match all ...  but maybe it should be a match none instead?
+                    // Not sure when we hit this, it's probably are very rare case.
                     (SortValue::Boolean(_val), _) => return None,
                 };
-                Some(SortValue::U64(val))
+                Some(val)
             }
-            SortingFieldExtractorComponent::Score => Some(sort_value),
+            SortingFieldExtractorComponent::Score => match sort_value {
+                SortValue::F64(val) => Some(val.to_u64()),
+                _ => panic!("Internal error: Got non-F64 sort value for Score."),
+            },
         }
     }
 }
@@ -273,11 +287,7 @@ impl SortingFieldExtractorPair {
     /// See also [`SortingFieldExtractorComponent::extract_typed_sort_value_opt`] for more
     /// information.
     #[inline]
-    fn extract_typed_sort_value(
-        &self,
-        doc_id: DocId,
-        score: Score,
-    ) -> (Option<SortValue>, Option<SortValue>) {
+    fn extract_typed_sort_value(&self, doc_id: DocId, score: Score) -> (Option<u64>, Option<u64>) {
         let first = self.first.extract_typed_sort_value_opt(doc_id, score);
         let second = self
             .second
@@ -380,9 +390,65 @@ pub struct QuickwitSegmentCollector {
     segment_ord: u32,
     timestamp_filter_opt: Option<TimestampFilter>,
     aggregation: Option<AggregationSegmentCollectors>,
-    search_after: Option<PartialHit>,
+    search_after: Option<SearchAfterSegment>,
     // Precomputed order for search_after for split_id and segment_ord
     precomp_search_after_order: Ordering,
+}
+
+/// Search After, but the sort values are converted to the u64 fast field representation.
+struct SearchAfterSegment {
+    sort_value: Option<u64>,
+    sort_value2: Option<u64>,
+    compare_on_equal: bool,
+    doc_id: DocId,
+}
+impl SearchAfterSegment {
+    fn new(
+        search_after: Option<PartialHit>,
+        score_extractor: &SortingFieldExtractorPair,
+    ) -> Option<Self> {
+        let Some(search_after) = search_after else {
+            return None;
+        };
+
+        let mut sort_value = None;
+        if let Some(search_after_sort_value) = search_after
+            .sort_value
+            .and_then(|sort_value| sort_value.sort_value)
+        {
+            if let Some(new_value) = score_extractor
+                .first
+                .convert_to_u64_ff_val(search_after_sort_value)
+            {
+                sort_value = Some(new_value);
+            } else {
+                // Value is out of bounds, we ignore sort_value2 and disable the whole
+                // search_after
+                return None;
+            }
+        }
+
+        let mut sort_value2 = None;
+        if let Some(search_after_sort_value) = search_after
+            .sort_value2
+            .and_then(|sort_value2| sort_value2.sort_value)
+        {
+            let extractor = score_extractor
+                .second
+                .as_ref()
+                .expect("Internal error: Got sort_value2, but no sort extractor");
+            if let Some(new_value) = extractor.convert_to_u64_ff_val(search_after_sort_value) {
+                sort_value2 = Some(new_value);
+            }
+        }
+
+        Some(Self {
+            sort_value,
+            sort_value2,
+            compare_on_equal: !search_after.split_id.is_empty(),
+            doc_id: search_after.doc_id,
+        })
+    }
 }
 
 impl QuickwitSegmentCollector {
@@ -392,8 +458,8 @@ impl QuickwitSegmentCollector {
             self.score_extractor.extract_typed_sort_value(doc_id, score);
 
         if let Some(search_after) = &self.search_after {
-            let search_after_value1 = search_after.sort_value.and_then(|v| v.sort_value);
-            let search_after_value2 = search_after.sort_value2.and_then(|v| v.sort_value);
+            let search_after_value1 = search_after.sort_value;
+            let search_after_value2 = search_after.sort_value2;
             let orders = &self.top_k_hits.sort_key_mapper;
             let mut cmp_result = orders
                 .order1
@@ -403,7 +469,7 @@ impl QuickwitSegmentCollector {
                         .order2
                         .compare_opt(&sort_value2, &search_after_value2)
                 });
-            if !search_after.split_id.is_empty() {
+            if search_after.compare_on_equal {
                 // TODO actually it's not first, it should be what's in _shard_doc then first then
                 // default
                 let order = orders.order1;
@@ -438,8 +504,10 @@ impl QuickwitSegmentCollector {
 
 #[derive(Copy, Clone, Debug)]
 struct SegmentPartialHit {
-    sort_value: Option<SortValue>,
-    sort_value2: Option<SortValue>,
+    /// Normalized to u64, the typed value can be reconstructed with
+    /// SortingFieldExtractorComponent.
+    sort_value: Option<u64>,
+    sort_value2: Option<u64>,
     doc_id: DocId,
 }
 
@@ -689,45 +757,6 @@ impl QuickwitCollector {
     }
 }
 
-// Convert to u64 fast field representation
-fn update_search_after_for_segment_usage(
-    search_after_opt: &mut Option<PartialHit>,
-    score_extractor: &SortingFieldExtractorPair,
-) {
-    if let Some(search_after) = search_after_opt.as_mut() {
-        if let Some(sort_value) = search_after
-            .sort_value
-            .as_mut()
-            .and_then(|sort_value| sort_value.sort_value.as_mut())
-        {
-            if let Some(new_value) = score_extractor.first.convert_to_u64_ff_val(*sort_value) {
-                *sort_value = new_value.into();
-            } else {
-                // Value is out of bounds, we can ignore sort_value2 and disable the whole
-                // search_after
-                *search_after_opt = None;
-                return;
-            }
-        }
-
-        if let Some(sort_value) = search_after
-            .sort_value2
-            .as_mut()
-            .and_then(|sort_value2| sort_value2.sort_value.as_mut())
-        {
-            let extractor = score_extractor
-                .second
-                .as_ref()
-                .expect("Internal error: Got sort_value2, but no sort extractor");
-            if let Some(new_value) = extractor.convert_to_u64_ff_val(*sort_value) {
-                *sort_value = new_value.into();
-            } else {
-                // Value is out of bounds
-                search_after.sort_value2 = None;
-            }
-        }
-    }
-}
 impl Collector for QuickwitCollector {
     type Child = QuickwitSegmentCollector;
     type Fruit = LeafSearchResponse;
@@ -775,8 +804,7 @@ impl Collector for QuickwitCollector {
             _ => Ordering::Equal,
         };
         // Convert search_after into fast field u64
-        let mut search_after = self.search_after.clone();
-        update_search_after_for_segment_usage(&mut search_after, &score_extractor);
+        let search_after = SearchAfterSegment::new(self.search_after.clone(), &score_extractor);
         Ok(QuickwitSegmentCollector {
             num_hits: 0u64,
             split_id: self.split_id.clone(),
@@ -1045,8 +1073,8 @@ pub(crate) fn make_merge_collector(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct SegmentPartialHitSortingKey {
-    sort_value: Option<SortValue>,
-    sort_value2: Option<SortValue>,
+    sort_value: Option<u64>,
+    sort_value2: Option<u64>,
     doc_id: DocId,
     // TODO This should not be there.
     sort_order: SortOrder,
