@@ -24,19 +24,38 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use coarsetime::{Duration, Instant};
 
+#[derive(Clone, Copy)]
+struct Count {
+    generation: u32,
+    call_count: u32,
+}
+
+impl From<u64> for Count {
+    fn from(val: u64) -> Count {
+        Count {
+            generation: (val >> 32) as u32,
+            call_count: (val & ((1 << 32) - 1)) as u32,
+        }
+    }
+}
+
+impl From<Count> for u64 {
+    fn from(count: Count) -> u64 {
+        ((count.generation as u64) << 32) + count.call_count as u64
+    }
+}
+
 /// Helper function used in [`rate_limited_tracing`] to determine if this line should log,
 /// and update the related counters.
 pub fn should_log<F: Fn() -> Instant>(
     count_atomic: &AtomicU64,
     last_reset_atomic: &AtomicU64,
-    limit: u64,
+    limit: u32,
     now: F,
 ) -> bool {
     //  count_atomic is treated as 2 u32: upper bits count "generation", lower bits count number of
     //  calls since LAST_RESET. We assume there won't be 2**32 calls to this log in ~60s.
     //  Generation is free to wrap arround.
-
-    const MASK: u64 = 0xffffffff;
 
     let count = count_atomic.fetch_add(1, Ordering::Acquire);
     if count == 0 {
@@ -44,34 +63,39 @@ pub fn should_log<F: Fn() -> Instant>(
         last_reset_atomic.store(now().as_ticks(), Ordering::Release);
     }
 
-    if count & MASK >= limit {
+    let count: Count = count.into();
+
+    if count.call_count >= limit {
         let current_time = Duration::from_ticks(now().as_ticks());
         let last_reset = Duration::from_ticks(last_reset_atomic.load(Ordering::Acquire));
 
         let should_reset = current_time.abs_diff(last_reset) >= Duration::from_secs(60);
 
         if should_reset {
-            let generation = count >> 32;
+            //let generation = count >> 32;
             let mut update_time = false;
             let mut can_log = false;
 
             let _ =
                 count_atomic.fetch_update(Ordering::Release, Ordering::Acquire, |current_count| {
-                    let current_generation = current_count >> 32;
-                    if generation == current_generation {
+                    let mut current_count: Count = current_count.into();
+                    if count.generation == current_count.generation {
                         // we can update generation&time, so we can definitely log
                         update_time = true;
                         can_log = true;
-                        let generation_part = (generation + 1) << 32;
-                        let count_part = 1;
-                        Some(generation_part + count_part)
+                        let new_count = Count {
+                            generation: count.generation.wrapping_add(1),
+                            call_count: 1,
+                        };
+                        Some(new_count.into())
                     } else {
                         // we can't update generation&time, but maybe we can still log?
                         update_time = false;
-                        if current_generation & MASK < limit {
+                        if current_count.call_count < limit {
                             // we can log, update the count
                             can_log = true;
-                            Some(current_count + 1)
+                            current_count.call_count += 1;
+                            Some(current_count.into())
                         } else {
                             // we can't log, save some contention by not recording that we tried to
                             // log
@@ -174,12 +198,14 @@ mod tests {
     fn test_rate_limited_log_single_thread() {
         let count = AtomicU64::new(0);
         let last_reset = AtomicU64::new(0);
-        let limit = 5;
+        let limit = 5u64;
 
         let mut simulated_time = Instant::now();
         let simulation_step = Duration::from_secs(1);
 
-        assert!(should_log(&count, &last_reset, limit, || simulated_time));
+        assert!(should_log(&count, &last_reset, limit as _, || {
+            simulated_time
+        }));
         assert_eq!(count.load(Ordering::Relaxed), 1);
         let reset_timestamp = last_reset.load(Ordering::Relaxed);
         assert_ne!(reset_timestamp, 0);
@@ -188,7 +214,9 @@ mod tests {
 
         for i in 1..limit {
             // we log as many time as expected
-            assert!(should_log(&count, &last_reset, limit, || simulated_time));
+            assert!(should_log(&count, &last_reset, limit as _, || {
+                simulated_time
+            }));
             assert_eq!(count.load(Ordering::Relaxed), i + 1);
             assert_eq!(last_reset.load(Ordering::Relaxed), reset_timestamp);
             simulated_time += simulation_step;
@@ -196,7 +224,9 @@ mod tests {
 
         for i in limit..(limit * 2) {
             // we don't log, nor update
-            assert!(!should_log(&count, &last_reset, limit, || simulated_time));
+            assert!(!should_log(&count, &last_reset, limit as _, || {
+                simulated_time
+            }));
             assert_eq!(count.load(Ordering::Relaxed), i + 1);
             assert_eq!(last_reset.load(Ordering::Relaxed), reset_timestamp);
             simulated_time += simulation_step;
@@ -205,7 +235,9 @@ mod tests {
         // advance enough to reset counter
         simulated_time += simulation_step * 60;
 
-        assert!(should_log(&count, &last_reset, limit, || simulated_time));
+        assert!(should_log(&count, &last_reset, limit as _, || {
+            simulated_time
+        }));
         // counter got reset, generation increased
         assert_eq!(count.load(Ordering::Relaxed), 1 + (1 << 32));
         // last reset changed too
@@ -214,7 +246,9 @@ mod tests {
 
         for i in 1..limit {
             // we log as many time as expected
-            assert!(should_log(&count, &last_reset, limit, || simulated_time));
+            assert!(should_log(&count, &last_reset, limit as _, || {
+                simulated_time
+            }));
             assert_eq!(count.load(Ordering::Relaxed), i + 1 + (1 << 32));
             assert_eq!(last_reset.load(Ordering::Relaxed), reset_timestamp);
             simulated_time += simulation_step;
@@ -222,7 +256,9 @@ mod tests {
 
         for i in limit..(limit * 2) {
             // we don't log, nor update
-            assert!(!should_log(&count, &last_reset, limit, || simulated_time));
+            assert!(!should_log(&count, &last_reset, limit as _, || {
+                simulated_time
+            }));
             assert_eq!(count.load(Ordering::Relaxed), i + 1 + (1 << 32));
             assert_eq!(last_reset.load(Ordering::Relaxed), reset_timestamp);
             simulated_time += simulation_step;
