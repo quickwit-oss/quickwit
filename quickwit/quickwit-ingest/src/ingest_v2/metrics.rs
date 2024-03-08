@@ -75,6 +75,7 @@ impl Default for IngestV2Metrics {
                 "wal_memory_allocated_bytes",
                 "WAL memory allocated in bytes.",
                 "ingest",
+                &[],
             ),
             wal_memory_used_bytes: new_gauge(
                 "wal_memory_used_bytes",
