@@ -77,6 +77,7 @@ use super::replication::{
 };
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use super::IngesterPool;
+use crate::ingest_v2::metrics::report_wal_usage;
 use crate::metrics::INGEST_METRICS;
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{estimate_size, with_lock_metrics, FollowerId};
@@ -318,12 +319,9 @@ impl Ingester {
                     .reset_shards_operations_total
                     .with_label_values(["success"])
                     .inc();
-                INGEST_V2_METRICS
-                    .wal_disk_usage_bytes
-                    .set(state_guard.mrecordlog.disk_usage() as i64);
-                INGEST_V2_METRICS
-                    .wal_memory_usage_bytes
-                    .set(state_guard.mrecordlog.memory_usage() as i64);
+
+                let wal_usage = state_guard.mrecordlog.resource_usage();
+                report_wal_usage(wal_usage);
             }
             Ok(Err(error)) => {
                 warn!("advise reset shards request failed: {error}");
@@ -516,31 +514,27 @@ impl Ingester {
                 };
                 let requested_capacity = estimate_size(&doc_batch);
 
-                match check_enough_capacity(
+                if let Err(error) = check_enough_capacity(
                     &state_guard.mrecordlog,
                     self.disk_capacity,
                     self.memory_capacity,
                     requested_capacity + sum_of_requested_capacity,
                 ) {
-                    Ok(_usage) => (),
-                    Err(error) => {
-                        rate_limited_warn!(
-                            limit_per_min = 10,
-                            "failed to persist records to ingester `{}`: {error}",
-                            self.self_node_id
-                        );
-                        let persist_failure = PersistFailure {
-                            subrequest_id: subrequest.subrequest_id,
-                            index_uid: subrequest.index_uid,
-                            source_id: subrequest.source_id,
-                            shard_id: subrequest.shard_id,
-                            reason: PersistFailureReason::ResourceExhausted as i32,
-                        };
-                        persist_failures.push(persist_failure);
-                        continue;
-                    }
+                    rate_limited_warn!(
+                        limit_per_min = 10,
+                        "failed to persist records to ingester `{}`: {error}",
+                        self.self_node_id
+                    );
+                    let persist_failure = PersistFailure {
+                        subrequest_id: subrequest.subrequest_id,
+                        index_uid: subrequest.index_uid,
+                        source_id: subrequest.source_id,
+                        shard_id: subrequest.shard_id,
+                        reason: PersistFailureReason::ResourceExhausted as i32,
+                    };
+                    persist_failures.push(persist_failure);
+                    continue;
                 };
-
                 let (rate_limiter, rate_meter) = state_guard
                     .rate_trackers
                     .get_mut(&queue_id)
@@ -768,20 +762,15 @@ impl Ingester {
             }
             info!("deleted {} dangling shard(s)", shards_to_delete.len());
         }
-        let disk_usage = state_guard.mrecordlog.disk_usage() as u64;
+        let wal_usage = state_guard.mrecordlog.resource_usage();
+        drop(state_guard);
 
-        if disk_usage >= self.disk_capacity.as_u64() * 90 / 100 {
+        let disk_used = wal_usage.disk_used_bytes as u64;
+
+        if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
             self.background_reset_shards();
         }
-
-        INGEST_V2_METRICS
-            .wal_disk_usage_bytes
-            .set(disk_usage as i64);
-        INGEST_V2_METRICS
-            .wal_memory_usage_bytes
-            .set(state_guard.mrecordlog.memory_usage() as i64);
-
-        drop(state_guard);
+        report_wal_usage(wal_usage);
 
         let leader_id = self.self_node_id.to_string();
         let persist_response = PersistResponse {
@@ -935,15 +924,8 @@ impl Ingester {
                     .await;
             }
         }
-        let current_disk_usage = state_guard.mrecordlog.disk_usage();
-        let current_memory_usage = state_guard.mrecordlog.memory_usage();
-
-        INGEST_V2_METRICS
-            .wal_disk_usage_bytes
-            .set(current_disk_usage as i64);
-        INGEST_V2_METRICS
-            .wal_memory_usage_bytes
-            .set(current_memory_usage as i64);
+        let wal_usage = state_guard.mrecordlog.resource_usage();
+        report_wal_usage(wal_usage);
 
         self.check_decommissioning_status(&mut state_guard);
         let truncate_response = TruncateShardsResponse {};
