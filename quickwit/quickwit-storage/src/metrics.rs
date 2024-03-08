@@ -42,10 +42,11 @@ impl Default for StorageMetrics {
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
             fd_cache_metrics: CacheMetrics::for_component("fd"),
-            shortlived_cache: CacheMetrics::for_component("shortlived"),
             partial_request_cache: CacheMetrics::for_component("partial_request"),
             searcher_split_cache: CacheMetrics::for_component("searcher_split"),
+            shortlived_cache: CacheMetrics::for_component("shortlived"),
             split_footer_cache: CacheMetrics::for_component("splitfooter"),
+
             object_storage_get_total: new_counter(
                 "object_storage_gets_total",
                 "Number of objects fetched.",
@@ -96,14 +97,16 @@ impl CacheMetrics {
                 "in_cache_count",
                 "Count of {component_name} in cache",
                 &namespace,
+                &[],
             ),
             in_cache_num_bytes: new_gauge(
                 "in_cache_num_bytes",
                 "Number of {component_name} bytes in cache",
                 &namespace,
+                &[],
             ),
             hits_num_items: new_counter(
-                "cache_hit_total",
+                "cache_hits_total",
                 "Number of {component_name} cache hits",
                 &namespace,
             ),
@@ -113,7 +116,7 @@ impl CacheMetrics {
                 &namespace,
             ),
             misses_num_items: new_counter(
-                "cache_miss_total",
+                "cache_misses_total",
                 "Number of {component_name} cache misses",
                 &namespace,
             ),

@@ -73,7 +73,7 @@ where
     search_thread_pool().spawn(move || {
         let _guard = span.enter();
         let _active_thread_guard =
-            GaugeGuard::from_gauge(&crate::SEARCH_METRICS.active_search_threads_count);
+            GaugeGuard::from_gauge(&crate::SEARCH_METRICS.active_search_threads_count, 1);
         if tx.is_closed() {
             return;
         }

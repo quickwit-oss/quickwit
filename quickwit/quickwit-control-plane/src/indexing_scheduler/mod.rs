@@ -162,7 +162,7 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             }
             SourceType::Kafka
             | SourceType::Kinesis
-            | SourceType::GcpPubsub
+            | SourceType::PubSub
             | SourceType::Nats
             | SourceType::Pulsar => {
                 sources.push(SourceToSchedule {

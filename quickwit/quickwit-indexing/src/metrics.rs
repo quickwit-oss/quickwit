@@ -70,16 +70,19 @@ impl Default for IndexerMetrics {
                 "ongoing_merge_operations",
                 "Number of ongoing merge operations",
                 "indexing",
+                &[],
             ),
             pending_merge_operations: new_gauge(
                 "pending_merge_operations",
                 "Number of pending merge operations",
                 "indexing",
+                &[],
             ),
             pending_merge_bytes: new_gauge(
                 "pending_merge_bytes",
                 "Number of pending merge bytes",
                 "indexing",
+                &[],
             ),
         }
     }

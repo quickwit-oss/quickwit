@@ -19,7 +19,6 @@
 
 use std::time::Instant;
 
-use bytes::Bytes;
 use hyper::StatusCode;
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::IngestRequestV2Builder;
@@ -33,6 +32,7 @@ use tracing::warn;
 
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::ingest_api::lines;
+use crate::Body;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct ElasticBulkResponse {
@@ -43,13 +43,13 @@ pub(crate) struct ElasticBulkResponse {
 
 pub(crate) async fn elastic_bulk_ingest_v2(
     default_index_id: Option<IndexId>,
-    body: Bytes,
+    body: Body,
     bulk_options: ElasticBulkOptions,
     mut ingest_router: IngestRouterServiceClient,
 ) -> Result<ElasticBulkResponse, ElasticsearchError> {
     let now = Instant::now();
     let mut ingest_request_builder = IngestRequestV2Builder::default();
-    let mut lines = lines(&body).enumerate();
+    let mut lines = lines(&body.content).enumerate();
 
     while let Some((line_no, line)) = lines.next() {
         let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {

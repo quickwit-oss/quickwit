@@ -67,11 +67,13 @@ impl Default for IngestV2Metrics {
                 "wal_disk_usage_bytes",
                 "WAL disk usage in bytes.",
                 "ingest",
+                &[],
             ),
             wal_memory_usage_bytes: new_gauge(
                 "wal_memory_usage_bytes",
                 "WAL memory usage in bytes.",
                 "ingest",
+                &[],
             ),
         }
     }
