@@ -65,62 +65,60 @@ pub fn should_log<F: Fn() -> Instant>(
 
     let count: Count = count.into();
 
-    if count.call_count >= limit {
-        let current_time = Duration::from_ticks(now().as_ticks());
-        let last_reset = Duration::from_ticks(last_reset_atomic.load(Ordering::Acquire));
-
-        let should_reset = current_time.abs_diff(last_reset) >= Duration::from_secs(60);
-
-        if should_reset {
-            //let generation = count >> 32;
-            let mut update_time = false;
-            let mut can_log = false;
-
-            let _ =
-                count_atomic.fetch_update(Ordering::Release, Ordering::Acquire, |current_count| {
-                    let mut current_count: Count = current_count.into();
-                    if count.generation == current_count.generation {
-                        // we can update generation&time, so we can definitely log
-                        update_time = true;
-                        can_log = true;
-                        let new_count = Count {
-                            generation: count.generation.wrapping_add(1),
-                            call_count: 1,
-                        };
-                        Some(new_count.into())
-                    } else {
-                        // we can't update generation&time, but maybe we can still log?
-                        update_time = false;
-                        if current_count.call_count < limit {
-                            // we can log, update the count
-                            can_log = true;
-                            current_count.call_count += 1;
-                            Some(current_count.into())
-                        } else {
-                            // we can't log, save some contention by not recording that we tried to
-                            // log
-                            can_log = false;
-                            None
-                        }
-                    }
-                });
-
-            // technically there is a race condition if we stay stuck *here* for > 60s, which
-            // could cause us to log more than required. This is unlikely to happen, and not
-            // really a big issue.
-
-            if update_time {
-                // *we* updated generation, so we must update last_reset too
-                last_reset_atomic.store(current_time.as_ticks(), Ordering::Release);
-            }
-            can_log
-        } else {
-            // we are over-limit and not far enough in time to reset: don't log
-            false
-        }
-    } else {
-        true
+    if count.call_count < limit {
+        return true;
     }
+
+    let current_time = Duration::from_ticks(now().as_ticks());
+    let last_reset = Duration::from_ticks(last_reset_atomic.load(Ordering::Acquire));
+
+    let should_reset = current_time.abs_diff(last_reset) >= Duration::from_secs(60);
+
+    if !should_reset {
+        // we are over-limit and not far enough in time to reset: don't log
+        return false;
+    }
+
+    let mut update_time = false;
+    let mut can_log = false;
+
+    let _ = count_atomic.fetch_update(Ordering::Release, Ordering::Acquire, |current_count| {
+        let mut current_count: Count = current_count.into();
+        if count.generation == current_count.generation {
+            // we can update generation&time, so we can definitely log
+            update_time = true;
+            can_log = true;
+            let new_count = Count {
+                generation: count.generation.wrapping_add(1),
+                call_count: 1,
+            };
+            Some(new_count.into())
+        } else {
+            // we can't update generation&time, but maybe we can still log?
+            update_time = false;
+            if current_count.call_count < limit {
+                // we can log, update the count
+                can_log = true;
+                current_count.call_count += 1;
+                Some(current_count.into())
+            } else {
+                // we can't log, save some contention by not recording that we tried to
+                // log
+                can_log = false;
+                None
+            }
+        }
+    });
+
+    // technically there is a race condition if we stay stuck *here* for > 60s, which
+    // could cause us to log more than required. This is unlikely to happen, and not
+    // really a big issue.
+
+    if update_time {
+        // *we* updated generation, so we must update last_reset too
+        last_reset_atomic.store(current_time.as_ticks(), Ordering::Release);
+    }
+    can_log
 }
 
 #[macro_export]
