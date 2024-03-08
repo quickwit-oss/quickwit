@@ -42,6 +42,15 @@ pub struct MultiSearchQueryParams {
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
     pub expand_wildcards: Option<Vec<ExpandWildcards>>,
+    #[serde(serialize_with = "to_simple_list")]
+    #[serde(deserialize_with = "from_simple_list")]
+    #[serde(default)]
+    /// Additional filters to be applied to the query.
+    /// Useful for permissions and other use cases.
+    /// This is not part of the official Elasticsearch API.
+    ///
+    /// This will set extra_filters on the search request.
+    pub extra_filters: Option<Vec<String>>,
     #[serde(default)]
     pub ignore_throttled: Option<bool>,
     #[serde(default)]
@@ -58,6 +67,18 @@ pub struct MultiSearchQueryParams {
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
     pub routing: Option<Vec<String>>,
+    #[serde(serialize_with = "to_simple_list")]
+    #[serde(deserialize_with = "from_simple_list")]
+    #[serde(default)]
+    /// This is not part of the official Elasticsearch API.
+    /// This will set source_excludes on the search request.
+    pub _source_excludes: Option<Vec<String>>,
+    #[serde(serialize_with = "to_simple_list")]
+    #[serde(deserialize_with = "from_simple_list")]
+    #[serde(default)]
+    /// This is not part of the official Elasticsearch API.
+    /// This will set source_includes on the search request.
+    pub _source_includes: Option<Vec<String>>,
     #[serde(default)]
     pub typed_keys: Option<bool>,
 }
