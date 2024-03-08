@@ -160,4 +160,72 @@ pub use {
 };
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use coarsetime::{Duration, Instant};
+
+    use super::should_log;
+
+    // TODO as this is atomic code, we should test it with multiple threads to verify it behaves
+    // like we'd expect, maybe using something like `loom`?
+
+    #[test]
+    fn test_rate_limited_log_single_thread() {
+        let count = AtomicU64::new(0);
+        let last_reset = AtomicU64::new(0);
+        let limit = 5;
+
+        let mut simulated_time = Instant::now();
+        let simulation_step = Duration::from_secs(1);
+
+        assert!(should_log(&count, &last_reset, limit, || simulated_time));
+        assert_eq!(count.load(Ordering::Relaxed), 1);
+        let reset_timestamp = last_reset.load(Ordering::Relaxed);
+        assert_ne!(reset_timestamp, 0);
+
+        simulated_time += simulation_step;
+
+        for i in 1..limit {
+            // we log as many time as expected
+            assert!(should_log(&count, &last_reset, limit, || simulated_time));
+            assert_eq!(count.load(Ordering::Relaxed), i + 1);
+            assert_eq!(last_reset.load(Ordering::Relaxed), reset_timestamp);
+            simulated_time += simulation_step;
+        }
+
+        for i in limit..(limit * 2) {
+            // we don't log, nor update
+            assert!(!should_log(&count, &last_reset, limit, || simulated_time));
+            assert_eq!(count.load(Ordering::Relaxed), i + 1);
+            assert_eq!(last_reset.load(Ordering::Relaxed), reset_timestamp);
+            simulated_time += simulation_step;
+        }
+
+        // advance enough to reset counter
+        simulated_time += simulation_step * 60;
+
+        assert!(should_log(&count, &last_reset, limit, || simulated_time));
+        // counter got reset, generation increased
+        assert_eq!(count.load(Ordering::Relaxed), 1 + (1 << 32));
+        // last reset changed too
+        assert_ne!(last_reset.load(Ordering::Relaxed), reset_timestamp);
+        let reset_timestamp = last_reset.load(Ordering::Relaxed);
+
+        for i in 1..limit {
+            // we log as many time as expected
+            assert!(should_log(&count, &last_reset, limit, || simulated_time));
+            assert_eq!(count.load(Ordering::Relaxed), i + 1 + (1 << 32));
+            assert_eq!(last_reset.load(Ordering::Relaxed), reset_timestamp);
+            simulated_time += simulation_step;
+        }
+
+        for i in limit..(limit * 2) {
+            // we don't log, nor update
+            assert!(!should_log(&count, &last_reset, limit, || simulated_time));
+            assert_eq!(count.load(Ordering::Relaxed), i + 1 + (1 << 32));
+            assert_eq!(last_reset.load(Ordering::Relaxed), reset_timestamp);
+            simulated_time += simulation_step;
+        }
+    }
+}
