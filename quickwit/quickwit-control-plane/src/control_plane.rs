@@ -314,7 +314,7 @@ impl ControlPlane {
     /// This method includes some debouncing logic. Every call will be followed by a cooldown
     /// period.
     ///
-    /// This method returns a future that can awaited to ensure that the relevant rebuild plan
+    /// This method returns a future that can be awaited to ensure that the relevant rebuild plan
     /// operation has been executed.
     fn rebuild_plan_debounced(&mut self, ctx: &ActorContext<Self>) -> impl Future<Output = ()> {
         let next_rebuild_waiter = self
