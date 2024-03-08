@@ -27,7 +27,7 @@ use quickwit_proto::search::{
     LeafSearchStreamRequest, LeafSearchStreamResponse, ListFieldsRequest, ListFieldsResponse,
     ReportSplitsRequest, ReportSplitsResponse,
 };
-use quickwit_proto::{set_parent_span_from_request_metadata, tonic, ServiceError};
+use quickwit_proto::{set_parent_span_from_request_metadata, tonic, GrpcServiceError};
 use quickwit_search::SearchService;
 use tracing::instrument;
 
@@ -93,8 +93,8 @@ impl grpc::SearchService for GrpcSearchAdapter {
             .0
             .leaf_search_stream(leaf_search_request)
             .await
-            .map_err(|err| err.grpc_error())?
-            .map_err(|err| err.grpc_error());
+            .map_err(|error| error.into_grpc_status())?
+            .map_err(|error| error.into_grpc_status());
         Ok(tonic::Response::new(Box::pin(leaf_search_result)))
     }
 

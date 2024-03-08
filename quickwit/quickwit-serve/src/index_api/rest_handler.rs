@@ -1533,7 +1533,7 @@ mod tests {
             .body(source_config_body)
             .reply(&index_management_handler)
             .await;
-        assert_eq!(resp.status(), 405);
+        assert_eq!(resp.status(), 403);
 
         let resp = warp::test::request()
             .path(format!("/indexes/hdfs-logs/sources/{CLI_SOURCE_ID}").as_str())
@@ -1541,7 +1541,7 @@ mod tests {
             .body(source_config_body)
             .reply(&index_management_handler)
             .await;
-        assert_eq!(resp.status(), 405);
+        assert_eq!(resp.status(), 403);
 
         // Check get a non existing source returns 404.
         let resp = warp::test::request()
@@ -1570,7 +1570,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_file_source_returns_405() {
+    async fn test_create_file_source_returns_403() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
@@ -1586,7 +1586,7 @@ mod tests {
             .body(source_config_body)
             .reply(&index_management_handler)
             .await;
-        assert_eq!(resp.status(), 405);
+        assert_eq!(resp.status(), 403);
         let response_body = std::str::from_utf8(resp.body()).unwrap();
         assert!(response_body.contains("limited to a local usage"))
     }
@@ -1920,7 +1920,7 @@ mod tests {
             .body(r#"{"enable": true}"#)
             .reply(&index_management_handler)
             .await;
-        assert_eq!(resp.status(), 405);
+        assert_eq!(resp.status(), 403);
 
         let resp = warp::test::request()
             .path(format!("/indexes/hdfs-logs/sources/{CLI_SOURCE_ID}/toggle").as_str())
@@ -1928,7 +1928,7 @@ mod tests {
             .body(r#"{"enable": true}"#)
             .reply(&index_management_handler)
             .await;
-        assert_eq!(resp.status(), 405);
+        assert_eq!(resp.status(), 403);
         Ok(())
     }
 

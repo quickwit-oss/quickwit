@@ -412,10 +412,12 @@ fn convert_metastore_error<T>(
         | MetastoreError::JsonDeserializeError { .. }
         | MetastoreError::JsonSerializeError { .. }
         | MetastoreError::NotFound(_) => true,
+
         MetastoreError::Connection { .. }
         | MetastoreError::Db { .. }
         | MetastoreError::Internal { .. }
         | MetastoreError::Io { .. }
+        | MetastoreError::Timeout { .. }
         | MetastoreError::Unavailable(_) => false,
     };
     if is_transaction_certainly_aborted {

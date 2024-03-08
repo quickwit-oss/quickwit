@@ -855,7 +855,7 @@ impl Ingester {
             .await?
             .shards
             .get(&queue_id)
-            .ok_or(IngestV2Error::ShardNotFound {
+            .ok_or_else(|| IngestV2Error::ShardNotFound {
                 shard_id: open_fetch_stream_request.shard_id().clone(),
             })?
             .shard_status_rx

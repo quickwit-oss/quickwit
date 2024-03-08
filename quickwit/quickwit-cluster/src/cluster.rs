@@ -929,13 +929,13 @@ mod tests {
         .unwrap();
         let index_uid: IndexUid = IndexUid::for_test("index-1", 1);
         let indexing_task1 = IndexingTask {
-            pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+            pipeline_uid: Some(PipelineUid::for_test(1u128)),
             index_uid: Some(index_uid.clone()),
             source_id: "source-1".to_string(),
             shard_ids: Vec::new(),
         };
         let indexing_task2 = IndexingTask {
-            pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+            pipeline_uid: Some(PipelineUid::for_test(2u128)),
             index_uid: Some(index_uid.clone()),
             source_id: "source-1".to_string(),
             shard_ids: Vec::new(),
@@ -1013,7 +1013,7 @@ mod tests {
                 let index_id = random_generator.gen_range(0..=10_000);
                 let source_id = random_generator.gen_range(0..=100);
                 IndexingTask {
-                    pipeline_uid: Some(PipelineUid::from_u128(pipeline_id as u128)),
+                    pipeline_uid: Some(PipelineUid::for_test(pipeline_id as u128)),
                     index_uid: Some(
                         format!("index-{index_id}:11111111111111111111111111")
                             .parse()
@@ -1246,7 +1246,7 @@ mod tests {
         test_serialize_indexing_tasks_aux(&[], &mut node_state);
         test_serialize_indexing_tasks_aux(
             &[IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+                pipeline_uid: Some(PipelineUid::for_test(1u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "my-source1".to_string(),
                 shard_ids: vec![ShardId::from(1), ShardId::from(2)],
@@ -1256,7 +1256,7 @@ mod tests {
         // change in the set of shards
         test_serialize_indexing_tasks_aux(
             &[IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+                pipeline_uid: Some(PipelineUid::for_test(2u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "my-source1".to_string(),
                 shard_ids: vec![ShardId::from(1), ShardId::from(2), ShardId::from(3)],
@@ -1266,13 +1266,13 @@ mod tests {
         test_serialize_indexing_tasks_aux(
             &[
                 IndexingTask {
-                    pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+                    pipeline_uid: Some(PipelineUid::for_test(1u128)),
                     index_uid: Some(index_uid.clone()),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![ShardId::from(1), ShardId::from(2)],
                 },
                 IndexingTask {
-                    pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+                    pipeline_uid: Some(PipelineUid::for_test(2u128)),
                     index_uid: Some(index_uid.clone()),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![ShardId::from(3), ShardId::from(4)],
@@ -1284,13 +1284,13 @@ mod tests {
         test_serialize_indexing_tasks_aux(
             &[
                 IndexingTask {
-                    pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+                    pipeline_uid: Some(PipelineUid::for_test(1u128)),
                     index_uid: Some(index_uid.clone()),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![ShardId::from(1), ShardId::from(2)],
                 },
                 IndexingTask {
-                    pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+                    pipeline_uid: Some(PipelineUid::for_test(2u128)),
                     index_uid: Some(IndexUid::for_test("test-index2", 0)),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![ShardId::from(3), ShardId::from(4)],
@@ -1302,13 +1302,13 @@ mod tests {
         test_serialize_indexing_tasks_aux(
             &[
                 IndexingTask {
-                    pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+                    pipeline_uid: Some(PipelineUid::for_test(1u128)),
                     index_uid: Some(index_uid.clone()),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![ShardId::from(1), ShardId::from(2)],
                 },
                 IndexingTask {
-                    pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+                    pipeline_uid: Some(PipelineUid::for_test(2u128)),
                     index_uid: Some(index_uid.clone()),
                     source_id: "my-source2".to_string(),
                     shard_ids: vec![ShardId::from(3), ShardId::from(4)],

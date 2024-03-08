@@ -292,7 +292,7 @@ impl IngestRouter {
                         );
                     }
                     match persist_error {
-                        IngestV2Error::Transport(_) => {
+                        IngestV2Error::Unavailable(_) => {
                             workbench
                                 .unavailable_leaders
                                 .insert(persist_summary.leader_id);
@@ -300,11 +300,11 @@ impl IngestRouter {
                                 workbench.record_transport_error(subrequest_id);
                             }
                         }
-                        IngestV2Error::TooManyRequests
+                        IngestV2Error::IngesterUnavailable { .. }
                         | IngestV2Error::Internal(_)
                         | IngestV2Error::ShardNotFound { .. }
-                        | IngestV2Error::IngesterUnavailable { .. }
-                        | IngestV2Error::Timeout => {
+                        | IngestV2Error::Timeout(_)
+                        | IngestV2Error::TooManyRequests => {
                             for subrequest_id in persist_summary.subrequest_ids {
                                 workbench.record_internal_error(
                                     subrequest_id,
@@ -400,7 +400,13 @@ impl IngestRouter {
                     ingester.persist(persist_request),
                 )
                 .await
-                .unwrap_or_else(|_| Err(IngestV2Error::Timeout));
+                .unwrap_or_else(|_| {
+                    let message = format!(
+                        "persist request timed out after {} seconds",
+                        PERSIST_REQUEST_TIMEOUT.as_secs()
+                    );
+                    Err(IngestV2Error::Timeout(message))
+                });
                 (persist_summary, persist_result)
             };
             persist_futures.push(persist_future);
@@ -438,7 +444,13 @@ impl IngestRouter {
             self.retry_batch_persist(ingest_request, MAX_PERSIST_ATTEMPTS),
         )
         .await
-        .map_err(|_| IngestV2Error::Timeout)
+        .map_err(|_| {
+            let message = format!(
+                "ingest request timed out after {} seconds",
+                INGEST_REQUEST_TIMEOUT.as_secs()
+            );
+            IngestV2Error::Timeout(message)
+        })
     }
 }
 
@@ -1118,7 +1130,8 @@ mod tests {
                 leader_id: "test-ingester-0".into(),
                 subrequest_ids: vec![0],
             };
-            let persist_result = Err::<_, IngestV2Error>(IngestV2Error::Timeout);
+            let persist_result =
+                Err::<_, IngestV2Error>(IngestV2Error::Timeout("timeout error".to_string()));
             (persist_summary, persist_result)
         });
         router
@@ -1141,7 +1154,7 @@ mod tests {
                 subrequest_ids: vec![1],
             };
             let persist_result =
-                Err::<_, IngestV2Error>(IngestV2Error::Transport("transport error".to_string()));
+                Err::<_, IngestV2Error>(IngestV2Error::Unavailable("connection error".to_string()));
             (persist_summary, persist_result)
         });
         router

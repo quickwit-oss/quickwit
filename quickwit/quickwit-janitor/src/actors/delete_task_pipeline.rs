@@ -196,7 +196,7 @@ impl DeleteTaskPipeline {
         let index_pipeline_id = IndexingPipelineId {
             index_uid: self.index_uid.clone(),
             node_id: "unknown".to_string(),
-            pipeline_uid: PipelineUid::from_u128(0u128),
+            pipeline_uid: PipelineUid::new(),
             source_id: "unknown".to_string(),
         };
 

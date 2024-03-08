@@ -479,7 +479,7 @@ async fn fault_tolerant_fetch_stream(
         };
         let mut fetch_stream = match ingester.open_fetch_stream(open_fetch_stream_request).await {
             Ok(fetch_stream) => fetch_stream,
-            Err(shard_not_found_error @ IngestV2Error::ShardNotFound { .. }) => {
+            Err(not_found_error @ IngestV2Error::ShardNotFound { .. }) => {
                 error!(
                     client_id=%client_id,
                     index_uid=%index_uid,
@@ -491,7 +491,7 @@ async fn fault_tolerant_fetch_stream(
                     index_uid,
                     source_id,
                     shard_id,
-                    ingest_error: shard_not_found_error,
+                    ingest_error: not_found_error,
                 };
                 let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
                 from_position_exclusive.to_eof();

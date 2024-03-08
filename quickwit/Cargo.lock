@@ -5605,6 +5605,7 @@ dependencies = [
  "quickwit-codegen",
  "quickwit-common",
  "quickwit-macros",
+ "quickwit-proto",
  "serde",
  "thiserror",
  "tokio",

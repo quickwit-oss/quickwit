@@ -17,124 +17,60 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::{Add, Mul, Sub};
-use std::{fmt, io};
 
-use anyhow::anyhow;
 use quickwit_actors::AskError;
 use quickwit_common::pubsub::Event;
 use quickwit_common::tower::RpcName;
 use serde::{Deserialize, Serialize};
 use thiserror;
 
+use crate::metastore::MetastoreError;
 use crate::types::{IndexUid, PipelineUid, Position, ShardId, SourceId, SourceUid};
-use crate::{ServiceError, ServiceErrorCode};
+use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.indexing.rs");
 
 pub type IndexingResult<T> = std::result::Result<T, IndexingError>;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum IndexingError {
-    #[error("indexing pipeline `{pipeline_uid}` does not exist")]
-    MissingPipeline { pipeline_uid: PipelineUid },
-    #[error("indexing merge pipeline `{merge_pipeline_id}` does not exist")]
-    MissingMergePipeline { merge_pipeline_id: String },
-    #[error(
-        "pipeline #{pipeline_uid} for index `{index_id}` and source `{source_id}` already exists"
-    )]
-    PipelineAlreadyExists {
-        index_id: String,
-        source_id: SourceId,
-        pipeline_uid: PipelineUid,
-    },
-    #[error("I/O error `{0}`")]
-    Io(io::Error),
-    #[error("invalid params `{0}`")]
-    InvalidParams(anyhow::Error),
-    #[error("Spanw pipelines errors `{pipeline_ids:?}`")]
-    SpawnPipelinesError {
-        pipeline_ids: Vec<IndexingPipelineId>,
-    },
-    #[error("a metastore error occurred: {0}")]
-    MetastoreError(String),
-    #[error("a storage resolver error occurred: {0}")]
-    StorageResolverError(String),
-    #[error("an internal error occurred: {0}")]
+    #[error("internal error: {0}")]
     Internal(String),
-    #[error("indexing service is unavailable")]
-    Unavailable,
-}
-
-impl From<IndexingError> for tonic::Status {
-    fn from(error: IndexingError) -> Self {
-        match error {
-            IndexingError::MissingPipeline { pipeline_uid } => {
-                tonic::Status::not_found(format!("missing pipeline `{pipeline_uid}`"))
-            }
-            IndexingError::MissingMergePipeline { merge_pipeline_id } => {
-                tonic::Status::not_found(format!("missing merge pipeline `{merge_pipeline_id}`"))
-            }
-            IndexingError::PipelineAlreadyExists {
-                index_id,
-                source_id,
-                pipeline_uid,
-            } => tonic::Status::already_exists(format!(
-                "pipeline {index_id}/{source_id} {pipeline_uid} already exists "
-            )),
-            IndexingError::Io(error) => tonic::Status::internal(error.to_string()),
-            IndexingError::InvalidParams(error) => {
-                tonic::Status::invalid_argument(error.to_string())
-            }
-            IndexingError::SpawnPipelinesError { pipeline_ids } => {
-                tonic::Status::internal(format!("error spawning pipelines {:?}", pipeline_ids))
-            }
-            IndexingError::Internal(string) => tonic::Status::internal(string),
-            IndexingError::MetastoreError(string) => tonic::Status::internal(string),
-            IndexingError::StorageResolverError(string) => tonic::Status::internal(string),
-            IndexingError::Unavailable => {
-                tonic::Status::unavailable("indexing service is unavailable")
-            }
-        }
-    }
-}
-
-impl From<tonic::Status> for IndexingError {
-    fn from(status: tonic::Status) -> Self {
-        match status.code() {
-            tonic::Code::InvalidArgument => {
-                IndexingError::InvalidParams(anyhow!(status.message().to_string()))
-            }
-            tonic::Code::NotFound => IndexingError::MissingPipeline {
-                pipeline_uid: PipelineUid::default(),
-            },
-            tonic::Code::AlreadyExists => IndexingError::PipelineAlreadyExists {
-                index_id: "".to_string(),
-                source_id: "".to_string(),
-                pipeline_uid: PipelineUid::default(),
-            },
-            tonic::Code::Unavailable => IndexingError::Unavailable,
-            _ => IndexingError::InvalidParams(anyhow!(status.message().to_string())),
-        }
-    }
+    #[error("metastore error: {0}")]
+    Metastore(#[from] MetastoreError),
+    #[error("request timed out: {0}")]
+    Timeout(String),
+    #[error("service unavailable: {0}")]
+    Unavailable(String),
 }
 
 impl ServiceError for IndexingError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,
-            Self::MissingMergePipeline { .. } => ServiceErrorCode::NotFound,
-            Self::PipelineAlreadyExists { .. } => ServiceErrorCode::BadRequest,
-            Self::InvalidParams(_) => ServiceErrorCode::BadRequest,
-            Self::SpawnPipelinesError { .. } => ServiceErrorCode::Internal,
-            Self::Io(_) => ServiceErrorCode::Internal,
             Self::Internal(_) => ServiceErrorCode::Internal,
-            Self::MetastoreError(_) => ServiceErrorCode::Internal,
-            Self::StorageResolverError(_) => ServiceErrorCode::Internal,
-            Self::Unavailable => ServiceErrorCode::Unavailable,
+            Self::Metastore(metastore_error) => metastore_error.error_code(),
+            Self::Timeout(_) => ServiceErrorCode::Timeout,
+            Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
+    }
+}
+
+impl GrpcServiceError for IndexingError {
+    fn new_internal(message: String) -> Self {
+        Self::Internal(message)
+    }
+
+    fn new_timeout(message: String) -> Self {
+        Self::Timeout(message)
+    }
+
+    fn new_unavailable(message: String) -> Self {
+        Self::Unavailable(message)
     }
 }
 
@@ -142,10 +78,12 @@ impl From<AskError<IndexingError>> for IndexingError {
     fn from(error: AskError<IndexingError>) -> Self {
         match error {
             AskError::ErrorReply(error) => error,
-            AskError::MessageNotDelivered => IndexingError::Unavailable,
-            AskError::ProcessMessageError => IndexingError::Internal(
-                "an error occurred while processing the request".to_string(),
-            ),
+            AskError::MessageNotDelivered => {
+                Self::new_unavailable("request could not be delivered to actor".to_string())
+            }
+            AskError::ProcessMessageError => {
+                Self::new_internal("an error occurred while processing the request".to_string())
+            }
         }
     }
 }
