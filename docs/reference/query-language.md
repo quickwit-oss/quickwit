@@ -13,13 +13,13 @@ Quickwit queries are composed of basic clauses, with which it filter out documen
 For instance, `log_level:WARN body:DNS` will match only documents which have a field `log_level` containing `WARN`, and a field `body` containing `DNS`. You can also make the AND explicit:
 `log_level:WARN AND body:DNS`. If instead you want to get documents matching one of two clauses, you can use the `OR` keyword: `log_level:WARN OR log_level:ERROR`.
 
-If you configured default fiels on your index, you can omit the field name, and directly search for the value you want. For instance, if body is a default field, you could write
+If you configured default fields on your index, you can omit the field name, and directly search for the value you want. For instance, if body is a default field, you could write
 just `DNS` to get all documents where body contains `DNS`, or `log_level:WARN DNS` to get the same result as `log_level:WARN AND body:DNS`.
 
 ### Grouping and negating
 
-It is possible to group clauses to make more complexe expressions. For instance, if you want documents where log\_level is either `WARN` or `ERROR`, and the body contains `DNS`, you could
-do `(log_level:WARN OR log_level:ERROR) AND body:DNS`. You can go arbitrarily deep to make more complexe expression.
+It is possible to group clauses to make more complex expressions. For instance, if you want documents where log\_level is either `WARN` or `ERROR`, and the body contains `DNS`, you could
+do `(log_level:WARN OR log_level:ERROR) AND body:DNS`. You can go arbitrarily deep to make more complex expression.
 
 You can also negate a clause, as to get documents which did not match it. To do this, either use the NOT operator, or prefix the close with a `-`. For instance
 `log_level:ERROR AND NOT body:DNS` or `log_level:ERROR AND -body:DNS` returns documents where log\_level is `ERROR` and body doesn't contain `DNS`.
@@ -34,13 +34,13 @@ Up to now, we have seen only seen queries searching for specific keywords. There
 - range query: matches only if the field contains a value in the provided range. E.g. `year:[2020 TO 2022]` will match only if year is 2020, 2021 or 2022. See the [[reference]] for other usage of range query.
 - exist query: matches only if the field exist in the document. `body:*`
 - term set query: matches if the field contains one of the provided values. It can be more efficient than ORing many term queries. E.g. `id: IN [5 7 8 12 13 15 17 21]` will match a document where id is any of those
-values. When there is only a handful of terms to match, ORing multing term query is more efficient.
+values. When there is only a handful of terms to match, ORing multiple term query is more efficient.
 
 <!-- we don't talk about slop and boost here, trinity thinks they are better suited for a full reference than a short introduction -->
 
 ## Reference
 
-Queries are built of basic blocks called clauses. They target a specific field, and take the form `field:<something>`. The field is only used for the query directly adjacent. In `field:<something> <somethingelse>`, only '\<something\>' will be using that field.
+Queries are built of basic blocks called clauses. They target a specific field, and take the form `field:<something>`. The field is only used for the query directly adjacent. In `field:<something> <something-else>`, only '\<something\>' will be using that field.
 
 In many case it is possible to omit the field you search if it was configured as a `default_search_fields`. Not all kind of query support this, but they do unless noted otherwise in their description below. These clauses can be used together by using operators such as 'AND' or 'OR'.
 
@@ -96,15 +96,15 @@ For text fields, the ranges are defined by lexicographic order. It means for a t
 When using ranges on integers, it behaves naturally.
 
 You can make an half open range by using `*` as one of the bounds. `field:[b TO *]` will match 'bb' and 'zz', but not 'ab'.
-You can also use a comparhison based syntax:`field:<b`, `field:>b`, `field:<=b` or `field:>=b`.
+You can also use a comparison based syntax:`field:<b`, `field:>b`, `field:<=b` or `field:>=b`.
 
-For range queries, you must provide a field. Quickwit won't use `default_search_fuelds` automatically.
+For range queries, you must provide a field. Quickwit won't use `default_search_fields` automatically.
 
 ### Term Set Query
 
 A query which matches if the document contains any of the tokens provided. `field: IN [ab cd]` will match 'ab' or 'cd', but nothing else.
 
-This is a lot like writting `field:ab OR field:cd`. When there are only a handful of terms to search for, using ORs is usually faster. When there are many values to match, a term set query can become more efficient.
+This is a lot like writing `field:ab OR field:cd`. When there are only a handful of terms to search for, using ORs is usually faster. When there are many values to match, a term set query can become more efficient.
 
 <!-- previously a field was required. It looks like it may no longer be the case -->
 
@@ -124,7 +124,7 @@ For priorities, 'AND' takes precedence over 'OR'. That is, `a AND b OR c` is int
 
 ### Grouping
 
-It is possible to group clauses to make more complexe expression, using parenthesis. For instance, if a query should match if 'field1' is 'one' or 'two', and 'field2' is 'three', you can use `(field1:one OR field1:two) AND field2:three`.
+It is possible to group clauses to make more complex expression, using parenthesis. For instance, if a query should match if 'field1' is 'one' or 'two', and 'field2' is 'three', you can use `(field1:one OR field1:two) AND field2:three`.
 
 ### Searching inside structures
 
@@ -142,11 +142,11 @@ For instance, the above document will match the query `k8s\.component\.name:quic
 
 ### Escaping Special Characters
 
-Special reserved characters are: `+` , `^`, `` ` ``, `:`, `{`, `}`, `"`, `[`, `]`, `(`, `)`, `~`, `!`, `\\`, `*`, `SPACE`. Such characters can still appear in query terms, but they need to be escaped by an antislash `\` .
+Special reserved characters are: `+` , `^`, `` ` ``, `:`, `{`, `}`, `"`, `[`, `]`, `(`, `)`, `~`, `!`, `\\`, `*`, `SPACE`. Such characters can still appear in query terms, but they need to be escaped by an anti-slash `\` .
 
-### Searching on ip field and datetime
+### Searching on IP field and datetime
 
-When searching for IP addesses, they can be provided as IPv4 or IPv6. It is recommended to search with the format used
+When searching for IP addresses, they can be provided as IPv4 or IPv6. It is recommended to search with the format used
 when indexing documents. There is no support for searching for a range of IP using CIDR notation, but you can use normal
 range queries.
 
