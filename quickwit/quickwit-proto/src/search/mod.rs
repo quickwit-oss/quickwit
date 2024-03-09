@@ -133,25 +133,13 @@ impl Eq for SortValue {}
 impl Copy for SortValue {}
 
 impl Ord for SortValue {
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         // We make sure to end up with a total order.
         match (*self, *other) {
             // Same types.
             (SortValue::U64(left), SortValue::U64(right)) => left.cmp(&right),
             (SortValue::I64(left), SortValue::I64(right)) => left.cmp(&right),
-            (SortValue::F64(left), SortValue::F64(right)) => {
-                if left.is_nan() {
-                    if right.is_nan() {
-                        Ordering::Equal
-                    } else {
-                        Ordering::Less
-                    }
-                } else if right.is_nan() {
-                    Ordering::Greater
-                } else {
-                    left.partial_cmp(&right).unwrap_or(Ordering::Less)
-                }
-            }
             (SortValue::Boolean(left), SortValue::Boolean(right)) => left.cmp(&right),
             // We half the logic by making sure we keep
             // the "stronger" type on the left.
@@ -161,13 +149,9 @@ impl Ord for SortValue {
                 }
                 (left as i64).cmp(&right)
             }
-            (SortValue::F64(left), _) if left.is_nan() => Ordering::Less,
-            (SortValue::F64(left), SortValue::U64(right)) => {
-                left.partial_cmp(&(right as f64)).unwrap_or(Ordering::Less)
-            }
-            (SortValue::F64(left), SortValue::I64(right)) => {
-                left.partial_cmp(&(right as f64)).unwrap_or(Ordering::Less)
-            }
+            (SortValue::F64(left), SortValue::F64(right)) => left.total_cmp(&right),
+            (SortValue::F64(left), SortValue::U64(right)) => left.total_cmp(&(right as f64)),
+            (SortValue::F64(left), SortValue::I64(right)) => left.total_cmp(&(right as f64)),
             (SortValue::Boolean(left), right) => SortValue::U64(left as u64).cmp(&right),
             (left, right) => right.cmp(&left).reverse(),
         }
@@ -183,21 +167,18 @@ impl PartialOrd for SortValue {
 impl std::hash::Hash for SortValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         let this = self.normalize();
+        std::mem::discriminant(&this).hash(state);
         match this {
             SortValue::U64(number) => {
-                0u8.hash(state);
                 number.hash(state);
             }
             SortValue::I64(number) => {
-                1u8.hash(state);
                 number.hash(state);
             }
             SortValue::F64(number) => {
-                2u8.hash(state);
                 number.to_bits().hash(state);
             }
             SortValue::Boolean(b) => {
-                3u8.hash(state);
                 b.hash(state);
             }
         }

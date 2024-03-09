@@ -164,6 +164,7 @@ impl ClusterSandbox {
                         metastore_resolver,
                         storage_resolver,
                         shutdown_signal,
+                        quickwit_serve::do_nothing_env_filter_reload_fn(),
                     )
                     .await?;
                     Result::<_, anyhow::Error>::Ok(result)
@@ -212,6 +213,7 @@ impl ClusterSandbox {
     }
 
     pub fn enable_ingest_v2(&mut self) {
+        self.indexer_rest_client.enable_ingest_v2();
         self.searcher_rest_client.enable_ingest_v2();
     }
 
@@ -332,7 +334,6 @@ impl ClusterSandbox {
     }
 
     // Waits for the needed number of indexing pipeline to start.
-    #[allow(dead_code)]
     pub async fn wait_for_splits(
         &self,
         index_id: &str,

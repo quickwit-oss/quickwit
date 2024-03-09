@@ -18,3 +18,21 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 include!("../codegen/quickwit/quickwit.ingest.router.rs");
+
+impl IngestRequestV2 {
+    pub fn num_bytes(&self) -> usize {
+        self.subrequests
+            .iter()
+            .map(|subrequest| subrequest.num_bytes())
+            .sum()
+    }
+}
+
+impl IngestSubrequest {
+    pub fn num_bytes(&self) -> usize {
+        self.doc_batch
+            .as_ref()
+            .map(|doc_batch| doc_batch.doc_buffer.len())
+            .unwrap_or(0)
+    }
+}

@@ -20,7 +20,7 @@
 #![deny(clippy::disallowed_methods)]
 
 mod doc_batch;
-mod errors;
+pub mod error;
 mod ingest_api_service;
 #[path = "codegen/ingest_service.rs"]
 mod ingest_service;
@@ -31,14 +31,13 @@ mod mrecordlog_async;
 mod notifications;
 mod position;
 mod queue;
-mod semaphore_with_waiter;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
 pub use doc_batch::*;
-pub use errors::IngestServiceError;
+pub use error::IngestServiceError;
 pub use ingest_api_service::{GetMemoryCapacity, GetPartitionId, IngestApiService};
 pub use ingest_service::*;
 pub use ingest_v2::*;

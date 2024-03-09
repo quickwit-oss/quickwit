@@ -22,25 +22,47 @@ use quickwit_common::tower::RpcName;
 use thiserror;
 
 use crate::metastore::MetastoreError;
-use crate::{ServiceError, ServiceErrorCode};
+use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.control_plane.rs");
 
 pub type ControlPlaneResult<T> = std::result::Result<T, ControlPlaneError>;
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ControlPlaneError {
-    #[error("an internal error occurred: {0}")]
+    #[error("internal error: {0}")]
     Internal(String),
-    #[error("a metastore error occurred: {0}")]
+    #[error("metastore error: {0}")]
     Metastore(#[from] MetastoreError),
-    #[error("control plane is unavailable: {0}")]
+    #[error("request timed out: {0}")]
+    Timeout(String),
+    #[error("service unavailable: {0}")]
     Unavailable(String),
 }
 
-impl ControlPlaneError {
-    pub fn label_value(&self) -> &'static str {
-        "error"
+impl ServiceError for ControlPlaneError {
+    fn error_code(&self) -> ServiceErrorCode {
+        match self {
+            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::Metastore(metastore_error) => metastore_error.error_code(),
+            Self::Timeout(_) => ServiceErrorCode::Timeout,
+            Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+        }
+    }
+}
+
+impl GrpcServiceError for ControlPlaneError {
+    fn new_internal(message: String) -> Self {
+        Self::Internal(message)
+    }
+
+    fn new_timeout(message: String) -> Self {
+        Self::Timeout(message)
+    }
+
+    fn new_unavailable(message: String) -> Self {
+        Self::Unavailable(message)
     }
 }
 
@@ -52,28 +74,9 @@ impl From<ControlPlaneError> for MetastoreError {
                 cause: message,
             },
             ControlPlaneError::Metastore(error) => error,
+            ControlPlaneError::Timeout(message) => MetastoreError::Timeout(message),
             ControlPlaneError::Unavailable(message) => MetastoreError::Unavailable(message),
         }
-    }
-}
-
-impl From<ControlPlaneError> for tonic::Status {
-    fn from(control_plane_error: ControlPlaneError) -> Self {
-        let grpc_status_code = control_plane_error.error_code().to_grpc_status_code();
-        let message_json = serde_json::to_string(&control_plane_error)
-            .unwrap_or_else(|_| format!("original control plane error: {control_plane_error}"));
-        tonic::Status::new(grpc_status_code, message_json)
-    }
-}
-
-impl From<tonic::Status> for ControlPlaneError {
-    fn from(status: tonic::Status) -> Self {
-        serde_json::from_str(status.message()).unwrap_or_else(|_| {
-            ControlPlaneError::Internal(format!(
-                "failed to deserialize control plane error: `{}`",
-                status.message()
-            ))
-        })
     }
 }
 
@@ -82,21 +85,11 @@ impl From<AskError<ControlPlaneError>> for ControlPlaneError {
         match error {
             AskError::ErrorReply(error) => error,
             AskError::MessageNotDelivered => {
-                ControlPlaneError::Unavailable("request not delivered".to_string())
+                Self::new_unavailable("request could not be delivered to actor".to_string())
             }
-            AskError::ProcessMessageError => ControlPlaneError::Internal(
-                "an error occurred while processing the request".to_string(),
-            ),
-        }
-    }
-}
-
-impl ServiceError for ControlPlaneError {
-    fn error_code(&self) -> ServiceErrorCode {
-        match self {
-            Self::Internal { .. } => ServiceErrorCode::Internal,
-            Self::Metastore(error) => error.error_code(),
-            Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            AskError::ProcessMessageError => {
+                Self::new_internal("an error occurred while processing the request".to_string())
+            }
         }
     }
 }

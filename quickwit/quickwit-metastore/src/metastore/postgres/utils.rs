@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
-use sea_query::{any, Cond, Expr, Func, Order, SelectStatement};
+use sea_query::{any, Expr, Func, Order, SelectStatement};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, Pool, Postgres};
 use tracing::error;
@@ -93,13 +93,9 @@ pub(super) fn append_range_filters<V: Display>(
 pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplitsQuery) {
     // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
 
-    let or_condition = query
-        .index_uids
-        .iter()
-        .fold(Cond::any(), |cond, index_uid| {
-            cond.add(Expr::col(Splits::IndexUid).eq(Expr::val(index_uid.to_string())))
-        });
-    sql.cond_where(or_condition);
+    sql.cond_where(
+        Expr::col(Splits::IndexUid).is_in(query.index_uids.iter().map(|val| val.to_string())),
+    );
 
     if !query.split_states.is_empty() {
         sql.cond_where(

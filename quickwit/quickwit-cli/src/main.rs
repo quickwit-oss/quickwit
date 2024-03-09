@@ -60,8 +60,9 @@ async fn main_impl() -> anyhow::Result<()> {
     start_jemalloc_metrics_loop();
 
     let build_info = BuildInfo::get();
-    setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
-    let return_code: i32 = if let Err(err) = command.execute().await {
+    let env_filter_reload_fn =
+        setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
+    let return_code: i32 = if let Err(err) = command.execute(env_filter_reload_fn).await {
         eprintln!("{} command failed: {:?}\n", "✘".color(RED_COLOR), err);
         1
     } else {

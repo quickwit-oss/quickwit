@@ -93,12 +93,12 @@ impl SourceConfig {
     pub fn source_type(&self) -> SourceType {
         match self.source_params {
             SourceParams::File(_) => SourceType::File,
-            SourceParams::GcpPubSub(_) => SourceType::GcpPubsub,
             SourceParams::Ingest => SourceType::IngestV2,
             SourceParams::IngestApi => SourceType::IngestV1,
             SourceParams::IngestCli => SourceType::Cli,
             SourceParams::Kafka(_) => SourceType::Kafka,
             SourceParams::Kinesis(_) => SourceType::Kinesis,
+            SourceParams::PubSub(_) => SourceType::PubSub,
             SourceParams::Pulsar(_) => SourceType::Pulsar,
             SourceParams::Vec(_) => SourceType::Vec,
             SourceParams::Void(_) => SourceType::Void,
@@ -109,7 +109,7 @@ impl SourceConfig {
     pub fn params(&self) -> JsonValue {
         match &self.source_params {
             SourceParams::File(params) => serde_json::to_value(params),
-            SourceParams::GcpPubSub(params) => serde_json::to_value(params),
+            SourceParams::PubSub(params) => serde_json::to_value(params),
             SourceParams::Ingest => serde_json::to_value(()),
             SourceParams::IngestApi => serde_json::to_value(()),
             SourceParams::IngestCli => serde_json::to_value(()),
@@ -229,7 +229,6 @@ impl FromStr for SourceInputFormat {
 #[serde(tag = "source_type", content = "params", rename_all = "snake_case")]
 pub enum SourceParams {
     File(FileSourceParams),
-    GcpPubSub(GcpPubSubSourceParams),
     Ingest,
     #[serde(rename = "ingest-api")]
     IngestApi,
@@ -237,6 +236,8 @@ pub enum SourceParams {
     IngestCli,
     Kafka(KafkaSourceParams),
     Kinesis(KinesisSourceParams),
+    #[serde(rename = "pubsub")]
+    PubSub(PubSubSourceParams),
     Pulsar(PulsarSourceParams),
     Vec(VecSourceParams),
     Void(VoidSourceParams),
@@ -316,7 +317,7 @@ pub struct KafkaSourceParams {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct GcpPubSubSourceParams {
+pub struct PubSubSourceParams {
     /// Name of the subscription that the source consumes.
     pub subscription: String,
     /// When backfill mode is enabled, the source exits after reaching the end of the topic.

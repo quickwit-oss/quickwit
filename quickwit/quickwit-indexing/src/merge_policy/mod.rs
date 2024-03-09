@@ -377,7 +377,7 @@ pub mod tests {
             index_uid: IndexUid::new_with_random_ulid("test_index"),
             source_id: "test_source".to_string(),
             node_id: "test_node".to_string(),
-            pipeline_uid: PipelineUid::from_u128(0u128),
+            pipeline_uid: PipelineUid::for_test(0u128),
         };
         let split_attrs = merge_split_attrs(merged_split_id, &pipeline_id, splits);
         create_split_metadata(merge_policy, &split_attrs, tags, 0..0)

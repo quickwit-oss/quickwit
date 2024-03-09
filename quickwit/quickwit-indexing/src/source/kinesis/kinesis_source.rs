@@ -31,7 +31,8 @@ use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_aws::get_aws_config;
 use quickwit_common::retry::RetryParams;
 use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
-use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
+use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
+use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::mpsc;
@@ -41,11 +42,10 @@ use tracing::{info, warn};
 use super::api::list_shards;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
 use crate::actors::DocProcessor;
-use crate::models::RawDocBatch;
 use crate::source::kinesis::helpers::get_kinesis_client;
 use crate::source::{
-    Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory, BATCH_NUM_BYTES_LIMIT,
-    EMIT_BATCHES_TIMEOUT,
+    BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
+    BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
 };
 
 type ShardId = String;
@@ -212,10 +212,7 @@ impl Source for KinesisSource {
         indexer_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        let mut batch_num_bytes = 0;
-        let mut docs = Vec::new();
-        let mut checkpoint_delta = SourceCheckpointDelta::default();
-
+        let mut batch_builder = BatchBuilder::new(SourceType::Kinesis);
         let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
@@ -245,16 +242,12 @@ impl Source for KinesisSource {
                                         stream_name=%self.stream_name,
                                         shard_id=%shard_id,
                                         sequence_number=%record_sequence_number,
-                                        "Record is empty."
+                                        "record is empty"
                                     );
                                     self.state.num_invalid_records += 1;
                                     continue;
                                 }
-                                let doc_num_bytes = record_data.len() as u64;
-                                docs.push(Bytes::from(record_data));
-                                batch_num_bytes += doc_num_bytes;
-                                self.state.num_bytes_processed += doc_num_bytes;
-                                self.state.num_records_processed += 1;
+                                batch_builder.add_doc(Bytes::from(record_data));
 
                                 if i == num_records - 1 {
                                     let shard_consumer_state = self
@@ -272,14 +265,14 @@ impl Source for KinesisSource {
                                     let current_position = Position::from(record_sequence_number);
                                     let previous_position = std::mem::replace(&mut shard_consumer_state.position, current_position.clone());
 
-                                    checkpoint_delta.record_partition_delta(
+                                    batch_builder.checkpoint_delta.record_partition_delta(
                                         partition_id,
                                         previous_position,
                                         current_position,
                                     ).context("failed to record partition delta")?;
                                 }
                             }
-                            if batch_num_bytes >= BATCH_NUM_BYTES_LIMIT {
+                            if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
                                 break;
                             }
                         }
@@ -310,13 +303,12 @@ impl Source for KinesisSource {
                 }
             }
         }
-        if !checkpoint_delta.is_empty() {
-            let batch = RawDocBatch {
-                docs,
-                checkpoint_delta,
-                force_commit: false,
-            };
-            ctx.send_message(indexer_mailbox, batch).await?;
+        self.state.num_bytes_processed += batch_builder.num_bytes;
+        self.state.num_records_processed += batch_builder.docs.len() as u64;
+
+        if !batch_builder.checkpoint_delta.is_empty() {
+            ctx.send_message(indexer_mailbox, batch_builder.build())
+                .await?;
         }
         if self.state.shard_consumers.is_empty() {
             info!(stream_name = %self.stream_name, "reached end of stream");
@@ -369,8 +361,10 @@ pub(super) async fn get_region(
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]
 mod tests {
     use quickwit_actors::Universe;
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 
     use super::*;
+    use crate::models::RawDocBatch;
     use crate::source::kinesis::helpers::tests::{
         make_shard_id, put_records_into_shards, setup, teardown,
     };

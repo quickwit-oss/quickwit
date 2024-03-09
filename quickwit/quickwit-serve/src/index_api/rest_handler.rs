@@ -37,9 +37,10 @@ use quickwit_proto::metastore::{
     MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest, ToggleSourceRequest,
 };
 use quickwit_proto::types::IndexUid;
+use quickwit_query::query_ast::{query_ast_from_user_text, QueryAst};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{info, warn};
 use warp::{Filter, Rejection};
 
 use crate::format::{extract_config_format, extract_format_from_qs};
@@ -66,6 +67,17 @@ use crate::with_arg;
 )]
 pub struct IndexApi;
 
+fn log_failure<T, E: std::fmt::Display>(
+    message: &'static str,
+) -> impl Fn(Result<T, E>) -> Result<T, E> + Clone {
+    move |result| {
+        if let Err(err) = &result {
+            warn!("{message}: {err}");
+        };
+        result
+    }
+}
+
 pub fn index_management_handlers(
     index_service: IndexService,
     node_config: Arc<NodeConfig>,
@@ -88,6 +100,8 @@ pub fn index_management_handlers(
         .or(delete_source_handler(index_service.metastore()))
         // Tokenizer handlers.
         .or(analyze_request_handler())
+        // Parse query into query AST handler.
+        .or(parse_query_request_handler())
 }
 
 fn json_body<T: DeserializeOwned + Send>(
@@ -468,6 +482,7 @@ fn create_index_handler(
         .and(with_arg(index_service))
         .and(with_arg(node_config))
         .then(create_index)
+        .map(log_failure("failed to create index"))
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
 }
@@ -591,6 +606,7 @@ fn create_source_handler(
         .and(warp::filters::body::bytes())
         .and(with_arg(index_service))
         .then(create_source)
+        .map(log_failure("failed to create source"))
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
 }
@@ -864,6 +880,50 @@ async fn analyze_request(request: AnalyzeRequest) -> Result<serde_json::Value, I
     let json_value = serde_json::to_value(tokens)
         .map_err(|err| IndexServiceError::Internal(format!("cannot serialize tokens: {err}")))?;
     Ok(json_value)
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
+struct ParseQueryRequest {
+    /// Query text. The query language is that of tantivy.
+    pub query: String,
+    // Fields to search on.
+    #[param(rename = "search_field")]
+    #[serde(default)]
+    #[serde(rename(deserialize = "search_field"))]
+    #[serde(deserialize_with = "from_simple_list")]
+    pub search_fields: Option<Vec<String>>,
+}
+
+fn parse_query_request_filter(
+) -> impl Filter<Extract = (ParseQueryRequest,), Error = Rejection> + Clone {
+    warp::path!("parse-query")
+        .and(warp::post())
+        .and(warp::body::json())
+}
+
+fn parse_query_request_handler(
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    parse_query_request_filter()
+        .then(parse_query_request)
+        .and(extract_format_from_qs())
+        .map(into_rest_api_response)
+}
+
+/// Analyzes text with given tokenizer config and returns the list of tokens.
+#[utoipa::path(
+    post,
+    tag = "parse_query",
+    path = "/parse_query",
+    request_body = ParseQueryRequest,
+    responses(
+        (status = 200, description = "Successfully parsed query into AST.")
+    ),
+)]
+async fn parse_query_request(request: ParseQueryRequest) -> Result<QueryAst, IndexServiceError> {
+    let query_ast = query_ast_from_user_text(&request.query, request.search_fields)
+        .parse_user_query(&[])
+        .map_err(|err| IndexServiceError::Internal(err.to_string()))?;
+    Ok(query_ast)
 }
 
 #[cfg(test)]
@@ -1473,7 +1533,7 @@ mod tests {
             .body(source_config_body)
             .reply(&index_management_handler)
             .await;
-        assert_eq!(resp.status(), 405);
+        assert_eq!(resp.status(), 403);
 
         let resp = warp::test::request()
             .path(format!("/indexes/hdfs-logs/sources/{CLI_SOURCE_ID}").as_str())
@@ -1481,7 +1541,7 @@ mod tests {
             .body(source_config_body)
             .reply(&index_management_handler)
             .await;
-        assert_eq!(resp.status(), 405);
+        assert_eq!(resp.status(), 403);
 
         // Check get a non existing source returns 404.
         let resp = warp::test::request()
@@ -1510,7 +1570,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_file_source_returns_405() {
+    async fn test_create_file_source_returns_403() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
@@ -1526,7 +1586,7 @@ mod tests {
             .body(source_config_body)
             .reply(&index_management_handler)
             .await;
-        assert_eq!(resp.status(), 405);
+        assert_eq!(resp.status(), 403);
         let response_body = std::str::from_utf8(resp.body()).unwrap();
         assert!(response_body.contains("limited to a local usage"))
     }
@@ -1860,7 +1920,7 @@ mod tests {
             .body(r#"{"enable": true}"#)
             .reply(&index_management_handler)
             .await;
-        assert_eq!(resp.status(), 405);
+        assert_eq!(resp.status(), 403);
 
         let resp = warp::test::request()
             .path(format!("/indexes/hdfs-logs/sources/{CLI_SOURCE_ID}/toggle").as_str())
@@ -1868,7 +1928,7 @@ mod tests {
             .body(r#"{"enable": true}"#)
             .reply(&index_management_handler)
             .await;
-        assert_eq!(resp.status(), 405);
+        assert_eq!(resp.status(), 403);
         Ok(())
     }
 
@@ -1916,5 +1976,25 @@ mod tests {
             actual: actual_response_json,
             expected: expected_response_json
         );
+    }
+
+    #[tokio::test]
+    async fn test_parse_query_request() {
+        let metastore = MetastoreServiceClient::mock();
+        let index_service = IndexService::new(
+            MetastoreServiceClient::from(metastore),
+            StorageResolver::unconfigured(),
+        );
+        let index_management_handler =
+            super::index_management_handlers(index_service, Arc::new(NodeConfig::for_test()))
+                .recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/parse-query")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"query": "field:this AND field:that"}"#)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
     }
 }

@@ -157,9 +157,9 @@ impl IngestApiService {
                 index_id: index_id.to_string(),
             });
         }
-        let disk_usage = self.queues.disk_usage();
+        let disk_used = self.queues.resource_usage().disk_used_bytes;
 
-        if disk_usage > self.disk_limit {
+        if disk_used > self.disk_limit {
             info!("ingestion rejected due to disk limit");
             return Err(IngestServiceError::RateLimited);
         }
@@ -239,8 +239,8 @@ impl IngestApiService {
             .suggest_truncate(&request.index_id, request.up_to_position_included, ctx)
             .await?;
 
-        let memory_usage = self.queues.memory_usage();
-        let new_capacity = self.memory_limit - memory_usage;
+        let memory_used = self.queues.resource_usage().memory_used_bytes;
+        let new_capacity = self.memory_limit - memory_used;
         self.memory_capacity.reset_capacity(new_capacity);
 
         Ok(())

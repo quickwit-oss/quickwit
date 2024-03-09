@@ -74,7 +74,7 @@ impl ServiceError for IndexServiceError {
             Self::InvalidConfig(_) => ServiceErrorCode::BadRequest,
             Self::InvalidIdentifier(_) => ServiceErrorCode::BadRequest,
             Self::Metastore(error) => error.error_code(),
-            Self::OperationNotAllowed(_) => ServiceErrorCode::MethodNotAllowed,
+            Self::OperationNotAllowed(_) => ServiceErrorCode::Forbidden,
             Self::SplitDeletion(_) => ServiceErrorCode::Internal,
             Self::Storage(_) => ServiceErrorCode::Internal,
         }

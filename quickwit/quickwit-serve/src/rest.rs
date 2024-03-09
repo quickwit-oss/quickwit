@@ -21,9 +21,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use hyper::http::HeaderValue;
-use hyper::{http, Method};
+use hyper::{http, Method, StatusCode};
 use quickwit_common::tower::BoxFutureInfaillible;
-use quickwit_proto::ServiceErrorCode;
 use tower::make::Shared;
 use tower::ServiceBuilder;
 use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove};
@@ -42,6 +41,7 @@ use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
+use crate::log_level_handler::log_level_handler;
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
@@ -172,6 +172,9 @@ fn api_v1_routes(
                 RuntimeInfo::get(),
                 quickwit_services.node_config.clone(),
             ))
+            .or(log_level_handler(
+                quickwit_services.env_filter_reload_fn.clone(),
+            ))
             .or(indexing_get_handler(
                 quickwit_services.indexing_service_opt.clone(),
             ))
@@ -227,98 +230,98 @@ fn api_v1_routes(
 // More on this here: https://github.com/seanmonstar/warp/issues/388.
 // We may use this work on the PR is merged: https://github.com/seanmonstar/warp/pull/909.
 pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
-    let err = get_status_with_error(rejection);
-    let status_code = err.service_code.to_http_status_code();
+    let error = get_status_with_error(rejection);
+    let status_code = error.status_code;
     Ok(RestApiResponse::new::<(), _>(
-        &Err(err),
+        &Err(error),
         status_code,
-        &BodyFormat::default(),
+        BodyFormat::default(),
     ))
 }
 
 fn get_status_with_error(rejection: Rejection) -> RestApiError {
     if let Some(error) = rejection.find::<crate::format::UnsupportedMediaType>() {
         RestApiError {
-            service_code: ServiceErrorCode::UnsupportedMediaType,
+            status_code: StatusCode::UNSUPPORTED_MEDIA_TYPE,
             message: error.to_string(),
         }
     } else if rejection.is_not_found() {
         RestApiError {
-            service_code: ServiceErrorCode::NotFound,
+            status_code: StatusCode::NOT_FOUND,
             message: "Route not found".to_string(),
         }
     } else if let Some(error) = rejection.find::<serde_qs::Error>() {
         RestApiError {
-            service_code: ServiceErrorCode::BadRequest,
+            status_code: StatusCode::BAD_REQUEST,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<InvalidJsonRequest>() {
         // Happens when the request body could not be deserialized correctly.
         RestApiError {
-            service_code: ServiceErrorCode::BadRequest,
+            status_code: StatusCode::BAD_REQUEST,
             message: error.0.to_string(),
         }
     } else if let Some(error) = rejection.find::<InvalidArgument>() {
         // Happens when the url path or request body contains invalid argument(s).
         RestApiError {
-            service_code: ServiceErrorCode::BadRequest,
+            status_code: StatusCode::BAD_REQUEST,
             message: error.0.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::filters::body::BodyDeserializeError>() {
         // Happens when the request body could not be deserialized correctly.
         RestApiError {
-            service_code: ServiceErrorCode::BadRequest,
+            status_code: StatusCode::BAD_REQUEST,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::UnsupportedMediaType>() {
         RestApiError {
-            service_code: ServiceErrorCode::UnsupportedMediaType,
+            status_code: StatusCode::UNSUPPORTED_MEDIA_TYPE,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<UnsupportedEncoding>() {
         RestApiError {
-            service_code: ServiceErrorCode::UnsupportedMediaType,
+            status_code: StatusCode::UNSUPPORTED_MEDIA_TYPE,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<CorruptedData>() {
         RestApiError {
-            service_code: ServiceErrorCode::BadRequest,
+            status_code: StatusCode::BAD_REQUEST,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::InvalidQuery>() {
         RestApiError {
-            service_code: ServiceErrorCode::BadRequest,
+            status_code: StatusCode::BAD_REQUEST,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::LengthRequired>() {
         RestApiError {
-            service_code: ServiceErrorCode::BadRequest,
+            status_code: StatusCode::LENGTH_REQUIRED,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::MissingHeader>() {
         RestApiError {
-            service_code: ServiceErrorCode::BadRequest,
+            status_code: StatusCode::BAD_REQUEST,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::InvalidHeader>() {
         RestApiError {
-            service_code: ServiceErrorCode::BadRequest,
+            status_code: StatusCode::BAD_REQUEST,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::MethodNotAllowed>() {
         RestApiError {
-            service_code: ServiceErrorCode::MethodNotAllowed,
+            status_code: StatusCode::METHOD_NOT_ALLOWED,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::PayloadTooLarge>() {
         RestApiError {
-            service_code: ServiceErrorCode::BadRequest,
+            status_code: StatusCode::PAYLOAD_TOO_LARGE,
             message: error.to_string(),
         }
     } else {
         error!("REST server error: {:?}", rejection);
         RestApiError {
-            service_code: ServiceErrorCode::Internal,
+            status_code: StatusCode::INTERNAL_SERVER_ERROR,
             message: "internal server error".to_string(),
         }
     }
@@ -630,6 +633,7 @@ mod tests {
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
             jaeger_service_opt: None,
+            env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
         };
 
         let handler = api_v1_routes(Arc::new(quickwit_services))

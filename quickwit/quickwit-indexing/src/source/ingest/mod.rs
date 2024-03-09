@@ -38,7 +38,9 @@ use quickwit_proto::ingest::ingester::{
     TruncateShardsSubrequest,
 };
 use quickwit_proto::ingest::IngestV2Error;
-use quickwit_proto::metastore::{AcquireShardsRequest, MetastoreService, MetastoreServiceClient};
+use quickwit_proto::metastore::{
+    AcquireShardsRequest, MetastoreService, MetastoreServiceClient, SourceType,
+};
 use quickwit_proto::types::{
     NodeId, PipelineUid, Position, PublishToken, ShardId, SourceId, SourceUid,
 };
@@ -463,7 +465,7 @@ impl Source for IngestSource {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        let mut batch_builder = BatchBuilder::default();
+        let mut batch_builder = BatchBuilder::new(SourceType::IngestV2);
 
         let now = time::Instant::now();
         let deadline = now + EMIT_BATCHES_TIMEOUT;
@@ -608,14 +610,17 @@ impl Source for IngestSource {
         checkpoint: SourceCheckpoint,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
-        let mut truncate_up_to_positions: Vec<(ShardId, Position)> =
-            Vec::with_capacity(checkpoint.num_partitions());
-
-        for (partition_id, position) in checkpoint.iter() {
-            let shard_id = ShardId::from(partition_id.as_str());
-            truncate_up_to_positions.push((shard_id, position));
+        let truncate_up_to_positions: Vec<(ShardId, Position)> = checkpoint
+            .iter()
+            .filter(|(_, position)| !matches!(position, Position::Beginning))
+            .map(|(partition_id, position)| {
+                let shard_id = ShardId::from(partition_id.as_str());
+                (shard_id, position)
+            })
+            .collect();
+        if !truncate_up_to_positions.is_empty() {
+            self.truncate(truncate_up_to_positions).await;
         }
-        self.truncate(truncate_up_to_positions).await;
         Ok(())
     }
 
@@ -1789,7 +1794,6 @@ mod tests {
                 (ShardId::from(2u64), Position::offset(22u64)),
                 (ShardId::from(3u64), Position::eof(33u64)),
                 (ShardId::from(4u64), Position::offset(44u64)),
-                (ShardId::from(5u64), Position::Beginning),
                 (ShardId::from(6u64), Position::offset(66u64)),
             ],
         );

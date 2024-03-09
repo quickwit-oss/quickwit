@@ -58,7 +58,7 @@ Cloud-native search engine for observability (logs, traces, and soon metrics!). 
 - Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, Google Cloud Storage, …)
 - Decoupled compute and storage, stateless indexers & searchers
 - [Grafana data source](https://github.com/quickwit-oss/quickwit-datasource)
-- Kubernetes ready - See our [helm-chart](https://quickwit.io/docs/deployment/kubernetes)
+- Kubernetes ready - See our [helm-chart](https://quickwit.io/docs/deployment/kubernetes/helm)
 - RESTful API
 
 ## Enterprise ready

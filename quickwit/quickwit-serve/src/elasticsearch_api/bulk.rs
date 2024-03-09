@@ -20,7 +20,6 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use bytes::Bytes;
 use hyper::StatusCode;
 use quickwit_config::enable_ingest_v2;
 use quickwit_ingest::{
@@ -36,7 +35,7 @@ use crate::elasticsearch_api::make_elastic_api_response;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::format::extract_format_from_qs;
 use crate::ingest_api::lines;
-use crate::with_arg;
+use crate::{with_arg, Body};
 
 /// POST `_elastic/_bulk`
 pub fn es_compat_bulk_handler(
@@ -78,7 +77,7 @@ pub fn es_compat_index_bulk_handler(
 
 async fn elastic_ingest_bulk(
     default_index_id: Option<IndexId>,
-    body: Bytes,
+    body: Body,
     bulk_options: ElasticBulkOptions,
     mut ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
@@ -88,7 +87,7 @@ async fn elastic_ingest_bulk(
     }
     let now = Instant::now();
     let mut doc_batch_builders = HashMap::new();
-    let mut lines = lines(&body).enumerate();
+    let mut lines = lines(&body.content).enumerate();
 
     while let Some((line_number, line)) = lines.next() {
         let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {

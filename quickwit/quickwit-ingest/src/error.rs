@@ -22,11 +22,12 @@ use std::io;
 use mrecordlog::error::*;
 use quickwit_actors::AskError;
 use quickwit_common::tower::BufferError;
+pub(crate) use quickwit_proto::error::{grpc_error_to_grpc_status, grpc_status_to_service_error};
 use quickwit_proto::ingest::IngestV2Error;
-use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
-use serde::Serialize;
+use quickwit_proto::{tonic, GrpcServiceError, ServiceError, ServiceErrorCode};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, thiserror::Error, Serialize)]
+#[derive(Debug, Clone, thiserror::Error, Serialize, Deserialize)]
 pub enum IngestServiceError {
     #[error("data corruption: {0}")]
     Corruption(String),
@@ -70,40 +71,18 @@ impl From<io::Error> for IngestServiceError {
         IngestServiceError::IoError(io_error.to_string())
     }
 }
-impl From<IngestV2Error> for IngestServiceError {
-    fn from(err: IngestV2Error) -> Self {
-        match err {
-            IngestV2Error::Internal(_) => IngestServiceError::Internal(err.to_string()),
-            IngestV2Error::IngesterUnavailable { ingester_id } => {
-                IngestServiceError::Internal(format!("ingester {} is unavailable", ingester_id))
-            }
-            IngestV2Error::ShardNotFound { shard_id } => IngestServiceError::Internal(format!(
-                "shard {} is not found in the ingester",
-                shard_id
-            )),
-            IngestV2Error::Timeout => IngestServiceError::Unavailable,
-            IngestV2Error::TooManyRequests => IngestServiceError::RateLimited,
-            IngestV2Error::Transport(msg) => IngestServiceError::Internal(msg.to_string()),
-        }
-    }
-}
 
-impl From<tonic::Status> for IngestServiceError {
-    fn from(status: tonic::Status) -> Self {
-        // TODO: Use status.details() #2859.
-        match status.code() {
-            tonic::Code::AlreadyExists => IngestServiceError::IndexAlreadyExists {
-                index_id: status.message().to_string(),
-            },
-            tonic::Code::NotFound => IngestServiceError::IndexNotFound {
-                index_id: status.message().to_string(),
-            },
-            tonic::Code::InvalidArgument => {
-                IngestServiceError::InvalidPosition(status.message().to_string())
+impl From<IngestV2Error> for IngestServiceError {
+    fn from(error: IngestV2Error) -> Self {
+        match error {
+            IngestV2Error::IngesterUnavailable { .. }
+            | IngestV2Error::Timeout(_)
+            | IngestV2Error::Unavailable(_) => IngestServiceError::Unavailable,
+            IngestV2Error::Internal(message) => IngestServiceError::Internal(message),
+            IngestV2Error::ShardNotFound { .. } => {
+                IngestServiceError::Internal("shard not found".to_string())
             }
-            tonic::Code::ResourceExhausted => IngestServiceError::RateLimited,
-            tonic::Code::Unavailable => IngestServiceError::Unavailable,
-            _ => IngestServiceError::Internal(status.message().to_string()),
+            IngestV2Error::TooManyRequests => IngestServiceError::RateLimited,
         }
     }
 }
@@ -111,15 +90,29 @@ impl From<tonic::Status> for IngestServiceError {
 impl ServiceError for IngestServiceError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            IngestServiceError::Corruption(_) => ServiceErrorCode::Internal,
-            IngestServiceError::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
-            IngestServiceError::IndexNotFound { .. } => ServiceErrorCode::NotFound,
-            IngestServiceError::Internal { .. } => ServiceErrorCode::Internal,
-            IngestServiceError::InvalidPosition(_) => ServiceErrorCode::BadRequest,
-            IngestServiceError::IoError { .. } => ServiceErrorCode::Internal,
-            IngestServiceError::RateLimited => ServiceErrorCode::RateLimited,
-            IngestServiceError::Unavailable => ServiceErrorCode::Internal,
+            Self::Corruption { .. } => ServiceErrorCode::Internal,
+            Self::IndexAlreadyExists { .. } => ServiceErrorCode::AlreadyExists,
+            Self::IndexNotFound { .. } => ServiceErrorCode::NotFound,
+            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::InvalidPosition(_) => ServiceErrorCode::BadRequest,
+            Self::IoError { .. } => ServiceErrorCode::Internal,
+            Self::RateLimited => ServiceErrorCode::TooManyRequests,
+            Self::Unavailable => ServiceErrorCode::Unavailable,
         }
+    }
+}
+
+impl GrpcServiceError for IngestServiceError {
+    fn new_internal(message: String) -> Self {
+        Self::Internal(message)
+    }
+
+    fn new_timeout(message: String) -> Self {
+        Self::Internal(message)
+    }
+
+    fn new_unavailable(_: String) -> Self {
+        Self::Unavailable
     }
 }
 

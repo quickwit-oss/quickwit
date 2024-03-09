@@ -38,7 +38,6 @@ use quickwit_proto::search::{
     SortDatetimeFormat,
 };
 use quickwit_proto::types::IndexUid;
-use quickwit_proto::ServiceErrorCode;
 use quickwit_query::query_ast::{BoolQuery, QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
 use quickwit_search::{list_all_splits, resolve_index_patterns, SearchError, SearchService};
@@ -63,7 +62,7 @@ use super::model::{
 };
 use super::{make_elastic_api_response, TrackTotalHits};
 use crate::format::BodyFormat;
-use crate::rest_api_response::{into_rest_api_response, RestApiError, RestApiResponse};
+use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::{with_arg, BuildInfo};
 
 /// Elastic compatible cluster info handler.
@@ -97,12 +96,16 @@ pub fn es_compat_search_handler(
     elasticsearch_filter().then(|_params: SearchQueryParams| async move {
         // TODO
         let api_error = RestApiError {
-            service_code: ServiceErrorCode::NotSupportedYet,
+            status_code: StatusCode::NOT_IMPLEMENTED,
             message: "_elastic/_search is not supported yet. Please try the index search endpoint \
                       (_elastic/{index}/search)"
                 .to_string(),
         };
-        into_rest_api_response::<(), _>(Err(api_error), BodyFormat::default())
+        RestApiResponse::new::<(), _>(
+            &Err(api_error),
+            StatusCode::NOT_IMPLEMENTED,
+            BodyFormat::default(),
+        )
     })
 }
 
@@ -200,7 +203,7 @@ pub fn es_compat_index_multi_search_handler(
                 Ok(_) => StatusCode::OK,
                 Err(err) => err.status,
             };
-            RestApiResponse::new(&result, status_code, &BodyFormat::default())
+            RestApiResponse::new(&result, status_code, BodyFormat::default())
         })
 }
 
@@ -722,7 +725,16 @@ async fn es_compat_index_multi_search(
                     ))
                 })
             })?;
-        let search_query_params = SearchQueryParams::from(request_header);
+        let mut search_query_params = SearchQueryParams::from(request_header);
+        if let Some(_source_excludes) = &multi_search_params._source_excludes {
+            search_query_params._source_excludes = Some(_source_excludes.to_vec());
+        }
+        if let Some(_source_includes) = &multi_search_params._source_includes {
+            search_query_params._source_includes = Some(_source_includes.to_vec());
+        }
+        if let Some(extra_filters) = &multi_search_params.extra_filters {
+            search_query_params.extra_filters = Some(extra_filters.to_vec());
+        }
         let es_request =
             build_request_for_es_api(index_ids_patterns, search_query_params, search_body)?;
         search_requests.push(es_request);
@@ -733,13 +745,19 @@ async fn es_compat_index_multi_search(
         .into_iter()
         .map(|(search_request, append_shard_doc)| {
             let search_service = &search_service;
+            let _source_excludes = multi_search_params._source_excludes.clone();
+            let _source_includes = multi_search_params._source_includes.clone();
             async move {
                 let start_instant = Instant::now();
                 let search_response: SearchResponse =
                     search_service.clone().root_search(search_request).await?;
                 let elapsed = start_instant.elapsed();
-                let mut search_response_rest: ElasticsearchResponse =
-                    convert_to_es_search_response(search_response, append_shard_doc, None, None);
+                let mut search_response_rest: ElasticsearchResponse = convert_to_es_search_response(
+                    search_response,
+                    append_shard_doc,
+                    _source_excludes,
+                    _source_includes,
+                );
                 search_response_rest.took = elapsed.as_millis() as u32;
                 Ok::<_, ElasticsearchError>(search_response_rest)
             }

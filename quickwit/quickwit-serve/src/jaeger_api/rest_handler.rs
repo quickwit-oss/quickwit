@@ -325,13 +325,13 @@ async fn jaeger_get_trace_by_id(
 
 fn make_jaeger_api_response<T: serde::Serialize>(
     jaeger_result: Result<T, JaegerError>,
-    format: BodyFormat,
+    body_format: BodyFormat,
 ) -> RestApiResponse {
     let status_code = match &jaeger_result {
         Ok(_) => StatusCode::OK,
         Err(err) => err.status,
     };
-    RestApiResponse::new(&jaeger_result, status_code, &format)
+    RestApiResponse::new(&jaeger_result, status_code, body_format)
 }
 
 #[cfg(test)]

@@ -26,10 +26,10 @@ use thiserror::Error;
 #[allow(missing_docs)]
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum JanitorError {
-    #[error("invalid delete query: `{0}`")]
-    InvalidDeleteQuery(String),
     #[error("internal error: `{0}`")]
     Internal(String),
+    #[error("invalid delete query: `{0}`")]
+    InvalidDeleteQuery(String),
     #[error("metastore error: `{0}`")]
     Metastore(#[from] MetastoreError),
 }
@@ -37,9 +37,9 @@ pub enum JanitorError {
 impl ServiceError for JanitorError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            JanitorError::InvalidDeleteQuery(_) => ServiceErrorCode::BadRequest,
-            JanitorError::Internal(_) => ServiceErrorCode::Internal,
-            JanitorError::Metastore(error) => error.error_code(),
+            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::InvalidDeleteQuery(_) => ServiceErrorCode::BadRequest,
+            Self::Metastore(metastore_error) => metastore_error.error_code(),
         }
     }
 }
