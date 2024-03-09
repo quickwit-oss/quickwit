@@ -55,13 +55,11 @@ json:
       - name: host
         type: ip
         fast: true
-sleep_after: 3
 ---
 # Ingest documents
 method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: fieldcaps/ingest
-num_retries: 10
 params:
   commit: force
 ndjson:
@@ -85,7 +83,7 @@ params:
   commit: force
 ndjson:
   - {"mixed": 5, "date": "2023-01-10T12:00:00Z"} # inter split mixed type
-  - {"mixed": -5.5, "date": "2024-01-10T12:00:00Z"} 
+  - {"mixed": -5.5, "date": "2024-01-10T12:00:00Z"}
 ---
 # Ingest documents in index fieldcaps-2
 method: POST
