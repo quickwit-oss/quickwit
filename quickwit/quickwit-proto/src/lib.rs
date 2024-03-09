@@ -22,7 +22,6 @@
 #![allow(rustdoc::invalid_html_tags)]
 
 use std::cmp::Ordering;
-use std::fmt;
 
 use ::opentelemetry::global;
 use ::opentelemetry::propagation::{Extractor, Injector};
@@ -42,7 +41,7 @@ pub mod metastore;
 pub mod search;
 pub mod types;
 
-pub use error::{ServiceError, ServiceErrorCode};
+pub use error::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 use crate::search::ReportSplitsRequest;
 
@@ -67,6 +66,7 @@ pub mod opentelemetry {
                     include!("codegen/opentelemetry/opentelemetry.proto.collector.logs.v1.rs");
                 }
             }
+            // One can dream.
             // pub mod metrics {
             //     pub mod v1 {
             //         include!("codegen/opentelemetry/opentelemetry.proto.collector.metrics.v1.rs"
@@ -219,16 +219,6 @@ pub fn set_parent_span_from_request_metadata(request_metadata: &tonic::metadata:
     let parent_cx =
         global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request_metadata)));
     Span::current().set_parent(parent_cx);
-}
-
-impl<E: fmt::Debug + ServiceError> ServiceError for quickwit_actors::AskError<E> {
-    fn error_code(&self) -> ServiceErrorCode {
-        match self {
-            quickwit_actors::AskError::MessageNotDelivered => ServiceErrorCode::Internal,
-            quickwit_actors::AskError::ProcessMessageError => ServiceErrorCode::Internal,
-            quickwit_actors::AskError::ErrorReply(err) => err.error_code(),
-        }
-    }
 }
 
 impl search::SortOrder {

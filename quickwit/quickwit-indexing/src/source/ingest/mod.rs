@@ -38,7 +38,9 @@ use quickwit_proto::ingest::ingester::{
     TruncateShardsSubrequest,
 };
 use quickwit_proto::ingest::IngestV2Error;
-use quickwit_proto::metastore::{AcquireShardsRequest, MetastoreService, MetastoreServiceClient};
+use quickwit_proto::metastore::{
+    AcquireShardsRequest, MetastoreService, MetastoreServiceClient, SourceType,
+};
 use quickwit_proto::types::{
     NodeId, PipelineUid, Position, PublishToken, ShardId, SourceId, SourceUid,
 };
@@ -463,7 +465,7 @@ impl Source for IngestSource {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        let mut batch_builder = BatchBuilder::default();
+        let mut batch_builder = BatchBuilder::new(SourceType::IngestV2);
 
         let now = time::Instant::now();
         let deadline = now + EMIT_BATCHES_TIMEOUT;

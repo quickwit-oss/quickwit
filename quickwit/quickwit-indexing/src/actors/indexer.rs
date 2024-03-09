@@ -770,8 +770,8 @@ mod tests {
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(ProcessedDocBatch {
-                docs: vec![
+            .send_message(ProcessedDocBatch::new(
+                vec![
                     ProcessedDoc {
                         doc: doc!(
                             body_field=>"this is a test document",
@@ -791,13 +791,13 @@ mod tests {
                         num_bytes: 30,
                     },
                 ],
-                checkpoint_delta: SourceCheckpointDelta::from_range(4..6),
-                force_commit: false,
-            })
+                SourceCheckpointDelta::from_range(4..6),
+                false,
+            ))
             .await?;
         indexer_mailbox
-            .send_message(ProcessedDocBatch {
-                docs: vec![
+            .send_message(ProcessedDocBatch::new(
+                vec![
                     ProcessedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 3",
@@ -817,13 +817,13 @@ mod tests {
                         num_bytes: 30,
                     },
                 ],
-                checkpoint_delta: SourceCheckpointDelta::from_range(6..8),
-                force_commit: false,
-            })
+                SourceCheckpointDelta::from_range(6..8),
+                false,
+            ))
             .await?;
         indexer_mailbox
-            .send_message(ProcessedDocBatch {
-                docs: vec![ProcessedDoc {
+            .send_message(ProcessedDocBatch::new(
+                vec![ProcessedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
                         timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -832,9 +832,9 @@ mod tests {
                     partition: 1,
                     num_bytes: 30,
                 }],
-                checkpoint_delta: SourceCheckpointDelta::from_range(8..9),
-                force_commit: false,
-            })
+                SourceCheckpointDelta::from_range(8..9),
+                false,
+            ))
             .await?;
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
         assert_eq!(
@@ -921,11 +921,11 @@ mod tests {
         };
         for i in 0..10_000 {
             indexer_mailbox
-                .send_message(ProcessedDocBatch {
-                    docs: vec![make_doc(i)],
-                    checkpoint_delta: SourceCheckpointDelta::from_range(i..i + 1),
-                    force_commit: false,
-                })
+                .send_message(ProcessedDocBatch::new(
+                    vec![make_doc(i)],
+                    SourceCheckpointDelta::from_range(i..i + 1),
+                    false,
+                ))
                 .await?;
             let output_messages: Vec<IndexedSplitBatchBuilder> =
                 index_serializer_inbox.drain_for_test_typed();
@@ -986,8 +986,8 @@ mod tests {
             async move {
                 let mut position = 0;
                 while indexer_mailbox
-                    .send_message(ProcessedDocBatch {
-                        docs: vec![ProcessedDoc {
+                    .send_message(ProcessedDocBatch::new(
+                        vec![ProcessedDoc {
                             doc: doc!(
                                 body_field=>"this is a test document",
                                 timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -996,9 +996,9 @@ mod tests {
                             partition: 1,
                             num_bytes: 30,
                         }],
-                        force_commit: false,
-                        checkpoint_delta: SourceCheckpointDelta::from_range(position..position + 1),
-                    })
+                        SourceCheckpointDelta::from_range(position..position + 1),
+                        false,
+                    ))
                     .await
                     .is_ok()
                 {
@@ -1064,8 +1064,8 @@ mod tests {
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(ProcessedDocBatch {
-                docs: vec![ProcessedDoc {
+            .send_message(ProcessedDocBatch::new(
+                vec![ProcessedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
                         timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -1074,9 +1074,9 @@ mod tests {
                     partition: 1,
                     num_bytes: 30,
                 }],
-                checkpoint_delta: SourceCheckpointDelta::from_range(8..9),
-                force_commit: false,
-            })
+                SourceCheckpointDelta::from_range(8..9),
+                false,
+            ))
             .await
             .unwrap();
         let mut indexer_counters: IndexerCounters = Default::default();
@@ -1151,8 +1151,8 @@ mod tests {
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(ProcessedDocBatch {
-                docs: vec![ProcessedDoc {
+            .send_message(ProcessedDocBatch::new(
+                vec![ProcessedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
                         timestamp_field=> DateTime::from_timestamp_secs(1_662_529_435)
@@ -1161,9 +1161,9 @@ mod tests {
                     partition: 1,
                     num_bytes: 30,
                 }],
-                checkpoint_delta: SourceCheckpointDelta::from_range(8..9),
-                force_commit: false,
-            })
+                SourceCheckpointDelta::from_range(8..9),
+                false,
+            ))
             .await
             .unwrap();
         universe.send_exit_with_success(&indexer_mailbox).await?;
@@ -1234,8 +1234,8 @@ mod tests {
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(ProcessedDocBatch {
-                docs: vec![
+            .send_message(ProcessedDocBatch::new(
+                vec![
                     ProcessedDoc {
                         doc: doc!(
                             body_field=>"doc 2",
@@ -1255,9 +1255,9 @@ mod tests {
                         num_bytes: 30,
                     },
                 ],
-                checkpoint_delta: SourceCheckpointDelta::from_range(8..9),
-                force_commit: false,
-            })
+                SourceCheckpointDelta::from_range(8..9),
+                false,
+            ))
             .await?;
 
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
@@ -1331,16 +1331,16 @@ mod tests {
 
         for partition in 0..100 {
             indexer_mailbox
-                .send_message(ProcessedDocBatch {
-                    docs: vec![ProcessedDoc {
+                .send_message(ProcessedDocBatch::new(
+                    vec![ProcessedDoc {
                         doc: doc!(body_field=>"doc {i}"),
                         timestamp_opt: None,
                         partition,
                         num_bytes: 30,
                     }],
-                    checkpoint_delta: SourceCheckpointDelta::from_range(partition..partition + 1),
-                    force_commit: false,
-                })
+                    SourceCheckpointDelta::from_range(partition..partition + 1),
+                    false,
+                ))
                 .await
                 .unwrap();
         }
@@ -1409,16 +1409,16 @@ mod tests {
                 .await
                 .unwrap();
             indexer_mailbox
-                .send_message(ProcessedDocBatch {
-                    docs: vec![ProcessedDoc {
+                .send_message(ProcessedDocBatch::new(
+                    vec![ProcessedDoc {
                         doc: doc!(body_field=>"doc 1"),
                         timestamp_opt: None,
                         partition: 0,
                         num_bytes: 30,
                     }],
-                    checkpoint_delta: SourceCheckpointDelta::from_range(0..1),
-                    force_commit: false,
-                })
+                    SourceCheckpointDelta::from_range(0..1),
+                    false,
+                ))
                 .await
                 .unwrap();
         }
@@ -1480,16 +1480,16 @@ mod tests {
         indexer_handle.process_pending_and_observe().await;
         publish_lock.kill().await;
         indexer_mailbox
-            .send_message(ProcessedDocBatch {
-                docs: vec![ProcessedDoc {
+            .send_message(ProcessedDocBatch::new(
+                vec![ProcessedDoc {
                     doc: doc!(body_field=>"doc 1"),
                     timestamp_opt: None,
                     partition: 0,
                     num_bytes: 30,
                 }],
-                checkpoint_delta: SourceCheckpointDelta::from_range(0..1),
-                force_commit: false,
-            })
+                SourceCheckpointDelta::from_range(0..1),
+                false,
+            ))
             .await
             .unwrap();
         universe
@@ -1536,16 +1536,16 @@ mod tests {
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(ProcessedDocBatch {
-                docs: vec![ProcessedDoc {
+            .send_message(ProcessedDocBatch::new(
+                vec![ProcessedDoc {
                     doc: doc!(body_field=>"doc 1"),
                     timestamp_opt: None,
                     partition: 0,
                     num_bytes: 30,
                 }],
-                checkpoint_delta: SourceCheckpointDelta::from_range(0..1),
-                force_commit: true,
-            })
+                SourceCheckpointDelta::from_range(0..1),
+                true,
+            ))
             .await
             .unwrap();
         universe
@@ -1604,18 +1604,18 @@ mod tests {
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(ProcessedDocBatch {
-                docs: Vec::new(),
-                checkpoint_delta: SourceCheckpointDelta::from_range(4..6),
-                force_commit: false,
-            })
+            .send_message(ProcessedDocBatch::new(
+                Vec::new(),
+                SourceCheckpointDelta::from_range(4..6),
+                false,
+            ))
             .await?;
         indexer_mailbox
-            .send_message(ProcessedDocBatch {
-                docs: Vec::new(),
-                checkpoint_delta: SourceCheckpointDelta::from_range(6..8),
-                force_commit: false,
-            })
+            .send_message(ProcessedDocBatch::new(
+                Vec::new(),
+                SourceCheckpointDelta::from_range(6..8),
+                false,
+            ))
             .await?;
         universe
             .sleep(commit_timeout + Duration::from_secs(2))

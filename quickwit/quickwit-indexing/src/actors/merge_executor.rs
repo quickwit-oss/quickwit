@@ -592,7 +592,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_uid: PipelineUid::from_u128(0u128),
+            pipeline_uid: PipelineUid::for_test(0u128),
         };
         for split_id in 0..4 {
             let single_doc = std::iter::once(
@@ -716,7 +716,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
             node_id: "unknown".to_string(),
-            pipeline_uid: PipelineUid::from_u128(0u128),
+            pipeline_uid: PipelineUid::for_test(0u128),
             source_id: "unknown".to_string(),
         };
         test_sandbox.add_documents(docs).await?;

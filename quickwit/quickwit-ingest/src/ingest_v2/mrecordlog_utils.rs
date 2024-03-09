@@ -84,12 +84,6 @@ pub(super) async fn append_non_empty_doc_batch(
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(super) struct MRecordLogUsage {
-    pub disk: ByteSize,
-    pub memory: ByteSize,
-}
-
 /// Error returned when the mrecordlog does not have enough capacity to store some records.
 #[derive(Debug, Clone, Copy, thiserror::Error)]
 pub(super) enum NotEnoughCapacityError {
@@ -118,30 +112,27 @@ pub(super) fn check_enough_capacity(
     disk_capacity: ByteSize,
     memory_capacity: ByteSize,
     requested_capacity: ByteSize,
-) -> Result<MRecordLogUsage, NotEnoughCapacityError> {
-    let disk_usage = ByteSize(mrecordlog.disk_usage() as u64);
+) -> Result<(), NotEnoughCapacityError> {
+    let wal_usage = mrecordlog.resource_usage();
+    let disk_used = ByteSize(wal_usage.disk_used_bytes as u64);
 
-    if disk_usage + requested_capacity > disk_capacity {
+    if disk_used + requested_capacity > disk_capacity {
         return Err(NotEnoughCapacityError::Disk {
-            usage: disk_usage,
+            usage: disk_used,
             capacity: disk_capacity,
             requested: requested_capacity,
         });
     }
-    let memory_usage = ByteSize(mrecordlog.memory_usage() as u64);
+    let memory_used = ByteSize(wal_usage.memory_used_bytes as u64);
 
-    if memory_usage + requested_capacity > memory_capacity {
+    if memory_used + requested_capacity > memory_capacity {
         return Err(NotEnoughCapacityError::Memory {
-            usage: memory_usage,
+            usage: memory_used,
             capacity: memory_capacity,
             requested: requested_capacity,
         });
     }
-    let usage = MRecordLogUsage {
-        disk: disk_usage,
-        memory: memory_usage,
-    };
-    Ok(usage)
+    Ok(())
 }
 
 /// Deletes a queue from the WAL. Returns without error if the queue does not exist.

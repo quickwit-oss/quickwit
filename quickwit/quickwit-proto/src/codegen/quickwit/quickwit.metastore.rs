@@ -442,12 +442,16 @@ pub enum SourceType {
     Unspecified = 0,
     Cli = 1,
     File = 2,
-    GcpPubsub = 3,
     IngestV1 = 4,
     IngestV2 = 5,
+    /// Apache Kafka
     Kafka = 6,
+    /// Amazon Kinesis
     Kinesis = 7,
     Nats = 8,
+    /// Google Cloud Pub/Sub
+    PubSub = 3,
+    /// Apache Pulsar
     Pulsar = 9,
     Vec = 10,
     Void = 11,
@@ -462,12 +466,12 @@ impl SourceType {
             SourceType::Unspecified => "SOURCE_TYPE_UNSPECIFIED",
             SourceType::Cli => "SOURCE_TYPE_CLI",
             SourceType::File => "SOURCE_TYPE_FILE",
-            SourceType::GcpPubsub => "SOURCE_TYPE_GCP_PUBSUB",
             SourceType::IngestV1 => "SOURCE_TYPE_INGEST_V1",
             SourceType::IngestV2 => "SOURCE_TYPE_INGEST_V2",
             SourceType::Kafka => "SOURCE_TYPE_KAFKA",
             SourceType::Kinesis => "SOURCE_TYPE_KINESIS",
             SourceType::Nats => "SOURCE_TYPE_NATS",
+            SourceType::PubSub => "SOURCE_TYPE_PUB_SUB",
             SourceType::Pulsar => "SOURCE_TYPE_PULSAR",
             SourceType::Vec => "SOURCE_TYPE_VEC",
             SourceType::Void => "SOURCE_TYPE_VOID",
@@ -479,12 +483,12 @@ impl SourceType {
             "SOURCE_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
             "SOURCE_TYPE_CLI" => Some(Self::Cli),
             "SOURCE_TYPE_FILE" => Some(Self::File),
-            "SOURCE_TYPE_GCP_PUBSUB" => Some(Self::GcpPubsub),
             "SOURCE_TYPE_INGEST_V1" => Some(Self::IngestV1),
             "SOURCE_TYPE_INGEST_V2" => Some(Self::IngestV2),
             "SOURCE_TYPE_KAFKA" => Some(Self::Kafka),
             "SOURCE_TYPE_KINESIS" => Some(Self::Kinesis),
             "SOURCE_TYPE_NATS" => Some(Self::Nats),
+            "SOURCE_TYPE_PUB_SUB" => Some(Self::PubSub),
             "SOURCE_TYPE_PULSAR" => Some(Self::Pulsar),
             "SOURCE_TYPE_VEC" => Some(Self::Vec),
             "SOURCE_TYPE_VOID" => Some(Self::Void),
@@ -4376,7 +4380,7 @@ where
             .create_index(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn index_metadata(
         &mut self,
@@ -4386,7 +4390,7 @@ where
             .index_metadata(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn list_indexes_metadata(
         &mut self,
@@ -4396,7 +4400,7 @@ where
             .list_indexes_metadata(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn delete_index(
         &mut self,
@@ -4406,7 +4410,7 @@ where
             .delete_index(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn list_splits(
         &mut self,
@@ -4418,9 +4422,9 @@ where
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
                 let stream = quickwit_common::ServiceStream::from(streaming);
-                stream.map_err(|error| error.into())
+                stream.map_err(crate::error::grpc_status_to_service_error)
             })
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn stage_splits(
         &mut self,
@@ -4430,7 +4434,7 @@ where
             .stage_splits(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn publish_splits(
         &mut self,
@@ -4440,7 +4444,7 @@ where
             .publish_splits(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn mark_splits_for_deletion(
         &mut self,
@@ -4450,7 +4454,7 @@ where
             .mark_splits_for_deletion(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn delete_splits(
         &mut self,
@@ -4460,7 +4464,7 @@ where
             .delete_splits(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn add_source(
         &mut self,
@@ -4470,7 +4474,7 @@ where
             .add_source(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn toggle_source(
         &mut self,
@@ -4480,7 +4484,7 @@ where
             .toggle_source(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn delete_source(
         &mut self,
@@ -4490,7 +4494,7 @@ where
             .delete_source(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn reset_source_checkpoint(
         &mut self,
@@ -4500,7 +4504,7 @@ where
             .reset_source_checkpoint(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn last_delete_opstamp(
         &mut self,
@@ -4510,7 +4514,7 @@ where
             .last_delete_opstamp(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn create_delete_task(
         &mut self,
@@ -4520,7 +4524,7 @@ where
             .create_delete_task(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn update_splits_delete_opstamp(
         &mut self,
@@ -4530,7 +4534,7 @@ where
             .update_splits_delete_opstamp(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn list_delete_tasks(
         &mut self,
@@ -4540,7 +4544,7 @@ where
             .list_delete_tasks(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn list_stale_splits(
         &mut self,
@@ -4550,7 +4554,7 @@ where
             .list_stale_splits(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn open_shards(
         &mut self,
@@ -4560,7 +4564,7 @@ where
             .open_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn acquire_shards(
         &mut self,
@@ -4570,7 +4574,7 @@ where
             .acquire_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn delete_shards(
         &mut self,
@@ -4580,7 +4584,7 @@ where
             .delete_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn list_shards(
         &mut self,
@@ -4590,7 +4594,7 @@ where
             .list_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn create_index_template(
         &mut self,
@@ -4600,7 +4604,7 @@ where
             .create_index_template(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn get_index_template(
         &mut self,
@@ -4610,7 +4614,7 @@ where
             .get_index_template(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn find_index_template_matches(
         &mut self,
@@ -4620,7 +4624,7 @@ where
             .find_index_template_matches(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn list_index_templates(
         &mut self,
@@ -4630,7 +4634,7 @@ where
             .list_index_templates(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn delete_index_templates(
         &mut self,
@@ -4640,7 +4644,7 @@ where
             .delete_index_templates(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_status_to_service_error)
     }
     async fn check_connectivity(&mut self) -> anyhow::Result<()> {
         if self.connection_addrs_rx.borrow().len() == 0 {
@@ -4682,7 +4686,7 @@ for MetastoreServiceGrpcServerAdapter {
             .create_index(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn index_metadata(
         &self,
@@ -4693,7 +4697,7 @@ for MetastoreServiceGrpcServerAdapter {
             .index_metadata(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn list_indexes_metadata(
         &self,
@@ -4704,7 +4708,7 @@ for MetastoreServiceGrpcServerAdapter {
             .list_indexes_metadata(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn delete_index(
         &self,
@@ -4715,7 +4719,7 @@ for MetastoreServiceGrpcServerAdapter {
             .delete_index(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     type ListSplitsStream = quickwit_common::ServiceStream<
         tonic::Result<ListSplitsResponse>,
@@ -4728,8 +4732,10 @@ for MetastoreServiceGrpcServerAdapter {
             .clone()
             .list_splits(request.into_inner())
             .await
-            .map(|stream| tonic::Response::new(stream.map_err(|error| error.into())))
-            .map_err(|error| error.into())
+            .map(|stream| tonic::Response::new(
+                stream.map_err(crate::error::grpc_error_to_grpc_status),
+            ))
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn stage_splits(
         &self,
@@ -4740,7 +4746,7 @@ for MetastoreServiceGrpcServerAdapter {
             .stage_splits(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn publish_splits(
         &self,
@@ -4751,7 +4757,7 @@ for MetastoreServiceGrpcServerAdapter {
             .publish_splits(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn mark_splits_for_deletion(
         &self,
@@ -4762,7 +4768,7 @@ for MetastoreServiceGrpcServerAdapter {
             .mark_splits_for_deletion(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn delete_splits(
         &self,
@@ -4773,7 +4779,7 @@ for MetastoreServiceGrpcServerAdapter {
             .delete_splits(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn add_source(
         &self,
@@ -4784,7 +4790,7 @@ for MetastoreServiceGrpcServerAdapter {
             .add_source(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn toggle_source(
         &self,
@@ -4795,7 +4801,7 @@ for MetastoreServiceGrpcServerAdapter {
             .toggle_source(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn delete_source(
         &self,
@@ -4806,7 +4812,7 @@ for MetastoreServiceGrpcServerAdapter {
             .delete_source(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn reset_source_checkpoint(
         &self,
@@ -4817,7 +4823,7 @@ for MetastoreServiceGrpcServerAdapter {
             .reset_source_checkpoint(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn last_delete_opstamp(
         &self,
@@ -4828,7 +4834,7 @@ for MetastoreServiceGrpcServerAdapter {
             .last_delete_opstamp(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn create_delete_task(
         &self,
@@ -4839,7 +4845,7 @@ for MetastoreServiceGrpcServerAdapter {
             .create_delete_task(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn update_splits_delete_opstamp(
         &self,
@@ -4850,7 +4856,7 @@ for MetastoreServiceGrpcServerAdapter {
             .update_splits_delete_opstamp(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn list_delete_tasks(
         &self,
@@ -4861,7 +4867,7 @@ for MetastoreServiceGrpcServerAdapter {
             .list_delete_tasks(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn list_stale_splits(
         &self,
@@ -4872,7 +4878,7 @@ for MetastoreServiceGrpcServerAdapter {
             .list_stale_splits(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn open_shards(
         &self,
@@ -4883,7 +4889,7 @@ for MetastoreServiceGrpcServerAdapter {
             .open_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn acquire_shards(
         &self,
@@ -4894,7 +4900,7 @@ for MetastoreServiceGrpcServerAdapter {
             .acquire_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn delete_shards(
         &self,
@@ -4905,7 +4911,7 @@ for MetastoreServiceGrpcServerAdapter {
             .delete_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn list_shards(
         &self,
@@ -4916,7 +4922,7 @@ for MetastoreServiceGrpcServerAdapter {
             .list_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn create_index_template(
         &self,
@@ -4927,7 +4933,7 @@ for MetastoreServiceGrpcServerAdapter {
             .create_index_template(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn get_index_template(
         &self,
@@ -4938,7 +4944,7 @@ for MetastoreServiceGrpcServerAdapter {
             .get_index_template(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn find_index_template_matches(
         &self,
@@ -4949,7 +4955,7 @@ for MetastoreServiceGrpcServerAdapter {
             .find_index_template_matches(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn list_index_templates(
         &self,
@@ -4960,7 +4966,7 @@ for MetastoreServiceGrpcServerAdapter {
             .list_index_templates(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn delete_index_templates(
         &self,
@@ -4971,7 +4977,7 @@ for MetastoreServiceGrpcServerAdapter {
             .delete_index_templates(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
 }
 /// Generated client implementations.

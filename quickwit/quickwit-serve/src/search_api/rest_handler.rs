@@ -489,9 +489,9 @@ fn make_streaming_reply(result: Result<hyper::Body, SearchError>) -> impl Reply 
             status_code = StatusCode::OK;
             warp::reply::Response::new(body)
         }
-        Err(err) => {
-            status_code = err.error_code().to_http_status_code();
-            warp::reply::Response::new(hyper::Body::from(err.to_string()))
+        Err(error) => {
+            status_code = error.error_code().http_status_code();
+            warp::reply::Response::new(hyper::Body::from(error.to_string()))
         }
     };
     reply::with_status(body, status_code)

@@ -1243,7 +1243,7 @@ dependencies = [
 [[package]]
 name = "chitchat"
 version = "0.8.0"
-source = "git+https://github.com/quickwit-oss/chitchat.git?rev=867207e#867207e5bb72297cb586980c48b854ec2428508b"
+source = "git+https://github.com/quickwit-oss/chitchat.git?rev=78f8aff#78f8aff838d969fb5f7c88222a237b2af21bc6be"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3975,7 +3975,7 @@ dependencies = [
 [[package]]
 name = "mrecordlog"
 version = "0.4.0"
-source = "git+https://github.com/quickwit-oss/mrecordlog?rev=2c593d3#2c593d385b5d788a84f39aed712160547f3b3256"
+source = "git+https://github.com/quickwit-oss/mrecordlog?rev=187486f#187486fcde8dcfc4d570af4af19be852ab325cde"
 dependencies = [
  "bytes",
  "crc32fast",
@@ -5605,6 +5605,7 @@ dependencies = [
  "quickwit-codegen",
  "quickwit-common",
  "quickwit-macros",
+ "quickwit-proto",
  "serde",
  "thiserror",
  "tokio",

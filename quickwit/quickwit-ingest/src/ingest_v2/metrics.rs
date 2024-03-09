@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use mrecordlog::ResourceUsage;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     new_counter_vec, new_gauge, new_gauge_vec, new_histogram_vec, HistogramVec, IntCounterVec,
@@ -28,8 +29,9 @@ pub(super) struct IngestV2Metrics {
     pub shards: IntGaugeVec<2>,
     pub wal_acquire_lock_requests_in_flight: IntGaugeVec<2>,
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
-    pub wal_disk_usage_bytes: IntGauge,
-    pub wal_memory_usage_bytes: IntGauge,
+    pub wal_disk_used_bytes: IntGauge,
+    pub wal_memory_allocated_bytes: IntGauge,
+    pub wal_memory_used_bytes: IntGauge,
 }
 
 impl Default for IngestV2Metrics {
@@ -63,18 +65,38 @@ impl Default for IngestV2Metrics {
                 &[],
                 ["operation", "type"],
             ),
-            wal_disk_usage_bytes: new_gauge(
-                "wal_disk_usage_bytes",
-                "WAL disk usage in bytes.",
+            wal_disk_used_bytes: new_gauge(
+                "wal_disk_used_bytes",
+                "WAL disk space used in bytes.",
                 "ingest",
+                &[],
             ),
-            wal_memory_usage_bytes: new_gauge(
-                "wal_memory_usage_bytes",
-                "WAL memory usage in bytes.",
+            wal_memory_allocated_bytes: new_gauge(
+                "wal_memory_allocated_bytes",
+                "WAL memory allocated in bytes.",
                 "ingest",
+                &[],
+            ),
+            wal_memory_used_bytes: new_gauge(
+                "wal_memory_used_bytes",
+                "WAL memory used in bytes.",
+                "ingest",
+                &[],
             ),
         }
     }
+}
+
+pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
+    INGEST_V2_METRICS
+        .wal_disk_used_bytes
+        .set(wal_usage.disk_used_bytes as i64);
+    INGEST_V2_METRICS
+        .wal_memory_allocated_bytes
+        .set(wal_usage.memory_allocated_bytes as i64);
+    INGEST_V2_METRICS
+        .wal_memory_used_bytes
+        .set(wal_usage.memory_used_bytes as i64);
 }
 
 pub(super) static INGEST_V2_METRICS: Lazy<IngestV2Metrics> = Lazy::new(IngestV2Metrics::default);

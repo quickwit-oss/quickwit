@@ -506,16 +506,17 @@ impl Handler<RawDocBatch> for DocProcessor {
             return Ok(());
         }
         let mut processed_docs: Vec<ProcessedDoc> = Vec::with_capacity(raw_doc_batch.docs.len());
+
         for raw_doc in raw_doc_batch.docs {
             let _protected_zone_guard = ctx.protect_zone();
             self.process_raw_doc(raw_doc, &mut processed_docs);
             ctx.record_progress();
         }
-        let processed_doc_batch = ProcessedDocBatch {
-            docs: processed_docs,
-            checkpoint_delta: raw_doc_batch.checkpoint_delta,
-            force_commit: raw_doc_batch.force_commit,
-        };
+        let processed_doc_batch = ProcessedDocBatch::new(
+            processed_docs,
+            raw_doc_batch.checkpoint_delta,
+            raw_doc_batch.force_commit,
+        );
         ctx.send_message(&self.indexer_mailbox, processed_doc_batch)
             .await?;
         Ok(())
@@ -556,7 +557,6 @@ impl Handler<NewPublishToken> for DocProcessor {
 mod tests {
     use std::sync::Arc;
 
-    use bytes::Bytes;
     use prost::Message;
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
@@ -595,10 +595,10 @@ mod tests {
         doc_processor_mailbox
             .send_message(RawDocBatch::for_test(
                 &[
-                    r#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#, // missing timestamp
-                    r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#, // ok
-                    r#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#, // ok
-                    "{", // invalid json
+                    br#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#, // missing timestamp
+                    br#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#, // ok
+                    br#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#, // ok
+                    b"{", // invalid json
                 ],
                 0..4,
             ))
@@ -679,24 +679,15 @@ mod tests {
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
         doc_processor_mailbox
-            .send_message(RawDocBatch {
-                docs: vec![
-                    Bytes::from_static(
-                        br#"{"tenant": "tenant_1", "body": "first doc for tenant 1"}"#,
-                    ),
-                    Bytes::from_static(
-                        br#"{"tenant": "tenant_2", "body": "first doc for tenant 2"}"#,
-                    ),
-                    Bytes::from_static(
-                        br#"{"tenant": "tenant_1", "body": "second doc for tenant 1"}"#,
-                    ),
-                    Bytes::from_static(
-                        br#"{"tenant": "tenant_2", "body": "second doc for tenant 2"}"#,
-                    ),
+            .send_message(RawDocBatch::for_test(
+                &[
+                    br#"{"tenant": "tenant_1", "body": "first doc for tenant 1"}"#,
+                    br#"{"tenant": "tenant_2", "body": "first doc for tenant 2"}"#,
+                    br#"{"tenant": "tenant_1", "body": "second doc for tenant 1"}"#,
+                    br#"{"tenant": "tenant_2", "body": "second doc for tenant 2"}"#,
                 ],
-                checkpoint_delta: SourceCheckpointDelta::from_range(0..2),
-                force_commit: false,
-            })
+                0..2,
+            ))
             .await?;
         universe
             .send_exit_with_success(&doc_processor_mailbox)
@@ -776,7 +767,7 @@ mod tests {
         doc_processor_mailbox
             .send_message(RawDocBatch::for_test(
                 &[
-                    r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#,
+                    br#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#,
                 ],
                 0..1,
             ))
@@ -839,13 +830,7 @@ mod tests {
         }];
         let request = ExportTraceServiceRequest { resource_spans };
         let raw_doc_json = serde_json::to_vec(&request).unwrap();
-        let raw_doc = Bytes::from(raw_doc_json);
-
-        let raw_doc_batch = RawDocBatch {
-            docs: vec![raw_doc],
-            checkpoint_delta: SourceCheckpointDelta::from_range(0..2),
-            force_commit: false,
-        };
+        let raw_doc_batch = RawDocBatch::for_test(&[&raw_doc_json], 0..2);
         doc_processor_mailbox
             .send_message(raw_doc_batch)
             .await
@@ -921,13 +906,7 @@ mod tests {
         let mut raw_doc_buffer = Vec::new();
         request.encode(&mut raw_doc_buffer).unwrap();
 
-        let raw_doc = Bytes::from(raw_doc_buffer);
-
-        let raw_doc_batch = RawDocBatch {
-            docs: vec![raw_doc],
-            checkpoint_delta: SourceCheckpointDelta::from_range(0..2),
-            force_commit: false,
-        };
+        let raw_doc_batch = RawDocBatch::for_test(&[&raw_doc_buffer], 0..2);
         doc_processor_mailbox
             .send_message(raw_doc_batch)
             .await
@@ -988,10 +967,10 @@ mod tests_vrl {
         doc_processor_mailbox
             .send_message(RawDocBatch::for_test(
                 &[
-                    r#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#, // missing timestamp
-                    r#"{"body": "happy using VRL", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#, // ok
-                    r#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#, // ok
-                    "{", // invalid json
+                    br#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#, // missing timestamp
+                    br#"{"body": "happy using VRL", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#, // ok
+                    br#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#, // ok
+                    b"{", // invalid json
                 ],
                 0..4,
             ))
@@ -1079,9 +1058,9 @@ mod tests_vrl {
             .send_message(RawDocBatch::for_test(
                 &[
                     // body,timestamp,response_date,response_time,response_payload
-                    r#""happy using VRL",1628837062,"2021-12-19T16:39:59+00:00",2,"YWJj""#,
-                    r#""happy2",1628837062,"2021-12-19T16:40:57+00:00",13,"YWJj""#,
-                    r#""happy2",1628837062,"2021-12-19T16:40:57+00:00","invalid-response_time","YWJj""#,
+                    br#""happy using VRL",1628837062,"2021-12-19T16:39:59+00:00",2,"YWJj""#,
+                    br#""happy2",1628837062,"2021-12-19T16:40:57+00:00",13,"YWJj""#,
+                    br#""happy2",1628837062,"2021-12-19T16:40:57+00:00","invalid-response_time","YWJj""#,
                 ],
                 0..4,
             ))
