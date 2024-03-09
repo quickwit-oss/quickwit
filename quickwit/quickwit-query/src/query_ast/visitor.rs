@@ -114,92 +114,92 @@ pub trait QueryAstVisitor<'a> {
 }
 
 /// Simple trait to implement a Visitor over the QueryAst.
-pub trait QueryAstMutVisitor {
+pub trait QueryAstTransformer {
     type Err;
 
-    fn visit_mut(&mut self, query_ast: QueryAst) -> Result<Option<QueryAst>, Self::Err> {
+    fn transform(&mut self, query_ast: QueryAst) -> Result<Option<QueryAst>, Self::Err> {
         match query_ast {
-            QueryAst::Bool(bool_query) => self.visit_bool_mut(bool_query),
-            QueryAst::Term(term_query) => self.visit_term_mut(term_query),
-            QueryAst::TermSet(term_set_query) => self.visit_term_set_mut(term_set_query),
-            QueryAst::FullText(full_text_query) => self.visit_full_text_mut(full_text_query),
+            QueryAst::Bool(bool_query) => self.transform_bool(bool_query),
+            QueryAst::Term(term_query) => self.transform_term(term_query),
+            QueryAst::TermSet(term_set_query) => self.transform_term_set(term_set_query),
+            QueryAst::FullText(full_text_query) => self.transform_full_text(full_text_query),
             QueryAst::PhrasePrefix(phrase_prefix_query) => {
-                self.visit_phrase_prefix_mut(phrase_prefix_query)
+                self.transform_phrase_prefix(phrase_prefix_query)
             }
-            QueryAst::Range(range_query) => self.visit_range_mut(range_query),
-            QueryAst::MatchAll => self.visit_match_all_mut(),
-            QueryAst::MatchNone => self.visit_match_none_mut(),
-            QueryAst::Boost { underlying, boost } => self.visit_boost_mut(*underlying, boost),
-            QueryAst::UserInput(user_text_query) => self.visit_user_text_mut(user_text_query),
-            QueryAst::FieldPresence(exists) => self.visit_exists_mut(exists),
-            QueryAst::Wildcard(wildcard) => self.visit_wildcard_mut(wildcard),
+            QueryAst::Range(range_query) => self.transform_range(range_query),
+            QueryAst::MatchAll => self.transform_match_all(),
+            QueryAst::MatchNone => self.transform_match_none(),
+            QueryAst::Boost { underlying, boost } => self.transform_boost(*underlying, boost),
+            QueryAst::UserInput(user_text_query) => self.transform_user_text(user_text_query),
+            QueryAst::FieldPresence(exists) => self.transform_exists(exists),
+            QueryAst::Wildcard(wildcard) => self.transform_wildcard(wildcard),
         }
     }
 
-    fn visit_bool_mut(&mut self, mut bool_query: BoolQuery) -> Result<Option<QueryAst>, Self::Err> {
+    fn transform_bool(&mut self, mut bool_query: BoolQuery) -> Result<Option<QueryAst>, Self::Err> {
         bool_query.must = bool_query
             .must
             .into_iter()
-            .filter_map(|query_ast| self.visit_mut(query_ast).transpose())
+            .filter_map(|query_ast| self.transform(query_ast).transpose())
             .collect::<Result<Vec<_>, _>>()?;
         bool_query.should = bool_query
             .should
             .into_iter()
-            .filter_map(|query_ast| self.visit_mut(query_ast).transpose())
+            .filter_map(|query_ast| self.transform(query_ast).transpose())
             .collect::<Result<Vec<_>, _>>()?;
         bool_query.must_not = bool_query
             .must_not
             .into_iter()
-            .filter_map(|query_ast| self.visit_mut(query_ast).transpose())
+            .filter_map(|query_ast| self.transform(query_ast).transpose())
             .collect::<Result<Vec<_>, _>>()?;
         bool_query.filter = bool_query
             .filter
             .into_iter()
-            .filter_map(|query_ast| self.visit_mut(query_ast).transpose())
+            .filter_map(|query_ast| self.transform(query_ast).transpose())
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Some(QueryAst::Bool(bool_query)))
     }
 
-    fn visit_term_mut(&mut self, term_query: TermQuery) -> Result<Option<QueryAst>, Self::Err> {
+    fn transform_term(&mut self, term_query: TermQuery) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::Term(term_query)))
     }
 
-    fn visit_term_set_mut(
+    fn transform_term_set(
         &mut self,
         term_set: TermSetQuery,
     ) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::TermSet(term_set)))
     }
 
-    fn visit_full_text_mut(
+    fn transform_full_text(
         &mut self,
         full_text: FullTextQuery,
     ) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::FullText(full_text)))
     }
 
-    fn visit_phrase_prefix_mut(
+    fn transform_phrase_prefix(
         &mut self,
         phrase_query: PhrasePrefixQuery,
     ) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::PhrasePrefix(phrase_query)))
     }
 
-    fn visit_match_all_mut(&mut self) -> Result<Option<QueryAst>, Self::Err> {
+    fn transform_match_all(&mut self) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::MatchAll))
     }
 
-    fn visit_match_none_mut(&mut self) -> Result<Option<QueryAst>, Self::Err> {
+    fn transform_match_none(&mut self) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::MatchNone))
     }
 
-    fn visit_boost_mut(
+    fn transform_boost(
         &mut self,
         underlying: QueryAst,
         boost: NotNaNf32,
     ) -> Result<Option<QueryAst>, Self::Err> {
-        self.visit_mut(underlying).map(|maybe_ast| {
+        self.transform(underlying).map(|maybe_ast| {
             maybe_ast.map(|underlying| QueryAst::Boost {
                 underlying: Box::new(underlying),
                 boost,
@@ -207,25 +207,25 @@ pub trait QueryAstMutVisitor {
         })
     }
 
-    fn visit_range_mut(&mut self, range_query: RangeQuery) -> Result<Option<QueryAst>, Self::Err> {
+    fn transform_range(&mut self, range_query: RangeQuery) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::Range(range_query)))
     }
 
-    fn visit_user_text_mut(
+    fn transform_user_text(
         &mut self,
         user_text_query: UserInputQuery,
     ) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::UserInput(user_text_query)))
     }
 
-    fn visit_exists_mut(
+    fn transform_exists(
         &mut self,
         exists_query: FieldPresenceQuery,
     ) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::FieldPresence(exists_query)))
     }
 
-    fn visit_wildcard_mut(
+    fn transform_wildcard(
         &mut self,
         wildcard_query: WildcardQuery,
     ) -> Result<Option<QueryAst>, Self::Err> {

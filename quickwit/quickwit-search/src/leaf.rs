@@ -30,7 +30,7 @@ use quickwit_proto::search::{
     CountHits, LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue,
     SplitIdAndFooterOffsets, SplitSearchError,
 };
-use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstMutVisitor, RangeQuery, TermQuery};
+use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery, TermQuery};
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
@@ -453,7 +453,7 @@ fn remove_redundant_timestamp_range(
     };
     warn!("before={query_ast:?}");
     let new_ast = visitor
-        .visit_mut(query_ast)
+        .transform(query_ast)
         .expect("can't fail unwrapping Infallible")
         .unwrap_or(QueryAst::MatchNone);
     warn!("after={new_ast:?}");
@@ -504,26 +504,26 @@ impl<'a> RemoveRedundantTimestampRange<'a> {
     }
 }
 
-impl<'a> QueryAstMutVisitor for RemoveRedundantTimestampRange<'a> {
+impl<'a> QueryAstTransformer for RemoveRedundantTimestampRange<'a> {
     type Err = std::convert::Infallible;
 
-    fn visit_bool_mut(&mut self, mut bool_query: BoolQuery) -> Result<Option<QueryAst>, Self::Err> {
+    fn transform_bool(&mut self, mut bool_query: BoolQuery) -> Result<Option<QueryAst>, Self::Err> {
         // we only want to visit sub-queries which are strict (positive) requirements
         bool_query.must = bool_query
             .must
             .into_iter()
-            .filter_map(|query_ast| self.visit_mut(query_ast).transpose())
+            .filter_map(|query_ast| self.transform(query_ast).transpose())
             .collect::<Result<Vec<_>, _>>()?;
         bool_query.filter = bool_query
             .filter
             .into_iter()
-            .filter_map(|query_ast| self.visit_mut(query_ast).transpose())
+            .filter_map(|query_ast| self.transform(query_ast).transpose())
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Some(QueryAst::Bool(bool_query)))
     }
 
-    fn visit_range_mut(
+    fn transform_range(
         &mut self,
         mut range_query: RangeQuery,
     ) -> Result<Option<QueryAst>, Self::Err> {
@@ -582,7 +582,7 @@ impl<'a> QueryAstMutVisitor for RemoveRedundantTimestampRange<'a> {
         }
     }
 
-    fn visit_term_mut(&mut self, term_query: TermQuery) -> Result<Option<QueryAst>, Self::Err> {
+    fn transform_term(&mut self, term_query: TermQuery) -> Result<Option<QueryAst>, Self::Err> {
         // TODO we could remove query bounds, this point query surely is more precise, and it
         // doesn't require loading a fastfield
         Ok(Some(QueryAst::Term(term_query)))
