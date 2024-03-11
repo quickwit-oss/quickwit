@@ -25,14 +25,14 @@ use quickwit_ingest::IngestRequestV2Builder;
 use quickwit_proto::ingest::router::{IngestRouterService, IngestRouterServiceClient, IngestFailureReason};
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::IndexId;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use tracing::warn;
 
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::ingest_api::lines;
 use crate::Body;
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize)]
 pub(crate) struct ElasticBulkResponse {
     #[serde(rename = "took")]
     pub took_millis: u64,
@@ -40,19 +40,29 @@ pub(crate) struct ElasticBulkResponse {
     pub items: Vec<ElasticBulkItem>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub(crate) struct ElasticBulkItem {
     pub action: ElasticBulkAction,
     pub response: ElasticBulkActionResponse,
 }
 
+
+#[derive(Debug, Serialize)]
 pub(crate) struct ElasticBulkActionResponse {
     #[serde(rename = "_index")]
     pub index_id: IndexId,
+    #[serde(serialize_with="serialize_status_code")]
     pub status_code: StatusCode,
     pub error: Option<ElasticBulkError>,
 }
 
+fn serialize_status_code<S>(status_code: &StatusCode, serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer
+{
+    serializer.serialize_u16(status_code.as_u16())
+}
+
+#[derive(Debug, Serialize)]
 pub(crate) struct ElasticBulkError {
     #[serde(rename = "index")]
     pub index_id: Option<IndexId>,
@@ -61,6 +71,7 @@ pub(crate) struct ElasticBulkError {
     pub reason: String,
 }
 
+#[derive(Debug,Serialize)]
 pub(crate) enum ElasticBulkAction {
 }
 
@@ -113,24 +124,25 @@ pub(crate) async fn elastic_bulk_ingest_v2(
         let ingest_response_v2 = ingest_router.ingest(ingest_request).await?;
         let took_millis = now.elapsed().as_millis() as u64;
         let errors = !ingest_response_v2.failures.is_empty();
-        for failure in ingest_response_v2.failures {
-            // This custom logic for Airmail is temporary.
-            if failure.reason() == IngestFailureReason::IndexNotFound {
-                let reason = format!("index `{}` not found", failure.index_id);
-                let elasticsearch_error = ElasticsearchError::new(StatusCode::NOT_FOUND, reason);
-                return Err(elasticsearch_error);
-            }
-        }
-        let mut items = Vec::new();
         // for failure in ingest_response_v2.failures {
-        //     match failure.reason() {
-        //         IngestFailureReason::IndexNotFound => {
-
-        //         }
-        //         _ => {
-        //             // TODO
-        //         }
+        //     // This custom logic for Airmail is temporary.
+        //     if failure.reason() == IngestFailureReason::IndexNotFound {
+        //         let reason = format!("index `{}` not found", failure.index_id);
+        //         let elasticsearch_error = ElasticsearchError::new(StatusCode::NOT_FOUND, reason);
+        //         return Err(elasticsearch_error);
+        //     }
         // }
+        let mut items = Vec::new();
+        for failure in ingest_response_v2.failures {
+            match failure.reason() {
+                IngestFailureReason::IndexNotFound => {
+                }
+                _ => {
+                    // TODO
+                    todo!();
+                }
+        }
+        todo!();
         let bulk_response = ElasticBulkResponse {
             took_millis,
             errors,
