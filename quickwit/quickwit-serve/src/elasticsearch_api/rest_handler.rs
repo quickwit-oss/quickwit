@@ -269,7 +269,10 @@ fn build_request_for_es_api(
 
     let max_hits = search_params.size.or(search_body.size).unwrap_or(10);
     let start_offset = search_params.from.or(search_body.from).unwrap_or(0);
-    let count_hits = match search_params.track_total_hits {
+    let count_hits = match search_params
+        .track_total_hits
+        .or(search_body.track_total_hits)
+    {
         None => CountHits::Underestimate,
         Some(TrackTotalHits::Track(false)) => CountHits::Underestimate,
         Some(TrackTotalHits::Count(count)) if count <= max_hits as i64 => CountHits::Underestimate,
