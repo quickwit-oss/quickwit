@@ -61,7 +61,7 @@ use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::ingest_controller::IngestControllerStats;
 use crate::ingest::IngestController;
-use crate::model::{ControlPlaneModel, ControlPlaneModelMetrics};
+use crate::model::ControlPlaneModel;
 use crate::IndexerPool;
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
@@ -139,7 +139,8 @@ impl ControlPlane {
 pub struct ControlPlaneObservableState {
     pub indexing_scheduler: IndexingSchedulerState,
     pub ingest_controller: IngestControllerStats,
-    pub model_metrics: ControlPlaneModelMetrics,
+    pub num_indexes: usize,
+    pub num_sources: usize,
 }
 
 #[async_trait]
@@ -154,7 +155,8 @@ impl Actor for ControlPlane {
         ControlPlaneObservableState {
             indexing_scheduler: self.indexing_scheduler.observable_state(),
             ingest_controller: self.ingest_controller.stats,
-            model_metrics: self.model.observable_state(),
+            num_indexes: self.model.num_indexes(),
+            num_sources: self.model.num_sources(),
         }
     }
 
@@ -2003,8 +2005,8 @@ mod tests {
         assert!(matches!(error, ControlPlaneError::Unavailable { .. }));
 
         let control_plane_state = control_plane_mailbox.ask(Observe).await.unwrap();
-        assert_eq!(control_plane_state.model_metrics.num_indexes, 1);
-        assert_eq!(control_plane_state.model_metrics.num_sources, 1);
+        assert_eq!(control_plane_state.num_indexes, 1);
+        assert_eq!(control_plane_state.num_sources, 1);
 
         universe.assert_quit().await;
     }
