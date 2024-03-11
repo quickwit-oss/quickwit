@@ -412,6 +412,68 @@ fn rewrite_request(
     }
 }
 
+// equivalent to Bound::map, which is unstable
+pub fn map_bound<T, U>(bound: Bound<T>, f: impl FnOnce(T) -> U) -> Bound<U> {
+    use Bound::*;
+    match bound {
+        Unbounded => Unbounded,
+        Included(x) => Included(f(x)),
+        Excluded(x) => Excluded(f(x)),
+    }
+}
+
+// returns the max of left and right, that isn't unbounded. Useful for making
+// the intersection of lower bound of ranges
+fn max_bound<T: Ord + Copy>(left: Bound<T>, right: Bound<T>) -> Bound<T> {
+    use Bound::*;
+    match (left, right) {
+        (Unbounded, right) => right,
+        (left, Unbounded) => left,
+        (Included(left), Included(right)) => Included(left.max(right)),
+        (Excluded(left), Excluded(right)) => Excluded(left.max(right)),
+        (excluded_total @ Excluded(excluded), included_total @ Included(included)) => {
+            if included > excluded {
+                included_total
+            } else {
+                excluded_total
+            }
+        }
+        (included_total @ Included(included), excluded_total @ Excluded(excluded)) => {
+            if included > excluded {
+                included_total
+            } else {
+                excluded_total
+            }
+        }
+    }
+}
+
+// returns the min of left and right, that isn't unbounded. Useful for making
+// the intersection of upper bound of ranges
+fn min_bound<T: Ord + Copy>(left: Bound<T>, right: Bound<T>) -> Bound<T> {
+    use Bound::*;
+    match (left, right) {
+        (Unbounded, right) => right,
+        (left, Unbounded) => left,
+        (Included(left), Included(right)) => Included(left.min(right)),
+        (Excluded(left), Excluded(right)) => Excluded(left.min(right)),
+        (excluded_total @ Excluded(excluded), included_total @ Included(included)) => {
+            if included < excluded {
+                included_total
+            } else {
+                excluded_total
+            }
+        }
+        (included_total @ Included(included), excluded_total @ Excluded(excluded)) => {
+            if included < excluded {
+                included_total
+            } else {
+                excluded_total
+            }
+        }
+    }
+}
+
 /// remove timestamp range that would be present both in QueryAst and SearchRequest
 ///
 /// this can save us from doing double the work in some cases, and help with the partial request
@@ -426,14 +488,16 @@ fn remove_redundant_timestamp_range(
         return;
     };
 
-    // inclusive
     let start_timestamp = search_request
         .start_timestamp
-        .map(DateTime::from_timestamp_secs);
-    // exclusive
+        .map(DateTime::from_timestamp_secs)
+        .map(Bound::Included)
+        .unwrap_or(Bound::Unbounded);
     let end_timestamp = search_request
         .end_timestamp
-        .map(DateTime::from_timestamp_secs);
+        .map(DateTime::from_timestamp_secs)
+        .map(Bound::Excluded)
+        .unwrap_or(Bound::Unbounded);
 
     let mut visitor = RemoveTimestampRange {
         timestamp_field,
@@ -449,43 +513,53 @@ fn remove_redundant_timestamp_range(
         visitor.start_timestamp,
         split.timestamp_start.map(DateTime::from_timestamp_secs),
     ) {
-        (Some(query_ts), Some(split_ts)) => {
-            // if the query starts sooner or at the same timestamp as the split, every doc is okay
+        (Bound::Included(query_ts), Some(split_ts)) => {
             if query_ts > split_ts {
-                Some(query_ts)
+                Bound::Included(query_ts)
             } else {
-                None
+                Bound::Unbounded
             }
         }
-        (None, Some(_)) => None,
+        (Bound::Excluded(query_ts), Some(split_ts)) => {
+            if query_ts >= split_ts {
+                Bound::Excluded(query_ts)
+            } else {
+                Bound::Unbounded
+            }
+        }
+        (Bound::Unbounded, Some(_)) => Bound::Unbounded,
         (timestamp, None) => timestamp,
     };
     let final_end_timestamp = match (
         visitor.end_timestamp,
         split.timestamp_end.map(DateTime::from_timestamp_secs),
     ) {
-        (Some(query_ts), Some(split_ts)) => {
-            // if the query ends after or at the timestamp of the split, every doc is okay
-            // query_ts is not inclusive, but split_ts is, so if both are equal, we need to filter.
-            if query_ts <= split_ts {
-                Some(query_ts)
+        (Bound::Included(query_ts), Some(split_ts)) => {
+            if query_ts < split_ts {
+                Bound::Included(query_ts)
             } else {
-                None
+                Bound::Unbounded
             }
         }
-        (None, Some(_)) => None,
+        (Bound::Excluded(query_ts), Some(split_ts)) => {
+            if query_ts <= split_ts {
+                Bound::Excluded(query_ts)
+            } else {
+                Bound::Unbounded
+            }
+        }
+        (Bound::Unbounded, Some(_)) => Bound::Unbounded,
         (timestamp, None) => timestamp,
     };
-
-    if final_start_timestamp.is_some() || final_end_timestamp.is_some() {
+    if final_start_timestamp != Bound::Unbounded || final_end_timestamp != Bound::Unbounded {
         let range = RangeQuery {
             field: timestamp_field.to_string(),
-            lower_bound: final_start_timestamp
-                .map(|bound| Bound::Included(bound.into_timestamp_nanos().into()))
-                .unwrap_or(Bound::Unbounded),
-            upper_bound: final_end_timestamp
-                .map(|bound| Bound::Excluded(bound.into_timestamp_nanos().into()))
-                .unwrap_or(Bound::Unbounded),
+            lower_bound: map_bound(final_start_timestamp, |bound| {
+                bound.into_timestamp_nanos().into()
+            }),
+            upper_bound: map_bound(final_end_timestamp, |bound| {
+                bound.into_timestamp_nanos().into()
+            }),
         };
         if let QueryAst::Bool(bool_query) = &mut new_ast {
             bool_query.filter.push(range.into());
@@ -505,10 +579,11 @@ fn remove_redundant_timestamp_range(
 }
 
 /// Remove all `must` and `filter timestamp ranges, and summarize them
+#[derive(Debug, Clone)]
 struct RemoveTimestampRange<'a> {
     timestamp_field: &'a str,
-    start_timestamp: Option<DateTime>,
-    end_timestamp: Option<DateTime>,
+    start_timestamp: Bound<DateTime>,
+    end_timestamp: Bound<DateTime>,
 }
 
 impl<'a> RemoveTimestampRange<'a> {
@@ -518,42 +593,34 @@ impl<'a> RemoveTimestampRange<'a> {
         included: bool,
     ) {
         use quickwit_query::InterpretUserInput;
-        let Some(mut lower_bound) = DateTime::interpret_json(lower_bound) else {
+        let Some(lower_bound) = DateTime::interpret_json(lower_bound) else {
             // we shouldn't be able to get here, we would have errored much earlier in root search
             warn!("unparseable time bound in leaf search: {lower_bound:?}");
             return;
         };
-        if !included {
-            // lowerbound we keep is inclusive, to make it exclusive we forbid the very 1st value
-            // of the range
-            lower_bound = DateTime::from_timestamp_nanos(lower_bound.into_timestamp_nanos() + 1);
-        }
+        let bound = if included {
+            Bound::Included(lower_bound)
+        } else {
+            Bound::Excluded(lower_bound)
+        };
 
-        self.start_timestamp = Some(
-            self.start_timestamp
-                .map(|ts| ts.max(lower_bound))
-                .unwrap_or(lower_bound),
-        );
+        self.start_timestamp = max_bound(self.start_timestamp, bound);
     }
 
     fn update_end_timestamp(&mut self, upper_bound: &quickwit_query::JsonLiteral, included: bool) {
         use quickwit_query::InterpretUserInput;
-        let Some(mut upper_bound) = DateTime::interpret_json(upper_bound) else {
+        let Some(upper_bound) = DateTime::interpret_json(upper_bound) else {
             // we shouldn't be able to get here, we would have errored much earlier in root search
             warn!("unparseable time bound in leaf search: {upper_bound:?}");
             return;
         };
-        if included {
-            // upperbound we keep is exclusive, to make it inclusive we allow the very last value
-            // of the range
-            upper_bound = DateTime::from_timestamp_nanos(upper_bound.into_timestamp_nanos() + 1);
-        }
+        let bound = if included {
+            Bound::Included(upper_bound)
+        } else {
+            Bound::Excluded(upper_bound)
+        };
 
-        self.end_timestamp = Some(
-            self.end_timestamp
-                .map(|ts| ts.min(upper_bound))
-                .unwrap_or(upper_bound),
-        );
+        self.end_timestamp = min_bound(self.end_timestamp, bound);
     }
 }
 
@@ -1026,7 +1093,7 @@ mod tests {
 
         let expected_lower_exclusive = RangeQuery {
             field: timestamp_field.to_string(),
-            lower_bound: Bound::Included((time2 * S_TO_NS + 1).into()),
+            lower_bound: Bound::Excluded((time2 * S_TO_NS).into()),
             upper_bound: Bound::Unbounded,
         };
         let search_request = SearchRequest {
@@ -1072,7 +1139,7 @@ mod tests {
         let expected_upper_2_inc = RangeQuery {
             field: timestamp_field.to_string(),
             lower_bound: Bound::Unbounded,
-            upper_bound: Bound::Excluded((time2 * S_TO_NS + 1).into()),
+            upper_bound: Bound::Included((time2 * S_TO_NS).into()),
         };
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
