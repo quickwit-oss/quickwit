@@ -51,12 +51,8 @@ service IngesterService {
   // Closes a set of shards. This RPC is called by the control plane.
   rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
 
-  // Pings an ingester to check if it is ready to host shards and serve requests.
-  rpc Ping(PingRequest) returns (PingResponse);
-
   // Decommissions the ingester.
   rpc Decommission(DecommissionRequest) returns (DecommissionResponse);
-
 }
 
 message RetainShardsForSource {
@@ -263,14 +259,6 @@ message CloseShardsRequest {
 }
 
 message CloseShardsResponse {
-}
-
-message PingRequest {
-  string leader_id = 1;
-  optional string follower_id = 2;
-}
-
-message PingResponse {
 }
 
 message DecommissionRequest {

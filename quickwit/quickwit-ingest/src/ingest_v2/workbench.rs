@@ -112,6 +112,9 @@ impl IngestWorkbench {
             GetOrCreateOpenShardsFailureReason::SourceNotFound => {
                 SubworkbenchFailure::SourceNotFound
             }
+            GetOrCreateOpenShardsFailureReason::NoIngestersAvailable => {
+                SubworkbenchFailure::NoShardsAvailable
+            }
             GetOrCreateOpenShardsFailureReason::Unspecified => {
                 warn!(
                     "failure reason for subrequest `{}` is unspecified",
@@ -145,7 +148,7 @@ impl IngestWorkbench {
         // `NotFound`, and `TooManyRequests`: in reality, we should never have to handle these cases
         // here.
         match persist_error {
-            IngestV2Error::IngesterUnavailable { .. } | IngestV2Error::Unavailable(_) => {
+            IngestV2Error::Unavailable(_) => {
                 self.unavailable_leaders.insert(persist_summary.leader_id);
 
                 for subrequest_id in persist_summary.subrequest_ids {
