@@ -26,7 +26,8 @@ use quickwit_common::metrics::{
 
 pub(super) struct IngestV2Metrics {
     pub reset_shards_operations_total: IntCounterVec<1>,
-    pub shards: IntGaugeVec<2>,
+    pub open_shards: IntGauge,
+    pub closed_shards: IntGauge,
     pub wal_acquire_lock_requests_in_flight: IntGaugeVec<2>,
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
     pub wal_disk_used_bytes: IntGauge,
@@ -44,12 +45,17 @@ impl Default for IngestV2Metrics {
                 &[],
                 ["status"],
             ),
-            shards: new_gauge_vec(
+            open_shards: new_gauge(
                 "shards",
-                "Number of shards.",
+                "Number of shards hosted by the ingester.",
                 "ingest",
-                &[],
-                ["state", "index_id"],
+                &[("state", "open")],
+            ),
+            closed_shards: new_gauge(
+                "shards",
+                "Number of shards hosted by the ingester.",
+                "ingest",
+                &[("state", "closed")],
             ),
             wal_acquire_lock_requests_in_flight: new_gauge_vec(
                 "wal_acquire_lock_requests_in_flight",
