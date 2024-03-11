@@ -4,3 +4,16 @@ endpoint: _cluster/settings
 json:
   transient:
     action.auto_create_index: "false"
+---
+method: PUT
+endpoint: simple
+json: {
+  "mappings": {
+    "properties": {
+      "created_at": {
+        "type": "date",
+        "store": true
+      }
+    }
+  }
+}

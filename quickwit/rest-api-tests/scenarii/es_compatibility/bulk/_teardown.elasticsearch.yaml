@@ -4,3 +4,7 @@ endpoint: _cluster/settings
 json:
   transient:
     action.auto_create_index: "true"
+---
+method: DELETE
+endpoint: simple
+status_code: null

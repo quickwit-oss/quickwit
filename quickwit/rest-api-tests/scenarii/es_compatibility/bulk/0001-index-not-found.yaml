@@ -1,8 +1,8 @@
 ndjson:
-  - "index": { "_index": "test-index-not-found", "_id": "1" }
-  - {"message": "Hello, World!"}
-  - "index": { "_index": "test-index-not-found" }
-  - {"message": "Hello, World!"}
+  - index: {"_index": "test-index-not-found", "_id": "1"}
+  - message: "Hello, World!"
+  - index: {"_index": "test-index-not-found"}
+  - message: "Hello, World!"
 status_code: 200
 expected:
   errors: true
