@@ -72,8 +72,8 @@ impl CloseIdleShardsTask {
 
             for (queue_id, shard) in &mut state_guard.shards {
                 if shard.is_open() && shard.is_idle(now, self.idle_shard_timeout) {
-                    info!("closing idle shard `{queue_id}`");
                     shard.close();
+                    info!("closed idle shard `{queue_id}`");
                 }
             }
         }
