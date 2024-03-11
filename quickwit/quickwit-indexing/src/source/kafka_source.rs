@@ -176,6 +176,7 @@ impl ConsumerContext for RdKafkaContext {
                     );
                 }
             }
+            info!(tpl=?tpl, "setting topic partition list");
         }
     }
 }
