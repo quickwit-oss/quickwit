@@ -114,6 +114,7 @@ pub enum GetOrCreateOpenShardsFailureReason {
     Unspecified = 0,
     IndexNotFound = 1,
     SourceNotFound = 2,
+    NoIngestersAvailable = 3,
 }
 impl GetOrCreateOpenShardsFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -131,6 +132,9 @@ impl GetOrCreateOpenShardsFailureReason {
             GetOrCreateOpenShardsFailureReason::SourceNotFound => {
                 "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_SOURCE_NOT_FOUND"
             }
+            GetOrCreateOpenShardsFailureReason::NoIngestersAvailable => {
+                "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_NO_INGESTERS_AVAILABLE"
+            }
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -144,6 +148,9 @@ impl GetOrCreateOpenShardsFailureReason {
             }
             "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_SOURCE_NOT_FOUND" => {
                 Some(Self::SourceNotFound)
+            }
+            "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_NO_INGESTERS_AVAILABLE" => {
+                Some(Self::NoIngestersAvailable)
             }
             _ => None,
         }

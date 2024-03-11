@@ -257,7 +257,6 @@ impl ControlPlaneModel {
             .set_shards_as_unavailable(unavailable_leaders);
     }
 
-    #[cfg(test)]
     pub(crate) fn all_shards(&self) -> impl Iterator<Item = &ShardEntry> + '_ {
         self.shard_table.all_shards()
     }
