@@ -75,9 +75,9 @@ impl From<io::Error> for IngestServiceError {
 impl From<IngestV2Error> for IngestServiceError {
     fn from(error: IngestV2Error) -> Self {
         match error {
-            IngestV2Error::IngesterUnavailable { .. }
-            | IngestV2Error::Timeout(_)
-            | IngestV2Error::Unavailable(_) => IngestServiceError::Unavailable,
+            IngestV2Error::Timeout(_) | IngestV2Error::Unavailable(_) => {
+                IngestServiceError::Unavailable
+            }
             IngestV2Error::Internal(message) => IngestServiceError::Internal(message),
             IngestV2Error::ShardNotFound { .. } => {
                 IngestServiceError::Internal("shard not found".to_string())

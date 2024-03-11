@@ -448,7 +448,7 @@ async fn fault_tolerant_fetch_stream(
                     index_uid=%index_uid,
                     source_id=%source_id,
                     shard_id=%shard_id,
-                    "ingester `{ingester_id}` is not available: failing over to ingester `{failover_ingester_id}`"
+                    "ingester `{ingester_id}` is unavailable: failing over to ingester `{failover_ingester_id}`"
                 );
             } else {
                 error!(
@@ -456,11 +456,11 @@ async fn fault_tolerant_fetch_stream(
                     index_uid=%index_uid,
                     source_id=%source_id,
                     shard_id=%shard_id,
-                    "ingester `{ingester_id}` is not available: closing fetch stream"
+                    "ingester `{ingester_id}` is unavailable: closing fetch stream"
                 );
-                let ingest_error = IngestV2Error::IngesterUnavailable {
-                    ingester_id: ingester_id.clone(),
-                };
+                let message =
+                    format!("ingester `{ingester_id}` is unavailable: closing fetch stream");
+                let ingest_error = IngestV2Error::Unavailable(message);
                 // Attempt to send the error to the consumer in a best-effort manner before
                 // returning.
                 let fetch_stream_error = FetchStreamError {

@@ -364,19 +364,6 @@ pub struct CloseShardsResponse {}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PingRequest {
-    #[prost(string, tag = "1")]
-    pub leader_id: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "2")]
-    pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PingResponse {}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DecommissionRequest {}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -571,11 +558,6 @@ impl RpcName for CloseShardsRequest {
         "close_shards"
     }
 }
-impl RpcName for PingRequest {
-    fn rpc_name() -> &'static str {
-        "ping"
-    }
-}
 impl RpcName for DecommissionRequest {
     fn rpc_name() -> &'static str {
         "decommission"
@@ -629,11 +611,6 @@ pub trait IngesterService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync +
         &mut self,
         request: CloseShardsRequest,
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse>;
-    /// Pings an ingester to check if it is ready to host shards and serve requests.
-    async fn ping(
-        &mut self,
-        request: PingRequest,
-    ) -> crate::ingest::IngestV2Result<PingResponse>;
     /// Decommissions the ingester.
     async fn decommission(
         &mut self,
@@ -775,12 +752,6 @@ impl IngesterService for IngesterServiceClient {
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
         self.inner.close_shards(request).await
     }
-    async fn ping(
-        &mut self,
-        request: PingRequest,
-    ) -> crate::ingest::IngestV2Result<PingResponse> {
-        self.inner.ping(request).await
-    }
     async fn decommission(
         &mut self,
         request: DecommissionRequest,
@@ -848,12 +819,6 @@ pub mod ingester_service_mock {
             request: super::CloseShardsRequest,
         ) -> crate::ingest::IngestV2Result<super::CloseShardsResponse> {
             self.inner.lock().await.close_shards(request).await
-        }
-        async fn ping(
-            &mut self,
-            request: super::PingRequest,
-        ) -> crate::ingest::IngestV2Result<super::PingResponse> {
-            self.inner.lock().await.ping(request).await
         }
         async fn decommission(
             &mut self,
@@ -1006,22 +971,6 @@ impl tower::Service<CloseShardsRequest> for Box<dyn IngesterService> {
         Box::pin(fut)
     }
 }
-impl tower::Service<PingRequest> for Box<dyn IngesterService> {
-    type Response = PingResponse;
-    type Error = crate::ingest::IngestV2Error;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(&mut self, request: PingRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.ping(request).await };
-        Box::pin(fut)
-    }
-}
 impl tower::Service<DecommissionRequest> for Box<dyn IngesterService> {
     type Response = DecommissionResponse;
     type Error = crate::ingest::IngestV2Error;
@@ -1082,11 +1031,6 @@ struct IngesterServiceTowerServiceStack {
         CloseShardsResponse,
         crate::ingest::IngestV2Error,
     >,
-    ping_svc: quickwit_common::tower::BoxService<
-        PingRequest,
-        PingResponse,
-        crate::ingest::IngestV2Error,
-    >,
     decommission_svc: quickwit_common::tower::BoxService<
         DecommissionRequest,
         DecommissionResponse,
@@ -1105,7 +1049,6 @@ impl Clone for IngesterServiceTowerServiceStack {
             retain_shards_svc: self.retain_shards_svc.clone(),
             truncate_shards_svc: self.truncate_shards_svc.clone(),
             close_shards_svc: self.close_shards_svc.clone(),
-            ping_svc: self.ping_svc.clone(),
             decommission_svc: self.decommission_svc.clone(),
         }
     }
@@ -1159,12 +1102,6 @@ impl IngesterService for IngesterServiceTowerServiceStack {
         request: CloseShardsRequest,
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
         self.close_shards_svc.ready().await?.call(request).await
-    }
-    async fn ping(
-        &mut self,
-        request: PingRequest,
-    ) -> crate::ingest::IngestV2Result<PingResponse> {
-        self.ping_svc.ready().await?.call(request).await
     }
     async fn decommission(
         &mut self,
@@ -1253,16 +1190,6 @@ type CloseShardsLayer = quickwit_common::tower::BoxLayer<
     CloseShardsResponse,
     crate::ingest::IngestV2Error,
 >;
-type PingLayer = quickwit_common::tower::BoxLayer<
-    quickwit_common::tower::BoxService<
-        PingRequest,
-        PingResponse,
-        crate::ingest::IngestV2Error,
-    >,
-    PingRequest,
-    PingResponse,
-    crate::ingest::IngestV2Error,
->;
 type DecommissionLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         DecommissionRequest,
@@ -1283,7 +1210,6 @@ pub struct IngesterServiceTowerLayerStack {
     retain_shards_layers: Vec<RetainShardsLayer>,
     truncate_shards_layers: Vec<TruncateShardsLayer>,
     close_shards_layers: Vec<CloseShardsLayer>,
-    ping_layers: Vec<PingLayer>,
     decommission_layers: Vec<DecommissionLayer>,
 }
 impl IngesterServiceTowerLayerStack {
@@ -1495,31 +1421,6 @@ impl IngesterServiceTowerLayerStack {
         >>::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
-                    PingRequest,
-                    PingResponse,
-                    crate::ingest::IngestV2Error,
-                >,
-            > + Clone + Send + Sync + 'static,
-        <L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                PingRequest,
-                PingResponse,
-                crate::ingest::IngestV2Error,
-            >,
-        >>::Service: tower::Service<
-                PingRequest,
-                Response = PingResponse,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <<L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                PingRequest,
-                PingResponse,
-                crate::ingest::IngestV2Error,
-            >,
-        >>::Service as tower::Service<PingRequest>>::Future: Send + 'static,
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
                     DecommissionRequest,
                     DecommissionResponse,
                     crate::ingest::IngestV2Error,
@@ -1559,7 +1460,6 @@ impl IngesterServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.close_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.ping_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.decommission_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
@@ -1722,25 +1622,6 @@ impl IngesterServiceTowerLayerStack {
         self.close_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn stack_ping_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    PingRequest,
-                    PingResponse,
-                    crate::ingest::IngestV2Error,
-                >,
-            > + Send + Sync + 'static,
-        L::Service: tower::Service<
-                PingRequest,
-                Response = PingResponse,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<PingRequest>>::Future: Send + 'static,
-    {
-        self.ping_layers.push(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
     pub fn stack_decommission_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<
@@ -1870,14 +1751,6 @@ impl IngesterServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(boxed_instance.clone()),
                 |svc, layer| layer.layer(svc),
             );
-        let ping_svc = self
-            .ping_layers
-            .into_iter()
-            .rev()
-            .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
-                |svc, layer| layer.layer(svc),
-            );
         let decommission_svc = self
             .decommission_layers
             .into_iter()
@@ -1896,7 +1769,6 @@ impl IngesterServiceTowerLayerStack {
             retain_shards_svc,
             truncate_shards_svc,
             close_shards_svc,
-            ping_svc,
             decommission_svc,
         };
         IngesterServiceClient::new(tower_svc_stack)
@@ -2032,12 +1904,6 @@ where
             Future = BoxFuture<CloseShardsResponse, crate::ingest::IngestV2Error>,
         >
         + tower::Service<
-            PingRequest,
-            Response = PingResponse,
-            Error = crate::ingest::IngestV2Error,
-            Future = BoxFuture<PingResponse, crate::ingest::IngestV2Error>,
-        >
-        + tower::Service<
             DecommissionRequest,
             Response = DecommissionResponse,
             Error = crate::ingest::IngestV2Error,
@@ -2090,12 +1956,6 @@ where
         &mut self,
         request: CloseShardsRequest,
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
-        self.call(request).await
-    }
-    async fn ping(
-        &mut self,
-        request: PingRequest,
-    ) -> crate::ingest::IngestV2Result<PingResponse> {
         self.call(request).await
     }
     async fn decommission(
@@ -2231,16 +2091,6 @@ where
             .map(|response| response.into_inner())
             .map_err(crate::error::grpc_status_to_service_error)
     }
-    async fn ping(
-        &mut self,
-        request: PingRequest,
-    ) -> crate::ingest::IngestV2Result<PingResponse> {
-        self.inner
-            .ping(request)
-            .await
-            .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
-    }
     async fn decommission(
         &mut self,
         request: DecommissionRequest,
@@ -2369,17 +2219,6 @@ for IngesterServiceGrpcServerAdapter {
         self.inner
             .clone()
             .close_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
-    }
-    async fn ping(
-        &self,
-        request: tonic::Request<PingRequest>,
-    ) -> Result<tonic::Response<PingResponse>, tonic::Status> {
-        self.inner
-            .clone()
-            .ping(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2733,31 +2572,6 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Pings an ingester to check if it is ready to host shards and serve requests.
-        pub async fn ping(
-            &mut self,
-            request: impl tonic::IntoRequest<super::PingRequest>,
-        ) -> std::result::Result<tonic::Response<super::PingResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.ingest.ingester.IngesterService/Ping",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("quickwit.ingest.ingester.IngesterService", "Ping"),
-                );
-            self.inner.unary(req, path, codec).await
-        }
         /// Decommissions the ingester.
         pub async fn decommission(
             &mut self,
@@ -2879,11 +2693,6 @@ pub mod ingester_service_grpc_server {
             tonic::Response<super::CloseShardsResponse>,
             tonic::Status,
         >;
-        /// Pings an ingester to check if it is ready to host shards and serve requests.
-        async fn ping(
-            &self,
-            request: tonic::Request<super::PingRequest>,
-        ) -> std::result::Result<tonic::Response<super::PingResponse>, tonic::Status>;
         /// Decommissions the ingester.
         async fn decommission(
             &self,
@@ -3328,49 +3137,6 @@ pub mod ingester_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = CloseShardsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.ingest.ingester.IngesterService/Ping" => {
-                    #[allow(non_camel_case_types)]
-                    struct PingSvc<T: IngesterServiceGrpc>(pub Arc<T>);
-                    impl<
-                        T: IngesterServiceGrpc,
-                    > tonic::server::UnaryService<super::PingRequest> for PingSvc<T> {
-                        type Response = super::PingResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::PingRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).ping(request).await };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = PingSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
