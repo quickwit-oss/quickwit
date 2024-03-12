@@ -38,7 +38,6 @@ use quickwit_proto::metastore::{
     MetastoreError, MetastoreService, MetastoreServiceClient, SourceType,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
-use serde::Serialize;
 pub(super) use shard_table::{ScalingMode, ShardEntry, ShardStats, ShardTable};
 use tracing::{info, instrument, warn};
 
@@ -58,25 +57,23 @@ pub(crate) struct ControlPlaneModel {
     shard_table: ShardTable,
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize)]
-pub struct ControlPlaneModelMetrics {
-    pub num_indexes: usize,
-    pub num_sources: usize,
-    pub num_shards: usize,
-}
-
 impl ControlPlaneModel {
     /// Clears the entire state of the model.
     pub fn clear(&mut self) {
         *self = Default::default();
     }
 
-    pub fn observable_state(&self) -> ControlPlaneModelMetrics {
-        ControlPlaneModelMetrics {
-            num_indexes: self.index_table.len(),
-            num_sources: self.shard_table.num_sources(),
-            num_shards: self.shard_table.num_shards(),
-        }
+    pub fn num_indexes(&self) -> usize {
+        self.index_table.len()
+    }
+
+    pub fn num_sources(&self) -> usize {
+        self.shard_table.num_sources()
+    }
+
+    #[cfg(test)]
+    pub fn num_shards(&self) -> usize {
+        self.shard_table.num_shards()
     }
 
     #[instrument(skip_all)]
@@ -152,6 +149,12 @@ impl ControlPlaneModel {
         self.index_uid_table.get(index_id).cloned()
     }
 
+    fn update_metrics(&self) {
+        crate::metrics::CONTROL_PLANE_METRICS
+            .indexes_total
+            .set(self.index_table.len() as i64);
+    }
+
     pub(crate) fn source_configs(&self) -> impl Iterator<Item = (SourceUid, &SourceConfig)> + '_ {
         self.index_table.values().flat_map(|index_metadata| {
             index_metadata
@@ -181,12 +184,14 @@ impl ControlPlaneModel {
             }
         }
         self.index_table.insert(index_uid, index_metadata);
+        self.update_metrics();
     }
 
     pub(crate) fn delete_index(&mut self, index_uid: &IndexUid) {
         self.index_table.remove(index_uid);
         self.index_uid_table.remove(&index_uid.index_id);
         self.shard_table.delete_index(&index_uid.index_id);
+        self.update_metrics();
     }
 
     /// Adds a source to a given index. Returns an error if the source already
