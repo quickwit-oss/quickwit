@@ -8,21 +8,21 @@ expected:
     primaries:
       docs:
         count: 100
-      store: 
-        size_in_bytes: 
+      store:
+        size_in_bytes:
           $expect: "val > 278300"
     total:
       segments:
         count: 1
       docs:
         count: 100
-  indices: 
+  indices:
     gharchive:
       primaries:
         docs:
           count: 100
-        store: 
-          size_in_bytes: 
+        store:
+          size_in_bytes:
             $expect: "val > 278300"
       total:
         segments:
@@ -45,7 +45,7 @@ expected:
         count: 1
       docs:
         count: 100
-  indices: 
+  indices:
     gharchive:
       primaries:
         docs:
@@ -65,13 +65,13 @@ expected:
   _all:
     primaries:
       docs:
-        count: 105
+        count: 100
     total:
       segments:
-        count: 5
+        count: 1
       docs:
-        count: 105
-  indices: 
+        count: 100
+  indices:
     gharchive:
       primaries:
         docs:

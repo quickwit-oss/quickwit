@@ -1,4 +1,6 @@
 # Extra filters are additional filters that are applied to the query. Useful for permissions and other use cases. 
+engines:
+  - quickwit
 json:
   query:
       match_all: {}
@@ -9,6 +11,8 @@ expected:
     total:
       value: 60
 --- # 2 extra filters
+engines:
+  - quickwit
 json:
   query:
       match_all: {}
@@ -19,6 +23,8 @@ expected:
     total:
       value: 2
 --- # Test mixing
+engines:
+  - quickwit
 json:
   query:
     query_string:
@@ -30,6 +36,8 @@ expected:
     total:
       value: 2
 --- # Test mixing
+engines:
+  - quickwit
 json:
   query:
     query_string:
