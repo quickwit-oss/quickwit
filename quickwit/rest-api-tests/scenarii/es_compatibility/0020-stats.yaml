@@ -65,12 +65,12 @@ expected:
   _all:
     primaries:
       docs:
-        count: 100
+        count: 105
     total:
       segments:
-        count: 1
+        count: 5
       docs:
-        count: 100
+        count: 105
   indices: 
     gharchive:
       primaries:
