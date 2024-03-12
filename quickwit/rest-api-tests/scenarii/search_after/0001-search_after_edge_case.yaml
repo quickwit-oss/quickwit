@@ -1,0 +1,270 @@
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
+    - val_u64:
+        order: asc
+  search_after: [-10]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      - sort: [0]
+--- # f64 to u64
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
+    - val_u64:
+        order: asc
+  search_after: [0.2]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      - sort: [20]
+--- # u64 to i64
+desc: "search after u64 to i64 asc"
+json:
+  size: 5
+  query:
+      match_all: {}
+  sort:
+    - val_i64:
+        order: asc
+  search_after: [250]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      - sort: [300]
+      - sort: [9223372036854775807]
+      - sort: [9223372036854775807]
+--- # u64 to i64
+desc: "search after u64 to i64 desc"
+json:
+  size: 5
+  query:
+      match_all: {}
+  sort:
+    - val_i64:
+        order: desc
+  search_after: [250]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      - sort: [200]
+      - sort: [-100]
+--- # u64 to i64 corner case. We are exceeding i64::MAX, so we don't get any results.
+desc: "search after u64 to i64 corner case exceeding i64::MAX asc"
+json:
+  size: 5
+  query:
+      match_all: {}
+  sort:
+    - val_i64:
+        order: asc
+  search_after: [18_000_000_000_000_000_000]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      $expect: "len(val) == 0"
+--- # u64 to i64 corner case.We are exceeding i64::MAX, but with desc we get ALL the results.
+desc: "search after u64 to i64 corner case exceeding i64::MAX desc"
+json:
+  size: 5
+  query:
+      match_all: {}
+  sort:
+    - val_i64:
+        order: desc
+  search_after: [18_000_000_000_000_000_000]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      - sort: [9_223_372_036_854_775_807]
+      - sort: [9_223_372_036_854_775_807]
+      - sort: [300]
+      - sort: [200]
+      - sort: [-100]
+--- # u64 to i64 corner case
+desc: "search after u64 to i64 corner case one below i64::MAX asc"
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
+    - val_i64:
+        order: asc
+  search_after: [9_223_372_036_854_775_806]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      - sort: [9_223_372_036_854_775_807]
+---
+desc: "search after u64 to i64 corner case exactly i64::MAX asc"
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
+    - val_i64:
+        order: asc
+  search_after: [9_223_372_036_854_775_807]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      $expect: "len(val) == 0"
+---
+desc: "search after u64 to i64 corner case one above i64::MAX asc"
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
+    - val_i64:
+        order: asc
+  search_after: [9_223_372_036_854_775_808]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      $expect: "len(val) == 0"
+---
+desc: "search after f64 to i64 corner case"
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
+    - val_i64:
+        order: asc
+  search_after: [9_223_372_036_854_500_000.5] # lower the value we seem to hit some f64 accuracy issue here
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      - sort: [9_223_372_036_854_775_807]
+---
+desc: "search after f64 to i64 out of bounds asc match nothing"
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
+    - val_i64:
+        order: asc
+  search_after: [19_223_372_036_854_500_000.5]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      $expect: "len(val) == 0"
+---
+desc: "search after f64 to i64 out of bounds desc match everything"
+json:
+  size: 5
+  query:
+      match_all: {}
+  sort:
+    - val_i64:
+        order: desc
+  search_after: [19_223_372_036_854_500_000.5]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      - sort: [9_223_372_036_854_775_807]
+      - sort: [9_223_372_036_854_775_807]
+      - sort: [300]
+      - sort: [200]
+      - sort: [-100]
+---
+desc: "search after on mixed column asc"
+json:
+  size: 5
+  query:
+      match_all: {}
+  sort:
+    - mixed_type:
+        order: asc
+  search_after: [-10]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      - sort: [0]
+      - sort: [True]
+      - sort: [10.5]
+      - sort: [18000000000000000000]
+---
+desc: "search after on mixed column desc match nothing"
+json:
+  size: 5
+  query:
+      match_all: {}
+  sort:
+    - mixed_type:
+        order: desc
+  search_after: [-10]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      $expect: "len(val) == 0"
+---
+desc: "search after on mixed column desc"
+json:
+  size: 5
+  query:
+      match_all: {}
+  sort:
+    - mixed_type:
+        order: desc
+  search_after: [2]
+expected:
+  hits:
+    total:
+      value: 5
+      relation: eq
+    hits:
+      - sort: [True]
+      - sort: [0]
+      - sort: [-10]
+
+
