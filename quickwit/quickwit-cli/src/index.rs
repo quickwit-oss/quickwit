@@ -618,7 +618,7 @@ fn display_option_in_table(opt: &Option<impl Display>) -> String {
 fn display_timestamp(timestamp: &Option<i64>) -> String {
     match timestamp {
         Some(timestamp) => {
-            let datetime = chrono::NaiveDateTime::from_timestamp_millis(*timestamp * 1000)
+            let datetime = chrono::DateTime::from_timestamp_millis(*timestamp * 1000)
                 .map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S").to_string())
                 .unwrap_or_else(|| "Invalid timestamp!".to_string());
             format!("{} (Timestamp: {})", datetime, timestamp)
