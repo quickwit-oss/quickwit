@@ -160,7 +160,11 @@ impl SplitFile {
         use std::os::unix::fs::FileExt;
         let file = self.clone();
         let buf = tokio::task::spawn_blocking(move || {
-            let mut buf = vec![0u8; range.len()];
+            let mut buf = Vec::with_capacity(range.len());
+            #[allow(clippy::uninit_vec)]
+            unsafe {
+                buf.set_len(range.len());
+            }
             file.0.file.read_exact_at(&mut buf, range.start as u64)?;
             io::Result::Ok(buf)
         })
