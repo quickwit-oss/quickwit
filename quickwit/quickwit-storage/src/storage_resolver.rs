@@ -42,7 +42,7 @@ pub struct StorageResolver {
 }
 
 impl fmt::Debug for StorageResolver {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("StorageResolver").finish()
     }
 }

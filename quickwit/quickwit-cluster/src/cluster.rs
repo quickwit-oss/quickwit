@@ -269,15 +269,27 @@ impl Cluster {
             .set(key, value);
     }
 
+    /// Sets a key-value pair on the cluster node's state.
+    pub async fn set_self_key_value_delete_after_ttl(
+        &self,
+        key: impl ToString,
+        value: impl ToString,
+    ) {
+        let chitchat = self.chitchat().await;
+        let mut chitchat_lock = chitchat.lock().await;
+        let chitchat_self_node = chitchat_lock.self_node_state();
+        let key = key.to_string();
+        chitchat_self_node.set_with_ttl(key.clone(), value);
+    }
+
     pub async fn get_self_key_value(&self, key: &str) -> Option<String> {
         self.chitchat()
             .await
             .lock()
             .await
             .self_node_state()
-            .get_versioned(key)
-            .filter(|versioned_value| !versioned_value.is_tombstone())
-            .map(|versioned_value| versioned_value.value.clone())
+            .get(key)
+            .map(|value| value.to_string())
     }
 
     pub async fn remove_self_key(&self, key: &str) {
@@ -286,7 +298,7 @@ impl Cluster {
             .lock()
             .await
             .self_node_state()
-            .mark_for_deletion(key)
+            .delete(key)
     }
 
     pub async fn subscribe(
@@ -385,7 +397,7 @@ impl Cluster {
             node_state.set(key, metrics.to_string());
         }
         for obsolete_task_key in current_metrics_keys {
-            node_state.mark_for_deletion(&obsolete_task_key);
+            node_state.delete(&obsolete_task_key);
         }
     }
 
@@ -457,14 +469,7 @@ fn spawn_ready_members_task(
 pub fn parse_indexing_tasks(node_state: &NodeState) -> Vec<IndexingTask> {
     node_state
         .iter_prefix(INDEXING_TASK_PREFIX)
-        .flat_map(|(key, versioned_value)| {
-            // We want to skip the tombstoned keys.
-            if !versioned_value.is_tombstone() {
-                Some((key, versioned_value.value.as_str()))
-            } else {
-                None
-            }
-        })
+        .map(|(key, versioned_value)| (key, versioned_value.value.as_str()))
         .flat_map(|(key, value)| {
             let indexing_task_opt = chitchat_kv_to_indexing_task(key, value);
             if indexing_task_opt.is_none() {
@@ -493,7 +498,7 @@ pub(crate) fn set_indexing_tasks_in_node_state(
         node_state.set(key, value);
     }
     for obsolete_task_key in current_indexing_tasks_keys {
-        node_state.mark_for_deletion(&obsolete_task_key);
+        node_state.delete(&obsolete_task_key);
     }
 }
 
