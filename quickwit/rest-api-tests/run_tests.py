@@ -137,7 +137,18 @@ def check_result(result, expected, context_path = ""):
 
 def check_result_list(result, expected, context_path=""):
     if len(result) != len(expected):
-        raise(Exception("Wrong length at context %s" % context_path))
+        if len(expected) != 0:
+            # get keys from the expected dicts and filter result to print only the keys that are in the expected dicts
+            expected_keys = set().union(*expected)
+            filtered_result = [{k: v for k, v in d.items() if k in expected_keys} for d in result]
+            # Check if the length differs by more than five
+            if abs(len(filtered_result) - len(expected)) > 5:
+                # Show only the first 5 elements followed by ellipsis if there are more
+                display_filtered_result = filtered_result[:5] + ['...'] if len(filtered_result) > 5 else filtered_result
+            else:
+                display_filtered_result = filtered_result
+            raise Exception("Wrong length at context %s. Expected: %s Received: %s,\n Expected \n%s \n Received \n%s" % (context_path, len(expected), len(result), display_filtered_result, expected))
+        raise Exception("Wrong length at context %s. Expected: %s Received: %s" % (context_path, len(expected), len(result)))
     for (i, (left, right)) in enumerate(zip(result, expected)):
         check_result(left, right, context_path + "[%s]" % i)
 
@@ -242,7 +253,7 @@ class Visitor:
                 num_steps_executed += 1
             except Exception as e:
                 print("🔴 %s" % scenario_path)
-                print("Failed at step %d" % i)
+                print(f"Failed at step '{step['desc']}'" if 'desc' in step else f"Failed at step {i}")
                 print(step)
                 print(e)
                 print("--------------")

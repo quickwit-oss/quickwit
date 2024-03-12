@@ -20,6 +20,8 @@ expected:
   docs.count: '0'
 - index: otel-traces-v0_7
   docs.count: '0'
+- index: search_after
+  docs.count: '5'
 ---
 method: [GET]
 engines:
