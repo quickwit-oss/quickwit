@@ -847,10 +847,6 @@ pub(super) mod tests {
             .unwrap();
         drop(mrecordlog_guard);
 
-        timeout(Duration::from_millis(100), fetch_stream.next())
-            .await
-            .unwrap_err();
-
         let shard_status = (ShardState::Closed, Position::Beginning);
         shard_status_tx.send(shard_status).unwrap();
 

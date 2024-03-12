@@ -747,8 +747,7 @@ impl Ingester {
                     .get_mut(queue_id)
                     .expect("shard should exist");
 
-                shard.shard_state = ShardState::Closed;
-                shard.notify_shard_status();
+                shard.close();
             }
             info!(
                 "closed {} shard(s) following IO error(s)",
@@ -982,8 +981,7 @@ impl Ingester {
         let mut state_guard = self.state.lock_partially().await?;
 
         for shard in state_guard.shards.values_mut() {
-            shard.shard_state = ShardState::Closed;
-            shard.notify_shard_status();
+            shard.close();
         }
         state_guard.set_status(IngesterStatus::Decommissioning);
         self.check_decommissioning_status(&mut state_guard);
@@ -1110,10 +1108,8 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
         for (shard_id, shard_position) in shard_positions_update.updated_shard_positions {
             let queue_id = queue_id(&index_uid, &source_id, &shard_id);
             if shard_position.is_eof() {
-                info!(shard = queue_id, "deleting shard");
                 state_guard.delete_shard(&queue_id).await;
-            } else {
-                info!(shard=queue_id, shard_position=%shard_position, "truncating shard");
+            } else if !shard_position.is_beginning() {
                 state_guard.truncate_shard(&queue_id, &shard_position).await;
             }
         }
