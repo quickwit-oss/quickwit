@@ -1175,7 +1175,7 @@ mod tests {
             GetOrCreateOpenShardsFailureReason::SourceNotFound
         );
 
-        assert_eq!(model.observable_state().num_shards, 3);
+        assert_eq!(model.num_shards(), 3);
     }
 
     #[tokio::test]

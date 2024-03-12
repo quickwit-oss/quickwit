@@ -209,6 +209,7 @@ impl ShardTable {
         self.table_entries.len()
     }
 
+    #[cfg(test)]
     pub fn num_shards(&self) -> usize {
         self.table_entries
             .values()
