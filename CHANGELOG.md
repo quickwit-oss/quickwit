@@ -70,13 +70,17 @@ More details in tantivy's [changelog](https://github.com/quickwit-oss/tantivy/bl
 
 ### Changed
 
-- (Breaking) [Adding ZSTD compression to chitchat's Deltas](https://github.com/quickwit-oss/chitchat/pull/112)
+- (Breaking) [Add ZSTD compression to chitchat's Deltas](https://github.com/quickwit-oss/chitchat/pull/112)
 
 ### Removed
 
 ### Migration from 0.7.x to 0.8.0
 
-As we introduced a breaking change in the gossip protocol (chitchat), you need a full restart of your cluster to do the migration: you have to shutdown all your nodes and restart them as cluster's member won't be able to gossip between them if one is on 0.7.x version and the other on 0.8.0.
+To deploy Quickwit 0.8.0, you must either:
+- **shutdown down** your cluster **entirely** before deploying, or
+- **restart all** the nodes of your cluster after deploying.
+
+Because we made some breaking changes in the gossip protocol (chitchat), nodes running different versions of Quickwit cannot communicate with each other and crash upon receiving messages that do not match their release version. The new protocol is now versioned, and future updates of the gossip protocol will be backward compatible.
 
 
 ## [0.7.1]
