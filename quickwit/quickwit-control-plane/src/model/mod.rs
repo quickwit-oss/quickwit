@@ -252,8 +252,9 @@ impl ControlPlaneModel {
         Ok(has_changed)
     }
 
-    pub(crate) fn all_shards_mut(&mut self) -> impl Iterator<Item = &mut ShardEntry> + '_ {
-        self.shard_table.all_shards_mut()
+    pub(crate) fn set_shards_as_unavailable(&mut self, unavailable_leaders: &FnvHashSet<NodeId>) {
+        self.shard_table
+            .set_shards_as_unavailable(unavailable_leaders);
     }
 
     #[cfg(test)]

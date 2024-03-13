@@ -102,6 +102,13 @@ impl ShardTableEntry {
     fn is_empty(&self) -> bool {
         self.shard_entries.is_empty()
     }
+
+    fn num_open_shards(&self) -> usize {
+        self.shard_entries
+            .values()
+            .filter(|shard_entry| shard_entry.is_open())
+            .count()
+    }
 }
 
 // A table that keeps track of the existing shards for each index and source,
@@ -271,10 +278,23 @@ impl ShardTable {
             .map(|(source, shard_table)| (source, shard_table.shard_entries.values()))
     }
 
-    pub(crate) fn all_shards_mut(&mut self) -> impl Iterator<Item = &mut ShardEntry> + '_ {
-        self.table_entries
-            .values_mut()
-            .flat_map(|table_entry| table_entry.shard_entries.values_mut())
+    pub(crate) fn set_shards_as_unavailable(&mut self, unavailable_leaders: &FnvHashSet<NodeId>) {
+        for (source_uid, shard_table_entry) in &mut self.table_entries {
+            let mut modified = false;
+            for shard_entry in shard_table_entry.shard_entries.values_mut() {
+                if shard_entry.is_open() && unavailable_leaders.contains(&shard_entry.leader_id) {
+                    shard_entry.set_shard_state(ShardState::Unavailable);
+                    modified = true;
+                }
+            }
+            if modified {
+                let num_open_shards = shard_table_entry.num_open_shards();
+                crate::metrics::CONTROL_PLANE_METRICS
+                    .open_shards_total
+                    .with_label_values([source_uid.index_uid.index_id.as_str()])
+                    .set(num_open_shards as i64);
+            };
+        }
     }
 
     /// Lists the shards of a given source. Returns `None` if the source does not exist.
@@ -322,23 +342,26 @@ impl ShardTable {
                 shard_ids.insert(shard.shard_id().clone());
             }
         }
-        match self.table_entries.entry(source_uid) {
+        match self.table_entries.entry(source_uid.clone()) {
             Entry::Occupied(mut entry) => {
                 let table_entry = entry.get_mut();
-
                 for opened_shard in opened_shards {
                     // We only insert shards that we don't know about because the control plane
                     // knows more about the state of the shards than the metastore.
                     table_entry
                         .shard_entries
                         .entry(opened_shard.shard_id().clone())
-                        .or_insert(opened_shard.into());
+                        .or_insert_with(|| ShardEntry::from(opened_shard));
                 }
             }
             // This should never happen if the control plane view is consistent with the state of
             // the metastore, so should we panic here? Warnings are most likely going to go
             // unnoticed.
             Entry::Vacant(entry) => {
+                warn!(
+                    "control plane inconsistent with metastore: inserting shards for a \
+                     non-existing source (please report)"
+                );
                 let shard_entries: FnvHashMap<ShardId, ShardEntry> = opened_shards
                     .into_iter()
                     .map(|shard| (shard.shard_id().clone(), shard.into()))
@@ -350,6 +373,8 @@ impl ShardTable {
                 entry.insert(table_entry);
             }
         }
+        // Let's now update the open shard metrics for this specific index.
+        self.update_shard_metrics_for_source_uid(&source_uid);
         self.check_invariant();
     }
 
@@ -375,6 +400,19 @@ impl ShardTable {
             .cloned()
             .collect();
         Some(open_shards)
+    }
+
+    pub fn update_shard_metrics_for_source_uid(&self, source_uid: &SourceUid) {
+        let num_open_shards: usize =
+            if let Some(shard_table_entry) = self.table_entries.get(source_uid) {
+                shard_table_entry.num_open_shards()
+            } else {
+                0
+            };
+        crate::metrics::CONTROL_PLANE_METRICS
+            .open_shards_total
+            .with_label_values([source_uid.index_uid.index_id.as_str()])
+            .set(num_open_shards as i64);
     }
 
     pub fn update_shards(
@@ -436,6 +474,7 @@ impl ShardTable {
                 }
             }
         }
+        self.update_shard_metrics_for_source_uid(source_uid);
         closed_shard_ids
     }
 
@@ -458,6 +497,7 @@ impl ShardTable {
                 &mut self.ingester_shards,
             );
         }
+        self.update_shard_metrics_for_source_uid(source_uid);
         self.check_invariant();
     }
 
