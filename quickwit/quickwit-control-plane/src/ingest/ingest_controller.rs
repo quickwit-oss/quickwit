@@ -36,9 +36,7 @@ use quickwit_proto::ingest::ingester::{
     CloseShardsRequest, IngesterService, InitShardsRequest, PingRequest, RetainShardsForSource,
     RetainShardsRequest,
 };
-use quickwit_proto::ingest::{
-    IngestV2Error, Shard, ShardIdPosition, ShardIdPositions, ShardIds, ShardState,
-};
+use quickwit_proto::ingest::{IngestV2Error, Shard, ShardIdPosition, ShardIdPositions, ShardIds};
 use quickwit_proto::metastore;
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
@@ -49,7 +47,6 @@ use tracing::{error, info, warn};
 use ulid::Ulid;
 
 use crate::ingest::wait_handle::WaitHandle;
-use crate::metrics::CONTROL_PLANE_METRICS;
 use crate::model::{ControlPlaneModel, ScalingMode, ShardEntry, ShardStats};
 
 const MAX_SHARD_INGESTION_THROUGHPUT_MIB_PER_SEC: f32 = 5.;
@@ -343,13 +340,7 @@ impl IngestController {
             }
         }
         if !confirmed_unavailable_leaders.is_empty() {
-            for shard_entry in model.all_shards_mut() {
-                if shard_entry.is_open()
-                    && confirmed_unavailable_leaders.contains(&shard_entry.leader_id)
-                {
-                    shard_entry.set_shard_state(ShardState::Unavailable);
-                }
-            }
+            model.set_shards_as_unavailable(&confirmed_unavailable_leaders);
         }
     }
 
@@ -583,14 +574,6 @@ impl IngestController {
                 open_shards_subresponse.opened_shards,
             );
         }
-        let label_values = [
-            source_uid.index_uid.index_id.as_str(),
-            &source_uid.source_id,
-        ];
-        CONTROL_PLANE_METRICS
-            .open_shards_total
-            .with_label_values(label_values)
-            .set(new_num_open_shards as i64);
     }
 
     /// Attempts to decrease the number of shards. This operation is rate limited to avoid closing
@@ -641,15 +624,6 @@ impl IngestController {
             return;
         }
         model.close_shards(&source_uid, &[shard_id]);
-
-        let label_values = [
-            source_uid.index_uid.index_id.as_str(),
-            &source_uid.source_id,
-        ];
-        CONTROL_PLANE_METRICS
-            .open_shards_total
-            .with_label_values(label_values)
-            .set(new_num_open_shards as i64);
     }
 
     pub(crate) fn advise_reset_shards(
