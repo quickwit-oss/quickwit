@@ -259,7 +259,7 @@ impl MultiFetchStream {
         ingester_pool: IngesterPool,
         retry_params: RetryParams,
     ) -> Self {
-        let (fetch_message_tx, fetch_message_rx) = mpsc::channel(3);
+        let (fetch_message_tx, fetch_message_rx) = mpsc::channel(1);
         Self {
             self_node_id,
             client_id,
