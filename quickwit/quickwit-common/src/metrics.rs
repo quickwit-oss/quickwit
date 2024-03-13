@@ -173,11 +173,19 @@ pub struct GaugeGuard {
     delta: i64,
 }
 
-impl GaugeGuard {
-    pub fn from_gauge(gauge: &'static IntGauge, delta: i64) -> Self {
-        gauge.add(delta);
+impl std::fmt::Debug for GaugeGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.delta.fmt(f)
+    }
+}
 
-        Self { gauge, delta }
+impl GaugeGuard {
+    pub fn from_gauge(gauge: &'static IntGauge) -> Self {
+        Self { gauge, delta: 0i64 }
+    }
+
+    pub fn get(&self) -> i64 {
+        self.delta
     }
 
     pub fn add(&mut self, delta: i64) {

@@ -30,6 +30,7 @@ pub struct IndexerMetrics {
     pub ongoing_merge_operations: IntGauge,
     pub pending_merge_operations: IntGauge,
     pub pending_merge_bytes: IntGauge,
+    pub index_writer_memory_usage: IntGauge,
 }
 
 impl Default for IndexerMetrics {
@@ -81,6 +82,12 @@ impl Default for IndexerMetrics {
             pending_merge_bytes: new_gauge(
                 "pending_merge_bytes",
                 "Number of pending merge bytes",
+                "indexing",
+                &[],
+            ),
+            index_writer_memory_usage: new_gauge(
+                "index_writer_memory_usage",
+                "Amount of memory used in tantivy's IndexWriter",
                 "indexing",
                 &[],
             ),

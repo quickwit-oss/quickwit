@@ -500,7 +500,7 @@ impl BatchBuilder {
             SourceType::Pulsar => &MEMORY_METRICS.in_flight_data.sources.pulsar,
             _ => &MEMORY_METRICS.in_flight_data.sources.other,
         };
-        let gauge_guard = GaugeGuard::from_gauge(gauge, 0);
+        let gauge_guard = GaugeGuard::from_gauge(gauge);
 
         Self {
             docs: Vec::with_capacity(capacity),
