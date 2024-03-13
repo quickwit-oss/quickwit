@@ -513,6 +513,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid().clone();
+        info!(index=%index_uid, "delete index");
 
         if let Err(metastore_error) = self.metastore.delete_index(request).await {
             return convert_metastore_error(metastore_error);
@@ -557,6 +558,8 @@ impl Handler<AddSourceRequest> for ControlPlane {
                     return Ok(Err(ControlPlaneError::from(error)));
                 }
             };
+        info!(index=%index_uid, source_config=?source_config, "add source");
+
         if let Err(error) = self.metastore.add_source(request).await {
             return Ok(Err(ControlPlaneError::from(error)));
         };
@@ -588,6 +591,8 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
         let enable = request.enable;
+
+        info!(index=%index_uid, source_id=%source_id, enable=enable, "toggle source");
 
         if let Err(error) = self.metastore.toggle_source(request).await {
             return Ok(Err(ControlPlaneError::from(error)));
