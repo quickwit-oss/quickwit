@@ -238,7 +238,9 @@ impl IndexerState {
             publish_token_opt,
             last_delete_opstamp,
             memory_usage: GaugeGuard::from_gauge(
-                &quickwit_common::metrics::MEMORY_METRICS.in_flight_data.index_writer,
+                &quickwit_common::metrics::MEMORY_METRICS
+                    .in_flight_data
+                    .index_writer,
             ),
         };
         Ok(workbench)
@@ -317,8 +319,8 @@ impl IndexerState {
             )?;
             let mem_usage_before = indexed_split.index_writer.mem_usage() as u64;
             if split_created {
-                // The split was just created. We need to account the initial index writer memory
-                // usage.
+                // The split was just created. We need to account for the initial index writer's
+                // memory usage.
                 memory_usage_delta += mem_usage_before as i64;
             }
             indexed_split.split_attrs.uncompressed_docs_size_in_bytes += num_bytes as u64;

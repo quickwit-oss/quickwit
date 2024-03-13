@@ -253,9 +253,9 @@ impl Default for MemoryMetrics {
 #[derive(Clone)]
 pub struct InFlightDataGauges {
     pub doc_processor_mailbox: IntGauge,
+    pub index_writer: IntGauge,
     pub indexer_mailbox: IntGauge,
     pub ingest_router: IntGauge,
-    pub index_writer: IntGauge,
     pub rest_server: IntGauge,
     pub sources: InFlightDataSourceGauges,
 }
@@ -271,9 +271,9 @@ impl Default for InFlightDataGauges {
         );
         Self {
             doc_processor_mailbox: in_flight_gauge_vec.with_label_values(["doc_processor_mailbox"]),
+            index_writer: in_flight_gauge_vec.with_label_values(["index_writer"]),
             indexer_mailbox: in_flight_gauge_vec.with_label_values(["indexer_mailbox"]),
             ingest_router: in_flight_gauge_vec.with_label_values(["ingest_router"]),
-            index_writer: in_flight_gauge_vec.with_label_values(["index_writer"]),
             rest_server: in_flight_gauge_vec.with_label_values(["rest_server"]),
             sources: InFlightDataSourceGauges::new(&in_flight_gauge_vec),
         }
