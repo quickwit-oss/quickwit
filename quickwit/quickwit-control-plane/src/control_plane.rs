@@ -55,7 +55,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::Serialize;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
@@ -513,11 +513,12 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid().clone();
-        info!(index=%index_uid, "delete index");
+        debug!(%index_uid, "deleting index");
 
         if let Err(metastore_error) = self.metastore.delete_index(request).await {
             return convert_metastore_error(metastore_error);
         };
+        info!(%index_uid, "deleted index");
 
         let ingester_needing_resync: BTreeSet<NodeId> = self
             .model
@@ -558,15 +559,17 @@ impl Handler<AddSourceRequest> for ControlPlane {
                     return Ok(Err(ControlPlaneError::from(error)));
                 }
             };
-        info!(index=%index_uid, source_config=?source_config, "add source");
+        let source_id = source_config.source_id.clone();
+        debug!(%index_uid, source_id, "adding source");
 
         if let Err(error) = self.metastore.add_source(request).await {
             return Ok(Err(ControlPlaneError::from(error)));
         };
-
         self.model
             .add_source(&index_uid, source_config)
             .context("failed to add source")?;
+
+        info!(%index_uid, source_id, "added source");
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
@@ -591,12 +594,13 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
         let enable = request.enable;
-
-        info!(index=%index_uid, source_id=%source_id, enable=enable, "toggle source");
+        debug!(%index_uid, source_id, enable, "toggling source");
 
         if let Err(error) = self.metastore.toggle_source(request).await {
             return Ok(Err(ControlPlaneError::from(error)));
         };
+        info!(%index_uid, source_id, enabled=enable, "toggled source");
+
         let mutation_occured = self.model.toggle_source(&index_uid, &source_id, enable)?;
 
         if mutation_occured {
