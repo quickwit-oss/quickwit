@@ -28,6 +28,7 @@ mod elasticsearch_api;
 mod format;
 mod grpc;
 mod health_check_api;
+mod heap_pprof;
 mod index_api;
 mod indexing_api;
 mod ingest_api;
