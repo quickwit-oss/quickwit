@@ -890,7 +890,9 @@ mod tests {
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
     };
-    use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
+    use quickwit_proto::control_plane::{
+        GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsSubrequest,
+    };
     use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
     use quickwit_proto::ingest::ingester::{IngesterServiceClient, RetainShardsResponse};
     use quickwit_proto::ingest::{Shard, ShardState};
@@ -1998,7 +2000,7 @@ mod tests {
             MetastoreServiceClient::from(mock_metastore),
         );
 
-        let error = control_plane_mailbox
+        let response = control_plane_mailbox
             .ask(GetOrCreateOpenShardsRequest {
                 subrequests: vec![GetOrCreateOpenShardsSubrequest {
                     subrequest_id: 0,
@@ -2010,8 +2012,13 @@ mod tests {
             })
             .await
             .unwrap()
-            .unwrap_err();
-        assert!(matches!(error, ControlPlaneError::Unavailable { .. }));
+            .unwrap();
+        assert!(response.successes.is_empty());
+        assert_eq!(response.failures.len(), 1);
+        assert!(matches!(
+            response.failures[0].reason(),
+            GetOrCreateOpenShardsFailureReason::NoIngestersAvailable
+        ));
 
         let control_plane_state = control_plane_mailbox.ask(Observe).await.unwrap();
         assert_eq!(control_plane_state.num_indexes, 1);

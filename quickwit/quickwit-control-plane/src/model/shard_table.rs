@@ -263,7 +263,6 @@ impl ShardTable {
         self.check_invariant();
     }
 
-    #[cfg(test)]
     pub(crate) fn all_shards(&self) -> impl Iterator<Item = &ShardEntry> + '_ {
         self.table_entries
             .values()
