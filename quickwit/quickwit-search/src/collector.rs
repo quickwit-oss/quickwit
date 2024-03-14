@@ -82,9 +82,10 @@ impl SortByComponent {
     fn to_sorting_field_extractor_component(
         &self,
         segment_reader: &SegmentReader,
-    ) -> tantivy::Result<SortingFieldExtractorComponent> {
+    ) -> tantivy::Result<Option<SortingFieldExtractorComponent>> {
         match self {
-            SortByComponent::DocId { .. } => Ok(SortingFieldExtractorComponent::DocId),
+            // Nothing to extract
+            SortByComponent::DocId { .. } => Ok(None),
             SortByComponent::FastField { field_name, .. } => {
                 let sort_column_opt: Option<(Column<u64>, ColumnType)> =
                     segment_reader.fast_fields().u64_lenient(field_name)?;
@@ -95,12 +96,12 @@ impl SortByComponent {
                     )
                 });
                 let sort_field_type = SortFieldType::try_from(column_type)?;
-                Ok(SortingFieldExtractorComponent::FastField {
+                Ok(Some(SortingFieldExtractorComponent::FastField {
                     sort_column,
                     sort_field_type,
-                })
+                }))
             }
-            SortByComponent::Score { .. } => Ok(SortingFieldExtractorComponent::Score),
+            SortByComponent::Score { .. } => Ok(Some(SortingFieldExtractorComponent::Score)),
         }
     }
     pub fn requires_scoring(&self) -> bool {
@@ -141,7 +142,6 @@ enum SortFieldType {
 /// a value from a fast field, or nothing (sort by DocId).
 enum SortingFieldExtractorComponent {
     /// If undefined, we simply sort by DocIds.
-    DocId,
     FastField {
         sort_column: Column<u64>,
         sort_field_type: SortFieldType,
@@ -159,7 +159,6 @@ impl SortingFieldExtractorComponent {
     fn extract_typed_sort_value_opt(&self, doc_id: DocId, score: Score) -> Option<u64> {
         match self {
             // Tie breaks are not handled here, but in SegmentPartialHit
-            SortingFieldExtractorComponent::DocId => None,
             SortingFieldExtractorComponent::FastField { sort_column, .. } => {
                 sort_column.first(doc_id)
             }
@@ -182,7 +181,6 @@ impl SortingFieldExtractorComponent {
             SortFieldType::Bool => SortValue::Boolean(fast_field_value != 0u64),
         };
         match self {
-            SortingFieldExtractorComponent::DocId => SortValue::U64(sort_value),
             SortingFieldExtractorComponent::FastField {
                 sort_field_type, ..
             } => map_fast_field_to_value(sort_value, *sort_field_type),
@@ -199,10 +197,6 @@ impl SortingFieldExtractorComponent {
     #[inline]
     fn convert_to_u64_ff_val(&self, sort_value: SortValue, sort_order: SortOrder) -> Option<u64> {
         match self {
-            SortingFieldExtractorComponent::DocId => match sort_value {
-                SortValue::U64(val) => Some(val),
-                _ => panic!("Internal error: Got non-U64 sort value for DocId."),
-            },
             SortingFieldExtractorComponent::FastField {
                 sort_field_type, ..
             } => {
@@ -407,17 +401,22 @@ impl TryFrom<ColumnType> for SortFieldType {
 fn get_score_extractor(
     sort_by: &SortByPair,
     segment_reader: &SegmentReader,
-) -> tantivy::Result<SortingFieldExtractorPair> {
-    Ok(SortingFieldExtractorPair {
-        first: sort_by
-            .first
-            .to_sorting_field_extractor_component(segment_reader)?,
-        second: sort_by
-            .second
-            .as_ref()
-            .map(|first| first.to_sorting_field_extractor_component(segment_reader))
-            .transpose()?,
-    })
+) -> tantivy::Result<Option<SortingFieldExtractorPair>> {
+    let first: Option<SortingFieldExtractorComponent> = sort_by
+        .first
+        .to_sorting_field_extractor_component(segment_reader)?;
+    let Some(first) = first else {
+        return Ok(None);
+    };
+
+    let second: Option<SortingFieldExtractorComponent> = sort_by
+        .second
+        .as_ref()
+        .map(|first| first.to_sorting_field_extractor_component(segment_reader))
+        .transpose()?
+        .flatten();
+
+    Ok(Some(SortingFieldExtractorPair { first, second }))
 }
 
 /// PartialHitHeapItem order is the inverse of the natural order
@@ -471,7 +470,8 @@ enum AggregationSegmentCollectors {
 pub struct QuickwitSegmentCollector {
     num_hits: u64,
     split_id: String,
-    score_extractor: SortingFieldExtractorPair,
+    // Only exists for non-doc_id sorts.
+    score_extractor: Option<SortingFieldExtractorPair>,
     // PartialHits in this heap don't contain a split_id yet.
     top_k_hits: TopK<SegmentPartialHit, SegmentPartialHitSortingKey, HitSortingMapper>,
     segment_ord: u32,
@@ -494,9 +494,12 @@ impl SearchAfterSegment {
         search_after: Option<PartialHit>,
         sort_order1: SortOrder,
         sort_order2: SortOrder,
-        score_extractor: &SortingFieldExtractorPair,
+        score_extractor: &Option<SortingFieldExtractorPair>,
     ) -> Option<Self> {
         let Some(search_after) = search_after else {
+            return None;
+        };
+        let Some(score_extractor) = score_extractor else {
             return None;
         };
 
@@ -545,8 +548,13 @@ impl SearchAfterSegment {
 impl QuickwitSegmentCollector {
     #[inline]
     fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
-        let (sort_value, sort_value2): (Option<u64>, Option<u64>) =
-            self.score_extractor.extract_typed_sort_value(doc_id, score);
+        // score extractor is None if we sort by doc_id.
+        let (sort_value, sort_value2) = if let Some(score_extractor) = self.score_extractor.as_ref()
+        {
+            score_extractor.extract_typed_sort_value(doc_id, score)
+        } else {
+            (None, None)
+        };
 
         if let Some(search_after) = &self.search_after {
             let search_after_value1 = search_after.sort_value;
@@ -607,13 +615,18 @@ impl SegmentPartialHit {
         self,
         split_id: String,
         segment_ord: SegmentOrdinal,
-        first: &SortingFieldExtractorComponent,
-        second: &Option<SortingFieldExtractorComponent>,
+        first: Option<&SortingFieldExtractorComponent>,
+        second: Option<&SortingFieldExtractorComponent>,
     ) -> PartialHit {
         PartialHit {
             sort_value: self
                 .sort_value
-                .map(|sort_value| first.convert_u64_ff_val_to_sort_value(sort_value))
+                .map(|sort_value| {
+                    first
+                        .as_ref()
+                        .expect("Internal error: Got sort_value, but no sort extractor")
+                        .convert_u64_ff_val_to_sort_value(sort_value)
+                })
                 .map(|sort_value| SortByValue {
                     sort_value: Some(sort_value),
                 }),
@@ -667,8 +680,12 @@ impl SegmentCollector for QuickwitSegmentCollector {
                 segment_partial_hit.into_partial_hit(
                     self.split_id.clone(),
                     self.segment_ord,
-                    &self.score_extractor.first,
-                    &self.score_extractor.second,
+                    self.score_extractor
+                        .as_ref()
+                        .map(|extractor| &extractor.first),
+                    self.score_extractor
+                        .as_ref()
+                        .and_then(|extractor| extractor.second.as_ref()),
                 )
             })
             .collect();
