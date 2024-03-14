@@ -227,7 +227,8 @@ tempfile = "3"
 thiserror = "1"
 thousands = "0.2.0"
 tikv-jemalloc-ctl = "0.5"
-tikv-jemallocator = "0.5"
+tikv-jemallocator = { version = "0.5.4", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
+jemalloc_pprof = "0.1"
 time = { version = "0.3", features = ["std", "formatting", "macros"] }
 tokio = { version = "1.37", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -346,4 +347,5 @@ sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921
 debug = false
 
 [profile.release]
-lto = "thin"
+debug = true
+#lto = "thin"

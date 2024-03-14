@@ -37,6 +37,7 @@ use crate::decompression::{CorruptedData, UnsupportedEncoding};
 use crate::delete_task_api::delete_task_api_handlers;
 use crate::elasticsearch_api::elastic_api_handlers;
 use crate::health_check_api::health_check_handlers;
+use crate::heap_pprof::heap_pprof_handler;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
@@ -90,7 +91,12 @@ pub(crate) async fn start_rest_server(
     // `/metrics` route.
     let metrics_routes = warp::path("metrics").and(warp::get()).map(metrics_handler);
 
-    // `/api/debugging/*` route.
+    // `/heap_pprof` route.
+    let heap_pprof_routes = warp::path("heap_pprof")
+        .and(warp::get())
+        .then(heap_pprof_handler);
+
+    // `/debugging` route.
     let debugging_routes = debugging_routes(quickwit_services.clone());
 
     // `/api/v1/*` routes.
@@ -115,6 +121,7 @@ pub(crate) async fn start_rest_server(
         .or(ui_handler())
         .or(health_check_routes)
         .or(metrics_routes)
+        .or(heap_pprof_routes)
         .or(debugging_routes)
         .with(request_counter)
         .recover(recover_fn)
