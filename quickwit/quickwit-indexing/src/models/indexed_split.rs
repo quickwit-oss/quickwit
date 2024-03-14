@@ -185,6 +185,7 @@ pub struct IndexedSplitBatchBuilder {
     pub commit_trigger: CommitTrigger,
     pub batch_parent_span: Span,
     pub memory_usage: GaugeGuard,
+    pub _split_builders_total_guard: GaugeGuard,
 }
 
 /// Sends notifications to the Publisher that the last batch of splits was emtpy.
