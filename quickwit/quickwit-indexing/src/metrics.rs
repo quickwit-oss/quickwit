@@ -27,7 +27,7 @@ pub struct IndexerMetrics {
     pub processed_bytes: IntCounterVec<2>,
     pub backpressure_micros: IntCounterVec<1>,
     pub available_concurrent_upload_permits: IntGaugeVec<1>,
-    pub split_builders_total: IntGauge,
+    pub split_builders: IntGauge,
     pub ongoing_merge_operations: IntGauge,
     pub pending_merge_operations: IntGauge,
     pub pending_merge_bytes: IntGauge,
@@ -67,9 +67,9 @@ impl Default for IndexerMetrics {
                 &[],
                 ["component"],
             ),
-            split_builders_total: new_gauge(
-                "split_builders_total",
-                "Number of existing index writer instance",
+            split_builders: new_gauge(
+                "split_builders",
+                "Number of existing index writer instances.",
                 "indexing",
                 &[],
             ),
