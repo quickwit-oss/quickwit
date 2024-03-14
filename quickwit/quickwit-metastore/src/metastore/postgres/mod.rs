@@ -20,8 +20,10 @@
 mod error;
 mod factory;
 mod metastore;
+mod metrics;
 mod migrator;
 mod model;
+mod pool;
 mod split_stream;
 mod tags;
 mod utils;

@@ -22,12 +22,14 @@ use std::task::{Context, Poll};
 
 use futures::stream::BoxStream;
 use ouroboros::self_referencing;
-use sqlx::{Pool, Postgres};
+use sqlx::Postgres;
 use tokio_stream::Stream;
+
+use super::pool::TrackedPool;
 
 #[self_referencing(pub_extras)]
 pub struct SplitStream<T> {
-    connection_pool: Pool<Postgres>,
+    connection_pool: TrackedPool<Postgres>,
     sql: String,
     #[borrows(connection_pool, sql)]
     #[covariant]
