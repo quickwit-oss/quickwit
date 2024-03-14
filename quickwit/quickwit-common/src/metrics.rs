@@ -252,12 +252,13 @@ impl Default for MemoryMetrics {
 
 #[derive(Clone)]
 pub struct InFlightDataGauges {
-    pub doc_processor_mailbox: IntGauge,
-    pub index_writer: IntGauge,
-    pub indexer_mailbox: IntGauge,
-    pub ingest_router: IntGauge,
     pub rest_server: IntGauge,
+    pub ingest_router: IntGauge,
+    pub wal: IntGauge,
     pub sources: InFlightDataSourceGauges,
+    pub doc_processor_mailbox: IntGauge,
+    pub indexer_mailbox: IntGauge,
+    pub index_writer: IntGauge,
 }
 
 impl Default for InFlightDataGauges {
@@ -270,12 +271,13 @@ impl Default for InFlightDataGauges {
             ["component"],
         );
         Self {
-            doc_processor_mailbox: in_flight_gauge_vec.with_label_values(["doc_processor_mailbox"]),
-            index_writer: in_flight_gauge_vec.with_label_values(["index_writer"]),
-            indexer_mailbox: in_flight_gauge_vec.with_label_values(["indexer_mailbox"]),
-            ingest_router: in_flight_gauge_vec.with_label_values(["ingest_router"]),
             rest_server: in_flight_gauge_vec.with_label_values(["rest_server"]),
+            ingest_router: in_flight_gauge_vec.with_label_values(["ingest_router"]),
+            wal: in_flight_gauge_vec.with_label_values(["wal"]),
             sources: InFlightDataSourceGauges::new(&in_flight_gauge_vec),
+            doc_processor_mailbox: in_flight_gauge_vec.with_label_values(["doc_processor_mailbox"]),
+            indexer_mailbox: in_flight_gauge_vec.with_label_values(["indexer_mailbox"]),
+            index_writer: in_flight_gauge_vec.with_label_values(["index_writer"]),
         }
     }
 }
