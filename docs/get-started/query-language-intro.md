@@ -23,23 +23,6 @@ app_name:tantivy
 
 In many cases the field name can be omitted, quickwit will then use the `default_search_fields` configured for the index.
 
-### Adressing structured data
-
-Data stored deep inside nested data structures like `object` or `json` fields can be addressed using dots as separators in the field name.
-For instance, the document `{"product": {"attributes": {color": "red"}}}` is matched by
-```
-product.attributes.color:red
-```
-
-If the keys of your object contain dots, the above syntax has some ambiguity : by default `{"k8s.component.name": "quickwit"}` will be matched by 
-```k8s.component.name:quickwit```
-
-It is possible to remove the ambiguity by setting expand_dots in the json field configuration. 
-In that case, it will be necessary to escape the `.` in the query to match this document like this :
-```
-k8s\.component\.name:quickwit
-```
-
 ### Clauses Cheat Sheet
 
 Quickwit support various types of clauses to express different kinds of conditions. Here's a quick overview of them:

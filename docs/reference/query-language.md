@@ -1,108 +1,236 @@
 ---
-title: Query language
+title: Query Language Reference
 sidebar_position: 40
 ---
 
-Quickwit uses a query mini-language which is used by providing a `query` parameter to the search endpoints.
-
-### Terms
-
-The `query` is parsed into a series of terms and operators. There are two types of terms: single terms such as “tantivy” and phrases which is a group of words surrounded by double quotes such as “hello world”.
-
-Multiple terms can be combined together with Boolean operators `AND, OR` to form a more complex query. By default, terms will be combined with the `AND` operator.
-
-IP addresses can be provided as IpV4 or IpV6. It is recommended to use the same format as in the indexed documents.
-
-### Fields
-
-You can specify fields to search in the query by following the syntax `field_name:term`.
-
-For example, let's assume an index that contains two fields, `title`, and `body` with `body` the default field. To search for the phrase “Barack Obama” in the title AND “president” in the body, you can enter:
+## Pseudo-grammar
 
 ```
-title:"barack obama" AND president
+query = '(' query ')'
+      | query operator query
+      | unary_operator query
+      | clause
+
+operator = 'AND' | 'OR'
+
+unary_operator = 'NOT' | '-'
+
+clause = field_name ':' field_clause
+       | defaultable_clause
+       | '*'
+
+field_clause = term | term_prefix | term_set | phrase | phrase_prefix | range | '*'
+defaultable_clause = term | term_prefix | term_set | phrase | phrase_prefix
+```
+---
+## Writing Queries
+### Escaping Special Characters
+
+Special reserved characters are: `+` , `^`, `` ` ``, `:`, `{`, `}`, `"`, `[`, `]`, `(`, `)`, `~`, `!`, `\\`, `*`, `SPACE`. Such characters can still appear in query terms, but they need to be escaped by an anti-slash `\` .
+
+<!-- NEED CLARIFICATION: where is escaping necessary ? non-quoted terms ? field names ?-->
+
+### Allowed characters in field names
+<!-- NEED CLARIFICATION: this should refer to a section of the index documentation that explains allowed field names -->
+
+### Addressing nested structures
+
+Data stored deep inside nested data structures like `object` or `json` fields can be addressed using dots as separators in the field name.
+For instance, the document `{"product": {"attributes": {color": "red"}}}` is matched by
+```
+product.attributes.color:red
 ```
 
-Note that a query like `title:barack obama` will find only `barack` in the title and `obama` in the default fields. If no default field has been set on the index, this will result in an error.
+If the keys of your object contain dots, the above syntax has some ambiguity : by default `{"k8s.component.name": "quickwit"}` will be matched by 
+```k8s.component.name:quickwit```
 
-### Searching structures nested in documents.
-
-Quickwit is designed to index structured data.
-If you search into some object nested into your document, whether it is an `object`, a `json` object, or whether it was caught through the `dynamic` mode, the query language is the same. You simply need to chain the different steps to reach your value from the root of the document.
-
-For instance, the document `{"product": {"attributes": {color": "red"}}}` is returned if you query `product.attributes.color:red`.
-
-If a dot `.` exists in one of the key of your object, the above syntax has some ambiguity.
-For instance, by default, `{"k8s.component.name": "quickwit"}` will be matched by `k8s.component.name:quickwit`.
-
-It is possible to remove the ambiguity by setting `expand_dots` in the json field configuration.
-In that case, it will be necessary to escape the `.` in the query to match this document.
-
-For instance, the above document will match the query `k8s\.component\.name:quickwit`.
-
-### Boolean Operators
-
-Quickwit supports `AND`, `+`, `OR`, `NOT` and `-` as Boolean operators (case sensitive). By default, the `AND` is chosen, this means that if you omit it in a query like `title:"barack obama" president` Quickwit will interpret the query as `title:"barack obama" AND president`.
-
-### Grouping boolean operators
-
-Quickwit supports parenthesis to group multiple clauses:
-
+It is possible to remove the ambiguity by setting expand_dots in the json field configuration. 
+In that case, it will be necessary to escape the `.` in the query to match this document like this :
 ```
-(color:red OR color:green) AND size:large
+k8s\.component\.name:quickwit
 ```
 
-### Slop Operator
+---
 
-Quickwit also supports phrase queries with a slop parameter using the slop operator `~` followed by the value of the slop. 
-The query will match phrases if its terms are separated by slop terms at most. 
+## Structured data
+### Datetime
+Datetime values must be provided in rfc3339 format, such as `1970-01-01T00:00:00Z`
 
-The slop can be considered a budget between all terms. E.g. `"A B C"~1` matches `"A X B C"`, `"A B X C"`, but not `"A X B X C"`.
+### IP addresses
+IP addresses can be provided as IPv4 or IPv6. It is recommended to search with the format used when indexing documents.
+There is no support for searching for a range of IP using CIDR notation, but you can use normal range queries.
 
-Transposition costs 2, e.g. `"A B"~1` will not match `"B A"` but it would with `"A B"~2`. 
+---
+
+## Types of clauses
+
+### Term `field:term`
+```
+term: term_char+
+```
+
+Matches documents if the targeted field contains a token equal to the provided term. 
+
+`field:value` will match any document where the field 'field' has a token 'value'.
+
+### Term Prefix `field:prefix*`
+```
+term_prefix: term '*'
+```
+
+Matches documents if the targeted field contains a token which starts with the provided value.
+
+`field:quick*` will match any document where the field 'field' has a token like `quickwit` or `quickstart`, but not `qui` or `abcd`.
+
+
+### Term set `field: IN [a b c]`
+```
+term_set = 'IN' '[' term_list ']'
+term_list = term_list term
+          | term
+```
+Matches if the document contains any of the tokens provided. 
+
+###### Examples
+`field: IN [ab cd]` will match 'ab' or 'cd', but nothing else.
+
+###### Perfomance Note
+This is a lot like writing `field:ab OR field:cd`. When there are only a handful of terms to search for, using ORs is usually faster.
+When there are many values to match, a term set query can become more efficient.
+
+<!-- previously a field was required. It looks like it may no longer be the case -->
+
+### Phrase `field:"sequence of words"`
+```
+phrase = phrase_string
+       | phrase_string slop
+phrase_string = '"' phrase_char '"'
+slop = '~' [01-9]+
+
+```
+
+Matches if the field contains the sequence of token provided. `field:"looks good to me"` will match any document containing that sequence of tokens.
+The field must have been configured with `record: position` when indexing.
+
+###### Slop operator
+Is is also possible to add a slop, which allow matching a sequence with some distance. For instance `"looks to me"~1` will match "looks good to me", but not "looks very good to me".
+Transposition costs 2, e.g. `"A B"~1` will not match `"B A"` but it would with `"A B"~2`.
 Transposition is not a special case, in the example above A is moved 1 position and B is moved 1 position, so the slop is 2.
 
-:::caution
-Slop queries can only be used on field indexed with the [record option](./../configuration/index-config.md#text-type) set to `position` value.
-:::
+### Phrase Prefix `field:"finish this phr"*`
+```
+phrase_prefix = phrase '*'
+```
 
-### Set Operator
+Matches if the field contains the sequence of token provided, where the last token in the query may be only a prefix of the token in the document.
 
-Quickwit supports `IN [value1 value2 ...]` as a set membership operator. This is more cpu efficient than the equivalent `OR`ing of many terms, but may download more of the split than `OR`ing, especially when only a few terms are searched. You must specify a field being searched for Set queries.
+The field must have been configured with `record: position` when indexing.
 
-### Range queries
+There is no slop for phrase prefix queries.
 
-Range queries can only be executed on fields with a fast field. Currently only fields of type `ip` are supported.
+###### Examples
+ `field:"thanks for your contrib"*` will match 'thanks for your contribution'.
 
+###### Limitation
+
+Quickwit may trim some results matched by this clause in some cases.  If you search for `"thanks for your co"*`, it will enumerate the first 50 tokens which start with "co", and search for any documents where "thanks for your" is followed by any of these tokens.
+
+If there are many tokens starting with "co", "contribution" might not be one of the 50 selected tokens, and the query won't match a document containing "thanks for your contribution". Normal prefix queries don't suffer from this issue.
+
+
+<!-- NEEDS CLARIFICATION : what does "first 50 tokens" mean ? in what order ? can the value be tuned ? -->
+
+
+### Range `field: [low_bound high_bound}`
+```
+range = explicit_range | comparison_half_range
+
+explicit_range = left_bound_char bounds right_bound_char
+left_bound_char = '[' | '{' 
+right_bound_char = '}' | ']'
+bounds = term term
+       | term '*'
+       | '*' term
+
+comparison_range = comparison_operator term
+comparision_operator = '<' | '>' | '<=' | '>='
+```
+
+Matches if the document contains a token between the provided bounds for that field.
+For range queries, you must provide a field. Quickwit won't use `default_search_fields` automatically.
+
+###### Order
+For text fields, the ranges are defined by lexicographic order. It means for a text field, 100 is between 1 and 2.
+When using ranges on integers, it behaves naturally.
+
+###### Inclusive and exclusive bounds
+Inclusive bounds are represented by square brackets `[]`. They will match tokens equal to the bound term.
+Exclusive bounds are represented by curly brackets `{}`. They will not match tokens equal to the bound term.
+
+###### Half-Open bounds
+You can make an half open range by using `*` as one of the bounds. `field:[b TO *]` will match 'bb' and 'zz', but not 'ab'.
+You can also use a comparison based syntax:`field:<b`, `field:>b`, `field:<=b` or `field:>=b`.
+
+<!-- NEEDS CLARIFICATION : ordering of empty values ? -->
+
+###### Examples
 - Inclusive Range: `ip:[127.0.0.1 TO 127.0.0.50]`
 - Exclusive Range: `ip:{127.0.0.1 TO 127.0.0.50}`
 - Unbounded Inclusive Range: `ip:[127.0.0.1 TO *] or ip:>=127.0.0.1`
 - Unbounded Exclusive Range: `ip:{127.0.0.1 TO *] or ip:>127.0.0.1`
 
 
-#### Examples:
+### Exists `field:*`
 
-With the following corpus:
-```json
-[
-    {"id": 1, "body": "a red bike"},
-    {"id": 2, "body": "a small blue bike"},
-    {"id": 3, "body": "a small, rusty, and yellow bike"},
-    {"id": 4, "body": "fred's small bike"},
-    {"id": 5, "body": "a tiny shelter"}
-]
-```
-The following queries will output:
+Matches documents where the field is set. You have to specify a field for this query, Quickwit won't use `default_search_fields` automatically.
 
-- `body:"small bird"~2`: no match []
-- `body:"red bike"~2`: matches [1]
-- `body:"small blue bike"~3`: matches [2]
-- `body:"small bike"`: matches [4]
-- `body:"small bike"~1`: matches [2, 4]
-- `body:"small bike"~2`: matches [2, 4]
-- `body:"small bike"~3`: matches [2, 3, 4]
-- `body: IN [small tiny]`: matches [2, 3, 4, 5]
+### Match All `*`
 
-### Escaping Special Characters
+Matches every document. You can't put a field in front. It is simply written as `*`.
 
-Special reserved characters are: `+` , `^`, `` ` ``, `:`, `{`, `}`, `"`, `[`, `]`, `(`, `)`, `~`, `!`, `\\`, `*`, `SPACE`. Such characters can still appear in query terms, but they need to be escaped by an antislash `\` .
+---
+
+## Building Queries
+Most queries are composed of more than one clause. When doing so, you may add operators between clauses.
+
+Implicitly if no operator is provided, 'AND' is assumed.
+
+### Conjunction `AND`
+An `AND` query will match only if both sides match.
+
+<!-- TODO: Formal example ?*-->
+
+### Disjunction `OR`
+An `OR` query will match if either (or both) sides match.
+
+<!-- TODO: Formal example ?*-->
+
+### Negation `NOT` or `-`
+A `NOT` query will match if the clause it is applied to does not match.
+The `-` prefix is equivalent to the `NOT` operator.
+
+### Grouping `()`
+Parentheses are used to force the order of evaluation of operators.
+For instance, if a query should match if 'field1' is 'one' or 'two', and 'field2' is 'three', you can use `(field1:one OR field1:two) AND field2:three`.
+
+### Operator Precedence
+Without parentheses, `AND` takes precedence over `OR`. That is, `a AND b OR c` is interpreted as `(a AND b) or c`.
+
+`NOT` and `-` takes precedence over everything, such that `-a AND b` means `(-a) AND b`, not `-(a AND B)`.
+
+
+---
+
+## Other considerations 
+
+### Default Search Fields
+In many case it is possible to omit the field you search if it was configured in the `default_search_fields` array of the index configuration.
+
+<!-- NEED CLARIFICATION : default fields clauses behavior on an array is combined using OR or AND ? -->
+
+### Tokenization
+Note that the result of a query can depend on the tokenizer used for the field getting searched. Hence this document always speaks of tokens, which may be the exact value the document contain (in case of the raw tokenizer), or a subset of it (for instance any tokenizer cutting on spaces).
+
+<!-- NOTE : should dig deeper ? -->
+Quickwit uses a query mini-language which is used by providing a `query` parameter to the search endpoints.
+<!-- todo also used in some place in ES: where? -->
