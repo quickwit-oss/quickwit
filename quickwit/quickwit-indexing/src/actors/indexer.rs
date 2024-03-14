@@ -647,8 +647,6 @@ impl Indexer {
         else {
             return Ok(());
         };
-        // Dropping the indexing permit explicitly here for enhanced readability.
-        drop(indexing_permit);
 
         let mut splits: Vec<IndexedSplitBuilder> = indexed_splits.into_values().collect();
 
@@ -694,6 +692,7 @@ impl Indexer {
                 commit_trigger,
                 batch_parent_span,
                 memory_usage,
+                _indexing_permit: indexing_permit,
                 _split_builders_total_guard: split_builders_total_guard,
             },
         )

@@ -28,6 +28,7 @@ use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{IndexUid, PublishToken};
 use tantivy::directory::MmapDirectory;
 use tantivy::IndexBuilder;
+use tokio::sync::OwnedSemaphorePermit;
 use tracing::{instrument, Span};
 
 use crate::controlled_directory::ControlledDirectory;
@@ -185,6 +186,7 @@ pub struct IndexedSplitBatchBuilder {
     pub commit_trigger: CommitTrigger,
     pub batch_parent_span: Span,
     pub memory_usage: GaugeGuard,
+    pub _indexing_permit: Option<OwnedSemaphorePermit>,
     pub _split_builders_total_guard: GaugeGuard,
 }
 
