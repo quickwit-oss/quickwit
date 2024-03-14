@@ -173,7 +173,8 @@ impl IndexingService {
             temp_dir::create_or_purge_directory(&data_dir_path.join(INDEXING_DIR_NAME)).await?;
         let queue_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
         let cooperative_indexing_permits = if indexer_config.enable_cooperative_indexing {
-            Some(Arc::new(Semaphore::new(num_blocking_threads)))
+            let num_permits = (num_blocking_threads * 2).div_ceil(3);
+            Some(Arc::new(Semaphore::new(num_permits)))
         } else {
             None
         };
