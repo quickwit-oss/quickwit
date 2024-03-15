@@ -23,7 +23,7 @@ use quickwit_lambda::searcher::handler;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    logger::setup_lambda_tracer()?;
+    logger::setup_lambda_tracer(tracing::Level::INFO)?;
     let func = service_fn(handler);
     run(func).await.map_err(|e| anyhow::anyhow!(e))
 }

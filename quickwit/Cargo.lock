@@ -6068,6 +6068,7 @@ dependencies = [
  "quickwit-index-management",
  "quickwit-indexing",
  "quickwit-ingest",
+ "quickwit-janitor",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-rest-client",

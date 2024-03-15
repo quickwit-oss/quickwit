@@ -30,8 +30,5 @@ searcher:
   partial_request_cache_capacity: ${QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY:-64M}
 ";
 
-pub(crate) static INDEX_ID: Lazy<String> =
-    Lazy::new(|| var("QW_LAMBDA_INDEX_ID").expect("QW_LAMBDA_INDEX_ID must be set"));
-
 pub(crate) static DISABLE_SEARCH_CACHE: Lazy<bool> =
     Lazy::new(|| var("QW_LAMBDA_DISABLE_SEARCH_CACHE").is_ok_and(|v| v.as_str() == "true"));

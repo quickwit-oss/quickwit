@@ -32,7 +32,9 @@ class IndexerService(Construct):
                 "QW_LAMBDA_INDEX_CONFIG_URI": f"s3://{index_config_bucket}/{index_config_key}",
                 **environment,
             },
-            timeout=aws_cdk.Duration.minutes(15),
+            # use a strict timeout and retry policy to avoid unexpected costs
+            timeout=aws_cdk.Duration.minutes(1),
+            retry_attempts=0,
             reserved_concurrent_executions=1,
             memory_size=memory_size,
             ephemeral_storage_size=aws_cdk.Size.gibibytes(10),

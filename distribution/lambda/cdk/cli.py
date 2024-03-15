@@ -316,6 +316,15 @@ def empty_mock_data_buckets():
     _clean_s3_bucket(bucket_name)
 
 
+def print_mock_data_metastore():
+    bucket_name = _get_cloudformation_output_value(
+        app.MOCK_DATA_STACK_NAME, mock_data_stack.INDEX_STORE_BUCKET_NAME_EXPORT_NAME
+    )
+    s3 = session.client("s3")
+    response = s3.get_object(Bucket=bucket_name, Key="index/mock-sales/metastore.json")
+    print(response["Body"].read().decode())
+
+
 @cache
 def _git_commit():
     return subprocess.run(

@@ -56,7 +56,7 @@ indexer-package-path:
 searcher-package-path:
 	echo -n $(SEARCHER_PACKAGE_PATH)
 
-bootstrap: package check-env
+bootstrap:
 	cdk bootstrap aws://$$CDK_ACCOUNT/$$CDK_REGION
 
 deploy-hdfs: package check-env
@@ -65,17 +65,20 @@ deploy-hdfs: package check-env
 deploy-mock-data: package check-env
 	cdk deploy -a cdk/app.py MockDataStack
 
+print-mock-data-metastore: check-env
+	python -c 'from cdk import cli; cli.print_mock_data_metastore()'
+
 # address https://github.com/aws/aws-cdk/issues/20060
 before-destroy:
 	mkdir -p cdk.out
 	touch $(INDEXER_PACKAGE_PATH)
 	touch $(SEARCHER_PACKAGE_PATH)
 
-destroy-hdfs: before-destroy
+destroy-hdfs: before-destroy check-env
 	python -c 'from cdk import cli; cli.empty_hdfs_bucket()'
 	cdk destroy  --force -a cdk/app.py HdfsStack
 
-destroy-mock-data: before-destroy
+destroy-mock-data: before-destroy check-env
 	python -c 'from cdk import cli; cli.empty_mock_data_buckets()'
 	cdk destroy  --force -a cdk/app.py MockDataStack
 
@@ -108,6 +111,7 @@ bench-index:
 	done
 
 bench-search-term:
+	export QW_LAMBDA_LOG_SPAN_BOUNDARIES=true
 	mem_sizes=( 1024 2048 4096 8192 )
 	for mem_size in "$${mem_sizes[@]}"
 	do
@@ -117,6 +121,7 @@ bench-search-term:
 	done
 
 bench-search-histogram:
+	export QW_LAMBDA_LOG_SPAN_BOUNDARIES=true
 	mem_sizes=( 1024 2048 4096 8192 )
 	for mem_size in "$${mem_sizes[@]}"
 	do

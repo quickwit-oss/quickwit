@@ -12,7 +12,7 @@ from aws_cdk import (
 from constructs import Construct
 import yaml
 
-from ..services.quickwit_service import QuickwitService
+from ..services import quickwit_service
 
 SEARCHER_FUNCTION_NAME_EXPORT_NAME = "mock-data-searcher-function-name"
 INDEX_STORE_BUCKET_NAME_EXPORT_NAME = "mock-data-index-store-bucket-name"
@@ -28,7 +28,7 @@ class Source(Construct):
         scope: Construct,
         construct_id: str,
         index_id: str,
-        qw_svc: QuickwitService,
+        qw_svc: quickwit_service.QuickwitService,
         **kwargs,
     ):
         super().__init__(scope, construct_id, **kwargs)
@@ -83,7 +83,7 @@ class SearchAPI(Construct):
         scope: Construct,
         construct_id: str,
         index_id: str,
-        qw_svc: QuickwitService,
+        qw_svc: quickwit_service.QuickwitService,
         api_key: str,
         **kwargs,
     ) -> None:
@@ -149,12 +149,15 @@ class MockDataStack(Stack):
             "mock-data-index-config",
             path=index_config_local_path,
         )
-        qw_svc = QuickwitService(
+        lambda_env = quickwit_service.extract_local_env()
+        qw_svc = quickwit_service.QuickwitService(
             self,
             "Quickwit",
             index_id=index_id,
             index_config_bucket=index_config.s3_bucket_name,
             index_config_key=index_config.s3_object_key,
+            indexer_environment=lambda_env,
+            searcher_environment=lambda_env,
             indexer_package_location=indexer_package_location,
             searcher_package_location=searcher_package_location,
         )

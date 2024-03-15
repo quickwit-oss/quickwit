@@ -32,10 +32,12 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::{EnvFilter, Layer};
 
+use crate::environment::{LOG_SPAN_BOUNDARIES, OPENTELEMETRY_AUTHORIZATION, OPENTELEMETRY_URL};
+
 static TRACER_PROVIDER: OnceCell<Option<TracerProvider>> = OnceCell::new();
 pub(crate) const RUNTIME_CONTEXT_SPAN: &str = "runtime_context";
 
-fn fmt_layer<S>(level: Level, ansi: bool) -> impl Layer<S>
+fn fmt_layer<S>(level: Level) -> impl Layer<S>
 where
     S: for<'a> LookupSpan<'a>,
     S: tracing::Subscriber,
@@ -59,11 +61,16 @@ where
             ),
         )
         .json();
+    let fmt_span = if *LOG_SPAN_BOUNDARIES {
+        FmtSpan::NEW | FmtSpan::CLOSE
+    } else {
+        FmtSpan::NONE
+    };
     tracing_subscriber::fmt::layer::<S>()
-        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+        .with_span_events(fmt_span)
         .event_format(event_format)
         .fmt_fields(JsonFields::default())
-        .with_ansi(ansi)
+        .with_ansi(false)
         .with_filter(env_filter)
 }
 
@@ -111,34 +118,26 @@ where
         .with_filter(env_filter)
 }
 
-fn setup_logging_and_tracing(
-    level: Level,
-    ansi: bool,
-    build_info: &BuildInfo,
-) -> anyhow::Result<()> {
+pub fn setup_lambda_tracer(level: Level) -> anyhow::Result<()> {
     global::set_text_map_propagator(TraceContextPropagator::new());
     let registry = tracing_subscriber::registry();
-    let otlp_config = (
-        std::env::var("QW_LAMBDA_OPENTELEMETRY_URL"),
-        std::env::var("QW_LAMBDA_OPENTELEMETRY_AUTHORIZATION"),
-    );
-    if let (Ok(ot_url), Ok(ot_auth)) = otlp_config {
+    let build_info = BuildInfo::get();
+    if let (Some(ot_url), Some(ot_auth)) = (
+        OPENTELEMETRY_URL.clone(),
+        OPENTELEMETRY_AUTHORIZATION.clone(),
+    ) {
         registry
-            .with(fmt_layer(level, ansi))
+            .with(fmt_layer(level))
             .with(otlp_layer(ot_url, ot_auth, level, build_info))
             .try_init()
             .context("Failed to set up tracing.")?;
     } else {
         registry
-            .with(fmt_layer(level, ansi))
+            .with(fmt_layer(level))
             .try_init()
             .context("Failed to set up tracing.")?;
     }
     Ok(())
-}
-
-pub fn setup_lambda_tracer() -> anyhow::Result<()> {
-    setup_logging_and_tracing(Level::INFO, false, BuildInfo::get())
 }
 
 pub fn flush_tracer() {
