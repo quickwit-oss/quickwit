@@ -517,7 +517,10 @@ where
             .fetch_cluster_state(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                FetchClusterStateRequest::rpc_name(),
+            ))
     }
 }
 #[derive(Debug)]

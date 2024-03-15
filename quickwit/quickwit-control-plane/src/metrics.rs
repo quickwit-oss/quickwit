@@ -28,7 +28,7 @@ pub struct ControlPlaneMetrics {
     pub schedule_total: IntCounter,
     pub metastore_error_aborted: IntCounter,
     pub metastore_error_maybe_executed: IntCounter,
-    pub open_shards_total: IntGaugeVec<2>,
+    pub open_shards_total: IntGaugeVec<1>,
 }
 
 impl Default for ControlPlaneMetrics {
@@ -62,7 +62,7 @@ impl Default for ControlPlaneMetrics {
                 "Number of open shards per source.",
                 "control_plane",
                 &[],
-                ["index_id", "source_id"],
+                ["index_id"],
             ),
         }
     }

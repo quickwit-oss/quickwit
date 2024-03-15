@@ -47,10 +47,9 @@ use quickwit_proto::ingest::ingester::{
     IngesterServiceStream, IngesterStatus, InitShardsRequest, InitShardsResponse,
     ObservationMessage, OpenFetchStreamRequest, OpenObservationStreamRequest,
     OpenReplicationStreamRequest, OpenReplicationStreamResponse, PersistFailure,
-    PersistFailureReason, PersistRequest, PersistResponse, PersistSuccess, PingRequest,
-    PingResponse, ReplicateFailureReason, ReplicateSubrequest, RetainShardsForSource,
-    RetainShardsRequest, RetainShardsResponse, SynReplicationMessage, TruncateShardsRequest,
-    TruncateShardsResponse,
+    PersistFailureReason, PersistRequest, PersistResponse, PersistSuccess, ReplicateFailureReason,
+    ReplicateSubrequest, RetainShardsForSource, RetainShardsRequest, RetainShardsResponse,
+    SynReplicationMessage, TruncateShardsRequest, TruncateShardsResponse,
 };
 use quickwit_proto::ingest::{
     CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardIds, ShardState,
@@ -372,12 +371,10 @@ impl Ingester {
             .try_send(open_message)
             .expect("channel should be open and have capacity");
 
-        let mut ingester =
-            self.ingester_pool
-                .get(&follower_id)
-                .ok_or(IngestV2Error::IngesterUnavailable {
-                    ingester_id: follower_id.clone(),
-                })?;
+        let mut ingester = self.ingester_pool.get(&follower_id).ok_or_else(|| {
+            let message = format!("ingester `{follower_id}` is unavailable");
+            IngestV2Error::Unavailable(message)
+        })?;
         let mut ack_replication_stream = ingester
             .open_replication_stream(syn_replication_stream)
             .await?;
@@ -948,31 +945,6 @@ impl Ingester {
         Ok(CloseShardsResponse {})
     }
 
-    async fn ping_inner(&mut self, ping_request: PingRequest) -> IngestV2Result<PingResponse> {
-        let state_guard = self.state.lock_partially().await?;
-
-        if state_guard.status() != IngesterStatus::Ready {
-            return Err(IngestV2Error::Internal("node decommissioned".to_string()));
-        }
-        if ping_request.leader_id != self.self_node_id {
-            let ping_response = PingResponse {};
-            return Ok(ping_response);
-        };
-        let Some(follower_id) = &ping_request.follower_id else {
-            let ping_response = PingResponse {};
-            return Ok(ping_response);
-        };
-        let follower_id: NodeId = follower_id.clone().into();
-        let mut ingester = self.ingester_pool.get(&follower_id).ok_or({
-            IngestV2Error::IngesterUnavailable {
-                ingester_id: follower_id,
-            }
-        })?;
-        ingester.ping(ping_request).await?;
-        let ping_response = PingResponse {};
-        Ok(ping_response)
-    }
-
     async fn decommission_inner(
         &mut self,
         _decommission_request: DecommissionRequest,
@@ -1075,10 +1047,6 @@ impl IngesterService for Ingester {
         close_shards_request: CloseShardsRequest,
     ) -> IngestV2Result<CloseShardsResponse> {
         self.close_shards_inner(close_shards_request).await
-    }
-
-    async fn ping(&mut self, ping_request: PingRequest) -> IngestV2Result<PingResponse> {
-        self.ping_inner(ping_request).await
     }
 
     async fn decommission(

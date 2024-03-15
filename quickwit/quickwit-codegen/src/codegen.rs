@@ -353,6 +353,16 @@ impl SynMethod {
         }
     }
 
+    fn rpc_name(&self, mock: bool) -> TokenStream {
+        let request_type = &self.request_type;
+
+        if mock {
+            quote! { super::#request_type::rpc_name() }
+        } else {
+            quote! { #request_type::rpc_name() }
+        }
+    }
+
     fn response_type(&self, context: &CodegenContext, mock: bool) -> TokenStream {
         let response_type = if mock {
             let response_type = &self.response_type;
@@ -1158,6 +1168,7 @@ fn generate_grpc_client_adapter_methods(context: &CodegenContext) -> TokenStream
     for syn_method in &context.methods {
         let method_name = syn_method.name.to_token_stream();
         let request_type = syn_method.request_type(false);
+        let rpc_name = syn_method.rpc_name(false);
         let response_type = syn_method.response_type(context, false);
 
         let into_response_type = if syn_method.server_streaming {
@@ -1165,7 +1176,7 @@ fn generate_grpc_client_adapter_methods(context: &CodegenContext) -> TokenStream
                 {
                     let streaming: tonic::Streaming<_> = response.into_inner();
                     let stream = quickwit_common::ServiceStream::from(streaming);
-                    stream.map_err(crate::error::grpc_status_to_service_error)
+                    stream.map_err(|status| crate::error::grpc_status_to_service_error(status, #rpc_name))
                 }
             }
         } else {
@@ -1177,7 +1188,7 @@ fn generate_grpc_client_adapter_methods(context: &CodegenContext) -> TokenStream
                     .#method_name(request)
                     .await
                     .map(#into_response_type)
-                    .map_err(crate::error::grpc_status_to_service_error)
+                    .map_err(|status| crate::error::grpc_status_to_service_error(status, #rpc_name))
             }
         };
         stream.extend(method);

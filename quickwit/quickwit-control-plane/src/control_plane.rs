@@ -55,7 +55,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::Serialize;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
@@ -513,10 +513,12 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid().clone();
+        debug!(%index_uid, "deleting index");
 
         if let Err(metastore_error) = self.metastore.delete_index(request).await {
             return convert_metastore_error(metastore_error);
         };
+        info!(%index_uid, "deleted index");
 
         let ingester_needing_resync: BTreeSet<NodeId> = self
             .model
@@ -557,13 +559,17 @@ impl Handler<AddSourceRequest> for ControlPlane {
                     return Ok(Err(ControlPlaneError::from(error)));
                 }
             };
+        let source_id = source_config.source_id.clone();
+        debug!(%index_uid, source_id, "adding source");
+
         if let Err(error) = self.metastore.add_source(request).await {
             return Ok(Err(ControlPlaneError::from(error)));
         };
-
         self.model
             .add_source(&index_uid, source_config)
             .context("failed to add source")?;
+
+        info!(%index_uid, source_id, "added source");
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
@@ -588,10 +594,13 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
         let enable = request.enable;
+        debug!(%index_uid, source_id, enable, "toggling source");
 
         if let Err(error) = self.metastore.toggle_source(request).await {
             return Ok(Err(ControlPlaneError::from(error)));
         };
+        info!(%index_uid, source_id, enabled=enable, "toggled source");
+
         let mutation_occured = self.model.toggle_source(&index_uid, &source_id, enable)?;
 
         if mutation_occured {
@@ -881,7 +890,9 @@ mod tests {
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
     };
-    use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
+    use quickwit_proto::control_plane::{
+        GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsSubrequest,
+    };
     use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
     use quickwit_proto::ingest::ingester::{IngesterServiceClient, RetainShardsResponse};
     use quickwit_proto::ingest::{Shard, ShardState};
@@ -1989,7 +2000,7 @@ mod tests {
             MetastoreServiceClient::from(mock_metastore),
         );
 
-        let error = control_plane_mailbox
+        let response = control_plane_mailbox
             .ask(GetOrCreateOpenShardsRequest {
                 subrequests: vec![GetOrCreateOpenShardsSubrequest {
                     subrequest_id: 0,
@@ -2001,8 +2012,13 @@ mod tests {
             })
             .await
             .unwrap()
-            .unwrap_err();
-        assert!(matches!(error, ControlPlaneError::Unavailable { .. }));
+            .unwrap();
+        assert!(response.successes.is_empty());
+        assert_eq!(response.failures.len(), 1);
+        assert!(matches!(
+            response.failures[0].reason(),
+            GetOrCreateOpenShardsFailureReason::NoIngestersAvailable
+        ));
 
         let control_plane_state = control_plane_mailbox.ask(Observe).await.unwrap();
         assert_eq!(control_plane_state.num_indexes, 1);

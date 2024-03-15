@@ -442,10 +442,8 @@ impl IngestRouterService for IngestRouter {
     ) -> IngestV2Result<IngestResponseV2> {
         let request_size_bytes = ingest_request.num_bytes();
 
-        let _gauge_guard = GaugeGuard::from_gauge(
-            &MEMORY_METRICS.in_flight_data.ingest_router,
-            request_size_bytes as i64,
-        );
+        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight_data.ingest_router);
+        gauge_guard.add(request_size_bytes as i64);
         let _permit = self
             .ingest_semaphore
             .clone()
