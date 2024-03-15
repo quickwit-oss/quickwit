@@ -86,7 +86,7 @@ x-default-logging: &logging
 
 services:
   quickwit:
-    image: quickwit/quickwit:${QW_VERSION:-0.7.1}
+    image: quickwit/quickwit:${QW_VERSION:-0.8.0}
     volumes:
       - ./qwdata:/quickwit/qwdata
     ports:
