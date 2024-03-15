@@ -624,6 +624,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_transport_errors_handling() {
+        quickwit_common::setup_logging_for_tests();
+
         let addr: SocketAddr = "127.0.0.1:9999".parse().unwrap();
         let channel = Endpoint::from_static("http://127.0.0.1:9999")
             .timeout(Duration::from_millis(100))

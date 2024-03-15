@@ -30,6 +30,7 @@ fn main() {
         .with_result_type_path("crate::Result")
         .with_error_type_path("crate::IngestServiceError")
         .with_prost_config(prost_config)
+        .generate_rpc_name_impls()
         .run()
         .unwrap();
 }
