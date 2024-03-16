@@ -17,13 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
-use bytes::{BufMut, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use futures::StreamExt;
 use mrecordlog::Record;
 use quickwit_common::retry::RetryParams;
@@ -143,12 +142,12 @@ impl FetchStreamTask {
                 break;
             };
             for Record { payload, .. } in mrecords {
-                if mrecord_buffer.len() + payload.len() > mrecord_buffer.capacity() {
+                if mrecord_buffer.len() + payload.remaining() > mrecord_buffer.capacity() {
                     has_drained_queue = false;
                     break;
                 }
-                mrecord_buffer.put(payload.borrow());
-                mrecord_lengths.push(payload.len() as u32);
+                mrecord_lengths.push(payload.remaining() as u32);
+                mrecord_buffer.put(payload);
             }
             // Drop the lock while we send the message.
             drop(mrecordlog_guard);
