@@ -183,7 +183,7 @@ impl Queues {
             if first_key_opt.is_none() {
                 first_key_opt = Some(position);
             }
-            num_bytes += doc_batch.command_from_buf(payload.as_ref());
+            num_bytes += doc_batch.command_from_buf(payload);
             if num_bytes > size_limit {
                 break;
             }
