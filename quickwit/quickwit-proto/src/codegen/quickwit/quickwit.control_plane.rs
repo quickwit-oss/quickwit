@@ -1526,7 +1526,10 @@ where
             .create_index(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::metastore::CreateIndexRequest::rpc_name(),
+            ))
     }
     async fn delete_index(
         &mut self,
@@ -1536,7 +1539,10 @@ where
             .delete_index(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::metastore::DeleteIndexRequest::rpc_name(),
+            ))
     }
     async fn add_source(
         &mut self,
@@ -1546,7 +1552,10 @@ where
             .add_source(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::metastore::AddSourceRequest::rpc_name(),
+            ))
     }
     async fn toggle_source(
         &mut self,
@@ -1556,7 +1565,10 @@ where
             .toggle_source(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::metastore::ToggleSourceRequest::rpc_name(),
+            ))
     }
     async fn delete_source(
         &mut self,
@@ -1566,7 +1578,10 @@ where
             .delete_source(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::metastore::DeleteSourceRequest::rpc_name(),
+            ))
     }
     async fn get_or_create_open_shards(
         &mut self,
@@ -1576,7 +1591,10 @@ where
             .get_or_create_open_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                GetOrCreateOpenShardsRequest::rpc_name(),
+            ))
     }
     async fn advise_reset_shards(
         &mut self,
@@ -1586,7 +1604,10 @@ where
             .advise_reset_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                AdviseResetShardsRequest::rpc_name(),
+            ))
     }
     async fn get_debug_state(
         &mut self,
@@ -1596,7 +1617,10 @@ where
             .get_debug_state(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                GetDebugStateRequest::rpc_name(),
+            ))
     }
 }
 #[derive(Debug)]

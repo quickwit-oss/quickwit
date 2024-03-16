@@ -139,7 +139,7 @@ where E: GrpcServiceError {
 }
 
 /// Converts a gRPC status into a service error.
-pub fn grpc_status_to_service_error<E>(status: tonic::Status) -> E
+pub fn grpc_status_to_service_error<E>(status: tonic::Status, rpc_name: &'static str) -> E
 where E: GrpcServiceError {
     if let Some(header_value) = status.metadata().get_bin(QW_ERROR_HEADER_NAME) {
         let service_error = match decode_error(header_value) {
@@ -154,10 +154,8 @@ where E: GrpcServiceError {
         };
         return service_error;
     }
-    if let Some(source) = status.source() {
-        error!(error = %source, "transport error");
-    }
     let message = status.message().to_string();
+    error!(code = ?status.code(), rpc = rpc_name, "gRPC transport error: {message}");
 
     match status.code() {
         // `Cancelled` is a client timeout whereas `DeadlineExceeded` is a server timeout. At this
@@ -241,7 +239,7 @@ mod tests {
 
         let service_error = MyError::new_internal("test".to_string());
         let status = grpc_error_to_grpc_status(service_error.clone());
-        let expected_error: MyError = grpc_status_to_service_error(status);
+        let expected_error: MyError = grpc_status_to_service_error(status, "rpc_name");
         assert_eq!(service_error, expected_error);
     }
 }

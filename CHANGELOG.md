@@ -22,6 +22,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --->
 
+## [0.8.0]
+
+### Added
+
+- Remove some noisy logs (#4447)
+- Add `/{index}/_stats` and `/_stats` ES API (#4442)
+- Use `search_after` in ES scroll API (#4280)
+- Add support for wildcard exclusion in index patterns (#4458)
+- Add `.` support in DSL indentifiers (#3989)
+- Add cat indices ES API (#4465)
+- Limit concurrent merges (#4473)
+- Add Index Template API and auto create index (#4456) (only available with ingest V2)
+- Add support for compressed ES `_bulk` requests (#4506)
+- Add support for slash `/` character in field names (#4510)
+- Handle SIGTERM shutdown signal (#4539)
+- Add `start_timestamp` and `end_timestamp` filter to ES `_field_caps` API (#4547)
+- Limit the number of merge pipelines that can be spawned concurrently (#4574)
+- Add support for `_source_excludes` and `_source_includes` query parameters in ES API (#4572)
+- Add gRPC metrics layer to clients and servers (#4591)
+- Add additional cluster metrics (#4597)
+- Add index patterns query param on GET `/indexes` endpoint (#4600)
+- Add support for GCS file backed metastore (#4604)
+- Add default search fields for OTEL traces index (#4602)
+- Add support for delete index in ES API (#4606)
+- Add a handler to dynamically change the log level (#4662)
+- Add REST endpoint to parse a query into a query AST (#4652)
+- Add postgresql index and use `IN` instead of many `OR` (#4670)
+- Add support for `_source_excludes`, `_source_includes`, `extra_filters` in `_msearch` ES API (#4696)
+- Handle `track_total_size` on request ES body (#4710)
+- Add a metric for the number number of indexes (#4711)
+- Add various performance optimizations in Quickwit and Tantivy
+
+More details in tantivy's [changelog](https://github.com/quickwit-oss/tantivy/blob/main/CHANGELOG.md).
+
+### Fixed
+
+- Fix aggregation result on empty index (#4449)
+- Fix Gzip file source (#4457)
+- Rate limit noisy logs (#4483)
+- Prevent the exponential backoff from overflowing after 64 attempts (#4501)
+- Remove field presence in ES `_field_caps` API (#4492)
+- Remove `source` in ES parameter, remove unsupported field `fields` in response (#4590)
+- Fix aggregation `split_size` parameter, add docs and test (#4627)
+- Various fixes in chitchat (gossip): more details in [chitchat commit history](https://github.com/quickwit-oss/chitchat/commits/main/?since=2024-01-08&until=2024-03-13)
+- Various fixes in mrecordlog (WAL): more details in [mrecordlog commit history](https://github.com/quickwit-oss/mrecordlog/commits/main/?since=2024-01-08&until=2024-03-13)
+
+### Changed
+
+- (Breaking) [Add ZSTD compression to chitchat's Deltas](https://github.com/quickwit-oss/chitchat/pull/112)
+
+### Removed
+
+### Migration from 0.7.x to 0.8.0
+
+To deploy Quickwit 0.8.0, you must either:
+- **shutdown down** your cluster **entirely** before deploying, or
+- **restart all** the nodes of your cluster after deploying.
+
+Because we made some breaking changes in the gossip protocol (chitchat), nodes running different versions of Quickwit cannot communicate with each other and crash upon receiving messages that do not match their release version. The new protocol is now versioned, and future updates of the gossip protocol will be backward compatible.
+
+
 ## [0.7.1]
 
 ### Added

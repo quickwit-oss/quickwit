@@ -2007,7 +2007,10 @@ where
             .persist(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                PersistRequest::rpc_name(),
+            ))
     }
     async fn open_replication_stream(
         &mut self,
@@ -2019,9 +2022,16 @@ where
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
                 let stream = quickwit_common::ServiceStream::from(streaming);
-                stream.map_err(crate::error::grpc_status_to_service_error)
+                stream
+                    .map_err(|status| crate::error::grpc_status_to_service_error(
+                        status,
+                        SynReplicationMessage::rpc_name(),
+                    ))
             })
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                SynReplicationMessage::rpc_name(),
+            ))
     }
     async fn open_fetch_stream(
         &mut self,
@@ -2033,9 +2043,16 @@ where
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
                 let stream = quickwit_common::ServiceStream::from(streaming);
-                stream.map_err(crate::error::grpc_status_to_service_error)
+                stream
+                    .map_err(|status| crate::error::grpc_status_to_service_error(
+                        status,
+                        OpenFetchStreamRequest::rpc_name(),
+                    ))
             })
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                OpenFetchStreamRequest::rpc_name(),
+            ))
     }
     async fn open_observation_stream(
         &mut self,
@@ -2047,9 +2064,16 @@ where
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
                 let stream = quickwit_common::ServiceStream::from(streaming);
-                stream.map_err(crate::error::grpc_status_to_service_error)
+                stream
+                    .map_err(|status| crate::error::grpc_status_to_service_error(
+                        status,
+                        OpenObservationStreamRequest::rpc_name(),
+                    ))
             })
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                OpenObservationStreamRequest::rpc_name(),
+            ))
     }
     async fn init_shards(
         &mut self,
@@ -2059,7 +2083,10 @@ where
             .init_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                InitShardsRequest::rpc_name(),
+            ))
     }
     async fn retain_shards(
         &mut self,
@@ -2069,7 +2096,10 @@ where
             .retain_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                RetainShardsRequest::rpc_name(),
+            ))
     }
     async fn truncate_shards(
         &mut self,
@@ -2079,7 +2109,10 @@ where
             .truncate_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                TruncateShardsRequest::rpc_name(),
+            ))
     }
     async fn close_shards(
         &mut self,
@@ -2089,7 +2122,10 @@ where
             .close_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                CloseShardsRequest::rpc_name(),
+            ))
     }
     async fn decommission(
         &mut self,
@@ -2099,7 +2135,10 @@ where
             .decommission(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                DecommissionRequest::rpc_name(),
+            ))
     }
 }
 #[derive(Debug)]
