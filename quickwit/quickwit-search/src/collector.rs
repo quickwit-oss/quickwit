@@ -150,6 +150,20 @@ enum SortingFieldExtractorComponent {
 }
 
 impl SortingFieldExtractorComponent {
+    fn is_fast_field(&self) -> bool {
+        matches!(self, SortingFieldExtractorComponent::FastField { .. })
+    }
+    /// Loads the fast field values for the given doc_ids in its u64 representation. The returned
+    /// u64 representation maintains the ordering of the original value.
+    #[inline]
+    fn extract_typed_sort_values_block(&self, doc_ids: &[DocId], values: &mut [Option<u64>]) {
+        // In the collect block case we don't have scores to extract
+        if let SortingFieldExtractorComponent::FastField { sort_column, .. } = self {
+            let values = &mut values[..doc_ids.len()];
+            sort_column.first_vals(doc_ids, values);
+        }
+    }
+
     /// Returns the sort value for the given element in its u64 representation. The returned u64
     /// representation maintains the ordering of the original value.
     ///
@@ -371,6 +385,23 @@ pub(crate) struct SortingFieldExtractorPair {
 impl SortingFieldExtractorPair {
     /// Returns the list of sort values for the given element
     ///
+    /// See also [`SortingFieldExtractorComponent::extract_typed_sort_values_block`] for more
+    /// information.
+    #[inline]
+    fn extract_typed_sort_values(
+        &self,
+        doc_ids: &[DocId],
+        values1: &mut [Option<u64>],
+        values2: &mut [Option<u64>],
+    ) {
+        self.first
+            .extract_typed_sort_values_block(doc_ids, &mut values1[..doc_ids.len()]);
+        if let Some(second) = self.second.as_ref() {
+            second.extract_typed_sort_values_block(doc_ids, &mut values2[..doc_ids.len()]);
+        }
+    }
+    /// Returns the list of sort values for the given element
+    ///
     /// See also [`SortingFieldExtractorComponent::extract_typed_sort_value_opt`] for more
     /// information.
     #[inline]
@@ -480,6 +511,10 @@ pub struct QuickwitSegmentCollector {
     search_after: Option<SearchAfterSegment>,
     // Precomputed order for search_after for split_id and segment_ord
     precomp_search_after_order: Ordering,
+    // Caches for block fetching
+    filtered_docs: Box<[DocId; 64]>,
+    sort_values1: Box<[Option<u64>; 64]>,
+    sort_values2: Box<[Option<u64>; 64]>,
 }
 
 /// Search After, but the sort values are converted to the u64 fast field representation.
@@ -543,15 +578,107 @@ impl SearchAfterSegment {
 }
 
 impl QuickwitSegmentCollector {
-    #[inline]
-    fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
-        let (sort_value, sort_value2): (Option<u64>, Option<u64>) =
-            self.score_extractor.extract_typed_sort_value(doc_id, score);
+    fn collect_top_k_block(&mut self, num_docs: usize, docs: &[DocId]) {
+        let doc_ids = get_final_docs(
+            &self.timestamp_filter_opt,
+            num_docs,
+            docs,
+            &self.filtered_docs,
+        );
+        self.score_extractor.extract_typed_sort_values(
+            doc_ids,
+            &mut self.sort_values1[..],
+            &mut self.sort_values2[..],
+        );
+        if let Some(_search_after) = &self.search_after {
+            // Search after not optimized for block collection yet
+            for ((doc_id, sort_value), sort_value2) in doc_ids
+                .iter()
+                .cloned()
+                .zip(self.sort_values1.iter().cloned())
+                .zip(self.sort_values2.iter().cloned())
+            {
+                Self::collect_top_k_vals(
+                    doc_id,
+                    sort_value,
+                    sort_value2,
+                    &self.search_after,
+                    self.precomp_search_after_order,
+                    &mut self.top_k_hits,
+                );
+            }
+        } else {
+            // Probaly would make sense to check the fence against e.g. sort_values1 earlier,
+            // before creating the SegmentPartialHit.
+            //
+            // Below are different versions to avoid iterating the caches if they are unused.
+            //
+            // No sort values loaded. Sort only by doc_id.
+            if !self.score_extractor.first.is_fast_field() {
+                for doc_id in doc_ids.iter().cloned() {
+                    let hit = SegmentPartialHit {
+                        sort_value: None,
+                        sort_value2: None,
+                        doc_id,
+                    };
+                    self.top_k_hits.add_entry(hit);
+                }
+                return;
+            }
+            let has_no_second_sort = !self
+                .score_extractor
+                .second
+                .as_ref()
+                .map(|extr| extr.is_fast_field())
+                .unwrap_or(false);
+            // No second sort values => We can skip iterating the second sort values cache.
+            if has_no_second_sort {
+                for (doc_id, sort_value) in doc_ids
+                    .iter()
+                    .cloned()
+                    .zip(self.sort_values1.iter().cloned())
+                {
+                    let hit = SegmentPartialHit {
+                        sort_value,
+                        sort_value2: None,
+                        doc_id,
+                    };
+                    self.top_k_hits.add_entry(hit);
+                }
+                return;
+            }
 
-        if let Some(search_after) = &self.search_after {
+            for ((doc_id, sort_value), sort_value2) in doc_ids
+                .iter()
+                .cloned()
+                .zip(self.sort_values1.iter().cloned())
+                .zip(self.sort_values2.iter().cloned())
+            {
+                let hit = SegmentPartialHit {
+                    sort_value,
+                    sort_value2,
+                    doc_id,
+                };
+                self.top_k_hits.add_entry(hit);
+            }
+        }
+    }
+    #[inline]
+    /// Generic top k collection, that includes search_after handling
+    ///
+    /// Outside of the collector to circumvent lifetime issues.
+    fn collect_top_k_vals(
+        doc_id: DocId,
+        sort_value: Option<u64>,
+        sort_value2: Option<u64>,
+        search_after: &Option<SearchAfterSegment>,
+        precomp_search_after_order: Ordering,
+        top_k_hits: &mut TopK<SegmentPartialHit, SegmentPartialHitSortingKey, HitSortingMapper>,
+    ) {
+        if let Some(search_after) = &search_after {
             let search_after_value1 = search_after.sort_value;
             let search_after_value2 = search_after.sort_value2;
-            let orders = &self.top_k_hits.sort_key_mapper;
+            let orders = &top_k_hits.sort_key_mapper;
             let mut cmp_result = orders
                 .order1
                 .compare_opt(&sort_value, &search_after_value1)
@@ -565,7 +692,7 @@ impl QuickwitSegmentCollector {
                 // default
                 let order = orders.order1;
                 cmp_result = cmp_result
-                    .then(self.precomp_search_after_order)
+                    .then(precomp_search_after_order)
                     // We compare doc_id only if sort_value1, sort_value2, split_id and segment_ord
                     // are equal.
                     .then_with(|| order.compare(&doc_id, &search_after.doc_id))
@@ -581,7 +708,21 @@ impl QuickwitSegmentCollector {
             sort_value2,
             doc_id,
         };
-        self.top_k_hits.add_entry(hit);
+        top_k_hits.add_entry(hit);
+    }
+
+    #[inline]
+    fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
+        let (sort_value, sort_value2): (Option<u64>, Option<u64>) =
+            self.score_extractor.extract_typed_sort_value(doc_id, score);
+        Self::collect_top_k_vals(
+            doc_id,
+            sort_value,
+            sort_value2,
+            &self.search_after,
+            self.precomp_search_after_order,
+            &mut self.top_k_hits,
+        );
     }
 
     #[inline]
@@ -590,6 +731,24 @@ impl QuickwitSegmentCollector {
             return timestamp_filter.is_within_range(doc_id);
         }
         true
+    }
+}
+
+/// This is to circumvent lifetime issues and is pretty terrible.
+///
+/// We either use `filtered_docs` buffer (computed in `compute_filtered_block`) or return the passed
+/// docs.
+#[inline]
+fn get_final_docs<'a>(
+    timestamp_filter_opt: &Option<TimestampFilter>,
+    num_docs: usize,
+    docs: &'a [DocId],
+    filtered_docs: &'a [DocId; BUFFER_LEN],
+) -> &'a [DocId] {
+    if timestamp_filter_opt.is_some() {
+        &filtered_docs[..num_docs]
+    } else {
+        &docs[..num_docs]
     }
 }
 
@@ -635,8 +794,64 @@ impl SegmentPartialHit {
     }
 }
 
+const BUFFER_LEN: usize = tantivy::COLLECT_BLOCK_BUFFER_LEN;
+/// Store the filtered docs in `filtered_docs_buffer` if `timestamp_filter_opt` is present.
+///
+/// Returns the number of docs.
+///
+/// Ideally we would return just final docs slice, but we can't do that because of the borrow
+/// checker.
+fn compute_filtered_block<'a>(
+    timestamp_filter_opt: &Option<TimestampFilter>,
+    docs: &'a [DocId],
+    filtered_docs_buffer: &'a mut [DocId; BUFFER_LEN],
+) -> usize {
+    let Some(timestamp_filter) = &timestamp_filter_opt else {
+        return docs.len();
+    };
+    let mut len = 0;
+    for &doc in docs {
+        filtered_docs_buffer[len] = doc;
+        len += if timestamp_filter.is_within_range(doc) {
+            1
+        } else {
+            0
+        };
+    }
+    len
+}
+
 impl SegmentCollector for QuickwitSegmentCollector {
     type Fruit = tantivy::Result<LeafSearchResponse>;
+
+    #[inline]
+    fn collect_block(&mut self, docs: &[DocId]) {
+        let num_docs =
+            compute_filtered_block(&self.timestamp_filter_opt, docs, &mut self.filtered_docs);
+
+        // Update results
+        self.num_hits += num_docs as u64;
+
+        if self.top_k_hits.max_len() != 0 {
+            self.collect_top_k_block(num_docs, docs);
+        }
+
+        let docs = get_final_docs(
+            &self.timestamp_filter_opt,
+            num_docs,
+            docs,
+            &self.filtered_docs,
+        );
+        match self.aggregation.as_mut() {
+            Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
+                collector.collect_block(docs)
+            }
+            Some(AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector)) => {
+                collector.collect_block(docs)
+            }
+            None => (),
+        }
+    }
 
     #[inline]
     fn collect(&mut self, doc_id: DocId, score: Score) {
@@ -907,6 +1122,9 @@ impl Collector for QuickwitCollector {
             aggregation,
             search_after,
             precomp_search_after_order,
+            filtered_docs: Box::new([0; 64]),
+            sort_values1: Box::new([None; 64]),
+            sort_values2: Box::new([None; 64]),
         })
     }
 
