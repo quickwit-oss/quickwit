@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![recursion_limit = "256"]
+
 mod build_info;
 mod cluster_api;
 mod debugging_api;
@@ -55,6 +57,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use bytesize::ByteSize;
+pub(crate) use decompression::Body;
 pub use format::BodyFormat;
 use futures::StreamExt;
 use itertools::Itertools;
@@ -1293,7 +1296,7 @@ mod tests {
         assert!(new_indexer_node_info.indexing_tasks.is_empty());
 
         let new_indexing_task = IndexingTask {
-            pipeline_uid: Some(PipelineUid::from_u128(0u128)),
+            pipeline_uid: Some(PipelineUid::for_test(0u128)),
             index_uid: Some(IndexUid::for_test("test-index", 0)),
             source_id: "test-source".to_string(),
             shard_ids: Vec::new(),

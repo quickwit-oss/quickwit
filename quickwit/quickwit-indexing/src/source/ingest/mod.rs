@@ -38,7 +38,9 @@ use quickwit_proto::ingest::ingester::{
     TruncateShardsSubrequest,
 };
 use quickwit_proto::ingest::IngestV2Error;
-use quickwit_proto::metastore::{AcquireShardsRequest, MetastoreService, MetastoreServiceClient};
+use quickwit_proto::metastore::{
+    AcquireShardsRequest, MetastoreService, MetastoreServiceClient, SourceType,
+};
 use quickwit_proto::types::{
     NodeId, PipelineUid, Position, PublishToken, ShardId, SourceId, SourceUid,
 };
@@ -320,7 +322,7 @@ impl IngestSource {
         > = FnvHashMap::default();
 
         for (shard_id, truncate_up_to_position_inclusive) in truncate_up_to_positions {
-            if matches!(truncate_up_to_position_inclusive, Position::Beginning) {
+            if truncate_up_to_position_inclusive.is_beginning() {
                 continue;
             }
             let Some(shard) = self.assigned_shards.get(&shard_id) else {
@@ -400,7 +402,6 @@ impl IngestSource {
         if new_assigned_shard_ids.is_empty() && self.assigned_shards.is_empty() {
             return Ok(());
         }
-
         // There are two reasons why we might want to reset the pipeline.
         // 1) it has never been initialized in the first place. This happens typically on the first
         // call to `assign_shards` with a non-empty list of shards. We check that by looking at
@@ -463,7 +464,7 @@ impl Source for IngestSource {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        let mut batch_builder = BatchBuilder::default();
+        let mut batch_builder = BatchBuilder::new(SourceType::IngestV2);
 
         let now = time::Instant::now();
         let deadline = now + EMIT_BATCHES_TIMEOUT;
@@ -610,7 +611,6 @@ impl Source for IngestSource {
     ) -> anyhow::Result<()> {
         let truncate_up_to_positions: Vec<(ShardId, Position)> = checkpoint
             .iter()
-            .filter(|(_, position)| !matches!(position, Position::Beginning))
             .map(|(partition_id, position)| {
                 let shard_id = ShardId::from(partition_id.as_str());
                 (shard_id, position)
@@ -1792,6 +1792,7 @@ mod tests {
                 (ShardId::from(2u64), Position::offset(22u64)),
                 (ShardId::from(3u64), Position::eof(33u64)),
                 (ShardId::from(4u64), Position::offset(44u64)),
+                (ShardId::from(5u64), Position::Beginning),
                 (ShardId::from(6u64), Position::offset(66u64)),
             ],
         );

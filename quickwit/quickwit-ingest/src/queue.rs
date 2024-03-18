@@ -22,7 +22,7 @@ use std::path::Path;
 
 use bytes::Buf;
 use mrecordlog::error::CreateQueueError;
-use mrecordlog::Record;
+use mrecordlog::{Record, ResourceUsage};
 use quickwit_actors::ActorContext;
 
 use crate::mrecordlog_async::MultiRecordLogAsync;
@@ -211,12 +211,8 @@ impl Queues {
         })
     }
 
-    pub(crate) fn disk_usage(&self) -> usize {
-        self.record_log.disk_usage()
-    }
-
-    pub(crate) fn memory_usage(&self) -> usize {
-        self.record_log.memory_usage()
+    pub(crate) fn resource_usage(&self) -> ResourceUsage {
+        self.record_log.resource_usage()
     }
 }
 
@@ -230,7 +226,7 @@ mod tests {
     use tokio::sync::watch;
 
     use super::Queues;
-    use crate::errors::IngestServiceError;
+    use crate::error::IngestServiceError;
     use crate::IngestApiService;
 
     const TEST_QUEUE_ID: &str = "my-queue";

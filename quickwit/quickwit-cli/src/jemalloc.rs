@@ -19,47 +19,48 @@
 
 use std::time::Duration;
 
-use quickwit_common::metrics::new_gauge;
+use quickwit_common::metrics::MEMORY_METRICS;
 use tikv_jemallocator::Jemalloc;
 use tracing::error;
 
 #[global_allocator]
 pub static GLOBAL: Jemalloc = Jemalloc;
 
-pub const JEMALLOC_METRICS_POLLING_INTERVAL: Duration = Duration::from_secs(1);
+const JEMALLOC_METRICS_POLLING_INTERVAL: Duration = Duration::from_secs(1);
 
 pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
-    let allocated_gauge = new_gauge(
-        "allocated_num_bytes",
-        "Number of bytes allocated memory, as reported by jemallocated.",
-        "quickwit",
-    );
+    let memory_metrics = MEMORY_METRICS.clone();
 
-    // Obtain a MIB for the `epoch`, `stats.allocated`, and
-    // `atats.resident` keys:
-    let epoch_management_information_base = tikv_jemalloc_ctl::epoch::mib()?;
-    let allocated = tikv_jemalloc_ctl::stats::allocated::mib()?;
+    // Obtain a MIB for the `epoch`, `stats.active`, `stats.allocated`, and `stats.resident` keys:
+    let epoch_mib = tikv_jemalloc_ctl::epoch::mib()?;
+    let active_mib = tikv_jemalloc_ctl::stats::active::mib()?;
+    let allocated_mib = tikv_jemalloc_ctl::stats::allocated::mib()?;
+    let resident_mib = tikv_jemalloc_ctl::stats::resident::mib()?;
 
     let mut poll_interval = tokio::time::interval(JEMALLOC_METRICS_POLLING_INTERVAL);
 
     loop {
         poll_interval.tick().await;
 
-        // Many statistics are cached and only updated
-        // when the epoch is advanced:
-        epoch_management_information_base.advance()?;
+        // Many statistics are cached and only updated when the epoch is advanced:
+        epoch_mib.advance()?;
 
-        // Read statistics using MIB key:
-        let allocated = allocated.read()?;
+        // Read statistics using MIB keys:
+        let active = active_mib.read()?;
+        memory_metrics.active_bytes.set(active as i64);
 
-        allocated_gauge.set(allocated as i64);
+        let allocated = allocated_mib.read()?;
+        memory_metrics.allocated_bytes.set(allocated as i64);
+
+        let resident = resident_mib.read()?;
+        memory_metrics.resident_bytes.set(resident as i64);
     }
 }
 
 pub fn start_jemalloc_metrics_loop() {
     tokio::task::spawn(async {
-        if let Err(jemalloc_metrics_err) = jemalloc_metrics_loop().await {
-            error!(err=?jemalloc_metrics_err, "failed to gather metrics from jemalloc");
+        if let Err(error) = jemalloc_metrics_loop().await {
+            error!(%error, "failed to collect metrics from jemalloc");
         }
     });
 }

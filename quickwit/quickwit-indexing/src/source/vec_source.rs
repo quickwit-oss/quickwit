@@ -25,12 +25,13 @@ use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::VecSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
+use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
 use serde_json::Value as JsonValue;
 use tracing::info;
 
+use super::BatchBuilder;
 use crate::actors::DocProcessor;
-use crate::models::RawDocBatch;
 use crate::source::{Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
 
 pub struct VecSource {
@@ -92,29 +93,32 @@ impl Source for VecSource {
         batch_sink: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        let mut doc_batch = RawDocBatch::default();
+        let mut batch_builder = BatchBuilder::new(SourceType::Vec);
 
-        doc_batch.docs.extend(
-            self.params.docs[self.next_item_idx..]
-                .iter()
-                .take(self.params.batch_num_docs)
-                .cloned(),
-        );
-        if doc_batch.docs.is_empty() {
+        for doc in self.params.docs[self.next_item_idx..]
+            .iter()
+            .take(self.params.batch_num_docs)
+            .cloned()
+        {
+            batch_builder.add_doc(doc);
+        }
+        if batch_builder.docs.is_empty() {
             info!("reached end of source");
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
         let from_item_idx = self.next_item_idx;
-        self.next_item_idx += doc_batch.docs.len();
+        self.next_item_idx += batch_builder.docs.len();
         let to_item_idx = self.next_item_idx;
-        doc_batch.checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
+
+        batch_builder.checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             self.partition.clone(),
             position_from_offset(from_item_idx),
             position_from_offset(to_item_idx),
         )
         .unwrap();
-        ctx.send_message(batch_sink, doc_batch).await?;
+        ctx.send_message(batch_sink, batch_builder.build()).await?;
+
         Ok(Duration::default())
     }
 
@@ -142,6 +146,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::models::RawDocBatch;
     use crate::source::SourceActor;
 
     #[tokio::test]
@@ -158,8 +163,7 @@ mod tests {
         };
         let source_config = SourceConfig {
             source_id: "test-vec-source".to_string(),
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Vec(params.clone()),
             transform_config: None,
@@ -219,8 +223,7 @@ mod tests {
 
         let source_config = SourceConfig {
             source_id: "test-vec-source".to_string(),
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Vec(params.clone()),
             transform_config: None,

@@ -25,10 +25,10 @@ use std::time::Duration;
 use anyhow::Context;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
+use futures::{Future, StreamExt};
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, Supervisor, Universe,
-    WeakMailbox,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, DeferableReplyHandler, Handler, Mailbox,
+    Supervisor, Universe, WeakMailbox,
 };
 use quickwit_cluster::{
     ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory, ClusterNode,
@@ -55,13 +55,13 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::Serialize;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::ingest_controller::IngestControllerStats;
 use crate::ingest::IngestController;
-use crate::model::{ControlPlaneModel, ControlPlaneModelMetrics};
+use crate::model::ControlPlaneModel;
 use crate::IndexerPool;
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
@@ -139,7 +139,8 @@ impl ControlPlane {
 pub struct ControlPlaneObservableState {
     pub indexing_scheduler: IndexingSchedulerState,
     pub ingest_controller: IngestControllerStats,
-    pub model_metrics: ControlPlaneModelMetrics,
+    pub num_indexes: usize,
+    pub num_sources: usize,
 }
 
 #[async_trait]
@@ -154,7 +155,8 @@ impl Actor for ControlPlane {
         ControlPlaneObservableState {
             indexing_scheduler: self.indexing_scheduler.observable_state(),
             ingest_controller: self.ingest_controller.stats,
-            model_metrics: self.model.observable_state(),
+            num_indexes: self.model.num_indexes(),
+            num_sources: self.model.num_sources(),
         }
     }
 
@@ -163,9 +165,9 @@ impl Actor for ControlPlane {
         self.model
             .load_from_metastore(&mut self.metastore, ctx.progress())
             .await
-            .context("failed to initialize the model")?;
+            .context("failed to initialize control plane model")?;
 
-        self.rebuild_plan_debounced(ctx);
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
 
         self.ingest_controller.sync_with_all_ingesters(&self.model);
 
@@ -313,9 +315,17 @@ impl ControlPlane {
     ///
     /// This method includes some debouncing logic. Every call will be followed by a cooldown
     /// period.
-    fn rebuild_plan_debounced(&mut self, ctx: &ActorContext<Self>) {
+    ///
+    /// This method returns a future that can be awaited to ensure that the relevant rebuild plan
+    /// operation has been executed.
+    fn rebuild_plan_debounced(&mut self, ctx: &ActorContext<Self>) -> impl Future<Output = ()> {
+        let next_rebuild_waiter = self
+            .indexing_scheduler
+            .next_rebuild_tracker
+            .next_rebuild_waiter();
         self.rebuild_plan_debouncer
             .self_send_with_cooldown::<RebuildPlan>(ctx);
+        next_rebuild_waiter
     }
 }
 
@@ -370,7 +380,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
             ctx.progress(),
         )
         .await?;
-        self.rebuild_plan_debounced(ctx);
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         Ok(())
     }
 }
@@ -412,10 +422,12 @@ fn convert_metastore_error<T>(
         | MetastoreError::JsonDeserializeError { .. }
         | MetastoreError::JsonSerializeError { .. }
         | MetastoreError::NotFound(_) => true,
+
         MetastoreError::Connection { .. }
         | MetastoreError::Db { .. }
         | MetastoreError::Internal { .. }
         | MetastoreError::Io { .. }
+        | MetastoreError::Timeout { .. }
         | MetastoreError::Unavailable(_) => false,
     };
     if is_transaction_certainly_aborted {
@@ -446,17 +458,24 @@ fn convert_metastore_error<T>(
 // This handler is a metastore call proxied through the control plane: we must first forward the
 // request to the metastore, and then act on the event.
 #[async_trait]
-impl Handler<CreateIndexRequest> for ControlPlane {
+impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
     type Reply = ControlPlaneResult<CreateIndexResponse>;
 
-    async fn handle(
+    async fn handle_message(
         &mut self,
         request: CreateIndexRequest,
+        reply: impl FnOnce(Self::Reply) + Send + Sync + 'static,
         ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        let response = match self.metastore.create_index(request).await {
+    ) -> Result<(), ActorExitStatus> {
+        let response = match ctx
+            .protect_future(self.metastore.create_index(request))
+            .await
+        {
             Ok(response) => response,
-            Err(metastore_error) => return convert_metastore_error(metastore_error),
+            Err(metastore_error) => {
+                reply(convert_metastore_error(metastore_error)?);
+                return Ok(());
+            }
         };
         let index_metadata: IndexMetadata =
             match serde_utils::from_json_str(&response.index_metadata_json) {
@@ -472,9 +491,16 @@ impl Handler<CreateIndexRequest> for ControlPlane {
         self.model.add_index(index_metadata);
 
         if should_rebuild_plan {
-            self.rebuild_plan_debounced(ctx);
+            let rebuild_plan_notifier = self.rebuild_plan_debounced(ctx);
+            tokio::task::spawn(async move {
+                rebuild_plan_notifier.await;
+                reply(Ok(response));
+            });
+        } else {
+            reply(Ok(response));
         }
-        Ok(Ok(response))
+
+        Ok(())
     }
 }
 
@@ -490,10 +516,15 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid().clone();
+        debug!(%index_uid, "deleting index");
 
-        if let Err(metastore_error) = self.metastore.delete_index(request).await {
+        if let Err(metastore_error) = ctx
+            .protect_future(self.metastore.delete_index(request))
+            .await
+        {
             return convert_metastore_error(metastore_error);
         };
+        info!(%index_uid, "deleted index");
 
         let ingester_needing_resync: BTreeSet<NodeId> = self
             .model
@@ -508,7 +539,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.rebuild_plan_debounced(ctx);
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
 
         let response = EmptyResponse {};
         Ok(Ok(response))
@@ -534,17 +565,21 @@ impl Handler<AddSourceRequest> for ControlPlane {
                     return Ok(Err(ControlPlaneError::from(error)));
                 }
             };
-        if let Err(error) = self.metastore.add_source(request).await {
+        let source_id = source_config.source_id.clone();
+        debug!(%index_uid, source_id, "adding source");
+
+        if let Err(error) = ctx.protect_future(self.metastore.add_source(request)).await {
             return Ok(Err(ControlPlaneError::from(error)));
         };
-
         self.model
             .add_source(&index_uid, source_config)
             .context("failed to add source")?;
 
+        info!(%index_uid, source_id, "added source");
+
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.rebuild_plan_debounced(ctx);
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
 
         let response = EmptyResponse {};
         Ok(Ok(response))
@@ -565,14 +600,20 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
         let enable = request.enable;
+        debug!(%index_uid, source_id, enable, "toggling source");
 
-        if let Err(error) = self.metastore.toggle_source(request).await {
+        if let Err(error) = ctx
+            .protect_future(self.metastore.toggle_source(request))
+            .await
+        {
             return Ok(Err(ControlPlaneError::from(error)));
         };
+        info!(%index_uid, source_id, enabled=enable, "toggled source");
+
         let mutation_occured = self.model.toggle_source(&index_uid, &source_id, enable)?;
 
         if mutation_occured {
-            self.rebuild_plan_debounced(ctx);
+            let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         }
         Ok(Ok(EmptyResponse {}))
     }
@@ -597,7 +638,10 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
             source_id: source_id.clone(),
         };
 
-        if let Err(metastore_error) = self.metastore.delete_source(request).await {
+        if let Err(metastore_error) = ctx
+            .protect_future(self.metastore.delete_source(request))
+            .await
+        {
             // TODO If the metastore fails returns an error but somehow succeed deleting the source,
             // the control plane will restart and the shards will be remaining on the ingesters.
             //
@@ -620,7 +664,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
 
         self.model.delete_source(&source_uid);
 
-        self.rebuild_plan_debounced(ctx);
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         let response = EmptyResponse {};
 
         Ok(Ok(response))
@@ -656,7 +700,7 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
                 return Ok(Err(control_plane_error));
             }
         };
-        self.rebuild_plan_debounced(ctx);
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         Ok(Ok(response))
     }
 }
@@ -690,7 +734,7 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
         self.ingest_controller
             .handle_local_shards_update(local_shards_update, &mut self.model, ctx.progress())
             .await;
-        self.rebuild_plan_debounced(ctx);
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         Ok(Ok(()))
     }
 }
@@ -858,7 +902,9 @@ mod tests {
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
     };
-    use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
+    use quickwit_proto::control_plane::{
+        GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsSubrequest,
+    };
     use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
     use quickwit_proto::ingest::ingester::{IngesterServiceClient, RetainShardsResponse};
     use quickwit_proto::ingest::{Shard, ShardState};
@@ -1966,7 +2012,7 @@ mod tests {
             MetastoreServiceClient::from(mock_metastore),
         );
 
-        let error = control_plane_mailbox
+        let response = control_plane_mailbox
             .ask(GetOrCreateOpenShardsRequest {
                 subrequests: vec![GetOrCreateOpenShardsSubrequest {
                     subrequest_id: 0,
@@ -1978,12 +2024,17 @@ mod tests {
             })
             .await
             .unwrap()
-            .unwrap_err();
-        assert!(matches!(error, ControlPlaneError::Unavailable { .. }));
+            .unwrap();
+        assert!(response.successes.is_empty());
+        assert_eq!(response.failures.len(), 1);
+        assert!(matches!(
+            response.failures[0].reason(),
+            GetOrCreateOpenShardsFailureReason::NoIngestersAvailable
+        ));
 
         let control_plane_state = control_plane_mailbox.ask(Observe).await.unwrap();
-        assert_eq!(control_plane_state.model_metrics.num_indexes, 1);
-        assert_eq!(control_plane_state.model_metrics.num_sources, 1);
+        assert_eq!(control_plane_state.num_indexes, 1);
+        assert_eq!(control_plane_state.num_sources, 1);
 
         universe.assert_quit().await;
     }

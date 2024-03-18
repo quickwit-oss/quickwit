@@ -80,11 +80,10 @@ Short max poll interval durations may cause a source to crash when back pressure
 
 ```bash
 cat << EOF > source-config.yaml
-version: 0.7
+version: 0.8
 source_id: my-kafka-source
 source_type: kafka
-max_num_pipelines_per_indexer: 1
-desired_num_pipelines: 2
+num_pipelines: 2
 params:
   topic: my-topic
   client_params:
@@ -164,38 +163,13 @@ EOF
 ./quickwit source create --index my-index --source-config source-config.yaml
 ```
 
-## Maximum number of pipelines per indexer
+## Number of pipelines
 
-The `max_num_pipelines_per_indexer` parameter is only available for sources that can be distributed: Kafka, GCP PubSub and Pulsar(coming soon).
+`num_pipelines` parameter is only available for sources that can be distributed: Kafka, GCP PubSub and Pulsar (coming soon).
 
-The maximum number of indexing pipelines defines the limit of pipelines spawned for the source on a given indexer.
-This maximum can be reached only if there are enough `desired_num_pipelines` to run.
-
-:::note
-
-With the following parameters, only one pipeline will run on one indexer.
-
-- `max_num_pipelines_per_indexer=2`
-- `desired_num_pipelines=1`
-
-:::
-
-## Desired number of pipelines
-
-`desired_num_pipelines` parameter is only available for sources that can be distributed: Kafka, GCP PubSub and Pulsar (coming soon).
-
-The desired number of indexing pipelines defines the number of pipelines to run on a cluster for the source. It is a "desired"
-number as it cannot be reach it there is not enough indexers in
-the cluster.
-
-:::note
-
-With the following parameters, only one pipeline will start on the sole indexer.
-
-- `max_num_pipelines_per_indexer=1`
-- `desired_num_pipelines=2`
-
-:::
+It defines the number of pipelines to run on a cluster for the source. The actual placement of these pipelines on the different indexer
+will be decided by the control plane. Note that distributions of a source like Kafka is done by assigning a set of partitions to different pipelines.
+As a result, it is recommended to make sure the number of partitions is a multiple of the number of `num_pipelines`.
 
 ## Transform parameters
 

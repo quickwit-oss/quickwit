@@ -23,7 +23,7 @@ use std::path::Path;
 
 use bytes::Buf;
 use mrecordlog::error::*;
-use mrecordlog::{MultiRecordLog, Record, SyncPolicy};
+use mrecordlog::{MultiRecordLog, Record, ResourceUsage, SyncPolicy};
 use tokio::task::JoinError;
 use tracing::error;
 
@@ -185,11 +185,7 @@ impl MultiRecordLogAsync {
         self.mrecordlog_ref().last_record(queue)
     }
 
-    pub fn memory_usage(&self) -> usize {
-        self.mrecordlog_ref().memory_usage()
-    }
-
-    pub fn disk_usage(&self) -> usize {
-        self.mrecordlog_ref().disk_usage()
+    pub fn resource_usage(&self) -> ResourceUsage {
+        self.mrecordlog_ref().resource_usage()
     }
 }

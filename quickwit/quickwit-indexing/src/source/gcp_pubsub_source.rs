@@ -30,8 +30,9 @@ use google_cloud_pubsub::client::{Client, ClientConfig};
 use google_cloud_pubsub::subscription::Subscription;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_common::rand::append_random_suffix;
-use quickwit_config::GcpPubSubSourceParams;
+use quickwit_config::PubSubSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
+use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
 use serde_json::{json, Value as JsonValue};
 use tokio::time;
@@ -48,11 +49,11 @@ pub struct GcpPubSubSourceFactory;
 #[async_trait]
 impl TypedSourceFactory for GcpPubSubSourceFactory {
     type Source = GcpPubSubSource;
-    type Params = GcpPubSubSourceParams;
+    type Params = PubSubSourceParams;
 
     async fn typed_create_source(
         ctx: Arc<SourceRuntimeArgs>,
-        params: GcpPubSubSourceParams,
+        params: PubSubSourceParams,
         _checkpoint: SourceCheckpoint, // TODO: Use checkpoint!
     ) -> anyhow::Result<Self::Source> {
         GcpPubSubSource::try_new(ctx, params).await
@@ -97,7 +98,7 @@ impl fmt::Debug for GcpPubSubSource {
 impl GcpPubSubSource {
     pub async fn try_new(
         ctx: Arc<SourceRuntimeArgs>,
-        params: GcpPubSubSourceParams,
+        params: PubSubSourceParams,
     ) -> anyhow::Result<Self> {
         let subscription_name = params.subscription;
         let backfill_mode_enabled = params.enable_backfill_mode;
@@ -166,18 +167,18 @@ impl Source for GcpPubSubSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
-        let mut batch: BatchBuilder = BatchBuilder::default();
+        let mut batch_builder = BatchBuilder::new(SourceType::PubSub);
         let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
         // TODO: ensure we ACK the message after being commit: at least once
         // TODO: ensure we increase_ack_deadline for the items
         loop {
             tokio::select! {
-                resp = self.pull_message_batch(&mut batch) => {
+                resp = self.pull_message_batch(&mut batch_builder) => {
                     if let Err(err) = resp {
                         warn!("failed to pull messages from subscription `{}`: {:?}", self.subscription_name, err);
                     }
-                    if batch.num_bytes >= BATCH_NUM_BYTES_LIMIT {
+                    if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
                         break;
                     }
                 }
@@ -188,7 +189,7 @@ impl Source for GcpPubSubSource {
             ctx.record_progress();
         }
 
-        if batch.num_bytes > 0 {
+        if batch_builder.num_bytes > 0 {
             self.state.num_consecutive_empty_batches = 0
         } else {
             self.state.num_consecutive_empty_batches += 1
@@ -200,13 +201,13 @@ impl Source for GcpPubSubSource {
             ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
-        if !batch.checkpoint_delta.is_empty() {
+        if !batch_builder.checkpoint_delta.is_empty() {
             debug!(
-                num_bytes=%batch.num_bytes,
-                num_docs=%batch.docs.len(),
+                num_bytes=%batch_builder.num_bytes,
+                num_docs=%batch_builder.docs.len(),
                 num_millis=%now.elapsed().as_millis(),
                 "Sending doc batch to indexer.");
-            let message = batch.build();
+            let message = batch_builder.build();
             ctx.send_message(doc_processor_mailbox, message).await?;
         }
         Ok(Duration::default())
@@ -313,10 +314,9 @@ mod gcp_pubsub_emulator_tests {
         let source_id = append_random_suffix("test-gcp-pubsub-source--source");
         SourceConfig {
             source_id,
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
-            source_params: SourceParams::GcpPubSub(GcpPubSubSourceParams {
+            source_params: SourceParams::PubSub(PubSubSourceParams {
                 project_id: Some(GCP_TEST_PROJECT.to_string()),
                 enable_backfill_mode: true,
                 subscription: subscription.to_string(),
@@ -355,7 +355,7 @@ mod gcp_pubsub_emulator_tests {
         let index_id = append_random_suffix("test-gcp-pubsub-source--invalid-subscription--index");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let metastore = metastore_for_test();
-        let SourceParams::GcpPubSub(params) = source_config.clone().source_params else {
+        let SourceParams::PubSub(params) = source_config.clone().source_params else {
             panic!(
                 "Expected `SourceParams::GcpPubSub` source params, got {:?}",
                 source_config.source_params

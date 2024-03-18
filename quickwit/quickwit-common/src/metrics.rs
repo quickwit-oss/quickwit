@@ -19,6 +19,7 @@
 
 use std::collections::HashMap;
 
+use once_cell::sync::Lazy;
 use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
 pub use prometheus::{
     Histogram, HistogramTimer, HistogramVec as PrometheusHistogramVec, IntCounter,
@@ -91,10 +92,20 @@ pub fn new_counter_vec<const N: usize>(
     IntCounterVec { underlying }
 }
 
-pub fn new_gauge(name: &str, help: &str, subsystem: &str) -> IntGauge {
+pub fn new_gauge(
+    name: &str,
+    help: &str,
+    subsystem: &str,
+    const_labels: &[(&str, &str)],
+) -> IntGauge {
+    let owned_const_labels: HashMap<String, String> = const_labels
+        .iter()
+        .map(|(label_name, label_value)| (label_name.to_string(), label_value.to_string()))
+        .collect();
     let gauge_opts = Opts::new(name, help)
         .namespace("quickwit")
-        .subsystem(subsystem);
+        .subsystem(subsystem)
+        .const_labels(owned_const_labels);
     let gauge = IntGauge::with_opts(gauge_opts).expect("failed to create gauge");
     prometheus::register(Box::new(gauge.clone())).expect("failed to register gauge");
     gauge
@@ -157,18 +168,40 @@ pub fn new_histogram_vec<const N: usize>(
     HistogramVec { underlying }
 }
 
-pub struct GaugeGuard(&'static IntGauge);
+pub struct GaugeGuard {
+    gauge: &'static IntGauge,
+    delta: i64,
+}
+
+impl std::fmt::Debug for GaugeGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.delta.fmt(f)
+    }
+}
 
 impl GaugeGuard {
     pub fn from_gauge(gauge: &'static IntGauge) -> Self {
-        gauge.inc();
-        Self(gauge)
+        Self { gauge, delta: 0i64 }
+    }
+
+    pub fn get(&self) -> i64 {
+        self.delta
+    }
+
+    pub fn add(&mut self, delta: i64) {
+        self.gauge.add(delta);
+        self.delta += delta;
+    }
+
+    pub fn sub(&mut self, delta: i64) {
+        self.gauge.sub(delta);
+        self.delta -= delta;
     }
 }
 
 impl Drop for GaugeGuard {
     fn drop(&mut self) {
-        self.0.dec();
+        self.gauge.sub(self.delta)
     }
 }
 
@@ -179,3 +212,100 @@ pub fn metrics_text_payload() -> String {
     let _ = encoder.encode(&metric_families, &mut buffer); // TODO avoid ignoring the error.
     String::from_utf8_lossy(&buffer).to_string()
 }
+
+#[derive(Clone)]
+pub struct MemoryMetrics {
+    pub active_bytes: IntGauge,
+    pub allocated_bytes: IntGauge,
+    pub resident_bytes: IntGauge,
+    pub in_flight_data: InFlightDataGauges,
+}
+
+impl Default for MemoryMetrics {
+    fn default() -> Self {
+        Self {
+            active_bytes: new_gauge(
+                "active_bytes",
+                "Total number of bytes in active pages allocated by the application, as reported \
+                 by jemalloc `stats.active`.",
+                "memory",
+                &[],
+            ),
+            allocated_bytes: new_gauge(
+                "allocated_bytes",
+                "Total number of bytes allocated by the application, as reported by jemalloc \
+                 `stats.allocated`.",
+                "memory",
+                &[],
+            ),
+            resident_bytes: new_gauge(
+                "resident_bytes",
+                " Total number of bytes in physically resident data pages mapped by the \
+                 allocator, as reported by jemalloc `stats.resident`.",
+                "memory",
+                &[],
+            ),
+            in_flight_data: InFlightDataGauges::default(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct InFlightDataGauges {
+    pub rest_server: IntGauge,
+    pub ingest_router: IntGauge,
+    pub wal: IntGauge,
+    pub sources: InFlightDataSourceGauges,
+    pub doc_processor_mailbox: IntGauge,
+    pub indexer_mailbox: IntGauge,
+    pub index_writer: IntGauge,
+}
+
+impl Default for InFlightDataGauges {
+    fn default() -> Self {
+        let in_flight_gauge_vec = new_gauge_vec(
+            "in_flight_data_bytes",
+            "Amount of data in-flight in various buffers in bytes.",
+            "memory",
+            &[],
+            ["component"],
+        );
+        Self {
+            rest_server: in_flight_gauge_vec.with_label_values(["rest_server"]),
+            ingest_router: in_flight_gauge_vec.with_label_values(["ingest_router"]),
+            wal: in_flight_gauge_vec.with_label_values(["wal"]),
+            sources: InFlightDataSourceGauges::new(&in_flight_gauge_vec),
+            doc_processor_mailbox: in_flight_gauge_vec.with_label_values(["doc_processor_mailbox"]),
+            indexer_mailbox: in_flight_gauge_vec.with_label_values(["indexer_mailbox"]),
+            index_writer: in_flight_gauge_vec.with_label_values(["index_writer"]),
+        }
+    }
+}
+
+/// TODO make those lazy.
+#[derive(Clone)]
+pub struct InFlightDataSourceGauges {
+    pub file: IntGauge,
+    pub ingest: IntGauge,
+    pub kafka: IntGauge,
+    pub kinesis: IntGauge,
+    pub pubsub: IntGauge,
+    pub pulsar: IntGauge,
+    pub other: IntGauge,
+}
+
+impl InFlightDataSourceGauges {
+    pub fn new(in_flight_gauge_vec: &IntGaugeVec<1>) -> Self {
+        Self {
+            file: in_flight_gauge_vec.with_label_values(["file_source"]),
+            ingest: in_flight_gauge_vec.with_label_values(["ingest_source"]),
+            kafka: in_flight_gauge_vec.with_label_values(["kafka_source"]),
+            kinesis: in_flight_gauge_vec.with_label_values(["kinesis_source"]),
+            pubsub: in_flight_gauge_vec.with_label_values(["pubsub_source"]),
+            pulsar: in_flight_gauge_vec.with_label_values(["pulsar_source"]),
+            other: in_flight_gauge_vec.with_label_values(["other"]),
+        }
+    }
+}
+
+pub static MEMORY_METRICS: Lazy<MemoryMetrics> = Lazy::new(MemoryMetrics::default);

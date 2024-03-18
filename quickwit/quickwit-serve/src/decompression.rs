@@ -21,6 +21,7 @@ use std::io::Read;
 
 use bytes::Bytes;
 use flate2::read::GzDecoder;
+use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use thiserror::Error;
 use tokio::task;
 use warp::reject::Reject;
@@ -78,10 +79,26 @@ pub(crate) struct UnsupportedEncoding(String);
 impl Reject for UnsupportedEncoding {}
 
 /// Custom filter for optional decompression
-pub(crate) fn get_body_bytes() -> impl Filter<Extract = (Bytes,), Error = warp::Rejection> + Clone {
+pub(crate) fn get_body_bytes() -> impl Filter<Extract = (Body,), Error = warp::Rejection> + Clone {
     warp::header::optional("content-encoding")
         .and(warp::body::bytes())
         .and_then(|encoding: Option<String>, body: Bytes| async move {
-            decompress_body(encoding, body).await
+            decompress_body(encoding, body).await.map(Body::from)
         })
+}
+
+pub(crate) struct Body {
+    pub content: Bytes,
+    _gauge_guard: GaugeGuard,
+}
+
+impl From<Bytes> for Body {
+    fn from(content: Bytes) -> Self {
+        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight_data.rest_server);
+        gauge_guard.add(content.len() as i64);
+        Body {
+            content,
+            _gauge_guard: gauge_guard,
+        }
+    }
 }

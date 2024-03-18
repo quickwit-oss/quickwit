@@ -23,12 +23,10 @@ json:
       tokenizer: default
       expand_dots: true
       fast: true
-sleep_after: 3
 ---
 # Ingest documents
 method: POST
 endpoint: simple/ingest
-num_retries: 10
 params:
   commit: force
 ndjson:

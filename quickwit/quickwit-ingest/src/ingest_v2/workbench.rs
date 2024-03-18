@@ -26,8 +26,11 @@ use quickwit_proto::ingest::ingester::{PersistFailure, PersistFailureReason, Per
 use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
+use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::types::{NodeId, SubrequestId};
 use tracing::warn;
+
+use super::router::PersistRequestSummary;
 
 /// A helper struct for managing the state of the subrequests of an ingest request during multiple
 /// persist attempts.
@@ -109,12 +112,15 @@ impl IngestWorkbench {
             GetOrCreateOpenShardsFailureReason::SourceNotFound => {
                 SubworkbenchFailure::SourceNotFound
             }
+            GetOrCreateOpenShardsFailureReason::NoIngestersAvailable => {
+                SubworkbenchFailure::NoShardsAvailable
+            }
             GetOrCreateOpenShardsFailureReason::Unspecified => {
                 warn!(
                     "failure reason for subrequest `{}` is unspecified",
                     open_shards_failure.subrequest_id
                 );
-                SubworkbenchFailure::Internal("unspecified".to_string())
+                SubworkbenchFailure::Internal("unspecified failure reason".to_string())
             }
         };
         self.record_failure(open_shards_failure.subrequest_id, last_failure);
@@ -133,6 +139,38 @@ impl IngestWorkbench {
         subworkbench.persist_success_opt = Some(persist_success);
     }
 
+    pub fn record_persist_error(
+        &mut self,
+        persist_error: IngestV2Error,
+        persist_summary: PersistRequestSummary,
+    ) {
+        // Persist responses use dedicated failure reasons for `IngesterUnavailable`,
+        // `NotFound`, and `TooManyRequests`: in reality, we should never have to handle these cases
+        // here.
+        match persist_error {
+            IngestV2Error::Unavailable(_) => {
+                self.unavailable_leaders.insert(persist_summary.leader_id);
+
+                for subrequest_id in persist_summary.subrequest_ids {
+                    self.record_ingester_unavailable(subrequest_id);
+                }
+            }
+            IngestV2Error::Internal(_)
+            | IngestV2Error::ShardNotFound { .. }
+            | IngestV2Error::Timeout(_)
+            | IngestV2Error::TooManyRequests => {
+                for subrequest_id in persist_summary.subrequest_ids {
+                    self.record_internal_error(subrequest_id, persist_error.to_string());
+                }
+            }
+        }
+    }
+
+    pub fn record_persist_failure(&mut self, persist_failure: &PersistFailure) {
+        let failure = SubworkbenchFailure::Persist(persist_failure.reason());
+        self.record_failure(persist_failure.subrequest_id, failure);
+    }
+
     fn record_failure(&mut self, subrequest_id: SubrequestId, failure: SubworkbenchFailure) {
         let Some(subworkbench) = self.subworkbenches.get_mut(&subrequest_id) else {
             warn!("could not find subrequest `{}` in workbench", subrequest_id);
@@ -149,16 +187,11 @@ impl IngestWorkbench {
     /// Marks a node as unavailable for the span of the workbench.
     ///
     /// Remaining attempts will treat the node as if it was not in the ingester pool.
-    pub fn record_transport_error(&mut self, subrequest_id: SubrequestId) {
-        self.record_failure(subrequest_id, SubworkbenchFailure::Transport);
+    pub fn record_ingester_unavailable(&mut self, subrequest_id: SubrequestId) {
+        self.record_failure(subrequest_id, SubworkbenchFailure::Unavailable);
     }
 
-    pub fn record_persist_failure(&mut self, persist_failure: &PersistFailure) {
-        let failure = SubworkbenchFailure::Persist(persist_failure.reason());
-        self.record_failure(persist_failure.subrequest_id, failure);
-    }
-
-    pub fn record_internal_error(&mut self, subrequest_id: SubrequestId, error_message: String) {
+    fn record_internal_error(&mut self, subrequest_id: SubrequestId, error_message: String) {
         self.record_failure(subrequest_id, SubworkbenchFailure::Internal(error_message));
     }
 
@@ -166,6 +199,7 @@ impl IngestWorkbench {
         let num_subworkbenches = self.subworkbenches.len();
         let mut successes = Vec::with_capacity(self.num_successes);
         let mut failures = Vec::with_capacity(num_subworkbenches - self.num_successes);
+
         for subworkbench in self.subworkbenches.into_values() {
             if let Some(persist_success) = subworkbench.persist_success_opt {
                 let success = IngestSuccess {
@@ -187,6 +221,7 @@ impl IngestWorkbench {
             }
         }
         assert_eq!(successes.len() + failures.len(), num_subworkbenches);
+
         IngestResponseV2 {
             successes,
             failures,
@@ -212,17 +247,23 @@ impl IngestWorkbench {
 
 #[derive(Debug)]
 pub(super) enum SubworkbenchFailure {
+    // There is no entry in the routing table for this index.
     IndexNotFound,
+    // There is no entry in the routing table for this source.
     SourceNotFound,
+    // The routing table entry for this source is empty, shards are all closed, or their leaders
+    // are unavailable.
     NoShardsAvailable,
-    // Transport error: we failed to reach the ingester.
-    Transport,
-    // This is an error supplied by the ingester.
+    // This is an error returned by the ingester: e.g. shard not found, shard closed, rate
+    // limited, resource exhausted, etc.
     Persist(PersistFailureReason),
     Internal(String),
+    // The ingester is no longer in the pool or a transport error occurred.
+    Unavailable,
 }
 
 impl SubworkbenchFailure {
+    /// Returns the final `IngestFailureReason` returned to the client.
     fn reason(&self) -> IngestFailureReason {
         match self {
             Self::IndexNotFound => IngestFailureReason::IndexNotFound,
@@ -231,7 +272,7 @@ impl SubworkbenchFailure {
             Self::NoShardsAvailable => IngestFailureReason::NoShardsAvailable,
             // In our last attempt, we did not manage to reach the ingester.
             // We can consider that as a no shards available.
-            Self::Transport => IngestFailureReason::NoShardsAvailable,
+            Self::Unavailable => IngestFailureReason::NoShardsAvailable,
             Self::Persist(persist_failure_reason) => (*persist_failure_reason).into(),
         }
     }
@@ -258,7 +299,7 @@ impl IngestSubworkbench {
         self.persist_success_opt.is_none() && self.last_failure_is_transient()
     }
 
-    /// Returns `false` if and only if the last attempt suggest retrying will fail.
+    /// Returns `false` if and only if the last attempt suggests retrying will fail.
     /// e.g.:
     /// - the index does not exist
     /// - the source does not exist.
@@ -267,10 +308,9 @@ impl IngestSubworkbench {
             Some(SubworkbenchFailure::IndexNotFound) => false,
             Some(SubworkbenchFailure::SourceNotFound) => false,
             Some(SubworkbenchFailure::Internal(_)) => true,
-            // No need to retry no shards were available.
-            Some(SubworkbenchFailure::NoShardsAvailable) => false,
+            Some(SubworkbenchFailure::NoShardsAvailable) => true,
             Some(SubworkbenchFailure::Persist(_)) => true,
-            Some(SubworkbenchFailure::Transport) => true,
+            Some(SubworkbenchFailure::Unavailable) => true,
             None => true,
         }
     }
@@ -292,7 +332,7 @@ mod tests {
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 
-        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Transport);
+        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Unavailable);
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 
@@ -302,8 +342,8 @@ mod tests {
         assert!(subworkbench.last_failure_is_transient());
 
         subworkbench.last_failure_opt = Some(SubworkbenchFailure::NoShardsAvailable);
-        assert!(!subworkbench.is_pending());
-        assert!(!subworkbench.last_failure_is_transient());
+        assert!(subworkbench.is_pending());
+        assert!(subworkbench.last_failure_is_transient());
 
         subworkbench.last_failure_opt = Some(SubworkbenchFailure::IndexNotFound);
         assert!(!subworkbench.is_pending());
@@ -468,6 +508,59 @@ mod tests {
             Some(PersistSuccess { .. })
         ));
         assert_eq!(subworkbench.num_attempts, 1);
+    }
+
+    #[test]
+    fn test_ingest_workbench_record_persist_error_unavailable() {
+        let ingest_subrequests = vec![IngestSubrequest {
+            subrequest_id: 0,
+            ..Default::default()
+        }];
+        let mut workbench = IngestWorkbench::new(ingest_subrequests, 1);
+
+        let persist_error = IngestV2Error::Unavailable("connection error".to_string());
+        let leader_id = NodeId::from("test-leader");
+        let persist_summary = PersistRequestSummary {
+            leader_id: leader_id.clone(),
+            subrequest_ids: vec![0],
+        };
+        workbench.record_persist_error(persist_error, persist_summary);
+
+        assert!(workbench.unavailable_leaders.contains(&leader_id));
+
+        let subworkbench = workbench.subworkbenches.get(&0).unwrap();
+        assert_eq!(subworkbench.num_attempts, 1);
+
+        assert!(matches!(
+            subworkbench.last_failure_opt,
+            Some(SubworkbenchFailure::Unavailable)
+        ));
+        assert!(subworkbench.persist_success_opt.is_none());
+    }
+
+    #[test]
+    fn test_ingest_workbench_record_persist_error_internal() {
+        let ingest_subrequests = vec![IngestSubrequest {
+            subrequest_id: 0,
+            ..Default::default()
+        }];
+        let mut workbench = IngestWorkbench::new(ingest_subrequests, 1);
+
+        let persist_error = IngestV2Error::Internal("IO error".to_string());
+        let persist_summary = PersistRequestSummary {
+            leader_id: NodeId::from("test-leader"),
+            subrequest_ids: vec![0],
+        };
+        workbench.record_persist_error(persist_error, persist_summary);
+
+        let subworkbench = workbench.subworkbenches.get(&0).unwrap();
+        assert_eq!(subworkbench.num_attempts, 1);
+
+        assert!(matches!(
+            &subworkbench.last_failure_opt,
+            Some(SubworkbenchFailure::Internal(message)) if message.contains("IO error")
+        ));
+        assert!(subworkbench.persist_success_opt.is_none());
     }
 
     #[test]

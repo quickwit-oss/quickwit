@@ -34,6 +34,7 @@ use pulsar::{
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_config::{PulsarSourceAuth, PulsarSourceParams};
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
+use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::{IndexUid, Position};
 use serde_json::{json, Value as JsonValue};
 use tokio::time;
@@ -212,7 +213,7 @@ impl Source for PulsarSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
-        let mut batch = BatchBuilder::default();
+        let mut batch_builder = BatchBuilder::new(SourceType::Pulsar);
         let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
@@ -226,9 +227,9 @@ impl Source for PulsarSource {
                         .ok_or_else(|| ActorExitStatus::from(anyhow!("consumer was dropped")))?
                         .map_err(|e| ActorExitStatus::from(anyhow!("failed to get message from consumer: {:?}", e)))?;
 
-                    self.process_message(message, &mut batch).map_err(ActorExitStatus::from)?;
+                    self.process_message(message, &mut batch_builder).map_err(ActorExitStatus::from)?;
 
-                    if batch.num_bytes >= BATCH_NUM_BYTES_LIMIT {
+                    if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
                         break;
                     }
                 }
@@ -239,16 +240,16 @@ impl Source for PulsarSource {
             ctx.record_progress();
         }
 
-        if !batch.checkpoint_delta.is_empty() {
+        if !batch_builder.checkpoint_delta.is_empty() {
             debug!(
-                num_docs=%batch.docs.len(),
-                num_bytes=%batch.num_bytes,
+                num_docs=%batch_builder.docs.len(),
+                num_bytes=%batch_builder.num_bytes,
                 num_millis=%now.elapsed().as_millis(),
-                "Sending doc batch to indexer.");
-            let message = batch.build();
+                "sending doc batch to indexer"
+            );
+            let message = batch_builder.build();
             ctx.send_message(doc_processor_mailbox, message).await?;
         }
-
         Ok(Duration::default())
     }
 
@@ -545,8 +546,7 @@ mod pulsar_broker_tests {
         let source_id = append_random_suffix("test-pulsar-source--source");
         let source_config = SourceConfig {
             source_id: source_id.clone(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Pulsar(PulsarSourceParams {
                 topics: topics.into_iter().map(|v| v.as_ref().to_string()).collect(),
@@ -567,7 +567,7 @@ mod pulsar_broker_tests {
             merged_batch
                 .checkpoint_delta
                 .extend(batch.checkpoint_delta)
-                .expect("Merge batches.");
+                .unwrap();
         }
         merged_batch.docs.sort();
         merged_batch
@@ -837,7 +837,7 @@ mod pulsar_broker_tests {
             .expect("Setup pulsar source");
 
         let position = Position::Beginning;
-        let mut batch = BatchBuilder::default();
+        let mut batch = BatchBuilder::new(SourceType::Pulsar);
         pulsar_source
             .add_doc_to_batch(&topic, position, Bytes::from_static(b""), &mut batch)
             .expect("Add batch should not error on empty doc.");
@@ -849,7 +849,7 @@ mod pulsar_broker_tests {
         assert!(batch.docs.is_empty());
 
         let position = Position::offset(1u64); // Used for testing simplicity.
-        let mut batch = BatchBuilder::default();
+        let mut batch = BatchBuilder::new(SourceType::Pulsar);
         let doc = Bytes::from_static(b"some-demo-data");
         pulsar_source
             .add_doc_to_batch(&topic, position, doc, &mut batch)
@@ -866,7 +866,7 @@ mod pulsar_broker_tests {
         assert_eq!(batch.docs.len(), 1);
 
         let position = Position::offset(4u64); // Used for testing simplicity.
-        let mut batch = BatchBuilder::default();
+        let mut batch = BatchBuilder::new(SourceType::Pulsar);
         let doc = Bytes::from_static(b"some-demo-data-2");
         pulsar_source
             .add_doc_to_batch(&topic, position, doc, &mut batch)

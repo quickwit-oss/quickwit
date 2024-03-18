@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use mrecordlog::ResourceUsage;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     new_counter_vec, new_gauge, new_gauge_vec, new_histogram_vec, HistogramVec, IntCounterVec,
@@ -25,11 +26,12 @@ use quickwit_common::metrics::{
 
 pub(super) struct IngestV2Metrics {
     pub reset_shards_operations_total: IntCounterVec<1>,
-    pub shards: IntGaugeVec<2>,
+    pub open_shards: IntGauge,
+    pub closed_shards: IntGauge,
     pub wal_acquire_lock_requests_in_flight: IntGaugeVec<2>,
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
-    pub wal_disk_usage_bytes: IntGauge,
-    pub wal_memory_usage_bytes: IntGauge,
+    pub wal_disk_used_bytes: IntGauge,
+    pub wal_memory_used_bytes: IntGauge,
 }
 
 impl Default for IngestV2Metrics {
@@ -42,12 +44,17 @@ impl Default for IngestV2Metrics {
                 &[],
                 ["status"],
             ),
-            shards: new_gauge_vec(
+            open_shards: new_gauge(
                 "shards",
-                "Number of shards.",
+                "Number of shards hosted by the ingester.",
                 "ingest",
-                &[],
-                ["state", "index_id"],
+                &[("state", "open")],
+            ),
+            closed_shards: new_gauge(
+                "shards",
+                "Number of shards hosted by the ingester.",
+                "ingest",
+                &[("state", "closed")],
             ),
             wal_acquire_lock_requests_in_flight: new_gauge_vec(
                 "wal_acquire_lock_requests_in_flight",
@@ -63,18 +70,33 @@ impl Default for IngestV2Metrics {
                 &[],
                 ["operation", "type"],
             ),
-            wal_disk_usage_bytes: new_gauge(
-                "wal_disk_usage_bytes",
-                "WAL disk usage in bytes.",
+            wal_disk_used_bytes: new_gauge(
+                "wal_disk_used_bytes",
+                "WAL disk space used in bytes.",
                 "ingest",
+                &[],
             ),
-            wal_memory_usage_bytes: new_gauge(
-                "wal_memory_usage_bytes",
-                "WAL memory usage in bytes.",
+            wal_memory_used_bytes: new_gauge(
+                "wal_memory_used_bytes",
+                "WAL memory used in bytes.",
                 "ingest",
+                &[],
             ),
         }
     }
+}
+
+pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
+    INGEST_V2_METRICS
+        .wal_disk_used_bytes
+        .set(wal_usage.disk_used_bytes as i64);
+    quickwit_common::metrics::MEMORY_METRICS
+        .in_flight_data
+        .wal
+        .set(wal_usage.memory_allocated_bytes as i64);
+    INGEST_V2_METRICS
+        .wal_memory_used_bytes
+        .set(wal_usage.memory_used_bytes as i64);
 }
 
 pub(super) static INGEST_V2_METRICS: Lazy<IngestV2Metrics> = Lazy::new(IngestV2Metrics::default);

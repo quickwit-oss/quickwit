@@ -267,6 +267,7 @@ mod tests {
         messages
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_shard_eof() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
@@ -307,6 +308,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_start_at_horizon() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();

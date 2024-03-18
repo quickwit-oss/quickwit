@@ -19,8 +19,8 @@ pub struct VersionedKeyValue {
     pub value: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub version: u64,
-    #[prost(bool, tag = "4")]
-    pub is_tombstone: bool,
+    #[prost(enumeration = "DeletionStatus", tag = "4")]
+    pub status: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -50,6 +50,37 @@ pub struct FetchClusterStateResponse {
     pub cluster_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub node_states: ::prost::alloc::vec::Vec<NodeState>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum DeletionStatus {
+    Set = 0,
+    Deleted = 1,
+    DeleteAfterTtl = 2,
+}
+impl DeletionStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            DeletionStatus::Set => "Set",
+            DeletionStatus::Deleted => "Deleted",
+            DeletionStatus::DeleteAfterTtl => "DeleteAfterTtl",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Set" => Some(Self::Set),
+            "Deleted" => Some(Self::Deleted),
+            "DeleteAfterTtl" => Some(Self::DeleteAfterTtl),
+            _ => None,
+        }
+    }
 }
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
@@ -486,7 +517,10 @@ where
             .fetch_cluster_state(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                FetchClusterStateRequest::rpc_name(),
+            ))
     }
 }
 #[derive(Debug)]
@@ -513,7 +547,7 @@ for ClusterServiceGrpcServerAdapter {
             .fetch_cluster_state(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
 }
 /// Generated client implementations.

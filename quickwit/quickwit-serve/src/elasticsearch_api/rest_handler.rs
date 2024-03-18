@@ -38,7 +38,6 @@ use quickwit_proto::search::{
     SortDatetimeFormat,
 };
 use quickwit_proto::types::IndexUid;
-use quickwit_proto::ServiceErrorCode;
 use quickwit_query::query_ast::{BoolQuery, QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
 use quickwit_search::{list_all_splits, resolve_index_patterns, SearchError, SearchService};
@@ -63,7 +62,7 @@ use super::model::{
 };
 use super::{make_elastic_api_response, TrackTotalHits};
 use crate::format::BodyFormat;
-use crate::rest_api_response::{into_rest_api_response, RestApiError, RestApiResponse};
+use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::{with_arg, BuildInfo};
 
 /// Elastic compatible cluster info handler.
@@ -97,12 +96,16 @@ pub fn es_compat_search_handler(
     elasticsearch_filter().then(|_params: SearchQueryParams| async move {
         // TODO
         let api_error = RestApiError {
-            service_code: ServiceErrorCode::NotSupportedYet,
+            status_code: StatusCode::NOT_IMPLEMENTED,
             message: "_elastic/_search is not supported yet. Please try the index search endpoint \
                       (_elastic/{index}/search)"
                 .to_string(),
         };
-        into_rest_api_response::<(), _>(Err(api_error), BodyFormat::default())
+        RestApiResponse::new::<(), _>(
+            &Err(api_error),
+            StatusCode::NOT_IMPLEMENTED,
+            BodyFormat::default(),
+        )
     })
 }
 
@@ -200,7 +203,7 @@ pub fn es_compat_index_multi_search_handler(
                 Ok(_) => StatusCode::OK,
                 Err(err) => err.status,
             };
-            RestApiResponse::new(&result, status_code, &BodyFormat::default())
+            RestApiResponse::new(&result, status_code, BodyFormat::default())
         })
 }
 
@@ -266,7 +269,10 @@ fn build_request_for_es_api(
 
     let max_hits = search_params.size.or(search_body.size).unwrap_or(10);
     let start_offset = search_params.from.or(search_body.from).unwrap_or(0);
-    let count_hits = match search_params.track_total_hits {
+    let count_hits = match search_params
+        .track_total_hits
+        .or(search_body.track_total_hits)
+    {
         None => CountHits::Underestimate,
         Some(TrackTotalHits::Track(false)) => CountHits::Underestimate,
         Some(TrackTotalHits::Count(count)) if count <= max_hits as i64 => CountHits::Underestimate,

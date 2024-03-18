@@ -132,8 +132,7 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         .map(|vrl_script| TransformConfig::new(vrl_script, None));
     let source_config = SourceConfig {
         source_id: CLI_SOURCE_ID.to_string(),
-        max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 is always non-zero."),
-        desired_num_pipelines: NonZeroUsize::new(1).expect("1 is always non-zero."),
+        num_pipelines: NonZeroUsize::new(1).expect("1 is always non-zero."),
         enabled: true,
         source_params,
         transform_config,

@@ -25,7 +25,6 @@ json:
           - rfc3339
         fast_precision: seconds
         fast: true
-sleep_after: 3
 ---
 # Create empty index
 method: POST
@@ -45,12 +44,10 @@ json:
           - rfc3339
         fast_precision: seconds
         fast: true
-sleep_after: 3
 ---
 # Ingest documents
 method: POST
 endpoint: aggregations/ingest
-num_retries: 10
 params:
   commit: force
 ndjson:
@@ -70,5 +67,5 @@ ndjson:
   - {"name": "Fritz", "response": 30, "id": 0}
   - {"name": "Holger", "response": 30, "id": 4, "date": "2015-02-06T00:00:00Z", "host": "192.168.0.10"}
   - {"name": "Werner", "response": 20, "id": 5, "date": "2015-01-02T00:00:00Z", "host": "192.168.0.10"}
-  - {"name": "Bernhard", "response": 130, "id": 14, "date": "2015-02-16T00:00:00Z", "host": "192.168.0.15"}
+  - {"name": "Bernhard", "response": 130, "id": 14, "date": "2015-02-16T00:00:00Z"}
 

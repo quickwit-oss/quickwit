@@ -18,8 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_doc_mapper::QueryParserError;
+use quickwit_proto::error::grpc_error_to_grpc_status;
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
-use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
+use quickwit_proto::{tonic, GrpcServiceError, ServiceError, ServiceErrorCode};
 use quickwit_storage::StorageResolverError;
 use serde::{Deserialize, Serialize};
 use tantivy::TantivyError;
@@ -29,6 +30,7 @@ use tokio::task::JoinError;
 /// Possible SearchError
 #[allow(missing_docs)]
 #[derive(Error, Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
 pub enum SearchError {
     #[error("could not find indexes matching the IDs `{index_ids:?}`")]
     IndexesNotFound { index_ids: Vec<String> },
@@ -42,24 +44,44 @@ pub enum SearchError {
     InvalidQuery(String),
     #[error("storage not found: `{0}`)")]
     StorageResolver(#[from] StorageResolverError),
+    #[error("request timed out: {0}")]
+    Timeout(String),
+    #[error("service unavailable: {0}")]
+    Unavailable(String),
 }
 
 impl ServiceError for SearchError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            SearchError::IndexesNotFound { .. } => ServiceErrorCode::NotFound,
-            SearchError::Internal(_) => ServiceErrorCode::Internal,
-            SearchError::InvalidAggregationRequest(_) => ServiceErrorCode::BadRequest,
-            SearchError::InvalidArgument(_) => ServiceErrorCode::BadRequest,
-            SearchError::InvalidQuery(_) => ServiceErrorCode::BadRequest,
-            SearchError::StorageResolver(_) => ServiceErrorCode::BadRequest,
+            Self::IndexesNotFound { .. } => ServiceErrorCode::NotFound,
+            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::InvalidAggregationRequest(_) => ServiceErrorCode::BadRequest,
+            Self::InvalidArgument(_) => ServiceErrorCode::BadRequest,
+            Self::InvalidQuery(_) => ServiceErrorCode::BadRequest,
+            Self::StorageResolver(_) => ServiceErrorCode::Internal,
+            Self::Timeout(_) => ServiceErrorCode::Timeout,
+            Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
+    }
+}
+
+impl GrpcServiceError for SearchError {
+    fn new_internal(message: String) -> Self {
+        Self::Internal(message)
+    }
+
+    fn new_timeout(message: String) -> Self {
+        Self::Timeout(message)
+    }
+
+    fn new_unavailable(message: String) -> Self {
+        Self::Unavailable(message)
     }
 }
 
 impl From<SearchError> for tonic::Status {
     fn from(error: SearchError) -> Self {
-        error.grpc_error()
+        grpc_error_to_grpc_status(error)
     }
 }
 
@@ -72,7 +94,7 @@ pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
 
 impl From<TantivyError> for SearchError {
     fn from(tantivy_error: TantivyError) -> Self {
-        SearchError::Internal(format!("Tantivy error: {tantivy_error}"))
+        SearchError::Internal(format!("tantivy error: {tantivy_error}"))
     }
 }
 
@@ -84,7 +106,7 @@ impl From<postcard::Error> for SearchError {
 
 impl From<serde_json::Error> for SearchError {
     fn from(serde_error: serde_json::Error) -> Self {
-        SearchError::Internal(format!("Serde error: {serde_error}"))
+        SearchError::Internal(format!("serde error: {serde_error}"))
     }
 }
 

@@ -179,6 +179,9 @@ impl BroadcastLocalShardsTask {
             })
             .collect();
 
+        let mut num_open_shards = 0;
+        let mut num_closed_shards = 0;
+
         for (queue_id, shard_state) in queue_ids {
             let Some((_rate_limiter, rate_meter)) = state_guard.rate_trackers.get_mut(&queue_id)
             else {
@@ -208,10 +211,7 @@ impl BroadcastLocalShardsTask {
                 .or_default()
                 .insert(shard_info);
         }
-        for (source_uid, shard_infos) in &per_source_shard_infos {
-            let mut num_open_shards = 0;
-            let mut num_closed_shards = 0;
-
+        for shard_infos in per_source_shard_infos.values() {
             for shard_info in shard_infos {
                 match shard_info.shard_state {
                     ShardState::Open => num_open_shards += 1,
@@ -219,15 +219,12 @@ impl BroadcastLocalShardsTask {
                     ShardState::Unavailable | ShardState::Unspecified => {}
                 }
             }
-            INGEST_V2_METRICS
-                .shards
-                .with_label_values(["open", &source_uid.index_uid.index_id])
-                .set(num_open_shards as i64);
-            INGEST_V2_METRICS
-                .shards
-                .with_label_values(["closed", &source_uid.index_uid.index_id])
-                .set(num_closed_shards as i64);
         }
+        INGEST_V2_METRICS.open_shards.set(num_open_shards as i64);
+        INGEST_V2_METRICS
+            .closed_shards
+            .set(num_closed_shards as i64);
+
         let snapshot = LocalShardsSnapshot {
             per_source_shard_infos,
         };

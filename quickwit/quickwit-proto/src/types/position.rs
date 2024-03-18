@@ -160,6 +160,10 @@ impl Position {
         }
     }
 
+    pub fn is_beginning(&self) -> bool {
+        matches!(self, Self::Beginning)
+    }
+
     pub fn is_eof(&self) -> bool {
         matches!(self, Self::Eof(_))
     }

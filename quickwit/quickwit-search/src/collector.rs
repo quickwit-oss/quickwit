@@ -35,7 +35,7 @@ use tantivy::aggregation::{AggregationLimits, AggregationSegmentCollector};
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::columnar::{ColumnType, MonotonicallyMappableToU64};
 use tantivy::fastfield::Column;
-use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
+use tantivy::{DateTime, DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
 use crate::filters::{create_timestamp_filter_builder, TimestampFilter, TimestampFilterBuilder};
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector, Span};
@@ -128,7 +128,7 @@ impl SortByComponent {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum SortFieldType {
     U64,
     I64,
@@ -150,11 +150,44 @@ enum SortingFieldExtractorComponent {
 }
 
 impl SortingFieldExtractorComponent {
-    /// Returns the sort value for the given element
+    fn is_fast_field(&self) -> bool {
+        matches!(self, SortingFieldExtractorComponent::FastField { .. })
+    }
+    /// Loads the fast field values for the given doc_ids in its u64 representation. The returned
+    /// u64 representation maintains the ordering of the original value.
+    #[inline]
+    fn extract_typed_sort_values_block(&self, doc_ids: &[DocId], values: &mut [Option<u64>]) {
+        // In the collect block case we don't have scores to extract
+        if let SortingFieldExtractorComponent::FastField { sort_column, .. } = self {
+            let values = &mut values[..doc_ids.len()];
+            sort_column.first_vals(doc_ids, values);
+        }
+    }
+
+    /// Returns the sort value for the given element in its u64 representation. The returned u64
+    /// representation maintains the ordering of the original value.
     ///
     /// The function returns None if the sort key is a fast field, for which we have no value
     /// for the given doc_id, or we sort by DocId.
-    fn extract_typed_sort_value_opt(&self, doc_id: DocId, score: Score) -> Option<SortValue> {
+    #[inline]
+    fn extract_typed_sort_value_opt(&self, doc_id: DocId, score: Score) -> Option<u64> {
+        match self {
+            // Tie breaks are not handled here, but in SegmentPartialHit
+            SortingFieldExtractorComponent::DocId => None,
+            SortingFieldExtractorComponent::FastField { sort_column, .. } => {
+                sort_column.first(doc_id)
+            }
+            SortingFieldExtractorComponent::Score { .. } => Some((score as f64).to_u64()),
+        }
+    }
+
+    #[inline]
+    /// Converts u64 fast field values to its correct type.
+    /// The conversion is delayed for performance reasons.
+    ///
+    /// This is used to convert `search_after` sort value to a u64 representation that will respect
+    /// the same order as the `SortValue` representation.
+    fn convert_u64_ff_val_to_sort_value(&self, sort_value: u64) -> SortValue {
         let map_fast_field_to_value = |fast_field_value, field_type| match field_type {
             SortFieldType::U64 => SortValue::U64(fast_field_value),
             SortFieldType::I64 => SortValue::I64(i64::from_u64(fast_field_value)),
@@ -162,17 +195,175 @@ impl SortingFieldExtractorComponent {
             SortFieldType::DateTime => SortValue::I64(i64::from_u64(fast_field_value)),
             SortFieldType::Bool => SortValue::Boolean(fast_field_value != 0u64),
         };
-
         match self {
-            SortingFieldExtractorComponent::DocId => None,
+            SortingFieldExtractorComponent::DocId => SortValue::U64(sort_value),
             SortingFieldExtractorComponent::FastField {
-                sort_column,
-                sort_field_type,
-                ..
-            } => sort_column
-                .first(doc_id)
-                .map(|field_val| map_fast_field_to_value(field_val, *sort_field_type)),
-            SortingFieldExtractorComponent::Score { .. } => Some(SortValue::F64(score as f64)),
+                sort_field_type, ..
+            } => map_fast_field_to_value(sort_value, *sort_field_type),
+            SortingFieldExtractorComponent::Score => SortValue::F64(f64::from_u64(sort_value)),
+        }
+    }
+    /// Converts fast field values into their u64 fast field representation.
+    ///
+    /// Returns None if value is out of bounds of target value.
+    /// None means that the search_after will be disabled and everything matches.
+    ///
+    /// What's currently missing is to signal that _nothing_ matches to generate an optimized
+    /// query. For now we just choose the max value of the target type.
+    #[inline]
+    fn convert_to_u64_ff_val(&self, sort_value: SortValue, sort_order: SortOrder) -> Option<u64> {
+        match self {
+            SortingFieldExtractorComponent::DocId => match sort_value {
+                SortValue::U64(val) => Some(val),
+                _ => panic!("Internal error: Got non-U64 sort value for DocId."),
+            },
+            SortingFieldExtractorComponent::FastField {
+                sort_field_type, ..
+            } => {
+                // We need to convert a (potential user provided) value in the correct u64
+                // representation of the fast field.
+                // This requires this weird conversion of first casting into the target type
+                // (if possible) and then to its u64 presentation.
+                //
+                // For the conversion into the target type it's important to know if the target
+                // type does not cover the whole range of the source type. In that case we need to
+                // add additional conversion checks, to see if it matches everything
+                // or nothing. (Which also depends on the sort order).
+                // Below are the visual representations of the value ranges of the different types.
+                // Note: DateTime is equal to I64 and omitted.
+                //
+                //     Bool value range (0, 1):
+                //                        <->
+                //
+                //     I64 value range (signed 64-bit integer):
+                //     <------------------------------------>
+                //     -2^63                             2^63-1
+                //     U64 value range (unsigned 64-bit integer):
+                //                        <------------------------------------>
+                //                        0                                  2^64-1
+                // F64 value range (64-bit floating point, conceptual, not to scale):
+                // <-------------------------------------------------------------------->
+                // Very negative numbers                                       Very positive numbers
+                //
+                // Those conversions have limited target type value space:
+                // - [X] U64 -> I64
+                // - [X] F64 -> I64
+                // - [X] I64 -> U64
+                // - [X] F64 -> U64
+                //
+                // - [X] F64 -> Bool
+                // - [X] I64 -> Bool
+                // - [X] U64 -> Bool
+                //
+                let val = match (sort_value, sort_field_type) {
+                    // Same field type, no conversion needed.
+                    (SortValue::U64(val), SortFieldType::U64) => val,
+                    (SortValue::F64(val), SortFieldType::F64) => val.to_u64(),
+                    (SortValue::Boolean(val), SortFieldType::Bool) => val.to_u64(),
+                    (SortValue::I64(val), SortFieldType::I64) => val.to_u64(),
+                    (SortValue::U64(mut val), SortFieldType::I64) => {
+                        if sort_order == SortOrder::Desc && val > i64::MAX as u64 {
+                            return None;
+                        }
+                        // Add a limit to avoid overflow.
+                        val = val.min(i64::MAX as u64);
+                        (val as i64).to_u64()
+                    }
+                    (SortValue::U64(val), SortFieldType::F64) => (val as f64).to_u64(),
+                    (SortValue::U64(mut val), SortFieldType::DateTime) => {
+                        // Match everything
+                        if sort_order == SortOrder::Desc && val > i64::MAX as u64 {
+                            return None;
+                        }
+                        // Add a limit to avoid overflow.
+                        val = val.min(i64::MAX as u64);
+                        DateTime::from_timestamp_nanos(val as i64).to_u64()
+                    }
+                    (SortValue::I64(val), SortFieldType::U64) => {
+                        if val < 0 && sort_order == SortOrder::Asc {
+                            return None;
+                        }
+                        if val < 0 && sort_order == SortOrder::Desc {
+                            u64::MIN // matches nothing as search_after is not inclusive
+                        } else {
+                            val as u64
+                        }
+                    }
+                    (SortValue::I64(val), SortFieldType::F64) => (val as f64).to_u64(),
+                    (SortValue::I64(val), SortFieldType::DateTime) => {
+                        DateTime::from_timestamp_nanos(val).to_u64()
+                    }
+                    (SortValue::F64(val), SortFieldType::U64) => {
+                        let all_values_ahead1 =
+                            val < u64::MIN as f64 && sort_order == SortOrder::Asc;
+                        let all_values_ahead2 =
+                            val > u64::MAX as f64 && sort_order == SortOrder::Desc;
+                        if all_values_ahead1 || all_values_ahead2 {
+                            return None;
+                        }
+                        // f64 cast already handles under/overflow and clamps the value
+                        (val as u64).to_u64()
+                    }
+                    (SortValue::F64(val), SortFieldType::I64)
+                    | (SortValue::F64(val), SortFieldType::DateTime) => {
+                        let all_values_ahead1 =
+                            val < i64::MIN as f64 && sort_order == SortOrder::Asc;
+                        let all_values_ahead2 =
+                            val > i64::MAX as f64 && sort_order == SortOrder::Desc;
+                        if all_values_ahead1 || all_values_ahead2 {
+                            return None;
+                        }
+                        // f64 cast already handles under/overflow and clamps the value
+                        let val_i64 = val as i64;
+
+                        if *sort_field_type == SortFieldType::DateTime {
+                            DateTime::from_timestamp_nanos(val_i64).to_u64()
+                        } else {
+                            val_i64.to_u64()
+                        }
+                    }
+                    // Not sure when we hit this, it's probably are very rare case.
+                    (SortValue::Boolean(val), SortFieldType::U64) => val as u64,
+                    (SortValue::Boolean(val), SortFieldType::F64) => (val as u64 as f64).to_u64(),
+                    (SortValue::Boolean(val), SortFieldType::I64) => (val as i64).to_u64(),
+                    (SortValue::Boolean(val), SortFieldType::DateTime) => {
+                        DateTime::from_timestamp_nanos(val as i64).to_u64()
+                    }
+                    (SortValue::U64(mut val), SortFieldType::Bool) => {
+                        let all_values_ahead1 = val > 1 && sort_order == SortOrder::Desc;
+                        if all_values_ahead1 {
+                            return None;
+                        }
+                        // clamp value for comparison
+                        val = val.min(1).max(0);
+                        (val == 1).to_u64()
+                    }
+                    (SortValue::I64(mut val), SortFieldType::Bool) => {
+                        let all_values_ahead1 = val > 1 && sort_order == SortOrder::Desc;
+                        let all_values_ahead2 = val < 0 && sort_order == SortOrder::Asc;
+                        if all_values_ahead1 || all_values_ahead2 {
+                            return None;
+                        }
+                        // clamp value for comparison
+                        val = val.min(1).max(0);
+                        (val == 1).to_u64()
+                    }
+                    (SortValue::F64(mut val), SortFieldType::Bool) => {
+                        let all_values_ahead1 = val > 1.0 && sort_order == SortOrder::Desc;
+                        let all_values_ahead2 = val < 0.0 && sort_order == SortOrder::Asc;
+                        if all_values_ahead1 || all_values_ahead2 {
+                            return None;
+                        }
+                        val = val.min(1.0).max(0.0);
+                        (val >= 0.5).to_u64() // Is this correct?
+                    }
+                };
+                Some(val)
+            }
+            SortingFieldExtractorComponent::Score => match sort_value {
+                SortValue::F64(val) => Some(val.to_u64()),
+                _ => panic!("Internal error: Got non-F64 sort value for Score."),
+            },
         }
     }
 }
@@ -194,13 +385,27 @@ pub(crate) struct SortingFieldExtractorPair {
 impl SortingFieldExtractorPair {
     /// Returns the list of sort values for the given element
     ///
+    /// See also [`SortingFieldExtractorComponent::extract_typed_sort_values_block`] for more
+    /// information.
+    #[inline]
+    fn extract_typed_sort_values(
+        &self,
+        doc_ids: &[DocId],
+        values1: &mut [Option<u64>],
+        values2: &mut [Option<u64>],
+    ) {
+        self.first
+            .extract_typed_sort_values_block(doc_ids, &mut values1[..doc_ids.len()]);
+        if let Some(second) = self.second.as_ref() {
+            second.extract_typed_sort_values_block(doc_ids, &mut values2[..doc_ids.len()]);
+        }
+    }
+    /// Returns the list of sort values for the given element
+    ///
     /// See also [`SortingFieldExtractorComponent::extract_typed_sort_value_opt`] for more
     /// information.
-    fn extract_typed_sort_value(
-        &self,
-        doc_id: DocId,
-        score: Score,
-    ) -> (Option<SortValue>, Option<SortValue>) {
+    #[inline]
+    fn extract_typed_sort_value(&self, doc_id: DocId, score: Score) -> (Option<u64>, Option<u64>) {
         let first = self.first.extract_typed_sort_value_opt(doc_id, score);
         let second = self
             .second
@@ -295,29 +500,192 @@ enum AggregationSegmentCollectors {
 
 /// Quickwit collector working at the scale of the segment.
 pub struct QuickwitSegmentCollector {
+    timestamp_filter_opt: Option<TimestampFilter>,
+    segment_top_k_collector: Option<QuickwitSegmentTopKCollector>,
+    // Caches for block fetching
+    filtered_docs: Box<[DocId; 64]>,
+    aggregation: Option<AggregationSegmentCollectors>,
     num_hits: u64,
+}
+
+impl QuickwitSegmentCollector {
+    #[inline]
+    fn accept_document(&self, doc_id: DocId) -> bool {
+        if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
+            return timestamp_filter.is_within_range(doc_id);
+        }
+        true
+    }
+}
+
+/// Quickwit collector working at the scale of the segment.
+struct QuickwitSegmentTopKCollector {
     split_id: String,
     score_extractor: SortingFieldExtractorPair,
     // PartialHits in this heap don't contain a split_id yet.
     top_k_hits: TopK<SegmentPartialHit, SegmentPartialHitSortingKey, HitSortingMapper>,
     segment_ord: u32,
-    timestamp_filter_opt: Option<TimestampFilter>,
-    aggregation: Option<AggregationSegmentCollectors>,
-    search_after: Option<PartialHit>,
+    search_after: Option<SearchAfterSegment>,
     // Precomputed order for search_after for split_id and segment_ord
     precomp_search_after_order: Ordering,
+    sort_values1: Box<[Option<u64>; 64]>,
+    sort_values2: Box<[Option<u64>; 64]>,
 }
 
-impl QuickwitSegmentCollector {
-    #[inline]
-    fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
-        let (sort_value, sort_value2) =
-            self.score_extractor.extract_typed_sort_value(doc_id, score);
+/// Search After, but the sort values are converted to the u64 fast field representation.
+struct SearchAfterSegment {
+    sort_value: Option<u64>,
+    sort_value2: Option<u64>,
+    compare_on_equal: bool,
+    doc_id: DocId,
+}
+impl SearchAfterSegment {
+    fn new(
+        search_after: Option<PartialHit>,
+        sort_order1: SortOrder,
+        sort_order2: SortOrder,
+        score_extractor: &SortingFieldExtractorPair,
+    ) -> Option<Self> {
+        let Some(search_after) = search_after else {
+            return None;
+        };
 
-        if let Some(search_after) = &self.search_after {
-            let search_after_value1 = search_after.sort_value.and_then(|v| v.sort_value);
-            let search_after_value2 = search_after.sort_value2.and_then(|v| v.sort_value);
-            let orders = &self.top_k_hits.sort_key_mapper;
+        let mut sort_value = None;
+        if let Some(search_after_sort_value) = search_after
+            .sort_value
+            .and_then(|sort_value| sort_value.sort_value)
+        {
+            if let Some(new_value) = score_extractor
+                .first
+                .convert_to_u64_ff_val(search_after_sort_value, sort_order1)
+            {
+                sort_value = Some(new_value);
+            } else {
+                // Value is out of bounds, we ignore sort_value2 and disable the whole
+                // search_after
+                return None;
+            }
+        }
+
+        let mut sort_value2 = None;
+        if let Some(search_after_sort_value) = search_after
+            .sort_value2
+            .and_then(|sort_value2| sort_value2.sort_value)
+        {
+            let extractor = score_extractor
+                .second
+                .as_ref()
+                .expect("Internal error: Got sort_value2, but no sort extractor");
+            if let Some(new_value) =
+                extractor.convert_to_u64_ff_val(search_after_sort_value, sort_order2)
+            {
+                sort_value2 = Some(new_value);
+            }
+        }
+
+        Some(Self {
+            sort_value,
+            sort_value2,
+            compare_on_equal: !search_after.split_id.is_empty(),
+            doc_id: search_after.doc_id,
+        })
+    }
+}
+
+impl QuickwitSegmentTopKCollector {
+    fn collect_top_k_block(&mut self, docs: &[DocId]) {
+        self.score_extractor.extract_typed_sort_values(
+            docs,
+            &mut self.sort_values1[..],
+            &mut self.sort_values2[..],
+        );
+        if self.search_after.is_some() {
+            // Search after not optimized for block collection yet
+            for ((doc_id, sort_value), sort_value2) in docs
+                .iter()
+                .cloned()
+                .zip(self.sort_values1.iter().cloned())
+                .zip(self.sort_values2.iter().cloned())
+            {
+                Self::collect_top_k_vals(
+                    doc_id,
+                    sort_value,
+                    sort_value2,
+                    &self.search_after,
+                    self.precomp_search_after_order,
+                    &mut self.top_k_hits,
+                );
+            }
+        } else {
+            // Probaly would make sense to check the fence against e.g. sort_values1 earlier,
+            // before creating the SegmentPartialHit.
+            //
+            // Below are different versions to avoid iterating the caches if they are unused.
+            //
+            // No sort values loaded. Sort only by doc_id.
+            if !self.score_extractor.first.is_fast_field() {
+                for doc_id in docs.iter().cloned() {
+                    let hit = SegmentPartialHit {
+                        sort_value: None,
+                        sort_value2: None,
+                        doc_id,
+                    };
+                    self.top_k_hits.add_entry(hit);
+                }
+                return;
+            }
+            let has_no_second_sort = !self
+                .score_extractor
+                .second
+                .as_ref()
+                .map(|extr| extr.is_fast_field())
+                .unwrap_or(false);
+            // No second sort values => We can skip iterating the second sort values cache.
+            if has_no_second_sort {
+                for (doc_id, sort_value) in
+                    docs.iter().cloned().zip(self.sort_values1.iter().cloned())
+                {
+                    let hit = SegmentPartialHit {
+                        sort_value,
+                        sort_value2: None,
+                        doc_id,
+                    };
+                    self.top_k_hits.add_entry(hit);
+                }
+                return;
+            }
+
+            for ((doc_id, sort_value), sort_value2) in docs
+                .iter()
+                .cloned()
+                .zip(self.sort_values1.iter().cloned())
+                .zip(self.sort_values2.iter().cloned())
+            {
+                let hit = SegmentPartialHit {
+                    sort_value,
+                    sort_value2,
+                    doc_id,
+                };
+                self.top_k_hits.add_entry(hit);
+            }
+        }
+    }
+    #[inline]
+    /// Generic top k collection, that includes search_after handling
+    ///
+    /// Outside of the collector to circumvent lifetime issues.
+    fn collect_top_k_vals(
+        doc_id: DocId,
+        sort_value: Option<u64>,
+        sort_value2: Option<u64>,
+        search_after: &Option<SearchAfterSegment>,
+        precomp_search_after_order: Ordering,
+        top_k_hits: &mut TopK<SegmentPartialHit, SegmentPartialHitSortingKey, HitSortingMapper>,
+    ) {
+        if let Some(search_after) = &search_after {
+            let search_after_value1 = search_after.sort_value;
+            let search_after_value2 = search_after.sort_value2;
+            let orders = &top_k_hits.sort_key_mapper;
             let mut cmp_result = orders
                 .order1
                 .compare_opt(&sort_value, &search_after_value1)
@@ -326,12 +694,12 @@ impl QuickwitSegmentCollector {
                         .order2
                         .compare_opt(&sort_value2, &search_after_value2)
                 });
-            if !search_after.split_id.is_empty() {
+            if search_after.compare_on_equal {
                 // TODO actually it's not first, it should be what's in _shard_doc then first then
                 // default
                 let order = orders.order1;
                 cmp_result = cmp_result
-                    .then(self.precomp_search_after_order)
+                    .then(precomp_search_after_order)
                     // We compare doc_id only if sort_value1, sort_value2, split_id and segment_ord
                     // are equal.
                     .then_with(|| order.compare(&doc_id, &search_after.doc_id))
@@ -343,38 +711,63 @@ impl QuickwitSegmentCollector {
         }
 
         let hit = SegmentPartialHit {
-            sort_value: sort_value.map(Into::into),
-            sort_value2: sort_value2.map(Into::into),
+            sort_value,
+            sort_value2,
             doc_id,
         };
-        self.top_k_hits.add_entry(hit);
+        top_k_hits.add_entry(hit);
     }
 
     #[inline]
-    fn accept_document(&self, doc_id: DocId) -> bool {
-        if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
-            return timestamp_filter.is_within_range(doc_id);
-        }
-        true
+    fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
+        let (sort_value, sort_value2): (Option<u64>, Option<u64>) =
+            self.score_extractor.extract_typed_sort_value(doc_id, score);
+        Self::collect_top_k_vals(
+            doc_id,
+            sort_value,
+            sort_value2,
+            &self.search_after,
+            self.precomp_search_after_order,
+            &mut self.top_k_hits,
+        );
     }
 }
 
 #[derive(Copy, Clone, Debug)]
 struct SegmentPartialHit {
-    sort_value: Option<SortValue>,
-    sort_value2: Option<SortValue>,
+    /// Normalized to u64, the typed value can be reconstructed with
+    /// SortingFieldExtractorComponent.
+    sort_value: Option<u64>,
+    sort_value2: Option<u64>,
     doc_id: DocId,
 }
 
 impl SegmentPartialHit {
-    fn into_partial_hit(self, split_id: String, segment_ord: SegmentOrdinal) -> PartialHit {
+    fn into_partial_hit(
+        self,
+        split_id: String,
+        segment_ord: SegmentOrdinal,
+        first: &SortingFieldExtractorComponent,
+        second: &Option<SortingFieldExtractorComponent>,
+    ) -> PartialHit {
         PartialHit {
-            sort_value: self.sort_value.map(|sort_value| SortByValue {
-                sort_value: Some(sort_value),
-            }),
-            sort_value2: self.sort_value2.map(|sort_value| SortByValue {
-                sort_value: Some(sort_value),
-            }),
+            sort_value: self
+                .sort_value
+                .map(|sort_value| first.convert_u64_ff_val_to_sort_value(sort_value))
+                .map(|sort_value| SortByValue {
+                    sort_value: Some(sort_value),
+                }),
+            sort_value2: self
+                .sort_value2
+                .map(|sort_value| {
+                    second
+                        .as_ref()
+                        .expect("Internal error: Got sort_value2, but no sort extractor")
+                        .convert_u64_ff_val_to_sort_value(sort_value)
+                })
+                .map(|sort_value| SortByValue {
+                    sort_value: Some(sort_value),
+                }),
             doc_id: self.doc_id,
             split_id,
             segment_ord,
@@ -382,8 +775,61 @@ impl SegmentPartialHit {
     }
 }
 
+pub use tantivy::COLLECT_BLOCK_BUFFER_LEN;
+/// Store the filtered docs in `filtered_docs_buffer` if `timestamp_filter_opt` is present.
+///
+/// Returns the number of docs.
+///
+/// Ideally we would return just final docs slice, but we can't do that because of the borrow
+/// checker.
+fn compute_filtered_block<'a>(
+    timestamp_filter_opt: &Option<TimestampFilter>,
+    docs: &'a [DocId],
+    filtered_docs_buffer: &'a mut [DocId; COLLECT_BLOCK_BUFFER_LEN],
+) -> &'a [DocId] {
+    let Some(timestamp_filter) = &timestamp_filter_opt else {
+        return docs;
+    };
+    let mut len = 0;
+    for &doc in docs {
+        filtered_docs_buffer[len] = doc;
+        len += if timestamp_filter.is_within_range(doc) {
+            1
+        } else {
+            0
+        };
+    }
+    &filtered_docs_buffer[..len]
+}
+
 impl SegmentCollector for QuickwitSegmentCollector {
     type Fruit = tantivy::Result<LeafSearchResponse>;
+
+    #[inline]
+    fn collect_block(&mut self, unfiltered_docs: &[DocId]) {
+        let filtered_docs: &[DocId] = compute_filtered_block(
+            &self.timestamp_filter_opt,
+            unfiltered_docs,
+            &mut self.filtered_docs,
+        );
+
+        // Update results
+        self.num_hits += filtered_docs.len() as u64;
+
+        if let Some(segment_top_k_collector) = self.segment_top_k_collector.as_mut() {
+            segment_top_k_collector.collect_top_k_block(filtered_docs);
+        }
+
+        match self.aggregation.as_mut() {
+            Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
+                collector.collect_block(filtered_docs)
+            }
+            Some(AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector)) => {
+                collector.collect_block(filtered_docs)
+            }
+            None => (),
+        }
+    }
 
     #[inline]
     fn collect(&mut self, doc_id: DocId, score: Score) {
@@ -392,7 +838,9 @@ impl SegmentCollector for QuickwitSegmentCollector {
         }
 
         self.num_hits += 1;
-        self.collect_top_k(doc_id, score);
+        if let Some(segment_top_k_collector) = self.segment_top_k_collector.as_mut() {
+            segment_top_k_collector.collect_top_k(doc_id, score);
+        }
 
         match self.aggregation.as_mut() {
             Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
@@ -406,14 +854,23 @@ impl SegmentCollector for QuickwitSegmentCollector {
     }
 
     fn harvest(self) -> Self::Fruit {
-        let partial_hits: Vec<PartialHit> = self
-            .top_k_hits
-            .finalize()
-            .into_iter()
-            .map(|segment_partial_hit: SegmentPartialHit| {
-                segment_partial_hit.into_partial_hit(self.split_id.clone(), self.segment_ord)
-            })
-            .collect();
+        let mut partial_hits: Vec<PartialHit> = Vec::new();
+        if let Some(segment_top_k_collector) = self.segment_top_k_collector {
+            // TODO put that in a method of segment_top_k_collector
+            partial_hits = segment_top_k_collector
+                .top_k_hits
+                .finalize()
+                .into_iter()
+                .map(|segment_partial_hit: SegmentPartialHit| {
+                    segment_partial_hit.into_partial_hit(
+                        segment_top_k_collector.split_id.clone(),
+                        segment_top_k_collector.segment_ord,
+                        &segment_top_k_collector.score_extractor.first,
+                        &segment_top_k_collector.score_extractor.second,
+                    )
+                })
+                .collect();
+        }
 
         let intermediate_aggregation_result = match self.aggregation {
             Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
@@ -636,16 +1093,31 @@ impl Collector for QuickwitCollector {
             // This value isn't actually used.
             _ => Ordering::Equal,
         };
+        // Convert search_after into fast field u64
+        let search_after =
+            SearchAfterSegment::new(self.search_after.clone(), order1, order2, &score_extractor);
+
+        let segment_top_k_collector = if leaf_max_hits == 0 {
+            None
+        } else {
+            Some(QuickwitSegmentTopKCollector {
+                split_id: self.split_id.clone(),
+                score_extractor,
+                top_k_hits: TopK::new(leaf_max_hits, sort_key_mapper),
+                segment_ord,
+                search_after,
+                precomp_search_after_order,
+                sort_values1: Box::new([None; 64]),
+                sort_values2: Box::new([None; 64]),
+            })
+        };
+
         Ok(QuickwitSegmentCollector {
-            num_hits: 0u64,
-            split_id: self.split_id.clone(),
-            score_extractor,
-            top_k_hits: TopK::new(leaf_max_hits, sort_key_mapper),
-            segment_ord,
+            num_hits: 0,
             timestamp_filter_opt,
+            segment_top_k_collector,
             aggregation,
-            search_after: self.search_after.clone(),
-            precomp_search_after_order,
+            filtered_docs: Box::new([0; 64]),
         })
     }
 
@@ -904,8 +1376,8 @@ pub(crate) fn make_merge_collector(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct SegmentPartialHitSortingKey {
-    sort_value: Option<SortValue>,
-    sort_value2: Option<SortValue>,
+    sort_value: Option<u64>,
+    sort_value2: Option<u64>,
     doc_id: DocId,
     // TODO This should not be there.
     sort_order: SortOrder,

@@ -55,33 +55,14 @@ pub const RESERVED_SOURCE_IDS: &[&str] =
 pub struct SourceConfig {
     pub source_id: String,
 
-    /// Maximum number of indexing pipelines spawned for the source on a given indexer.
-    /// The maximum is reached only if there is enough `desired_num_pipelines` to run.
-    /// The value is only used by sources that Quickwit knows how to distribute across
-    /// pipelines/nodes, that is for Kafka sources only.
-    /// Example:
-    /// - `max_num_pipelines_per_indexer=2`
-    /// - `desired_num_pipelines=1`
-    /// => Only one pipeline will run on one indexer.
-    pub max_num_pipelines_per_indexer: NonZeroUsize,
-    /// Number of desired indexing pipelines to run on a cluster for the source.
-    /// This number could not be reach if there is not enough indexers.
-    /// The value is only used by sources that Quickwit knows how to distribute across
-    /// pipelines/nodes, that is for Kafka sources only.
-    /// Example:
-    /// - `max_num_pipelines_per_indexer=1`
-    /// - `desired_num_pipelines=2`
-    /// - 1 indexer
-    /// => Only one pipeline will start on the sole indexer.
-    pub desired_num_pipelines: NonZeroUsize,
+    /// Number of indexing pipelines to run on a cluster for the source.
+    pub num_pipelines: NonZeroUsize,
 
     // Denotes if this source is enabled.
     pub enabled: bool,
 
     pub source_params: SourceParams,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "transform")]
     pub transform_config: Option<TransformConfig>,
 
     // Denotes the input data format.
@@ -93,12 +74,12 @@ impl SourceConfig {
     pub fn source_type(&self) -> SourceType {
         match self.source_params {
             SourceParams::File(_) => SourceType::File,
-            SourceParams::GcpPubSub(_) => SourceType::GcpPubsub,
             SourceParams::Ingest => SourceType::IngestV2,
             SourceParams::IngestApi => SourceType::IngestV1,
             SourceParams::IngestCli => SourceType::Cli,
             SourceParams::Kafka(_) => SourceType::Kafka,
             SourceParams::Kinesis(_) => SourceType::Kinesis,
+            SourceParams::PubSub(_) => SourceType::PubSub,
             SourceParams::Pulsar(_) => SourceType::Pulsar,
             SourceParams::Vec(_) => SourceType::Vec,
             SourceParams::Void(_) => SourceType::Void,
@@ -109,7 +90,7 @@ impl SourceConfig {
     pub fn params(&self) -> JsonValue {
         match &self.source_params {
             SourceParams::File(params) => serde_json::to_value(params),
-            SourceParams::GcpPubSub(params) => serde_json::to_value(params),
+            SourceParams::PubSub(params) => serde_json::to_value(params),
             SourceParams::Ingest => serde_json::to_value(()),
             SourceParams::IngestApi => serde_json::to_value(()),
             SourceParams::IngestCli => serde_json::to_value(()),
@@ -126,8 +107,7 @@ impl SourceConfig {
     pub fn cli() -> Self {
         Self {
             source_id: CLI_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
-            desired_num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
             enabled: true,
             source_params: SourceParams::IngestCli,
             transform_config: None,
@@ -139,8 +119,7 @@ impl SourceConfig {
     pub fn ingest_v2() -> Self {
         Self {
             source_id: INGEST_V2_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
-            desired_num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
             enabled: enable_ingest_v2(),
             source_params: SourceParams::Ingest,
             transform_config: None,
@@ -152,8 +131,7 @@ impl SourceConfig {
     pub fn ingest_api_default() -> Self {
         Self {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
-            desired_num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,
@@ -165,8 +143,7 @@ impl SourceConfig {
     pub fn for_test(source_id: &str, source_params: SourceParams) -> Self {
         Self {
             source_id: source_id.to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
-            desired_num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
             enabled: true,
             source_params,
             transform_config: None,
@@ -179,8 +156,7 @@ impl TestableForRegression for SourceConfig {
     fn sample_for_regression() -> Self {
         SourceConfig {
             source_id: "kafka-source".to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-            desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+            num_pipelines: NonZeroUsize::new(2).unwrap(),
             enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "kafka-topic".to_string(),
@@ -229,7 +205,6 @@ impl FromStr for SourceInputFormat {
 #[serde(tag = "source_type", content = "params", rename_all = "snake_case")]
 pub enum SourceParams {
     File(FileSourceParams),
-    GcpPubSub(GcpPubSubSourceParams),
     Ingest,
     #[serde(rename = "ingest-api")]
     IngestApi,
@@ -237,6 +212,8 @@ pub enum SourceParams {
     IngestCli,
     Kafka(KafkaSourceParams),
     Kinesis(KinesisSourceParams),
+    #[serde(rename = "pubsub")]
+    PubSub(PubSubSourceParams),
     Pulsar(PulsarSourceParams),
     Vec(VecSourceParams),
     Void(VoidSourceParams),
@@ -316,7 +293,7 @@ pub struct KafkaSourceParams {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct GcpPubSubSourceParams {
+pub struct PubSubSourceParams {
     /// Name of the subscription that the source consumes.
     pub subscription: String,
     /// When backfill mode is enabled, the source exits after reaching the end of the topic.
@@ -571,8 +548,7 @@ mod tests {
             load_source_config_from_user_config(config_format, file_content.as_bytes()).unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kafka-source".to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-            desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+            num_pipelines: NonZeroUsize::new(2).unwrap(),
             enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "cloudera-cluster-logs".to_string(),
@@ -587,7 +563,7 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.desired_num_pipelines.get(), 2);
+        assert_eq!(source_config.num_pipelines.get(), 2);
     }
 
     #[test]
@@ -668,8 +644,7 @@ mod tests {
             load_source_config_from_user_config(config_format, file_content.as_bytes()).unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kinesis-source".to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
-            desired_num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
             enabled: true,
             source_params: SourceParams::Kinesis(KinesisSourceParams {
                 stream_name: "emr-cluster-logs".to_string(),
@@ -683,7 +658,7 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.desired_num_pipelines.get(), 1);
+        assert_eq!(source_config.num_pipelines.get(), 1);
     }
 
     #[tokio::test]
@@ -705,30 +680,29 @@ mod tests {
                 .to_string()
                 .contains("`desired_num_pipelines` must be"));
         }
+        // {
+        //     let content = r#"
+        //     {
+        //         "version": "0.7",
+        //         "source_id": "hdfs-logs-void-source",
+        //         "desired_num_pipelines": 1,
+        //         "max_num_pipelines_per_indexer": 0,
+        //         "source_type": "void",
+        //         "params": {}
+        //     }
+        //     "#;
+        //     let error = load_source_config_from_user_config(ConfigFormat::Json,
+        // content.as_bytes())         .unwrap_err();
+        //     assert!(error
+        //         .to_string()
+        //         .contains("`max_num_pipelines_per_indexer` must be"));
+        // }
         {
             let content = r#"
             {
-                "version": "0.7",
+                "version": "0.8",
                 "source_id": "hdfs-logs-void-source",
-                "desired_num_pipelines": 1,
-                "max_num_pipelines_per_indexer": 0,
-                "source_type": "void",
-                "params": {}
-            }
-            "#;
-            let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
-                .unwrap_err();
-            assert!(error
-                .to_string()
-                .contains("`max_num_pipelines_per_indexer` must be"));
-        }
-        {
-            let content = r#"
-            {
-                "version": "0.7",
-                "source_id": "hdfs-logs-void-source",
-                "desired_num_pipelines": 1,
-                "max_num_pipelines_per_indexer": 2,
+                "num_pipelines": 2,
                 "source_type": "void",
                 "params": {}
             }
@@ -755,7 +729,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_load_valid_distributed_source_config() {
+    async fn test_load_valid_distributed_source_config_0_7() {
         {
             let content = r#"
             {
@@ -772,8 +746,7 @@ mod tests {
             let source_config =
                 load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
                     .unwrap();
-            assert_eq!(source_config.desired_num_pipelines.get(), 3);
-            assert_eq!(source_config.max_num_pipelines_per_indexer.get(), 3);
+            assert_eq!(source_config.num_pipelines.get(), 3);
         }
         {
             let content = r#"
@@ -792,8 +765,29 @@ mod tests {
             load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
                 .unwrap_err();
             // TODO: uncomment asserts once distributed indexing is activated for pulsar.
-            // assert_eq!(source_config.desired_num_pipelines(), 3);
+            // assert_eq!(source_config.num_pipelines(), 3);
             // assert_eq!(source_config.max_num_pipelines_per_indexer(), 3);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_load_valid_distributed_source_config() {
+        {
+            let content = r#"
+            {
+                "version": "0.8",
+                "source_id": "hdfs-logs-kafka-source",
+                "num_pipelines": 3,
+                "source_type": "kafka",
+                "params": {
+                    "topic": "my-topic"
+                }
+            }
+            "#;
+            let source_config =
+                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                    .unwrap();
+            assert_eq!(source_config.num_pipelines.get(), 3);
         }
     }
 
@@ -1076,8 +1070,7 @@ mod tests {
         let source_config: SourceConfig = ConfigFormat::Json.parse(&file_content).unwrap();
         let expected_source_config = SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
-            desired_num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: Some(TransformConfig {
@@ -1087,7 +1080,7 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.desired_num_pipelines.get(), 1);
+        assert_eq!(source_config.num_pipelines.get(), 1);
     }
 
     #[test]

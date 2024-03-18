@@ -134,8 +134,7 @@ mod tests {
         let source_loader = quickwit_supported_sources();
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,

@@ -27,11 +27,17 @@ message ChitchatId {
   string gossip_advertise_addr = 3;
 }
 
+enum DeletionStatus {
+    Set = 0;
+    Deleted = 1;
+    DeleteAfterTtl = 2;
+}
+
 message VersionedKeyValue {
   string key = 1;
   string value = 2;
   uint64 version = 3;
-  bool is_tombstone = 4;
+  DeletionStatus status = 4;
 }
 
 message NodeState {

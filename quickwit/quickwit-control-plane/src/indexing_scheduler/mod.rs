@@ -17,11 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod change_tracker;
 mod scheduling;
 
 use std::cmp::Ordering;
 use std::fmt;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fnv::{FnvHashMap, FnvHashSet};
@@ -36,6 +38,7 @@ use serde::Serialize;
 use tracing::{debug, info, warn};
 
 use crate::indexing_plan::PhysicalIndexingPlan;
+use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
 use crate::model::ControlPlaneModel;
 use crate::{IndexerNodeInfo, IndexerPool};
@@ -100,6 +103,7 @@ pub struct IndexingScheduler {
     self_node_id: NodeId,
     indexer_pool: IndexerPool,
     state: IndexingSchedulerState,
+    pub(crate) next_rebuild_tracker: RebuildNotifier,
 }
 
 impl fmt::Debug for IndexingScheduler {
@@ -162,13 +166,13 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             }
             SourceType::Kafka
             | SourceType::Kinesis
-            | SourceType::GcpPubsub
+            | SourceType::PubSub
             | SourceType::Nats
             | SourceType::Pulsar => {
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::NonSharded {
-                        num_pipelines: source_config.desired_num_pipelines.get() as u32,
+                        num_pipelines: source_config.num_pipelines.get() as u32,
                         // FIXME
                         load_per_pipeline: NonZeroU32::new(PIPELINE_FULL_CAPACITY.cpu_millis())
                             .unwrap(),
@@ -187,6 +191,7 @@ impl IndexingScheduler {
             self_node_id,
             indexer_pool,
             state: IndexingSchedulerState::default(),
+            next_rebuild_tracker: RebuildNotifier::default(),
         }
     }
 
@@ -201,6 +206,8 @@ impl IndexingScheduler {
     // `ControlPlane::rebuild_indexing_plan_debounced`.
     pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
         crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
+
+        let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
 
         let sources = get_sources_to_schedule(model);
 
@@ -239,7 +246,7 @@ impl IndexingScheduler {
                 return;
             }
         }
-        self.apply_physical_indexing_plan(&indexers, new_physical_plan);
+        self.apply_physical_indexing_plan(&indexers, new_physical_plan, Some(notify_on_drop));
         self.state.num_schedule_indexing_plan += 1;
     }
 
@@ -283,7 +290,7 @@ impl IndexingScheduler {
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
-            self.apply_physical_indexing_plan(&indexers, last_applied_plan.clone());
+            self.apply_physical_indexing_plan(&indexers, last_applied_plan.clone(), None);
         }
     }
 
@@ -295,12 +302,14 @@ impl IndexingScheduler {
         &mut self,
         indexers: &[IndexerNodeInfo],
         new_physical_plan: PhysicalIndexingPlan,
+        notify_on_drop: Option<Arc<NotifyChangeOnDrop>>,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
         for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer() {
             // We don't want to block on a slow indexer so we apply this change asynchronously
             // TODO not blocking is cool, but we need to make sure there is not accumulation
             // possible here.
+            let notify_on_drop = notify_on_drop.clone();
             tokio::spawn({
                 let indexer = indexers
                     .iter()
@@ -322,6 +331,7 @@ impl IndexingScheduler {
                             "failed to apply indexing plan to indexer"
                         );
                     }
+                    drop(notify_on_drop);
                 }
             });
         }
@@ -516,19 +526,19 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(10u128)),
+                pipeline_uid: Some(PipelineUid::for_test(10u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1b = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(11u128)),
+                pipeline_uid: Some(PipelineUid::for_test(11u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(20u128)),
+                pipeline_uid: Some(PipelineUid::for_test(20u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -548,13 +558,13 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+                pipeline_uid: Some(PipelineUid::for_test(1u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+                pipeline_uid: Some(PipelineUid::for_test(2u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -580,13 +590,13 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
+                pipeline_uid: Some(PipelineUid::for_test(1u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(2u128)),
+                pipeline_uid: Some(PipelineUid::for_test(2u128)),
                 index_uid: Some(index_uid2.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -620,19 +630,19 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1a = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(10u128)),
+                pipeline_uid: Some(PipelineUid::for_test(10u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1b = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(11u128)),
+                pipeline_uid: Some(PipelineUid::for_test(11u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1c = IndexingTask {
-                pipeline_uid: Some(PipelineUid::from_u128(12u128)),
+                pipeline_uid: Some(PipelineUid::for_test(12u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
@@ -671,8 +681,7 @@ mod tests {
                 &index_uid,
                 SourceConfig {
                     source_id: "source_disabled".to_string(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(3).unwrap(),
-                    desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
+                    num_pipelines: NonZeroUsize::new(3).unwrap(),
                     enabled: false,
                     source_params: SourceParams::Kafka(kafka_source_params.clone()),
                     transform_config: None,
@@ -685,8 +694,7 @@ mod tests {
                 &index_uid,
                 SourceConfig {
                     source_id: "source_enabled".to_string(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    num_pipelines: NonZeroUsize::new(2).unwrap(),
                     enabled: true,
                     source_params: SourceParams::Kafka(kafka_source_params.clone()),
                     transform_config: None,
@@ -699,8 +707,7 @@ mod tests {
                 &index_uid,
                 SourceConfig {
                     source_id: "ingest_v1".to_string(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    num_pipelines: NonZeroUsize::new(2).unwrap(),
                     enabled: true,
                     // ingest v1
                     source_params: SourceParams::IngestApi,
@@ -714,8 +721,7 @@ mod tests {
                 &index_uid,
                 SourceConfig {
                     source_id: "ingest_v2".to_string(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    num_pipelines: NonZeroUsize::new(2).unwrap(),
                     enabled: true,
                     // ingest v2
                     source_params: SourceParams::Ingest,
@@ -730,8 +736,7 @@ mod tests {
                 &index_uid,
                 SourceConfig {
                     source_id: "ingest_v2_without_shard".to_string(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    num_pipelines: NonZeroUsize::new(2).unwrap(),
                     enabled: true,
                     // ingest v2
                     source_params: SourceParams::Ingest,
@@ -745,8 +750,7 @@ mod tests {
                 &index_uid,
                 SourceConfig {
                     source_id: "ingest_cli".to_string(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    num_pipelines: NonZeroUsize::new(2).unwrap(),
                     enabled: true,
                     // ingest v1
                     source_params: SourceParams::IngestCli,
@@ -847,13 +851,12 @@ mod tests {
 
     prop_compose! {
       fn gen_kafka_source()
-        (index_idx in 0usize..100usize, desired_num_pipelines in 1usize..51usize, max_num_pipelines_per_indexer in 1usize..5usize) -> (IndexUid, SourceConfig) {
+        (index_idx in 0usize..100usize, num_pipelines in 1usize..51usize) -> (IndexUid, SourceConfig) {
           let index_uid = IndexUid::from_parts(&format!("index-id-{index_idx}"), 0 /* this is the index uid */);
           let source_id = quickwit_common::rand::append_random_suffix("kafka-source");
           (index_uid, SourceConfig {
               source_id,
-              desired_num_pipelines: NonZeroUsize::new(desired_num_pipelines).unwrap(),
-              max_num_pipelines_per_indexer: NonZeroUsize::new(max_num_pipelines_per_indexer).unwrap(),
+              num_pipelines: NonZeroUsize::new(num_pipelines).unwrap(),
               enabled: true,
               source_params: kafka_source_params_for_test(),
               transform_config: None,

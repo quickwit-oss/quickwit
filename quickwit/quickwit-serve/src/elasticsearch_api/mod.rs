@@ -93,7 +93,7 @@ pub fn elastic_api_handlers(
 ///
 /// When set to `Count` with an integer value `n`, the response accurately tracks the total
 /// hit count that match the query up to `n` documents.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TrackTotalHits {
     /// Track the number of hits that match the query accurately.
@@ -122,7 +122,7 @@ fn make_elastic_api_response<T: serde::Serialize>(
         Ok(_) => StatusCode::OK,
         Err(error) => error.status,
     };
-    RestApiResponse::new(&elasticsearch_result, status_code, &body_format)
+    RestApiResponse::new(&elasticsearch_result, status_code, body_format)
 }
 
 #[cfg(test)]

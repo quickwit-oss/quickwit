@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use bytesize::ByteSize;
 use futures::{Future, StreamExt};
-use quickwit_common::ServiceStream;
+use quickwit_common::{rate_limited_warn, ServiceStream};
 use quickwit_proto::ingest::ingester::{
     ack_replication_message, syn_replication_message, AckReplicationMessage, IngesterStatus,
     InitReplicaRequest, InitReplicaResponse, ReplicateFailure, ReplicateFailureReason,
@@ -36,11 +36,11 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{error, warn};
 
+use super::metrics::report_wal_usage;
 use super::models::IngesterShard;
 use super::mrecord::MRecord;
 use super::mrecordlog_utils::check_enough_capacity;
 use super::state::IngesterState;
-use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::metrics::INGEST_METRICS;
 use crate::{estimate_size, with_lock_metrics};
 
@@ -588,26 +588,27 @@ impl ReplicationTask {
 
             let requested_capacity = estimate_size(&doc_batch);
 
-            let current_usage = match check_enough_capacity(
+            if let Err(error) = check_enough_capacity(
                 &state_guard.mrecordlog,
                 self.disk_capacity,
                 self.memory_capacity,
                 requested_capacity,
             ) {
-                Ok(usage) => usage,
-                Err(error) => {
-                    warn!("failed to replicate records: {error}");
+                rate_limited_warn!(
+                    limit_per_min = 10,
+                    "failed to replicate records to ingester `{}`: {error}",
+                    self.follower_id,
+                );
 
-                    let replicate_failure = ReplicateFailure {
-                        subrequest_id: subrequest.subrequest_id,
-                        index_uid: subrequest.index_uid,
-                        source_id: subrequest.source_id,
-                        shard_id: subrequest.shard_id,
-                        reason: ReplicateFailureReason::ResourceExhausted as i32,
-                    };
-                    replicate_failures.push(replicate_failure);
-                    continue;
-                }
+                let replicate_failure = ReplicateFailure {
+                    subrequest_id: subrequest.subrequest_id,
+                    index_uid: subrequest.index_uid,
+                    source_id: subrequest.source_id,
+                    shard_id: subrequest.shard_id,
+                    reason: ReplicateFailureReason::ResourceExhausted as i32,
+                };
+                replicate_failures.push(replicate_failure);
+                continue;
             };
             let current_position_inclusive: Position = if force_commit {
                 let encoded_mrecords = doc_batch
@@ -629,16 +630,6 @@ impl ReplicationTask {
             }
             .map(Position::offset)
             .expect("records should not be empty");
-
-            let new_disk_usage = current_usage.disk + requested_capacity;
-            let new_memory_usage = current_usage.memory + requested_capacity;
-
-            INGEST_V2_METRICS
-                .wal_disk_usage_bytes
-                .set(new_disk_usage.as_u64() as i64);
-            INGEST_V2_METRICS
-                .wal_memory_usage_bytes
-                .set(new_memory_usage.as_u64() as i64);
 
             INGEST_METRICS
                 .replicated_num_bytes_total
@@ -663,6 +654,11 @@ impl ReplicationTask {
             };
             replicate_successes.push(replicate_success);
         }
+        let wal_usage = state_guard.mrecordlog.resource_usage();
+        drop(state_guard);
+
+        report_wal_usage(wal_usage);
+
         let follower_id = self.follower_id.clone().into();
 
         let replicate_response = ReplicateResponse {

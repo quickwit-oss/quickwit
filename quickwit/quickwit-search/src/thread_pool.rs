@@ -72,8 +72,9 @@ where
     let span = tracing::Span::current();
     search_thread_pool().spawn(move || {
         let _guard = span.enter();
-        let _active_thread_guard =
+        let mut active_thread_guard =
             GaugeGuard::from_gauge(&crate::SEARCH_METRICS.active_search_threads_count);
+        active_thread_guard.add(1i64);
         if tx.is_closed() {
             return;
         }

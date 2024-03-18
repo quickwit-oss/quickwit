@@ -115,7 +115,11 @@ impl FetchStreamTask {
             "spawning fetch task"
         );
         let mut has_drained_queue = false;
-        let mut to_position_inclusive = Position::Beginning;
+        let mut to_position_inclusive = if self.from_position_inclusive == 0 {
+            Position::Beginning
+        } else {
+            Position::offset(self.from_position_inclusive - 1)
+        };
 
         loop {
             if has_drained_queue && self.shard_status_rx.changed().await.is_err() {
@@ -444,7 +448,7 @@ async fn fault_tolerant_fetch_stream(
                     index_uid=%index_uid,
                     source_id=%source_id,
                     shard_id=%shard_id,
-                    "ingester `{ingester_id}` is not available: failing over to ingester `{failover_ingester_id}`"
+                    "ingester `{ingester_id}` is unavailable: failing over to ingester `{failover_ingester_id}`"
                 );
             } else {
                 error!(
@@ -452,11 +456,11 @@ async fn fault_tolerant_fetch_stream(
                     index_uid=%index_uid,
                     source_id=%source_id,
                     shard_id=%shard_id,
-                    "ingester `{ingester_id}` is not available: closing fetch stream"
+                    "ingester `{ingester_id}` is unavailable: closing fetch stream"
                 );
-                let ingest_error = IngestV2Error::IngesterUnavailable {
-                    ingester_id: ingester_id.clone(),
-                };
+                let message =
+                    format!("ingester `{ingester_id}` is unavailable: closing fetch stream");
+                let ingest_error = IngestV2Error::Unavailable(message);
                 // Attempt to send the error to the consumer in a best-effort manner before
                 // returning.
                 let fetch_stream_error = FetchStreamError {
@@ -479,7 +483,7 @@ async fn fault_tolerant_fetch_stream(
         };
         let mut fetch_stream = match ingester.open_fetch_stream(open_fetch_stream_request).await {
             Ok(fetch_stream) => fetch_stream,
-            Err(shard_not_found_error @ IngestV2Error::ShardNotFound { .. }) => {
+            Err(not_found_error @ IngestV2Error::ShardNotFound { .. }) => {
                 error!(
                     client_id=%client_id,
                     index_uid=%index_uid,
@@ -491,7 +495,7 @@ async fn fault_tolerant_fetch_stream(
                     index_uid,
                     source_id,
                     shard_id,
-                    ingest_error: shard_not_found_error,
+                    ingest_error: not_found_error,
                 };
                 let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
                 from_position_exclusive.to_eof();
@@ -626,11 +630,14 @@ pub(super) mod tests {
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
+        let shard_id = ShardId::from(1);
+        let queue_id = queue_id(&index_uid, &source_id, &shard_id);
+
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
-            shard_id: Some(ShardId::from(1)),
+            shard_id: Some(shard_id.clone()),
             from_position_exclusive: Some(Position::Beginning),
         };
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
@@ -640,8 +647,6 @@ pub(super) mod tests {
             shard_status_rx,
             1024,
         );
-        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
-
         let mut mrecordlog_guard = mrecordlog.write().await;
 
         mrecordlog_guard
@@ -670,8 +675,8 @@ pub(super) mod tests {
         let fetch_payload = into_fetch_payload(fetch_message);
 
         assert_eq!(fetch_payload.index_uid(), &index_uid);
-        assert_eq!(fetch_payload.source_id, "test-source");
-        assert_eq!(fetch_payload.shard_id(), ShardId::from(1));
+        assert_eq!(fetch_payload.source_id, source_id);
+        assert_eq!(fetch_payload.shard_id(), shard_id);
         assert_eq!(fetch_payload.from_position_exclusive(), Position::Beginning);
         assert_eq!(
             fetch_payload.to_position_inclusive(),
@@ -805,15 +810,15 @@ pub(super) mod tests {
         let fetch_eof = into_fetch_eof(fetch_message);
 
         assert_eq!(fetch_eof.index_uid(), &index_uid);
-        assert_eq!(fetch_eof.source_id, "test-source");
-        assert_eq!(fetch_eof.shard_id(), ShardId::from(1));
+        assert_eq!(fetch_eof.source_id, source_id);
+        assert_eq!(fetch_eof.shard_id(), shard_id);
         assert_eq!(fetch_eof.eof_position, Some(Position::eof(3u64)));
 
         fetch_task_handle.await.unwrap();
     }
 
     #[tokio::test]
-    async fn test_fetch_task_eof_at_beginning() {
+    async fn test_fetch_task_signals_eof() {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = Arc::new(RwLock::new(Some(
             MultiRecordLogAsync::open(tempdir.path()).await.unwrap(),
@@ -821,21 +826,8 @@ pub(super) mod tests {
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
-        let open_fetch_stream_request = OpenFetchStreamRequest {
-            client_id: client_id.clone(),
-            index_uid: Some(index_uid.clone()),
-            source_id: source_id.clone(),
-            shard_id: Some(ShardId::from(1)),
-            from_position_exclusive: Some(Position::Beginning),
-        };
-        let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
-        let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
-            open_fetch_stream_request,
-            mrecordlog.clone(),
-            shard_status_rx,
-            1024,
-        );
-        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
+        let shard_id = ShardId::from(1);
+        let queue_id = queue_id(&index_uid, &source_id, &shard_id);
 
         let mut mrecordlog_guard = mrecordlog.write().await;
 
@@ -845,11 +837,85 @@ pub(super) mod tests {
             .create_queue(&queue_id)
             .await
             .unwrap();
+
+        mrecordlog_guard
+            .as_mut()
+            .unwrap()
+            .append_records(
+                &queue_id,
+                None,
+                std::iter::once(MRecord::new_doc("test-doc-foo").encode()),
+            )
+            .await
+            .unwrap();
         drop(mrecordlog_guard);
 
-        timeout(Duration::from_millis(100), fetch_stream.next())
+        let open_fetch_stream_request = OpenFetchStreamRequest {
+            client_id: client_id.clone(),
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(shard_id.clone()),
+            from_position_exclusive: Some(Position::offset(0u64)),
+        };
+        let shard_status = (ShardState::Closed, Position::offset(0u64));
+        let (_shard_status_tx, shard_status_rx) = watch::channel(shard_status);
+
+        let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
+            open_fetch_stream_request,
+            mrecordlog.clone(),
+            shard_status_rx,
+            1024,
+        );
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
-            .unwrap_err();
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let fetch_eof = into_fetch_eof(fetch_message);
+
+        assert_eq!(fetch_eof.index_uid(), &index_uid);
+        assert_eq!(fetch_eof.source_id, source_id);
+        assert_eq!(fetch_eof.shard_id(), shard_id);
+        assert_eq!(fetch_eof.eof_position, Some(Position::eof(0u64).as_eof()));
+
+        fetch_task_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_fetch_task_signals_eof_at_beginning() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let mrecordlog = Arc::new(RwLock::new(Some(
+            MultiRecordLogAsync::open(tempdir.path()).await.unwrap(),
+        )));
+        let client_id = "test-client".to_string();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let source_id = "test-source".to_string();
+        let shard_id = ShardId::from(1);
+        let queue_id = queue_id(&index_uid, &source_id, &shard_id);
+
+        let open_fetch_stream_request = OpenFetchStreamRequest {
+            client_id: client_id.clone(),
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(shard_id.clone()),
+            from_position_exclusive: Some(Position::Beginning),
+        };
+        let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
+        let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
+            open_fetch_stream_request,
+            mrecordlog.clone(),
+            shard_status_rx,
+            1024,
+        );
+        let mut mrecordlog_guard = mrecordlog.write().await;
+
+        mrecordlog_guard
+            .as_mut()
+            .unwrap()
+            .create_queue(&queue_id)
+            .await
+            .unwrap();
+        drop(mrecordlog_guard);
 
         let shard_status = (ShardState::Closed, Position::Beginning);
         shard_status_tx.send(shard_status).unwrap();
@@ -862,8 +928,8 @@ pub(super) mod tests {
         let fetch_eof = into_fetch_eof(fetch_message);
 
         assert_eq!(fetch_eof.index_uid(), &index_uid);
-        assert_eq!(fetch_eof.source_id, "test-source");
-        assert_eq!(fetch_eof.shard_id(), ShardId::from(1));
+        assert_eq!(fetch_eof.source_id, source_id);
+        assert_eq!(fetch_eof.shard_id(), shard_id);
         assert_eq!(fetch_eof.eof_position, Some(Position::Beginning.as_eof()));
 
         fetch_task_handle.await.unwrap();
@@ -878,11 +944,14 @@ pub(super) mod tests {
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
+        let shard_id = ShardId::from(1);
+        let queue_id = queue_id(&index_uid, &source_id, &shard_id);
+
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
-            shard_id: Some(ShardId::from(1)),
+            shard_id: Some(shard_id.clone()),
             from_position_exclusive: Some(Position::offset(0u64)),
         };
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
@@ -892,8 +961,6 @@ pub(super) mod tests {
             shard_status_rx,
             1024,
         );
-        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
-
         let mut mrecordlog_guard = mrecordlog.write().await;
 
         mrecordlog_guard
@@ -954,8 +1021,8 @@ pub(super) mod tests {
         let fetch_payload = into_fetch_payload(fetch_message);
 
         assert_eq!(fetch_payload.index_uid(), &index_uid);
-        assert_eq!(fetch_payload.source_id, "test-source");
-        assert_eq!(fetch_payload.shard_id(), ShardId::from(1));
+        assert_eq!(fetch_payload.source_id, source_id);
+        assert_eq!(fetch_payload.shard_id(), shard_id);
         assert_eq!(
             fetch_payload.from_position_exclusive(),
             Position::offset(0u64)
@@ -987,11 +1054,13 @@ pub(super) mod tests {
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
+        let shard_id = ShardId::from(1);
+
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
-            shard_id: Some(ShardId::from(1)),
+            shard_id: Some(shard_id.clone()),
             from_position_exclusive: Some(Position::Beginning),
         };
         let (_shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
@@ -1020,11 +1089,14 @@ pub(super) mod tests {
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
+        let shard_id = ShardId::from(1);
+        let queue_id = queue_id(&index_uid, &source_id, &shard_id);
+
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: client_id.clone(),
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
-            shard_id: Some(ShardId::from(1)),
+            shard_id: Some(shard_id.clone()),
             from_position_exclusive: Some(Position::Beginning),
         };
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
@@ -1034,8 +1106,6 @@ pub(super) mod tests {
             shard_status_rx,
             30,
         );
-        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
-
         let mut mrecordlog_guard = mrecordlog.write().await;
 
         mrecordlog_guard
@@ -1163,8 +1233,8 @@ pub(super) mod tests {
 
         let fetch_payload = FetchPayload {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".into(),
-            shard_id: Some(ShardId::from(1)),
+            source_id: source_id.clone(),
+            shard_id: Some(shard_id.clone()),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
             from_position_exclusive: Some(Position::offset(0u64)),
             to_position_inclusive: Some(Position::offset(1u64)),
@@ -1174,8 +1244,8 @@ pub(super) mod tests {
 
         let fetch_eof = FetchEof {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".into(),
-            shard_id: Some(ShardId::from(1)),
+            source_id: source_id.clone(),
+            shard_id: Some(shard_id.clone()),
             eof_position: Some(Position::eof(1u64)),
         };
         let fetch_message = FetchMessage::new_eof(fetch_eof);
@@ -1275,8 +1345,8 @@ pub(super) mod tests {
 
         let fetch_payload = FetchPayload {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".into(),
-            shard_id: Some(ShardId::from(1)),
+            source_id: source_id.clone(),
+            shard_id: Some(shard_id.clone()),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
             from_position_exclusive: Some(Position::offset(0u64)),
             to_position_inclusive: Some(Position::offset(1u64)),
@@ -1286,8 +1356,8 @@ pub(super) mod tests {
 
         let fetch_eof = FetchEof {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".into(),
-            shard_id: Some(ShardId::from(1)),
+            source_id: source_id.clone(),
+            shard_id: Some(shard_id.clone()),
             eof_position: Some(Position::eof(1u64)),
         };
         let fetch_message = FetchMessage::new_eof(fetch_eof);
@@ -1386,8 +1456,8 @@ pub(super) mod tests {
 
         let fetch_payload = FetchPayload {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".into(),
-            shard_id: Some(ShardId::from(1)),
+            source_id: source_id.clone(),
+            shard_id: Some(shard_id.clone()),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
             from_position_exclusive: Some(Position::offset(0u64)),
             to_position_inclusive: Some(Position::offset(1u64)),
@@ -1400,8 +1470,8 @@ pub(super) mod tests {
 
         let fetch_eof = FetchEof {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".into(),
-            shard_id: Some(ShardId::from(1)),
+            source_id: source_id.clone(),
+            shard_id: Some(shard_id.clone()),
             eof_position: Some(Position::eof(1u64)),
         };
         let fetch_message = FetchMessage::new_eof(fetch_eof);
@@ -1572,8 +1642,8 @@ pub(super) mod tests {
 
         let fetch_payload = FetchPayload {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".into(),
-            shard_id: Some(ShardId::from(1)),
+            source_id: source_id.clone(),
+            shard_id: Some(shard_id.clone()),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
             from_position_exclusive: Some(Position::offset(0u64)),
             to_position_inclusive: Some(Position::offset(1u64)),
@@ -1586,8 +1656,8 @@ pub(super) mod tests {
 
         let fetch_payload = FetchPayload {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".into(),
-            shard_id: Some(ShardId::from(1)),
+            source_id: source_id.clone(),
+            shard_id: Some(shard_id.clone()),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-bar"]),
             from_position_exclusive: Some(Position::offset(1u64)),
             to_position_inclusive: Some(Position::offset(2u64)),

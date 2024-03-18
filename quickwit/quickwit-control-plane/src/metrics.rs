@@ -18,19 +18,23 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, new_gauge_vec, IntCounter, IntGaugeVec};
+use quickwit_common::metrics::{
+    new_counter, new_gauge, new_gauge_vec, IntCounter, IntGauge, IntGaugeVec,
+};
 
 pub struct ControlPlaneMetrics {
+    pub indexes_total: IntGauge,
     pub restart_total: IntCounter,
     pub schedule_total: IntCounter,
     pub metastore_error_aborted: IntCounter,
     pub metastore_error_maybe_executed: IntCounter,
-    pub open_shards_total: IntGaugeVec<2>,
+    pub open_shards_total: IntGaugeVec<1>,
 }
 
 impl Default for ControlPlaneMetrics {
     fn default() -> Self {
         ControlPlaneMetrics {
+            indexes_total: new_gauge("indexes_total", "Number of indexes.", "control_plane", &[]),
             restart_total: new_counter(
                 "restart_total",
                 "Number of control plane restart.",
@@ -58,7 +62,7 @@ impl Default for ControlPlaneMetrics {
                 "Number of open shards per source.",
                 "control_plane",
                 &[],
-                ["index_id", "source_id"],
+                ["index_id"],
             ),
         }
     }

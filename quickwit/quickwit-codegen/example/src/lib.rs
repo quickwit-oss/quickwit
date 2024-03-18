@@ -113,18 +113,27 @@ fn spawn_ping_response_stream(
     service_stream
 }
 
-#[derive(Debug, Clone)]
-struct HelloImpl;
+#[derive(Debug, Clone, Default)]
+struct HelloImpl {
+    delay: Duration,
+}
 
 #[async_trait]
 impl Hello for HelloImpl {
     async fn hello(&mut self, request: HelloRequest) -> HelloResult<HelloResponse> {
+        tokio::time::sleep(self.delay).await;
+
+        if request.name.is_empty() {
+            return Err(HelloError::InvalidArgument("name is empty".to_string()));
+        }
         Ok(HelloResponse {
             message: format!("Hello, {}!", request.name),
         })
     }
 
     async fn goodbye(&mut self, request: GoodbyeRequest) -> HelloResult<GoodbyeResponse> {
+        tokio::time::sleep(self.delay).await;
+
         Ok(GoodbyeResponse {
             message: format!("Goodbye, {}!", request.name),
         })
@@ -169,7 +178,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hello_codegen() {
-        let mut hello = HelloImpl;
+        let mut hello = HelloImpl::default();
 
         assert_eq!(
             hello
@@ -255,7 +264,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hello_codegen_grpc() {
-        let grpc_server_adapter = HelloGrpcServerAdapter::new(HelloImpl);
+        let grpc_server_adapter = HelloGrpcServerAdapter::new(HelloImpl::default());
         let grpc_server: HelloGrpcServer<HelloGrpcServerAdapter> =
             HelloGrpcServer::new(grpc_server_adapter);
         let addr: SocketAddr = "127.0.0.1:6666".parse().unwrap();
@@ -286,6 +295,16 @@ mod tests {
                 message: "Hello, gRPC client!".to_string()
             }
         );
+
+        assert!(matches!(
+            grpc_client
+                .hello(HelloRequest {
+                    name: "".to_string()
+                })
+                .await
+                .unwrap_err(),
+            HelloError::InvalidArgument(_)
+        ));
 
         let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);
         let mut pong_stream = grpc_client.ping(ping_stream).await.unwrap();
@@ -484,7 +503,7 @@ mod tests {
             .stack_hello_layer(hello_layer.clone())
             .stack_goodbye_layer(goodbye_layer.clone())
             .stack_ping_layer(ping_layer.clone())
-            .build(HelloImpl);
+            .build(HelloImpl::default());
 
         hello_tower
             .hello(HelloRequest {
@@ -530,7 +549,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_balance_channel() {
-        let hello = HelloImpl;
+        let hello = HelloImpl::default();
         let grpc_server_adapter = HelloGrpcServerAdapter::new(hello);
         let grpc_server = HelloGrpcServer::new(grpc_server_adapter);
         let addr: SocketAddr = "127.0.0.1:8888".parse().unwrap();
@@ -601,5 +620,50 @@ mod tests {
             }
         );
         hello.check_connectivity().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_transport_errors_handling() {
+        quickwit_common::setup_logging_for_tests();
+
+        let addr: SocketAddr = "127.0.0.1:9999".parse().unwrap();
+        let channel = Endpoint::from_static("http://127.0.0.1:9999")
+            .timeout(Duration::from_millis(100))
+            .connect_lazy();
+        let max_message_size = ByteSize::mib(1);
+        let mut grpc_client = HelloClient::from_channel(addr, channel, max_message_size);
+
+        let error = grpc_client
+            .hello(HelloRequest {
+                name: "Client".to_string(),
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(error, HelloError::Unavailable(_)));
+
+        let hello = HelloImpl {
+            delay: Duration::from_secs(1),
+        };
+        let grpc_server_adapter = HelloGrpcServerAdapter::new(hello);
+        let grpc_server: HelloGrpcServer<HelloGrpcServerAdapter> =
+            HelloGrpcServer::new(grpc_server_adapter);
+        let addr: SocketAddr = "127.0.0.1:9999".parse().unwrap();
+
+        tokio::spawn({
+            async move {
+                Server::builder()
+                    .add_service(grpc_server)
+                    .serve(addr)
+                    .await
+                    .unwrap();
+            }
+        });
+        let error = grpc_client
+            .hello(HelloRequest {
+                name: "Client".to_string(),
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(error, HelloError::Timeout(_)));
     }
 }

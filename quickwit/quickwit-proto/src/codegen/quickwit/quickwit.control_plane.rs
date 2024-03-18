@@ -114,6 +114,7 @@ pub enum GetOrCreateOpenShardsFailureReason {
     Unspecified = 0,
     IndexNotFound = 1,
     SourceNotFound = 2,
+    NoIngestersAvailable = 3,
 }
 impl GetOrCreateOpenShardsFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -131,6 +132,9 @@ impl GetOrCreateOpenShardsFailureReason {
             GetOrCreateOpenShardsFailureReason::SourceNotFound => {
                 "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_SOURCE_NOT_FOUND"
             }
+            GetOrCreateOpenShardsFailureReason::NoIngestersAvailable => {
+                "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_NO_INGESTERS_AVAILABLE"
+            }
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -144,6 +148,9 @@ impl GetOrCreateOpenShardsFailureReason {
             }
             "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_SOURCE_NOT_FOUND" => {
                 Some(Self::SourceNotFound)
+            }
+            "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_NO_INGESTERS_AVAILABLE" => {
+                Some(Self::NoIngestersAvailable)
             }
             _ => None,
         }
@@ -1519,7 +1526,10 @@ where
             .create_index(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::metastore::CreateIndexRequest::rpc_name(),
+            ))
     }
     async fn delete_index(
         &mut self,
@@ -1529,7 +1539,10 @@ where
             .delete_index(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::metastore::DeleteIndexRequest::rpc_name(),
+            ))
     }
     async fn add_source(
         &mut self,
@@ -1539,7 +1552,10 @@ where
             .add_source(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::metastore::AddSourceRequest::rpc_name(),
+            ))
     }
     async fn toggle_source(
         &mut self,
@@ -1549,7 +1565,10 @@ where
             .toggle_source(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::metastore::ToggleSourceRequest::rpc_name(),
+            ))
     }
     async fn delete_source(
         &mut self,
@@ -1559,7 +1578,10 @@ where
             .delete_source(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::metastore::DeleteSourceRequest::rpc_name(),
+            ))
     }
     async fn get_or_create_open_shards(
         &mut self,
@@ -1569,7 +1591,10 @@ where
             .get_or_create_open_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                GetOrCreateOpenShardsRequest::rpc_name(),
+            ))
     }
     async fn advise_reset_shards(
         &mut self,
@@ -1579,7 +1604,10 @@ where
             .advise_reset_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                AdviseResetShardsRequest::rpc_name(),
+            ))
     }
     async fn get_debug_state(
         &mut self,
@@ -1589,7 +1617,10 @@ where
             .get_debug_state(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                GetDebugStateRequest::rpc_name(),
+            ))
     }
 }
 #[derive(Debug)]
@@ -1616,7 +1647,7 @@ for ControlPlaneServiceGrpcServerAdapter {
             .create_index(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn delete_index(
         &self,
@@ -1627,7 +1658,7 @@ for ControlPlaneServiceGrpcServerAdapter {
             .delete_index(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn add_source(
         &self,
@@ -1638,7 +1669,7 @@ for ControlPlaneServiceGrpcServerAdapter {
             .add_source(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn toggle_source(
         &self,
@@ -1649,7 +1680,7 @@ for ControlPlaneServiceGrpcServerAdapter {
             .toggle_source(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn delete_source(
         &self,
@@ -1660,7 +1691,7 @@ for ControlPlaneServiceGrpcServerAdapter {
             .delete_source(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn get_or_create_open_shards(
         &self,
@@ -1671,7 +1702,7 @@ for ControlPlaneServiceGrpcServerAdapter {
             .get_or_create_open_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn advise_reset_shards(
         &self,
@@ -1682,7 +1713,7 @@ for ControlPlaneServiceGrpcServerAdapter {
             .advise_reset_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn get_debug_state(
         &self,
@@ -1693,7 +1724,7 @@ for ControlPlaneServiceGrpcServerAdapter {
             .get_debug_state(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
 }
 /// Generated client implementations.

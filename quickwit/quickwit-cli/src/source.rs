@@ -741,8 +741,7 @@ mod tests {
             .collect();
         let sources = vec![SourceConfig {
             source_id: "foo-source".to_string(),
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::file("path/to/file"),
             transform_config: None,
@@ -802,8 +801,7 @@ mod tests {
         let sources = [
             SourceConfig {
                 source_id: "foo-source".to_string(),
-                desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
                 source_params: SourceParams::stdin(),
                 transform_config: None,
@@ -811,8 +809,7 @@ mod tests {
             },
             SourceConfig {
                 source_id: "bar-source".to_string(),
-                desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
                 source_params: SourceParams::stdin(),
                 transform_config: None,

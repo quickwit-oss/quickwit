@@ -155,6 +155,22 @@ impl CommitType {
 #[allow(unused_imports)]
 use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
+use quickwit_common::tower::RpcName;
+impl RpcName for IngestRequest {
+    fn rpc_name() -> &'static str {
+        "ingest"
+    }
+}
+impl RpcName for FetchRequest {
+    fn rpc_name() -> &'static str {
+        "fetch"
+    }
+}
+impl RpcName for TailRequest {
+    fn rpc_name() -> &'static str {
+        "tail"
+    }
+}
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait IngestService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
@@ -803,21 +819,30 @@ where
             .ingest(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                IngestRequest::rpc_name(),
+            ))
     }
     async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse> {
         self.inner
             .fetch(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                FetchRequest::rpc_name(),
+            ))
     }
     async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse> {
         self.inner
             .tail(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(|error| error.into())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                TailRequest::rpc_name(),
+            ))
     }
 }
 #[derive(Debug)]
@@ -843,7 +868,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
             .ingest(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn fetch(
         &self,
@@ -854,7 +879,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
             .fetch(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn tail(
         &self,
@@ -865,7 +890,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
             .tail(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(|error| error.into())
+            .map_err(crate::error::grpc_error_to_grpc_status)
     }
 }
 /// Generated client implementations.
