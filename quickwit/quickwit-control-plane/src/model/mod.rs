@@ -31,7 +31,7 @@ use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::Progress;
 use quickwit_config::SourceConfig;
 use quickwit_ingest::ShardInfos;
-use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
+use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt, MetastoreServiceExt};
 use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::metastore::{
@@ -88,12 +88,11 @@ impl ControlPlaneModel {
         let now = Instant::now();
         self.clear();
 
-        let index_metadatas = progress
-            .protect_future(metastore.list_indexes_metadata(ListIndexesMetadataRequest::all()))
-            .await?
-            .deserialize_indexes_metadata()?;
+        let indexes_metadata: Vec<IndexMetadata> = progress
+            .protect_future(metastore.list_all_indexes())
+            .await?;
 
-        let num_indexes = index_metadatas.len();
+        let num_indexes = indexes_metadata.len();
         self.index_table.reserve(num_indexes);
 
         let mut num_sources = 0;
@@ -101,7 +100,7 @@ impl ControlPlaneModel {
 
         let mut pending_subrequests = Vec::with_capacity(num_indexes.min(LIST_SHARDS_BATCH_SIZE));
 
-        for index_metadata in index_metadatas {
+        for index_metadata in indexes_metadata {
             self.add_index(index_metadata);
         }
 

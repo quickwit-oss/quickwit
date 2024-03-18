@@ -33,12 +33,14 @@ mod store_operations;
 use core::fmt;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::future::ready;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
+use futures::{stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use quickwit_common::ServiceStream;
 use quickwit_config::IndexTemplate;
@@ -51,12 +53,12 @@ use quickwit_proto::metastore::{
     IndexMetadataRequest, IndexMetadataResponse, IndexTemplateMatch, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
     ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardsRequest,
-    OpenShardsResponse, OpenShardsSubrequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
-    UpdateSplitsDeleteOpstampResponse,
+    ListIndexesMetadataResponse, ListShardsRequest,
+    ListShardsResponse, ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest,
+    MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult, MetastoreService,
+    MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse, OpenShardsSubrequest,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
@@ -87,6 +89,12 @@ pub(crate) enum LazyIndexStatus {
     /// The index is being deleted and but its index metadata file has not yet been removed from
     /// storage.
     Deleting,
+}
+
+impl LazyIndexStatus {
+    fn is_active(&self) -> bool {
+        matches!(self, LazyIndexStatus::Active(_))
+    }
 }
 
 #[derive(Debug)]
@@ -720,36 +728,65 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> MetastoreResult<ListIndexesMetadataResponse> {
-        // Done in two steps:
-        // 1) Get index IDs and release the lock on `per_index_metastores`.
-        // 2) Get each index metadata. Note that each get will take a read lock on
-        // `per_index_metastores`. Lock is released in 1) to let a concurrent task/thread to
-        // take a write lock on `per_index_metastores`.
-        let index_id_matcher =
-            IndexIdMatcher::try_from_index_id_patterns(&request.index_id_patterns)?;
-        let inner_rlock_guard = self.state.read().await;
-        let index_ids: Vec<IndexId> = inner_rlock_guard
+        const MAX_CONCURRENCY: usize = 100;
+
+        let matcher = IndexIdMatcher::try_from_index_id_patterns(&request.index_id_patterns)?;
+        let start_index_uid_exclusive = request.start_index_uid_exclusive.unwrap_or_default();
+        let limit = request.limit.unwrap_or(1_000) as usize;
+
+        let index_ids: Vec<IndexId> = self
+            .state
+            .read()
+            .await
             .indexes
             .iter()
-            .filter_map(|(index_id, index_state)| match index_state {
-                LazyIndexStatus::Active(_) if index_id_matcher.is_match(index_id) => Some(index_id),
-                _ => None,
+            .filter_map(|(index_id, index_status)| {
+                if index_status.is_active()
+                    // We don't have access to index UIDs until we fetch them, so we start filtering by index IDs, inclusively, first.
+                    && start_index_uid_exclusive.index_id <= *index_id
+                    && matcher.is_match(index_id)
+                {
+                    Some(index_id)
+                } else {
+                    None
+                }
             })
             .cloned()
+            .sorted()
             .collect();
-        drop(inner_rlock_guard);
 
-        let metastore = self.clone();
-        let indexes_metadata: Vec<IndexMetadata> = try_join_all(
-            index_ids
-                .into_iter()
-                .map(|index_id| get_index_metadata(metastore.clone(), index_id)),
-        )
-        .await?
-        .into_iter()
-        .flatten()
-        .collect();
-        let response = ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)?;
+        let mut indexes_metadata: Vec<IndexMetadata> = stream::iter(index_ids)
+            .map(|index_id| fetch_index_metadata(self.clone(), index_id))
+            .buffered(MAX_CONCURRENCY)
+            .try_filter_map(|index_metadata_opt| {
+                ready(match index_metadata_opt {
+                    Some(index_metadata)
+                        if index_metadata.index_uid > start_index_uid_exclusive =>
+                    {
+                        Ok(Some(index_metadata))
+                    }
+                    _ => Ok(None),
+                })
+            })
+            // We must fetch one more index than the limit to know if more indexes exist.
+            .take(limit + 1)
+            .try_collect()
+            .await?;
+
+        // If there are more indexes, we return the index UID of the next index to start
+        // from.
+        let next_start_index_uid_exclusive: Option<IndexUid> = if indexes_metadata.len() > limit {
+            indexes_metadata.pop();
+            Some(indexes_metadata[limit - 1].index_uid.clone())
+        } else {
+            None
+        };
+        let indexes_metadata_json: String = serde_utils::to_json_str(&indexes_metadata)?;
+
+        let response = ListIndexesMetadataResponse {
+            indexes_metadata_json,
+            next_start_index_uid_exclusive,
+        };
         Ok(response)
     }
 
@@ -1062,7 +1099,8 @@ async fn get_index_mutex(
     }
 }
 
-async fn get_index_metadata(
+/// Gets the index metadata from memory or storage.
+async fn fetch_index_metadata(
     mut metastore: FileBackedMetastore,
     index_id: IndexId,
 ) -> MetastoreResult<Option<IndexMetadata>> {

@@ -34,8 +34,9 @@ use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask,
-    IndexMetadataRequest, IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsRequest,
-    ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    IndexMetadataRequest, IndexMetadataResponse, ListIndexesMetadataRequest,
+    ListIndexesMetadataResponse, ListIndexesRequest, ListSplitsRequest, ListSplitsResponse,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
     MetastoreServiceStream, PublishSplitsRequest, StageSplitsRequest,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
@@ -59,6 +60,45 @@ pub trait MetastoreServiceExt: MetastoreService {
             Err(error) => Err(error),
         }
     }
+
+    /// Lists all the indexes in the metastore using the `list_indexes` RPC if implemented.
+    /// Otherwise, it falls back to using the `list_indexes_metadata` RPC.
+    async fn list_all_indexes(&mut self) -> MetastoreResult<Vec<IndexMetadata>> {
+        match list_all_indexes_helper(self).await {
+            Ok(indexes) => return Ok(indexes),
+            Err(MetastoreError::Unimplemented(_)) => {}
+            Err(error) => return Err(error),
+        };
+        let indexes = self
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
+            .await?
+            .deserialize_indexes_metadata()?;
+        Ok(indexes)
+    }
+}
+
+async fn list_all_indexes_helper<M: MetastoreService + ?Sized>(
+    metastore: &mut M,
+) -> MetastoreResult<Vec<IndexMetadata>> {
+    let mut indexes = Vec::new();
+    let mut request = ListIndexesRequest {
+        index_id_patterns: vec!["*".to_string()],
+        start_index_uid_exclusive: None,
+        limit: Some(1_000),
+    };
+    loop {
+        let response = metastore.list_indexes(request.clone()).await?;
+
+        for index_metadata_json in response.indexes_metadata_json {
+            let index_metadata = serde_utils::from_json_str(&index_metadata_json)?;
+            indexes.push(index_metadata);
+        }
+        if response.next_start_index_uid_exclusive.is_none() {
+            break;
+        }
+        request.start_index_uid_exclusive = response.next_start_index_uid_exclusive;
+    }
+    Ok(indexes)
 }
 
 impl MetastoreServiceExt for MetastoreServiceClient {}

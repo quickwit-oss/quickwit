@@ -29,13 +29,19 @@ pub struct ListIndexesMetadataRequest {
     /// with a '-'), and no negative pattern (a pattern starting with a '-').
     #[prost(string, repeated, tag = "2")]
     pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "3")]
+    pub start_index_uid_exclusive: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(uint32, optional, tag = "4")]
+    pub limit: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadataResponse {
     #[prost(string, tag = "1")]
-    pub indexes_metadata_serialized_json: ::prost::alloc::string::String,
+    pub indexes_metadata_json: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub next_start_index_uid_exclusive: ::core::option::Option<crate::types::IndexUid>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -31,11 +31,12 @@ use quickwit_proto::metastore::{
     IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
     ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult,
-    MetastoreService, MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest,
-    OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
-    ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    ListIndexesMetadataResponse, ListIndexesRequest, ListIndexesResponse, ListShardsRequest,
+    ListShardsResponse, ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest,
+    MarkSplitsForDeletionRequest, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 
 /// A [`MetastoreService`] implementation that proxies some requests to the control plane so it can
@@ -128,6 +129,13 @@ impl MetastoreService for ControlPlaneMetastore {
         request: ListIndexesMetadataRequest,
     ) -> MetastoreResult<ListIndexesMetadataResponse> {
         self.metastore.list_indexes_metadata(request).await
+    }
+
+    async fn list_indexes(
+        &mut self,
+        request: ListIndexesRequest,
+    ) -> MetastoreResult<ListIndexesResponse> {
+        self.metastore.list_indexes(request).await
     }
 
     async fn stage_splits(

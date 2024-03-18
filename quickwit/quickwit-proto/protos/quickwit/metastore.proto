@@ -205,10 +205,13 @@ message ListIndexesMetadataRequest {
   // An index must match at least one positive pattern (a pattern not starting
   // with a '-'), and no negative pattern (a pattern starting with a '-').
   repeated string index_id_patterns = 2;
+  optional quickwit.common.IndexUid start_index_uid_exclusive = 3;
+  optional uint32 limit = 4;
 }
 
 message ListIndexesMetadataResponse {
-  string indexes_metadata_serialized_json = 1;
+  string indexes_metadata_json = 1;
+  optional quickwit.common.IndexUid next_start_index_uid_exclusive = 2;
 }
 
 message DeleteIndexRequest {

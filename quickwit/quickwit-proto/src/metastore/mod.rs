@@ -335,8 +335,10 @@ pub mod serde_utils {
 
 impl ListIndexesMetadataRequest {
     pub fn all() -> ListIndexesMetadataRequest {
-        ListIndexesMetadataRequest {
+        Self {
             index_id_patterns: vec!["*".to_string()],
+            start_index_uid_exclusive: None,
+            limit: Some(u32::MAX - 1),
         }
     }
 }
