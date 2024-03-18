@@ -785,7 +785,7 @@ pub use tantivy::COLLECT_BLOCK_BUFFER_LEN;
 fn compute_filtered_block<'a>(
     timestamp_filter_opt: &Option<TimestampFilter>,
     docs: &'a [DocId],
-    filtered_docs_buffer: &'a mut [DocId; BUFFER_LEN],
+    filtered_docs_buffer: &'a mut [DocId; COLLECT_BLOCK_BUFFER_LEN],
 ) -> &'a [DocId] {
     let Some(timestamp_filter) = &timestamp_filter_opt else {
         return docs;
