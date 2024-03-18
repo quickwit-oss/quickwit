@@ -30,17 +30,18 @@ use crate::IndexMetadata;
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedIndexMetadata {
-    #[serde(rename = "0.7")]
+    #[serde(rename = "0.8")]
     // Retro compatibility.
+    #[serde(alias = "0.7")]
     #[serde(alias = "0.6")]
     #[serde(alias = "0.5")]
     #[serde(alias = "0.4")]
-    V0_7(IndexMetadataV0_7),
+    V0_8(IndexMetadataV0_8),
 }
 
 impl From<IndexMetadata> for VersionedIndexMetadata {
     fn from(index_metadata: IndexMetadata) -> Self {
-        VersionedIndexMetadata::V0_7(index_metadata.into())
+        VersionedIndexMetadata::V0_8(index_metadata.into())
     }
 }
 
@@ -51,12 +52,12 @@ impl TryFrom<VersionedIndexMetadata> for IndexMetadata {
         match index_metadata {
             // When we have more than one version, you should chain version conversion.
             // ie. Implement conversion from V_k -> V_{k+1}
-            VersionedIndexMetadata::V0_7(v6) => v6.try_into(),
+            VersionedIndexMetadata::V0_8(v8) => v8.try_into(),
         }
     }
 }
 
-impl From<IndexMetadata> for IndexMetadataV0_7 {
+impl From<IndexMetadata> for IndexMetadataV0_8 {
     fn from(index_metadata: IndexMetadata) -> Self {
         let sources: Vec<SourceConfig> = index_metadata.sources.values().cloned().collect();
         Self {
@@ -70,7 +71,7 @@ impl From<IndexMetadata> for IndexMetadataV0_7 {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
-pub(crate) struct IndexMetadataV0_7 {
+pub(crate) struct IndexMetadataV0_8 {
     #[schema(value_type = String)]
     // Defaults to nil for backward compatibility.
     #[serde(default, alias = "index_id")]
@@ -85,26 +86,26 @@ pub(crate) struct IndexMetadataV0_7 {
     pub sources: Vec<SourceConfig>,
 }
 
-impl TryFrom<IndexMetadataV0_7> for IndexMetadata {
+impl TryFrom<IndexMetadataV0_8> for IndexMetadata {
     type Error = anyhow::Error;
 
-    fn try_from(v0_6: IndexMetadataV0_7) -> anyhow::Result<Self> {
+    fn try_from(v0_8: IndexMetadataV0_8) -> anyhow::Result<Self> {
         let mut sources: HashMap<String, SourceConfig> = Default::default();
-        for source in v0_6.sources {
+        for source in v0_8.sources {
             if sources.contains_key(&source.source_id) {
                 anyhow::bail!("source `{}` is defined more than once", source.source_id);
             }
             sources.insert(source.source_id.clone(), source);
         }
         Ok(Self {
-            index_uid: if v0_6.index_uid.is_empty() {
-                IndexUid::from_parts(&v0_6.index_config.index_id, 0)
+            index_uid: if v0_8.index_uid.is_empty() {
+                IndexUid::from_parts(&v0_8.index_config.index_id, 0)
             } else {
-                v0_6.index_uid
+                v0_8.index_uid
             },
-            index_config: v0_6.index_config,
-            checkpoint: v0_6.checkpoint,
-            create_timestamp: v0_6.create_timestamp,
+            index_config: v0_8.index_config,
+            checkpoint: v0_8.checkpoint,
+            create_timestamp: v0_8.create_timestamp,
             sources,
         })
     }
