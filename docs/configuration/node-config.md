@@ -166,7 +166,9 @@ This section contains the configuration options for an indexer. The split store 
 | `split_store_max_num_bytes` | Maximum size in bytes allowed in the split store for each index-source pair. | `100G` |
 | `split_store_max_num_splits` | Maximum number of files allowed in the split store for each index-source pair. | `1000` |
 | `max_concurrent_split_uploads` | Maximum number of concurrent split uploads allowed on the node. | `12` |
+| `merge_concurrency` | Maximum number of merge operations that can be executed on the node at one point in time. | `(2 x num threads available) / 3` |
 | `enable_otlp_endpoint` | If true, enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry Protocol (OTLP). | `false` |
+| `cpu_capacity` | Advisory parameter used by the control plane. The value can expressed be in threads (e.g. `2`) or in term of millicpus (`2000m`). The control plane will attempt to schedule indexing pipelines on the different nodes proportionally to the cpu capacity advertised by the indexer. It is NOT used as a limit. All pipelines will be scheduled regardless of whether the cluster has sufficient capacity or not. The control plane does not attempt to spread the work equally when the load is well below the `cpu_capacity`. Users who need a balanced load on all of their indexer nodes can set the `cpu_capacity` to an arbitrarily low value as long as they keep it proportional to the number of threads available. | `num threads available` |
 
 Example:
 
