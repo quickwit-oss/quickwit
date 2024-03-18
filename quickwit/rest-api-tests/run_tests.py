@@ -147,7 +147,7 @@ def check_result_list(result, expected, context_path=""):
                 display_filtered_result = filtered_result[:5] + ['...'] if len(filtered_result) > 5 else filtered_result
             else:
                 display_filtered_result = filtered_result
-            raise Exception("Wrong length at context %s. Expected: %s Received: %s,\n Expected \n%s \n Received \n%s" % (context_path, len(expected), len(result), display_filtered_result, expected))
+            raise Exception("Wrong length at context %s. Expected: %s Received: %s,\n Expected \n%s \n Received \n%s" % (context_path, len(expected), len(result), expected, display_filtered_result))
         raise Exception("Wrong length at context %s. Expected: %s Received: %s" % (context_path, len(expected), len(result)))
     for (i, (left, right)) in enumerate(zip(result, expected)):
         check_result(left, right, context_path + "[%s]" % i)
