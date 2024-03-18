@@ -1740,8 +1740,8 @@ mod tests {
                 .method("POST")
                 .json(&true)
                 .body(
-                    r#"{"version": "0.7", "source_id": "pulsar-source",
-    "desired_num_pipelines": 2, "source_type": "pulsar", "params": {"topics": ["my-topic"],
+                    r#"{"version": "0.8", "source_id": "pulsar-source",
+    "num_pipelines": 2, "source_type": "pulsar", "params": {"topics": ["my-topic"],
     "address": "pulsar://localhost:6650" }}"#,
                 )
                 .reply(&index_management_handler)
