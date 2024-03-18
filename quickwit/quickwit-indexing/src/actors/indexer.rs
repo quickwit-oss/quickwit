@@ -225,6 +225,10 @@ impl IndexerState {
         let publish_lock = self.publish_lock.clone();
         let publish_token_opt = self.publish_token_opt.clone();
 
+        let mut split_builders_guard =
+            GaugeGuard::from_gauge(&crate::metrics::INDEXER_METRICS.split_builders);
+        split_builders_guard.add(1);
+
         let workbench = IndexingWorkbench {
             workbench_id,
             create_instant: Instant::now(),
@@ -242,6 +246,7 @@ impl IndexerState {
                     .in_flight_data
                     .index_writer,
             ),
+            split_builders_guard,
         };
         Ok(workbench)
     }
@@ -364,6 +369,7 @@ struct IndexingWorkbench {
     last_delete_opstamp: u64,
     // Number of bytes declared as used by tantivy.
     memory_usage: GaugeGuard,
+    split_builders_guard: GaugeGuard,
 }
 
 pub struct Indexer {
@@ -635,6 +641,7 @@ impl Indexer {
             batch_parent_span,
             indexing_permit,
             memory_usage,
+            split_builders_guard,
             ..
         }) = self.indexing_workbench_opt.take()
         else {
@@ -687,6 +694,7 @@ impl Indexer {
                 commit_trigger,
                 batch_parent_span,
                 memory_usage,
+                _split_builders_guard: split_builders_guard,
             },
         )
         .await?;
