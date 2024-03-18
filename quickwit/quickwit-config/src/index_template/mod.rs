@@ -23,7 +23,7 @@ use anyhow::ensure;
 use quickwit_common::uri::Uri;
 use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
-pub use serialize::{IndexTemplateV0_7, VersionedIndexTemplate};
+pub use serialize::{IndexTemplateV0_8, VersionedIndexTemplate};
 
 use crate::index_config::validate_index_config;
 use crate::{

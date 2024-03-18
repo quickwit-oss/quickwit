@@ -29,23 +29,24 @@ use crate::{
 };
 
 /// Alias for the latest serialization format.
-type IndexConfigForSerialization = IndexConfigV0_7;
+type IndexConfigForSerialization = IndexConfigV0_8;
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedIndexConfig {
-    #[serde(rename = "0.7")]
+    #[serde(rename = "0.8")]
     // Retro compatibility
     #[serde(alias = "0.4")]
     #[serde(alias = "0.5")]
     #[serde(alias = "0.6")]
-    V0_7(IndexConfigV0_7),
+    #[serde(alias = "0.7")]
+    V0_8(IndexConfigV0_8),
 }
 
 impl From<VersionedIndexConfig> for IndexConfigForSerialization {
     fn from(versioned_config: VersionedIndexConfig) -> IndexConfigForSerialization {
         match versioned_config {
-            VersionedIndexConfig::V0_7(v0_6) => v0_6,
+            VersionedIndexConfig::V0_8(v0_8) => v0_8,
         }
     }
 }
@@ -109,7 +110,7 @@ impl IndexConfigForSerialization {
 
 impl From<IndexConfig> for VersionedIndexConfig {
     fn from(index_config: IndexConfig) -> Self {
-        VersionedIndexConfig::V0_7(index_config.into())
+        VersionedIndexConfig::V0_8(index_config.into())
     }
 }
 
@@ -118,14 +119,14 @@ impl TryFrom<VersionedIndexConfig> for IndexConfig {
 
     fn try_from(versioned_index_config: VersionedIndexConfig) -> anyhow::Result<Self> {
         match versioned_index_config {
-            VersionedIndexConfig::V0_7(v0_6) => v0_6.build_and_validate(None),
+            VersionedIndexConfig::V0_8(v0_8) => v0_8.build_and_validate(None),
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct IndexConfigV0_7 {
+pub struct IndexConfigV0_8 {
     pub index_id: String,
     #[schema(value_type = String)]
     #[serde(default)]
@@ -140,9 +141,9 @@ pub struct IndexConfigV0_7 {
     pub retention_policy_opt: Option<RetentionPolicy>,
 }
 
-impl From<IndexConfig> for IndexConfigV0_7 {
+impl From<IndexConfig> for IndexConfigV0_8 {
     fn from(index_config: IndexConfig) -> Self {
-        IndexConfigV0_7 {
+        IndexConfigV0_8 {
             index_id: index_config.index_id,
             index_uri: Some(index_config.index_uri),
             doc_mapping: index_config.doc_mapping,
