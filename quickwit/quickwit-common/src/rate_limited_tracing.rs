@@ -24,23 +24,30 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use coarsetime::{Duration, Instant};
 
+/// Metadata for a log site. This is stored inside a single AtomicU64 when not in use.
+///
+/// `call_count` is the number of calls since the last upgrade of generation, it's stored
+/// in the lower 32b of the atomic, so it can just be incremented on the fast path.
+/// `generation` is the number of time we reseted the `call_count`. It isn't used as is, and
+/// is just compared to itself to detect and handle properly concurent resets frop multiple
+/// threads.
 #[derive(Clone, Copy)]
-struct Count {
+struct LogSiteMetadata {
     generation: u32,
     call_count: u32,
 }
 
-impl From<u64> for Count {
-    fn from(val: u64) -> Count {
-        Count {
+impl From<u64> for LogSiteMetadata {
+    fn from(val: u64) -> LogSiteMetadata {
+        LogSiteMetadata {
             generation: (val >> 32) as u32,
             call_count: (val & ((1 << 32) - 1)) as u32,
         }
     }
 }
 
-impl From<Count> for u64 {
-    fn from(count: Count) -> u64 {
+impl From<LogSiteMetadata> for u64 {
+    fn from(count: LogSiteMetadata) -> u64 {
         ((count.generation as u64) << 32) + count.call_count as u64
     }
 }
@@ -57,15 +64,20 @@ pub fn should_log<F: Fn() -> Instant>(
     //  calls since LAST_RESET. We assume there won't be 2**32 calls to this log in ~60s.
     //  Generation is free to wrap arround.
 
-    let count = count_atomic.fetch_add(1, Ordering::Acquire);
-    if count == 0 {
+    // Because the lower 32 bits are storing the log count, we can
+    // increment the entire u64 to record this log call.
+    let logsite_meta_u64 = count_atomic.fetch_add(1, Ordering::Acquire);
+    if logsite_meta_u64 == 0 {
         // this can only be reached the very 1st time we log
         last_reset_atomic.store(now().as_ticks(), Ordering::Release);
     }
 
-    let count: Count = count.into();
+    let LogSiteMetadata {
+        generation,
+        call_count,
+    } = logsite_meta_u64.into();
 
-    if count.call_count < limit {
+    if call_count < limit {
         return true;
     }
 
@@ -80,35 +92,33 @@ pub fn should_log<F: Fn() -> Instant>(
     }
 
     let mut update_time = false;
-    let mut can_log = false;
 
-    let _ = count_atomic.fetch_update(Ordering::Release, Ordering::Acquire, |current_count| {
-        let mut current_count: Count = current_count.into();
-        if count.generation == current_count.generation {
-            // we can update generation&time, so we can definitely log
-            update_time = true;
-            can_log = true;
-            let new_count = Count {
-                generation: count.generation.wrapping_add(1),
-                call_count: 1,
-            };
-            Some(new_count.into())
-        } else {
-            // we can't update generation&time, but maybe we can still log?
-            update_time = false;
-            if current_count.call_count < limit {
-                // we can log, update the count
-                can_log = true;
-                current_count.call_count += 1;
-                Some(current_count.into())
+    let update_res =
+        count_atomic.fetch_update(Ordering::Release, Ordering::Acquire, |current_count| {
+            let mut current_count: LogSiteMetadata = current_count.into();
+            if generation == current_count.generation {
+                // we can update generation&time, so we can definitely log
+                update_time = true;
+                let new_count = LogSiteMetadata {
+                    generation: generation.wrapping_add(1),
+                    call_count: 1,
+                };
+                Some(new_count.into())
             } else {
-                // we can't log, save some contention by not recording that we tried to
-                // log
-                can_log = false;
-                None
+                // we can't update generation&time, but maybe we can still log?
+                update_time = false;
+                if current_count.call_count < limit {
+                    // we can log, update the count
+                    current_count.call_count += 1;
+                    Some(current_count.into())
+                } else {
+                    // we can't log, save some contention by not recording that we tried to
+                    // log, and exit in error
+                    None
+                }
             }
-        }
-    });
+        });
+    let can_log = update_res.is_ok();
 
     // technically there is a race condition if we stay stuck *here* for > 60s, which
     // could cause us to log more than required. This is unlikely to happen, and not
