@@ -44,7 +44,7 @@ mod templating;
 pub use cluster_config::ClusterConfig;
 // We export that one for backward compatibility.
 // See #2048
-use index_config::serialize::{IndexConfigV0_7, VersionedIndexConfig};
+use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
 pub use index_config::{
     build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig,
     IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
@@ -60,7 +60,7 @@ pub use source_config::{
 };
 use tracing::warn;
 
-use crate::index_template::IndexTemplateV0_7;
+use crate::index_template::IndexTemplateV0_8;
 pub use crate::index_template::{IndexTemplate, IndexTemplateId, VersionedIndexTemplate};
 use crate::merge_policy_config::{
     ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
@@ -90,9 +90,9 @@ pub use crate::storage_config::{
     SourceConfigV0_7,
     SourceConfigV0_8,
     VersionedIndexConfig,
-    IndexConfigV0_7,
+    IndexConfigV0_8,
     VersionedIndexTemplate,
-    IndexTemplateV0_7,
+    IndexTemplateV0_8,
     SourceInputFormat,
     SourceParams,
     FileSourceParams,
