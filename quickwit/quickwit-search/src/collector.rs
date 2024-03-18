@@ -500,22 +500,38 @@ enum AggregationSegmentCollectors {
 
 /// Quickwit collector working at the scale of the segment.
 pub struct QuickwitSegmentCollector {
+    timestamp_filter_opt: Option<TimestampFilter>,
+    segment_top_k_collector: Option<QuickwitSegmentTopKCollector>,
+    // Caches for block fetching
+    filtered_docs: Box<[DocId; 64]>,
+    aggregation: Option<AggregationSegmentCollectors>,
     num_hits: u64,
+}
+
+impl QuickwitSegmentCollector {
+    #[inline]
+    fn accept_document(&self, doc_id: DocId) -> bool {
+        if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
+            return timestamp_filter.is_within_range(doc_id);
+        }
+        true
+    }
+}
+
+/// Quickwit collector working at the scale of the segment.
+struct QuickwitSegmentTopKCollector {
     split_id: String,
     score_extractor: SortingFieldExtractorPair,
     // PartialHits in this heap don't contain a split_id yet.
     top_k_hits: TopK<SegmentPartialHit, SegmentPartialHitSortingKey, HitSortingMapper>,
     segment_ord: u32,
-    timestamp_filter_opt: Option<TimestampFilter>,
-    aggregation: Option<AggregationSegmentCollectors>,
     search_after: Option<SearchAfterSegment>,
     // Precomputed order for search_after for split_id and segment_ord
     precomp_search_after_order: Ordering,
-    // Caches for block fetching
-    filtered_docs: Box<[DocId; 64]>,
     sort_values1: Box<[Option<u64>; 64]>,
     sort_values2: Box<[Option<u64>; 64]>,
 }
+
 
 /// Search After, but the sort values are converted to the u64 fast field representation.
 struct SearchAfterSegment {
@@ -577,22 +593,16 @@ impl SearchAfterSegment {
     }
 }
 
-impl QuickwitSegmentCollector {
-    fn collect_top_k_block(&mut self, num_docs: usize, docs: &[DocId]) {
-        let doc_ids = get_final_docs(
-            &self.timestamp_filter_opt,
-            num_docs,
-            docs,
-            &self.filtered_docs,
-        );
+impl QuickwitSegmentTopKCollector {
+    fn collect_top_k_block(&mut self, docs: &[DocId]) {
         self.score_extractor.extract_typed_sort_values(
-            doc_ids,
+            docs,
             &mut self.sort_values1[..],
             &mut self.sort_values2[..],
         );
         if let Some(_search_after) = &self.search_after {
             // Search after not optimized for block collection yet
-            for ((doc_id, sort_value), sort_value2) in doc_ids
+            for ((doc_id, sort_value), sort_value2) in docs
                 .iter()
                 .cloned()
                 .zip(self.sort_values1.iter().cloned())
@@ -615,7 +625,7 @@ impl QuickwitSegmentCollector {
             //
             // No sort values loaded. Sort only by doc_id.
             if !self.score_extractor.first.is_fast_field() {
-                for doc_id in doc_ids.iter().cloned() {
+                for doc_id in docs.iter().cloned() {
                     let hit = SegmentPartialHit {
                         sort_value: None,
                         sort_value2: None,
@@ -633,7 +643,7 @@ impl QuickwitSegmentCollector {
                 .unwrap_or(false);
             // No second sort values => We can skip iterating the second sort values cache.
             if has_no_second_sort {
-                for (doc_id, sort_value) in doc_ids
+                for (doc_id, sort_value) in docs
                     .iter()
                     .cloned()
                     .zip(self.sort_values1.iter().cloned())
@@ -648,7 +658,7 @@ impl QuickwitSegmentCollector {
                 return;
             }
 
-            for ((doc_id, sort_value), sort_value2) in doc_ids
+            for ((doc_id, sort_value), sort_value2) in docs
                 .iter()
                 .cloned()
                 .zip(self.sort_values1.iter().cloned())
@@ -725,31 +735,6 @@ impl QuickwitSegmentCollector {
         );
     }
 
-    #[inline]
-    fn accept_document(&self, doc_id: DocId) -> bool {
-        if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
-            return timestamp_filter.is_within_range(doc_id);
-        }
-        true
-    }
-}
-
-/// This is to circumvent lifetime issues and is pretty terrible.
-///
-/// We either use `filtered_docs` buffer (computed in `compute_filtered_block`) or return the passed
-/// docs.
-#[inline]
-fn get_final_docs<'a>(
-    timestamp_filter_opt: &Option<TimestampFilter>,
-    num_docs: usize,
-    docs: &'a [DocId],
-    filtered_docs: &'a [DocId; BUFFER_LEN],
-) -> &'a [DocId] {
-    if timestamp_filter_opt.is_some() {
-        &filtered_docs[..num_docs]
-    } else {
-        &docs[..num_docs]
-    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -805,9 +790,9 @@ fn compute_filtered_block<'a>(
     timestamp_filter_opt: &Option<TimestampFilter>,
     docs: &'a [DocId],
     filtered_docs_buffer: &'a mut [DocId; BUFFER_LEN],
-) -> usize {
+) -> &'a [DocId] {
     let Some(timestamp_filter) = &timestamp_filter_opt else {
-        return docs.len();
+        return docs;
     };
     let mut len = 0;
     for &doc in docs {
@@ -818,36 +803,31 @@ fn compute_filtered_block<'a>(
             0
         };
     }
-    len
+    &filtered_docs_buffer[..len]
+    // len
 }
 
 impl SegmentCollector for QuickwitSegmentCollector {
     type Fruit = tantivy::Result<LeafSearchResponse>;
 
     #[inline]
-    fn collect_block(&mut self, docs: &[DocId]) {
-        let num_docs =
-            compute_filtered_block(&self.timestamp_filter_opt, docs, &mut self.filtered_docs);
+    fn collect_block(&mut self, unfiltered_docs: &[DocId]) {
+        let filtered_docs: &[DocId] =
+            compute_filtered_block(&self.timestamp_filter_opt, unfiltered_docs, &mut self.filtered_docs);
 
         // Update results
-        self.num_hits += num_docs as u64;
+        self.num_hits += filtered_docs.len() as u64;
 
-        if self.top_k_hits.max_len() != 0 {
-            self.collect_top_k_block(num_docs, docs);
+        if let Some(segment_top_k_collector) = self.segment_top_k_collector.as_mut() {//.top_k_hits.max_len() != 0 {
+            segment_top_k_collector.collect_top_k_block(filtered_docs);
         }
 
-        let docs = get_final_docs(
-            &self.timestamp_filter_opt,
-            num_docs,
-            docs,
-            &self.filtered_docs,
-        );
         match self.aggregation.as_mut() {
             Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
-                collector.collect_block(docs)
+                collector.collect_block(filtered_docs)
             }
             Some(AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector)) => {
-                collector.collect_block(docs)
+                collector.collect_block(filtered_docs)
             }
             None => (),
         }
@@ -860,7 +840,9 @@ impl SegmentCollector for QuickwitSegmentCollector {
         }
 
         self.num_hits += 1;
-        self.collect_top_k(doc_id, score);
+        if let Some(segment_top_k_collector) = self.segment_top_k_collector.as_mut() {
+            segment_top_k_collector.collect_top_k(doc_id, score);
+        }
 
         match self.aggregation.as_mut() {
             Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
@@ -874,19 +856,22 @@ impl SegmentCollector for QuickwitSegmentCollector {
     }
 
     fn harvest(self) -> Self::Fruit {
-        let partial_hits: Vec<PartialHit> = self
-            .top_k_hits
+        let mut partial_hits: Vec<PartialHit> = Vec::new();
+        if let Some(segment_top_k_collector) = self.segment_top_k_collector {
+            // TODO put that in a method of segment_top_k_collector
+            partial_hits = segment_top_k_collector.top_k_hits
             .finalize()
             .into_iter()
             .map(|segment_partial_hit: SegmentPartialHit| {
                 segment_partial_hit.into_partial_hit(
-                    self.split_id.clone(),
-                    self.segment_ord,
-                    &self.score_extractor.first,
-                    &self.score_extractor.second,
+                    segment_top_k_collector.split_id.clone(),
+                    segment_top_k_collector.segment_ord,
+                    &segment_top_k_collector.score_extractor.first,
+                    &segment_top_k_collector.score_extractor.second,
                 )
             })
             .collect();
+        }
 
         let intermediate_aggregation_result = match self.aggregation {
             Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
@@ -1112,19 +1097,30 @@ impl Collector for QuickwitCollector {
         // Convert search_after into fast field u64
         let search_after =
             SearchAfterSegment::new(self.search_after.clone(), order1, order2, &score_extractor);
+
+        let segment_top_k_collector =
+            if leaf_max_hits == 0 {
+                None
+            } else {
+                Some(QuickwitSegmentTopKCollector {
+                split_id: self.split_id.clone(),
+                score_extractor,
+                top_k_hits: TopK::new(leaf_max_hits, sort_key_mapper),
+                segment_ord,
+                search_after,
+                precomp_search_after_order,
+                sort_values1: Box::new([None; 64]),
+                sort_values2: Box::new([None; 64]),
+                })
+            };
+
         Ok(QuickwitSegmentCollector {
-            num_hits: 0u64,
-            split_id: self.split_id.clone(),
-            score_extractor,
-            top_k_hits: TopK::new(leaf_max_hits, sort_key_mapper),
-            segment_ord,
+            num_hits: 0,
             timestamp_filter_opt,
+            segment_top_k_collector,
             aggregation,
-            search_after,
-            precomp_search_after_order,
             filtered_docs: Box::new([0; 64]),
-            sort_values1: Box::new([None; 64]),
-            sort_values2: Box::new([None; 64]),
+
         })
     }
 
