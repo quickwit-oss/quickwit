@@ -139,7 +139,7 @@ impl IndexerConfig {
     }
 
     pub fn default_merge_concurrency() -> NonZeroUsize {
-        NonZeroUsize::new(num_cpus::get() / 2).unwrap_or(NonZeroUsize::new(1).unwrap())
+        NonZeroUsize::new(num_cpus::get() * 2 / 3).unwrap_or(NonZeroUsize::new(1).unwrap())
     }
 
     fn default_cpu_capacity() -> CpuCapacity {
