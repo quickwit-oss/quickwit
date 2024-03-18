@@ -2657,7 +2657,7 @@ pub mod ingester_service_grpc_server {
             request: tonic::Request<super::PersistRequest>,
         ) -> std::result::Result<tonic::Response<super::PersistResponse>, tonic::Status>;
         /// Server streaming response type for the OpenReplicationStream method.
-        type OpenReplicationStreamStream: futures_core::Stream<
+        type OpenReplicationStreamStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::AckReplicationMessage, tonic::Status>,
             >
             + Send
@@ -2671,7 +2671,7 @@ pub mod ingester_service_grpc_server {
             tonic::Status,
         >;
         /// Server streaming response type for the OpenFetchStream method.
-        type OpenFetchStreamStream: futures_core::Stream<
+        type OpenFetchStreamStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::FetchMessage, tonic::Status>,
             >
             + Send
@@ -2686,7 +2686,7 @@ pub mod ingester_service_grpc_server {
             tonic::Status,
         >;
         /// Server streaming response type for the OpenObservationStream method.
-        type OpenObservationStreamStream: futures_core::Stream<
+        type OpenObservationStreamStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::ObservationMessage, tonic::Status>,
             >
             + Send
@@ -2837,7 +2837,9 @@ pub mod ingester_service_grpc_server {
                             request: tonic::Request<super::PersistRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).persist(request).await };
+                            let fut = async move {
+                                <T as IngesterServiceGrpc>::persist(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -2885,7 +2887,11 @@ pub mod ingester_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).open_replication_stream(request).await
+                                <T as IngesterServiceGrpc>::open_replication_stream(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -2933,7 +2939,11 @@ pub mod ingester_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).open_fetch_stream(request).await
+                                <T as IngesterServiceGrpc>::open_fetch_stream(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -2981,7 +2991,11 @@ pub mod ingester_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).open_observation_stream(request).await
+                                <T as IngesterServiceGrpc>::open_observation_stream(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -3026,7 +3040,10 @@ pub mod ingester_service_grpc_server {
                             request: tonic::Request<super::InitShardsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).init_shards(request).await };
+                            let fut = async move {
+                                <T as IngesterServiceGrpc>::init_shards(&inner, request)
+                                    .await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -3071,7 +3088,8 @@ pub mod ingester_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).retain_shards(request).await
+                                <T as IngesterServiceGrpc>::retain_shards(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -3117,7 +3135,8 @@ pub mod ingester_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).truncate_shards(request).await
+                                <T as IngesterServiceGrpc>::truncate_shards(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -3163,7 +3182,8 @@ pub mod ingester_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).close_shards(request).await
+                                <T as IngesterServiceGrpc>::close_shards(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -3209,7 +3229,8 @@ pub mod ingester_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).decommission(request).await
+                                <T as IngesterServiceGrpc>::decommission(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }

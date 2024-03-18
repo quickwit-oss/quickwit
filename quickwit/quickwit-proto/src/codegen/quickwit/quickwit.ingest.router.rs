@@ -817,7 +817,10 @@ pub mod ingest_router_service_grpc_server {
                             request: tonic::Request<super::IngestRequestV2>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).ingest(request).await };
+                            let fut = async move {
+                                <T as IngestRouterServiceGrpc>::ingest(&inner, request)
+                                    .await
+                            };
                             Box::pin(fut)
                         }
                     }

@@ -724,7 +724,11 @@ pub mod indexing_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).apply_indexing_plan(request).await
+                                <T as IndexingServiceGrpc>::apply_indexing_plan(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }

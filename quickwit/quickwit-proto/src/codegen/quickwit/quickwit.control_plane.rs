@@ -2243,7 +2243,11 @@ pub mod control_plane_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).create_index(request).await
+                                <T as ControlPlaneServiceGrpc>::create_index(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -2292,7 +2296,11 @@ pub mod control_plane_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_index(request).await
+                                <T as ControlPlaneServiceGrpc>::delete_index(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -2340,7 +2348,10 @@ pub mod control_plane_service_grpc_server {
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).add_source(request).await };
+                            let fut = async move {
+                                <T as ControlPlaneServiceGrpc>::add_source(&inner, request)
+                                    .await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -2388,7 +2399,11 @@ pub mod control_plane_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).toggle_source(request).await
+                                <T as ControlPlaneServiceGrpc>::toggle_source(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -2437,7 +2452,11 @@ pub mod control_plane_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_source(request).await
+                                <T as ControlPlaneServiceGrpc>::delete_source(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -2485,7 +2504,11 @@ pub mod control_plane_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).get_or_create_open_shards(request).await
+                                <T as ControlPlaneServiceGrpc>::get_or_create_open_shards(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -2531,7 +2554,11 @@ pub mod control_plane_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).advise_reset_shards(request).await
+                                <T as ControlPlaneServiceGrpc>::advise_reset_shards(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -2577,7 +2604,11 @@ pub mod control_plane_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).get_debug_state(request).await
+                                <T as ControlPlaneServiceGrpc>::get_debug_state(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }

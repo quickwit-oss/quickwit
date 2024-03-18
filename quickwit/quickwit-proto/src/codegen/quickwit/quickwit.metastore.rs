@@ -6025,7 +6025,7 @@ pub mod metastore_service_grpc_server {
             request: tonic::Request<super::DeleteIndexRequest>,
         ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         /// Server streaming response type for the ListSplits method.
-        type ListSplitsStream: futures_core::Stream<
+        type ListSplitsStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::ListSplitsResponse, tonic::Status>,
             >
             + Send
@@ -6327,7 +6327,8 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).create_index(request).await
+                                <T as MetastoreServiceGrpc>::create_index(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6373,7 +6374,8 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).index_metadata(request).await
+                                <T as MetastoreServiceGrpc>::index_metadata(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6419,7 +6421,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).list_indexes_metadata(request).await
+                                <T as MetastoreServiceGrpc>::list_indexes_metadata(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6465,7 +6471,8 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_index(request).await
+                                <T as MetastoreServiceGrpc>::delete_index(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6511,7 +6518,10 @@ pub mod metastore_service_grpc_server {
                             request: tonic::Request<super::ListSplitsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).list_splits(request).await };
+                            let fut = async move {
+                                <T as MetastoreServiceGrpc>::list_splits(&inner, request)
+                                    .await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -6556,7 +6566,8 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).stage_splits(request).await
+                                <T as MetastoreServiceGrpc>::stage_splits(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6602,7 +6613,8 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).publish_splits(request).await
+                                <T as MetastoreServiceGrpc>::publish_splits(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6648,7 +6660,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).mark_splits_for_deletion(request).await
+                                <T as MetastoreServiceGrpc>::mark_splits_for_deletion(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6694,7 +6710,8 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_splits(request).await
+                                <T as MetastoreServiceGrpc>::delete_splits(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6739,7 +6756,10 @@ pub mod metastore_service_grpc_server {
                             request: tonic::Request<super::AddSourceRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).add_source(request).await };
+                            let fut = async move {
+                                <T as MetastoreServiceGrpc>::add_source(&inner, request)
+                                    .await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -6784,7 +6804,8 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).toggle_source(request).await
+                                <T as MetastoreServiceGrpc>::toggle_source(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6830,7 +6851,8 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_source(request).await
+                                <T as MetastoreServiceGrpc>::delete_source(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6876,7 +6898,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).reset_source_checkpoint(request).await
+                                <T as MetastoreServiceGrpc>::reset_source_checkpoint(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6922,7 +6948,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).last_delete_opstamp(request).await
+                                <T as MetastoreServiceGrpc>::last_delete_opstamp(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -6968,7 +6998,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).create_delete_task(request).await
+                                <T as MetastoreServiceGrpc>::create_delete_task(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -7019,7 +7053,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).update_splits_delete_opstamp(request).await
+                                <T as MetastoreServiceGrpc>::update_splits_delete_opstamp(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -7065,7 +7103,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).list_delete_tasks(request).await
+                                <T as MetastoreServiceGrpc>::list_delete_tasks(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -7111,7 +7153,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).list_stale_splits(request).await
+                                <T as MetastoreServiceGrpc>::list_stale_splits(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -7156,7 +7202,10 @@ pub mod metastore_service_grpc_server {
                             request: tonic::Request<super::OpenShardsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).open_shards(request).await };
+                            let fut = async move {
+                                <T as MetastoreServiceGrpc>::open_shards(&inner, request)
+                                    .await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -7201,7 +7250,8 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).acquire_shards(request).await
+                                <T as MetastoreServiceGrpc>::acquire_shards(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -7247,7 +7297,8 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_shards(request).await
+                                <T as MetastoreServiceGrpc>::delete_shards(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -7292,7 +7343,10 @@ pub mod metastore_service_grpc_server {
                             request: tonic::Request<super::ListShardsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).list_shards(request).await };
+                            let fut = async move {
+                                <T as MetastoreServiceGrpc>::list_shards(&inner, request)
+                                    .await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -7337,7 +7391,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).create_index_template(request).await
+                                <T as MetastoreServiceGrpc>::create_index_template(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -7383,7 +7441,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).get_index_template(request).await
+                                <T as MetastoreServiceGrpc>::get_index_template(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -7433,7 +7495,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).find_index_template_matches(request).await
+                                <T as MetastoreServiceGrpc>::find_index_template_matches(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -7479,7 +7545,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).list_index_templates(request).await
+                                <T as MetastoreServiceGrpc>::list_index_templates(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -7525,7 +7595,11 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).delete_index_templates(request).await
+                                <T as MetastoreServiceGrpc>::delete_index_templates(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }

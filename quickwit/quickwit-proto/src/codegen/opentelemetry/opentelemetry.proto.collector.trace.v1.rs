@@ -292,7 +292,9 @@ pub mod trace_service_server {
                             request: tonic::Request<super::ExportTraceServiceRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).export(request).await };
+                            let fut = async move {
+                                <T as TraceService>::export(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }

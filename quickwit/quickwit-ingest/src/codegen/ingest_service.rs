@@ -1206,7 +1206,9 @@ pub mod ingest_service_grpc_server {
                             request: tonic::Request<super::IngestRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).ingest(request).await };
+                            let fut = async move {
+                                <T as IngestServiceGrpc>::ingest(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1249,7 +1251,9 @@ pub mod ingest_service_grpc_server {
                             request: tonic::Request<super::FetchRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).fetch(request).await };
+                            let fut = async move {
+                                <T as IngestServiceGrpc>::fetch(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1292,7 +1296,9 @@ pub mod ingest_service_grpc_server {
                             request: tonic::Request<super::TailRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).tail(request).await };
+                            let fut = async move {
+                                <T as IngestServiceGrpc>::tail(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }

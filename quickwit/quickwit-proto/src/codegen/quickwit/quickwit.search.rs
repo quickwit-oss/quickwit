@@ -1222,7 +1222,7 @@ pub mod search_service_server {
             tonic::Status,
         >;
         /// Server streaming response type for the LeafSearchStream method.
-        type LeafSearchStreamStream: futures_core::Stream<
+        type LeafSearchStreamStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<
                     super::LeafSearchStreamResponse,
                     tonic::Status,
@@ -1398,7 +1398,9 @@ pub mod search_service_server {
                             request: tonic::Request<super::SearchRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).root_search(request).await };
+                            let fut = async move {
+                                <T as SearchService>::root_search(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1442,7 +1444,9 @@ pub mod search_service_server {
                             request: tonic::Request<super::LeafSearchRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).leaf_search(request).await };
+                            let fut = async move {
+                                <T as SearchService>::leaf_search(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1486,7 +1490,9 @@ pub mod search_service_server {
                             request: tonic::Request<super::FetchDocsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).fetch_docs(request).await };
+                            let fut = async move {
+                                <T as SearchService>::fetch_docs(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1533,7 +1539,8 @@ pub mod search_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).leaf_search_stream(request).await
+                                <T as SearchService>::leaf_search_stream(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -1579,7 +1586,7 @@ pub mod search_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).root_list_terms(request).await
+                                <T as SearchService>::root_list_terms(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1625,7 +1632,7 @@ pub mod search_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).leaf_list_terms(request).await
+                                <T as SearchService>::leaf_list_terms(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1670,7 +1677,9 @@ pub mod search_service_server {
                             request: tonic::Request<super::ScrollRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).scroll(request).await };
+                            let fut = async move {
+                                <T as SearchService>::scroll(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1713,7 +1722,9 @@ pub mod search_service_server {
                             request: tonic::Request<super::PutKvRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).put_kv(request).await };
+                            let fut = async move {
+                                <T as SearchService>::put_kv(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1756,7 +1767,9 @@ pub mod search_service_server {
                             request: tonic::Request<super::GetKvRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).get_kv(request).await };
+                            let fut = async move {
+                                <T as SearchService>::get_kv(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1801,7 +1814,7 @@ pub mod search_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).report_splits(request).await
+                                <T as SearchService>::report_splits(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1846,7 +1859,9 @@ pub mod search_service_server {
                             request: tonic::Request<super::ListFieldsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).list_fields(request).await };
+                            let fut = async move {
+                                <T as SearchService>::list_fields(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1891,7 +1906,8 @@ pub mod search_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).leaf_list_fields(request).await
+                                <T as SearchService>::leaf_list_fields(&inner, request)
+                                    .await
                             };
                             Box::pin(fut)
                         }

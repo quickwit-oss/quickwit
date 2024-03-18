@@ -22,9 +22,5 @@ tracing = { workspace = true }
 username = { workspace = true }
 uuid = { workspace = true }
 
-# This is actually not used directly the goal is to fix the version
-# used by reqwest. 0.8.30 has an unclear license.
-encoding_rs = { workspace = true }
-
 [dev-dependencies]
 serde_json = { workspace = true }

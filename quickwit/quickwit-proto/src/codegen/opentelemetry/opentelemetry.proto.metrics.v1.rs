@@ -79,7 +79,7 @@ pub struct ScopeMetrics {
 ///   |data        |---> |Gauge, Sum, Histogram, Summary, ... |
 ///   +------------+     +------------------------------------+
 ///
-///     Data [One of Gauge, Sum, Histogram, Summary, ...]
+///     Data \[One of Gauge, Sum, Histogram, Summary, ...\]
 ///   +-----------+
 ///   |...        |  // Metadata about the Data.
 ///   |points     |--+
@@ -569,7 +569,7 @@ pub mod summary_data_point {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ValueAtQuantile {
         /// The quantile of a distribution. Must be in the interval
-        /// [0.0, 1.0].
+        /// \[0.0, 1.0\].
         #[prost(double, tag = "1")]
         pub quantile: f64,
         /// The value at the given quantile of a distribution.

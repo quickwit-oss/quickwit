@@ -86,7 +86,7 @@ async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
 async-trait = "0.1"
 backoff = { version = "0.4", features = ["tokio"] }
-base64 = "0.21"
+base64 = "0.22"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "1.3.0", features = ["serde"] }
 bytestring = "1.3.0"
@@ -97,26 +97,26 @@ chrono = { version = "0.4", default-features = false, features = [
 ] }
 clap = { version = "4.5.0", features = ["env", "string"] }
 colored = "2.1.0"
-console-subscriber = "0.1.8"
+console-subscriber = "0.2"
 criterion = { version = "0.5", features = ["async_tokio"] }
 cron = "0.12.0"
-dialoguer = "0.10.3"
+dialoguer = "0.11"
 dotenv = "0.15"
 dyn-clone = "1.0.10"
-enum-iterator = "1.5"
-env_logger = "0.10"
+enum-iterator = "2"
+env_logger = "0.11"
 fail = "0.5"
 flume = "0.11"
 fnv = "1"
 flate2 = "1.0"
 futures = "0.3"
 futures-util = { version = "0.3.25", default-features = false }
-google-cloud-auth = "0.12.0"
-google-cloud-default = { version = "0.3.0", features = ["pubsub"] }
-google-cloud-gax = "0.15.0"
-google-cloud-googleapis = { version = "0.10.0", features = ["pubsub"] }
-google-cloud-pubsub = "0.18.0"
-heck = "0.4.1"
+google-cloud-auth = "0.13.0"
+google-cloud-default = { version = "0.4.0", features = ["pubsub"] }
+google-cloud-gax = "0.17.0"
+google-cloud-googleapis = { version = "0.12.0", features = ["pubsub"] }
+google-cloud-pubsub = "0.23.0"
+heck = "0.5"
 hex = "0.4.3"
 home = "0.5.4"
 hostname = "0.3"
@@ -139,9 +139,9 @@ itertools = "0.12"
 json_comments = "0.2"
 libz-sys = "1.1.8"
 lru = "0.12"
-lindera-core = "0.27.0"
-lindera-dictionary = "0.27.0"
-lindera-tokenizer = { version = "0.27.0", features = [
+lindera-core = "0.29.0"
+lindera-dictionary = "0.29.0"
+lindera-tokenizer = { version = "0.29.0", features = [
   "cc-cedict-compress",
   "cc-cedict",
   "ipadic-compress",
@@ -152,7 +152,7 @@ lindera-tokenizer = { version = "0.27.0", features = [
 matches = "0.1.9"
 md5 = "0.7"
 mime_guess = "2.0.4"
-mockall = "0.11"
+mockall = "0.12"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "187486f" }
 new_string_template = "1.4.0"
 nom = "7.1.3"
@@ -167,7 +167,7 @@ opentelemetry-otlp = "0.13.0"
 ouroboros = "0.18.0"
 percent-encoding = "2.3.1"
 pin-project = "1.1.0"
-pnet = { version = "0.33.0", features = ["std"] }
+pnet = { version = "0.34.0", features = ["std"] }
 postcard = { version = "1.0.4", features = [
   "use-std",
 ], default-features = false }
@@ -176,11 +176,11 @@ prettyplease = "0.2.0"
 proc-macro2 = "1.0.50"
 prometheus = { version = "0.13", features = ["process"] }
 proptest = "1"
-prost = { version = "0.11.6", default-features = false, features = [
+prost = { version = "0.12.3", default-features = false, features = [
   "prost-derive",
 ] }
-prost-build = "0.11.6"
-prost-types = "0.11.6"
+prost-build = "0.12.3"
+prost-types = "0.12.3"
 pulsar = { git = "https://github.com/quickwit-oss/pulsar-rs.git", rev = "f9eff04", default-features = false, features = [
   "auth-oauth2",
   "compression",
@@ -190,7 +190,7 @@ quote = "1.0.23"
 rand = "0.8"
 rand_distr = "0.4"
 rayon = "1"
-rdkafka = { version = "0.33", default-features = false, features = [
+rdkafka = { version = "0.36", default-features = false, features = [
   "cmake-build",
   "libz",
   "ssl",
@@ -203,7 +203,7 @@ reqwest = { version = "0.11", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
-rust-embed = "6.8.1"
+rust-embed = "8.3"
 sea-query = { version = "0" }
 sea-query-binder = { version = "0", features = [
   "runtime-tokio-rustls",
@@ -215,7 +215,7 @@ serde_json = "1.0"
 serde_qs = { version = "0.12", features = ["warp"] }
 serde_with = "3.6.0"
 serde_yaml = "0.9"
-siphasher = "0.3"
+siphasher = "1"
 sqlx = { version = "0.7", features = [
   "migrate",
   "postgres",
@@ -223,8 +223,8 @@ sqlx = { version = "0.7", features = [
   "time",
 ] }
 syn = { version = "2.0.11", features = ["extra-traits", "full", "parsing"] }
-sync_wrapper = "0.1.2"
-tabled = { version = "0.14", features = ["color"] }
+sync_wrapper = "1"
+tabled =  "0.15"
 tempfile = "3"
 termcolor = "1"
 thiserror = "1"
@@ -235,9 +235,9 @@ time = { version = "0.3", features = ["std", "formatting", "macros"] }
 tokio = { version = "1.36", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
-toml = "0.7.6"
-tonic = { version = "0.9.0", features = ["gzip"] }
-tonic-build = "0.9.0"
+toml = "0.8"
+tonic = { version = "0.11.0", features = ["gzip"] }
+tonic-build = "0.11.0"
 tower = { version = "0.4.13", features = [
   "balance",
   "buffer",
@@ -282,15 +282,15 @@ aws-smithy-http = "0.55.0"
 aws-smithy-types = "0.55.0"
 aws-types = "0.55.0"
 
-azure_core = { version = "0.13.0", features = ["enable_reqwest_rustls"] }
-azure_storage = { version = "0.13.0", default-features = false, features = [
+azure_core = { version = "0.19.0", features = ["enable_reqwest_rustls"] }
+azure_storage = { version = "0.19.0", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
 azure_storage_blobs = { version = "0.13.0", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
 
-opendal = { version = "0.44", default-features = false }
+opendal = { version = "0.45", default-features = false }
 reqsign = { version = "0.14", default-features = false }
 
 quickwit-actors = { path = "quickwit-actors" }
@@ -329,9 +329,7 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "67ebba3", d
   "zstd-compression",
 ] }
 
-# This is actually not used directly the goal is to fix the version
-# used by reqwest.
-encoding_rs = "=0.8.32"
+encoding_rs = "0.8.33"
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }

@@ -1024,7 +1024,7 @@ pub mod hello_grpc_server {
             request: tonic::Request<super::GoodbyeRequest>,
         ) -> std::result::Result<tonic::Response<super::GoodbyeResponse>, tonic::Status>;
         /// Server streaming response type for the Ping method.
-        type PingStream: futures_core::Stream<
+        type PingStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::PingResponse, tonic::Status>,
             >
             + Send
@@ -1129,7 +1129,9 @@ pub mod hello_grpc_server {
                             request: tonic::Request<super::HelloRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).hello(request).await };
+                            let fut = async move {
+                                <T as HelloGrpc>::hello(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1171,7 +1173,9 @@ pub mod hello_grpc_server {
                             request: tonic::Request<super::GoodbyeRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).goodbye(request).await };
+                            let fut = async move {
+                                <T as HelloGrpc>::goodbye(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1216,7 +1220,9 @@ pub mod hello_grpc_server {
                             request: tonic::Request<tonic::Streaming<super::PingRequest>>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).ping(request).await };
+                            let fut = async move {
+                                <T as HelloGrpc>::ping(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }

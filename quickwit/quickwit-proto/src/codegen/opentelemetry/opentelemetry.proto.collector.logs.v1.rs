@@ -292,7 +292,9 @@ pub mod logs_service_server {
                             request: tonic::Request<super::ExportLogsServiceRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).export(request).await };
+                            let fut = async move {
+                                <T as LogsService>::export(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
