@@ -21,6 +21,7 @@ mod shard_table;
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std::mem;
 use std::ops::Deref;
 use std::time::Instant;
 
@@ -82,6 +83,8 @@ impl ControlPlaneModel {
         metastore: &mut MetastoreServiceClient,
         progress: &Progress,
     ) -> ControlPlaneResult<()> {
+        const LIST_SHARDS_BATCH_SIZE: usize = 500;
+
         let now = Instant::now();
         self.clear();
 
@@ -96,13 +99,13 @@ impl ControlPlaneModel {
         let mut num_sources = 0;
         let mut num_shards = 0;
 
-        let mut subrequests = Vec::with_capacity(index_metadatas.len());
+        let mut pending_subrequests = Vec::with_capacity(num_indexes.min(LIST_SHARDS_BATCH_SIZE));
 
         for index_metadata in index_metadatas {
             self.add_index(index_metadata);
         }
 
-        for index_metadata in self.index_table.values() {
+        for (idx, index_metadata) in self.index_table.values().enumerate() {
             for source_config in index_metadata.sources.values() {
                 num_sources += 1;
 
@@ -114,27 +117,30 @@ impl ControlPlaneModel {
                     source_id: source_config.source_id.clone(),
                     shard_state: None,
                 };
-                subrequests.push(request);
+                pending_subrequests.push(request);
             }
-        }
-        if !subrequests.is_empty() {
-            // TODO: Limit the number of subrequests and perform multiple requests if needed.
-            let list_shards_request = metastore::ListShardsRequest { subrequests };
-            let list_shard_response = progress
-                .protect_future(metastore.list_shards(list_shards_request))
-                .await?;
+            if pending_subrequests.len() >= LIST_SHARDS_BATCH_SIZE || idx == num_indexes - 1 {
+                let subrequests = mem::replace(
+                    &mut pending_subrequests,
+                    Vec::with_capacity((num_indexes - idx).min(LIST_SHARDS_BATCH_SIZE)),
+                );
+                let list_shards_request = metastore::ListShardsRequest { subrequests };
+                let list_shards_response = progress
+                    .protect_future(metastore.list_shards(list_shards_request))
+                    .await?;
 
-            for list_shards_subresponse in list_shard_response.subresponses {
-                num_shards += list_shards_subresponse.shards.len();
+                for list_shards_subresponse in list_shards_response.subresponses {
+                    num_shards += list_shards_subresponse.shards.len();
 
-                let ListShardsSubresponse {
-                    index_uid,
-                    source_id,
-                    shards,
-                } = list_shards_subresponse;
-                let index_uid = index_uid.expect("`index_uid` should be a required field");
-                self.shard_table
-                    .insert_shards(&index_uid, &source_id, shards);
+                    let ListShardsSubresponse {
+                        index_uid,
+                        source_id,
+                        shards,
+                    } = list_shards_subresponse;
+                    let index_uid = index_uid.expect("`index_uid` should be a required field");
+                    self.shard_table
+                        .insert_shards(&index_uid, &source_id, shards);
+                }
             }
         }
         info!(
