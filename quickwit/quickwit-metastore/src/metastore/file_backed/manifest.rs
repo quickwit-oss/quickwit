@@ -74,46 +74,47 @@ pub(crate) struct Manifest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "version")]
 enum VersionedManifest {
-    #[serde(rename = "0.7")]
-    V0_7(ManifestV0_7),
+    #[serde(rename = "0.8")]
+    #[serde(alias = "0.7")]
+    V0_8(ManifestV0_8),
 }
 
 impl From<Manifest> for VersionedManifest {
     fn from(manifest: Manifest) -> Self {
-        VersionedManifest::V0_7(manifest.into())
+        VersionedManifest::V0_8(manifest.into())
     }
 }
 
 impl From<VersionedManifest> for Manifest {
     fn from(versioned_manifest: VersionedManifest) -> Self {
         match versioned_manifest {
-            VersionedManifest::V0_7(manifest) => manifest.into(),
+            VersionedManifest::V0_8(manifest) => manifest.into(),
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct ManifestV0_7 {
+struct ManifestV0_8 {
     indexes: BTreeMap<IndexId, IndexStatus>,
     templates: Vec<IndexTemplate>,
 }
 
-impl From<Manifest> for ManifestV0_7 {
+impl From<Manifest> for ManifestV0_8 {
     fn from(manifest: Manifest) -> Self {
         let templates = manifest
             .templates
             .into_values()
             .sorted_unstable_by(|left, right| left.template_id.cmp(&right.template_id))
             .collect();
-        ManifestV0_7 {
+        ManifestV0_8 {
             indexes: manifest.indexes,
             templates,
         }
     }
 }
 
-impl From<ManifestV0_7> for Manifest {
-    fn from(manifest: ManifestV0_7) -> Self {
+impl From<ManifestV0_8> for Manifest {
+    fn from(manifest: ManifestV0_8) -> Self {
         let indexes = manifest.indexes.into_iter().collect();
         let templates = manifest
             .templates

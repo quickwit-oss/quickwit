@@ -100,7 +100,7 @@
         "message"
       ]
     },
-    "version": "0.7"
+    "version": "0.8"
   },
   "index_uid": "my-index:00000000000000000000000000",
   "sources": [
@@ -121,5 +121,5 @@
       "version": "0.8"
     }
   ],
-  "version": "0.7"
+  "version": "0.8"
 }
