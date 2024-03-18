@@ -599,7 +599,7 @@ impl QuickwitSegmentTopKCollector {
             &mut self.sort_values1[..],
             &mut self.sort_values2[..],
         );
-        if let Some(_search_after) = &self.search_after {
+        if self.search_after.is_some() {
             // Search after not optimized for block collection yet
             for ((doc_id, sort_value), sort_value2) in docs
                 .iter()
@@ -775,7 +775,7 @@ impl SegmentPartialHit {
     }
 }
 
-const BUFFER_LEN: usize = tantivy::COLLECT_BLOCK_BUFFER_LEN;
+pub use tantivy::COLLECT_BLOCK_BUFFER_LEN;
 /// Store the filtered docs in `filtered_docs_buffer` if `timestamp_filter_opt` is present.
 ///
 /// Returns the number of docs.
@@ -800,7 +800,6 @@ fn compute_filtered_block<'a>(
         };
     }
     &filtered_docs_buffer[..len]
-    // len
 }
 
 impl SegmentCollector for QuickwitSegmentCollector {
@@ -818,7 +817,6 @@ impl SegmentCollector for QuickwitSegmentCollector {
         self.num_hits += filtered_docs.len() as u64;
 
         if let Some(segment_top_k_collector) = self.segment_top_k_collector.as_mut() {
-            //.top_k_hits.max_len() != 0 {
             segment_top_k_collector.collect_top_k_block(filtered_docs);
         }
 
