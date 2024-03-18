@@ -314,8 +314,7 @@ mod gcp_pubsub_emulator_tests {
         let source_id = append_random_suffix("test-gcp-pubsub-source--source");
         SourceConfig {
             source_id,
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::PubSub(PubSubSourceParams {
                 project_id: Some(GCP_TEST_PROJECT.to_string()),

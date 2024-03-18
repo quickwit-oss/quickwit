@@ -163,8 +163,7 @@ mod tests {
         };
         let source_config = SourceConfig {
             source_id: "test-vec-source".to_string(),
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Vec(params.clone()),
             transform_config: None,
@@ -224,8 +223,7 @@ mod tests {
 
         let source_config = SourceConfig {
             source_id: "test-vec-source".to_string(),
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Vec(params.clone()),
             transform_config: None,
