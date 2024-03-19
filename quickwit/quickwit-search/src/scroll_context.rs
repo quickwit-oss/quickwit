@@ -222,6 +222,9 @@ impl FromStr for ScrollKeyAndStartOffset {
         let scroll_ulid = u128::from_le_bytes(scroll_ulid_bytes.try_into().unwrap()).into();
         let from = u64::from_le_bytes(from_bytes.try_into().unwrap());
         let max_hits = u32::from_le_bytes(max_hits_bytes.try_into().unwrap());
+        if max_hits > 10_000 {
+            return Err("scroll id is malformed");
+        }
         let search_after =
             serde_json::from_slice(&base64_decoded[28..]).map_err(|_| "scroll id is malformed")?;
         Ok(ScrollKeyAndStartOffset {

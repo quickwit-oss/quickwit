@@ -382,8 +382,6 @@ pub(crate) async fn scroll(
 
     let cached_results = scroll_context.get_cached_partial_hits(start_doc..end_doc);
     partial_hits.extend_from_slice(cached_results);
-    // TODO if max_hits_per_page is corrupted by the client, we could be forced to allocate an
-    // arbitrarily large buffer.
     if (partial_hits.len() as u64) < current_scroll.max_hits_per_page as u64 {
         let search_after = partial_hits
             .last()
