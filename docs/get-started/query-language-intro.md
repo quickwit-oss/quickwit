@@ -13,7 +13,7 @@ The main concept of this language is a clause, which represents a simple conditi
 
 A clause operates on fields of your document. It has the following syntax :
 ```
-field: condition
+field:condition
 ```
 
 For example, when searching documents where the field `app_name` contains the token `tantivy`, you would write the following clause:
@@ -29,14 +29,14 @@ Quickwit support various types of clauses to express different kinds of conditio
 
 | type | syntax | examples | description| `default_search_field`|
 |-------------|--------|----------|------------|-----------------------|
-| term | `field: token` | `app_name: tantivy` <br/> `process_id:1234` <br/> `word` | A term clause tests the existence of avalue in the field's tokens | yes |
-| term prefix | `field: prefix*` | `app_name: tant*` <br/> `quick*` | A term clause tests the existence of a token starting with the provided value | yes |
-| term set | `field: IN [token token ..]` |`severity: IN [error warn]` | A term set clause tests the existence of any of the provided value in the field's tokens| yes |
-| phrase | `field: "sequence of tokens"` | `full_name: "john doe"` | A phrase clause tests the existence of the provided sequence of tokens | yes |
-| phrase prefix | `field: "sequence of tokens"*` | `title: "how to m"*` | A phrase prefix clause tests the exsitence of a sequence of tokens, the last one used like in a prefix clause | yes |
+| term | `field:token` | `app_name:tantivy` <br/> `process_id:1234` <br/> `word` | A term clause tests the existence of avalue in the field's tokens | yes |
+| term prefix | `field:prefix*` | `app_name:tant*` <br/> `quick*` | A term clause tests the existence of a token starting with the provided value | yes |
+| term set | `field:IN [token token ..]` |`severity:IN [error warn]` | A term set clause tests the existence of any of the provided value in the field's tokens| yes |
+| phrase | `field:"sequence of tokens"` | `full_name:"john doe"` | A phrase clause tests the existence of the provided sequence of tokens | yes |
+| phrase prefix | `field:"sequence of tokens"*` | `title:"how to m"*` | A phrase prefix clause tests the exsitence of a sequence of tokens, the last one used like in a prefix clause | yes |
 | all | `*` | `*` | A match-all clause will match every document | no |
-| exist | `field: *` | `error: *` | An exist clause tests the existence of any value for the field, it will match only if the field exists | no |
-| range | `field: bounds` |`duration: [0 1000}` <br/> `last_name: [banner miller]` | A term clause tests the existence of a token between the provided bounds | no |
+| exist | `field:*` | `error:*` | An exist clause tests the existence of any value for the field, it will match only if the field exists | no |
+| range | `field:bounds` |`duration:[0 TO 1000}` <br/> `last_name: [banner TO miller]` | A term clause tests the existence of a token between the provided bounds | no |
 
 ## Queries
 

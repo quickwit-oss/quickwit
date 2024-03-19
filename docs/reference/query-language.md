@@ -9,6 +9,7 @@ sidebar_position: 40
 query = '(' query ')'
       | query operator query
       | unary_operator query
+      | query query
       | clause
 
 operator = 'AND' | 'OR'
@@ -26,12 +27,13 @@ defaultable_clause = term | term_prefix | term_set | phrase | phrase_prefix
 ## Writing Queries
 ### Escaping Special Characters
 
-Special reserved characters are: `+` , `^`, `` ` ``, `:`, `{`, `}`, `"`, `[`, `]`, `(`, `)`, `~`, `!`, `\\`, `*`, `SPACE`. Such characters can still appear in query terms, but they need to be escaped by an anti-slash `\` .
+Some characters need to be escaped in non quoted terms because they are syntactically significant otherwise: special reserved characters are: `+` , `^`, `` ` ``, `:`, `{`, `}`, `"`, `[`, `]`, `(`, `)`, `~`, `!`, `\\`, `*`, `SPACE`. If such such characters appear in query terms, they need to be escaped by prefixing them with an anti-slash `\`.
 
-<!-- NEED CLARIFICATION: where is escaping necessary ? non-quoted terms ? field names ?-->
+In quoted terms, the quote character in use `'` or `"` needs to be escaped.
 
-### Allowed characters in field names
-<!-- NEED CLARIFICATION: this should refer to a section of the index documentation that explains allowed field names -->
+###### Allowed characters in field names
+
+See the [Field name validation rules](https://quickwit.io/docs/configuration/index-config#field-name-validation-rules) in the index config documentation.
 
 ### Addressing nested structures
 
@@ -66,7 +68,7 @@ There is no support for searching for a range of IP using CIDR notation, but you
 
 ### Term `field:term`
 ```
-term: term_char+
+term = term_char+
 ```
 
 Matches documents if the targeted field contains a token equal to the provided term. 
@@ -75,15 +77,14 @@ Matches documents if the targeted field contains a token equal to the provided t
 
 ### Term Prefix `field:prefix*`
 ```
-term_prefix: term '*'
+term_prefix = term '*'
 ```
 
 Matches documents if the targeted field contains a token which starts with the provided value.
 
 `field:quick*` will match any document where the field 'field' has a token like `quickwit` or `quickstart`, but not `qui` or `abcd`.
 
-
-### Term set `field: IN [a b c]`
+### Term set `field:IN [a b c]`
 ```
 term_set = 'IN' '[' term_list ']'
 term_list = term_list term
@@ -92,7 +93,7 @@ term_list = term_list term
 Matches if the document contains any of the tokens provided. 
 
 ###### Examples
-`field: IN [ab cd]` will match 'ab' or 'cd', but nothing else.
+`field:IN [ab cd]` will match 'ab' or 'cd', but nothing else.
 
 ###### Perfomance Note
 This is a lot like writing `field:ab OR field:cd`. When there are only a handful of terms to search for, using ORs is usually faster.
@@ -133,24 +134,20 @@ There is no slop for phrase prefix queries.
 
 ###### Limitation
 
-Quickwit may trim some results matched by this clause in some cases.  If you search for `"thanks for your co"*`, it will enumerate the first 50 tokens which start with "co", and search for any documents where "thanks for your" is followed by any of these tokens.
+Quickwit may trim some results matched by this clause in some cases.  If you search for `"thanks for your co"*`, it will enumerate the first 50 tokens which start with "co" (in their storage order), and search for any documents where "thanks for your" is followed by any of these tokens.
 
 If there are many tokens starting with "co", "contribution" might not be one of the 50 selected tokens, and the query won't match a document containing "thanks for your contribution". Normal prefix queries don't suffer from this issue.
 
-
-<!-- NEEDS CLARIFICATION : what does "first 50 tokens" mean ? in what order ? can the value be tuned ? -->
-
-
-### Range `field: [low_bound high_bound}`
+### Range `field:[low_bound TO high_bound}`
 ```
 range = explicit_range | comparison_half_range
 
 explicit_range = left_bound_char bounds right_bound_char
 left_bound_char = '[' | '{' 
 right_bound_char = '}' | ']'
-bounds = term term
-       | term '*'
-       | '*' term
+bounds = term TO term
+       | term TO '*'
+       | '*' TO term
 
 comparison_range = comparison_operator term
 comparision_operator = '<' | '>' | '<=' | '>='
@@ -171,7 +168,7 @@ Exclusive bounds are represented by curly brackets `{}`. They will not match tok
 You can make an half open range by using `*` as one of the bounds. `field:[b TO *]` will match 'bb' and 'zz', but not 'ab'.
 You can also use a comparison based syntax:`field:<b`, `field:>b`, `field:<=b` or `field:>=b`.
 
-<!-- NEEDS CLARIFICATION : ordering of empty values ? -->
+<!-- NOTE : empty values likely not indexed -->
 
 ###### Examples
 - Inclusive Range: `ip:[127.0.0.1 TO 127.0.0.50]`
@@ -224,13 +221,9 @@ Without parentheses, `AND` takes precedence over `OR`. That is, `a AND b OR c` i
 ## Other considerations 
 
 ### Default Search Fields
-In many case it is possible to omit the field you search if it was configured in the `default_search_fields` array of the index configuration.
-
-<!-- NEED CLARIFICATION : default fields clauses behavior on an array is combined using OR or AND ? -->
+In many case it is possible to omit the field you search if it was configured in the `default_search_fields` array of the index configuration. If more than one field is configured as default, the resulting implicit clauses are combined using a conjunction ('OR').
 
 ### Tokenization
 Note that the result of a query can depend on the tokenizer used for the field getting searched. Hence this document always speaks of tokens, which may be the exact value the document contain (in case of the raw tokenizer), or a subset of it (for instance any tokenizer cutting on spaces).
 
 <!-- NOTE : should dig deeper ? -->
-Quickwit uses a query mini-language which is used by providing a `query` parameter to the search endpoints.
-<!-- todo also used in some place in ES: where? -->
