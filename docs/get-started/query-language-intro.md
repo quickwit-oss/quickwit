@@ -90,4 +90,4 @@ type:proposal -(status:rejected OR status:pending)
 
 ## Dive deeper
 
-If you want to know more about the query language, head to the [Query Language Reference](/docs/reference/query-language-reference)
+If you want to know more about the query language, head to the [Query Language Reference](../reference/query-language.md)
