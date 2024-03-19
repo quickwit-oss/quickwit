@@ -5775,7 +5775,7 @@ name = "quickwit-doc-mapper"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "base64 0.21.7",
+ "base64 0.22.0",
  "criterion",
  "dyn-clone",
  "fnv",
@@ -5981,7 +5981,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.0",
  "itertools 0.12.1",
  "once_cell",
  "prost",
@@ -6204,7 +6204,7 @@ name = "quickwit-query"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "base64 0.21.7",
+ "base64 0.22.0",
  "criterion",
  "fnv",
  "hex",
@@ -6256,7 +6256,7 @@ dependencies = [
  "anyhow",
  "assert-json-diff 2.0.2",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.0",
  "bytes",
  "bytesize",
  "chitchat",
@@ -6308,7 +6308,7 @@ dependencies = [
  "anyhow",
  "assert-json-diff 2.0.2",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.0",
  "bytes",
  "bytesize",
  "elasticsearch-dsl",
@@ -6385,7 +6385,7 @@ dependencies = [
  "azure_core",
  "azure_storage",
  "azure_storage_blobs",
- "base64 0.21.7",
+ "base64 0.22.0",
  "bytes",
  "bytesize",
  "fnv",
