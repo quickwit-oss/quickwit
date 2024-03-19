@@ -40,11 +40,9 @@ Quickwit support various types of clauses to express different kinds of conditio
 
 ## Queries
 
-Clauses can be combined using operators to form more complex queries.
-
 ### Combining queries
 
-Clauses can be combined using boolean operators `AND` and  `OR` to create search exp
+Clauses can be combined using boolean operators `AND` and  `OR` to create more complex search expressions
 An `AND` query will match only if conditions on both sides of the operator are met
 ```
 type:rose AND color:red
