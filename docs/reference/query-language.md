@@ -157,7 +157,9 @@ Matches if the document contains a token between the provided bounds for that fi
 For range queries, you must provide a field. Quickwit won't use `default_search_fields` automatically.
 
 ###### Order
-For text fields, the ranges are defined by lexicographic order. It means for a text field, 100 is between 1 and 2.
+For text fields, the ranges are defined by lexicographic order on uft-8 encoded byte arrays. It means for a text field, 100 is between 1 and 2.
+<!-- TODO: Build a more comprehensive example set to showcase how wharacters are sorted -->
+
 When using ranges on integers, it behaves naturally.
 
 ###### Inclusive and exclusive bounds
