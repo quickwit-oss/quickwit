@@ -47,6 +47,8 @@ pub enum IndexingError {
     Timeout(String),
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unimplemented(String),
 }
 
 impl ServiceError for IndexingError {
@@ -56,11 +58,16 @@ impl ServiceError for IndexingError {
             Self::Metastore(metastore_error) => metastore_error.error_code(),
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unimplemented(_) => ServiceErrorCode::Unimplemented,
         }
     }
 }
 
 impl GrpcServiceError for IndexingError {
+    fn service_name() -> &'static str {
+        "indexing"
+    }
+
     fn new_internal(message: String) -> Self {
         Self::Internal(message)
     }
@@ -71,6 +78,10 @@ impl GrpcServiceError for IndexingError {
 
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
+    }
+
+    fn new_unimplemented(message: String) -> Self {
+        Self::Unimplemented(message)
     }
 }
 

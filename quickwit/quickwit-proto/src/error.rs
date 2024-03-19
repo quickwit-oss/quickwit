@@ -47,6 +47,7 @@ pub enum ServiceErrorCode {
     TooManyRequests,
     Unauthenticated,
     Unavailable,
+    Unimplemented,
 }
 
 impl ServiceErrorCode {
@@ -61,6 +62,7 @@ impl ServiceErrorCode {
             Self::TooManyRequests => tonic::Code::ResourceExhausted,
             Self::Unauthenticated => tonic::Code::Unauthenticated,
             Self::Unavailable => tonic::Code::Unavailable,
+            Self::Unimplemented => tonic::Code::Unimplemented,
         }
     }
 
@@ -75,6 +77,7 @@ impl ServiceErrorCode {
             Self::TooManyRequests => http::StatusCode::TOO_MANY_REQUESTS,
             Self::Unauthenticated => http::StatusCode::UNAUTHORIZED,
             Self::Unavailable => http::StatusCode::SERVICE_UNAVAILABLE,
+            Self::Unimplemented => http::StatusCode::NOT_IMPLEMENTED,
         }
     }
 }
@@ -107,6 +110,8 @@ where E: ServiceError
 /// and a message. However, it also means that modifying the serialization format of existing errors
 /// or introducing new ones is not backward compatible.
 pub trait GrpcServiceError: ServiceError + Serialize + DeserializeOwned + Send + Sync {
+    fn service_name() -> &'static str;
+
     fn into_grpc_status(self) -> tonic::Status {
         grpc_error_to_grpc_status(self)
     }
@@ -116,6 +121,8 @@ pub trait GrpcServiceError: ServiceError + Serialize + DeserializeOwned + Send +
     fn new_timeout(message: String) -> Self;
 
     fn new_unavailable(message: String) -> Self;
+
+    fn new_unimplemented(message: String) -> Self;
 }
 
 /// Converts a service error into a gRPC status.
@@ -154,14 +161,19 @@ where E: GrpcServiceError {
         };
         return service_error;
     }
+    let service_name = E::service_name();
     let message = status.message().to_string();
-    error!(code = ?status.code(), rpc = rpc_name, "gRPC transport error: {message}");
+    error!(code = ?status.code(), service = service_name, rpc = rpc_name, "gRPC transport error: {message}");
 
     match status.code() {
         // `Cancelled` is a client timeout whereas `DeadlineExceeded` is a server timeout. At this
         // stage, we don't distinguish them.
         tonic::Code::Cancelled | tonic::Code::DeadlineExceeded => E::new_timeout(message),
         tonic::Code::Unavailable => E::new_unavailable(message),
+        tonic::Code::Unimplemented => {
+            let message = format!("{service_name} server does not implement `{rpc_name}` RPC");
+            E::new_unimplemented(message)
+        }
         _ => E::new_internal(message),
     }
 }
@@ -211,35 +223,46 @@ mod tests {
             Timeout(String),
             #[error("service unavailable: {0}")]
             Unavailable(String),
+            #[error("{0}")]
+            Unimplemented(String),
         }
 
         impl ServiceError for MyError {
             fn error_code(&self) -> ServiceErrorCode {
                 match self {
-                    MyError::Internal(_) => ServiceErrorCode::Internal,
-                    MyError::Timeout(_) => ServiceErrorCode::Timeout,
-                    MyError::Unavailable(_) => ServiceErrorCode::Unavailable,
+                    Self::Internal(_) => ServiceErrorCode::Internal,
+                    Self::Timeout(_) => ServiceErrorCode::Timeout,
+                    Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+                    Self::Unimplemented(_) => ServiceErrorCode::Unimplemented,
                 }
             }
         }
 
         impl GrpcServiceError for MyError {
+            fn service_name() -> &'static str {
+                "my_service"
+            }
+
             fn new_internal(message: String) -> Self {
-                MyError::Internal(message)
+                Self::Internal(message)
             }
 
             fn new_timeout(message: String) -> Self {
-                MyError::Timeout(message)
+                Self::Timeout(message)
             }
 
             fn new_unavailable(message: String) -> Self {
-                MyError::Unavailable(message)
+                Self::Unavailable(message)
+            }
+
+            fn new_unimplemented(message: String) -> Self {
+                Self::Unimplemented(message)
             }
         }
 
         let service_error = MyError::new_internal("test".to_string());
         let status = grpc_error_to_grpc_status(service_error.clone());
-        let expected_error: MyError = grpc_status_to_service_error(status, "rpc_name");
+        let expected_error: MyError = grpc_status_to_service_error(status, "my_rpc");
         assert_eq!(service_error, expected_error);
     }
 }

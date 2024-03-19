@@ -39,6 +39,8 @@ pub enum ControlPlaneError {
     Timeout(String),
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unimplemented(String),
 }
 
 impl ServiceError for ControlPlaneError {
@@ -48,11 +50,16 @@ impl ServiceError for ControlPlaneError {
             Self::Metastore(metastore_error) => metastore_error.error_code(),
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unimplemented(_) => ServiceErrorCode::Unimplemented,
         }
     }
 }
 
 impl GrpcServiceError for ControlPlaneError {
+    fn service_name() -> &'static str {
+        "control plane"
+    }
+
     fn new_internal(message: String) -> Self {
         Self::Internal(message)
     }
@@ -64,18 +71,23 @@ impl GrpcServiceError for ControlPlaneError {
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
     }
+
+    fn new_unimplemented(message: String) -> Self {
+        Self::Unimplemented(message)
+    }
 }
 
 impl From<ControlPlaneError> for MetastoreError {
     fn from(error: ControlPlaneError) -> Self {
         match error {
-            ControlPlaneError::Internal(message) => MetastoreError::Internal {
+            ControlPlaneError::Internal(message) => Self::Internal {
                 message: "an internal metastore error occurred".to_string(),
                 cause: message,
             },
             ControlPlaneError::Metastore(error) => error,
-            ControlPlaneError::Timeout(message) => MetastoreError::Timeout(message),
-            ControlPlaneError::Unavailable(message) => MetastoreError::Unavailable(message),
+            ControlPlaneError::Timeout(message) => Self::Timeout(message),
+            ControlPlaneError::Unavailable(message) => Self::Unavailable(message),
+            ControlPlaneError::Unimplemented(message) => Self::Unimplemented(message),
         }
     }
 }

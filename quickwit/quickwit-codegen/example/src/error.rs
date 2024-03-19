@@ -36,6 +36,8 @@ pub enum HelloError {
     Timeout(String),
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unimplemented(String),
 }
 
 impl ServiceError for HelloError {
@@ -45,11 +47,16 @@ impl ServiceError for HelloError {
             Self::InvalidArgument(_) => ServiceErrorCode::BadRequest,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unimplemented(_) => ServiceErrorCode::Unimplemented,
         }
     }
 }
 
 impl GrpcServiceError for HelloError {
+    fn service_name() -> &'static str {
+        "hello"
+    }
+
     fn new_internal(message: String) -> Self {
         Self::Internal(message)
     }
@@ -60,6 +67,10 @@ impl GrpcServiceError for HelloError {
 
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
+    }
+
+    fn new_unimplemented(message: String) -> Self {
+        Self::Unimplemented(message)
     }
 }
 

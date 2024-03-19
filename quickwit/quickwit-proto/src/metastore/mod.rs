@@ -150,6 +150,9 @@ pub enum MetastoreError {
 
     #[error("service unavailable: {0}")]
     Unavailable(String),
+
+    #[error("{0}")]
+    Unimplemented(String),
 }
 
 #[cfg(feature = "postgres")]
@@ -177,11 +180,16 @@ impl ServiceError for MetastoreError {
             Self::NotFound(_) => ServiceErrorCode::NotFound,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unimplemented(_) => ServiceErrorCode::Unimplemented,
         }
     }
 }
 
 impl GrpcServiceError for MetastoreError {
+    fn service_name() -> &'static str {
+        "metastore"
+    }
+
     fn new_internal(message: String) -> Self {
         Self::Internal {
             message,
@@ -195,6 +203,10 @@ impl GrpcServiceError for MetastoreError {
 
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
+    }
+
+    fn new_unimplemented(message: String) -> Self {
+        Self::Unimplemented(message)
     }
 }
 

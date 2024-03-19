@@ -45,6 +45,8 @@ pub enum IngestServiceError {
     RateLimited,
     #[error("ingest service is unavailable")]
     Unavailable,
+    #[error("unimplemented")]
+    Unimplemented,
 }
 
 impl From<AskError<IngestServiceError>> for IngestServiceError {
@@ -75,14 +77,11 @@ impl From<io::Error> for IngestServiceError {
 impl From<IngestV2Error> for IngestServiceError {
     fn from(error: IngestV2Error) -> Self {
         match error {
-            IngestV2Error::Timeout(_) | IngestV2Error::Unavailable(_) => {
-                IngestServiceError::Unavailable
-            }
-            IngestV2Error::Internal(message) => IngestServiceError::Internal(message),
-            IngestV2Error::ShardNotFound { .. } => {
-                IngestServiceError::Internal("shard not found".to_string())
-            }
-            IngestV2Error::TooManyRequests => IngestServiceError::RateLimited,
+            IngestV2Error::Timeout(_) | IngestV2Error::Unavailable(_) => Self::Unavailable,
+            IngestV2Error::Internal(message) => Self::Internal(message),
+            IngestV2Error::ShardNotFound { .. } => Self::Internal("shard not found".to_string()),
+            IngestV2Error::TooManyRequests => Self::RateLimited,
+            IngestV2Error::Unimplemented(_) => Self::Unimplemented,
         }
     }
 }
@@ -98,11 +97,16 @@ impl ServiceError for IngestServiceError {
             Self::IoError { .. } => ServiceErrorCode::Internal,
             Self::RateLimited => ServiceErrorCode::TooManyRequests,
             Self::Unavailable => ServiceErrorCode::Unavailable,
+            Self::Unimplemented => ServiceErrorCode::Unimplemented,
         }
     }
 }
 
 impl GrpcServiceError for IngestServiceError {
+    fn service_name() -> &'static str {
+        "ingest v1"
+    }
+
     fn new_internal(message: String) -> Self {
         Self::Internal(message)
     }
@@ -113,6 +117,10 @@ impl GrpcServiceError for IngestServiceError {
 
     fn new_unavailable(_: String) -> Self {
         Self::Unavailable
+    }
+
+    fn new_unimplemented(_: String) -> Self {
+        Self::Unimplemented
     }
 }
 
@@ -137,6 +145,7 @@ impl From<IngestServiceError> for tonic::Status {
             IngestServiceError::IoError { .. } => tonic::Code::Internal,
             IngestServiceError::RateLimited => tonic::Code::ResourceExhausted,
             IngestServiceError::Unavailable => tonic::Code::Unavailable,
+            IngestServiceError::Unimplemented => tonic::Code::Unimplemented,
         };
         let message = error.to_string();
         tonic::Status::new(code, message)

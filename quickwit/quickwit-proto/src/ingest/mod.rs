@@ -46,6 +46,8 @@ pub enum IngestV2Error {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unimplemented(String),
 }
 
 impl ServiceError for IngestV2Error {
@@ -56,11 +58,16 @@ impl ServiceError for IngestV2Error {
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unimplemented(_) => ServiceErrorCode::Unimplemented,
         }
     }
 }
 
 impl GrpcServiceError for IngestV2Error {
+    fn service_name() -> &'static str {
+        "ingest"
+    }
+
     fn new_internal(message: String) -> Self {
         Self::Internal(message)
     }
@@ -71,6 +78,10 @@ impl GrpcServiceError for IngestV2Error {
 
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
+    }
+
+    fn new_unimplemented(message: String) -> Self {
+        Self::Unimplemented(message)
     }
 }
 

@@ -35,6 +35,8 @@ pub enum ClusterError {
     Timeout(String),
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unimplemented(String),
 }
 
 impl ServiceError for ClusterError {
@@ -43,11 +45,16 @@ impl ServiceError for ClusterError {
             Self::Internal(_) => ServiceErrorCode::Internal,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unimplemented(_) => ServiceErrorCode::Unimplemented,
         }
     }
 }
 
 impl GrpcServiceError for ClusterError {
+    fn service_name() -> &'static str {
+        "cluster"
+    }
+
     fn new_internal(message: String) -> Self {
         Self::Internal(message)
     }
@@ -58,5 +65,9 @@ impl GrpcServiceError for ClusterError {
 
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
+    }
+
+    fn new_unimplemented(message: String) -> Self {
+        Self::Unimplemented(message)
     }
 }
