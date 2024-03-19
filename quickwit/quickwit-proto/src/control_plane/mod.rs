@@ -41,6 +41,12 @@ pub enum ControlPlaneError {
     Unavailable(String),
 }
 
+impl From<quickwit_common::tower::TaskCancelled> for ControlPlaneError {
+    fn from(task_cancelled: quickwit_common::tower::TaskCancelled) -> Self {
+        ControlPlaneError::Internal(task_cancelled.to_string())
+    }
+}
+
 impl ServiceError for ControlPlaneError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
