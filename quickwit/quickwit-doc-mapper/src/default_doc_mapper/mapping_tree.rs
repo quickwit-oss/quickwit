@@ -1222,7 +1222,7 @@ mod tests {
         let error = typ.value_from_json(json!("dEwerwer#!%")).err().unwrap();
         assert_eq!(
             error,
-            "expected base64 string, got `dEwerwer#!%`: Invalid byte 35, offset 8."
+            "expected base64 string, got `dEwerwer#!%`: Invalid symbol 35, offset 8."
         );
     }
 
