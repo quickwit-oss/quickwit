@@ -770,7 +770,8 @@ async fn setup_ingest_v2(
     };
 
     // Instantiate ingester.
-    let ingester_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+    let ingester_opt: Option<Ingester> = if node_config.is_service_enabled(QuickwitService::Indexer)
+    {
         let wal_dir_path = node_config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
 
@@ -856,6 +857,7 @@ async fn setup_ingest_v2(
 
     let ingester_service_opt = ingester_opt.map(|ingester| {
         IngesterServiceClient::tower()
+            .stack_persist_layer(quickwit_common::tower::OneTaskPerCallLayer)
             .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
             .build(ingester)
     });

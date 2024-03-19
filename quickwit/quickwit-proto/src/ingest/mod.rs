@@ -48,6 +48,19 @@ pub enum IngestV2Error {
     Unavailable(String),
 }
 
+impl From<quickwit_common::tower::TaskCancelled> for IngestV2Error {
+    fn from(task_cancelled: quickwit_common::tower::TaskCancelled) -> IngestV2Error {
+        let quickwit_common::tower::TaskCancelled {
+            join_error,
+            request_name,
+        } = task_cancelled;
+        IngestV2Error::Internal(format!(
+            "Task running `{request_name}` was cancelled or panicked. JoinError: {:?})",
+            join_error
+        ))
+    }
+}
+
 impl ServiceError for IngestV2Error {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
