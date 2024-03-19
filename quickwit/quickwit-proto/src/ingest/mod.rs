@@ -49,6 +49,12 @@ pub enum IngestV2Error {
     Unavailable(String),
 }
 
+impl From<quickwit_common::tower::TaskCancelled> for IngestV2Error {
+    fn from(task_cancelled: quickwit_common::tower::TaskCancelled) -> IngestV2Error {
+        IngestV2Error::Internal(task_cancelled.to_string())
+    }
+}
+
 impl ServiceError for IngestV2Error {
     fn error_code(&self) -> ServiceErrorCode {
         match self {

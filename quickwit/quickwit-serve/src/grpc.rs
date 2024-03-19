@@ -107,6 +107,13 @@ pub(crate) async fn start_grpc_server(
         enabled_grpc_services.insert("ingester");
         services.ingester_opt.clone().map(|ingester| {
             IngesterServiceClient::tower()
+                .stack_persist_layer(quickwit_common::tower::OneTaskPerCallLayer)
+                .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)
+                .stack_init_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+                .stack_retain_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+                .stack_truncate_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+                .stack_close_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+                .stack_decommission_layer(quickwit_common::tower::OneTaskPerCallLayer)
                 .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
                 .build(ingester)
                 .as_grpc_service(max_message_size)
