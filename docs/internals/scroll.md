@@ -14,7 +14,6 @@ The search result then contains the normal response, but a `_scroll` property is
 
 That id is then meant to be sent to a scroll rest API.
 This API successive calls will then return pages incrementally.
-Scroll is limited to 10k items.
 
 ## Quirk and difficulty.
 
@@ -54,11 +53,12 @@ The "page-change" mutation is something that happens on the server side.
 In quickwit on the other hand, the scroll id is the concatenation of the
 - ULID: used as the address for the search context.
 - the start_offset.
+- the number of hits per page
+- a search_after key
 
 We only mutate the state server side to update the cache whenever needed.
 
 The idea here is that if that if the put request failed, we can still return the right results even if we have an obsolete version of the `ScrollContext`.
-We indeed take the max of the start_offset supplied in the `scroll_id` and present in the `ScrollContext`.
 
 # Quickwit implementation (improvment, quirks and shortcuts)
 
@@ -73,9 +73,5 @@ Also thanks to this period, we do not add any extra replication repair mechanism
 Some scroll calls will end up being broken if we were to remove 2 servers within 30mn.
 
 Quickwit caches partial hits in batches of 1000 results.
-Querying page N currently  requires fetching the results from up to N*1000.
-
-One possible amelioration could be to add a `search_after` information the context. It is possible to workaround the tie breaker
-edge case, by only considering `search_after >=` and adjusting offsets accordingly.
-
-For instance, if batch K ends with hit K*1_000, and the last 3 hits have the same score S. We can store S, and the number of docs with a score S to skip: 3.  To then fetch batch `K+1`, we can filter out all pages with a score < S, and fetch hits from 3..1_003.
+Querying page N leverages `search_after`, so that accessing further pages isn't more
+costly than accessing the first ones.
