@@ -169,6 +169,8 @@ Quickwit handles three numeric types: `i64`, `u64`, and `f64`.
 
 Numeric values can be stored in a fast field (the equivalent of Lucene's `DocValues`), which is a column-oriented storage used for range queries and aggregations.
 
+When querying negative numbers without precising a field (using `default_search_fields`), you should single-quote the number (for instance '-5'), otherwise it will be interpreted as wanting to match anything but that number.
+
 Example of a mapping for an u64 field:
 
 ```yaml
@@ -421,8 +423,7 @@ name: my_default_field
 type: concatenate
 concatenated_fields:
   - text
-  - params_* # shortcut for all fields starting with `params_`
-  - resource.author # all fields in resource.author, assuming resource is either of type `object` or `json`
+  - resource.author # all fields in resource.author, assuming resource is an `object`
   - _dynamic # content of the dynamic field, assuming indexing mode is `dynamic` (see below)
 tokenizer: default
 record: basic
@@ -431,20 +432,32 @@ record: basic
 Concatenate fields don't support fast fields, and are never stored. They uses their own tokenizer, independantly of the
 tokenizer configured on the individual fields.
 At query time, concatenate fields don't support range queries.
-Only the following types are supported inside a concatenate field: text, datetime, bool, i64, u64, ip, json. Other types are reject
+Only the following types are supported inside a concatenate field: text, bool, i64, u64, json. Other types are reject
 at index creation, or discarded during indexation if they are found inside a json field.
-datetime can only be queried in their RFC-3339 form, possibly omiting later components. # todo! will have to confirm this is achievable
 For json fields, they path is not indexed, only values are.
 
+<!--
+when the features are supported, add these:
+  - params_* # shortcut for all fields starting with `params_`
+  - resource.author # all fields in resource.author, assuming resource is either of type `object` or `json`
+---
+Only the following types are supported inside a concatenate field: text, datetime, bool, i64, u64, ip, json. Other types are reject
+---
+Datetime can only be queried in their RFC-3339 form, possibly omiting later components. # todo! will have to confirm this is achievable
+---
 plan:
 - implement text/bool/i64/u64 (nothing to do on search side for it to work). all gets converted to strings
 - add json
 - add object
 - add dynamic
-- add sub-field and wildcard
+-- you are here
+- add wildcard
+- add json sub-fields?
 - add datetime (at index time, generate multiple tokens for yyyy, yyyy-MM... to yyyy-MM-ddThh:mm:ss; at search time, emit both tokenized and "raw" version of what may look like a datetime)
+- check negative i64 works as intended for non-raw tokenizer, and leverage datetime code if it doesn't
 - add ip (at index time, convert to single token; at search time, emit both tokenized and "raw" version of the ip)
 - allow optionally indexing json path (how do we tokenize it? split at each dot, or not?)
+-->
 
 ### Mode
 

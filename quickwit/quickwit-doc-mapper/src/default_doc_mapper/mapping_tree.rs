@@ -95,7 +95,7 @@ impl Iterator for MapOrArrayIter {
 
 /// Iterate over all primitive values inside the provided JsonValue, ignoring Nulls, and opening
 /// arrays and objects.
-struct JsonValueIterator {
+pub(crate) struct JsonValueIterator {
     currently_itered: Vec<MapOrArrayIter>,
 }
 
@@ -158,7 +158,7 @@ impl<T, I: Iterator<Item = T>> Iterator for OneOrIter<T, I> {
     }
 }
 
-fn map_primitive_json_to_tantivy(value: JsonValue) -> Option<TantivyValue> {
+pub(crate) fn map_primitive_json_to_tantivy(value: JsonValue) -> Option<TantivyValue> {
     match value {
         JsonValue::Array(_) | JsonValue::Object(_) | JsonValue::Null => None,
         JsonValue::String(text) => Some(TantivyValue::Str(text)),
@@ -272,12 +272,12 @@ impl LeafType {
         use LeafType::*;
         matches!(self, Text(_) | U64(_) | I64(_) | Bool(_) | Json(_))
         /*
-            // will be supported
-            DateTime(QuickwitDateTimeOptions),
-            IpAddr(QuickwitIpAddrOptions),
+            // will be supported if possible
+            DateTime(_),
+            IpAddr(_),
             // won't be supported
-            Bytes(QuickwitBytesOptions),
-            F64(QuickwitNumericOptions),
+            Bytes(_),
+            F64(_),
         */
     }
 }
@@ -773,7 +773,7 @@ impl MappingTree {
 pub(crate) fn build_mapping_tree(
     entries: &[FieldMappingEntry],
     schema: &mut SchemaBuilder,
-) -> anyhow::Result<MappingNode> {
+) -> anyhow::Result<(MappingNode, Vec<Field>)> {
     let mut field_path = Vec::new();
     build_mapping_tree_from_entries(entries, &mut field_path, schema)
 }
@@ -782,9 +782,10 @@ fn build_mapping_tree_from_entries<'a>(
     entries: &'a [FieldMappingEntry],
     field_path: &mut Vec<&'a str>,
     schema: &mut SchemaBuilder,
-) -> anyhow::Result<MappingNode> {
+) -> anyhow::Result<(MappingNode, Vec<Field>)> {
     let mut mapping_node = MappingNode::default();
     let mut concatenate_fields = Vec::new();
+    let mut concatenate_dynamic_fields = Vec::new();
     for entry in entries {
         if let FieldMappingType::Concatenate(_) = &entry.mapping_type {
             concatenate_fields.push(entry);
@@ -793,10 +794,11 @@ fn build_mapping_tree_from_entries<'a>(
             if mapping_node.branches.contains_key(&entry.name) {
                 bail!("duplicated field definition `{}`", entry.name);
             }
-            let child_tree =
+            let (child_tree, mut dynamic_fields) =
                 build_mapping_from_field_type(&entry.mapping_type, field_path, schema)?;
             field_path.pop();
             mapping_node.insert(&entry.name, child_tree);
+            concatenate_dynamic_fields.append(&mut dynamic_fields);
         }
     }
     for concatenate_field_entry in concatenate_fields {
@@ -810,7 +812,11 @@ fn build_mapping_tree_from_entries<'a>(
         let text_options: TextOptions = options.clone().into();
         let field = schema.add_text_field(name, text_options);
         for sub_field in &options.concatenate_fields {
-            // TODO handle *
+            if sub_field == "_dynamic" {
+                // TODO prevent pushing twice
+                concatenate_dynamic_fields.push(field);
+                continue;
+            }
             for matched_field in
                 mapping_node
                     .find_field_mapping_leaf(sub_field)
@@ -829,7 +835,7 @@ fn build_mapping_tree_from_entries<'a>(
         }
         // TODO handle _dynamic
     }
-    Ok(mapping_node)
+    Ok((mapping_node, concatenate_dynamic_fields))
 }
 
 fn get_numeric_options_for_bool_field(
@@ -961,7 +967,7 @@ fn build_mapping_from_field_type<'a>(
     field_mapping_type: &'a FieldMappingType,
     field_path: &mut Vec<&'a str>,
     schema_builder: &mut SchemaBuilder,
-) -> anyhow::Result<MappingTree> {
+) -> anyhow::Result<(MappingTree, Vec<Field>)> {
     let field_name = field_name_for_field_path(field_path);
     match field_mapping_type {
         FieldMappingType::Text(options, cardinality) => {
@@ -973,7 +979,7 @@ fn build_mapping_from_field_type<'a>(
                 cardinality: *cardinality,
                 concatenate: Vec::new(),
             };
-            Ok(MappingTree::Leaf(mapping_leaf))
+            Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
         }
         FieldMappingType::I64(options, cardinality) => {
             let numeric_options = get_numeric_options_for_numeric_field(options);
@@ -984,7 +990,7 @@ fn build_mapping_from_field_type<'a>(
                 cardinality: *cardinality,
                 concatenate: Vec::new(),
             };
-            Ok(MappingTree::Leaf(mapping_leaf))
+            Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
         }
         FieldMappingType::U64(options, cardinality) => {
             let numeric_options = get_numeric_options_for_numeric_field(options);
@@ -995,7 +1001,7 @@ fn build_mapping_from_field_type<'a>(
                 cardinality: *cardinality,
                 concatenate: Vec::new(),
             };
-            Ok(MappingTree::Leaf(mapping_leaf))
+            Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
         }
         FieldMappingType::F64(options, cardinality) => {
             let numeric_options = get_numeric_options_for_numeric_field(options);
@@ -1006,7 +1012,7 @@ fn build_mapping_from_field_type<'a>(
                 cardinality: *cardinality,
                 concatenate: Vec::new(),
             };
-            Ok(MappingTree::Leaf(mapping_leaf))
+            Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
         }
         FieldMappingType::Bool(options, cardinality) => {
             let numeric_options = get_numeric_options_for_bool_field(options);
@@ -1017,7 +1023,7 @@ fn build_mapping_from_field_type<'a>(
                 cardinality: *cardinality,
                 concatenate: Vec::new(),
             };
-            Ok(MappingTree::Leaf(mapping_leaf))
+            Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
         }
         FieldMappingType::IpAddr(options, cardinality) => {
             let ip_addr_options = get_ip_address_options(options);
@@ -1028,7 +1034,7 @@ fn build_mapping_from_field_type<'a>(
                 cardinality: *cardinality,
                 concatenate: Vec::new(),
             };
-            Ok(MappingTree::Leaf(mapping_leaf))
+            Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
         }
         FieldMappingType::DateTime(options, cardinality) => {
             let date_time_options = get_date_time_options(options);
@@ -1039,7 +1045,7 @@ fn build_mapping_from_field_type<'a>(
                 cardinality: *cardinality,
                 concatenate: Vec::new(),
             };
-            Ok(MappingTree::Leaf(mapping_leaf))
+            Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
         }
         FieldMappingType::Bytes(options, cardinality) => {
             let bytes_options = get_bytes_options(options);
@@ -1050,25 +1056,26 @@ fn build_mapping_from_field_type<'a>(
                 cardinality: *cardinality,
                 concatenate: Vec::new(),
             };
-            Ok(MappingTree::Leaf(mapping_leaf))
+            Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
         }
         FieldMappingType::Json(options, cardinality) => {
             let json_options = JsonObjectOptions::from(options.clone());
             let field = schema_builder.add_json_field(&field_name, json_options);
-            Ok(MappingTree::Leaf(MappingLeaf {
+            let mapping_leaf = MappingLeaf {
                 field,
                 typ: LeafType::Json(options.clone()),
                 cardinality: *cardinality,
                 concatenate: Vec::new(),
-            }))
+            };
+            Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
         }
         FieldMappingType::Object(entries) => {
-            let mapping_node = build_mapping_tree_from_entries(
+            let (mapping_node, concate_dynamic_fields) = build_mapping_tree_from_entries(
                 &entries.field_mappings,
                 field_path,
                 schema_builder,
             )?;
-            Ok(MappingTree::Node(mapping_node))
+            Ok((MappingTree::Node(mapping_node), concate_dynamic_fields))
         }
         FieldMappingType::Concatenate(_) => {
             bail!("Concatenate shouldn't reach build_mapping_from_field_type: this is a bug")
