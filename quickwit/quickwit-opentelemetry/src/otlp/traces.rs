@@ -717,11 +717,11 @@ impl OtlpGrpcTracesService {
         })
         .await
         .map_err(|join_error| {
-            error!(join_error=?join_error, "failed to parse spans");
-            Status::internal("Failed to parse spans.")
+            error!(error=%join_error, "failed to parse spans");
+            Status::internal("failed to parse spans")
         })??;
         if num_spans == 0 {
-            return Err(tonic::Status::invalid_argument("The request is empty."));
+            return Err(tonic::Status::invalid_argument("request is empty"));
         }
         if num_spans == num_parse_errors {
             return Err(tonic::Status::internal(error_message));

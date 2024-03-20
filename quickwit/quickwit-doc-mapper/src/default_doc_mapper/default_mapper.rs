@@ -1158,7 +1158,7 @@ mod tests {
         }"#,
         );
         let expected_msg = "the field `image` could not be parsed: expected base64 string, got \
-                            `invalid base64 data`: Invalid byte 32, offset 7.";
+                            `invalid base64 data`: Invalid symbol 32, offset 7.";
         assert_eq!(result.unwrap_err().to_string(), expected_msg);
         Ok(())
     }

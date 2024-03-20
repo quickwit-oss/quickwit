@@ -55,7 +55,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use bytesize::ByteSize;
 pub(crate) use decompression::Body;
 pub use format::BodyFormat;
@@ -373,7 +373,9 @@ pub async fn serve_quickwit(
     shutdown_signal: BoxFutureInfaillible<()>,
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
-    let cluster = start_cluster_service(&node_config).await?;
+    let cluster = start_cluster_service(&node_config)
+        .await
+        .context("failed to start cluster service")?;
 
     let event_broker = EventBroker::default();
     let indexer_pool = IndexerPool::default();
@@ -386,7 +388,13 @@ pub async fn serve_quickwit(
         if node_config.is_service_enabled(QuickwitService::Metastore) {
             let metastore: MetastoreServiceClient = metastore_resolver
                 .resolve(&node_config.metastore_uri)
-                .await?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed to resolve metastore uri `{}`",
+                        node_config.metastore_uri
+                    )
+                })?;
             let broker_layer = EventListenerLayer::new(event_broker.clone());
             let metastore = MetastoreServiceClient::tower()
                 .stack_create_index_layer(broker_layer.clone())
@@ -412,7 +420,7 @@ pub async fn serve_quickwit(
                 .is_err()
             {
                 error!("no metastore service found among cluster members, stopping server");
-                anyhow::bail!(
+                bail!(
                     "failed to start server: no metastore service was found among cluster \
                      members. try running Quickwit with additional metastore service `quickwit \
                      run --service metastore`"
@@ -442,7 +450,8 @@ pub async fn serve_quickwit(
         &indexer_pool,
         &ingester_pool,
     )
-    .await?;
+    .await
+    .context("failed to start control plane service")?;
 
     // Set up the "control plane proxy" for the metastore.
     let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
@@ -451,7 +460,9 @@ pub async fn serve_quickwit(
     ));
 
     // Setup ingest service v1.
-    let ingest_service = start_ingest_client_if_needed(&node_config, &universe, &cluster).await?;
+    let ingest_service = start_ingest_client_if_needed(&node_config, &universe, &cluster)
+        .await
+        .context("failed to start ingest v1 service")?;
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         let indexing_service = start_indexing_service(
@@ -464,7 +475,8 @@ pub async fn serve_quickwit(
             storage_resolver.clone(),
             event_broker.clone(),
         )
-        .await?;
+        .await
+        .context("failed to start indexing service")?;
         Some(indexing_service)
     } else {
         None
@@ -486,7 +498,8 @@ pub async fn serve_quickwit(
         control_plane_service.clone(),
         ingester_pool,
     )
-    .await?;
+    .await
+    .context("failed to start ingest v2 service")?;
 
     if node_config.is_service_enabled(QuickwitService::Indexer)
         || node_config.is_service_enabled(QuickwitService::ControlPlane)
@@ -511,18 +524,23 @@ pub async fn serve_quickwit(
     {
         {
             let otel_logs_index_config =
-                OtlpGrpcLogsService::index_config(&node_config.default_index_root_uri)?;
+                OtlpGrpcLogsService::index_config(&node_config.default_index_root_uri)
+                    .context("failed to load OTEL logs index config")?;
             let otel_traces_index_config =
-                OtlpGrpcTracesService::index_config(&node_config.default_index_root_uri)?;
+                OtlpGrpcTracesService::index_config(&node_config.default_index_root_uri)
+                    .context("failed to load OTEL traces index config")?;
 
-            for index_config in [otel_logs_index_config, otel_traces_index_config] {
+            for (index_name, index_config) in [
+                ("OTEL logs", otel_logs_index_config),
+                ("OTEL traces", otel_traces_index_config),
+            ] {
                 match index_manager.create_index(index_config, false).await {
                     Ok(_)
                     | Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(
                         EntityKind::Index { .. },
-                    ))) => Ok(()),
-                    Err(error) => Err(error),
-                }?;
+                    ))) => {}
+                    Err(error) => bail!("failed to create {index_name} index: {error}",),
+                };
             }
         }
     }
@@ -553,7 +571,8 @@ pub async fn serve_quickwit(
         storage_resolver.clone(),
         searcher_context,
     )
-    .await?;
+    .await
+    .context("failed to start searcher service")?;
 
     // The control plane listens for local shards updates to learn about each shard's ingestion
     // throughput. Ingesters (routers) do so to update their shard table.
@@ -586,7 +605,8 @@ pub async fn serve_quickwit(
             event_broker.clone(),
             std::env::var(DISABLE_DELETE_TASK_SERVICE_ENV_KEY).is_err(),
         )
-        .await?;
+        .await
+        .context("failed to start janitor service")?;
         Some(janitor_service)
     } else {
         None
@@ -719,7 +739,7 @@ pub async fn serve_quickwit(
     let rest_join_handle = spawn_named_task(rest_server, "rest_server");
 
     let (grpc_res, rest_res) = tokio::try_join!(grpc_join_handle, rest_join_handle)
-        .expect("the tasks running the gRPC and REST servers should not panic or be cancelled");
+        .expect("tasks running the gRPC and REST servers should not panic or be cancelled");
 
     if let Err(grpc_err) = grpc_res {
         error!("gRPC server failed: {:?}", grpc_err);
@@ -727,7 +747,9 @@ pub async fn serve_quickwit(
     if let Err(rest_err) = rest_res {
         error!("REST server failed: {:?}", rest_err);
     }
-    let actor_exit_statuses = shutdown_handle.await?;
+    let actor_exit_statuses = shutdown_handle
+        .await
+        .context("failed to gracefully shutdown services")?;
     Ok(actor_exit_statuses)
 }
 
