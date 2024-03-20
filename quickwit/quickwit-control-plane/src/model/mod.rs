@@ -83,48 +83,45 @@ impl ControlPlaneModel {
         metastore: &mut MetastoreServiceClient,
         progress: &Progress,
     ) -> ControlPlaneResult<()> {
-        const LIST_SHARDS_BATCH_SIZE: usize = 500;
+        const BATCH_SIZE: usize = 500;
 
         let now = Instant::now();
         self.clear();
 
-        let index_metadatas = progress
+        let indexes_metadata = progress
             .protect_future(metastore.list_indexes_metadata(ListIndexesMetadataRequest::all()))
             .await?
-            .deserialize_indexes_metadata()?;
+            .deserialize_indexes_metadata()
+            .await?;
 
         let num_indexes = indexes_metadata.len();
         self.index_table.reserve(num_indexes);
 
-        let mut num_sources = 0;
-        let mut num_shards = 0;
-
-        let mut pending_subrequests = Vec::with_capacity(num_indexes.min(LIST_SHARDS_BATCH_SIZE));
-
         for index_metadata in indexes_metadata {
             self.add_index(index_metadata);
         }
+        let mut num_sources = 0;
+        let mut num_shards = 0;
+
+        let mut next_list_shards_request = metastore::ListShardsRequest::default();
 
         for (idx, index_metadata) in self.index_table.values().enumerate() {
             for source_config in index_metadata.sources.values() {
                 num_sources += 1;
 
-                if source_config.source_type() != SourceType::IngestV2 {
-                    continue;
+                if source_config.source_type() == SourceType::IngestV2 {
+                    let request = ListShardsSubrequest {
+                        index_uid: index_metadata.index_uid.clone().into(),
+                        source_id: source_config.source_id.clone(),
+                        shard_state: None,
+                    };
+                    next_list_shards_request.subrequests.push(request);
                 }
-                let request = ListShardsSubrequest {
-                    index_uid: index_metadata.index_uid.clone().into(),
-                    source_id: source_config.source_id.clone(),
-                    shard_state: None,
-                };
-                pending_subrequests.push(request);
             }
-            if pending_subrequests.len() >= LIST_SHARDS_BATCH_SIZE || idx == num_indexes - 1 {
-                let subrequests = mem::replace(
-                    &mut pending_subrequests,
-                    Vec::with_capacity((num_indexes - idx).min(LIST_SHARDS_BATCH_SIZE)),
-                );
-                let list_shards_request = metastore::ListShardsRequest { subrequests };
+            let num_subrequests = next_list_shards_request.subrequests.len();
+
+            if num_subrequests > 0 && (num_subrequests >= BATCH_SIZE || idx == num_indexes - 1) {
+                let list_shards_request = mem::take(&mut next_list_shards_request);
                 let list_shards_response = progress
                     .protect_future(metastore.list_shards(list_shards_request))
                     .await?;
@@ -408,7 +405,7 @@ mod tests {
                 index_2.add_source(SourceConfig::cli()).unwrap();
 
                 let indexes = vec![index_0, index_1, index_2];
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(indexes).unwrap())
+                Ok(ListIndexesMetadataResponse::for_test(indexes))
             });
         let index_uid_clone = index_uid.clone();
         let index_uid2_clone = index_uid2.clone();

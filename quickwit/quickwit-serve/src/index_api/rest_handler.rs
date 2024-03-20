@@ -458,8 +458,9 @@ async fn list_indexes_metadata(
         };
     metastore
         .list_indexes_metadata(list_indexes_metata_request)
+        .await?
+        .deserialize_indexes_metadata()
         .await
-        .and_then(|response| response.deserialize_indexes_metadata())
 }
 
 #[derive(Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
@@ -1249,10 +1250,7 @@ mod tests {
                 );
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(vec![index_metadata])
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata]))
             });
         let index_service = IndexService::new(
             MetastoreServiceClient::from(mock_metastore),
@@ -1565,6 +1563,7 @@ mod tests {
             .await
             .unwrap()
             .deserialize_indexes_metadata()
+            .await
             .unwrap();
         assert!(indexes.is_empty());
     }

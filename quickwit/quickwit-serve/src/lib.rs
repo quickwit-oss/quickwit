@@ -1166,7 +1166,8 @@ async fn check_cluster_configuration(
     let file_backed_indexes = metastore
         .list_indexes_metadata(ListIndexesMetadataRequest::all())
         .await?
-        .deserialize_indexes_metadata()?
+        .deserialize_indexes_metadata()
+        .await?
         .into_iter()
         .filter(|index_metadata| index_metadata.index_uri().protocol().is_file_storage())
         .collect::<Vec<_>>();
@@ -1216,10 +1217,9 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadata()
             .return_once(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     IndexMetadata::for_test("test-index", "file:///qwdata/indexes/test-index"),
-                ])
-                .unwrap())
+                ]))
             });
 
         check_cluster_configuration(

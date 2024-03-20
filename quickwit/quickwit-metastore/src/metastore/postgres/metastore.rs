@@ -357,7 +357,7 @@ impl MetastoreService for PostgresqlMetastore {
         let sql =
             build_index_id_patterns_sql_query(&request.index_id_patterns).map_err(|error| {
                 MetastoreError::Internal {
-                    message: "failed to build `list_indexes_metadatas` SQL query".to_string(),
+                    message: "failed to build `list_indexes_metadata` SQL query".to_string(),
                     cause: error.to_string(),
                 }
             })?;
@@ -368,7 +368,8 @@ impl MetastoreService for PostgresqlMetastore {
             .into_iter()
             .map(|pg_index| pg_index.index_metadata())
             .collect::<MetastoreResult<Vec<IndexMetadata>>>()?;
-        let response = ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)?;
+        let response =
+            ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata).await?;
         Ok(response)
     }
 
