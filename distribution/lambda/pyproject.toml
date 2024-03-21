@@ -13,7 +13,7 @@ aws-cdk-lib = "^2.95.1"
 cargo-lambda = "^0.21.0"
 constructs = ">=10.0.0,<11.0.0"
 pyyaml = "^6.0.1"
-black = "^23.9.1"
+black = "^24.3.0"
 boto3 = "^1.28.59"
 mypy = "^1.7.0"
 
