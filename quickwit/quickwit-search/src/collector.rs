@@ -502,17 +502,18 @@ enum AggregationSegmentCollectors {
 pub struct QuickwitSegmentCollector {
     timestamp_filter_opt: Option<TimestampFilter>,
     segment_top_k_collector: Option<QuickwitSegmentTopKCollector>,
-    // Caches for block fetching
-    filtered_docs: Box<[DocId; 64]>,
     aggregation: Option<AggregationSegmentCollectors>,
     num_hits: u64,
+    // Caches for block fetching
+    filtered_docs: Box<[DocId; 64]>,
+    timestamps_buffer: Box<[Option<DateTime>; 64]>,
 }
 
 impl QuickwitSegmentCollector {
     #[inline]
     fn accept_document(&self, doc_id: DocId) -> bool {
         if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
-            return timestamp_filter.is_within_range(doc_id);
+            return timestamp_filter.contains_doc_timestamp(doc_id);
         }
         true
     }
@@ -786,18 +787,20 @@ fn compute_filtered_block<'a>(
     timestamp_filter_opt: &Option<TimestampFilter>,
     docs: &'a [DocId],
     filtered_docs_buffer: &'a mut [DocId; COLLECT_BLOCK_BUFFER_LEN],
+    timestamps_buffer: &'a mut [Option<DateTime>; COLLECT_BLOCK_BUFFER_LEN],
 ) -> &'a [DocId] {
     let Some(timestamp_filter) = &timestamp_filter_opt else {
         return docs;
     };
+    timestamp_filter.fetch_timestamps(docs, timestamps_buffer);
     let mut len = 0;
-    for &doc in docs {
-        filtered_docs_buffer[len] = doc;
-        len += if timestamp_filter.is_within_range(doc) {
-            1
+    for (doc, date) in docs.iter().zip(timestamps_buffer.iter()) {
+        filtered_docs_buffer[len] = *doc;
+        len += if let Some(ts) = date {
+            timestamp_filter.contains_timestamp(ts) as usize
         } else {
             0
-        };
+        }
     }
     &filtered_docs_buffer[..len]
 }
@@ -811,6 +814,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
             &self.timestamp_filter_opt,
             unfiltered_docs,
             &mut self.filtered_docs,
+            &mut self.timestamps_buffer,
         );
 
         // Update results
@@ -1118,6 +1122,7 @@ impl Collector for QuickwitCollector {
             segment_top_k_collector,
             aggregation,
             filtered_docs: Box::new([0; 64]),
+            timestamps_buffer: Box::new([None; 64]),
         })
     }
 
