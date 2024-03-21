@@ -1,0 +1,117 @@
+# we use the tokenizer from the concat field, not the underlying field
+endpoint: concat/search
+params:
+  query: "concat_raw:AB-CD"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:EF-GH"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:'AB CD'"
+expected:
+  num_hits: 0
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:'EF GH'"
+expected:
+  num_hits: 0
+---
+endpoint: concat/search
+params:
+  query: "concat_default:AB"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_default:GH"
+expected:
+  num_hits: 1
+---
+# we find bool both in text and in bool fields
+endpoint: concat/search
+params:
+  query: "concat_raw:true"
+expected:
+  num_hits: 2
+---
+endpoint: concat/search
+params:
+  query: "concat_default:true"
+expected:
+  num_hits: 2
+---
+# we find numbers both in text and int fields
+endpoint: concat/search
+params:
+  query: "concat_raw:42"
+expected:
+  num_hits: 1 # only 1 hit, 42 doesn't get tokenized on this field
+---
+endpoint: concat/search
+params:
+  query: "concat_default:42"
+expected:
+  num_hits: 2 # 2 hits, the number, and the tokenized text
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:otherfieldvalue"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:9"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:false"
+expected:
+  num_hits: 2 # also include the document with a json field
+---
+endpoint: concat/search
+params:
+  query: "concat_default:otherfieldvalue OR concat_default:9"
+expected:
+  num_hits: 0 # this field doesn't include _dynamic
+---
+endpoint: concat/search
+params:
+  query: "concat_default:false"
+expected:
+  num_hits: 1 # only include the document with a json field
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:10"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:nestedstring"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_default:10"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_default:nestedstring"
+expected:
+  num_hits: 1
+---

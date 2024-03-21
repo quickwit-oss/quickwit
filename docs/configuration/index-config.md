@@ -422,8 +422,8 @@ to the field being searched.
 name: my_default_field
 type: concatenate
 concatenated_fields:
-  - text
-  - resource.author # all fields in resource.author, assuming resource is an `object`
+  - text # things inside text, tokenized with the `default` tokenizer
+  - resource.author # all fields in resource.author, assuming resource is a `json` field
   - _dynamic # content of the dynamic field, assuming indexing mode is `dynamic` (see below)
 tokenizer: default
 record: basic

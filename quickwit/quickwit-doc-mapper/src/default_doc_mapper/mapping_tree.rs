@@ -661,7 +661,6 @@ impl MappingNode {
                         let dynamic_json_obj_after_path =
                             get_or_insert_path(path, dynamic_json_obj);
                         dynamic_json_obj_after_path.insert(field_name, val);
-                        // TODO add to potential _dynamic concatenate field
                     }
                     ModeType::Strict => {
                         path.push(field_name);
@@ -833,7 +832,6 @@ fn build_mapping_tree_from_entries<'a>(
                 matched_field.concatenate.push(field);
             }
         }
-        // TODO handle _dynamic
     }
     Ok((mapping_node, concatenate_dynamic_fields))
 }
