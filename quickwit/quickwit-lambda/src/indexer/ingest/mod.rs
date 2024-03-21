@@ -37,7 +37,7 @@ use quickwit_index_management::clear_cache_directory;
 use quickwit_indexing::models::IndexingStatistics;
 use tracing::{debug, info};
 
-use crate::indexer::environment::CONFIGURATION_TEMPLATE;
+use crate::indexer::environment::{CONFIGURATION_TEMPLATE, DISABLE_JANITOR};
 use crate::indexer::ingest::helpers::wait_for_merges;
 use crate::utils::load_node_config;
 
@@ -69,8 +69,11 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     )
     .await?;
 
-    let services = [QuickwitService::Indexer, QuickwitService::Janitor];
-    let cluster = create_empty_cluster(&config, &services).await?;
+    let mut services = vec![QuickwitService::Indexer];
+    if !*DISABLE_JANITOR {
+        services.push(QuickwitService::Janitor);
+    }
+    let cluster = create_empty_cluster(&config, &services[..]).await?;
     let universe = Universe::new();
     let runtimes_config = RuntimesConfig::default();
 

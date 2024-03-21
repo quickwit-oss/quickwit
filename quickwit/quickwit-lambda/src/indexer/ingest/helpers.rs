@@ -241,7 +241,7 @@ pub(super) async fn spawn_services(
                 SearchJobPlacer::default(),
                 storage_resolver,
                 event_broker,
-                true,
+                false,
             )
             .await?,
         )

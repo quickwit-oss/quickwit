@@ -26,10 +26,10 @@ use quickwit_search::SearchResponseRest;
 use quickwit_serve::SearchRequestQueryString;
 use tracing::{debug_span, error, info_span, instrument, Instrument};
 
-use super::environment::DISABLE_SEARCH_CACHE;
 use super::search::{search, SearchArgs};
 use crate::environment::INDEX_ID;
 use crate::logger;
+use crate::searcher::environment::DISABLE_SEARCH_CACHE;
 use crate::utils::LambdaContainerContext;
 
 #[instrument(skip_all)]
