@@ -24,9 +24,12 @@ use std::fmt;
 use std::sync::Arc;
 
 use bytes::{BufMut, BytesMut};
+use bytesize::ByteSize;
 use futures::StreamExt;
 use mrecordlog::Record;
+use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_common::retry::RetryParams;
+use quickwit_common::stream_utils::{InFlightValue, TrackedSender};
 use quickwit_common::{spawn_named_task, ServiceStream};
 use quickwit_proto::ingest::ingester::{
     fetch_message, FetchEof, FetchMessage, FetchPayload, IngesterService, OpenFetchStreamRequest,
@@ -53,7 +56,7 @@ pub(super) struct FetchStreamTask {
     /// The position of the next record fetched.
     from_position_inclusive: u64,
     mrecordlog: Arc<RwLock<Option<MultiRecordLogAsync>>>,
-    fetch_message_tx: mpsc::Sender<IngestV2Result<FetchMessage>>,
+    fetch_message_tx: TrackedSender<IngestV2Result<FetchMessage>>,
     /// This channel notifies the fetch task when new records are available. This way the fetch
     /// task does not need to grab the lock and poll the mrecordlog queue unnecessarily.
     shard_status_rx: watch::Receiver<ShardStatus>,
@@ -85,7 +88,8 @@ impl FetchStreamTask {
             .as_u64()
             .map(|offset| offset + 1)
             .unwrap_or_default();
-        let (fetch_message_tx, fetch_stream) = ServiceStream::new_bounded(3);
+        let (fetch_message_tx, fetch_stream) =
+            ServiceStream::new_bounded_with_gauge(3, &MEMORY_METRICS.in_flight.fetch_stream);
         let mut fetch_task = Self {
             shard_id: open_fetch_stream_request.shard_id().clone(),
             queue_id: open_fetch_stream_request.queue_id(),
@@ -167,6 +171,7 @@ impl FetchStreamTask {
                     mrecord_buffer: mrecord_buffer.freeze(),
                     mrecord_lengths,
                 };
+                let batch_size = mrecord_batch.estimate_size();
                 let fetch_payload = FetchPayload {
                     index_uid: self.index_uid.clone().into(),
                     source_id: self.source_id.clone(),
@@ -177,7 +182,12 @@ impl FetchStreamTask {
                 };
                 let fetch_message = FetchMessage::new_payload(fetch_payload);
 
-                if self.fetch_message_tx.send(Ok(fetch_message)).await.is_err() {
+                if self
+                    .fetch_message_tx
+                    .send(Ok(fetch_message), batch_size)
+                    .await
+                    .is_err()
+                {
                     // The consumer was dropped.
                     return;
                 }
@@ -207,8 +217,10 @@ impl FetchStreamTask {
                         eof_position: Some(eof_position),
                     };
                     let fetch_message = FetchMessage::new_eof(fetch_eof);
-
-                    let _ = self.fetch_message_tx.send(Ok(fetch_message)).await;
+                    let _ = self
+                        .fetch_message_tx
+                        .send(Ok(fetch_message), ByteSize(0))
+                        .await;
                     return;
                 }
             }
@@ -224,9 +236,12 @@ impl FetchStreamTask {
             );
             let _ = self
                 .fetch_message_tx
-                .send(Err(IngestV2Error::Internal(
-                    "fetch stream ended before reaching end of shard".to_string(),
-                )))
+                .send(
+                    Err(IngestV2Error::Internal(
+                        "fetch stream ended before reaching end of shard".to_string(),
+                    )),
+                    ByteSize(0),
+                )
                 .await;
         }
     }
@@ -248,8 +263,8 @@ pub struct MultiFetchStream {
     ingester_pool: IngesterPool,
     retry_params: RetryParams,
     fetch_task_handles: HashMap<QueueId, JoinHandle<()>>,
-    fetch_message_rx: mpsc::Receiver<Result<FetchMessage, FetchStreamError>>,
-    fetch_message_tx: mpsc::Sender<Result<FetchMessage, FetchStreamError>>,
+    fetch_message_rx: mpsc::Receiver<Result<InFlightValue<FetchMessage>, FetchStreamError>>,
+    fetch_message_tx: mpsc::Sender<Result<InFlightValue<FetchMessage>, FetchStreamError>>,
 }
 
 impl MultiFetchStream {
@@ -272,7 +287,9 @@ impl MultiFetchStream {
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn fetch_message_tx(&self) -> mpsc::Sender<Result<FetchMessage, FetchStreamError>> {
+    pub fn fetch_message_tx(
+        &self,
+    ) -> mpsc::Sender<Result<InFlightValue<FetchMessage>, FetchStreamError>> {
         self.fetch_message_tx.clone()
     }
 
@@ -346,6 +363,7 @@ impl MultiFetchStream {
             .recv()
             .await
             .expect("channel should be open")
+            .map(|value: InFlightValue<FetchMessage>| value.into_inner())
     }
 
     /// Resets the stream by aborting all the active fetch tasks and dropping all queued responses.
@@ -401,7 +419,7 @@ async fn retrying_fetch_stream(
     ingester_ids: Vec<NodeId>,
     ingester_pool: IngesterPool,
     retry_params: RetryParams,
-    fetch_message_tx: mpsc::Sender<Result<FetchMessage, FetchStreamError>>,
+    fetch_message_tx: mpsc::Sender<Result<InFlightValue<FetchMessage>, FetchStreamError>>,
 ) {
     for num_attempts in 1..=retry_params.max_attempts {
         fault_tolerant_fetch_stream(
@@ -435,7 +453,7 @@ async fn fault_tolerant_fetch_stream(
     from_position_exclusive: &mut Position,
     ingester_ids: &[NodeId],
     ingester_pool: IngesterPool,
-    fetch_message_tx: mpsc::Sender<Result<FetchMessage, FetchStreamError>>,
+    fetch_message_tx: mpsc::Sender<Result<InFlightValue<FetchMessage>, FetchStreamError>>,
 ) {
     // TODO: We can probably simplify this code by breaking it into smaller functions.
     'outer: for (ingester_idx, ingester_id) in ingester_ids.iter().enumerate() {
@@ -536,9 +554,14 @@ async fn fault_tolerant_fetch_stream(
             match fetch_message_result {
                 Ok(fetch_message) => match &fetch_message.message {
                     Some(fetch_message::Message::Payload(fetch_payload)) => {
+                        let batch_size = fetch_payload.estimate_size();
                         let to_position_inclusive = fetch_payload.to_position_inclusive().clone();
-
-                        if fetch_message_tx.send(Ok(fetch_message)).await.is_err() {
+                        let in_flight_value = InFlightValue::new(
+                            fetch_message,
+                            batch_size,
+                            &MEMORY_METRICS.in_flight.multi_fetch_stream,
+                        );
+                        if fetch_message_tx.send(Ok(in_flight_value)).await.is_err() {
                             // The consumer was dropped.
                             return;
                         }
@@ -546,10 +569,14 @@ async fn fault_tolerant_fetch_stream(
                     }
                     Some(fetch_message::Message::Eof(fetch_eof)) => {
                         let eof_position = fetch_eof.eof_position().clone();
-
+                        let in_flight_value = InFlightValue::new(
+                            fetch_message,
+                            ByteSize(0),
+                            &MEMORY_METRICS.in_flight.multi_fetch_stream,
+                        );
                         // We ignore the send error if the consumer was dropped because we're going
                         // to return anyway.
-                        let _ = fetch_message_tx.send(Ok(fetch_message)).await;
+                        let _ = fetch_message_tx.send(Ok(in_flight_value)).await;
 
                         *from_position_exclusive = eof_position;
                         return;
@@ -1267,7 +1294,8 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let fetch_payload = into_fetch_payload(fetch_message);
 
         assert_eq!(
@@ -1283,7 +1311,8 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let fetch_eof = into_fetch_eof(fetch_message);
 
         assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
@@ -1379,7 +1408,8 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let fetch_payload = into_fetch_payload(fetch_message);
 
         assert_eq!(
@@ -1395,7 +1425,8 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let fetch_eof = into_fetch_eof(fetch_message);
 
         assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
@@ -1493,7 +1524,8 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let fetch_payload = into_fetch_payload(fetch_message);
 
         assert_eq!(
@@ -1509,7 +1541,8 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let fetch_eof = into_fetch_eof(fetch_message);
 
         assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
@@ -1695,7 +1728,8 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let fetch_payload = into_fetch_payload(fetch_message);
 
         assert_eq!(
@@ -1720,7 +1754,8 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let fetch_payload = into_fetch_payload(fetch_message);
 
         assert_eq!(

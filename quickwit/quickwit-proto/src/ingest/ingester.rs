@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use bytesize::ByteSize;
+
 use crate::types::{queue_id, Position, QueueId, ShardId};
 
 include!("../codegen/quickwit/quickwit.ingest.ingester.rs");
@@ -71,6 +73,14 @@ impl FetchPayload {
             mrecord_batch.mrecord_lengths.len()
         } else {
             0
+        }
+    }
+
+    pub fn estimate_size(&self) -> ByteSize {
+        if let Some(mrecord_batch) = &self.mrecord_batch {
+            mrecord_batch.estimate_size()
+        } else {
+            ByteSize(0)
         }
     }
 
