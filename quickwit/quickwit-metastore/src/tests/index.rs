@@ -227,6 +227,7 @@ pub async fn test_metastore_list_all_indexes<
         .await
         .unwrap()
         .deserialize_indexes_metadata()
+        .await
         .unwrap()
         .into_iter()
         .filter(|index| index.index_id().starts_with(&index_id_prefix))
@@ -251,6 +252,7 @@ pub async fn test_metastore_list_all_indexes<
         .await
         .unwrap()
         .deserialize_indexes_metadata()
+        .await
         .unwrap()
         .into_iter()
         .filter(|index| index.index_id().starts_with(&index_id_prefix))
@@ -290,6 +292,7 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreServiceExt + 
         .await
         .unwrap()
         .deserialize_indexes_metadata()
+        .await
         .unwrap()
         .len();
     assert_eq!(indexes_count, 0);
@@ -325,6 +328,7 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreServiceExt + 
         .await
         .unwrap()
         .deserialize_indexes_metadata()
+        .await
         .unwrap()
         .len();
     assert_eq!(indexes_count, 2);

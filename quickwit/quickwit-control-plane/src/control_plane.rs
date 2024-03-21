@@ -948,9 +948,7 @@ mod tests {
             });
         mock_metastore
             .expect_list_indexes_metadata()
-            .returning(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
-            });
+            .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
         let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
@@ -992,9 +990,7 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
         mock_metastore
             .expect_list_indexes_metadata()
-            .returning(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
-            });
+            .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
@@ -1044,10 +1040,9 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(move |_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
 
         let cluster_config = ClusterConfig::for_test();
@@ -1090,12 +1085,7 @@ mod tests {
         index_metadata.add_source(test_source_config).unwrap();
         mock_metastore
             .expect_list_indexes_metadata()
-            .return_once(|_| {
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(vec![index_metadata])
-                        .unwrap(),
-                )
-            });
+            .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata])));
 
         let index_uid_clone = index_uid.clone();
         mock_metastore
@@ -1171,9 +1161,7 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
         mock_metastore
             .expect_list_indexes_metadata()
-            .returning(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
-            });
+            .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
@@ -1217,10 +1205,7 @@ mod tests {
                 let mut source_config = SourceConfig::ingest_v2();
                 source_config.enabled = true;
                 index_metadata.add_source(source_config).unwrap();
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(vec![index_metadata])
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata]))
             });
         let index_uid_clone = index_uid.clone();
         mock_metastore
@@ -1300,7 +1285,7 @@ mod tests {
             .times(2) // 1 for the first initialization, 1 after the respawn of the control plane.
             .returning(|list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
-                Ok(ListIndexesMetadataResponse::empty())
+                Ok(ListIndexesMetadataResponse::for_test(Vec::new()))
             });
         mock_metastore.expect_list_shards().return_once(
             |_list_shards_request: ListShardsRequest| {
@@ -1439,10 +1424,9 @@ mod tests {
         mock_metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_0_clone.clone()
-                ])
-                .unwrap())
+                ]))
             },
         );
         let index_uid_clone = index_0.index_uid.clone();
@@ -1588,10 +1572,9 @@ mod tests {
         mock_metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_0_clone.clone()
-                ])
-                .unwrap())
+                ]))
             },
         );
 
@@ -1673,10 +1656,9 @@ mod tests {
         mock_metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_0_clone.clone()
-                ])
-                .unwrap())
+                ]))
             },
         );
         let index_uid_clone = index_0.index_uid.clone();
@@ -1758,10 +1740,9 @@ mod tests {
             .in_sequence(&mut seq)
             .returning(move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_0_clone.clone()
-                ])
-                .unwrap())
+                ]))
             });
         mock_metastore
             .expect_list_shards()
@@ -1886,10 +1867,9 @@ mod tests {
         mock_metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_0_clone.clone()
-                ])
-                .unwrap())
+                ]))
             },
         );
 
@@ -1955,9 +1935,7 @@ mod tests {
 
         mock_metastore
             .expect_list_indexes_metadata()
-            .return_once(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
-            });
+            .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
 
         mock_metastore
             .expect_find_index_template_matches()
@@ -2086,9 +2064,7 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_list_indexes_metadata()
-            .return_once(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
-            });
+            .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
         let metastore = MetastoreServiceClient::from(mock_metastore);
         let (_control_plane_mailbox, control_plane_handle) = ControlPlane::spawn(
             &universe,

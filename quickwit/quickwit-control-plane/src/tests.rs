@@ -116,7 +116,7 @@ async fn start_control_plane(
     metastore.expect_list_indexes_metadata().returning(
         move |_list_indexes_request: quickwit_proto::metastore::ListIndexesMetadataRequest| {
             let indexes_metadata = vec![index_metadata_2.clone(), index_metadata_1.clone()];
-            Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata).unwrap())
+            Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
         },
     );
     metastore.expect_list_shards().returning(|_| {

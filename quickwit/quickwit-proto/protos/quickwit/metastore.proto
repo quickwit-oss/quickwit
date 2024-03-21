@@ -208,7 +208,10 @@ message ListIndexesMetadataRequest {
 }
 
 message ListIndexesMetadataResponse {
-  string indexes_metadata_serialized_json = 1;
+  // Deprecated (v0.9.0), use `indexes_metadata_json_zstd` instead.
+  optional string indexes_metadata_json_opt = 1;
+  // A JSON serialized then ZSTD compressed list of `IndexMetadata`: `Vec<IndexMetadata> | JSON | ZSTD`.
+  bytes indexes_metadata_json_zstd = 2;
 }
 
 message DeleteIndexRequest {

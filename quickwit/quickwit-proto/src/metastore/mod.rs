@@ -297,6 +297,19 @@ pub mod serde_utils {
         })
     }
 
+    pub fn from_json_zstd<T: DeserializeOwned>(value_bytes: &[u8]) -> MetastoreResult<T> {
+        let value_json = zstd::decode_all(value_bytes).map_err(|error| {
+            MetastoreError::JsonDeserializeError {
+                struct_name: std::any::type_name::<T>().to_string(),
+                message: error.to_string(),
+            }
+        })?;
+        serde_json::from_slice(&value_json).map_err(|error| MetastoreError::JsonDeserializeError {
+            struct_name: std::any::type_name::<T>().to_string(),
+            message: error.to_string(),
+        })
+    }
+
     pub fn from_json_str<'de, T: Deserialize<'de>>(value_str: &'de str) -> MetastoreResult<T> {
         serde_json::from_str(value_str).map_err(|error| MetastoreError::JsonDeserializeError {
             struct_name: std::any::type_name::<T>().to_string(),
@@ -322,6 +335,23 @@ pub mod serde_utils {
         serde_json::to_vec(value).map_err(|error| MetastoreError::JsonSerializeError {
             struct_name: std::any::type_name::<T>().to_string(),
             message: error.to_string(),
+        })
+    }
+
+    pub fn to_json_zstd<T: Serialize>(
+        value: &T,
+        compression_level: i32,
+    ) -> Result<Vec<u8>, MetastoreError> {
+        let value_json =
+            serde_json::to_vec(value).map_err(|error| MetastoreError::JsonSerializeError {
+                struct_name: std::any::type_name::<T>().to_string(),
+                message: error.to_string(),
+            })?;
+        zstd::encode_all(value_json.as_slice(), compression_level).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: std::any::type_name::<T>().to_string(),
+                message: error.to_string(),
+            }
         })
     }
 

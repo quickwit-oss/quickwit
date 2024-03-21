@@ -80,26 +80,32 @@ impl RetentionPolicyExecutor {
     /// Indexes refresh Loop handler logic.
     /// Should not return an error to prevent the actor from crashing.
     async fn handle_refresh_loop(&mut self, ctx: &ActorContext<Self>) {
-        debug!("retention-policy-refresh-indexes-operation");
+        debug!("loading indexes from the metastore");
         self.counters.num_refresh_passes += 1;
 
-        let index_metadatas = match self
+        let response = match self
             .metastore
             .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
-            .and_then(|response| response.deserialize_indexes_metadata())
         {
-            Ok(metadatas) => metadatas,
+            Ok(response) => response,
             Err(error) => {
-                error!(error=?error, "failed to list indexes from the metastore");
+                error!(%error, "failed to list indexes from the metastore");
                 return;
             }
         };
-        debug!(index_ids=%index_metadatas.iter().map(|im| im.index_id()).join(", "), "retention policy refresh");
+        let indexes = match response.deserialize_indexes_metadata().await {
+            Ok(indexes) => indexes,
+            Err(error) => {
+                error!(%error, "failed to deserialize indexes metadata");
+                return;
+            }
+        };
+        info!("loaded {} indexes from the metastore", indexes.len());
 
         let deleted_indexes = compute_deleted_indexes(
             self.index_configs.keys().map(String::as_str),
-            index_metadatas
+            indexes
                 .iter()
                 .map(|index_metadata| index_metadata.index_id()),
         );
@@ -109,8 +115,7 @@ impl RetentionPolicyExecutor {
                 self.index_configs.remove(&index_id);
             }
         }
-
-        for index_metadata in index_metadatas {
+        for index_metadata in indexes {
             let index_uid = index_metadata.index_uid.clone();
             let index_config = index_metadata.into_index_config();
             // We only care about indexes with a retention policy configured.
@@ -365,10 +370,7 @@ mod tests {
                     ("index-2", Some("1 hour")),
                     ("index-3", None),
                 ]);
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
             });
 
         mock_metastore
@@ -381,10 +383,7 @@ mod tests {
                     ("index-2", Some("2 hour")),
                     ("index-3", Some("1 hour")),
                 ]);
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
             });
 
         mock_metastore
@@ -397,10 +396,7 @@ mod tests {
                     ("index-4", Some("1 hour")),
                     ("index-5", None),
                 ]);
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
             });
 
         let retention_policy_executor =
@@ -454,10 +450,7 @@ mod tests {
                     ("index-2", Some("1 hour")),
                     ("index-3", None),
                 ]);
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
             });
 
         mock_metastore
