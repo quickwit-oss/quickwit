@@ -83,8 +83,14 @@ impl Default for RuntimesConfig {
 }
 
 fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
+    let disable_lifo_slot: bool = crate::get_from_env("DISABLE_LIFO_SLOT", false);
+
     let mut runtimes = HashMap::default();
-    let blocking_runtime = tokio::runtime::Builder::new_multi_thread()
+    let mut blocking_runtime_builder = tokio::runtime::Builder::new_multi_thread();
+    if disable_lifo_slot {
+        blocking_runtime_builder.disable_lifo_slot();
+    }
+    let blocking_runtime = blocking_runtime_builder
         .worker_threads(config.num_threads_blocking)
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
