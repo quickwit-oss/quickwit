@@ -6101,6 +6101,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bytes",
  "bytesize",
  "dotenv",
  "futures",

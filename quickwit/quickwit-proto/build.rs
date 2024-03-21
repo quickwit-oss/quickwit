@@ -73,6 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Metastore service.
     let mut prost_config = prost_build::Config::default();
     prost_config
+        .bytes(["ListIndexesMetadataResponse.indexes_metadata_json_zstd"])
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
         .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
         .field_attribute("DeleteQuery.index_uid", "#[serde(alias = \"index_id\")]")

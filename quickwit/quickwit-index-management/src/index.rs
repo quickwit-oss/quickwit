@@ -257,7 +257,8 @@ impl IndexService {
         let indexes_metadata = metastore
             .list_indexes_metadata(list_indexes_metadatas_request)
             .await?
-            .deserialize_indexes_metadata()?;
+            .deserialize_indexes_metadata()
+            .await?;
 
         if !ignore_missing && indexes_metadata.len() != index_id_patterns.len() {
             let found_index_ids: HashSet<&str> = indexes_metadata

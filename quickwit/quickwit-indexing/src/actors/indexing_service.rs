@@ -711,13 +711,13 @@ impl IndexingService {
             .collect();
         debug!(queues=?queues, "list ingest API queues");
 
-        let indexes_metadatas = self
+        let indexes_metadata = self
             .metastore
-            .clone()
             .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await?
-            .deserialize_indexes_metadata()?;
-        let index_ids: HashSet<String> = indexes_metadatas
+            .deserialize_indexes_metadata()
+            .await?;
+        let index_ids: HashSet<String> = indexes_metadata
             .into_iter()
             .map(|index_metadata| index_metadata.index_id().to_string())
             .collect();
@@ -1468,13 +1468,10 @@ mod tests {
         let index_metadata_clone = index_metadata.clone();
         metastore
             .expect_list_indexes_metadata()
-            .returning(move |_request| {
-                let list_indexes_metadatas_response =
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
-                        index_metadata_clone.clone(),
-                    ])
-                    .unwrap();
-                Ok(list_indexes_metadatas_response)
+            .return_once(move |_request| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata_clone,
+                ]))
             });
         metastore.expect_index_metadata().returning(move |_| {
             Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
