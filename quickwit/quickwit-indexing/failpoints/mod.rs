@@ -211,7 +211,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
     Ok(())
 }
 
-const TEST_TEXT: &'static str = r#"His sole child, my lord, and bequeathed to my
+const TEST_TEXT: &str = r#"His sole child, my lord, and bequeathed to my
 overlooking. I have those hopes of her good that
 her education promises; her dispositions she
 inherits, which makes fair gifts fairer; for where

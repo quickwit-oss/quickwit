@@ -16,9 +16,8 @@ async-trait = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 dyn-clone = { workspace = true }
-fail = { workspace = true }
+fail = { workspace = true, optional = true }
 flume = { workspace = true }
-fnv = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
@@ -59,4 +58,5 @@ quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-codegen = { workspace = true }
 
 [features]
+failpoints = ["fail/failpoints"]
 testsuite = ["mockall"]
