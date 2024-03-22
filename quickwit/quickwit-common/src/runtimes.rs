@@ -92,6 +92,7 @@ fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
             format!("blocking-{id}")
         })
         .enable_all()
+        .disable_lifo_slot()
         .build()
         .unwrap();
     runtimes.insert(RuntimeType::Blocking, blocking_runtime);
@@ -103,6 +104,7 @@ fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
             format!("non-blocking-{id}")
         })
         .enable_all()
+        .disable_lifo_slot()
         .build()
         .unwrap();
     runtimes.insert(RuntimeType::NonBlocking, non_blocking_runtime);

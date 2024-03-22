@@ -38,6 +38,7 @@ COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
 
 WORKDIR /quickwit
 
+ENV RUSTFLAGS="--cfg tokio_unstable"
 RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
     && cargo build \
         -p quickwit-cli \

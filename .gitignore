@@ -22,7 +22,6 @@ QUESTIONS.txt
 .idea
 .vscode
 .vscode-license
-.cargo
 deps
 qwdata
 elastic-search-artifacts
