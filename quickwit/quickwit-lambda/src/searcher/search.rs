@@ -35,7 +35,8 @@ use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, Teleme
 use tokio::sync::OnceCell;
 use tracing::debug;
 
-use super::environment::{CONFIGURATION_TEMPLATE, DISABLE_SEARCH_CACHE, INDEX_ID};
+use crate::environment::INDEX_ID;
+use crate::searcher::environment::{CONFIGURATION_TEMPLATE, DISABLE_SEARCH_CACHE};
 use crate::utils::load_node_config;
 
 static LAMBDA_SEARCH_CACHE: OnceCell<LambdaSearchCtx> = OnceCell::const_new();
