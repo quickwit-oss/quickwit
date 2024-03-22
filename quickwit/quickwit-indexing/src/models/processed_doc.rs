@@ -56,8 +56,7 @@ impl ProcessedDocBatch {
         force_commit: bool,
     ) -> Self {
         let delta = docs.iter().map(|doc| doc.num_bytes as i64).sum::<i64>();
-        let mut gauge_guard =
-            GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight_data.indexer_mailbox);
+        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.indexer_mailbox);
         gauge_guard.add(delta);
         Self {
             docs,
