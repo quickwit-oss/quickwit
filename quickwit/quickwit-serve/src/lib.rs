@@ -331,6 +331,12 @@ async fn start_control_plane_if_needed(
         )
         .await?;
         let server = ControlPlaneServiceClient::tower()
+            .stack_create_index_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_delete_index_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_add_source_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_toggle_source_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_delete_source_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_get_or_create_open_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
             .stack_layer(CP_GRPC_SERVER_METRICS_LAYER.clone())
             .build_from_mailbox(control_plane_mailbox);
         Ok(server)
@@ -792,7 +798,8 @@ async fn setup_ingest_v2(
     };
 
     // Instantiate ingester.
-    let ingester_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+    let ingester_opt: Option<Ingester> = if node_config.is_service_enabled(QuickwitService::Indexer)
+    {
         let wal_dir_path = node_config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
 
@@ -878,6 +885,13 @@ async fn setup_ingest_v2(
 
     let ingester_service_opt = ingester_opt.map(|ingester| {
         IngesterServiceClient::tower()
+            .stack_persist_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_init_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_retain_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_truncate_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_close_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_decommission_layer(quickwit_common::tower::OneTaskPerCallLayer)
             .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
             .build(ingester)
     });
