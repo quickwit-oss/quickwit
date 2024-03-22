@@ -259,7 +259,7 @@ typetag = "0.2"
 ulid = "1.1"
 username = "0.2"
 utoipa = "4.2.0"
-uuid = { version = "1.7", features = ["v4", "serde"] }
+uuid = { version = "1.8", features = ["v4", "serde"] }
 vrl = { version = "0.8.1", default-features = false, features = [
   "compiler",
   "diagnostic",
@@ -323,7 +323,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "67ebba3", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "4e79e11", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

@@ -50,7 +50,7 @@ impl LazyFileBackedIndex {
         let index_mutex_opt = file_backed_index.map(|index| Arc::new(Mutex::new(index)));
         // If an index is given and a polling interval is given,
         // spawn immediately the polling task.
-        if let Some(index_mutex) = index_mutex_opt.as_ref() {
+        if let Some(index_mutex) = &index_mutex_opt {
             if let Some(polling_interval) = polling_interval_opt {
                 spawn_index_metadata_polling_task(
                     storage.clone(),

@@ -48,12 +48,13 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, SourceId};
 use sea_query::{Asterisk, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use sqlx::{Executor, Pool, Postgres, Transaction};
+use sqlx::{Acquire, Executor, Postgres, Transaction};
 use tracing::{debug, info, instrument, warn};
 
 use super::error::convert_sqlx_err;
 use super::migrator::run_migrations;
 use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits};
+use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
 use super::utils::{append_query_filters, establish_connection};
 use crate::checkpoint::{
@@ -71,7 +72,7 @@ use crate::{
 #[derive(Clone)]
 pub struct PostgresqlMetastore {
     uri: Uri,
-    connection_pool: Pool<Postgres>,
+    connection_pool: TrackedPool<Postgres>,
 }
 
 impl fmt::Debug for PostgresqlMetastore {
@@ -356,7 +357,7 @@ impl MetastoreService for PostgresqlMetastore {
         let sql =
             build_index_id_patterns_sql_query(&request.index_id_patterns).map_err(|error| {
                 MetastoreError::Internal {
-                    message: "failed to build `list_indexes_metadatas` SQL query".to_string(),
+                    message: "failed to build `list_indexes_metadata` SQL query".to_string(),
                     cause: error.to_string(),
                 }
             })?;
@@ -367,7 +368,8 @@ impl MetastoreService for PostgresqlMetastore {
             .into_iter()
             .map(|pg_index| pg_index.index_metadata())
             .collect::<MetastoreResult<Vec<IndexMetadata>>>()?;
-        let response = ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)?;
+        let response =
+            ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata).await?;
         Ok(response)
     }
 
@@ -709,7 +711,7 @@ impl MetastoreService for PostgresqlMetastore {
         let pg_split_stream = SplitStream::new(
             self.connection_pool.clone(),
             sql,
-            |connection_pool: &Pool<Postgres>, sql: &String| {
+            |connection_pool: &TrackedPool<Postgres>, sql: &String| {
                 sqlx::query_as_with::<_, PgSplit, _>(sql, values).fetch(connection_pool)
             },
         );

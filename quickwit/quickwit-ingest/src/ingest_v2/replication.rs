@@ -17,11 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::iter::once;
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use bytesize::ByteSize;
 use futures::{Future, StreamExt};
+use mrecordlog::error::CreateQueueError;
 use quickwit_common::{rate_limited_warn, ServiceStream};
 use quickwit_proto::ingest::ingester::{
     ack_replication_message, syn_replication_message, AckReplicationMessage, IngesterStatus,
@@ -30,7 +31,7 @@ use quickwit_proto::ingest::ingester::{
     SynReplicationMessage,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardState};
-use quickwit_proto::types::{NodeId, Position};
+use quickwit_proto::types::{NodeId, Position, QueueId};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -38,9 +39,9 @@ use tracing::{error, warn};
 
 use super::metrics::report_wal_usage;
 use super::models::IngesterShard;
-use super::mrecord::MRecord;
 use super::mrecordlog_utils::check_enough_capacity;
 use super::state::IngesterState;
+use crate::ingest_v2::mrecordlog_utils::{append_non_empty_doc_batch, AppendDocBatchError};
 use crate::metrics::INGEST_METRICS;
 use crate::{estimate_size, with_lock_metrics};
 
@@ -455,12 +456,19 @@ impl ReplicationTask {
         let mut state_guard =
             with_lock_metrics!(self.state.lock_fully(), "init_replica", "write").await?;
 
-        state_guard
-            .mrecordlog
-            .create_queue(&queue_id)
-            .await
-            .expect("TODO: Handle IO error");
-
+        match state_guard.mrecordlog.create_queue(&queue_id).await {
+            Ok(_) => {}
+            Err(CreateQueueError::AlreadyExists) => {
+                error!("WAL queue `{queue_id}` already exists");
+                let message = format!("WAL queue `{queue_id}` already exists");
+                return Err(IngestV2Error::Internal(message));
+            }
+            Err(CreateQueueError::IoError(io_error)) => {
+                error!("failed to create WAL queue `{queue_id}`: {io_error}",);
+                let message = format!("failed to create WAL queue `{queue_id}`: {io_error}");
+                return Err(IngestV2Error::Internal(message));
+            }
+        };
         let replica_shard = IngesterShard::new_replica(
             replica_shard.leader_id.into(),
             ShardState::Open,
@@ -506,6 +514,13 @@ impl ReplicationTask {
 
         let mut replicate_successes = Vec::with_capacity(replicate_request.subrequests.len());
         let mut replicate_failures = Vec::new();
+
+        // Keep track of the shards that need to be closed following an IO error.
+        let mut shards_to_close: HashSet<QueueId> = HashSet::new();
+
+        // Keep track of dangling shards, i.e., shards for which there is no longer a corresponding
+        // queue in the WAL and should be deleted.
+        let mut shards_to_delete: HashSet<QueueId> = HashSet::new();
 
         let mut state_guard =
             with_lock_metrics!(self.state.lock_fully(), "replicate", "write").await?;
@@ -599,7 +614,6 @@ impl ReplicationTask {
                     "failed to replicate records to ingester `{}`: {error}",
                     self.follower_id,
                 );
-
                 let replicate_failure = ReplicateFailure {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
@@ -610,26 +624,48 @@ impl ReplicationTask {
                 replicate_failures.push(replicate_failure);
                 continue;
             };
-            let current_position_inclusive: Position = if force_commit {
-                let encoded_mrecords = doc_batch
-                    .docs()
-                    .map(|doc| MRecord::Doc(doc).encode())
-                    .chain(once(MRecord::Commit.encode()));
-                state_guard
-                    .mrecordlog
-                    .append_records(&queue_id, None, encoded_mrecords)
-                    .await
-                    .expect("TODO")
-            } else {
-                let encoded_mrecords = doc_batch.docs().map(|doc| MRecord::Doc(doc).encode());
-                state_guard
-                    .mrecordlog
-                    .append_records(&queue_id, None, encoded_mrecords)
-                    .await
-                    .expect("TODO")
-            }
-            .map(Position::offset)
-            .expect("records should not be empty");
+            let append_result = append_non_empty_doc_batch(
+                &mut state_guard.mrecordlog,
+                &queue_id,
+                doc_batch,
+                force_commit,
+            )
+            .await;
+
+            let current_position_inclusive = match append_result {
+                Ok(current_position_inclusive) => current_position_inclusive,
+                Err(append_error) => {
+                    let reason = match &append_error {
+                        AppendDocBatchError::Io(io_error) => {
+                            error!("failed to replicate records to shard `{queue_id}`: {io_error}");
+                            shards_to_close.insert(queue_id);
+                            ReplicateFailureReason::ShardClosed
+                        }
+                        AppendDocBatchError::QueueNotFound(_) => {
+                            error!(
+                                "failed to replicate records to shard `{queue_id}`: WAL queue not \
+                                 found"
+                            );
+                            shards_to_delete.insert(queue_id);
+                            ReplicateFailureReason::ShardNotFound
+                        }
+                    };
+                    let replicate_failure = ReplicateFailure {
+                        subrequest_id: subrequest.subrequest_id,
+                        index_uid: subrequest.index_uid,
+                        source_id: subrequest.source_id,
+                        shard_id: subrequest.shard_id,
+                        reason: reason as i32,
+                    };
+                    replicate_failures.push(replicate_failure);
+                    continue;
+                }
+            };
+            state_guard
+                .shards
+                .get_mut(&queue_id)
+                .expect("replica shard should be initialized")
+                .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
             INGEST_METRICS
                 .replicated_num_bytes_total
@@ -637,13 +673,6 @@ impl ReplicationTask {
             INGEST_METRICS
                 .replicated_num_docs_total
                 .inc_by(batch_num_docs);
-
-            let replica_shard = state_guard
-                .shards
-                .get_mut(&queue_id)
-                .expect("replica shard should be initialized");
-            replica_shard
-                .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
             let replicate_success = ReplicateSuccess {
                 subrequest_id: subrequest.subrequest_id,
@@ -653,6 +682,25 @@ impl ReplicationTask {
                 replication_position_inclusive: Some(current_position_inclusive),
             };
             replicate_successes.push(replicate_success);
+        }
+        if !shards_to_close.is_empty() {
+            for queue_id in &shards_to_close {
+                let shard = state_guard
+                    .shards
+                    .get_mut(queue_id)
+                    .expect("shard should exist");
+
+                shard.shard_state = ShardState::Closed;
+                shard.notify_shard_status();
+                warn!("closed shard `{queue_id}` following IO error");
+            }
+        }
+        if !shards_to_delete.is_empty() {
+            for queue_id in &shards_to_delete {
+                state_guard.shards.remove(queue_id);
+                state_guard.rate_trackers.remove(queue_id);
+                warn!("deleted dangling shard `{queue_id}`");
+            }
         }
         let wal_usage = state_guard.mrecordlog.resource_usage();
         drop(state_guard);
@@ -1321,6 +1369,183 @@ mod tests {
             replicate_failure.reason(),
             ReplicateFailureReason::ShardClosed
         );
+    }
+
+    #[tokio::test]
+    async fn test_replication_task_deletes_dangling_shard() {
+        let leader_id: NodeId = "test-leader".into();
+        let follower_id: NodeId = "test-follower".into();
+        let (_temp_dir, state) = IngesterState::for_test().await;
+        let (syn_replication_stream_tx, syn_replication_stream) =
+            ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
+        let (ack_replication_stream_tx, mut ack_replication_stream) =
+            ServiceStream::new_unbounded();
+
+        let disk_capacity = ByteSize::mb(256);
+        let memory_capacity = ByteSize::mb(1);
+
+        let _replication_task_handle = ReplicationTask::spawn(
+            leader_id.clone(),
+            follower_id,
+            state.clone(),
+            syn_replication_stream,
+            ack_replication_stream_tx,
+            disk_capacity,
+            memory_capacity,
+        );
+
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let replica_shard = IngesterShard::new_replica(
+            leader_id,
+            ShardState::Open,
+            Position::Beginning,
+            Position::Beginning,
+            Instant::now(),
+        );
+        state
+            .lock_fully()
+            .await
+            .unwrap()
+            .shards
+            .insert(queue_id_01.clone(), replica_shard);
+
+        let replicate_request = ReplicateRequest {
+            leader_id: "test-leader".to_string(),
+            follower_id: "test-follower".to_string(),
+            commit_type: CommitTypeV2::Auto as i32,
+            subrequests: vec![ReplicateSubrequest {
+                subrequest_id: 0,
+                index_uid: Some(index_uid.clone()),
+                source_id: "test-source".to_string(),
+                shard_id: Some(ShardId::from(1)),
+                doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
+                from_position_exclusive: Position::offset(0u64).into(),
+            }],
+            replication_seqno: 0,
+        };
+        let syn_replication_message =
+            SynReplicationMessage::new_replicate_request(replicate_request);
+        syn_replication_stream_tx
+            .send(syn_replication_message)
+            .await
+            .unwrap();
+        let ack_replication_message = ack_replication_stream.next().await.unwrap().unwrap();
+        let replicate_response = into_replicate_response(ack_replication_message);
+
+        assert_eq!(replicate_response.follower_id, "test-follower");
+        assert_eq!(replicate_response.successes.len(), 0);
+        assert_eq!(replicate_response.failures.len(), 1);
+
+        let replicate_failure = &replicate_response.failures[0];
+        assert_eq!(replicate_failure.index_uid(), &index_uid);
+        assert_eq!(replicate_failure.source_id, "test-source");
+        assert_eq!(replicate_failure.shard_id(), ShardId::from(1));
+        assert_eq!(
+            replicate_failure.reason(),
+            ReplicateFailureReason::ShardNotFound
+        );
+
+        let state_guard = state.lock_partially().await.unwrap();
+        assert!(!state_guard.shards.contains_key(&queue_id_01));
+    }
+
+    // This test should be run manually and independently of other tests with the `failpoints`
+    // feature enabled:
+    // ```sh
+    // cargo test --manifest-path quickwit/Cargo.toml -p quickwit-ingest --features failpoints -- test_replication_task_closes_shard_on_io_error
+    // ```
+    #[cfg(feature = "failpoints")]
+    #[tokio::test]
+    async fn test_replication_task_closes_shard_on_io_error() {
+        let scenario = fail::FailScenario::setup();
+        fail::cfg("ingester:append_records", "return").unwrap();
+
+        let leader_id: NodeId = "test-leader".into();
+        let follower_id: NodeId = "test-follower".into();
+        let (_temp_dir, state) = IngesterState::for_test().await;
+        let (syn_replication_stream_tx, syn_replication_stream) =
+            ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
+        let (ack_replication_stream_tx, mut ack_replication_stream) =
+            ServiceStream::new_unbounded();
+
+        let disk_capacity = ByteSize::mb(256);
+        let memory_capacity = ByteSize::mb(1);
+
+        let _replication_task_handle = ReplicationTask::spawn(
+            leader_id.clone(),
+            follower_id,
+            state.clone(),
+            syn_replication_stream,
+            ack_replication_stream_tx,
+            disk_capacity,
+            memory_capacity,
+        );
+
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let replica_shard = IngesterShard::new_replica(
+            leader_id,
+            ShardState::Open,
+            Position::Beginning,
+            Position::Beginning,
+            Instant::now(),
+        );
+        let mut state_guard = state.lock_fully().await.unwrap();
+
+        state_guard
+            .shards
+            .insert(queue_id_01.clone(), replica_shard);
+
+        state_guard
+            .mrecordlog
+            .create_queue(&queue_id_01)
+            .await
+            .unwrap();
+
+        drop(state_guard);
+
+        let replicate_request = ReplicateRequest {
+            leader_id: "test-leader".to_string(),
+            follower_id: "test-follower".to_string(),
+            commit_type: CommitTypeV2::Auto as i32,
+            subrequests: vec![ReplicateSubrequest {
+                subrequest_id: 0,
+                index_uid: Some(index_uid.clone()),
+                source_id: "test-source".to_string(),
+                shard_id: Some(ShardId::from(1)),
+                doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
+                from_position_exclusive: Position::offset(0u64).into(),
+            }],
+            replication_seqno: 0,
+        };
+        let syn_replication_message =
+            SynReplicationMessage::new_replicate_request(replicate_request);
+        syn_replication_stream_tx
+            .send(syn_replication_message)
+            .await
+            .unwrap();
+        let ack_replication_message = ack_replication_stream.next().await.unwrap().unwrap();
+        let replicate_response = into_replicate_response(ack_replication_message);
+
+        assert_eq!(replicate_response.follower_id, "test-follower");
+        assert_eq!(replicate_response.successes.len(), 0);
+        assert_eq!(replicate_response.failures.len(), 1);
+
+        let replicate_failure = &replicate_response.failures[0];
+        assert_eq!(replicate_failure.index_uid(), &index_uid);
+        assert_eq!(replicate_failure.source_id, "test-source");
+        assert_eq!(replicate_failure.shard_id(), ShardId::from(1));
+        assert_eq!(
+            replicate_failure.reason(),
+            ReplicateFailureReason::ShardClosed
+        );
+
+        let state_guard = state.lock_partially().await.unwrap();
+        let replica_shard = state_guard.shards.get(&queue_id_01).unwrap();
+        replica_shard.assert_is_closed();
+
+        scenario.teardown();
     }
 
     #[tokio::test]

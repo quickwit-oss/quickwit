@@ -49,7 +49,7 @@ impl<Item: HasAssociatedColumnType> FastFieldSegmentCollector<Item> {
 
     fn accept_document(&self, doc_id: DocId) -> bool {
         if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
-            return timestamp_filter.is_within_range(doc_id);
+            return timestamp_filter.contains_doc_timestamp(doc_id);
         }
         true
     }
@@ -211,7 +211,7 @@ impl<Item, PartitionItem> PartitionedFastFieldSegmentCollector<Item, PartitionIt
 
     fn accept_document(&self, doc_id: DocId) -> bool {
         if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
-            return timestamp_filter.is_within_range(doc_id);
+            return timestamp_filter.contains_doc_timestamp(doc_id);
         }
         true
     }

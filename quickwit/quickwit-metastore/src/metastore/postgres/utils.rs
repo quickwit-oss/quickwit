@@ -26,11 +26,12 @@ use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
 use sea_query::{any, Expr, Func, Order, SelectStatement};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
-use sqlx::{ConnectOptions, Pool, Postgres};
+use sqlx::{ConnectOptions, Postgres};
 use tracing::error;
 use tracing::log::LevelFilter;
 
 use super::model::{Splits, ToTimestampFunc};
+use super::pool::TrackedPool;
 use super::tags::generate_sql_condition;
 use crate::metastore::FilterRange;
 use crate::{ListSplitsQuery, SplitMaturity, SplitMetadata};
@@ -43,7 +44,7 @@ pub(super) async fn establish_connection(
     acquire_timeout: Duration,
     idle_timeout_opt: Option<Duration>,
     max_lifetime_opt: Option<Duration>,
-) -> MetastoreResult<Pool<Postgres>> {
+) -> MetastoreResult<TrackedPool<Postgres>> {
     let pool_options = PgPoolOptions::new()
         .min_connections(min_connections as u32)
         .max_connections(max_connections as u32)
@@ -53,7 +54,7 @@ pub(super) async fn establish_connection(
     let connect_options: PgConnectOptions = PgConnectOptions::from_str(connection_uri.as_str())?
         .application_name("quickwit-metastore")
         .log_statements(LevelFilter::Info);
-    pool_options
+    let sqlx_pool = pool_options
         .connect_with(connect_options)
         .await
         .map_err(|error| {
@@ -61,7 +62,9 @@ pub(super) async fn establish_connection(
             MetastoreError::Connection {
                 message: error.to_string(),
             }
-        })
+        })?;
+    let tracked_pool = TrackedPool::new(sqlx_pool);
+    Ok(tracked_pool)
 }
 
 /// Extends an existing SQL string with the generated filter range appended to the query.

@@ -749,7 +749,8 @@ impl MetastoreService for FileBackedMetastore {
         .into_iter()
         .flatten()
         .collect();
-        let response = ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)?;
+        let response =
+            ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata).await?;
         Ok(response)
     }
 
@@ -1227,6 +1228,7 @@ mod tests {
             .await
             .unwrap()
             .deserialize_indexes_metadata()
+            .await
             .unwrap();
         assert_eq!(indexes_metadata.len(), 1);
 
@@ -1943,6 +1945,7 @@ mod tests {
             .await
             .unwrap()
             .deserialize_indexes_metadata()
+            .await
             .unwrap();
         assert_eq!(indexes_metadata.len(), 1);
 
@@ -1959,6 +1962,7 @@ mod tests {
             .await
             .unwrap()
             .deserialize_indexes_metadata()
+            .await
             .unwrap();
         assert_eq!(indexes_metadata.len(), 2);
 
@@ -1977,6 +1981,7 @@ mod tests {
             .await
             .unwrap()
             .deserialize_indexes_metadata()
+            .await
             .unwrap();
         assert!(indexes_metadata.is_empty());
 

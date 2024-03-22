@@ -120,7 +120,8 @@ impl DeleteTaskService {
             .metastore
             .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await?
-            .deserialize_indexes_metadata()?
+            .deserialize_indexes_metadata()
+            .await?
             .into_iter()
             .map(|index_metadata| {
                 (

@@ -517,6 +517,8 @@ This section describes indexing settings for a given index.
 | `split_num_docs_target` | Target number of docs per split.   | `10000000` |
 | `merge_policy` | Describes the strategy used to trigger split merge operations (see [Merge policies](#merge-policies) section below). |
 | `resources.heap_size`      | Indexer heap size per source per index.   | `2000000000` |
+| `docstore_compression_level` | Level of compression used by zstd for the docstore. Lower values may increase ingest speed, at the cost of index size | `8` |
+| `docstore_blocksize` | Size of blocks in the docstore, in bytes. Lower values may improve doc retrieval speed, at the cost of index size | `1000000` |
 
 ### Merge policies
 
