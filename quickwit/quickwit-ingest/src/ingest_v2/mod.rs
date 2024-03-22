@@ -33,6 +33,7 @@ mod routing_table;
 mod state;
 mod workbench;
 
+use std::collections::HashMap;
 use std::ops::{Add, AddAssign};
 use std::time::Duration;
 use std::{env, fmt};
@@ -40,7 +41,6 @@ use std::{env, fmt};
 pub use broadcast::{setup_local_shards_update_listener, LocalShardsUpdate, ShardInfo, ShardInfos};
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
-use fnv::FnvHashMap;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
@@ -138,7 +138,7 @@ impl DocBatchV2Builder {
 /// Helper struct to build an [`IngestRequestV2`].
 #[derive(Debug, Default)]
 pub struct IngestRequestV2Builder {
-    per_index_id_doc_batch_builders: FnvHashMap<IndexId, DocBatchV2Builder>,
+    per_index_id_doc_batch_builders: HashMap<IndexId, DocBatchV2Builder>,
 }
 
 impl IngestRequestV2Builder {

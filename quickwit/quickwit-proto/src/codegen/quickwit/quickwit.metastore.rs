@@ -34,8 +34,14 @@ pub struct ListIndexesMetadataRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadataResponse {
-    #[prost(string, tag = "1")]
-    pub indexes_metadata_serialized_json: ::prost::alloc::string::String,
+    /// Deprecated (v0.9.0), use `indexes_metadata_json_zstd` instead.
+    #[prost(string, optional, tag = "1")]
+    pub indexes_metadata_json_opt: ::core::option::Option<
+        ::prost::alloc::string::String,
+    >,
+    /// A JSON serialized then ZSTD compressed list of `IndexMetadata`: `Vec<IndexMetadata> | JSON | ZSTD`.
+    #[prost(bytes = "bytes", tag = "2")]
+    pub indexes_metadata_json_zstd: ::prost::bytes::Bytes,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

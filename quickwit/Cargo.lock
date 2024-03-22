@@ -4629,7 +4629,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=67ebba3#67ebba3c3ce155d8c1199224943b9c3dd0f47a98"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=4e79e11#4e79e11007b6c9fc3d3965beefe33e1ffcf641d3"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -5913,7 +5913,6 @@ dependencies = [
  "dyn-clone",
  "fail",
  "flume",
- "fnv",
  "futures",
  "http 0.2.12",
  "hyper 0.14.28",
@@ -6101,6 +6100,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bytes",
  "bytesize",
  "dotenv",
  "futures",
@@ -7981,7 +7981,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.22.0-dev"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=67ebba3#67ebba3c3ce155d8c1199224943b9c3dd0f47a98"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=4e79e11#4e79e11007b6c9fc3d3965beefe33e1ffcf641d3"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -8034,7 +8034,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=67ebba3#67ebba3c3ce155d8c1199224943b9c3dd0f47a98"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=4e79e11#4e79e11007b6c9fc3d3965beefe33e1ffcf641d3"
 dependencies = [
  "bitpacking",
 ]
@@ -8042,7 +8042,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=67ebba3#67ebba3c3ce155d8c1199224943b9c3dd0f47a98"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=4e79e11#4e79e11007b6c9fc3d3965beefe33e1ffcf641d3"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -8057,7 +8057,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=67ebba3#67ebba3c3ce155d8c1199224943b9c3dd0f47a98"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=4e79e11#4e79e11007b6c9fc3d3965beefe33e1ffcf641d3"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -8080,7 +8080,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.21.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=67ebba3#67ebba3c3ce155d8c1199224943b9c3dd0f47a98"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=4e79e11#4e79e11007b6c9fc3d3965beefe33e1ffcf641d3"
 dependencies = [
  "nom",
 ]
@@ -8088,7 +8088,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=67ebba3#67ebba3c3ce155d8c1199224943b9c3dd0f47a98"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=4e79e11#4e79e11007b6c9fc3d3965beefe33e1ffcf641d3"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -8099,7 +8099,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=67ebba3#67ebba3c3ce155d8c1199224943b9c3dd0f47a98"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=4e79e11#4e79e11007b6c9fc3d3965beefe33e1ffcf641d3"
 dependencies = [
  "murmurhash32",
  "rand_distr",
@@ -8109,7 +8109,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=67ebba3#67ebba3c3ce155d8c1199224943b9c3dd0f47a98"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=4e79e11#4e79e11007b6c9fc3d3965beefe33e1ffcf641d3"
 dependencies = [
  "serde",
 ]

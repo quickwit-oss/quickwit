@@ -22,6 +22,7 @@ use std::iter::once;
 use std::ops::RangeInclusive;
 
 use bytesize::ByteSize;
+#[cfg(feature = "failpoints")]
 use fail::fail_point;
 use mrecordlog::error::{AppendError, DeleteQueueError};
 use quickwit_proto::ingest::DocBatchV2;
@@ -54,19 +55,25 @@ pub(super) async fn append_non_empty_doc_batch(
             .docs()
             .map(|doc| MRecord::Doc(doc).encode())
             .chain(once(MRecord::Commit.encode()));
+
+        #[cfg(feature = "failpoints")]
         fail_point!("ingester:append_records", |_| {
             let io_error = io::Error::from(io::ErrorKind::PermissionDenied);
             Err(AppendDocBatchError::Io(io_error))
         });
+
         mrecordlog
             .append_records(queue_id, None, encoded_mrecords)
             .await
     } else {
         let encoded_mrecords = doc_batch.docs().map(|doc| MRecord::Doc(doc).encode());
+
+        #[cfg(feature = "failpoints")]
         fail_point!("ingester:append_records", |_| {
             let io_error = io::Error::from(io::ErrorKind::PermissionDenied);
             Err(AppendDocBatchError::Io(io_error))
         });
+
         mrecordlog
             .append_records(queue_id, None, encoded_mrecords)
             .await
@@ -203,10 +210,13 @@ mod tests {
         assert_eq!(position, Position::offset(2u64));
     }
 
-    // This test should be run manually and independently of other tests with the `fail/failpoints`
-    // feature enabled.
+    // This test should be run manually and independently of other tests with the `failpoints`
+    // feature enabled:
+    // ```sh
+    // cargo test --manifest-path quickwit/Cargo.toml -p quickwit-ingest --features failpoints -- test_append_non_empty_doc_batch_io_error
+    // ```
+    #[cfg(feature = "failpoints")]
     #[tokio::test]
-    #[ignore]
     async fn test_append_non_empty_doc_batch_io_error() {
         let scenario = fail::FailScenario::setup();
         fail::cfg("ingester:append_records", "return").unwrap();

@@ -1021,7 +1021,8 @@ pub async fn root_search(
     let indexes_metadata: Vec<IndexMetadata> = metastore
         .list_indexes_metadata(list_indexes_metadatas_request)
         .await?
-        .deserialize_indexes_metadata()?;
+        .deserialize_indexes_metadata()
+        .await?;
 
     check_all_index_metadata_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
 
@@ -2249,10 +2250,9 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(move |_indexes_metadata_request| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         mock_metastore
             .expect_list_splits()
@@ -2347,10 +2347,9 @@ mod tests {
         metastore
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         metastore
             .expect_list_splits()
@@ -2416,10 +2415,9 @@ mod tests {
         metastore
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
@@ -2513,10 +2511,9 @@ mod tests {
         metastore
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
@@ -2694,10 +2691,9 @@ mod tests {
         metastore
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
@@ -2869,10 +2865,9 @@ mod tests {
         metastore
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
@@ -2990,10 +2985,9 @@ mod tests {
         metastore
             .expect_list_indexes_metadata()
             .returning(move |_indexes_metadata_request| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
@@ -3121,10 +3115,9 @@ mod tests {
         metastore
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         metastore
             .expect_list_splits()
@@ -3201,10 +3194,9 @@ mod tests {
         metastore
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![MockSplitBuilder::new("split1")
@@ -3264,10 +3256,9 @@ mod tests {
         metastore
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![MockSplitBuilder::new("split1")
@@ -3353,10 +3344,9 @@ mod tests {
         metastore
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![MockSplitBuilder::new("split1")
@@ -3425,10 +3415,9 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         mock_metastore
             .expect_list_splits()
@@ -3511,10 +3500,9 @@ mod tests {
         metastore
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![MockSplitBuilder::new("split1")
@@ -3556,10 +3544,9 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
         mock_metastore
             .expect_list_splits()
@@ -3774,10 +3761,7 @@ mod tests {
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 let indexes_metadata = vec![index_metadata.clone(), index_metadata_2.clone()];
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
             });
         metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
@@ -3958,10 +3942,7 @@ mod tests {
             .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 let indexes_metadata = vec![index_metadata.clone(), index_metadata_2.clone()];
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
             });
         metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
@@ -4152,12 +4133,11 @@ mod tests {
             move |list_indexes_metadata_request: ListIndexesMetadataRequest| {
                 let index_id_patterns = list_indexes_metadata_request.index_id_patterns;
                 assert_eq!(&index_id_patterns, &["test-index-*".to_string()]);
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata_1,
                     index_metadata_2,
                     index_metadata_3,
-                ])
-                .unwrap())
+                ]))
             },
         );
         metastore
