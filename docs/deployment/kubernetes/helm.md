@@ -1,5 +1,5 @@
 ---
-title: Kubernetes
+title: Helm
 sidebar_position: 1
 ---
 
