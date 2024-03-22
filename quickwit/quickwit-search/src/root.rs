@@ -604,10 +604,7 @@ fn is_metadata_count_request(request: &SearchRequest) -> bool {
     if request.start_timestamp.is_some() || request.end_timestamp.is_some() {
         return false;
     }
-    if request.aggregation_request.is_some()
-        || !request.snippet_fields.is_empty()
-        || request.search_after.is_some()
-    {
+    if request.aggregation_request.is_some() || !request.snippet_fields.is_empty() {
         return false;
     }
     true
