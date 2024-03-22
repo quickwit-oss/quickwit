@@ -31,6 +31,7 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use mrecordlog::error::CreateQueueError;
 use quickwit_cluster::Cluster;
+use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -968,6 +969,19 @@ impl IngesterService for Ingester {
         &mut self,
         persist_request: PersistRequest,
     ) -> IngestV2Result<PersistResponse> {
+        // If the request is local, the amount of memory it occupies is already
+        // accounted for in the router.
+        let request_size_bytes = persist_request
+            .subrequests
+            .iter()
+            .flat_map(|subrequest| match &subrequest.doc_batch {
+                Some(doc_batch) if doc_batch.doc_buffer.is_unique() => Some(doc_batch.num_bytes()),
+                _ => None,
+            })
+            .sum::<usize>();
+        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingester_persist);
+        gauge_guard.add(request_size_bytes as i64);
+
         self.persist_inner(persist_request).await
     }
 

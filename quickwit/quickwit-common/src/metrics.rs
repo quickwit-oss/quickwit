@@ -254,6 +254,8 @@ impl Default for MemoryMetrics {
 pub struct InFlightDataGauges {
     pub rest_server: IntGauge,
     pub ingest_router: IntGauge,
+    pub ingester_persist: IntGauge,
+    pub ingester_replicate: IntGauge,
     pub wal: IntGauge,
     pub fetch_stream: IntGauge,
     pub multi_fetch_stream: IntGauge,
@@ -275,6 +277,8 @@ impl Default for InFlightDataGauges {
         Self {
             rest_server: in_flight_gauge_vec.with_label_values(["rest_server"]),
             ingest_router: in_flight_gauge_vec.with_label_values(["ingest_router"]),
+            ingester_persist: in_flight_gauge_vec.with_label_values(["ingester_persist"]),
+            ingester_replicate: in_flight_gauge_vec.with_label_values(["ingester_replicate"]),
             wal: in_flight_gauge_vec.with_label_values(["wal"]),
             fetch_stream: in_flight_gauge_vec.with_label_values(["fetch_stream"]),
             multi_fetch_stream: in_flight_gauge_vec.with_label_values(["multi_fetch_stream"]),
