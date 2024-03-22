@@ -31,6 +31,7 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use mrecordlog::error::CreateQueueError;
 use quickwit_cluster::Cluster;
+use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -968,6 +969,16 @@ impl IngesterService for Ingester {
         &mut self,
         persist_request: PersistRequest,
     ) -> IngestV2Result<PersistResponse> {
+        // If the request is local, the amount of memory it occupies is already
+        // accounted for in the router.
+        let request_size_bytes = if persist_request.is_local {
+            0
+        } else {
+            persist_request.num_bytes()
+        };
+        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingester_persist);
+        gauge_guard.add(request_size_bytes as i64);
+
         self.persist_inner(persist_request).await
     }
 
@@ -1500,6 +1511,7 @@ mod tests {
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-110", "test-doc-111"])),
                 },
             ],
+            is_local: false,
         };
         let persist_response = ingester.persist(persist_request).await.unwrap();
         assert_eq!(persist_response.leader_id, "test-ingester");
@@ -1567,6 +1579,7 @@ mod tests {
             leader_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Force as i32,
             subrequests: Vec::new(),
+            is_local: false,
         };
         let persist_response = ingester.persist(persist_request).await.unwrap();
         assert_eq!(persist_response.leader_id, "test-ingester");
@@ -1583,6 +1596,7 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: None,
             }],
+            is_local: false,
         };
 
         let init_shards_request = InitShardsRequest {
@@ -1661,6 +1675,7 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
             }],
+            is_local: false,
         };
         let persist_response = ingester.persist(persist_request).await.unwrap();
         assert_eq!(persist_response.leader_id, "test-ingester");
@@ -1707,6 +1722,7 @@ mod tests {
         let persist_request = PersistRequest {
             leader_id: "test-ingester".to_string(),
             commit_type: CommitTypeV2::Force as i32,
+            is_local: false,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
@@ -1801,6 +1817,7 @@ mod tests {
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-110", "test-doc-111"])),
                 },
             ],
+            is_local: false,
         };
         let persist_response = leader.persist(persist_request).await.unwrap();
         assert_eq!(persist_response.leader_id, "test-leader");
@@ -1987,6 +2004,7 @@ mod tests {
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-110", "test-doc-111"])),
                 },
             ],
+            is_local: false,
         };
         let persist_response = leader.persist(persist_request).await.unwrap();
         assert_eq!(persist_response.leader_id, "test-leader");
@@ -2095,6 +2113,7 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
             }],
+            is_local: false,
         };
         let persist_response = ingester.persist(persist_request).await.unwrap();
         assert_eq!(persist_response.leader_id, "test-ingester");
@@ -2161,6 +2180,7 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
             }],
+            is_local: false,
         };
         let persist_response = ingester.persist(persist_request).await.unwrap();
         assert_eq!(persist_response.leader_id, "test-ingester");
@@ -2229,6 +2249,7 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
             }],
+            is_local: false,
         };
         let persist_response = ingester.persist(persist_request).await.unwrap();
         assert_eq!(persist_response.leader_id, "test-ingester");

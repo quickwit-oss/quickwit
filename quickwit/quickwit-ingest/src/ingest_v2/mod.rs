@@ -236,7 +236,7 @@ mod tests {
         let doc_batch = doc_batch_builder.build().unwrap();
 
         assert_eq!(doc_batch.num_docs(), 2);
-        assert_eq!(doc_batch.num_bytes(), 13);
+        assert_eq!(doc_batch.num_bytes(), 21);
         assert_eq!(doc_batch.doc_lengths, [7, 6]);
         assert_eq!(doc_batch.doc_buffer, Bytes::from(&b"Hello, World!"[..]));
     }
@@ -278,7 +278,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .num_bytes(),
-            13
+            21
         );
         assert_eq!(
             ingest_request.subrequests[0]
@@ -313,7 +313,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .num_bytes(),
-            12
+            20
         );
         assert_eq!(
             ingest_request.subrequests[1]
@@ -345,6 +345,6 @@ mod tests {
             doc_buffer: vec![0u8; 100].into(),
             doc_lengths: vec![10, 20, 30],
         };
-        assert_eq!(estimate_size(&doc_batch), ByteSize(106));
+        assert_eq!(estimate_size(&doc_batch), ByteSize(118));
     }
 }

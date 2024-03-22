@@ -72,6 +72,7 @@ message PersistRequest {
   string leader_id = 1;
   quickwit.ingest.CommitTypeV2 commit_type = 3;
   repeated PersistSubrequest subrequests = 4;
+  bool is_local = 6;
 }
 
 message PersistSubrequest {

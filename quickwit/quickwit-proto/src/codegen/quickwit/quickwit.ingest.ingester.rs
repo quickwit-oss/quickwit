@@ -30,6 +30,8 @@ pub struct PersistRequest {
     pub commit_type: i32,
     #[prost(message, repeated, tag = "4")]
     pub subrequests: ::prost::alloc::vec::Vec<PersistSubrequest>,
+    #[prost(bool, tag = "6")]
+    pub is_local: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

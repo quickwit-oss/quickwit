@@ -106,7 +106,7 @@ impl DocBatchV2 {
     }
 
     pub fn num_bytes(&self) -> usize {
-        self.doc_buffer.len()
+        self.doc_buffer.len() + self.doc_lengths.len() * 4
     }
 
     pub fn num_docs(&self) -> usize {

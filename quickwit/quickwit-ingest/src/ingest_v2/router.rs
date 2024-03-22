@@ -357,6 +357,7 @@ impl IngestRouter {
 
         for (leader_id, subrequests) in per_leader_persist_subrequests {
             let leader_id: NodeId = leader_id.clone();
+            let is_local = leader_id == self.self_node_id;
             let subrequest_ids: Vec<SubrequestId> = subrequests
                 .iter()
                 .map(|subrequest| subrequest.subrequest_id)
@@ -373,6 +374,7 @@ impl IngestRouter {
                 leader_id: leader_id.into(),
                 subrequests,
                 commit_type: commit_type as i32,
+                is_local,
             };
             let persist_future = async move {
                 let persist_result = tokio::time::timeout(
@@ -444,6 +446,7 @@ impl IngestRouterService for IngestRouter {
 
         let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingest_router);
         gauge_guard.add(request_size_bytes as i64);
+
         let _permit = self
             .ingest_semaphore
             .clone()

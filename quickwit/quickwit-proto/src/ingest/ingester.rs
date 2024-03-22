@@ -123,6 +123,16 @@ impl OpenFetchStreamRequest {
     }
 }
 
+impl PersistRequest {
+    pub fn num_bytes(&self) -> usize {
+        self.subrequests
+            .iter()
+            .flat_map(|subrequest| &subrequest.doc_batch)
+            .map(|doc_batch| doc_batch.num_bytes())
+            .sum()
+    }
+}
+
 impl PersistSubrequest {
     pub fn shard_id(&self) -> &ShardId {
         self.shard_id
@@ -218,6 +228,16 @@ impl AckReplicationMessage {
                 replicate_response,
             )),
         }
+    }
+}
+
+impl ReplicateRequest {
+    pub fn num_bytes(&self) -> usize {
+        self.subrequests
+            .iter()
+            .flat_map(|subrequest| &subrequest.doc_batch)
+            .map(|doc_batch| doc_batch.num_bytes())
+            .sum()
     }
 }
 
