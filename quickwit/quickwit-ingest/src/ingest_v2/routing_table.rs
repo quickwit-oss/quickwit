@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::hash_map::Entry;
+use std::collections::hash_map::{Entry, OccupiedEntry};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -275,8 +275,8 @@ impl RoutingTableEntry {
         }
     }
 
-    /// Shards the shards identified by their shard IDs.
-    fn delete_shards(&mut self, index_uid: &IndexUid, shard_ids: &[ShardId]) {
+    /// Deletes the shards identified by their shard IDs.
+    fn delete_shards_by_id(&mut self, index_uid: &IndexUid, shard_ids: &[ShardId]) {
         // If the shard table was just recently updated with shards for a new index UID, then we can
         // safely discard this request.
         if self.index_uid != *index_uid {
@@ -306,6 +306,22 @@ impl RoutingTableEntry {
                 shards.retain(|shard| shard.shard_state != ShardState::Unspecified);
             }
         }
+    }
+
+    /// Deletes the shards.
+    fn delete_shards_by_leader_id(&mut self, index_uid: &IndexUid, leader_id: &NodeId) {
+        // If the shard table was just recently updated with shards for a new index UID, then we can
+        // safely discard this request.
+        if self.index_uid != *index_uid {
+            return;
+        }
+        for shards in [&mut self.local_shards, &mut self.remote_shards] {
+            shards.retain(|shard| shard.leader_id != *leader_id);
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.local_shards.is_empty() && self.remote_shards.is_empty()
     }
 
     #[cfg(test)]
@@ -439,23 +455,61 @@ impl RoutingTable {
         }
     }
 
-    /// Deletes the targeted shards.
-    pub fn delete_shards(
+    pub fn delete_shards_by_id(
         &mut self,
         index_uid: &IndexUid,
         source_id: impl Into<SourceId>,
         shard_ids: &[ShardId],
-    ) {
+    ) -> Option<(IndexUid, SourceId)> {
         let key = (index_uid.index_id.clone(), source_id.into());
-        if let Some(entry) = self.table.get_mut(&key) {
-            entry.delete_shards(index_uid, shard_ids);
+
+        if let Entry::Occupied(mut occupied_entry) = self.table.entry(key) {
+            occupied_entry
+                .get_mut()
+                .delete_shards_by_id(index_uid, shard_ids);
+
+            return delete_entry_if_empty(occupied_entry, index_uid);
         }
+        None
+    }
+
+    pub fn delete_shards_by_leader_id(
+        &mut self,
+        index_uid: &IndexUid,
+        source_id: impl Into<SourceId>,
+        leader_id: &NodeId,
+    ) -> Option<(IndexUid, SourceId)> {
+        let key = (index_uid.index_id.clone(), source_id.into());
+        if let Entry::Occupied(mut occupied_entry) = self.table.entry(key) {
+            occupied_entry
+                .get_mut()
+                .delete_shards_by_leader_id(index_uid, leader_id);
+
+            return delete_entry_if_empty(occupied_entry, index_uid);
+        }
+        None
     }
 
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.table.len()
     }
+}
+
+fn delete_entry_if_empty(
+    occupied_entry: OccupiedEntry<(IndexId, SourceId), RoutingTableEntry>,
+    index_uid: &IndexUid,
+) -> Option<(IndexUid, SourceId)> {
+    if occupied_entry.get().is_empty() && occupied_entry.get().index_uid == *index_uid {
+        let table_entry = occupied_entry.remove();
+        info!(
+            index_uid=%table_entry.index_uid,
+            source_id=%table_entry.source_id,
+            "deleted routing table entry"
+        );
+        return Some((table_entry.index_uid, table_entry.source_id));
+    }
+    None
 }
 
 #[cfg(test)]
@@ -951,8 +1005,8 @@ mod tests {
         let source_id: SourceId = "test-source".into();
 
         let mut table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
-        table_entry.delete_shards(&index_uid, &[]);
-        table_entry.delete_shards(&index_uid, &[ShardId::from(1)]);
+        table_entry.delete_shards_by_id(&index_uid, &[]);
+        table_entry.delete_shards_by_id(&index_uid, &[ShardId::from(1)]);
         assert!(table_entry.local_shards.is_empty());
         assert!(table_entry.remote_shards.is_empty());
 
@@ -1008,7 +1062,7 @@ mod tests {
             ],
             remote_round_robin_idx: AtomicUsize::default(),
         };
-        table_entry.delete_shards(
+        table_entry.delete_shards_by_id(
             &index_uid,
             &[
                 ShardId::from(1),
