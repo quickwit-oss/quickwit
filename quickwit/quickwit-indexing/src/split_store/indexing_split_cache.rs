@@ -17,40 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-// The Local Split Store is a local cache used to improve the performance of indexing nodes.
-// Its purpose is simple: when a new split is freshly created, it is usely merged
-// very rapidly after.
-//
-// In order to prevent this merge to force its download, we store it in the
-// `LocalSplitStore`. This store is just a cache: a cache miss is acceptable and
-// just means that the split will be redownloaded.
-//
-// The local split store eviction policy however, is rather uncommon.
-// On our happy path, a split is stored into the cache, and is then used only once
-// to undergo a merge.
-//
-// For this reason, we simply offer a way to `move splits into the cache`,
-// and `move splits out of the cache`. A split is removed from the split store
-// after its first access.
-//
-// Of course a failed merge could require accessing a given split more than once. In that
-// case the split will be downloaded again.
-//
-// The cache size is limited by 3 things:
-// - a maximum number of splits as defined in the `SplitStoreQuota`.
-// - a maximum number of bytes as defined in the `SplitStoreQuota`.
-// - finally, we evict older splits to make sure that the newest split and the oldest
-// split only differ by at most `SPLIT_MAX_AGE`.
-//
-// The point of this final rule invariant is to make sure that the disk space will be
-// if the cache is NOT under pressure but some splits are actually useless.
-//
-// When adding a new split into the cache, if adding the split would break one of the following
-// limit, we simply remove split one by one starting by the oldest first, until the split
-// can be added.
-
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -64,7 +31,7 @@ use quickwit_storage::StorageResult;
 use tantivy::directory::MmapDirectory;
 use tantivy::Directory;
 use tokio::sync::Mutex;
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 use ulid::Ulid;
 
 use super::SplitStoreQuota;
@@ -107,6 +74,7 @@ async fn num_bytes_in_folder(directory_path: &Path) -> io::Result<ByteSize> {
 ///
 /// In order to save the cost of an extra write, we store them in the form
 /// of a directory and the splits are built on the file upon upload.
+#[derive(Debug, Copy, Clone)]
 struct SplitFolder {
     split_id: Ulid,
     num_bytes: ByteSize,
@@ -138,30 +106,119 @@ fn split_id_from_split_folder(dir_path: &Path) -> Option<&str> {
     dir_path.file_name()?.to_str()?.strip_suffix(".split")
 }
 
-pub struct LocalSplitStore {
-    inner: Mutex<InnerLocalSplitStore>,
+/// The `IndexingSplitCache` is a local cache used to improve the performance of indexing nodes.
+/// Its purpose is simple: when a new split is freshly created, it is usely merged
+/// very rapidly after.
+///
+/// In order to prevent this merge to force its download, we store it in the
+/// `IndexingSplitCache`. This store is just a cache: a cache miss is acceptable and
+/// just means that the split will be redownloaded.
+///
+/// The indexing split cache eviction policy however, is rather uncommon.
+/// On our happy path, a split is stored into the cache, and is then used only once
+/// to undergo a merge.
+///
+/// For this reason, we simply offer a way to `move splits into the cache`,
+/// and `move splits out of the cache`. A split is removed from the split store
+/// after its first access.
+///
+/// Of course a failed merge could require accessing a given split more than once. In that
+/// case the split will be downloaded again.
+///
+/// The cache size is limited by 3 things:
+/// - a maximum number of splits as defined in the `SplitStoreQuota`.
+/// - a maximum number of bytes as defined in the `SplitStoreQuota`.
+/// - finally, we evict older splits to make sure that the newest split and the oldest
+/// split only differ by at most `SPLIT_MAX_AGE`.
+///
+/// The point of this final rule invariant is to make sure that the disk space will be
+/// released if the cache is NOT under pressure but some splits are actually useless.
+///
+/// When adding a new split into the cache, if adding the split would break one of the following
+/// limit, we simply remove split one by one starting by the oldest first, until the split
+/// can be added.
+
+pub struct IndexingSplitCache {
+    inner: Mutex<InnerSplitCache>,
 }
 
-struct InnerLocalSplitStore {
+struct InnerSplitCache {
+    split_registry: SplitFolderRegistry,
+    split_store_folder: PathBuf,
+}
+
+struct SplitFolderRegistry {
     /// Splits owned by the local split store, which reside in the split_store_folder.
-    /// SplitId -> SplitFolder
-    split_folders: HashMap<Ulid, SplitFolder>,
-    /// Binary heap of split ids.
-    /// The binary heap is used for eviction.
     ///
     /// Splits ids are generated using ULID, so that they are sorted
     /// according to their creation date.
+    ///
     /// We evict the oldest split first. (Note this is not an LRU strategy
     /// because we do not care about the last access time, but we only
     /// consider the creation time.)
-    split_ids: BinaryHeap<Reverse<Ulid>>,
-    /// The root folder where all data is moved into.
-    split_store_folder: PathBuf,
-    /// The split store space quota shared among all indexing split stores.
-    split_store_space_quota: SplitStoreQuota,
+    split_folders: BTreeMap<Ulid, ByteSize>,
+    /// The split store quota shared among all indexing split stores.
+    split_store_quota: SplitStoreQuota,
 }
 
-impl InnerLocalSplitStore {
+impl SplitFolderRegistry {
+    pub fn with_quota(split_store_quota: SplitStoreQuota) -> SplitFolderRegistry {
+        SplitFolderRegistry {
+            split_folders: BTreeMap::default(),
+            split_store_quota,
+        }
+    }
+
+    /// Returns an iterator over the split folders sorted by ULID.
+    #[cfg(any(test, feature = "testsuite"))]
+    fn iter(&self) -> impl Iterator<Item = SplitFolder> + '_ {
+        self.split_folders
+            .iter()
+            .map(|(&split_id, &num_bytes)| SplitFolder {
+                split_id,
+                num_bytes,
+            })
+    }
+
+    // Inserting the same split_folder with a different number of bytes panics.
+    fn insert(&mut self, split_folder: SplitFolder) {
+        if let Some(previous) = self
+            .split_folders
+            .insert(split_folder.split_id, split_folder.num_bytes)
+        {
+            assert_eq!(previous, split_folder.num_bytes);
+        }
+        self.split_store_quota.add_split(split_folder.num_bytes);
+    }
+
+    /// Returns true if the split was indeed present in the registry
+    fn remove(&mut self, split_id: Ulid) -> bool {
+        let Some(num_bytes) = self.split_folders.remove(&split_id) else {
+            return false;
+        };
+        self.split_store_quota.remove_split(num_bytes);
+        true
+    }
+
+    /// Returns the oldest split (oldest in the sense of the ULID = creation time).
+    fn oldest_split(&self) -> Option<Ulid> {
+        let (split_id, _) = self.split_folders.first_key_value()?;
+        Some(*split_id)
+    }
+
+    /// Removes the oldest split.
+    fn pop_oldest(&mut self) -> Option<Ulid> {
+        let oldest_split_id = self.oldest_split()?;
+        assert!(self.remove(oldest_split_id));
+        Some(oldest_split_id)
+    }
+
+    fn quota(&self) -> &SplitStoreQuota {
+        &self.split_store_quota
+    }
+}
+
+impl InnerSplitCache {
     /// Moves a split within the store to an external folder.
     ///
     /// Returns `None` if the split is not available in the cache.
@@ -170,14 +227,39 @@ impl InnerLocalSplitStore {
         split_id: Ulid,
         to_folder: &Path,
     ) -> StorageResult<Option<PathBuf>> {
-        let Some(split_folder) = self.split_folders.remove(&split_id) else {
+        if !self.split_registry.remove(split_id) {
+            // The split is simply not in cache.
             return Ok(None);
         };
         let from_path = self.split_path(split_id);
         let to_full_path = to_folder.join(from_path.file_name().unwrap());
-        tokio::fs::rename(&from_path, &to_full_path).await?;
-        self.split_store_space_quota
-            .remove_split(split_folder.num_bytes);
+
+        // We voluntarily use a non async operation:
+        // A rename is supposed to be short, and we want to keep this operation
+        // as transactional as possible: we don't want our task to be cancelled in the middle
+        // of an inconsistent state.
+        if let Err(io_err) = std::fs::rename(&from_path, &to_full_path) {
+            // We do not simply rely on the `io::ErrorKind::NotFound` here
+            // because it could be about the destination and no the origin.
+            if let Ok(false) = from_path.try_exists() {
+                // This could happen if some files have been manually deleted from the FS
+                // for instance.
+                //
+                // No catastrophy here.
+                warn!(from_path=%from_path.display(), to_full_path=%to_full_path.display(), error=%io_err, "split somehow missing from local split cache");
+            } else {
+                // At this point, we are probably in an inconsistent state.
+                // The split has been removed from our registry but the files are still in the cache
+                // directory.
+                error!(from_path=%from_path.display(), to_full_path=%to_full_path.display(), error=%io_err, "failed to move split directory out of cache");
+                // Let's attempt to repair consistency of our indexing split cache
+                // by removing the now dangling split directory.
+                if let Err(io_err) = tokio::fs::remove_dir(&from_path).await {
+                    error!(from_path=%from_path.display(), to_full_path=%to_full_path.display(), error=%io_err, "failed to remove dangling split directory from local split cache");
+                }
+            }
+            return Err(From::from(io_err));
+        }
         Ok(Some(to_full_path))
     }
 
@@ -192,19 +274,11 @@ impl InnerLocalSplitStore {
     /// # Panics
     /// Panics if there are no remaining splits.
     async fn evict_one_split(&mut self) -> io::Result<()> {
-        let split_folder = loop {
-            let split_id = self
-                .split_ids
-                .pop()
-                .expect("No remaining split to remove")
-                .0;
-            if let Some(split_folder) = self.split_folders.remove(&split_id) {
-                break split_folder;
-            }
-        };
-        self.split_store_space_quota
-            .remove_split(split_folder.num_bytes);
-        tokio::fs::remove_dir_all(&self.split_path(split_folder.split_id)).await?;
+        let evicted_split = self
+            .split_registry
+            .pop_oldest()
+            .expect("No remaining split to remove");
+        tokio::fs::remove_dir_all(&self.split_path(evicted_split)).await?;
         Ok(())
     }
 
@@ -230,8 +304,8 @@ impl InnerLocalSplitStore {
 
     /// Removes all splits that have a creation date older than `limit`.
     async fn remove_splits_older_than_limit(&mut self, limit: SystemTime) -> io::Result<()> {
-        while let Some(split_id) = self.split_ids.peek() {
-            if split_id.0.datetime() >= limit {
+        while let Some(split_id) = self.split_registry.oldest_split() {
+            if split_id.datetime() >= limit {
                 break;
             }
             self.evict_one_split().await?;
@@ -244,12 +318,13 @@ impl InnerLocalSplitStore {
     /// return true and record split , if the split should be moved into the cache.
     async fn make_room_and_record_split(&mut self, split_folder: SplitFolder) -> io::Result<bool> {
         // We don't accept splits that are too large.
-        if split_folder.num_bytes > self.split_store_space_quota.max_num_bytes() {
+        if split_folder.num_bytes > self.split_registry.quota().max_num_bytes() {
             return Ok(false);
         }
 
         while !self
-            .split_store_space_quota
+            .split_registry
+            .quota()
             .can_fit_split(split_folder.num_bytes)
         {
             self.evict_one_split().await?;
@@ -260,24 +335,19 @@ impl InnerLocalSplitStore {
                 .await?;
         }
 
-        self.split_store_space_quota
-            .add_split(split_folder.num_bytes);
-        let split_id = split_folder.split_id;
-        self.split_folders.insert(split_id, split_folder);
-        self.split_ids.push(Reverse(split_id));
+        self.split_registry.insert(split_folder);
         Ok(true)
     }
 }
 
-impl LocalSplitStore {
-    pub fn no_caching() -> LocalSplitStore {
-        let inner = Mutex::new(InnerLocalSplitStore {
-            split_folders: Default::default(),
+impl IndexingSplitCache {
+    pub fn no_caching() -> IndexingSplitCache {
+        let split_store_space_quota = SplitStoreQuota::no_caching();
+        let inner = Mutex::new(InnerSplitCache {
+            split_registry: SplitFolderRegistry::with_quota(split_store_space_quota),
             split_store_folder: PathBuf::from("no_caching"),
-            split_store_space_quota: SplitStoreQuota::no_caching(),
-            split_ids: BinaryHeap::default(),
         });
-        LocalSplitStore { inner }
+        IndexingSplitCache { inner }
     }
 
     /// Try to open an existing local split store directory.
@@ -294,7 +364,7 @@ impl LocalSplitStore {
     pub async fn open(
         split_store_folder: PathBuf,
         space_quota: SplitStoreQuota,
-    ) -> anyhow::Result<LocalSplitStore> {
+    ) -> anyhow::Result<IndexingSplitCache> {
         tokio::fs::create_dir_all(&split_store_folder)
             .await
             .context("failed to create the split cache directory")?;
@@ -326,11 +396,9 @@ impl LocalSplitStore {
             split_folders.push(split_folder);
         }
 
-        let mut inner_local_split_store = InnerLocalSplitStore {
+        let mut inner_local_split_store = InnerSplitCache {
             split_store_folder: split_store_folder.clone(),
-            split_store_space_quota: space_quota,
-            split_folders: HashMap::default(),
-            split_ids: BinaryHeap::default(),
+            split_registry: SplitFolderRegistry::with_quota(space_quota),
         };
 
         split_folders.sort_by_key(SplitFolder::creation_time);
@@ -347,19 +415,19 @@ impl LocalSplitStore {
             }
         }
 
-        Ok(LocalSplitStore {
+        Ok(IndexingSplitCache {
             inner: Mutex::new(inner_local_split_store),
         })
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub async fn inspect(&self) -> HashMap<String, ByteSize> {
+    pub async fn inspect(&self) -> std::collections::HashMap<String, ByteSize> {
         self.inner
             .lock()
             .await
-            .split_folders
+            .split_registry
             .iter()
-            .map(|(k, split_folder)| (k.to_string(), split_folder.num_bytes))
+            .map(|split_folder| (split_folder.split_id.to_string(), split_folder.num_bytes))
             .collect()
     }
 
@@ -429,7 +497,7 @@ mod tests {
     use tokio::fs;
     use ulid::Ulid;
 
-    use crate::split_store::{LocalSplitStore, SplitStoreQuota};
+    use crate::split_store::{IndexingSplitCache, SplitStoreQuota};
 
     async fn create_fake_split(
         split_cache_path: &Path,
@@ -451,7 +519,8 @@ mod tests {
         create_fake_split(temp_dir.path(), split_id2, 13).await?;
         let split_store_space_quota = SplitStoreQuota::default();
         let split_store =
-            LocalSplitStore::open(temp_dir.path().to_path_buf(), split_store_space_quota).await?;
+            IndexingSplitCache::open(temp_dir.path().to_path_buf(), split_store_space_quota)
+                .await?;
         let cache_content = split_store.inspect().await;
         assert_eq!(cache_content.len(), 2);
         assert_eq!(cache_content.get(split_id1).cloned(), Some(ByteSize(15)));
@@ -476,7 +545,7 @@ mod tests {
             .unwrap(); // 2
         let split_store_space_quota = SplitStoreQuota::new(2, ByteSize::kb(1));
         let local_split_store =
-            LocalSplitStore::open(dir.path().to_path_buf(), split_store_space_quota)
+            IndexingSplitCache::open(dir.path().to_path_buf(), split_store_space_quota)
                 .await
                 .unwrap();
         assert_eq!(local_split_store.inspect().await.len(), 2);
@@ -499,7 +568,7 @@ mod tests {
             .unwrap(); // 2
         let split_store_space_quota = SplitStoreQuota::new(6, ByteSize(61));
         let local_split_store =
-            LocalSplitStore::open(dir.path().to_path_buf(), split_store_space_quota)
+            IndexingSplitCache::open(dir.path().to_path_buf(), split_store_space_quota)
                 .await
                 .unwrap();
         let cache_content = local_split_store.inspect().await;
@@ -528,7 +597,7 @@ mod tests {
             .unwrap();
         let split_store_space_quota = SplitStoreQuota::new(6, ByteSize(100));
         let local_split_store =
-            LocalSplitStore::open(dir.path().to_path_buf(), split_store_space_quota)
+            IndexingSplitCache::open(dir.path().to_path_buf(), split_store_space_quota)
                 .await
                 .unwrap();
         let cache_content = local_split_store.inspect().await;
@@ -573,7 +642,7 @@ mod tests {
         tokio::fs::create_dir(&split_dir).await.unwrap();
         let cache_dir = tempfile::tempdir().unwrap();
         let quota = SplitStoreQuota::default();
-        let local_store = LocalSplitStore::open(cache_dir.path().to_path_buf(), quota)
+        let local_store = IndexingSplitCache::open(cache_dir.path().to_path_buf(), quota)
             .await
             .unwrap();
         assert!(split_dir.try_exists().unwrap());
