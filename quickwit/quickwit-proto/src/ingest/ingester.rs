@@ -221,6 +221,16 @@ impl AckReplicationMessage {
     }
 }
 
+impl ReplicateRequest {
+    pub fn num_bytes(&self) -> usize {
+        self.subrequests
+            .iter()
+            .flat_map(|subrequest| &subrequest.doc_batch)
+            .map(|doc_batch| doc_batch.num_bytes())
+            .sum()
+    }
+}
+
 impl ReplicateSubrequest {
     pub fn shard_id(&self) -> &ShardId {
         self.shard_id
