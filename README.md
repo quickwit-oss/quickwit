@@ -26,7 +26,7 @@ Cloud-native search engine for observability (logs, traces, and soon metrics!). 
 </h4>
 <br/>
 
-<b>We just released Quickwit 0.7! Read the [blog post](https://quickwit.io/blog/quickwit-0.7) to learn about the latest powerful features!</b>
+<b>We just released Quickwit 0.8! Read the [blog post](https://quickwit.io/blog/quickwit-0.8) to learn about the latest powerful features!</b>
 
 ### **Quickwit is the fastest search engine on cloud storage. It's the perfect fit for observability use cases**
 
@@ -94,16 +94,14 @@ Cloud-native search engine for observability (logs, traces, and soon metrics!). 
 
 # 🔮 Roadmap
 
-- [Quickwit 0.7 - Q3 2023](https://github.com/orgs/quickwit-oss/projects/8)
-  - Distributed and replicated native ingestion
-  - Local storage caching
-
 - [Long-term roadmap](ROADMAP.md)
   - Live tail
   - SQL
   - Security (TLS, authentication, RBAC)
   - Alerting
   - [and more...](ROADMAP.md)
+
+details are also available on the [github projects](https://github.com/orgs/quickwit-oss/projects?query=is%3Aopen)
 
 # 🙋 FAQ
 
