@@ -134,10 +134,7 @@ where E: sqlx::Executor<'a, Database = Postgres> {
     )
     .bind(index_id)
     .fetch_optional(executor)
-    .await
-    .map_err(|error| MetastoreError::Db {
-        message: error.to_string(),
-    })?;
+    .await?;
     Ok(index_opt)
 }
 
@@ -159,10 +156,7 @@ where
     )
     .bind(index_uid.to_string())
     .fetch_optional(executor)
-    .await
-    .map_err(|error| MetastoreError::Db {
-        message: error.to_string(),
-    })?;
+    .await?;
     Ok(index_opt)
 }
 
@@ -1033,10 +1027,7 @@ impl MetastoreService for PostgresqlMetastore {
         )
         .bind(request.index_uid().to_string())
         .fetch_one(&self.connection_pool)
-        .await
-        .map_err(|error| MetastoreError::Db {
-            message: error.to_string(),
-        })?;
+        .await?;
 
         Ok(LastDeleteOpstampResponse::new(max_opstamp as u64))
     }
