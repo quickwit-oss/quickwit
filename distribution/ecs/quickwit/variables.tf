@@ -13,6 +13,11 @@ variable "subnet_ids" {
 
 ## OPTIONAL VARIABLES
 
+variable "module_id" {
+  description = "Identifier for the module, e.g the stage. If not specified, a random string is generated."
+  default     = ""
+}
+
 variable "quickwit_ingress_cidr_blocks" {
   description = "CIDR blocks (private) that should have access to the Quickwit cluster"
   type        = list(string)
