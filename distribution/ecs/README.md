@@ -38,10 +38,19 @@ you are not already using NAT Gateways in the AZs where Quickwit will be
 deployed, you should probably push the Quickwit image to ECR and use ECR
 interface VPC endpoints instead (~$0.01/hour/AZ).
 
+When using the default image, you will quickly run into the Docker Hub rate
+limiting. We recommand pushing the Quickwit image to ECR and configure that as
+`quickwit_image`. Note that the architecture of the image that you push to ECR
+must match the `quickwit_cpu_architecture` variable (`ARM64` by default).
+
 Sidecar container and custom logging configurations can be configured using the
 variables `sidecar_container_definitions`, `sidecar_container_dependencies`,
 `log_configuration`, `enable_cloudwatch_logging`. A more concrete example can be
-found in the `./example/sidecar.tf` file.
+found in the `./example/logging.tf` file.
+
+You can also use sidecars to inject additional secrets as files. This can be
+useful for configuring sources such as Kafka. See `./exaple/kafka.tf` for an
+example.
 
 ## Running the example stack
 
@@ -76,7 +85,7 @@ The successful `apply` command should output the IP of the bastion EC2 instance.
 You can port forward Quickwit's search UI using:
 
 ```bash
-ssh -L -N 7280:searcher.quickwit:7280 -i {your-private-key-file} ubuntu@{bastion_ip}
+ssh -N -L 7280:searcher.quickwit:7280 -i {your-private-key-file} ubuntu@{bastion_ip}
 ```
 
 To ingest some example dataset, log into the bastion:

@@ -17,6 +17,12 @@ provider "aws" {
   }
 }
 
+# resource "aws_ecr_repository" "quickwit" {
+#   name                 = "quickwit"
+#   force_delete         = true
+#   image_tag_mutability = "MUTABLE"
+# }
+
 module "quickwit" {
   source                       = "../quickwit"
   vpc_id                       = module.vpc.vpc_id
@@ -27,7 +33,7 @@ module "quickwit" {
 
   # quickwit_index_s3_prefix  = "my-bucket/my-prefix"
   # quickwit_domain           = "quickwit"
-  # quickwit_image            = "quickwit/quickwit:latest"
+  # quickwit_image = aws_ecr_repository.quickwit.repository_url
   # quickwit_cpu_architecture = "ARM64"
 
   # quickwit_indexer = {
@@ -63,10 +69,15 @@ module "quickwit" {
   #   multi_az       = false
   # }
 
+  ## Example logging configuration (see logging.tf)
   # sidecar_container_definitions  = local.example_sidecar_container_definitions
   # sidecar_container_dependencies = local.example_sidecar_container_dependencies
   # log_configuration              = local.example_log_configuration
-  # enable_cloudwatch_logging      = true
+  # enable_cloudwatch_logging      = false
+
+  ## Example Kafka key injection (see kafka.tf)
+  # sidecar_container_definitions  = local.example_kafka_sidecar_container_definitions
+  # sidecar_container_dependencies = local.example_kafka_sidecar_container_dependencies
 }
 
 

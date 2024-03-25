@@ -1,3 +1,5 @@
+# Example configuration for pushing ECS logs to Datadog
+
 locals {
   example_datadog_api_key_arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:your-dd-api-key-secret"
   example_log_configuration = {

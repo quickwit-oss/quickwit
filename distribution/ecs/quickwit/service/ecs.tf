@@ -57,6 +57,11 @@ module "quickwit_service" {
         {
           sourceVolume  = "quickwit-data-vol"
           containerPath = local.quickwit_data_dir
+        },
+        # A volume that can be used to inject secrets as files.
+        {
+          sourceVolume  = "quickwit-keys"
+          containerPath = "/quickwit/keys"
         }
       ]
 
@@ -110,6 +115,9 @@ module "quickwit_service" {
   volume = [
     {
       name = "quickwit-data-vol"
+    },
+    {
+      name = "quickwit-keys"
     }
   ]
 
