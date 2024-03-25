@@ -349,3 +349,6 @@ sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921
 
 [profile.dev]
 debug = false
+
+[profile.release]
+lto = "thin"
