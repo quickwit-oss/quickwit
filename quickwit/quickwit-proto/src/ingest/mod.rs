@@ -277,6 +277,7 @@ impl From<PersistFailureReason> for IngestFailureReason {
             PersistFailureReason::ShardClosed => IngestFailureReason::NoShardsAvailable,
             PersistFailureReason::ResourceExhausted => IngestFailureReason::ResourceExhausted,
             PersistFailureReason::RateLimited => IngestFailureReason::RateLimited,
+            PersistFailureReason::Timeout => IngestFailureReason::Timeout,
         }
     }
 }

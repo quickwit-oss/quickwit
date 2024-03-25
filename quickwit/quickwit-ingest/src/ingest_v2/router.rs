@@ -404,14 +404,14 @@ impl IngestRouter {
         &mut self,
         ingest_request: IngestRequestV2,
         max_num_attempts: usize,
-    ) -> IngestResponseV2 {
+    ) -> IngestV2Result<IngestResponseV2> {
         let commit_type = ingest_request.commit_type();
         let mut workbench = IngestWorkbench::new(ingest_request.subrequests, max_num_attempts);
         while !workbench.is_complete() {
             workbench.new_attempt();
             self.batch_persist(&mut workbench, commit_type).await;
         }
-        workbench.into_ingest_response()
+        workbench.into_ingest_result()
     }
 
     async fn ingest_timeout(
@@ -430,7 +430,7 @@ impl IngestRouter {
                 INGEST_REQUEST_TIMEOUT.as_secs()
             );
             IngestV2Error::Timeout(message)
-        })
+        })?
     }
 }
 
@@ -1217,7 +1217,7 @@ mod tests {
                 subrequest_ids: vec![0],
             };
             let persist_result =
-                Err::<_, IngestV2Error>(IngestV2Error::Timeout("timeout error".to_string()));
+                Err::<_, IngestV2Error>(IngestV2Error::Internal("internal error".to_string()));
             (persist_summary, persist_result)
         });
         router
@@ -1227,7 +1227,7 @@ mod tests {
         let subworkbench = workbench.subworkbenches.get(&0).unwrap();
         assert!(matches!(
             &subworkbench.last_failure_opt,
-            &Some(SubworkbenchFailure::Internal(ref msg)) if msg.contains("timed out")
+            Some(SubworkbenchFailure::Internal(msg)) if msg.contains("internal")
         ));
 
         assert!(!workbench
