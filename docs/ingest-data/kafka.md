@@ -176,6 +176,48 @@ curl -XPOST -H 'Content-Type: application/json' 'http://localhost:7280/api/v1/gh
 }'
 ```
 
+
+## Secured Kafka connection (optional)
+
+The Quickwit Kafka source supports SSL and SASL authentication. This is
+particularly useful when consuming an external Kafka service.
+
+### SSL configuration
+
+```yaml
+version: 0.8
+source_id: kafka-source-ssl
+source_type: kafka
+num_pipelines: 2
+params:
+  topic: gh-archive
+  client_params:
+    bootstrap.servers: "your-kafka-broker.com"
+    security.protocol: "SSL"
+    ssl.ca.location: "/path/to/ca.pem"
+    ssl.certificate.location: "/path/to/service.cert"
+    ssl.key.location: "/path/to/service.key"
+```
+
+### SASL configuration
+
+```yaml
+version: 0.8
+source_id: kafka-source-sasl
+source_type: kafka
+num_pipelines: 2
+params:
+  topic: gh-archive
+  client_params:
+    bootstrap.servers: "your-kafka-broker.com"
+    ssl.ca.location: "/path/to/ca.pem"
+    security.protocol: "SASL_SSL"
+    sasl.mechanisms: "SCRAM-SHA-256"
+    sasl.username: "your_sasl_username"
+    sasl.password: "your_sasl_password"
+```
+
+
 ## Tear down resources (optional)
 
 Let's delete the files and resources created for the purpose of this tutorial.
