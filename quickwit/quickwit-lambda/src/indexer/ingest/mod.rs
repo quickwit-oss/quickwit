@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod helpers;
+mod source_id;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -72,7 +73,8 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         args.input_format,
         &index_metadata,
         args.vrl_script,
-    )?;
+    )
+    .await?;
 
     let mut services = vec![QuickwitService::Indexer];
     if !*DISABLE_JANITOR {

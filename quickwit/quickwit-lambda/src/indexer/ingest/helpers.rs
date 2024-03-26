@@ -17,14 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
 use chitchat::transport::ChannelTransport;
 use chitchat::FailureDetectorConfig;
-use chrono::{LocalResult, TimeZone, Utc};
+use chrono::Utc;
 use quickwit_actors::{ActorHandle, Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::pubsub::EventBroker;
@@ -58,11 +58,11 @@ use quickwit_storage::StorageResolver;
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tracing::{debug, info, instrument};
 
+use super::source_id::{
+    create_lambda_source_id, filter_prunable_lambda_source_ids, is_lambda_source_id,
+};
 use crate::environment::INDEX_ID;
 use crate::indexer::environment::{DISABLE_JANITOR, DISABLE_MERGE, INDEX_CONFIG_URI};
-
-const LAMBDA_SOURCE_ID_PREFIX: &str = "_ingest-lambda-source-";
-const MAX_LAMBDA_SOURCE_PARTITIONS: usize = 100;
 
 /// The indexing service needs to update its cluster chitchat state so that the control plane is
 /// aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
@@ -137,8 +137,9 @@ pub(super) async fn send_telemetry() {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand).await;
 }
 
-pub(super) fn configure_source(
-    metastore: &MetastoreServiceClient,
+/// Convert the incomming file path to a source config and save it to the metastore
+pub(super) async fn configure_source(
+    metastore: &mut MetastoreServiceClient,
     input_path: PathBuf,
     input_format: SourceInputFormat,
     index_metadata: &IndexMetadata,
@@ -150,20 +151,18 @@ pub(super) fn configure_source(
     let existing_sources_for_file: Vec<_> = index_metadata
         .sources
         .iter()
-        .filter(|(src_id, _)| src_id.starts_with(LAMBDA_SOURCE_ID_PREFIX))
+        .filter(|(src_id, _)| is_lambda_source_id(src_id))
         .map(|(src_id, src_config)| {
             if let SourceConfig {
-                source_id,
                 source_params: SourceParams::File(file_params),
                 ..
             } = src_config
             {
-                Ok((
-                    src_id,
-                    file_params
-                        .filepath
-                        .context("Found Lambda source without filepath")?,
-                ))
+                let filepath = file_params
+                    .filepath
+                    .as_ref()
+                    .context("Found Lambda file source without filepath")?;
+                Ok((src_id, filepath))
             } else {
                 bail!("Found Lambda source with non-file source type");
             }
@@ -172,11 +171,13 @@ pub(super) fn configure_source(
 
     let source_id = match existing_sources_for_file.len() {
         0 => {
-            metastore.add_source(AddSourceRequest {
-                index_uid: Some(index_metadata.index_uid.clone()),
-                source_config_json: serde_json::to_string(&existing_sources_for_file[0].1)?,
-            });
-            format!("{}{}", LAMBDA_SOURCE_ID_PREFIX, Utc::now().timestamp())
+            metastore
+                .add_source(AddSourceRequest {
+                    index_uid: Some(index_metadata.index_uid.clone()),
+                    source_config_json: serde_json::to_string(&existing_sources_for_file[0].1)?,
+                })
+                .await?;
+            create_lambda_source_id(Utc::now())
         }
         1 => existing_sources_for_file[0].0.clone(),
         n => bail!(
@@ -301,6 +302,7 @@ pub(super) async fn spawn_services(
     Ok((indexing_service_handle, janitor_service_opt))
 }
 
+/// Spawn and split an indexing pipeline
 pub(super) async fn spawn_pipelines(
     indexing_server_mailbox: &Mailbox<IndexingService>,
     source_config: SourceConfig,
@@ -323,42 +325,24 @@ pub(super) async fn spawn_pipelines(
     Ok((indexing_pipeline_handle, merge_pipeline_handle))
 }
 
-/// Delete Lambda source files if they have more than 12 hours and there are more than 20 of them.
+/// Delete Lambda file sources if they are old and there are too many of them
 pub(super) async fn prune_file_sources(
     metastore: &mut MetastoreServiceClient,
     index_metadata: IndexMetadata,
 ) -> anyhow::Result<()> {
-    let src_timestamps = index_metadata
-        .sources
-        .keys()
-        .filter(|src_id| src_id.starts_with(LAMBDA_SOURCE_ID_PREFIX))
-        .map(|src_id| {
-            let ts = src_id[LAMBDA_SOURCE_ID_PREFIX.len()..]
-                .parse::<i64>()
-                .context("Lambda source id doesn't contain a UNIX timestamp")?;
-            if let LocalResult::Single(parsed_ts) = Utc.timestamp_opt(ts, 0) {
-                Ok((parsed_ts, src_id))
-            } else {
-                bail!("Lambda source id contains an invalid UNIX timestamp")
-            }
-        })
-        .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
-
-    src_timestamps
-        .into_iter()
-        .rev()
-        .skip(20)
-        .filter(|(ts, _)| (Utc::now() - *ts).num_hours() > 12)
-        .for_each(|(_, src_id)| {
-            metastore.delete_source(DeleteSourceRequest {
+    let prunable_sources = filter_prunable_lambda_source_ids(index_metadata.sources.keys())?;
+    for src_id in prunable_sources {
+        metastore
+            .delete_source(DeleteSourceRequest {
                 index_uid: Some(index_metadata.index_uid.clone()),
                 source_id: src_id.clone(),
-            });
-        });
-
+            })
+            .await?;
+    }
     Ok(())
 }
 
+/// Observe the merge pipeline until there are no more ongoing merges
 pub(super) async fn wait_for_merges(
     merge_pipeline_handle: ActorHandle<MergePipeline>,
 ) -> anyhow::Result<()> {
