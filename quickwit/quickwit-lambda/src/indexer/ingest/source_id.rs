@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 use anyhow::{bail, Context};
 use chrono::{DateTime, LocalResult, TimeZone, Utc};
 
-const LAMBDA_SOURCE_ID_PREFIX: &str = "_ingest-lambda-source-";
+const LAMBDA_SOURCE_ID_PREFIX: &str = "ingest-lambda-source-";
 const MIN_FILE_SOURCES_TO_KEEP: usize = 20;
 const MIN_FILE_SOURCE_RETENTION_HOURS: usize = 12;
 
