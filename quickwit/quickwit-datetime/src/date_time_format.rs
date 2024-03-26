@@ -84,6 +84,9 @@ impl StrptimeParser {
             parsed.set_minute(0u8);
             parsed.set_second(0u8);
         }
+        if parsed.year().is_none() {
+            parsed.set_year(OffsetDateTime::now_utc().year());
+        }
         let date_time = parsed.try_into()?;
         Ok(date_time)
     }
