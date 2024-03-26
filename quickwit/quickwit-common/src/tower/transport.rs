@@ -134,6 +134,19 @@ where K: Hash + Eq + Send + Sync + Clone + 'static
     pub fn connection_keys_watcher(&self) -> watch::Receiver<HashSet<K>> {
         self.connection_keys_rx.clone()
     }
+
+    pub async fn wait_for(
+        &self,
+        timeout_after: Duration,
+        predicate: impl Fn(&HashSet<K>) -> bool,
+    ) -> bool {
+        tokio::time::timeout(
+            timeout_after,
+            self.connection_keys_watcher().wait_for(predicate),
+        )
+        .await
+        .is_ok()
+    }
 }
 
 /// `tower::buffer::Buffer` and `tower::balance::Balance` lazily polls their inner services. As a

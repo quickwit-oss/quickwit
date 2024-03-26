@@ -95,6 +95,7 @@ pub struct ControlPlane {
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
     rebuild_plan_debouncer: Debouncer,
+    is_ready: bool,
 }
 
 impl fmt::Debug for ControlPlane {
@@ -130,6 +131,7 @@ impl ControlPlane {
                 metastore: metastore.clone(),
                 model: Default::default(),
                 rebuild_plan_debouncer: Debouncer::new(REBUILD_PLAN_COOLDOWN_PERIOD),
+                is_ready: false,
             }
         })
     }
@@ -141,6 +143,7 @@ pub struct ControlPlaneObservableState {
     pub ingest_controller: IngestControllerStats,
     pub num_indexes: usize,
     pub num_sources: usize,
+    pub is_ready: bool,
 }
 
 #[async_trait]
@@ -157,6 +160,7 @@ impl Actor for ControlPlane {
             ingest_controller: self.ingest_controller.stats,
             num_indexes: self.model.num_indexes(),
             num_sources: self.model.num_sources(),
+            is_ready: self.is_ready,
         }
     }
 
@@ -179,6 +183,7 @@ impl Actor for ControlPlane {
             .take()
             .expect("`initialize` should be called only once");
         spawn_watch_indexers_task(weak_mailbox, cluster_change_stream);
+        self.is_ready = true;
         Ok(())
     }
 }
