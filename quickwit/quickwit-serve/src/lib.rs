@@ -64,8 +64,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use quickwit_actors::{ActorExitStatus, Mailbox, SpawnContext, Universe};
 use quickwit_cluster::{
-    start_cluster_service, Cluster, ClusterChange, ClusterChangeStream, ClusterMember,
-    ListenerHandle,
+    start_cluster_service, Cluster, ClusterChange, ClusterChangeStream, ListenerHandle,
 };
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
@@ -206,14 +205,6 @@ struct QuickwitServices {
     _report_splits_subscription_handle_opt: Option<EventSubscriptionHandle>,
 }
 
-fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
-    members.iter().any(|member| {
-        member
-            .enabled_services
-            .contains(&QuickwitService::Metastore)
-    })
-}
-
 async fn balance_channel_for_service(
     cluster: &Cluster,
     service: QuickwitService,
@@ -330,17 +321,31 @@ async fn start_control_plane_if_needed(
             replication_factor,
         )
         .await?;
-        let server = ControlPlaneServiceClient::tower()
+        let control_plane_server = ControlPlaneServiceClient::tower()
             .stack_layer(CP_GRPC_SERVER_METRICS_LAYER.clone())
             .build_from_mailbox(control_plane_mailbox);
-        Ok(server)
+        Ok(control_plane_server)
     } else {
         let balance_channel =
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
-        let client = ControlPlaneServiceClient::tower()
+
+        // If the node is a metastore, we skip this check in order to avoid a deadlock.
+        if !node_config.is_service_enabled(QuickwitService::Metastore) {
+            info!("connecting to control plane");
+
+            if !balance_channel
+                .wait_for(Duration::from_secs(300), |connections| {
+                    !connections.is_empty()
+                })
+                .await
+            {
+                bail!("could not find control plane in the cluster");
+            }
+        }
+        let control_plane_client = ControlPlaneServiceClient::tower()
             .stack_layer(CP_GRPC_CLIENT_METRICS_LAYER.clone())
             .build_from_balance_channel(balance_channel, node_config.grpc_config.max_message_size);
-        Ok(client)
+        Ok(control_plane_client)
     }
 }
 
@@ -413,21 +418,19 @@ pub async fn serve_quickwit(
         if let Some(metastore_server) = &metastore_server_opt {
             metastore_server.clone()
         } else {
-            // Wait for a metastore service to be available for at most 5 minutes.
-            if cluster
-                .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(300))
-                .await
-                .is_err()
-            {
-                error!("no metastore service found among cluster members, stopping server");
-                bail!(
-                    "failed to start server: no metastore service was found among cluster \
-                     members. try running Quickwit with additional metastore service `quickwit \
-                     run --service metastore`"
-                )
-            }
+            info!("connecting to metastore");
+
             let balance_channel =
                 balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
+
+            if !balance_channel
+                .wait_for(Duration::from_secs(300), |connections| {
+                    !connections.is_empty()
+                })
+                .await
+            {
+                bail!("could not find any metastore node in the cluster");
+            }
             let layers = ServiceBuilder::new()
                 .layer(RetryLayer::new(RetryPolicy::default()))
                 .layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
@@ -963,7 +966,7 @@ async fn setup_control_plane(
         default_index_root_uri,
         replication_factor,
     };
-    let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+    let (control_plane_mailbox, _control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
         universe,
         cluster_config,
         self_node_id,
@@ -980,6 +983,15 @@ async fn setup_control_plane(
         .subscribe_without_timeout::<ShardPositionsUpdate>(subscriber)
         .forever();
 
+    tokio::time::timeout(
+        Duration::from_secs(300),
+        readiness_rx.wait_for(|readiness| *readiness),
+    )
+    .await
+    .context("control plane initialization timed out")?
+    .context("control plane was killled or quit")?;
+
+    info!("control plane is ready");
     Ok(control_plane_mailbox)
 }
 

@@ -55,6 +55,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::Serialize;
+use tokio::sync::watch;
 use tracing::{debug, error, info};
 
 use crate::debouncer::Debouncer;
@@ -95,6 +96,7 @@ pub struct ControlPlane {
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
     rebuild_plan_debouncer: Debouncer,
+    readiness_tx: watch::Sender<bool>,
 }
 
 impl fmt::Debug for ControlPlane {
@@ -112,26 +114,40 @@ impl ControlPlane {
         indexer_pool: IndexerPool,
         ingester_pool: IngesterPool,
         metastore: MetastoreServiceClient,
-    ) -> (Mailbox<Self>, ActorHandle<Supervisor<Self>>) {
-        universe.spawn_builder().supervise_fn(move || {
-            let cluster_id = cluster_config.cluster_id.clone();
-            let replication_factor = cluster_config.replication_factor;
+    ) -> (
+        Mailbox<Self>,
+        ActorHandle<Supervisor<Self>>,
+        watch::Receiver<bool>,
+    ) {
+        let (readiness_tx, readiness_rx) = watch::channel(false);
+        let (control_plane_mailbox, control_plane_handle) =
+            universe.spawn_builder().supervise_fn(move || {
+                let cluster_id = cluster_config.cluster_id.clone();
+                let replication_factor = cluster_config.replication_factor;
 
-            let indexing_scheduler =
-                IndexingScheduler::new(cluster_id, self_node_id.clone(), indexer_pool.clone());
-            let ingest_controller =
-                IngestController::new(metastore.clone(), ingester_pool.clone(), replication_factor);
+                let indexing_scheduler =
+                    IndexingScheduler::new(cluster_id, self_node_id.clone(), indexer_pool.clone());
+                let ingest_controller = IngestController::new(
+                    metastore.clone(),
+                    ingester_pool.clone(),
+                    replication_factor,
+                );
 
-            ControlPlane {
-                cluster_config: cluster_config.clone(),
-                cluster_change_stream_opt: Some(cluster_change_stream_factory.create()),
-                indexing_scheduler,
-                ingest_controller,
-                metastore: metastore.clone(),
-                model: Default::default(),
-                rebuild_plan_debouncer: Debouncer::new(REBUILD_PLAN_COOLDOWN_PERIOD),
-            }
-        })
+                let readiness_tx = readiness_tx.clone();
+                let _ = readiness_tx.send(false);
+
+                ControlPlane {
+                    cluster_config: cluster_config.clone(),
+                    cluster_change_stream_opt: Some(cluster_change_stream_factory.create()),
+                    indexing_scheduler,
+                    ingest_controller,
+                    metastore: metastore.clone(),
+                    model: Default::default(),
+                    rebuild_plan_debouncer: Debouncer::new(REBUILD_PLAN_COOLDOWN_PERIOD),
+                    readiness_tx,
+                }
+            });
+        (control_plane_mailbox, control_plane_handle, readiness_rx)
     }
 }
 
@@ -141,6 +157,7 @@ pub struct ControlPlaneObservableState {
     pub ingest_controller: IngestControllerStats,
     pub num_indexes: usize,
     pub num_sources: usize,
+    pub readiness: bool,
 }
 
 #[async_trait]
@@ -157,6 +174,7 @@ impl Actor for ControlPlane {
             ingest_controller: self.ingest_controller.stats,
             num_indexes: self.model.num_indexes(),
             num_sources: self.model.num_sources(),
+            readiness: *self.readiness_tx.borrow(),
         }
     }
 
@@ -179,6 +197,7 @@ impl Actor for ControlPlane {
             .take()
             .expect("`initialize` should be called only once");
         spawn_watch_indexers_task(weak_mailbox, cluster_change_stream);
+        let _ = self.readiness_tx.send(true);
         Ok(())
     }
 }
@@ -953,7 +972,7 @@ mod tests {
             .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
-        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             self_node_id,
@@ -996,7 +1015,7 @@ mod tests {
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
-        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             self_node_id,
@@ -1049,7 +1068,7 @@ mod tests {
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
-        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             self_node_id,
@@ -1111,7 +1130,7 @@ mod tests {
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
-        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             self_node_id,
@@ -1167,7 +1186,7 @@ mod tests {
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
-        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             self_node_id,
@@ -1236,7 +1255,7 @@ mod tests {
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
-        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             self_node_id,
@@ -1328,7 +1347,7 @@ mod tests {
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
-        let (control_plane_mailbox, control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             node_id,
@@ -1337,6 +1356,14 @@ mod tests {
             ingester_pool,
             MetastoreServiceClient::from(mock_metastore),
         );
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            readiness_rx.wait_for(|readiness| *readiness),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
         let index_config = IndexConfig::for_test("test-index", "ram:///test-index");
         let create_index_request =
             CreateIndexRequest::try_from_index_config(&index_config).unwrap();
@@ -1468,7 +1495,7 @@ mod tests {
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
-        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             node_id,
@@ -1606,7 +1633,7 @@ mod tests {
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
-        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             node_id,
@@ -1690,7 +1717,7 @@ mod tests {
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
-        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             node_id,
@@ -1806,7 +1833,7 @@ mod tests {
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
-        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             node_id,
@@ -1899,7 +1926,7 @@ mod tests {
         );
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
-        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             node_id,
@@ -1982,7 +2009,7 @@ mod tests {
             })
         });
 
-        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             node_id,
@@ -2068,7 +2095,7 @@ mod tests {
             .expect_list_indexes_metadata()
             .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
         let metastore = MetastoreServiceClient::from(mock_metastore);
-        let (_control_plane_mailbox, control_plane_handle) = ControlPlane::spawn(
+        let (_control_plane_mailbox, control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
             node_id,

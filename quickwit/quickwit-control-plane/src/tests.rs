@@ -143,7 +143,7 @@ async fn start_control_plane(
     cluster_config.cluster_id = cluster.cluster_id().to_string();
 
     let self_node_id: NodeId = cluster.self_node_id().to_string().into();
-    let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+    let (control_plane_mailbox, _control_plane_handle, _is_ready_rx) = ControlPlane::spawn(
         universe,
         cluster_config,
         self_node_id,
