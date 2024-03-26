@@ -321,13 +321,18 @@ pub(super) async fn spawn_pipelines(
     Ok((indexing_pipeline_handle, merge_pipeline_handle))
 }
 
-/// Delete Lambda file sources if they are old and there are too many of them
+/// Delete old Lambda file sources
 pub(super) async fn prune_file_sources(
     metastore: &mut MetastoreServiceClient,
     index_metadata: IndexMetadata,
 ) -> anyhow::Result<()> {
     let prunable_sources: Vec<_> =
         filter_prunable_lambda_source_ids(index_metadata.sources.keys())?.collect();
+    info!(
+        existing = index_metadata.sources.len(),
+        prunable = prunable_sources.len(),
+        "prune file sources"
+    );
     for src_id in prunable_sources {
         metastore
             .delete_source(DeleteSourceRequest {

@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeMap;
-
 use anyhow::{bail, Context};
 use chrono::{DateTime, LocalResult, TimeZone, Utc};
 
@@ -26,7 +24,7 @@ const LAMBDA_SOURCE_ID_PREFIX: &str = "ingest-lambda-source-";
 
 /// This duration should be large enough to prevent repeated notification
 /// deliveries from causing duplicates
-const FILE_SOURCE_RETENTION_HOURS: usize = 6;
+const FILE_SOURCE_RETENTION_SECONDS: i64 = 6 * 3600;
 
 /// Create a source id for a Lambda file source, with the provided timestamp encoded in it
 pub(crate) fn create_lambda_source_id(time: DateTime<Utc>) -> String {
@@ -44,20 +42,19 @@ fn parse_source_id_timestamp(source_id: &str) -> anyhow::Result<DateTime<Utc>> {
     }
 }
 
-/// Parse the provided source ids and return those where the file source is
-/// older than `MIN_FILE_SOURCE_RETENTION_HOURS` hours
+/// Parse the provided source ids and return those where it's a Lambda file
+/// source older than `FILE_SOURCE_RETENTION_SECONDS`
 pub(crate) fn filter_prunable_lambda_source_ids<'a>(
     source_ids: impl Iterator<Item = &'a String>,
 ) -> anyhow::Result<impl Iterator<Item = &'a String>> {
-    let src_timestamps = source_ids
-        .filter(|src_id| src_id.starts_with(LAMBDA_SOURCE_ID_PREFIX))
+    let src_timestamps: Vec<_> = source_ids
+        .filter(|src_id| is_lambda_source_id(src_id))
         .map(|src_id| Ok((parse_source_id_timestamp(src_id)?, src_id)))
-        .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
+        .collect::<anyhow::Result<_>>()?;
 
     let prunable_sources = src_timestamps
         .into_iter()
-        .rev()
-        .filter(|(ts, _)| (Utc::now() - *ts).num_hours() > FILE_SOURCE_RETENTION_HOURS as i64)
+        .filter(|(ts, _)| (Utc::now() - *ts).num_seconds() > FILE_SOURCE_RETENTION_SECONDS)
         .map(|(_, src_id)| src_id);
 
     Ok(prunable_sources)
@@ -103,24 +100,14 @@ mod tests {
     fn test_filter_old() {
         let source_ids: Vec<String> = (0..5)
             .map(|i| {
-                let hours_ago = i * FILE_SOURCE_RETENTION_HOURS * 2;
-                Utc::now() - chrono::Duration::try_hours(hours_ago as i64).unwrap()
+                let secs_ago = i * FILE_SOURCE_RETENTION_SECONDS * 2;
+                Utc::now() - chrono::Duration::try_seconds(secs_ago).unwrap()
             })
             .map(create_lambda_source_id)
             .collect();
 
-        // Prune source ids that happen to be from newest to oldest
+        // Prune source ids, only keeping the most recent one
         let prunable_sources = filter_prunable_lambda_source_ids(source_ids.iter())
-            .unwrap()
-            .collect::<HashSet<_>>();
-        assert_eq!(prunable_sources.len(), 4);
-        assert!(!prunable_sources.contains(&source_ids[0]));
-        for source_id in source_ids.iter().skip(1) {
-            assert!(prunable_sources.contains(source_id));
-        }
-
-        // Prune source ids that happen to be from oldest to newst
-        let prunable_sources = filter_prunable_lambda_source_ids(source_ids.iter().rev())
             .unwrap()
             .collect::<HashSet<_>>();
         assert_eq!(prunable_sources.len(), 4);
