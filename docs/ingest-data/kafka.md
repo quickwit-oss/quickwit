@@ -217,6 +217,16 @@ params:
     sasl.password: "your_sasl_password"
 ```
 
+:::note
+
+If you get the following error:
+
+```Client creation error: ssl.ca.location failed: error:05880002:x509 certificate routines::system lib```
+
+It usually means the path to the CA certificate is incorrect. Update the
+`ssl.ca.location` parameter accordingly.
+
+:::
 
 ## Tear down resources (optional)
 
