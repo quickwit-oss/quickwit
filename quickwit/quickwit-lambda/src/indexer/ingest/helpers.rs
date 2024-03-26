@@ -170,15 +170,7 @@ pub(super) async fn configure_source(
         .collect::<anyhow::Result<Vec<_>>>()?;
 
     let source_id = match existing_sources_for_file.len() {
-        0 => {
-            metastore
-                .add_source(AddSourceRequest {
-                    index_uid: Some(index_metadata.index_uid.clone()),
-                    source_config_json: serde_json::to_string(&existing_sources_for_file[0].1)?,
-                })
-                .await?;
-            create_lambda_source_id(Utc::now())
-        }
+        0 => create_lambda_source_id(Utc::now()),
         1 => existing_sources_for_file[0].0.clone(),
         n => bail!(
             "Found {} Lambda sources for file {:?}, expected at most 1",
@@ -187,14 +179,25 @@ pub(super) async fn configure_source(
         ),
     };
 
-    Ok(SourceConfig {
+    let src_config = SourceConfig {
         source_id,
         num_pipelines: NonZeroUsize::new(1).expect("1 is always non-zero."),
         enabled: true,
         source_params,
         transform_config,
         input_format,
-    })
+    };
+
+    if existing_sources_for_file.is_empty() {
+        metastore
+            .add_source(AddSourceRequest {
+                index_uid: Some(index_metadata.index_uid.clone()),
+                source_config_json: serde_json::to_string(&src_config)?,
+            })
+            .await?;
+    }
+
+    Ok(src_config)
 }
 
 /// Check if the index exists, creating or overwriting it if necessary
