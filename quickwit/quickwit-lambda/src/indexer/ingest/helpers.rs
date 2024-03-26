@@ -17,15 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
 use chitchat::transport::ChannelTransport;
 use chitchat::FailureDetectorConfig;
+use chrono::{LocalResult, TimeZone, Utc};
 use quickwit_actors::{ActorHandle, Mailbox, Universe};
-use quickwit_cli::run_index_checklist;
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
@@ -34,7 +34,7 @@ use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     load_index_config_from_user_config, ConfigFormat, IndexConfig, NodeConfig, SourceConfig,
-    SourceInputFormat, SourceParams, TransformConfig, CLI_SOURCE_ID,
+    SourceInputFormat, SourceParams, TransformConfig,
 };
 use quickwit_index_management::IndexService;
 use quickwit_indexing::actors::{
@@ -44,10 +44,13 @@ use quickwit_indexing::models::{DetachIndexingPipeline, DetachMergePipeline, Spa
 use quickwit_indexing::IndexingPipeline;
 use quickwit_ingest::IngesterPool;
 use quickwit_janitor::{start_janitor_service, JanitorService};
-use quickwit_metastore::CreateIndexRequestExt;
+use quickwit_metastore::{
+    CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadata, IndexMetadataResponseExt,
+};
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::metastore::{
-    CreateIndexRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
+    AddSourceRequest, CreateIndexRequest, DeleteSourceRequest, IndexMetadataRequest,
+    MetastoreError, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{NodeId, PipelineUid};
 use quickwit_search::SearchJobPlacer;
@@ -57,6 +60,9 @@ use tracing::{debug, info, instrument};
 
 use crate::environment::INDEX_ID;
 use crate::indexer::environment::{DISABLE_JANITOR, DISABLE_MERGE, INDEX_CONFIG_URI};
+
+const LAMBDA_SOURCE_ID_PREFIX: &str = "_ingest-lambda-source-";
+const MAX_LAMBDA_SOURCE_PARTITIONS: usize = 100;
 
 /// The indexing service needs to update its cluster chitchat state so that the control plane is
 /// aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
@@ -132,65 +138,111 @@ pub(super) async fn send_telemetry() {
 }
 
 pub(super) fn configure_source(
+    metastore: &MetastoreServiceClient,
     input_path: PathBuf,
     input_format: SourceInputFormat,
+    index_metadata: &IndexMetadata,
     vrl_script: Option<String>,
-) -> SourceConfig {
+) -> anyhow::Result<SourceConfig> {
     let source_params = SourceParams::file(input_path);
     let transform_config = vrl_script.map(|vrl_script| TransformConfig::new(vrl_script, None));
-    SourceConfig {
-        source_id: CLI_SOURCE_ID.to_string(),
+
+    let existing_sources_for_file: Vec<_> = index_metadata
+        .sources
+        .iter()
+        .filter(|(src_id, _)| src_id.starts_with(LAMBDA_SOURCE_ID_PREFIX))
+        .map(|(src_id, src_config)| {
+            if let SourceConfig {
+                source_id,
+                source_params: SourceParams::File(file_params),
+                ..
+            } = src_config
+            {
+                Ok((
+                    src_id,
+                    file_params
+                        .filepath
+                        .context("Found Lambda source without filepath")?,
+                ))
+            } else {
+                bail!("Found Lambda source with non-file source type");
+            }
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    let source_id = match existing_sources_for_file.len() {
+        0 => {
+            metastore.add_source(AddSourceRequest {
+                index_uid: Some(index_metadata.index_uid.clone()),
+                source_config_json: serde_json::to_string(&existing_sources_for_file[0].1)?,
+            });
+            format!("{}{}", LAMBDA_SOURCE_ID_PREFIX, Utc::now().timestamp())
+        }
+        1 => existing_sources_for_file[0].0.clone(),
+        n => bail!(
+            "Found {} Lambda sources for file {:?}, expected at most 1",
+            n,
+            existing_sources_for_file[0].1.as_path(),
+        ),
+    };
+
+    Ok(SourceConfig {
+        source_id,
         num_pipelines: NonZeroUsize::new(1).expect("1 is always non-zero."),
         enabled: true,
         source_params,
         transform_config,
         input_format,
-    }
+    })
 }
 
 /// Check if the index exists, creating or overwriting it if necessary
 pub(super) async fn init_index_if_necessary(
     metastore: &mut MetastoreServiceClient,
     storage_resolver: &StorageResolver,
-    source_config: &SourceConfig,
     default_index_root_uri: &Uri,
     overwrite: bool,
-) -> anyhow::Result<()> {
-    let checklist_result =
-        run_index_checklist(metastore, storage_resolver, &INDEX_ID, Some(source_config)).await;
-    if let Err(e) = checklist_result {
-        let is_not_found = e
-            .downcast_ref()
-            .is_some_and(|meta_error| matches!(meta_error, MetastoreError::NotFound(_)));
-        if !is_not_found {
-            bail!(e);
-        }
-        info!(
-            index_id = *INDEX_ID,
-            index_config_uri = *INDEX_CONFIG_URI,
-            "Index not found, creating it"
-        );
-        let index_config = load_index_config(storage_resolver, default_index_root_uri).await?;
-        if index_config.index_id != *INDEX_ID {
-            bail!(
-                "Expected index ID was {} but config file had {}",
-                *INDEX_ID,
-                index_config.index_id,
+) -> anyhow::Result<IndexMetadata> {
+    let metadata_result = metastore
+        .index_metadata(IndexMetadataRequest::for_index_id(INDEX_ID.clone()))
+        .await;
+    let metadata = match metadata_result {
+        Ok(_) if overwrite => {
+            info!(
+                index_id = *INDEX_ID,
+                "Overwrite enabled, clearing existing index",
             );
+            let mut index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
+            index_service.clear_index(&INDEX_ID).await?;
+            metastore
+                .index_metadata(IndexMetadataRequest::for_index_id(INDEX_ID.clone()))
+                .await?
+                .deserialize_index_metadata()?
         }
-        metastore
-            .create_index(CreateIndexRequest::try_from_index_config(&index_config)?)
-            .await?;
-        info!("index created");
-    } else if overwrite {
-        info!(
-            index_id = *INDEX_ID,
-            "Overwrite enabled, clearing existing index",
-        );
-        let mut index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
-        index_service.clear_index(&INDEX_ID).await?;
-    }
-    Ok(())
+        Ok(metadata_resp) => metadata_resp.deserialize_index_metadata()?,
+        Err(MetastoreError::NotFound(_)) => {
+            info!(
+                index_id = *INDEX_ID,
+                index_config_uri = *INDEX_CONFIG_URI,
+                "Index not found, creating it"
+            );
+            let index_config = load_index_config(storage_resolver, default_index_root_uri).await?;
+            if index_config.index_id != *INDEX_ID {
+                bail!(
+                    "Expected index ID was {} but config file had {}",
+                    *INDEX_ID,
+                    index_config.index_id,
+                );
+            }
+            let create_resp = metastore
+                .create_index(CreateIndexRequest::try_from_index_config(&index_config)?)
+                .await?;
+            info!("index created");
+            create_resp.deserialize_index_metadata()?
+        }
+        Err(e) => bail!(e),
+    };
+    Ok(metadata)
 }
 
 pub(super) async fn spawn_services(
@@ -269,6 +321,42 @@ pub(super) async fn spawn_pipelines(
         .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
     Ok((indexing_pipeline_handle, merge_pipeline_handle))
+}
+
+/// Delete Lambda source files if they have more than 12 hours and there are more than 20 of them.
+pub(super) async fn prune_file_sources(
+    metastore: &mut MetastoreServiceClient,
+    index_metadata: IndexMetadata,
+) -> anyhow::Result<()> {
+    let src_timestamps = index_metadata
+        .sources
+        .keys()
+        .filter(|src_id| src_id.starts_with(LAMBDA_SOURCE_ID_PREFIX))
+        .map(|src_id| {
+            let ts = src_id[LAMBDA_SOURCE_ID_PREFIX.len()..]
+                .parse::<i64>()
+                .context("Lambda source id doesn't contain a UNIX timestamp")?;
+            if let LocalResult::Single(parsed_ts) = Utc.timestamp_opt(ts, 0) {
+                Ok((parsed_ts, src_id))
+            } else {
+                bail!("Lambda source id contains an invalid UNIX timestamp")
+            }
+        })
+        .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
+
+    src_timestamps
+        .into_iter()
+        .rev()
+        .skip(20)
+        .filter(|(ts, _)| (Utc::now() - *ts).num_hours() > 12)
+        .for_each(|(_, src_id)| {
+            metastore.delete_source(DeleteSourceRequest {
+                index_uid: Some(index_metadata.index_uid.clone()),
+                source_id: src_id.clone(),
+            });
+        });
+
+    Ok(())
 }
 
 pub(super) async fn wait_for_merges(

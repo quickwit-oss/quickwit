@@ -38,7 +38,7 @@ use quickwit_indexing::models::IndexingStatistics;
 use tracing::{debug, info};
 
 use crate::indexer::environment::{CONFIGURATION_TEMPLATE, DISABLE_JANITOR};
-use crate::indexer::ingest::helpers::wait_for_merges;
+use crate::indexer::ingest::helpers::{prune_file_sources, wait_for_merges};
 use crate::utils::load_node_config;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -58,16 +58,21 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     let (config, storage_resolver, mut metastore) =
         load_node_config(CONFIGURATION_TEMPLATE).await?;
 
-    let source_config = configure_source(args.input_path, args.input_format, args.vrl_script);
-
-    init_index_if_necessary(
+    let index_metadata = init_index_if_necessary(
         &mut metastore,
         &storage_resolver,
-        &source_config,
         &config.default_index_root_uri,
         args.overwrite,
     )
     .await?;
+
+    let source_config = configure_source(
+        &mut metastore,
+        args.input_path,
+        args.input_format,
+        &index_metadata,
+        args.vrl_script,
+    )?;
 
     let mut services = vec![QuickwitService::Indexer];
     if !*DISABLE_JANITOR {
@@ -91,6 +96,8 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
 
     let (indexing_pipeline_handle, merge_pipeline_handle) =
         spawn_pipelines(indexing_service_handle.mailbox(), source_config).await?;
+
+    prune_file_sources(&mut metastore, index_metadata).await?;
 
     debug!("wait for indexing to complete");
     let statistics = start_statistics_reporting_loop(indexing_pipeline_handle, false).await?;
