@@ -85,13 +85,29 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_prunable_source_ids() {
-        assert!(
-            MIN_FILE_SOURCES_TO_KEEP > MIN_FILE_SOURCE_RETENTION_HOURS,
-            "This test dumbly assumes MIN_FILE_SOURCES_TO_KEEP > MIN_FILE_SOURCE_RETENTION_HOURS"
-        );
+    fn test_dont_filter_recent() {
+        let source_ids: Vec<String> = (0..MIN_FILE_SOURCES_TO_KEEP + 5)
+            .map(|i| {
+                // only recent timestamps
+                Utc::now() - chrono::Duration::try_seconds(i as i64).unwrap()
+            })
+            .map(create_lambda_source_id)
+            .collect();
+        let prunable = filter_prunable_lambda_source_ids(source_ids.iter())
+            .unwrap()
+            .count();
+        assert_eq!(prunable, 0);
+    }
+
+    #[test]
+    fn test_filter_old_but_keep_min_number() {
         let source_ids: Vec<String> = (0..MIN_FILE_SOURCES_TO_KEEP + 3)
-            .map(|i| Utc::now() - chrono::Duration::try_hours(i as i64).unwrap())
+            .map(|i| {
+                // old timestamps so that MIN_FILE_SOURCES_TO_KEEP is the limit
+                Utc::now()
+                    - chrono::Duration::try_hours(MIN_FILE_SOURCE_RETENTION_HOURS as i64).unwrap()
+                    - chrono::Duration::try_hours(i as i64).unwrap()
+            })
             .map(create_lambda_source_id)
             .collect();
 
