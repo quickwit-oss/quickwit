@@ -23,8 +23,10 @@ use anyhow::{bail, Context};
 use chrono::{DateTime, LocalResult, TimeZone, Utc};
 
 const LAMBDA_SOURCE_ID_PREFIX: &str = "ingest-lambda-source-";
-const MIN_FILE_SOURCES_TO_KEEP: usize = 20;
-const MIN_FILE_SOURCE_RETENTION_HOURS: usize = 12;
+
+/// This duration should be large enough to prevent repeated notification
+/// deliveries from causing duplicates
+const FILE_SOURCE_RETENTION_HOURS: usize = 6;
 
 /// Create a source id for a Lambda file source, with the provided timestamp encoded in it
 pub(crate) fn create_lambda_source_id(time: DateTime<Utc>) -> String {
@@ -42,9 +44,8 @@ fn parse_source_id_timestamp(source_id: &str) -> anyhow::Result<DateTime<Utc>> {
     }
 }
 
-/// Parse the provided source ids and return the ones that are prunable:
-/// - There are at least `MIN_FILE_SOURCES_TO_KEEP` Lambda file sources
-/// - The file source is older than `MIN_FILE_SOURCE_RETENTION_HOURS`` hours
+/// Parse the provided source ids and return those where the file source is
+/// older than `MIN_FILE_SOURCE_RETENTION_HOURS` hours
 pub(crate) fn filter_prunable_lambda_source_ids<'a>(
     source_ids: impl Iterator<Item = &'a String>,
 ) -> anyhow::Result<impl Iterator<Item = &'a String>> {
@@ -56,8 +57,7 @@ pub(crate) fn filter_prunable_lambda_source_ids<'a>(
     let prunable_sources = src_timestamps
         .into_iter()
         .rev()
-        .skip(MIN_FILE_SOURCES_TO_KEEP)
-        .filter(|(ts, _)| (Utc::now() - *ts).num_hours() > MIN_FILE_SOURCE_RETENTION_HOURS as i64)
+        .filter(|(ts, _)| (Utc::now() - *ts).num_hours() > FILE_SOURCE_RETENTION_HOURS as i64)
         .map(|(_, src_id)| src_id);
 
     Ok(prunable_sources)
@@ -86,7 +86,7 @@ mod tests {
 
     #[test]
     fn test_dont_filter_recent() {
-        let source_ids: Vec<String> = (0..MIN_FILE_SOURCES_TO_KEEP + 5)
+        let source_ids: Vec<String> = (0..20)
             .map(|i| {
                 // only recent timestamps
                 Utc::now() - chrono::Duration::try_seconds(i as i64).unwrap()
@@ -100,13 +100,11 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_old_but_keep_min_number() {
-        let source_ids: Vec<String> = (0..MIN_FILE_SOURCES_TO_KEEP + 3)
+    fn test_filter_old() {
+        let source_ids: Vec<String> = (0..5)
             .map(|i| {
-                // old timestamps so that MIN_FILE_SOURCES_TO_KEEP is the limit
-                Utc::now()
-                    - chrono::Duration::try_hours(MIN_FILE_SOURCE_RETENTION_HOURS as i64).unwrap()
-                    - chrono::Duration::try_hours(i as i64).unwrap()
+                let hours_ago = i * FILE_SOURCE_RETENTION_HOURS * 2;
+                Utc::now() - chrono::Duration::try_hours(hours_ago as i64).unwrap()
             })
             .map(create_lambda_source_id)
             .collect();
@@ -115,18 +113,20 @@ mod tests {
         let prunable_sources = filter_prunable_lambda_source_ids(source_ids.iter())
             .unwrap()
             .collect::<HashSet<_>>();
-        assert_eq!(prunable_sources.len(), 3);
-        for source_id in source_ids.iter().take(3) {
-            assert!(!prunable_sources.contains(source_id));
+        assert_eq!(prunable_sources.len(), 4);
+        assert!(!prunable_sources.contains(&source_ids[0]));
+        for source_id in source_ids.iter().skip(1) {
+            assert!(prunable_sources.contains(source_id));
         }
 
         // Prune source ids that happen to be from oldest to newst
         let prunable_sources = filter_prunable_lambda_source_ids(source_ids.iter().rev())
             .unwrap()
             .collect::<HashSet<_>>();
-        assert_eq!(prunable_sources.len(), 3);
-        for source_id in source_ids.iter().take(3) {
-            assert!(!prunable_sources.contains(source_id));
+        assert_eq!(prunable_sources.len(), 4);
+        assert!(!prunable_sources.contains(&source_ids[0]));
+        for source_id in source_ids.iter().skip(1) {
+            assert!(prunable_sources.contains(source_id));
         }
     }
 
