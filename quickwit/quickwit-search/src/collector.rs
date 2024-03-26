@@ -39,7 +39,7 @@ use tantivy::{DateTime, DocId, Score, SegmentOrdinal, SegmentReader, TantivyErro
 
 use crate::filters::{create_timestamp_filter_builder, TimestampFilter, TimestampFilterBuilder};
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector, Span};
-use crate::top_k_collector::{QuickwitSegmentTopKCollector, SearchAfterSegment};
+use crate::top_k_collector::{specialized_top_k_segment_collector, QuickwitSegmentTopKCollector};
 use crate::GlobalDocAddress;
 
 #[derive(Clone, Debug)]
@@ -157,7 +157,7 @@ impl SortingFieldExtractorComponent {
     /// Loads the fast field values for the given doc_ids in its u64 representation. The returned
     /// u64 representation maintains the ordering of the original value.
     #[inline]
-    fn extract_typed_sort_values_block(&self, doc_ids: &[DocId], values: &mut [Option<u64>]) {
+    pub fn extract_typed_sort_values_block(&self, doc_ids: &[DocId], values: &mut [Option<u64>]) {
         // In the collect block case we don't have scores to extract
         if let SortingFieldExtractorComponent::FastField { sort_column, .. } = self {
             let values = &mut values[..doc_ids.len()];
@@ -510,7 +510,7 @@ enum AggregationSegmentCollectors {
 /// Quickwit collector working at the scale of the segment.
 pub struct QuickwitSegmentCollector {
     timestamp_filter_opt: Option<TimestampFilter>,
-    segment_top_k_collector: Option<QuickwitSegmentTopKCollector>,
+    segment_top_k_collector: Option<Box<dyn QuickwitSegmentTopKCollector>>,
     aggregation: Option<AggregationSegmentCollectors>,
     num_hits: u64,
     // Caches for block fetching
@@ -538,7 +538,7 @@ pub(crate) struct SegmentPartialHit {
 }
 
 impl SegmentPartialHit {
-    fn into_partial_hit(
+    pub fn into_partial_hit(
         self,
         split_id: String,
         segment_ord: SegmentOrdinal,
@@ -654,20 +654,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
     fn harvest(self) -> Self::Fruit {
         let mut partial_hits: Vec<PartialHit> = Vec::new();
         if let Some(segment_top_k_collector) = self.segment_top_k_collector {
-            // TODO put that in a method of segment_top_k_collector
-            partial_hits = segment_top_k_collector
-                .top_k_hits
-                .finalize()
-                .into_iter()
-                .map(|segment_partial_hit: SegmentPartialHit| {
-                    segment_partial_hit.into_partial_hit(
-                        segment_top_k_collector.split_id.clone(),
-                        segment_top_k_collector.segment_ord,
-                        &segment_top_k_collector.score_extractor.first,
-                        &segment_top_k_collector.score_extractor.second,
-                    )
-                })
-                .collect();
+            partial_hits = segment_top_k_collector.get_top_k();
         }
 
         let intermediate_aggregation_result = match self.aggregation {
@@ -882,32 +869,20 @@ impl Collector for QuickwitCollector {
         };
         let score_extractor = get_score_extractor(&self.sort_by, segment_reader)?;
         let (order1, order2) = self.sort_by.sort_orders();
-        let sort_key_mapper = HitSortingMapper { order1, order2 };
-        // Precompute the order for search_after if split_id is set
-        let precomp_search_after_order = match &self.search_after {
-            Some(search_after) if !search_after.split_id.is_empty() => order1
-                .compare(&self.split_id, &search_after.split_id)
-                .then_with(|| order1.compare(&segment_ord, &search_after.segment_ord)),
-            // This value isn't actually used.
-            _ => Ordering::Equal,
-        };
-        // Convert search_after into fast field u64
-        let search_after =
-            SearchAfterSegment::new(self.search_after.clone(), order1, order2, &score_extractor);
 
         let segment_top_k_collector = if leaf_max_hits == 0 {
             None
         } else {
-            Some(QuickwitSegmentTopKCollector {
-                split_id: self.split_id.clone(),
+            let coll: Box<dyn QuickwitSegmentTopKCollector> = specialized_top_k_segment_collector(
+                self.split_id.clone(),
                 score_extractor,
-                top_k_hits: TopK::new(leaf_max_hits, sort_key_mapper),
+                leaf_max_hits,
                 segment_ord,
-                search_after,
-                precomp_search_after_order,
-                sort_values1: Box::new([None; 64]),
-                sort_values2: Box::new([None; 64]),
-            })
+                self.search_after.clone(),
+                order1,
+                order2,
+            );
+            Some(coll)
         };
 
         Ok(QuickwitSegmentCollector {
