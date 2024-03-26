@@ -326,7 +326,8 @@ pub(super) async fn prune_file_sources(
     metastore: &mut MetastoreServiceClient,
     index_metadata: IndexMetadata,
 ) -> anyhow::Result<()> {
-    let prunable_sources = filter_prunable_lambda_source_ids(index_metadata.sources.keys())?;
+    let prunable_sources: Vec<_> =
+        filter_prunable_lambda_source_ids(index_metadata.sources.keys())?.collect();
     for src_id in prunable_sources {
         metastore
             .delete_source(DeleteSourceRequest {
