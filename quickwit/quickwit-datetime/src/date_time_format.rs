@@ -28,7 +28,7 @@ use time::error::Format;
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 use time::format_description::FormatItem;
 use time::parsing::Parsed;
-use time::{OffsetDateTime, PrimitiveDateTime};
+use time::{Month, OffsetDateTime, PrimitiveDateTime};
 use time_fmt::parse::time_format_item::parse_to_format_item;
 
 use crate::TantivyDateTime;
@@ -83,6 +83,15 @@ impl StrptimeParser {
             parsed.set_hour_24(0u8);
             parsed.set_minute(0u8);
             parsed.set_second(0u8);
+        }
+        if parsed.year().is_none() {
+            let now = OffsetDateTime::now_utc();
+            let year = if same_year(parsed.month(), now.month()) {
+                now.year()
+            } else {
+                now.year() - 1
+            };
+            parsed.set_year(year);
         }
         let date_time = parsed.try_into()?;
         Ok(date_time)
@@ -318,9 +327,18 @@ impl<'de> Deserialize<'de> for DateTimeOutputFormat {
     }
 }
 
+/// Returns `true` if `parse_month` is less or equal to `this_month`.
+fn same_year(parsed_month_opt: Option<Month>, this_month: Month) -> bool {
+    let parsed_month = parsed_month_opt.map(|month| month as u8).unwrap_or_default();
+    parsed_month <= this_month as u8
+}
+
 #[cfg(test)]
 mod tests {
+    
+
     use time::macros::datetime;
+    use time::{Month};
 
     use super::*;
 
@@ -452,5 +470,14 @@ mod tests {
             error,
             "datetime string `2021-01-01TABC` does not match strptime format `%Y-%m-%d`"
         );
+    }
+
+    #[test]
+    fn test_same_year() {
+        assert!(!same_year(Some(Month::November), Month::January));
+        assert!(!same_year(Some(Month::December), Month::January));
+        assert!(same_year(Some(Month::January), Month::January));
+        assert!(same_year(Some(Month::January), Month::February));
+        // assert!(same_year(Some(Month::February), Month::January));
     }
 }
