@@ -138,6 +138,8 @@ pub(super) async fn send_telemetry() {
 }
 
 /// Convert the incomming file path to a source config and save it to the metastore
+///
+/// If a Lambda file source already exists with the same path, format and transform, reuse it.
 pub(super) async fn configure_source(
     metastore: &mut MetastoreServiceClient,
     input_path: PathBuf,
@@ -145,37 +147,28 @@ pub(super) async fn configure_source(
     index_metadata: &IndexMetadata,
     vrl_script: Option<String>,
 ) -> anyhow::Result<SourceConfig> {
-    let source_params = SourceParams::file(input_path);
     let transform_config = vrl_script.map(|vrl_script| TransformConfig::new(vrl_script, None));
+    let source_params = SourceParams::file(input_path.clone());
 
-    let existing_sources_for_file: Vec<_> = index_metadata
+    let existing_sources_for_config: Vec<_> = index_metadata
         .sources
         .iter()
-        .filter(|(src_id, _)| is_lambda_source_id(src_id))
-        .map(|(src_id, src_config)| {
-            if let SourceConfig {
-                source_params: SourceParams::File(file_params),
-                ..
-            } = src_config
-            {
-                let filepath = file_params
-                    .filepath
-                    .as_ref()
-                    .context("Found Lambda file source without filepath")?;
-                Ok((src_id, filepath))
-            } else {
-                bail!("Found Lambda source with non-file source type");
-            }
+        .filter(|(src_id, src_config)| {
+            is_lambda_source_id(src_id)
+                && src_config.source_params == source_params
+                && src_config.input_format == input_format
+                && src_config.transform_config == transform_config
         })
-        .collect::<anyhow::Result<Vec<_>>>()?;
+        .map(|(src_id, _)| src_id)
+        .collect();
 
-    let source_id = match existing_sources_for_file.len() {
+    let source_id = match existing_sources_for_config.len() {
         0 => create_lambda_source_id(Utc::now()),
-        1 => existing_sources_for_file[0].0.clone(),
+        1 => existing_sources_for_config[0].clone(),
         n => bail!(
-            "Found {} Lambda sources for file {:?}, expected at most 1",
+            "Found {} existing Lambda sources for file {:?}, expected at most 1",
             n,
-            existing_sources_for_file[0].1.as_path(),
+            input_path,
         ),
     };
 
@@ -188,7 +181,7 @@ pub(super) async fn configure_source(
         input_format,
     };
 
-    if existing_sources_for_file.is_empty() {
+    if existing_sources_for_config.is_empty() {
         metastore
             .add_source(AddSourceRequest {
                 index_uid: Some(index_metadata.index_uid.clone()),
