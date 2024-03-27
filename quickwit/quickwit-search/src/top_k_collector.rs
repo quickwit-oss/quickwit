@@ -56,7 +56,7 @@ impl IntoOptionU64 for Option<u64> {
     }
 }
 
-impl IntoOptionU64 for Reverse<Option<u64>> {
+impl IntoOptionU64 for ReverseOptionU64 {
     #[inline]
     fn is_unit_type() -> bool {
         false
@@ -67,7 +67,7 @@ impl IntoOptionU64 for Reverse<Option<u64>> {
     }
     #[inline]
     fn from_option_u64(value: Option<u64>) -> Self {
-        Reverse(value)
+        ReverseOptionU64(value)
     }
 }
 
@@ -82,6 +82,29 @@ impl IntoOptionU64 for () {
     }
     #[inline]
     fn from_option_u64(_: Option<u64>) -> Self {}
+}
+
+/// Like Reverse<Option<u64>>, but sorts None as the smallest value.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+struct ReverseOptionU64(Option<u64>);
+
+impl Ord for ReverseOptionU64 {
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (&self.0, &other.0) {
+            (Some(x), Some(y)) => y.cmp(x),
+            (None, None) => Ordering::Equal,
+            (None, Some(_)) => Ordering::Less,
+            (Some(_), None) => Ordering::Greater,
+        }
+    }
+}
+
+impl PartialOrd for ReverseOptionU64 {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 /// Generic hit struct for top k collector.
@@ -186,12 +209,13 @@ pub fn specialized_top_k_segment_collector(
         .map(|extr| extr.is_fast_field())
         .unwrap_or(false);
 
+    #[derive(Debug)]
     enum SortType {
         DocId,
         OneFFSort,
         TwoFFSorts,
     }
-    let num_sorts = match (sort_first_by_ff, sort_second_by_ff) {
+    let sort_type = match (sort_first_by_ff, sort_second_by_ff) {
         (false, false) => SortType::DocId,
         (true, false) => SortType::OneFFSort,
         (true, true) => SortType::TwoFFSorts,
@@ -199,9 +223,8 @@ pub fn specialized_top_k_segment_collector(
     };
     // only check order1 for OneFFSort and DocId, as it's the only sort
     //
-    // REVERSE_DOCID is only used for SortType::DocId
-    // Asc on DocId is the default order for SortType::OneFFSort
-    match (num_sorts, order1, order2) {
+    // REVERSE_DOCID is only used for SortType::DocId and SortType::OneFFSort
+    match (sort_type, order1, order2) {
         (SortType::DocId, SortOrder::Desc, _) => {
             Box::new(SpecializedSegmentTopKCollector::<(), (), false>::new(
                 split_id,
@@ -218,39 +241,52 @@ pub fn specialized_top_k_segment_collector(
                 segment_ord,
             ))
         }
-        (SortType::OneFFSort, SortOrder::Asc, _) => {
-            Box::new(SpecializedSegmentTopKCollector::<
-                Reverse<Option<u64>>,
-                (),
-                false,
-            >::new(
-                split_id, score_extractor, leaf_max_hits, segment_ord
-            ))
-        }
-        (SortType::OneFFSort, SortOrder::Desc, _) => {
-            Box::new(
-                SpecializedSegmentTopKCollector::<Option<u64>, (), false>::new(
-                    split_id,
-                    score_extractor,
-                    leaf_max_hits,
-                    segment_ord,
-                ),
-            )
-        }
+        (SortType::OneFFSort, SortOrder::Asc, SortOrder::Asc) => Box::new(
+            SpecializedSegmentTopKCollector::<ReverseOptionU64, (), true>::new(
+                split_id,
+                score_extractor,
+                leaf_max_hits,
+                segment_ord,
+            ),
+        ),
+        (SortType::OneFFSort, SortOrder::Desc, SortOrder::Asc) => Box::new(
+            SpecializedSegmentTopKCollector::<Option<u64>, (), false>::new(
+                split_id,
+                score_extractor,
+                leaf_max_hits,
+                segment_ord,
+            ),
+        ),
+        (SortType::OneFFSort, SortOrder::Asc, SortOrder::Desc) => Box::new(
+            SpecializedSegmentTopKCollector::<ReverseOptionU64, (), true>::new(
+                split_id,
+                score_extractor,
+                leaf_max_hits,
+                segment_ord,
+            ),
+        ),
+        (SortType::OneFFSort, SortOrder::Desc, SortOrder::Desc) => Box::new(
+            SpecializedSegmentTopKCollector::<Option<u64>, (), false>::new(
+                split_id,
+                score_extractor,
+                leaf_max_hits,
+                segment_ord,
+            ),
+        ),
         (SortType::TwoFFSorts, SortOrder::Asc, SortOrder::Asc) => {
             Box::new(SpecializedSegmentTopKCollector::<
-                Reverse<Option<u64>>,
-                Reverse<Option<u64>>,
-                false,
+                ReverseOptionU64,
+                ReverseOptionU64,
+                true,
             >::new(
                 split_id, score_extractor, leaf_max_hits, segment_ord
             ))
         }
         (SortType::TwoFFSorts, SortOrder::Asc, SortOrder::Desc) => {
             Box::new(SpecializedSegmentTopKCollector::<
-                Reverse<Option<u64>>,
+                ReverseOptionU64,
                 Option<u64>,
-                false,
+                true,
             >::new(
                 split_id, score_extractor, leaf_max_hits, segment_ord
             ))
@@ -258,7 +294,7 @@ pub fn specialized_top_k_segment_collector(
         (SortType::TwoFFSorts, SortOrder::Desc, SortOrder::Asc) => {
             Box::new(SpecializedSegmentTopKCollector::<
                 Option<u64>,
-                Reverse<Option<u64>>,
+                ReverseOptionU64,
                 false,
             >::new(
                 split_id, score_extractor, leaf_max_hits, segment_ord

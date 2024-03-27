@@ -1721,23 +1721,43 @@ mod tests {
 
         for (sort_str, sort_function) in sort_orders {
             dataset.sort_by(sort_function);
-            for len in 1..dataset.len() {
+            // Check increasing slice sizes of the dataset
+            for slice_len in 0..dataset.len() {
                 let collector = super::make_collector_for_split(
                     "fake_split_id".to_string(),
                     &MockDocMapper,
-                    &make_request(len as u64, sort_str),
+                    &make_request(slice_len as u64, sort_str),
                     Default::default(),
                 )
                 .unwrap();
                 let res = searcher
                     .search(&tantivy::query::AllQuery, &collector)
                     .unwrap();
-                assert_eq!(res.partial_hits.len(), len);
+                assert_eq!(res.partial_hits.len(), slice_len);
                 for (expected, got) in dataset.iter().zip(res.partial_hits.iter()) {
-                    assert_eq!(
-                        expected.0 as u32, got.doc_id,
-                        "missmatch ordering for \"{sort_str}\":{len}"
-                    );
+                    if expected.0 as u32 != got.doc_id {
+                        let expected_docids = dataset
+                            .iter()
+                            .map(|(docid, val)| {
+                                format!("{} {:?} {:?}", *docid as u32, val.0.clone(), val.1.clone())
+                            })
+                            .collect::<Vec<_>>();
+                        let got_docids = res
+                            .partial_hits
+                            .iter()
+                            .map(|hit| {
+                                format!(
+                                    "{} {:?} {:?}",
+                                    hit.doc_id,
+                                    hit.sort_value.and_then(|el| el.sort_value).clone(),
+                                    hit.sort_value2.and_then(|el| el.sort_value).clone()
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                        eprintln!("expected: {:#?}", expected_docids);
+                        eprintln!("got: {:#?}", got_docids);
+                        panic!("missmatch ordering for \"{sort_str}\":{slice_len}");
+                    }
                 }
             }
         }
