@@ -264,6 +264,37 @@ impl From<CpuCapacity> for CpuCapacityForSerialization {
     }
 }
 
+/// This event means that a pipeline running in the current node (hence "local")
+/// performed a publish on an ingest pipeline, and hence the position of a shard has been updated.
+///
+/// This event is meant to be built by the `IngestSource`, upon reception of suggest truncate
+/// event. It should only be consumed by the `ShardPositionsService`.
+///
+/// (This is why its member are private).
+///
+/// The new position is to be exposed to the entire cluster via chitchat.
+///
+/// Consumers of such events should listen to the more `ShardPositionsUpdate` event instead.
+/// That event is broadcasted via the cluster event broker, and will include both local
+/// changes and changes from other nodes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalShardPositionsUpdate {
+    pub source_uid: SourceUid,
+    // This list can be partial: not all shards for the source need to be listed here.
+    pub shard_positions: Vec<(ShardId, Position)>,
+}
+
+impl LocalShardPositionsUpdate {
+    pub fn new(source_uid: SourceUid, shard_positions: Vec<(ShardId, Position)>) -> Self {
+        LocalShardPositionsUpdate {
+            source_uid,
+            shard_positions,
+        }
+    }
+}
+
+impl Event for LocalShardPositionsUpdate {}
+
 /// Whenever a shard position update is detected (whether it is emit by an indexing pipeline local
 /// to the cluster or received via chitchat), the shard positions service publishes a
 /// `ShardPositionsUpdate` event through the cluster's `EventBroker`.

@@ -62,7 +62,7 @@ pub use format::BodyFormat;
 use futures::StreamExt;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use quickwit_actors::{ActorExitStatus, Mailbox, SpawnContext, Universe};
+use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
 use quickwit_cluster::{
     start_cluster_service, Cluster, ClusterChange, ClusterChangeStream, ClusterMember,
     ListenerHandle,
@@ -83,8 +83,8 @@ use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubsc
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
-use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
+use quickwit_ingest::shard_positions::ShardPositionsService;
 use quickwit_ingest::{
     get_idle_shard_timeout, setup_local_shards_update_listener, start_ingest_api_service,
     wait_for_ingester_decommission, wait_for_ingester_status, GetMemoryCapacity, IngestRequest,
@@ -344,27 +344,6 @@ async fn start_control_plane_if_needed(
     }
 }
 
-fn start_shard_positions_service(
-    ingester_service_opt: Option<IngesterServiceClient>,
-    cluster: Cluster,
-    event_broker: EventBroker,
-    spawn_ctx: SpawnContext,
-) {
-    // We spawn a task here, because we need the ingester to be ready before spawning the
-    // the `ShardPositionsService`. If we don't, all the events we emit too early will be dismissed.
-    tokio::spawn(async move {
-        if let Some(ingester_service) = ingester_service_opt {
-            if wait_for_ingester_status(ingester_service, IngesterStatus::Ready)
-                .await
-                .is_err()
-            {
-                warn!("ingester failed to reach ready status");
-            }
-        }
-        ShardPositionsService::spawn(&spawn_ctx, event_broker, cluster);
-    });
-}
-
 pub async fn serve_quickwit(
     node_config: NodeConfig,
     runtimes_config: RuntimesConfig,
@@ -377,10 +356,21 @@ pub async fn serve_quickwit(
         .await
         .context("failed to start cluster service")?;
 
+    let universe = Universe::new();
     let event_broker = EventBroker::default();
+
+    // Starts the shard positions service.
+    if node_config.is_service_enabled(QuickwitService::Indexer)
+        || node_config.is_service_enabled(QuickwitService::ControlPlane)
+    {
+        // There is a bit of a race condition here.
+        // Ideally we would want to stream the current cluster state too, but it should contain
+        // nothing at this point.
+        ShardPositionsService::spawn(universe.spawn_ctx(), event_broker.clone(), cluster.clone())
+    }
+
     let indexer_pool = IndexerPool::default();
     let ingester_pool = IngesterPool::default();
-    let universe = Universe::new();
     let grpc_config = node_config.grpc_config.clone();
 
     // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
@@ -439,6 +429,7 @@ pub async fn serve_quickwit(
                 .stack_layer(layers)
                 .build_from_balance_channel(balance_channel, grpc_config.max_message_size)
         };
+
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
     let control_plane_service: ControlPlaneServiceClient = start_control_plane_if_needed(
@@ -500,17 +491,6 @@ pub async fn serve_quickwit(
     )
     .await
     .context("failed to start ingest v2 service")?;
-
-    if node_config.is_service_enabled(QuickwitService::Indexer)
-        || node_config.is_service_enabled(QuickwitService::ControlPlane)
-    {
-        start_shard_positions_service(
-            ingester_service_opt.clone(),
-            cluster.clone(),
-            event_broker.clone(),
-            universe.spawn_ctx().clone(),
-        );
-    }
 
     // Any node can serve index management requests (create/update/delete index, add/remove source,
     // etc.), so we always instantiate an index manager.

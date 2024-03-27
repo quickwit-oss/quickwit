@@ -33,6 +33,7 @@ use quickwit_ingest::{
     decoded_mrecords, FetchStreamError, IngesterPool, MRecord, MultiFetchStream,
 };
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
+use quickwit_proto::indexing::LocalShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
     fetch_message, FetchEof, FetchPayload, IngesterService, TruncateShardsRequest,
     TruncateShardsSubrequest,
@@ -55,7 +56,7 @@ use super::{
     BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
 };
 use crate::actors::DocProcessor;
-use crate::models::{LocalShardPositionsUpdate, NewPublishLock, NewPublishToken, PublishLock};
+use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 
 pub struct IngestSourceFactory;
 

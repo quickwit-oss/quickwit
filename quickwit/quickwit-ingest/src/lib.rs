@@ -31,6 +31,7 @@ mod mrecordlog_async;
 mod notifications;
 mod position;
 mod queue;
+pub mod shard_positions;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

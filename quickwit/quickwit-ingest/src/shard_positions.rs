@@ -17,52 +17,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use async_trait::async_trait;
-use fnv::FnvHashMap;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, SpawnContext};
 use quickwit_cluster::{Cluster, ListenerHandle};
 use quickwit_common::pretty::PrettyDisplay;
-use quickwit_common::pubsub::{Event, EventBroker};
-use quickwit_proto::indexing::ShardPositionsUpdate;
+use quickwit_common::pubsub::EventBroker;
+use quickwit_proto::indexing::{LocalShardPositionsUpdate, ShardPositionsUpdate};
 use quickwit_proto::types::{Position, ShardId, SourceUid};
 use tracing::{debug, error, info, warn};
 
 /// Prefix used in chitchat to publish the shard positions.
 const SHARD_POSITIONS_PREFIX: &str = "indexer.shard_positions:";
-
-/// This event means that a pipeline running in the current node (hence "local")
-/// performed a publish on an ingest pipeline, and hence the position of a shard has been updated.
-///
-/// This event is meant to be built by the `IngestSource`, upon reception of suggest truncate
-/// event. It should only be consumed by the `ShardPositionsService`.
-///
-/// (This is why its member are private).
-///
-/// The new position is to be exposed to the entire cluster via chitchat.
-///
-/// Consumers of such events should listen to the more `ShardPositionsUpdate` event instead.
-/// That event is broadcasted via the cluster event broker, and will include both local
-/// changes and changes from other nodes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LocalShardPositionsUpdate {
-    source_uid: SourceUid,
-    // This list can be partial: not all shards for the source need to be listed here.
-    shard_positions: Vec<(ShardId, Position)>,
-}
-
-impl LocalShardPositionsUpdate {
-    pub fn new(source_uid: SourceUid, shard_positions: Vec<(ShardId, Position)>) -> Self {
-        LocalShardPositionsUpdate {
-            source_uid,
-            shard_positions,
-        }
-    }
-}
 
 /// This event is an internal detail of the `ShardPositionsService`.
 ///
@@ -75,15 +45,13 @@ struct ClusterShardPositionsUpdate {
     pub position: Position,
 }
 
-impl Event for LocalShardPositionsUpdate {}
-
 /// The published shard positions is a model unique to the indexer service instance that
 /// keeps track of the latest (known) published position for the shards of all managed sources.
 ///
 /// It receives updates through the event broker, and only keeps the maximum published position
 /// for each shard.
 pub struct ShardPositionsService {
-    shard_positions_per_source: FnvHashMap<SourceUid, BTreeMap<ShardId, Position>>,
+    shard_positions_per_source: HashMap<SourceUid, BTreeMap<ShardId, Position>>,
     cluster: Cluster,
     event_broker: EventBroker,
     cluster_listener_handle_opt: Option<ListenerHandle>,
@@ -183,7 +151,12 @@ impl Actor for ShardPositionsService {
 
 impl ShardPositionsService {
     pub fn spawn(spawn_ctx: &SpawnContext, event_broker: EventBroker, cluster: Cluster) {
-        let shard_positions_service = ShardPositionsService::new(event_broker.clone(), cluster);
+        let shard_positions_service = ShardPositionsService {
+            shard_positions_per_source: Default::default(),
+            cluster,
+            event_broker: event_broker.clone(),
+            cluster_listener_handle_opt: None,
+        };
         let (shard_positions_service_mailbox, _) =
             spawn_ctx.spawn_builder().spawn(shard_positions_service);
         // This subscription is in charge of updating the shard positions model.
@@ -197,15 +170,6 @@ impl ShardPositionsService {
                 }
             })
             .forever();
-    }
-
-    fn new(event_broker: EventBroker, cluster: Cluster) -> ShardPositionsService {
-        ShardPositionsService {
-            shard_positions_per_source: Default::default(),
-            cluster,
-            event_broker,
-            cluster_listener_handle_opt: None,
-        }
     }
 }
 
