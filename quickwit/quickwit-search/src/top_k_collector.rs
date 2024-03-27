@@ -312,13 +312,13 @@ pub fn specialized_top_k_segment_collector(
     }
 }
 
-/// Fast TopN Computation
+/// Fast Top K Computation
 ///
 /// The buffer is truncated to the top_n elements when it reaches the capacity of the Vec.
 /// That means capacity has special meaning and should be carried over when cloning or serializing.
 ///
-/// For TopN == 0, it will be relative expensive.
-pub struct TopNComputer<D> {
+/// For TopK == 0, it will be relative expensive.
+pub struct TopKComputer<D> {
     /// Reverses sort order to get top-semantics instead of bottom-semantics
     buffer: Vec<Reverse<D>>,
     top_n: usize,
@@ -326,12 +326,12 @@ pub struct TopNComputer<D> {
 }
 
 // Custom clone to keep capacity
-impl<D: Clone> Clone for TopNComputer<D> {
+impl<D: Clone> Clone for TopKComputer<D> {
     fn clone(&self) -> Self {
         let mut buffer_clone = Vec::with_capacity(self.buffer.capacity());
         buffer_clone.extend(self.buffer.iter().cloned());
 
-        TopNComputer {
+        TopKComputer {
             buffer: buffer_clone,
             top_n: self.top_n,
             threshold: self.threshold.clone(),
@@ -339,15 +339,15 @@ impl<D: Clone> Clone for TopNComputer<D> {
     }
 }
 
-impl<D> TopNComputer<D>
+impl<D> TopKComputer<D>
 where D: Ord + Clone + Debug
 {
-    /// Create a new `TopNComputer`.
+    /// Create a new `TopKComputer`.
     /// Internally it will allocate a buffer of size `5 * top_n`.
     pub fn new(top_n: usize) -> Self {
         // Vec cap can't be 0, since it would panic in push
         let vec_cap = top_n.max(1) * 10;
-        TopNComputer {
+        TopKComputer {
             buffer: Vec::with_capacity(vec_cap),
             top_n,
             threshold: None,
@@ -531,7 +531,7 @@ struct SpecializedSegmentTopKCollector<
 > {
     split_id: String,
     hit_fetcher: SpecSortingFieldExtractor<V1, V2>,
-    top_k_hits: TopNComputer<Hit<V1, V2, REVERSE_DOCID>>,
+    top_k_hits: TopKComputer<Hit<V1, V2, REVERSE_DOCID>>,
     segment_ord: u32,
 }
 
@@ -549,7 +549,7 @@ impl<
     ) -> Self {
         let hit_fetcher =
             SpecSortingFieldExtractor::new(score_extractor.first, score_extractor.second);
-        let top_k_hits = TopNComputer::new(leaf_max_hits);
+        let top_k_hits = TopKComputer::new(leaf_max_hits);
         Self {
             split_id,
             hit_fetcher,
