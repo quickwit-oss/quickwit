@@ -34,14 +34,14 @@ use quickwit_actors::Mailbox;
 use quickwit_cluster::Cluster;
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pretty::PrettyDisplay;
-use quickwit_common::pubsub::{EventBroker, EventSubscriber};
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::Pool;
 use quickwit_common::{rate_limited_warn, ServiceStream};
+use quickwit_config::IngestApiConfig;
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, ControlPlaneService, ControlPlaneServiceClient,
 };
-use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, DecommissionRequest,
     DecommissionResponse, FetchMessage, IngesterService, IngesterServiceClient,
@@ -75,7 +75,7 @@ use super::replication::{
     ReplicationClient, ReplicationStreamTask, ReplicationStreamTaskHandle, ReplicationTask,
     SYN_REPLICATION_STREAM_CAPACITY,
 };
-use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
+use super::state::{IngesterState, InnerIngesterState};
 use super::IngesterPool;
 use crate::ingest_v2::metrics::report_wal_usage;
 use crate::metrics::INGEST_METRICS;
@@ -129,10 +129,8 @@ impl Ingester {
         control_plane: ControlPlaneServiceClient,
         ingester_pool: Pool<NodeId, IngesterServiceClient>,
         wal_dir_path: &Path,
-        disk_capacity: ByteSize,
-        memory_capacity: ByteSize,
+        ingest_api_config: &IngestApiConfig,
         rate_limiter_settings: RateLimiterSettings,
-        replication_factor: usize,
         idle_shard_timeout: Duration,
         shard_positions_service: Mailbox<ShardPositionsService>,
         event_broker: EventBroker,
@@ -144,15 +142,22 @@ impl Ingester {
         BroadcastLocalShardsTask::spawn(cluster, weak_state.clone());
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
+        let IngestApiConfig {
+            max_queue_memory_usage,
+            max_queue_disk_usage,
+            replication_factor,
+            ..
+        } = ingest_api_config;
+
         let ingester = Self {
             self_node_id,
             control_plane,
             ingester_pool,
             state,
-            disk_capacity,
-            memory_capacity,
+            disk_capacity: *max_queue_disk_usage,
+            memory_capacity: *max_queue_memory_usage,
             rate_limiter_settings,
-            replication_factor,
+            replication_factor: *replication_factor,
             reset_shards_permits: Arc::new(Semaphore::new(1)),
         };
         ingester.background_reset_shards();
@@ -1067,32 +1072,6 @@ impl IngesterService for Ingester {
     }
 }
 
-#[async_trait]
-impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
-    async fn handle_event(&mut self, shard_positions_update: ShardPositionsUpdate) {
-        let Some(state) = self.upgrade() else {
-            warn!("ingester state update failed");
-            return;
-        };
-        let Ok(mut state_guard) =
-            with_lock_metrics!(state.lock_fully().await, "gc_shards", "write")
-        else {
-            error!("failed to lock the ingester state");
-            return;
-        };
-        let index_uid = shard_positions_update.source_uid.index_uid;
-        let source_id = shard_positions_update.source_uid.source_id;
-
-        for (shard_id, shard_position) in shard_positions_update.updated_shard_positions {
-            let queue_id = queue_id(&index_uid, &source_id, &shard_id);
-            if shard_position.is_eof() {
-                state_guard.delete_shard(&queue_id).await;
-            } else if !shard_position.is_beginning() {
-                state_guard.truncate_shard(&queue_id, &shard_position).await;
-            }
-        }
-    }
-}
 
 pub async fn wait_for_ingester_status(
     mut ingester: IngesterServiceClient,
@@ -1152,11 +1131,13 @@ mod tests {
     use std::sync::atomic::{AtomicU16, Ordering};
 
     use bytes::Bytes;
+    use quickwit_actors::Universe;
     use quickwit_cluster::{create_cluster_for_test_with_id, ChannelTransport};
     use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
     use quickwit_common::tower::ConstantRate;
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::control_plane::{AdviseResetShardsResponse, MockControlPlaneService};
+    use quickwit_proto::indexing::ShardPositionsUpdate;
     use quickwit_proto::ingest::ingester::{
         IngesterServiceGrpcServer, IngesterServiceGrpcServerAdapter, PersistSubrequest,
         TruncateShardsSubrequest,
@@ -1179,11 +1160,10 @@ mod tests {
         node_id: NodeId,
         control_plane: ControlPlaneServiceClient,
         ingester_pool: IngesterPool,
-        disk_capacity: ByteSize,
-        memory_capacity: ByteSize,
         rate_limiter_settings: RateLimiterSettings,
-        replication_factor: usize,
+        ingest_api_config: IngestApiConfig,
         idle_shard_timeout: Duration,
+        event_broker: EventBroker,
     }
 
     impl Default for IngesterForTest {
@@ -1198,12 +1178,17 @@ mod tests {
                 node_id: "test-ingester".into(),
                 control_plane,
                 ingester_pool: IngesterPool::default(),
-                disk_capacity: ByteSize::mb(256),
-                memory_capacity: ByteSize::mb(1),
+                ingest_api_config: IngestApiConfig {
+                    max_queue_memory_usage: ByteSize::mb(1),
+                    max_queue_disk_usage: ByteSize::mb(256),
+                    replication_factor: 1,
+                    content_length_limit: ByteSize::mb(5),
+                },
                 rate_limiter_settings: RateLimiterSettings::default(),
-                replication_factor: 1,
                 idle_shard_timeout: DEFAULT_IDLE_SHARD_TIMEOUT,
+                event_broker: EventBroker::default(),
             }
+
         }
     }
 
@@ -1212,7 +1197,6 @@ mod tests {
             self.node_id = node_id.into();
             self
         }
-
         pub fn with_control_plane(mut self, control_plane: ControlPlaneServiceClient) -> Self {
             self.control_plane = control_plane;
             self
@@ -1224,7 +1208,7 @@ mod tests {
         }
 
         pub fn with_disk_capacity(mut self, disk_capacity: ByteSize) -> Self {
-            self.disk_capacity = disk_capacity;
+            self.ingest_api_config.max_queue_disk_usage = disk_capacity;
             self
         }
 
@@ -1237,12 +1221,17 @@ mod tests {
         }
 
         pub fn with_replication(mut self) -> Self {
-            self.replication_factor = 2;
+            self.ingest_api_config.replication_factor = 2;
             self
         }
 
         pub fn with_idle_shard_timeout(mut self, idle_shard_timeout: Duration) -> Self {
             self.idle_shard_timeout = idle_shard_timeout;
+            self
+        }
+
+        pub fn with_event_broker(mut self, event_broker: EventBroker) -> Self {
+            self.event_broker = event_broker;
             self
         }
 
@@ -1268,16 +1257,19 @@ mod tests {
             .await
             .unwrap();
 
+            let (shard_positions_tx, _shard_positions_rx) = Universe::new().create_test_mailbox();
+
             let ingester = Ingester::try_new(
                 cluster.clone(),
                 self.control_plane.clone(),
                 self.ingester_pool.clone(),
                 wal_dir_path,
-                self.disk_capacity,
-                self.memory_capacity,
+                &self.ingest_api_config,
                 self.rate_limiter_settings,
-                self.replication_factor,
                 self.idle_shard_timeout,
+                shard_positions_tx,
+                self.event_broker,
+
             )
             .await
             .unwrap();
@@ -1310,7 +1302,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_init() {
-        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        let event_broker = EventBroker::default();
+        let (ingester_ctx, ingester) = IngesterForTest::default()
+            .with_event_broker(event_broker.clone())
+            .build().await;
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
@@ -1374,7 +1369,7 @@ mod tests {
 
         ingester
             .state
-            .init(ingester_ctx.tempdir.path(), RateLimiterSettings::default())
+            .init(ingester_ctx.tempdir.path(), RateLimiterSettings::default(), event_broker)
             .await;
 
         let state_guard = ingester.state.lock_fully().await.unwrap();
@@ -2890,9 +2885,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_truncate_on_shard_positions_update() {
-        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
         let event_broker = EventBroker::default();
-        ingester.subscribe(&event_broker);
+        let (_ingester_ctx, ingester) = IngesterForTest::default()
+            .with_event_broker(event_broker.clone())
+            .build().await;
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let shard_01 = Shard {
