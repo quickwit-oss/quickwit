@@ -151,6 +151,9 @@ pub(crate) enum SortingFieldExtractorComponent {
 }
 
 impl SortingFieldExtractorComponent {
+    pub fn is_score(&self) -> bool {
+        matches!(self, SortingFieldExtractorComponent::Score)
+    }
     pub fn is_fast_field(&self) -> bool {
         matches!(self, SortingFieldExtractorComponent::FastField { .. })
     }
@@ -388,6 +391,14 @@ pub(crate) struct SortingFieldExtractorPair {
 }
 
 impl SortingFieldExtractorPair {
+    pub fn is_score(&self) -> bool {
+        self.first.is_score()
+            || self
+                .second
+                .as_ref()
+                .map(|second| second.is_score())
+                .unwrap_or(false)
+    }
     /// Returns the list of sort values for the given element
     ///
     /// See also [`SortingFieldExtractorComponent::extract_typed_sort_values_block`] for more

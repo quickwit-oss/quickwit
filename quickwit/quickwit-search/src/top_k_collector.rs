@@ -190,7 +190,7 @@ pub fn specialized_top_k_segment_collector(
     order1: SortOrder,
     order2: SortOrder,
 ) -> Box<dyn QuickwitSegmentTopKCollector> {
-    if search_after_option.is_some() {
+    if search_after_option.is_some() || score_extractor.is_score() {
         return Box::new(GenericQuickwitSegmentTopKCollector::new(
             split_id,
             score_extractor,
