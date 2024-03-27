@@ -30,6 +30,7 @@ use bytesize::ByteSize;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use mrecordlog::error::CreateQueueError;
+use quickwit_actors::Mailbox;
 use quickwit_cluster::Cluster;
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pretty::PrettyDisplay;
@@ -79,6 +80,7 @@ use super::IngesterPool;
 use crate::ingest_v2::metrics::report_wal_usage;
 use crate::metrics::INGEST_METRICS;
 use crate::mrecordlog_async::MultiRecordLogAsync;
+use crate::shard_positions::ShardPositionsService;
 use crate::{estimate_size, with_lock_metrics, FollowerId};
 
 /// Minimum interval between two reset shards operations.
@@ -132,6 +134,7 @@ impl Ingester {
         rate_limiter_settings: RateLimiterSettings,
         replication_factor: usize,
         idle_shard_timeout: Duration,
+        shard_positions_service: Mailbox<ShardPositionsService>,
         event_broker: EventBroker,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();

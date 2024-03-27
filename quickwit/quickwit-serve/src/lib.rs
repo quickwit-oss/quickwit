@@ -488,6 +488,7 @@ pub async fn serve_quickwit(
         &event_broker,
         control_plane_service.clone(),
         ingester_pool,
+        &universe
     )
     .await
     .context("failed to start ingest v2 service")?;
@@ -739,6 +740,7 @@ async fn setup_ingest_v2(
     event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
+    universe: &Universe,
 ) -> anyhow::Result<(IngestRouterServiceClient, Option<IngesterServiceClient>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
@@ -775,7 +777,8 @@ async fn setup_ingest_v2(
     let ingester_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         let wal_dir_path = node_config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
-
+        let shard_positions_service: Mailbox<ShardPositionsService> = universe.get_one::<ShardPositionsService>()
+            .expect("the shard positions service should be spawned before the ingester service");
         let idle_shard_timeout = get_idle_shard_timeout();
         let ingester = Ingester::try_new(
             cluster.clone(),
@@ -787,6 +790,7 @@ async fn setup_ingest_v2(
             rate_limiter_settings,
             replication_factor,
             idle_shard_timeout,
+            shard_positions_service,
             event_broker.clone(),
         )
         .await?;

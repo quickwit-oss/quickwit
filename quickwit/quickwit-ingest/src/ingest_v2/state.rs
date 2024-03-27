@@ -41,7 +41,7 @@ use super::rate_meter::RateMeter;
 use super::replication::{ReplicationStreamTaskHandle, ReplicationTaskHandle};
 use crate::ingest_v2::mrecordlog_utils::{force_delete_queue, queue_position_range};
 use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{FollowerId, IngesterInitialized, LeaderId};
+use crate::{FollowerId, LeaderId};
 
 /// Stores the state of the ingester and attempts to prevent deadlocks by exposing an API that
 /// guarantees that the internal data structures are always locked in the same order.
@@ -216,7 +216,6 @@ impl IngesterState {
         event_broker
             .subscribe_without_timeout::<ShardPositionsUpdate>(self.weak())
             .forever();
-        event_broker.publish(IngesterInitialized);
     }
 
     pub async fn wait_for_ready(&mut self) {

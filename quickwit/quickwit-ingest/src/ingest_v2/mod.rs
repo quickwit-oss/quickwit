@@ -41,7 +41,6 @@ use std::{env, fmt};
 pub use broadcast::{setup_local_shards_update_listener, LocalShardsUpdate, ShardInfo, ShardInfos};
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
-use quickwit_common::pubsub::Event;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
@@ -67,16 +66,6 @@ pub type FollowerId = NodeId;
 const IDLE_SHARD_TIMEOUT_ENV_KEY: &str = "QW_IDLE_SHARD_TIMEOUT_SECS";
 
 const DEFAULT_IDLE_SHARD_TIMEOUT: Duration = Duration::from_secs(15 * 60); // 15 minutes
-
-/// Event emitted when the ingester is initialized.
-/// Upon startup, the ingester service has too read its WAL.
-///
-/// This is done in a background task to allow for the initialization of other process to happen.
-/// This event marks the end of this initialization process.
-#[derive(Debug, Clone)]
-pub struct IngesterInitialized;
-
-impl Event for IngesterInitialized {}
 
 pub fn get_idle_shard_timeout() -> Duration {
     env::var(IDLE_SHARD_TIMEOUT_ENV_KEY)
