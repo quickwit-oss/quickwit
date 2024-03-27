@@ -30,8 +30,11 @@ static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");
 /// `quickwit-metastore/migrations` directory.
 #[instrument(skip_all)]
 pub(super) async fn run_migrations(pool: &TrackedPool<Postgres>) -> MetastoreResult<()> {
-    let tx = pool.begin().await?;
-    let migrate_result = MIGRATOR.run(pool).await;
+    let mut tx = pool.begin().await?;
+    let conn = tx.acquire().await?;
+    // this is an hidden function, made to get "around the annoying "implementation of `Acquire`
+    // is not general enough" error", which is the error we get otherwise.
+    let migrate_result = MIGRATOR.run_direct(conn).await;
 
     let Err(migrate_error) = migrate_result else {
         tx.commit().await?;
