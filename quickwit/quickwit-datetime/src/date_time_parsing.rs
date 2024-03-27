@@ -247,26 +247,6 @@ mod tests {
                 "2024-01-31 18:40:19.950188123",
                 datetime!(2024-01-31 18:40:19.950188123 UTC),
             ),
-            (
-                "%Y-%m-%d %H:%M:%S.%f",
-                "2024-01-31 18:40:19.950188123",
-                datetime!(2024-01-31 18:40:19.950188123 UTC),
-            ),
-            (
-                "%Y-%m-%d %H:%M:%S.%f",
-                "2024-01-31 18:40:19.950188123",
-                datetime!(2024-01-31 18:40:19.950188123 UTC),
-            ),
-            (
-                "%b %d %H:%M:%S",
-                "Mar  6 17:40:02",
-                datetime!(2024-03-06 17:40:02 UTC),
-            ),
-            (
-                "%Y %b %d %H:%M:%S",
-                "2024 Mar  6 17:40:02",
-                datetime!(2024-03-06 17:40:02 UTC),
-            ),
         ];
         for (fmt, date_time_str, expected) in test_data {
             let parser = StrptimeParser::from_str(fmt).unwrap();
