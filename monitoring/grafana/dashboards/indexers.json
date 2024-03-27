@@ -1180,7 +1180,7 @@
       "type": "timeseries"
     }
   ],
-  "refresh": "10s",
+  "refresh": "30s",
   "revision": 1,
   "schemaVersion": 39,
   "tags": [
@@ -1191,7 +1191,7 @@
     "list": [
       {
         "current": {
-          "selected": false,
+          "selected": true,
           "text": "Prometheus",
           "value": "PBFA97CFB590B2093"
         },
@@ -1245,6 +1245,6 @@
   "timezone": "utc",
   "title": "Quickwit Indexers",
   "uid": "quickwit-indexers",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
