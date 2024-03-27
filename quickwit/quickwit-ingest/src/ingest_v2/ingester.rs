@@ -96,6 +96,7 @@ pub(super) const PERSIST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature =
     Duration::from_secs(6)
 };
 
+
 #[derive(Clone)]
 pub struct Ingester {
     self_node_id: NodeId,
@@ -131,9 +132,10 @@ impl Ingester {
         rate_limiter_settings: RateLimiterSettings,
         replication_factor: usize,
         idle_shard_timeout: Duration,
+        event_broker: EventBroker,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();
-        let state = IngesterState::load(wal_dir_path, rate_limiter_settings);
+        let state = IngesterState::load(wal_dir_path, rate_limiter_settings, event_broker);
 
         let weak_state = state.weak();
         BroadcastLocalShardsTask::spawn(cluster, weak_state.clone());
@@ -399,15 +401,6 @@ impl Ingester {
         let replication_client = replication_stream_task_handle.replication_client();
         entry.insert(replication_stream_task_handle);
         Ok(replication_client)
-    }
-
-    pub fn subscribe(&self, event_broker: &EventBroker) {
-        let weak_ingester_state = self.state.weak();
-        // This subscription is the one in charge of truncating the mrecordlog.
-        info!("subscribing ingester to shard positions updates");
-        event_broker
-            .subscribe_without_timeout::<ShardPositionsUpdate>(weak_ingester_state)
-            .forever();
     }
 
     async fn persist_inner(

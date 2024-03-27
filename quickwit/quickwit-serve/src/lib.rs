@@ -787,9 +787,10 @@ async fn setup_ingest_v2(
             rate_limiter_settings,
             replication_factor,
             idle_shard_timeout,
+            event_broker.clone(),
         )
         .await?;
-        ingester.subscribe(event_broker);
+
         // We will now receive all new shard positions update events, from chitchat.
         // Unfortunately at this point, chitchat is already running.
         //

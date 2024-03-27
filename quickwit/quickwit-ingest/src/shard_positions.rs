@@ -34,6 +34,12 @@ use tracing::{debug, error, info, warn};
 /// Prefix used in chitchat to publish the shard positions.
 const SHARD_POSITIONS_PREFIX: &str = "indexer.shard_positions:";
 
+/// Message to request for the position of a given shard.
+pub struct GetPosition {
+    source_uid: SourceUid,
+    shard_id: ShardId,
+}
+
 /// This event is an internal detail of the `ShardPositionsService`.
 ///
 /// When a shard position change in the cluster is detected, a `ClusterShardPositionUpdate`
@@ -170,6 +176,30 @@ impl ShardPositionsService {
                 }
             })
             .forever();
+    }
+}
+
+impl ShardPositionsService {
+    pub fn get_position(&self, source_uid: SourceUid, shard_id: ShardId) -> Option<Position> {
+        let source_shards = self.shard_positions_per_source.get(&source_uid)?;
+        source_shards.get(&shard_id).cloned()
+    }
+}
+
+#[async_trait]
+impl Handler<GetPosition> for ShardPositionsService {
+    type Reply = Option<Position>;
+
+    async fn handle(
+        &mut self,
+        get_position: GetPosition,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let GetPosition {
+            source_uid,
+            shard_id,
+        } = get_position;
+        Ok(self.get_position(source_uid, shard_id))
     }
 }
 

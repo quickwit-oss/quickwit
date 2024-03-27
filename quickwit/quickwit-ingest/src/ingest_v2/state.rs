@@ -26,8 +26,10 @@ use std::time::{Duration, Instant};
 
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_common::pretty::PrettyDisplay;
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
+use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
 use quickwit_proto::types::{Position, QueueId};
@@ -39,7 +41,7 @@ use super::rate_meter::RateMeter;
 use super::replication::{ReplicationStreamTaskHandle, ReplicationTaskHandle};
 use crate::ingest_v2::mrecordlog_utils::{force_delete_queue, queue_position_range};
 use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{FollowerId, LeaderId};
+use crate::{FollowerId, IngesterInitialized, LeaderId};
 
 /// Stores the state of the ingester and attempts to prevent deadlocks by exposing an API that
 /// guarantees that the internal data structures are always locked in the same order.
@@ -99,13 +101,13 @@ impl IngesterState {
         }
     }
 
-    pub fn load(wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings) -> Self {
+    pub fn load(wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings, event_broker: EventBroker) -> Self {
         let state = Self::new();
         let state_clone = state.clone();
         let wal_dir_path = wal_dir_path.to_path_buf();
 
         let init_future = async move {
-            state_clone.init(&wal_dir_path, rate_limiter_settings).await;
+            state_clone.init(&wal_dir_path, rate_limiter_settings, event_broker).await;
         };
         tokio::spawn(init_future);
 
@@ -129,7 +131,7 @@ impl IngesterState {
     /// Initializes the internal state of the ingester. It loads the local WAL, then lists all its
     /// queues. Empty queues are deleted, while non-empty queues are recovered. However, the
     /// corresponding shards are closed and become read-only.
-    pub async fn init(&self, wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings) {
+    pub async fn init(&self, wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings, event_broker: EventBroker) {
         let mut inner_guard = self.inner.lock().await;
         let mut mrecordlog_guard = self.mrecordlog.write().await;
 
@@ -209,6 +211,12 @@ impl IngesterState {
         }
         mrecordlog_guard.replace(mrecordlog);
         inner_guard.set_status(IngesterStatus::Ready);
+        // This subscription is the one in charge of truncating the mrecordlog.
+        info!("subscribing ingester to shard positions updates");
+        event_broker
+            .subscribe_without_timeout::<ShardPositionsUpdate>(self.weak())
+            .forever();
+        event_broker.publish(IngesterInitialized);
     }
 
     pub async fn wait_for_ready(&mut self) {
