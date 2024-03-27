@@ -88,10 +88,11 @@ mod tests {
     use super::*;
     use crate::ingest_v2::models::IngesterShard;
     use crate::ingest_v2::state::IngesterState;
+    use crate::shard_positions;
 
     #[tokio::test]
     async fn test_close_idle_shards_run() {
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let (_temp_dir, state, _shard_positions) = IngesterState::for_test().await;
         let weak_state = state.weak();
         let idle_shard_timeout = Duration::from_millis(200);
         let join_handle = CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);

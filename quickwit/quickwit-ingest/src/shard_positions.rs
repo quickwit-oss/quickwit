@@ -35,9 +35,10 @@ use tracing::{debug, error, info, warn};
 const SHARD_POSITIONS_PREFIX: &str = "indexer.shard_positions:";
 
 /// Message to request for the position of a given shard.
+#[derive(Debug)]
 pub struct GetPosition {
-    source_uid: SourceUid,
-    shard_id: ShardId,
+    pub source_uid: SourceUid,
+    pub shard_id: ShardId,
 }
 
 /// This event is an internal detail of the `ShardPositionsService`.

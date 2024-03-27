@@ -98,7 +98,6 @@ pub(super) const PERSIST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature =
     Duration::from_secs(6)
 };
 
-
 #[derive(Clone)]
 pub struct Ingester {
     self_node_id: NodeId,
@@ -136,7 +135,12 @@ impl Ingester {
         event_broker: EventBroker,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();
-        let state = IngesterState::load(wal_dir_path, rate_limiter_settings, event_broker);
+        let state = IngesterState::load(
+            wal_dir_path,
+            rate_limiter_settings,
+            shard_positions_service,
+            event_broker,
+        );
 
         let weak_state = state.weak();
         BroadcastLocalShardsTask::spawn(cluster, weak_state.clone());
@@ -1072,7 +1076,6 @@ impl IngesterService for Ingester {
     }
 }
 
-
 pub async fn wait_for_ingester_status(
     mut ingester: IngesterServiceClient,
     status: IngesterStatus,
@@ -1173,7 +1176,6 @@ mod tests {
                 .expect_advise_reset_shards()
                 .returning(|_| Ok(AdviseResetShardsResponse::default()));
             let control_plane = ControlPlaneServiceClient::from(mock_control_plane);
-
             Self {
                 node_id: "test-ingester".into(),
                 control_plane,
@@ -1188,7 +1190,6 @@ mod tests {
                 idle_shard_timeout: DEFAULT_IDLE_SHARD_TIMEOUT,
                 event_broker: EventBroker::default(),
             }
-
         }
     }
 
@@ -1269,7 +1270,6 @@ mod tests {
                 self.idle_shard_timeout,
                 shard_positions_tx,
                 self.event_broker,
-
             )
             .await
             .unwrap();
@@ -1305,7 +1305,8 @@ mod tests {
         let event_broker = EventBroker::default();
         let (ingester_ctx, ingester) = IngesterForTest::default()
             .with_event_broker(event_broker.clone())
-            .build().await;
+            .build()
+            .await;
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
@@ -1367,9 +1368,16 @@ mod tests {
 
         drop(state_guard);
 
+        let (shard_positions_tx, shard_positions_rx) =
+            Universe::new().create_test_mailbox::<ShardPositionsService>();
         ingester
             .state
-            .init(ingester_ctx.tempdir.path(), RateLimiterSettings::default(), event_broker)
+            .init(
+                ingester_ctx.tempdir.path(),
+                RateLimiterSettings::default(),
+                shard_positions_tx,
+                event_broker,
+            )
             .await;
 
         let state_guard = ingester.state.lock_fully().await.unwrap();
@@ -2888,7 +2896,8 @@ mod tests {
         let event_broker = EventBroker::default();
         let (_ingester_ctx, ingester) = IngesterForTest::default()
             .with_event_broker(event_broker.clone())
-            .build().await;
+            .build()
+            .await;
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let shard_01 = Shard {

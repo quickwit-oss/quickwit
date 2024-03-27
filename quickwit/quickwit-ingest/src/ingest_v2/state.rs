@@ -26,6 +26,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
+use quickwit_actors::Mailbox;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -33,7 +34,7 @@ use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
-use quickwit_proto::types::{queue_id, Position, QueueId};
+use quickwit_proto::types::{queue_id, split_queue_id, Position, QueueId, SourceUid};
 use tokio::sync::{watch, Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard};
 use tracing::{error, info, warn};
 
@@ -42,6 +43,7 @@ use super::rate_meter::RateMeter;
 use super::replication::{ReplicationStreamTaskHandle, ReplicationTaskHandle};
 use crate::ingest_v2::mrecordlog_utils::{force_delete_queue, queue_position_range};
 use crate::mrecordlog_async::MultiRecordLogAsync;
+use crate::shard_positions::{GetPosition, ShardPositionsService};
 use crate::{with_lock_metrics, FollowerId, LeaderId};
 
 /// Stores the state of the ingester and attempts to prevent deadlocks by exposing an API that
@@ -102,13 +104,25 @@ impl IngesterState {
         }
     }
 
-    pub fn load(wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings, event_broker: EventBroker) -> Self {
+    pub fn load(
+        wal_dir_path: &Path,
+        rate_limiter_settings: RateLimiterSettings,
+        shard_positions_service: Mailbox<ShardPositionsService>,
+        event_broker: EventBroker,
+    ) -> Self {
         let state = Self::new();
         let state_clone = state.clone();
         let wal_dir_path = wal_dir_path.to_path_buf();
 
         let init_future = async move {
-            state_clone.init(&wal_dir_path, rate_limiter_settings, event_broker).await;
+            state_clone
+                .init(
+                    &wal_dir_path,
+                    rate_limiter_settings,
+                    shard_positions_service,
+                    event_broker,
+                )
+                .await;
         };
         tokio::spawn(init_future);
 
@@ -116,10 +130,23 @@ impl IngesterState {
     }
 
     #[cfg(test)]
-    pub async fn for_test() -> (tempfile::TempDir, Self) {
+    pub async fn for_test() -> (
+        tempfile::TempDir,
+        Self,
+        quickwit_actors::Inbox<ShardPositionsService>,
+    ) {
+        use quickwit_actors::Universe;
+
         let temp_dir = tempfile::tempdir().unwrap();
         let event_broker = EventBroker::default();
-        let mut state = IngesterState::load(temp_dir.path(), RateLimiterSettings::default(), event_broker);
+        let (shard_positions_tx, shard_positions_rx) =
+            Universe::default().create_test_mailbox::<ShardPositionsService>();
+        let mut state = IngesterState::load(
+            temp_dir.path(),
+            RateLimiterSettings::default(),
+            shard_positions_tx,
+            event_broker,
+        );
 
         state
             .status_rx
@@ -127,13 +154,19 @@ impl IngesterState {
             .await
             .unwrap();
 
-        (temp_dir, state)
+        (temp_dir, state, shard_positions_rx)
     }
 
     /// Initializes the internal state of the ingester. It loads the local WAL, then lists all its
     /// queues. Empty queues are deleted, while non-empty queues are recovered. However, the
     /// corresponding shards are closed and become read-only.
-    pub async fn init(&self, wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings, event_broker: EventBroker) {
+    pub async fn init(
+        &self,
+        wal_dir_path: &Path,
+        rate_limiter_settings: RateLimiterSettings,
+        shard_positions_service: Mailbox<ShardPositionsService>,
+        event_broker: EventBroker,
+    ) {
         let mut inner_guard = self.inner.lock().await;
         let mut mrecordlog_guard = self.mrecordlog.write().await;
 
@@ -218,6 +251,46 @@ impl IngesterState {
         event_broker
             .subscribe_without_timeout::<ShardPositionsUpdate>(self.weak())
             .forever();
+
+        let queue_ids: Vec<QueueId> = inner_guard.shards.keys().cloned().collect();
+
+        // Explicitly drop inner_guard early. We don't want to block the ingester use at this point.
+        drop(inner_guard);
+
+        let Some(ingester_state) = self.weak().upgrade() else {
+            error!("ingester state not present after initialization");
+            return;
+        };
+        for queue_id in queue_ids {
+            let Some((index_uid, source_id, shard_id)) = split_queue_id(&queue_id) else {
+                warn!(
+                    "queue_id `{queue_id}` could not be parsed into (index_uid, source_id, \
+                     shard_id)"
+                );
+                continue;
+            };
+            let get_position = GetPosition {
+                source_uid: SourceUid {
+                    index_uid,
+                    source_id,
+                },
+                shard_id,
+            };
+            let Ok(shard_position) = shard_positions_service.ask(get_position).await else {
+                error!("failed to get shard position for `{queue_id}`");
+                continue;
+            };
+            let Some(shard_position) = shard_position else {
+                // The shard is not known by the shard positions service at this point.
+                // This is perfectly normal.
+                continue;
+            };
+            let Ok(mut state) = ingester_state.lock_fully().await else {
+                error!("failed to lock the ingester state");
+                continue;
+            };
+            apply_position_update(&mut state, &queue_id, &shard_position).await;
+        }
     }
 
     pub async fn wait_for_ready(&mut self) {
@@ -308,34 +381,6 @@ impl Deref for PartiallyLockedIngesterState<'_> {
 impl DerefMut for PartiallyLockedIngesterState<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
-    }
-}
-
-
-#[async_trait]
-impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
-    async fn handle_event(&mut self, shard_positions_update: ShardPositionsUpdate) {
-        let Some(state) = self.upgrade() else {
-            warn!("ingester state update failed");
-            return;
-        };
-        let Ok(mut state_guard) =
-            with_lock_metrics!(state.lock_fully().await, "gc_shards", "write")
-        else {
-            error!("failed to lock the ingester state");
-            return;
-        };
-        let index_uid = shard_positions_update.source_uid.index_uid;
-        let source_id = shard_positions_update.source_uid.source_id;
-
-        for (shard_id, shard_position) in shard_positions_update.updated_shard_positions {
-            let queue_id = queue_id(&index_uid, &source_id, &shard_id);
-            if shard_position.is_eof() {
-                state_guard.delete_shard(&queue_id).await;
-            } else if !shard_position.is_beginning() {
-                state_guard.truncate_shard(&queue_id, &shard_position).await;
-            }
-        }
     }
 }
 
@@ -459,6 +504,45 @@ impl WeakIngesterState {
     }
 }
 
+async fn apply_position_update(
+    state: &mut FullyLockedIngesterState<'_>,
+    queue_id: &QueueId,
+    shard_position: &Position,
+) {
+    if state.shards.get(queue_id).is_none() {
+        return;
+    }
+    if shard_position.is_eof() {
+        state.delete_shard(queue_id).await;
+    } else if !shard_position.is_beginning() {
+        state.truncate_shard(queue_id, shard_position).await;
+    }
+}
+
+#[async_trait]
+impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
+    async fn handle_event(&mut self, shard_positions_update: ShardPositionsUpdate) {
+        let SourceUid {
+            index_uid,
+            source_id,
+        } = shard_positions_update.source_uid;
+        let Some(state) = self.upgrade() else {
+            warn!("ingester state update failed");
+            return;
+        };
+        let Ok(mut state_guard) =
+            with_lock_metrics!(state.lock_fully().await, "gc_shards", "write")
+        else {
+            error!("failed to lock the ingester state");
+            return;
+        };
+        for (shard_id, shard_position) in shard_positions_update.updated_shard_positions {
+            let queue_id = queue_id(&index_uid, &source_id, &shard_id);
+            apply_position_update(&mut state_guard, &queue_id, &shard_position).await;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tokio::time::timeout;
@@ -499,7 +583,11 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
 
         state
-            .init(temp_dir.path(), RateLimiterSettings::default(), EventBroker::default())
+            .init(
+                temp_dir.path(),
+                RateLimiterSettings::default(),
+                EventBroker::default(),
+            )
             .await;
 
         timeout(Duration::from_millis(100), state.wait_for_ready())

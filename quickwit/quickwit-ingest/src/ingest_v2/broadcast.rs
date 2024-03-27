@@ -466,7 +466,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let (_temp_dir, state, _shard_positions_inbox) = IngesterState::for_test().await;
         let weak_state = state.weak();
         let task = BroadcastLocalShardsTask {
             cluster,
