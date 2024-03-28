@@ -24,7 +24,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context};
 use chitchat::transport::ChannelTransport;
 use chitchat::FailureDetectorConfig;
-use chrono::Utc;
 use quickwit_actors::{ActorHandle, Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::pubsub::EventBroker;
@@ -49,8 +48,8 @@ use quickwit_metastore::{
 };
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::metastore::{
-    AddSourceRequest, CreateIndexRequest, DeleteSourceRequest, IndexMetadataRequest,
-    MetastoreError, MetastoreService, MetastoreServiceClient,
+    CreateIndexRequest, DeleteSourceRequest, IndexMetadataRequest, MetastoreError,
+    MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{NodeId, PipelineUid};
 use quickwit_search::SearchJobPlacer;
@@ -58,11 +57,12 @@ use quickwit_storage::StorageResolver;
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tracing::{debug, info, instrument};
 
-use super::source_id::{
-    create_lambda_source_id, filter_prunable_lambda_source_ids, is_lambda_source_id,
-};
 use crate::environment::INDEX_ID;
-use crate::indexer::environment::{DISABLE_JANITOR, DISABLE_MERGE, INDEX_CONFIG_URI};
+use crate::indexer::environment::{
+    DISABLE_JANITOR, DISABLE_MERGE, INDEX_CONFIG_URI, MAX_CHECKPOINTS,
+};
+
+const LAMBDA_SOURCE_ID: &str = "_ingest-lambda-source";
 
 /// The indexing service needs to update its cluster chitchat state so that the control plane is
 /// aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
@@ -137,60 +137,22 @@ pub(super) async fn send_telemetry() {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand).await;
 }
 
-/// Convert the incomming file path to a source config and save it to the metastore
-///
-/// If a Lambda file source already exists with the same path, format and transform, reuse it.
+/// Convert the incomming file path to a source config
 pub(super) async fn configure_source(
-    metastore: &mut MetastoreServiceClient,
     input_path: PathBuf,
     input_format: SourceInputFormat,
-    index_metadata: &IndexMetadata,
     vrl_script: Option<String>,
 ) -> anyhow::Result<SourceConfig> {
     let transform_config = vrl_script.map(|vrl_script| TransformConfig::new(vrl_script, None));
     let source_params = SourceParams::file(input_path.clone());
-
-    let existing_sources_for_config: Vec<_> = index_metadata
-        .sources
-        .iter()
-        .filter(|(src_id, src_config)| {
-            is_lambda_source_id(src_id)
-                && src_config.source_params == source_params
-                && src_config.input_format == input_format
-                && src_config.transform_config == transform_config
-        })
-        .map(|(src_id, _)| src_id)
-        .collect();
-
-    let source_id = match existing_sources_for_config.len() {
-        0 => create_lambda_source_id(Utc::now()),
-        1 => existing_sources_for_config[0].clone(),
-        n => bail!(
-            "Found {} existing Lambda sources for file {:?}, expected at most 1",
-            n,
-            input_path,
-        ),
-    };
-
-    let src_config = SourceConfig {
-        source_id,
+    Ok(SourceConfig {
+        source_id: LAMBDA_SOURCE_ID.to_owned(),
         num_pipelines: NonZeroUsize::new(1).expect("1 is always non-zero."),
         enabled: true,
         source_params,
         transform_config,
         input_format,
-    };
-
-    if existing_sources_for_config.is_empty() {
-        metastore
-            .add_source(AddSourceRequest {
-                index_uid: Some(index_metadata.index_uid.clone()),
-                source_config_json: serde_json::to_string(&src_config)?,
-            })
-            .await?;
-    }
-
-    Ok(src_config)
+    })
 }
 
 /// Check if the index exists, creating or overwriting it if necessary
@@ -321,26 +283,39 @@ pub(super) async fn spawn_pipelines(
     Ok((indexing_pipeline_handle, merge_pipeline_handle))
 }
 
-/// Delete old Lambda file sources
-pub(super) async fn prune_file_sources(
+/// Prune old Lambda file checkpoints if there are too many
+///
+/// Without pruning checkpoints accumulate indifinitely. This is particularly
+/// problematic when indexing a lot of small files, as the metastore will grow
+/// large even for a small index.
+///
+/// The current implementation just deletes all checkpoints if there are more
+/// than QW_LAMBDA_MAX_CHECKPOINTS. When this purging is performed, the Lambda
+/// indexer might ingest the same file again if it receives a duplicate
+/// notification.
+pub(super) async fn prune_lambda_source(
     metastore: &mut MetastoreServiceClient,
     index_metadata: IndexMetadata,
 ) -> anyhow::Result<()> {
-    let prunable_sources: Vec<_> =
-        filter_prunable_lambda_source_ids(index_metadata.sources.keys())?.collect();
-    info!(
-        existing = index_metadata.sources.len(),
-        prunable = prunable_sources.len(),
-        "prune file sources"
-    );
-    for src_id in prunable_sources {
-        metastore
-            .delete_source(DeleteSourceRequest {
-                index_uid: Some(index_metadata.index_uid.clone()),
-                source_id: src_id.clone(),
-            })
-            .await?;
+    let lambda_checkpoint_opt = index_metadata
+        .checkpoint
+        .source_checkpoint(LAMBDA_SOURCE_ID);
+
+    if let Some(lambda_checkpoint) = lambda_checkpoint_opt {
+        if lambda_checkpoint.num_partitions() > *MAX_CHECKPOINTS {
+            info!(
+                partitions = lambda_checkpoint.num_partitions(),
+                "prune Lambda checkpoints"
+            );
+            metastore
+                .delete_source(DeleteSourceRequest {
+                    index_uid: Some(index_metadata.index_uid.clone()),
+                    source_id: LAMBDA_SOURCE_ID.to_owned(),
+                })
+                .await?;
+        }
     }
+
     Ok(())
 }
 
