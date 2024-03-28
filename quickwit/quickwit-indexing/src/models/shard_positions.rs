@@ -160,8 +160,8 @@ impl Actor for ShardPositionsService {
             for (key, versioned_value) in node_state.iter_prefix(SHARD_POSITIONS_PREFIX) {
                 let key_stripped = key.strip_prefix(SHARD_POSITIONS_PREFIX).unwrap();
                 push_position_update(ctx.mailbox(), key_stripped, &versioned_value.value);
+                num_keys += 1;
             }
-            num_keys += 1;
             // It is tempting to yield here, but we are holding the chitchat lock.
             // Let's just log the amount of time it takes for the moment.
         }
