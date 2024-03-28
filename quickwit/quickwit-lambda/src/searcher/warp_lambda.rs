@@ -153,9 +153,7 @@ where
             v.insert(content_len.into());
         }
 
-        parts.uri = warp::hyper::Uri::from_str(uri.as_str())
-            .map_err(|e| e)
-            .unwrap();
+        parts.uri = warp::hyper::Uri::from_str(uri.as_str()).unwrap();
         let warp_request = WarpRequest::from_parts(parts, body);
 
         // Call warp service with warp request, save future

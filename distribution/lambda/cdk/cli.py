@@ -416,7 +416,7 @@ def test_mock_data_endpoints():
         app.MOCK_DATA_STACK_NAME, mock_data_stack.API_GATEWAY_EXPORT_NAME
     )
 
-    def req(method, path, body=None):
+    def req(method, path, body=None, expected_status=200):
         conn = http.client.HTTPSConnection(urlparse(apigw_url).netloc)
         conn.request(
             method,
@@ -426,12 +426,12 @@ def test_mock_data_endpoints():
         )
         response = conn.getresponse()
         print(f"{method} {path}")
-        if response.status != 200:
-            print(f"[{response.status}] => {response.read().decode()}")
+        headers = {k: v for (k, v) in response.getheaders()}
+        body = _decompress_if_gzip(response.read(), headers)
+        if response.status != expected_status:
+            print(f"[{response.status}] => {body}")
             exit(1)
         else:
-            headers = {k: v for (k, v) in response.getheaders()}
-            body = _decompress_if_gzip(response.read(), headers)
             print(f"[{response.status}] => {json.dumps(json.loads(body))[0:100]}")
 
     req("GET", f"/api/v1/{mock_sales_index_id}/search?query=animal")
@@ -447,3 +447,10 @@ def test_mock_data_endpoints():
         '{"query":{"bool":{"must":[{"range":{"quantity":{"gt":5}}}]}},"size":10}',
     )
     req("GET", f"/api/v1/_elastic/{mock_sales_index_id}/_field_caps?fields=quantity")
+    # expected errors
+    req(
+        "GET",
+        f"/api/v1/_elastic/{mock_sales_index_id}/_search?query=animal",
+        expected_status=400,
+    )
+    req("GET", f"/api/v1/_elastic/_search?q=animal", expected_status=501)
