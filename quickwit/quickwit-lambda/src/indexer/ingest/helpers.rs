@@ -48,8 +48,8 @@ use quickwit_metastore::{
 };
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::metastore::{
-    CreateIndexRequest, DeleteSourceRequest, IndexMetadataRequest, MetastoreError,
-    MetastoreService, MetastoreServiceClient,
+    CreateIndexRequest, IndexMetadataRequest, MetastoreError, MetastoreService,
+    MetastoreServiceClient, ResetSourceCheckpointRequest,
 };
 use quickwit_proto::types::{NodeId, PipelineUid};
 use quickwit_search::SearchJobPlacer;
@@ -308,7 +308,7 @@ pub(super) async fn prune_lambda_source(
                 "prune Lambda checkpoints"
             );
             metastore
-                .delete_source(DeleteSourceRequest {
+                .reset_source_checkpoint(ResetSourceCheckpointRequest {
                     index_uid: Some(index_metadata.index_uid.clone()),
                     source_id: LAMBDA_SOURCE_ID.to_owned(),
                 })
