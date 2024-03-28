@@ -31,30 +31,18 @@ use anyhow::anyhow;
 use http::header::Entry;
 use lambda_http::http::response::Parts;
 use lambda_http::http::HeaderValue;
-use lambda_http::request::RequestContext;
 use lambda_http::{
     lambda_runtime, Adapter, Body as LambdaBody, Error as LambdaError, Request, RequestExt,
     Response, Service,
 };
 use mime_guess::{mime, Mime};
 use once_cell::sync::Lazy;
+use tracing::{info_span, Instrument};
 use warp::hyper::Body as WarpBody;
 pub use {lambda_http, warp};
 
-use super::LAMBDA_REQUEST_ID_HEADER;
-
 pub type WarpRequest = warp::http::Request<warp::hyper::Body>;
 pub type WarpResponse = warp::http::Response<warp::hyper::Body>;
-
-#[derive(thiserror::Error, Debug)]
-pub enum WarpAdapterError {
-    #[error("This may never occur, it's infallible!!")]
-    Infallible(#[from] std::convert::Infallible),
-    #[error("Warp error: `{0:#?}`")]
-    HyperError(#[from] warp::hyper::Error),
-    #[error("Unexpected error: `{0:#?}`")]
-    Unexpected(#[from] LambdaError),
-}
 
 pub async fn run<'a, S>(service: S) -> Result<(), LambdaError>
 where
@@ -141,18 +129,7 @@ where
 
     fn call(&mut self, req: Request) -> Self::Future {
         let query_params = req.query_string_parameters();
-        let request_id_opt = match req.request_context() {
-            RequestContext::ApiGatewayV2(ctx) => ctx.request_id.clone(),
-            RequestContext::ApiGatewayV1(ctx) => ctx.request_id.clone(),
-            RequestContext::Alb(_) => None,
-            RequestContext::WebSocket(ctx) => ctx.request_id.clone(),
-        };
-        let request_id_header_opt = match request_id_opt.as_ref().map(|a| HeaderValue::from_str(a))
-        {
-            Some(Ok(rid)) => Some(rid),
-            Some(Err(_)) => None,
-            None => None,
-        };
+        let request_id = req.lambda_context().request_id.clone();
         let (mut parts, body) = req.into_parts();
         let (content_len, body) = match body {
             LambdaBody::Empty => (0, WarpBody::empty()),
@@ -175,9 +152,6 @@ where
         if let Entry::Vacant(v) = parts.headers.entry("Content-Length") {
             v.insert(content_len.into());
         }
-        if let Some(rid) = &request_id_header_opt {
-            parts.headers.insert(LAMBDA_REQUEST_ID_HEADER, rid.clone());
-        }
 
         parts.uri = warp::hyper::Uri::from_str(uri.as_str())
             .map_err(|e| e)
@@ -190,14 +164,12 @@ where
         // Create lambda future
         let fut = async move {
             let warp_response = warp_fut.await?;
-            let (mut parts, res_body): (_, _) = warp_response.into_parts();
+            let (parts, res_body): (_, _) = warp_response.into_parts();
             let body = warp_body_as_lambda_body(res_body, &parts).await?;
-            if let Some(rid) = request_id_header_opt {
-                parts.headers.insert(LAMBDA_REQUEST_ID_HEADER, rid);
-            }
             let lambda_response = Response::from_parts(parts, body);
             Ok::<Self::Response, Self::Error>(lambda_response)
-        };
+        }
+        .instrument(info_span!("searcher request", request_id));
         Box::pin(fut)
     }
 }

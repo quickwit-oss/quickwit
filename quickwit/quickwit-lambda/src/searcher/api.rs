@@ -32,16 +32,15 @@ use quickwit_search::{
 use quickwit_serve::lambda_search_api::*;
 use quickwit_storage::StorageResolver;
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
-use tracing::{error, info, info_span};
+use tracing::{error, info};
 use warp::filters::path::FullPath;
 use warp::reject::Rejection;
 use warp::Filter;
 
-use super::LAMBDA_REQUEST_ID_HEADER;
 use crate::searcher::environment::CONFIGURATION_TEMPLATE;
 use crate::utils::load_node_config;
 
-async fn get_search_service(
+async fn create_local_search_service(
     searcher_config: SearcherConfig,
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
@@ -88,18 +87,31 @@ fn es_compat_api(
         .or(es_compat_cat_indices_handler(metastore.clone()))
 }
 
-pub async fn searcher_api(
+fn v1_searcher_api(
+    search_service: Arc<dyn SearchService>,
+    metastore: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("api" / "v1" / ..)
+        .and(native_api(search_service.clone()).or(es_compat_api(search_service, metastore)))
+        .with(warp::filters::compression::gzip())
+        .recover(|rejection| {
+            error!(?rejection, "request rejected");
+            recover_fn(rejection)
+        })
+}
+
+pub async fn setup_searcher_api(
 ) -> anyhow::Result<impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone> {
     let (node_config, storage_resolver, metastore) =
         load_node_config(CONFIGURATION_TEMPLATE).await?;
 
-    let services: HashSet<String> =
-        HashSet::from_iter([QuickwitService::Searcher.as_str().to_string()]);
-    let telemetry_info =
-        QuickwitTelemetryInfo::new(services, HashSet::from_iter([QuickwitFeature::AwsLambda]));
+    let telemetry_info = QuickwitTelemetryInfo::new(
+        HashSet::from_iter([QuickwitService::Searcher.as_str().to_string()]),
+        HashSet::from_iter([QuickwitFeature::AwsLambda]),
+    );
     let _telemetry_handle_opt = quickwit_telemetry::start_telemetry_loop(telemetry_info);
 
-    let search_service = get_search_service(
+    let search_service = create_local_search_service(
         node_config.searcher_config,
         metastore.clone(),
         storage_resolver,
@@ -122,26 +134,11 @@ pub async fn searcher_api(
     let after_hook = warp::log::custom(|info| {
         info!(status = info.status().as_str(), "request completed");
     });
-    let api = warp::any().and(before_hook).and(
-        warp::path!("api" / "v1" / ..)
-            .and(native_api(search_service.clone()).or(es_compat_api(search_service, metastore)))
-            .with(warp::filters::compression::gzip())
-            .recover(|rejection| {
-                error!(?rejection, "request rejected");
-                recover_fn(rejection)
-            })
-            .with(after_hook)
-            .with(warp::trace(|info| {
-                info_span!(
-                    "request",
-                    request_id = info
-                        .request_headers()
-                        .get(LAMBDA_REQUEST_ID_HEADER)
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or(&""),
-                )
-            })),
-    );
+
+    let api = warp::any()
+        .and(before_hook)
+        .and(v1_searcher_api(search_service, metastore))
+        .with(after_hook);
 
     Ok(api)
 }
