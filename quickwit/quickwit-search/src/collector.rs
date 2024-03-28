@@ -1744,7 +1744,11 @@ mod tests {
                 let res = searcher
                     .search(&tantivy::query::AllQuery, &collector)
                     .unwrap();
-                assert_eq!(res.partial_hits.len(), slice_len);
+                assert_eq!(
+                    res.partial_hits.len(),
+                    slice_len,
+                    "missmatch slice_len for \"{sort_str}\":{slice_len}"
+                );
                 for (expected, got) in dataset.iter().zip(res.partial_hits.iter()) {
                     if expected.0 as u32 != got.doc_id {
                         let expected_docids = dataset

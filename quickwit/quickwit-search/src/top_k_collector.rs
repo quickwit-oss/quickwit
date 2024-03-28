@@ -44,6 +44,9 @@ trait IntoOptionU64 {
     fn into_option_u64(self) -> Option<u64>;
     fn from_option_u64(value: Option<u64>) -> Self;
 }
+trait MinValue {
+    fn min_value() -> Self;
+}
 
 impl IntoOptionU64 for Option<u64> {
     #[inline]
@@ -56,6 +59,13 @@ impl IntoOptionU64 for Option<u64> {
     }
 }
 
+impl MinValue for Option<u64> {
+    #[inline]
+    fn min_value() -> Self {
+        None
+    }
+}
+
 impl IntoOptionU64 for Option<Reverse<u64>> {
     #[inline]
     fn into_option_u64(self) -> Option<u64> {
@@ -63,7 +73,13 @@ impl IntoOptionU64 for Option<Reverse<u64>> {
     }
     #[inline]
     fn from_option_u64(value: Option<u64>) -> Self {
-        value.map(|el| Reverse(el))
+        value.map(Reverse)
+    }
+}
+impl MinValue for Option<Reverse<u64>> {
+    #[inline]
+    fn min_value() -> Self {
+        None
     }
 }
 
@@ -79,20 +95,41 @@ impl IntoOptionU64 for () {
     #[inline]
     fn from_option_u64(_: Option<u64>) -> Self {}
 }
+impl MinValue for () {
+    #[inline]
+    fn min_value() -> Self {}
+}
 
 /// Generic hit struct for top k collector.
 /// V1 and V2 are the types of the two values to sort by.
 /// They are either Option<u64> or _statically_ disabled via unit type.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-struct Hit<
-    V1: Copy + PartialEq + Eq + PartialOrd + Ord + Debug,
-    V2: Copy + PartialEq + Eq + PartialOrd + Ord + Debug,
-    const REVERSE_DOCID: bool,
-> {
+struct Hit<V1, V2, const REVERSE_DOCID: bool> {
     doc_id: DocId,
     value1: V1,
     value2: V2,
 }
+
+impl<V1, V2, const REVERSE_DOCID: bool> MinValue for Hit<V1, V2, REVERSE_DOCID>
+where
+    V1: MinValue,
+    V2: MinValue,
+{
+    #[inline]
+    fn min_value() -> Self {
+        let doc_id = if REVERSE_DOCID {
+            DocId::MAX
+        } else {
+            DocId::MIN
+        };
+        Hit {
+            doc_id,
+            value1: V1::min_value(),
+            value2: V2::min_value(),
+        }
+    }
+}
+
 impl<V1, V2, const REVERSE_DOCID: bool> std::fmt::Display for Hit<V1, V2, REVERSE_DOCID>
 where
     V1: Copy + PartialEq + Eq + PartialOrd + Ord + Debug,
@@ -109,8 +146,8 @@ where
 
 impl<V1, V2, const REVERSE_DOCID: bool> Ord for Hit<V1, V2, REVERSE_DOCID>
 where
-    V1: Copy + PartialEq + Eq + PartialOrd + Ord + Debug,
-    V2: Copy + PartialEq + Eq + PartialOrd + Ord + Debug,
+    V1: Copy + PartialEq + Eq + PartialOrd + Ord + Debug + MinValue,
+    V2: Copy + PartialEq + Eq + PartialOrd + Ord + Debug + MinValue,
 {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
@@ -129,8 +166,8 @@ where
 
 impl<V1, V2, const REVERSE_DOCID: bool> PartialOrd for Hit<V1, V2, REVERSE_DOCID>
 where
-    V1: Copy + PartialEq + Eq + PartialOrd + Ord + Debug,
-    V2: Copy + PartialEq + Eq + PartialOrd + Ord + Debug,
+    V1: Copy + PartialEq + Eq + PartialOrd + Ord + Debug + MinValue,
+    V2: Copy + PartialEq + Eq + PartialOrd + Ord + Debug + MinValue,
 {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -139,8 +176,8 @@ where
 }
 
 impl<
-        V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug,
-        V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug,
+        V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
+        V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
         const REVERSE_DOCID: bool,
     > Hit<V1, V2, REVERSE_DOCID>
 {
@@ -295,11 +332,11 @@ pub fn specialized_top_k_segment_collector(
 /// That means capacity has special meaning and should be carried over when cloning or serializing.
 ///
 /// For TopK == 0, it will be relative expensive.
-pub struct TopKComputer<D> {
+struct TopKComputer<D> {
     /// Reverses sort order to get top-semantics instead of bottom-semantics
     buffer: Vec<Reverse<D>>,
     top_n: usize,
-    pub(crate) threshold: Option<D>,
+    pub(crate) threshold: D,
 }
 
 // Custom clone to keep capacity
@@ -317,7 +354,7 @@ impl<D: Clone> Clone for TopKComputer<D> {
 }
 
 impl<D> TopKComputer<D>
-where D: Ord + Clone + Debug
+where D: Ord + Copy + Debug + MinValue
 {
     /// Create a new `TopKComputer`.
     pub fn new(top_n: usize) -> Self {
@@ -326,7 +363,7 @@ where D: Ord + Clone + Debug
         TopKComputer {
             buffer: Vec::with_capacity(vec_cap),
             top_n,
-            threshold: None,
+            threshold: D::min_value(),
         }
     }
 
@@ -334,14 +371,12 @@ where D: Ord + Clone + Debug
     /// If the document is below the current threshold, it will be ignored.
     #[inline]
     pub fn push(&mut self, doc: D) {
-        if let Some(last_median) = self.threshold.clone() {
-            if doc < last_median {
-                return;
-            }
+        if doc < self.threshold {
+            return;
         }
         if self.buffer.len() == self.buffer.capacity() {
             let median = self.truncate_top_n();
-            self.threshold = Some(median);
+            self.threshold = median;
         }
 
         // This is faster since it avoids the buffer resizing to be inlined from vec.push()
@@ -362,7 +397,7 @@ where D: Ord + Clone + Debug
         // Use select_nth_unstable to find the top nth score
         let (_, median_el, _) = self.buffer.select_nth_unstable(self.top_n);
 
-        let median_score = median_el.clone();
+        let median_score = *median_el;
         // Remove all elements below the top_n
         self.buffer.truncate(self.top_n);
 
@@ -507,8 +542,8 @@ where
 /// No search after handling
 /// Quickwit collector working at the scale of the segment.
 struct SpecializedSegmentTopKCollector<
-    V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug,
-    V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug,
+    V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
+    V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
     const REVERSE_DOCID: bool,
 > {
     split_id: String,
@@ -518,8 +553,8 @@ struct SpecializedSegmentTopKCollector<
 }
 
 impl<
-        V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + 'static,
-        V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + 'static,
+        V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue + 'static,
+        V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue + 'static,
         const REVERSE_DOCID: bool,
     > SpecializedSegmentTopKCollector<V1, V2, REVERSE_DOCID>
 {
@@ -541,8 +576,8 @@ impl<
     }
 }
 impl<
-        V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug,
-        V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug,
+        V1: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
+        V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
         const REVERSE_DOCID: bool,
     > QuickwitSegmentTopKCollector for SpecializedSegmentTopKCollector<V1, V2, REVERSE_DOCID>
 {
