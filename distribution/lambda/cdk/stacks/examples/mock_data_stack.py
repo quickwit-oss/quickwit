@@ -102,7 +102,6 @@ class SearchAPI(Construct):
         search_resource = api.root.add_resource("v1").add_resource("{proxy+}")
         search_resource.add_method("POST", searcher_integration, api_key_required=True)
         search_resource.add_method("GET", searcher_integration, api_key_required=True)
-        search_resource.add_method("PUT", searcher_integration, api_key_required=True)
         # Change the deployment id (api-deployment-x) each time the API changes,
         # otherwise changes are not deployed.
         api_deployment = aws_apigateway.Deployment(self, "api-deployment-1", api=api)
