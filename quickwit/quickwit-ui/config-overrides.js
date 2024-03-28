@@ -17,12 +17,27 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+const path = require('path');
 const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
 
-module.exports = function override(config, env) {
+function monaco(config) {
   config.plugins.push(new MonacoWebpackPlugin({
     languages: ['json']
   }));
   return config;
 }
 
+const {alias, aliasJest, configPaths} = require('react-app-rewire-alias')
+const aliasMap = configPaths('./tsconfig.paths.json') // or jsconfig.paths.json
+
+module.exports = function override(config) {
+  config = alias(aliasMap)(config);
+  config = monaco(config);
+  return config
+}
+
+module.exports.jest = function override(config) {
+  config = aliasJest(aliasMap)(config);
+  return config
+
+}
