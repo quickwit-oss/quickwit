@@ -169,10 +169,10 @@ search_settings:
 "#;
 
 #[derive(Debug, thiserror::Error)]
-pub enum OtlpTraceError {
-    #[error("failed to deserialize JSON span: `{0}`")]
+pub enum OtlpTracesError {
+    #[error("failed to deserialize JSON spans: `{0}`")]
     Json(#[from] serde_json::Error),
-    #[error("failed to deserialize Protobuf span: `{0}`")]
+    #[error("failed to deserialize Protobuf spans: `{0}`")]
     Protobuf(#[from] prost::DecodeError),
     #[error("failed to parse span: `{0}`")]
     SpanId(#[from] TryFromSpanIdError),
@@ -246,7 +246,7 @@ impl Span {
         span: OtlpSpan,
         resource: &Resource,
         scope: &Scope,
-    ) -> Result<Self, OtlpTraceError> {
+    ) -> Result<Self, OtlpTracesError> {
         let trace_id = TraceId::try_from(span.trace_id)?;
         let span_id = SpanId::try_from(span.span_id)?;
         let parent_span_id = if !span.parent_span_id.is_empty() {
@@ -629,7 +629,7 @@ pub struct Link {
 }
 
 impl Link {
-    fn try_from_otlp(link: OtlpLink) -> Result<Link, OtlpTraceError> {
+    fn try_from_otlp(link: OtlpLink) -> Result<Link, OtlpTracesError> {
         let link_trace_id = TraceId::try_from(link.trace_id)?;
         let link_span_id = SpanId::try_from(link.span_id)?;
         let link = Link {
@@ -649,7 +649,7 @@ impl Link {
 
 fn parse_otlp_spans(
     request: ExportTraceServiceRequest,
-) -> Result<BTreeSet<OrdSpan>, OtlpTraceError> {
+) -> Result<BTreeSet<OrdSpan>, OtlpTracesError> {
     let mut spans = BTreeSet::new();
 
     for resource_spans in request.resource_spans {
@@ -843,7 +843,7 @@ impl TraceService for OtlpGrpcTracesService {
     }
 }
 
-/// An JSON span iterator for use in the doc processor.
+/// An iterator of JSON OTLP spans for use in the doc processor.
 pub struct JsonSpanIterator {
     spans: btree_set::IntoIter<OrdSpan>,
     current_span_idx: usize,
@@ -886,13 +886,15 @@ impl Iterator for JsonSpanIterator {
     }
 }
 
-pub fn parse_otlp_spans_json(payload_json: &[u8]) -> Result<JsonSpanIterator, OtlpTraceError> {
+pub fn parse_otlp_spans_json(payload_json: &[u8]) -> Result<JsonSpanIterator, OtlpTracesError> {
     let request: ExportTraceServiceRequest = serde_json::from_slice(payload_json)?;
     let spans = parse_otlp_spans(request)?;
     Ok(JsonSpanIterator::new(spans, payload_json.len()))
 }
 
-pub fn parse_otlp_spans_protobuf(payload_proto: &[u8]) -> Result<JsonSpanIterator, OtlpTraceError> {
+pub fn parse_otlp_spans_protobuf(
+    payload_proto: &[u8],
+) -> Result<JsonSpanIterator, OtlpTracesError> {
     let request = ExportTraceServiceRequest::decode(payload_proto)?;
     let spans = parse_otlp_spans(request)?;
     Ok(JsonSpanIterator::new(spans, payload_proto.len()))

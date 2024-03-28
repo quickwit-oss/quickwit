@@ -30,7 +30,8 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
 use quickwit_opentelemetry::otlp::{
-    parse_otlp_spans_json, parse_otlp_spans_protobuf, JsonSpanIterator, OtlpTraceError,
+    parse_otlp_logs_json, parse_otlp_logs_protobuf, parse_otlp_spans_json,
+    parse_otlp_spans_protobuf, JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError,
 };
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -67,8 +68,8 @@ impl JsonDoc {
     ) -> Result<Self, DocProcessorError> {
         match json_value {
             JsonValue::Object(json_obj) => Ok(Self::new(json_obj, num_bytes)),
-            _ => Err(DocProcessorError::Parsing(
-                "document must be a JSON object".to_string(),
+            _ => Err(DocProcessorError::JsonParsing(
+                "document is not an object".to_string(),
             )),
         }
     }
@@ -82,38 +83,46 @@ impl JsonDoc {
 
 #[derive(Error, Debug)]
 pub enum DocProcessorError {
-    #[error("doc mapper parsing error: {0}")]
+    #[error("doc mapper parse error: {0}")]
     DocMapperParsing(DocParsingError),
-    #[error("OLTP trace parsing error: {0}")]
-    OltpTraceParsing(OtlpTraceError),
-    #[error("doc parsing error: {0}")]
-    Parsing(String),
+    #[error("JSON parse error: {0}")]
+    JsonParsing(String),
+    #[error("OLTP log records parse error: {0}")]
+    OltpLogsParsing(OtlpLogsError),
+    #[error("OLTP traces parse error: {0}")]
+    OltpTracesParsing(OtlpTracesError),
     #[cfg(feature = "vrl")]
     #[error("VRL transform error: {0}")]
     Transform(VrlTerminate),
 }
 
-impl From<OtlpTraceError> for DocProcessorError {
-    fn from(error: OtlpTraceError) -> Self {
-        DocProcessorError::OltpTraceParsing(error)
+impl From<OtlpLogsError> for DocProcessorError {
+    fn from(error: OtlpLogsError) -> Self {
+        Self::OltpLogsParsing(error)
+    }
+}
+
+impl From<OtlpTracesError> for DocProcessorError {
+    fn from(error: OtlpTracesError) -> Self {
+        Self::OltpTracesParsing(error)
     }
 }
 
 impl From<DocParsingError> for DocProcessorError {
     fn from(error: DocParsingError) -> Self {
-        DocProcessorError::DocMapperParsing(error)
+        Self::DocMapperParsing(error)
     }
 }
 
 impl From<serde_json::Error> for DocProcessorError {
     fn from(error: serde_json::Error) -> Self {
-        DocProcessorError::Parsing(error.to_string())
+        Self::JsonParsing(error.to_string())
     }
 }
 
 impl From<FromUtf8Error> for DocProcessorError {
     fn from(error: FromUtf8Error) -> Self {
-        DocProcessorError::Parsing(error.to_string())
+        Self::JsonParsing(error.to_string())
     }
 }
 
@@ -132,8 +141,11 @@ fn try_into_vrl_doc(
             map.insert(key, value);
             VrlValue::Object(map)
         }
-        SourceInputFormat::OtlpTraceJson | SourceInputFormat::OtlpTraceProtobuf => {
-            panic!("OTP log or trace data does not support VRL transforms")
+        SourceInputFormat::OtlpLogsJson
+        | SourceInputFormat::OtlpLogsProtobuf
+        | SourceInputFormat::OtlpTracesJson
+        | SourceInputFormat::OtlpTracesProtobuf => {
+            panic!("OTP logs or traces do not support VRL transforms")
         }
     };
     let vrl_doc = VrlDoc::new(vrl_value, num_bytes);
@@ -151,11 +163,19 @@ fn try_into_json_docs(
                 .map(|json_obj| JsonDoc::new(json_obj, num_bytes));
             JsonDocIterator::from(json_doc_result)
         }
-        SourceInputFormat::OtlpTraceJson => {
+        SourceInputFormat::OtlpLogsJson => {
+            let logs = parse_otlp_logs_json(&raw_doc);
+            JsonDocIterator::from(logs)
+        }
+        SourceInputFormat::OtlpLogsProtobuf => {
+            let logs = parse_otlp_logs_protobuf(&raw_doc);
+            JsonDocIterator::from(logs)
+        }
+        SourceInputFormat::OtlpTracesJson => {
             let spans = parse_otlp_spans_json(&raw_doc);
             JsonDocIterator::from(spans)
         }
-        SourceInputFormat::OtlpTraceProtobuf => {
+        SourceInputFormat::OtlpTracesProtobuf => {
             let spans = parse_otlp_spans_protobuf(&raw_doc);
             JsonDocIterator::from(spans)
         }
@@ -200,6 +220,7 @@ fn parse_raw_doc(
 
 enum JsonDocIterator {
     One(Option<Result<JsonDoc, DocProcessorError>>),
+    Logs(JsonLogIterator),
     Spans(JsonSpanIterator),
 }
 
@@ -209,6 +230,9 @@ impl Iterator for JsonDocIterator {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::One(opt) => opt.take(),
+            Self::Logs(logs) => logs
+                .next()
+                .map(|(json_value, num_bytes)| JsonDoc::try_from_json_value(json_value, num_bytes)),
             Self::Spans(spans) => spans
                 .next()
                 .map(|(json_value, num_bytes)| JsonDoc::try_from_json_value(json_value, num_bytes)),
@@ -227,10 +251,19 @@ where E: Into<DocProcessorError>
     }
 }
 
-impl From<Result<JsonSpanIterator, OtlpTraceError>> for JsonDocIterator {
-    fn from(result: Result<JsonSpanIterator, OtlpTraceError>) -> Self {
+impl From<Result<JsonLogIterator, OtlpLogsError>> for JsonDocIterator {
+    fn from(result: Result<JsonLogIterator, OtlpLogsError>) -> Self {
         match result {
-            Ok(json_doc) => Self::Spans(json_doc),
+            Ok(logs) => Self::Logs(logs),
+            Err(error) => Self::One(Some(Err(DocProcessorError::from(error)))),
+        }
+    }
+}
+
+impl From<Result<JsonSpanIterator, OtlpTracesError>> for JsonDocIterator {
+    fn from(result: Result<JsonSpanIterator, OtlpTracesError>) -> Self {
+        match result {
+            Ok(spans) => Self::Spans(spans),
             Err(error) => Self::One(Some(Err(DocProcessorError::from(error)))),
         }
     }
@@ -246,9 +279,9 @@ pub struct DocProcessorCounters {
     /// - number of docs that could not be transformed.
     /// - number of docs for which the doc mapper returnd an error.
     /// - number of valid docs.
-    pub num_doc_parsing_errors: AtomicU64,
+    pub num_doc_parse_errors: AtomicU64,
     pub num_transform_errors: AtomicU64,
-    pub num_oltp_trace_errors: AtomicU64,
+    pub num_oltp_parse_errors: AtomicU64,
     pub num_valid_docs: AtomicU64,
 
     /// Number of bytes that went through the indexer
@@ -263,9 +296,9 @@ impl DocProcessorCounters {
         Self {
             index_id,
             source_id,
-            num_doc_parsing_errors: Default::default(),
+            num_doc_parse_errors: Default::default(),
             num_transform_errors: Default::default(),
-            num_oltp_trace_errors: Default::default(),
+            num_oltp_parse_errors: Default::default(),
             num_valid_docs: Default::default(),
             num_bytes_total: Default::default(),
         }
@@ -274,8 +307,8 @@ impl DocProcessorCounters {
     /// Returns the overall number of docs that went through the indexer (valid or not).
     pub fn num_processed_docs(&self) -> u64 {
         self.num_valid_docs.load(Ordering::Relaxed)
-            + self.num_doc_parsing_errors.load(Ordering::Relaxed)
-            + self.num_oltp_trace_errors.load(Ordering::Relaxed)
+            + self.num_doc_parse_errors.load(Ordering::Relaxed)
+            + self.num_oltp_parse_errors.load(Ordering::Relaxed)
             + self.num_transform_errors.load(Ordering::Relaxed)
     }
 
@@ -283,8 +316,8 @@ impl DocProcessorCounters {
     /// (For instance, because they were missing a required field or because their because
     /// their format was invalid)
     pub fn num_invalid_docs(&self) -> u64 {
-        self.num_doc_parsing_errors.load(Ordering::Relaxed)
-            + self.num_oltp_trace_errors.load(Ordering::Relaxed)
+        self.num_doc_parse_errors.load(Ordering::Relaxed)
+            + self.num_oltp_parse_errors.load(Ordering::Relaxed)
             + self.num_transform_errors.load(Ordering::Relaxed)
     }
 
@@ -305,16 +338,16 @@ impl DocProcessorCounters {
     pub fn record_error(&self, error: DocProcessorError, num_bytes: u64) {
         let label = match error {
             DocProcessorError::DocMapperParsing(_) => {
-                self.num_doc_parsing_errors.fetch_add(1, Ordering::Relaxed);
+                self.num_doc_parse_errors.fetch_add(1, Ordering::Relaxed);
                 "doc_mapper_error"
             }
-            DocProcessorError::OltpTraceParsing(_) => {
-                self.num_oltp_trace_errors.fetch_add(1, Ordering::Relaxed);
-                "otlp_trace_parsing_error"
+            DocProcessorError::JsonParsing(_) => {
+                self.num_doc_parse_errors.fetch_add(1, Ordering::Relaxed);
+                "json_parse_error"
             }
-            DocProcessorError::Parsing(_) => {
-                self.num_doc_parsing_errors.fetch_add(1, Ordering::Relaxed);
-                "parsing_error"
+            DocProcessorError::OltpLogsParsing(_) | DocProcessorError::OltpTracesParsing(_) => {
+                self.num_oltp_parse_errors.fetch_add(1, Ordering::Relaxed);
+                "otlp_parse_error"
             }
             #[cfg(feature = "vrl")]
             DocProcessorError::Transform(_) => {
@@ -358,7 +391,7 @@ impl DocProcessor {
     ) -> anyhow::Result<Self> {
         let timestamp_field_opt = extract_timestamp_field(&*doc_mapper)?;
         if cfg!(not(feature = "vrl")) && transform_config_opt.is_some() {
-            bail!("VRL is not enabled. please recompile with the `vrl` feature")
+            bail!("VRL is not enabled: please recompile with the `vrl` feature")
         }
         let doc_processor = Self {
             doc_mapper,
@@ -414,11 +447,10 @@ impl DocProcessor {
                 }
                 Err(error) => {
                     rate_limited_warn!(
-                        limit_per_min = 5,
+                        limit_per_min = 10,
                         index_id = self.counters.index_id,
                         source_id = self.counters.source_id,
-                        "{}",
-                        error
+                        "{error}",
                     );
                     self.counters.record_error(error, num_bytes as u64);
                 }
@@ -563,8 +595,12 @@ mod tests {
     use quickwit_config::{build_doc_mapper, SearchSettings};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
-    use quickwit_opentelemetry::otlp::OtlpGrpcTracesService;
+    use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
+    use quickwit_proto::opentelemetry::proto::collector::logs::v1::ExportLogsServiceRequest;
     use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
+    use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;
+    use quickwit_proto::opentelemetry::proto::common::v1::AnyValue as OtlpAnyValue;
+    use quickwit_proto::opentelemetry::proto::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
     use quickwit_proto::opentelemetry::proto::trace::v1::{ResourceSpans, ScopeSpans, Span};
     use serde_json::Value as JsonValue;
     use tantivy::schema::NamedFieldDocument;
@@ -574,7 +610,7 @@ mod tests {
     use crate::models::{PublishLock, RawDocBatch};
 
     #[tokio::test]
-    async fn test_doc_processor_simple() -> anyhow::Result<()> {
+    async fn test_doc_processor_simple() {
         let index_id = "my-index";
         let source_id = "my-source";
         let universe = Universe::with_accelerated_time();
@@ -602,16 +638,17 @@ mod tests {
                 ],
                 0..4,
             ))
-            .await?;
+            .await.unwrap();
+
         let counters = doc_processor_handle
             .process_pending_and_observe()
             .await
             .state;
         assert_eq!(counters.index_id, index_id);
         assert_eq!(counters.source_id, source_id);
-        assert_eq!(counters.num_doc_parsing_errors.load(Ordering::Relaxed), 2);
+        assert_eq!(counters.num_doc_parse_errors.load(Ordering::Relaxed), 2);
         assert_eq!(counters.num_transform_errors.load(Ordering::Relaxed), 0);
-        assert_eq!(counters.num_oltp_trace_errors.load(Ordering::Relaxed), 0);
+        assert_eq!(counters.num_oltp_parse_errors.load(Ordering::Relaxed), 0);
         assert_eq!(counters.num_valid_docs.load(Ordering::Relaxed), 2);
         assert_eq!(counters.num_bytes_total.load(Ordering::Relaxed), 387);
 
@@ -628,7 +665,7 @@ mod tests {
 
         let schema = doc_mapper.schema();
         let NamedFieldDocument(named_field_doc_map) = batch.docs[0].doc.to_named_doc(&schema);
-        let doc_json = JsonValue::Object(doc_mapper.doc_to_json(named_field_doc_map)?);
+        let doc_json = JsonValue::Object(doc_mapper.doc_to_json(named_field_doc_map).unwrap());
         assert_eq!(
             doc_json,
             serde_json::json!({
@@ -647,7 +684,6 @@ mod tests {
             })
         );
         universe.assert_quit().await;
-        Ok(())
     }
 
     const DOCMAPPER_WITH_PARTITION_JSON: &str = r#"
@@ -661,7 +697,7 @@ mod tests {
         }"#;
 
     #[tokio::test]
-    async fn test_doc_processor_partitioning() -> anyhow::Result<()> {
+    async fn test_doc_processor_partitioning() {
         let doc_mapper: Arc<dyn DocMapper> = Arc::new(
             serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap(),
         );
@@ -688,7 +724,9 @@ mod tests {
                 ],
                 0..2,
             ))
-            .await?;
+            .await
+            .unwrap();
+
         universe
             .send_exit_with_success(&doc_processor_mailbox)
             .await
@@ -706,7 +744,6 @@ mod tests {
         assert_eq!(partition_ids[1], partition_ids[3]);
         assert_ne!(partition_ids[0], partition_ids[1]);
         universe.assert_quit().await;
-        Ok(())
     }
 
     #[tokio::test]
@@ -784,7 +821,163 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_doc_processor_otlp_trace_json() {
+    async fn test_doc_processor_otlp_logs_json() {
+        let root_uri = Uri::for_test("ram:///indexes");
+        let index_config = OtlpGrpcLogsService::index_config(&root_uri).unwrap();
+        let doc_mapper =
+            build_doc_mapper(&index_config.doc_mapping, &SearchSettings::default()).unwrap();
+
+        let universe = Universe::with_accelerated_time();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
+        let doc_processor = DocProcessor::try_new(
+            "my-index".to_string(),
+            "my-source".to_string(),
+            doc_mapper,
+            indexer_mailbox,
+            None,
+            SourceInputFormat::OtlpLogsJson,
+        )
+        .unwrap();
+
+        let (doc_processor_mailbox, doc_processor_handle) =
+            universe.spawn_builder().spawn(doc_processor);
+
+        let scope_logs = vec![ScopeLogs {
+            log_records: vec![
+                LogRecord {
+                    time_unix_nano: 1_000_000_000,
+                    body: Some(OtlpAnyValue {
+                        value: Some(OtlpAnyValueValue::StringValue(
+                            "foo log message".to_string(),
+                        )),
+                    }),
+                    ..Default::default()
+                },
+                LogRecord {
+                    time_unix_nano: 1_000_000_001,
+                    body: Some(OtlpAnyValue {
+                        value: Some(OtlpAnyValueValue::StringValue(
+                            "bar log message".to_string(),
+                        )),
+                    }),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }];
+        let resource_logs = vec![ResourceLogs {
+            scope_logs,
+            ..Default::default()
+        }];
+        let request = ExportLogsServiceRequest { resource_logs };
+        let raw_doc_json = serde_json::to_vec(&request).unwrap();
+        let raw_doc_batch = RawDocBatch::for_test(&[&raw_doc_json], 0..2);
+        doc_processor_mailbox
+            .send_message(raw_doc_batch)
+            .await
+            .unwrap();
+
+        universe
+            .send_exit_with_success(&doc_processor_mailbox)
+            .await
+            .unwrap();
+
+        let counters = doc_processor_handle
+            .process_pending_and_observe()
+            .await
+            .state;
+        assert_eq!(counters.num_valid_docs.load(Ordering::Relaxed), 2);
+
+        let batch = indexer_inbox.drain_for_test_typed::<ProcessedDocBatch>();
+        assert_eq!(batch.len(), 1);
+        assert_eq!(batch[0].docs.len(), 2);
+
+        let (exit_status, _) = doc_processor_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_doc_processor_otlp_logs_proto() {
+        let root_uri = Uri::for_test("ram:///indexes");
+        let index_config = OtlpGrpcLogsService::index_config(&root_uri).unwrap();
+        let doc_mapper =
+            build_doc_mapper(&index_config.doc_mapping, &SearchSettings::default()).unwrap();
+
+        let universe = Universe::with_accelerated_time();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
+        let doc_processor = DocProcessor::try_new(
+            "my-index".to_string(),
+            "my-source".to_string(),
+            doc_mapper,
+            indexer_mailbox,
+            None,
+            SourceInputFormat::OtlpLogsProtobuf,
+        )
+        .unwrap();
+
+        let (doc_processor_mailbox, doc_processor_handle) =
+            universe.spawn_builder().spawn(doc_processor);
+
+        let scope_logs = vec![ScopeLogs {
+            log_records: vec![
+                LogRecord {
+                    time_unix_nano: 1_000_000_000,
+                    body: Some(OtlpAnyValue {
+                        value: Some(OtlpAnyValueValue::StringValue(
+                            "foo log message".to_string(),
+                        )),
+                    }),
+                    ..Default::default()
+                },
+                LogRecord {
+                    time_unix_nano: 1_000_000_001,
+                    body: Some(OtlpAnyValue {
+                        value: Some(OtlpAnyValueValue::StringValue(
+                            "bar log message".to_string(),
+                        )),
+                    }),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }];
+        let resource_logs = vec![ResourceLogs {
+            scope_logs,
+            ..Default::default()
+        }];
+        let request = ExportLogsServiceRequest { resource_logs };
+        let mut raw_doc_buffer = Vec::new();
+        request.encode(&mut raw_doc_buffer).unwrap();
+
+        let raw_doc_batch = RawDocBatch::for_test(&[&raw_doc_buffer], 0..2);
+        doc_processor_mailbox
+            .send_message(raw_doc_batch)
+            .await
+            .unwrap();
+
+        universe
+            .send_exit_with_success(&doc_processor_mailbox)
+            .await
+            .unwrap();
+
+        let counters = doc_processor_handle
+            .process_pending_and_observe()
+            .await
+            .state;
+        assert_eq!(counters.num_valid_docs.load(Ordering::Relaxed), 2);
+
+        let batch = indexer_inbox.drain_for_test_typed::<ProcessedDocBatch>();
+        assert_eq!(batch.len(), 1);
+        assert_eq!(batch[0].docs.len(), 2);
+
+        let (exit_status, _) = doc_processor_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_doc_processor_otlp_traces_json() {
         let root_uri = Uri::for_test("ram:///indexes");
         let index_config = OtlpGrpcTracesService::index_config(&root_uri).unwrap();
         let doc_mapper =
@@ -798,7 +991,7 @@ mod tests {
             doc_mapper,
             indexer_mailbox,
             None,
-            SourceInputFormat::OtlpTraceJson,
+            SourceInputFormat::OtlpTracesJson,
         )
         .unwrap();
 
@@ -845,7 +1038,6 @@ mod tests {
             .process_pending_and_observe()
             .await
             .state;
-        // assert_eq!(counters.num_parse_errors.load(Ordering::Relaxed), 1);
         assert_eq!(counters.num_valid_docs.load(Ordering::Relaxed), 2);
 
         let batch = indexer_inbox.drain_for_test_typed::<ProcessedDocBatch>();
@@ -858,7 +1050,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_doc_processor_otlp_trace_proto() {
+    async fn test_doc_processor_otlp_traces_proto() {
         let root_uri = Uri::for_test("ram:///indexes");
         let index_config = OtlpGrpcTracesService::index_config(&root_uri).unwrap();
         let doc_mapper =
@@ -872,7 +1064,7 @@ mod tests {
             doc_mapper,
             indexer_mailbox,
             None,
-            SourceInputFormat::OtlpTraceProtobuf,
+            SourceInputFormat::OtlpTracesProtobuf,
         )
         .unwrap();
 
@@ -921,7 +1113,6 @@ mod tests {
             .process_pending_and_observe()
             .await
             .state;
-        // assert_eq!(counters.num_parse_errors.load(Ordering::Relaxed), 1);
         assert_eq!(counters.num_valid_docs.load(Ordering::Relaxed), 2);
 
         let batch = indexer_inbox.drain_for_test_typed::<ProcessedDocBatch>();
@@ -981,9 +1172,9 @@ mod tests_vrl {
             .state;
         assert_eq!(counters.index_id, index_id.to_string());
         assert_eq!(counters.source_id, source_id.to_string());
-        assert_eq!(counters.num_doc_parsing_errors.load(Ordering::Relaxed), 2);
+        assert_eq!(counters.num_doc_parse_errors.load(Ordering::Relaxed), 2);
         assert_eq!(counters.num_transform_errors.load(Ordering::Relaxed), 0);
-        assert_eq!(counters.num_oltp_trace_errors.load(Ordering::Relaxed), 0);
+        assert_eq!(counters.num_oltp_parse_errors.load(Ordering::Relaxed), 0);
         assert_eq!(counters.num_valid_docs.load(Ordering::Relaxed), 2);
         assert_eq!(counters.num_bytes_total.load(Ordering::Relaxed), 397);
 
@@ -1071,9 +1262,9 @@ mod tests_vrl {
             .state;
         assert_eq!(counters.index_id, index_id);
         assert_eq!(counters.source_id, source_id);
-        assert_eq!(counters.num_doc_parsing_errors.load(Ordering::Relaxed), 0,);
+        assert_eq!(counters.num_doc_parse_errors.load(Ordering::Relaxed), 0,);
         assert_eq!(counters.num_transform_errors.load(Ordering::Relaxed), 1,);
-        assert_eq!(counters.num_oltp_trace_errors.load(Ordering::Relaxed), 0,);
+        assert_eq!(counters.num_oltp_parse_errors.load(Ordering::Relaxed), 0,);
         assert_eq!(counters.num_valid_docs.load(Ordering::Relaxed), 2,);
         assert_eq!(counters.num_bytes_total.load(Ordering::Relaxed), 200,);
 

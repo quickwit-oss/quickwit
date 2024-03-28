@@ -86,7 +86,7 @@ macro_rules! rate_limited_warn {
 }
 #[macro_export]
 macro_rules! rate_limited_error {
-    ($unit:literal=$limit:literal, $($args:tt)*) => {
+    ($unit:ident=$limit:literal, $($args:tt)*) => {
         $crate::rate_limited_tracing::rate_limited_tracing!(error, $unit=$limit, $($args)*)
     };
 }
