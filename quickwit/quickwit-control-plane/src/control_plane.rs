@@ -113,6 +113,7 @@ impl ControlPlane {
         ingester_pool: IngesterPool,
         metastore: MetastoreServiceClient,
     ) -> (Mailbox<Self>, ActorHandle<Supervisor<Self>>) {
+        info!("starting control plane");
         universe.spawn_builder().supervise_fn(move || {
             let cluster_id = cluster_config.cluster_id.clone();
             let replication_factor = cluster_config.replication_factor;
@@ -260,6 +261,7 @@ impl ControlPlane {
         shard_ids: &[ShardId],
         progress: &Progress,
     ) -> anyhow::Result<()> {
+        info!(shard_ids=?shard_ids, "delete shards");
         let delete_shards_request = DeleteShardsRequest {
             index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.clone(),
@@ -367,6 +369,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
                     Some(shard.publish_position_inclusive().max(&position).clone());
                 if position.is_eof() {
                     // identify shards that have reached EOF but have not yet been removed.
+                    info!(shard_id=%shard_id, position=?position, "received eof shard via gossip");
                     shard_ids_to_close.push(shard_id);
                 }
             }
