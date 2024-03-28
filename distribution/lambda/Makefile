@@ -111,7 +111,7 @@ bench-index:
 	done
 
 bench-search-term:
-	export QW_LAMBDA_LOG_SPAN_BOUNDARIES=true
+	export QW_LAMBDA_ENABLE_VERBOSE_JSON_LOGS=true
 	mem_sizes=( 1024 2048 4096 8192 )
 	for mem_size in "$${mem_sizes[@]}"
 	do
@@ -121,7 +121,7 @@ bench-search-term:
 	done
 
 bench-search-histogram:
-	export QW_LAMBDA_LOG_SPAN_BOUNDARIES=true
+	export QW_LAMBDA_ENABLE_VERBOSE_JSON_LOGS=true
 	mem_sizes=( 1024 2048 4096 8192 )
 	for mem_size in "$${mem_sizes[@]}"
 	do
@@ -133,15 +133,13 @@ bench-search-histogram:
 bench-search:
 	for run in {1..30}
 	do 
-		export QW_LAMBDA_DISABLE_SEARCH_CACHE=true
-		$(MAKE) bench-search-term
-		$(MAKE) bench-search-histogram
-		export QW_LAMBDA_DISABLE_SEARCH_CACHE=false
 		export QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY=0
 		$(MAKE) bench-search-term
 		$(MAKE) bench-search-histogram
-		export QW_LAMBDA_DISABLE_SEARCH_CACHE=false
 		export QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY=64MB
 		$(MAKE) bench-search-term
 		$(MAKE) bench-search-histogram
 	done
+
+test-mock-data-endpoints:
+	python -c 'from cdk import cli; cli.test_mock_data_endpoints()'

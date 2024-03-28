@@ -32,46 +32,76 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::{EnvFilter, Layer};
 
-use crate::environment::{LOG_SPAN_BOUNDARIES, OPENTELEMETRY_AUTHORIZATION, OPENTELEMETRY_URL};
+use crate::environment::{
+    ENABLE_VERBOSE_JSON_LOGS, OPENTELEMETRY_AUTHORIZATION, OPENTELEMETRY_URL,
+};
 
 static TRACER_PROVIDER: OnceCell<Option<TracerProvider>> = OnceCell::new();
 pub(crate) const RUNTIME_CONTEXT_SPAN: &str = "runtime_context";
 
-fn fmt_layer<S>(level: Level) -> impl Layer<S>
+fn fmt_env_filter(level: Level) -> EnvFilter {
+    let default_filter = format!("quickwit={level}")
+        .parse()
+        .expect("Invalid default filter");
+    EnvFilter::builder()
+        .with_default_directive(default_filter)
+        .from_env_lossy()
+}
+
+fn fmt_time_format() -> UtcTime<std::vec::Vec<time::format_description::FormatItem<'static>>> {
+    // We do not rely on the Rfc3339 implementation, because it has a nanosecond precision.
+    // See discussion here: https://github.com/time-rs/time/discussions/418
+    UtcTime::new(
+        time::format_description::parse(
+            "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
+        )
+        .expect("Time format invalid."),
+    )
+}
+
+fn compact_fmt_layer<S>(level: Level) -> impl Layer<S>
 where
     S: for<'a> LookupSpan<'a>,
     S: tracing::Subscriber,
 {
-    let default_filter = format!("quickwit={level}")
-        .parse()
-        .expect("Invalid default filter");
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(default_filter)
-        .from_env_lossy();
     let event_format = tracing_subscriber::fmt::format()
         .with_target(true)
-        .with_timer(
-            // We do not rely on the Rfc3339 implementation, because it has a nanosecond precision.
-            // See discussion here: https://github.com/time-rs/time/discussions/418
-            UtcTime::new(
-                time::format_description::parse(
-                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
-                )
-                .expect("Time format invalid."),
-            ),
-        )
-        .json();
-    let fmt_span = if *LOG_SPAN_BOUNDARIES {
-        FmtSpan::NEW | FmtSpan::CLOSE
-    } else {
-        FmtSpan::NONE
-    };
+        .with_timer(fmt_time_format())
+        .compact();
+
     tracing_subscriber::fmt::layer::<S>()
-        .with_span_events(fmt_span)
+        .event_format(event_format)
+        .with_ansi(false)
+        .with_filter(fmt_env_filter(level))
+}
+
+fn json_fmt_layer<S>(level: Level) -> impl Layer<S>
+where
+    S: for<'a> LookupSpan<'a>,
+    S: tracing::Subscriber,
+{
+    let event_format = tracing_subscriber::fmt::format()
+        .with_target(true)
+        .with_timer(fmt_time_format())
+        .json();
+    tracing_subscriber::fmt::layer::<S>()
+        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
         .event_format(event_format)
         .fmt_fields(JsonFields::default())
         .with_ansi(false)
-        .with_filter(env_filter)
+        .with_filter(fmt_env_filter(level))
+}
+
+fn fmt_layer<S>(level: Level) -> Box<dyn Layer<S> + Send + Sync + 'static>
+where
+    S: for<'a> LookupSpan<'a>,
+    S: tracing::Subscriber,
+{
+    if *ENABLE_VERBOSE_JSON_LOGS {
+        json_fmt_layer(level).boxed()
+    } else {
+        compact_fmt_layer(level).boxed()
+    }
 }
 
 fn otlp_layer<S>(
