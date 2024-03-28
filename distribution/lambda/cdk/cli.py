@@ -72,7 +72,7 @@ class LambdaResult:
             log_tail=base64.b64decode(lambda_resp["LogResult"]).decode(),
             payload=payload,
             raw_size_bytes=len(payload),
-            status_code=200,
+            status_code=0,
         )
 
     @staticmethod
@@ -119,8 +119,6 @@ def _format_lambda_output(
     if lambda_result.function_error != "":
         print("\n## FUNCTION ERROR:")
         print(lambda_result.function_error)
-    print("\n## LOG TAIL:")
-    print(lambda_result.log_tail)
     print("\n## RAW RESPONSE SIZE (BYTES):")
     if len(lambda_result.payload) == 0:
         ratio = "empty payload"
@@ -213,12 +211,14 @@ def _invoke_searcher(
         LogType="Tail",
         Payload=json.dumps(
             {
-                "path": f"/api/v1/{index_id}/search",
                 "resource": f"/api/v1/{index_id}/search",
+                "path": f"/api/v1/{index_id}/search",
                 "httpMethod": "POST",
                 "headers": {
                     "Content-Type": "application/json",
-                    "Content-Length": f"{len(payload)}",
+                },
+                "requestContext": {
+                    "httpMethod": "POST",
                 },
                 "body": payload,
                 "isBase64Encoded": False,
@@ -268,7 +268,6 @@ def get_logs(
                     last_event_id = event["eventId"]
                     yield event["message"]
                     if event["message"].startswith("REPORT"):
-                        print(event["message"])
                         lower_time_bound = int(event["timestamp"])
                         last_event_id = "REPORT"
                         break
@@ -296,6 +295,7 @@ def download_logs_to_file(request_id: str, function_name: str, invoke_start: flo
                 int(invoke_start * 1000),
             ):
                 f.write(log)
+            print(f"Logs written to lambda.{request_id}.log")
     except Exception as e:
         print(f"Failed to download logs: {e}")
 

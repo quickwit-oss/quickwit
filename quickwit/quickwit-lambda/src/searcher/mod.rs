@@ -21,6 +21,4 @@ mod api;
 mod environment;
 pub mod warp_lambda;
 
-pub use api::searcher_api;
-
-const LAMBDA_REQUEST_ID_HEADER: &str = "lambda-request-id";
+pub use api::setup_searcher_api;

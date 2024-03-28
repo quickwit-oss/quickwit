@@ -18,12 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_lambda::logger;
-use quickwit_lambda::searcher::{searcher_api, warp_lambda};
+use quickwit_lambda::searcher::{setup_searcher_api, warp_lambda};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     logger::setup_lambda_tracer(tracing::Level::INFO)?;
-    let routes = searcher_api().await?;
+    let routes = setup_searcher_api().await?;
     let warp_service = warp::service(routes);
     warp_lambda::run(warp_service)
         .await
