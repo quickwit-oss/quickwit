@@ -161,7 +161,7 @@ services:
     command: -scheme http
 
   grafana:
-    image: grafana/grafana-oss:${GRAFANA_VERSION:-9.4.7}
+    image: grafana/grafana-oss:${GRAFANA_VERSION:-10.4.1}
     container_name: grafana
     ports:
       - "${MAP_HOST_GRAFANA:-127.0.0.1}:3000:3000"
