@@ -3994,7 +3994,7 @@ dependencies = [
 [[package]]
 name = "mrecordlog"
 version = "0.4.0"
-source = "git+https://github.com/quickwit-oss/mrecordlog?rev=8a77dd2#8a77dd20d4a6a56b94f0ceb17082d57bd65d81b6"
+source = "git+https://github.com/quickwit-oss/mrecordlog?rev=25bd600#25bd600942862761036fe567b458bf652cce72a8"
 dependencies = [
  "bytes",
  "crc32fast",

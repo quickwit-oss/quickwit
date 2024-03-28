@@ -53,6 +53,9 @@ service IngesterService {
 
   // Decommissions the ingester.
   rpc Decommission(DecommissionRequest) returns (DecommissionResponse);
+
+  // Get mrecordlog summary
+  rpc MrecordlogSummary(MrecordlogSummaryRequest) returns (MrecordlogSummaryResponse);
 }
 
 message RetainShardsForSource {
@@ -266,6 +269,20 @@ message DecommissionRequest {
 }
 
 message DecommissionResponse {
+}
+
+message MrecordlogSummaryRequest {
+}
+
+message MrecordlogSummaryResponse {
+  repeated MrecordlogQueueSummary queues = 1;
+}
+
+message MrecordlogQueueSummary {
+  string id = 1;
+  uint64 start = 2;
+  optional uint64 end = 3;
+  optional uint64 file_number = 4;
 }
 
 message OpenObservationStreamRequest {
