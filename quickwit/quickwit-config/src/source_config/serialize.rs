@@ -110,7 +110,7 @@ impl SourceConfigForSerialization {
         if let Some(transform_config) = &self.transform {
             if matches!(
                 self.input_format,
-                SourceInputFormat::OtlpTraceJson | SourceInputFormat::OtlpTraceProtobuf
+                SourceInputFormat::OtlpTracesJson | SourceInputFormat::OtlpTracesProtobuf
             ) {
                 bail!("VRL transforms are not supported for OTLP input formats");
             }

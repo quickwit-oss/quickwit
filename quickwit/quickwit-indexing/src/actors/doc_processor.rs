@@ -132,7 +132,7 @@ fn try_into_vrl_doc(
             map.insert(key, value);
             VrlValue::Object(map)
         }
-        SourceInputFormat::OtlpTraceJson | SourceInputFormat::OtlpTraceProtobuf => {
+        SourceInputFormat::OtlpTracesJson | SourceInputFormat::OtlpTracesProtobuf => {
             panic!("OTP log or trace data does not support VRL transforms")
         }
     };
@@ -151,11 +151,11 @@ fn try_into_json_docs(
                 .map(|json_obj| JsonDoc::new(json_obj, num_bytes));
             JsonDocIterator::from(json_doc_result)
         }
-        SourceInputFormat::OtlpTraceJson => {
+        SourceInputFormat::OtlpTracesJson => {
             let spans = parse_otlp_spans_json(&raw_doc);
             JsonDocIterator::from(spans)
         }
-        SourceInputFormat::OtlpTraceProtobuf => {
+        SourceInputFormat::OtlpTracesProtobuf => {
             let spans = parse_otlp_spans_protobuf(&raw_doc);
             JsonDocIterator::from(spans)
         }
@@ -798,7 +798,7 @@ mod tests {
             doc_mapper,
             indexer_mailbox,
             None,
-            SourceInputFormat::OtlpTraceJson,
+            SourceInputFormat::OtlpTracesJson,
         )
         .unwrap();
 
@@ -858,7 +858,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_doc_processor_otlp_trace_proto() {
+    async fn test_doc_processor_otlp_traces_proto() {
         let root_uri = Uri::for_test("ram:///indexes");
         let index_config = OtlpGrpcTracesService::index_config(&root_uri).unwrap();
         let doc_mapper =
@@ -872,7 +872,7 @@ mod tests {
             doc_mapper,
             indexer_mailbox,
             None,
-            SourceInputFormat::OtlpTraceProtobuf,
+            SourceInputFormat::OtlpTracesProtobuf,
         )
         .unwrap();
 
