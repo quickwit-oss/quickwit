@@ -35,17 +35,17 @@ pub trait QuickwitSegmentTopKCollector {
     fn collect_top_k(&mut self, doc_id: DocId, score: Score);
     fn get_top_k(&self) -> Vec<PartialHit>;
 }
+
 trait IntoOptionU64 {
-    fn is_unit_type() -> bool;
+    #[inline]
+    fn is_unit_type() -> bool {
+        false
+    }
     fn into_option_u64(self) -> Option<u64>;
     fn from_option_u64(value: Option<u64>) -> Self;
 }
 
 impl IntoOptionU64 for Option<u64> {
-    #[inline]
-    fn is_unit_type() -> bool {
-        false
-    }
     #[inline]
     fn into_option_u64(self) -> Option<u64> {
         self
@@ -56,18 +56,14 @@ impl IntoOptionU64 for Option<u64> {
     }
 }
 
-impl IntoOptionU64 for ReverseOptionU64 {
-    #[inline]
-    fn is_unit_type() -> bool {
-        false
-    }
+impl IntoOptionU64 for Option<Reverse<u64>> {
     #[inline]
     fn into_option_u64(self) -> Option<u64> {
-        self.0
+        self.map(|el| el.0)
     }
     #[inline]
     fn from_option_u64(value: Option<u64>) -> Self {
-        ReverseOptionU64(value)
+        value.map(|el| Reverse(el))
     }
 }
 
@@ -82,29 +78,6 @@ impl IntoOptionU64 for () {
     }
     #[inline]
     fn from_option_u64(_: Option<u64>) -> Self {}
-}
-
-/// Like Reverse<Option<u64>>, but sorts None as the smallest value.
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-struct ReverseOptionU64(Option<u64>);
-
-impl Ord for ReverseOptionU64 {
-    #[inline]
-    fn cmp(&self, other: &Self) -> Ordering {
-        match (&self.0, &other.0) {
-            (Some(x), Some(y)) => y.cmp(x),
-            (None, None) => Ordering::Equal,
-            (None, Some(_)) => Ordering::Less,
-            (Some(_), None) => Ordering::Greater,
-        }
-    }
-}
-
-impl PartialOrd for ReverseOptionU64 {
-    #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
 }
 
 /// Generic hit struct for top k collector.
@@ -190,6 +163,8 @@ pub fn specialized_top_k_segment_collector(
     order1: SortOrder,
     order2: SortOrder,
 ) -> Box<dyn QuickwitSegmentTopKCollector> {
+    // TODO: Add support for search_after to the specialized collector.
+    // Eventually we may want to remove the generic collector to reduce complexity.
     if search_after_option.is_some() || score_extractor.is_score() {
         return Box::new(GenericQuickwitSegmentTopKCollector::new(
             split_id,
@@ -241,14 +216,15 @@ pub fn specialized_top_k_segment_collector(
                 segment_ord,
             ))
         }
-        (SortType::OneFFSort, SortOrder::Asc, SortOrder::Asc) => Box::new(
-            SpecializedSegmentTopKCollector::<ReverseOptionU64, (), true>::new(
-                split_id,
-                score_extractor,
-                leaf_max_hits,
-                segment_ord,
-            ),
-        ),
+        (SortType::OneFFSort, SortOrder::Asc, SortOrder::Asc) => {
+            Box::new(SpecializedSegmentTopKCollector::<
+                Option<Reverse<u64>>,
+                (),
+                true,
+            >::new(
+                split_id, score_extractor, leaf_max_hits, segment_ord
+            ))
+        }
         (SortType::OneFFSort, SortOrder::Desc, SortOrder::Asc) => Box::new(
             SpecializedSegmentTopKCollector::<Option<u64>, (), false>::new(
                 split_id,
@@ -257,14 +233,15 @@ pub fn specialized_top_k_segment_collector(
                 segment_ord,
             ),
         ),
-        (SortType::OneFFSort, SortOrder::Asc, SortOrder::Desc) => Box::new(
-            SpecializedSegmentTopKCollector::<ReverseOptionU64, (), true>::new(
-                split_id,
-                score_extractor,
-                leaf_max_hits,
-                segment_ord,
-            ),
-        ),
+        (SortType::OneFFSort, SortOrder::Asc, SortOrder::Desc) => {
+            Box::new(SpecializedSegmentTopKCollector::<
+                Option<Reverse<u64>>,
+                (),
+                true,
+            >::new(
+                split_id, score_extractor, leaf_max_hits, segment_ord
+            ))
+        }
         (SortType::OneFFSort, SortOrder::Desc, SortOrder::Desc) => Box::new(
             SpecializedSegmentTopKCollector::<Option<u64>, (), false>::new(
                 split_id,
@@ -275,8 +252,8 @@ pub fn specialized_top_k_segment_collector(
         ),
         (SortType::TwoFFSorts, SortOrder::Asc, SortOrder::Asc) => {
             Box::new(SpecializedSegmentTopKCollector::<
-                ReverseOptionU64,
-                ReverseOptionU64,
+                Option<Reverse<u64>>,
+                Option<Reverse<u64>>,
                 true,
             >::new(
                 split_id, score_extractor, leaf_max_hits, segment_ord
@@ -284,7 +261,7 @@ pub fn specialized_top_k_segment_collector(
         }
         (SortType::TwoFFSorts, SortOrder::Asc, SortOrder::Desc) => {
             Box::new(SpecializedSegmentTopKCollector::<
-                ReverseOptionU64,
+                Option<Reverse<u64>>,
                 Option<u64>,
                 true,
             >::new(
@@ -294,7 +271,7 @@ pub fn specialized_top_k_segment_collector(
         (SortType::TwoFFSorts, SortOrder::Desc, SortOrder::Asc) => {
             Box::new(SpecializedSegmentTopKCollector::<
                 Option<u64>,
-                ReverseOptionU64,
+                Option<Reverse<u64>>,
                 false,
             >::new(
                 split_id, score_extractor, leaf_max_hits, segment_ord
@@ -343,7 +320,6 @@ impl<D> TopKComputer<D>
 where D: Ord + Clone + Debug
 {
     /// Create a new `TopKComputer`.
-    /// Internally it will allocate a buffer of size `5 * top_n`.
     pub fn new(top_n: usize) -> Self {
         // Vec cap can't be 0, since it would panic in push
         let vec_cap = top_n.max(1) * 10;
@@ -435,8 +411,14 @@ impl<
     ) -> Self {
         Self {
             _phantom: PhantomData,
-            sort_values1: Box::new([None; COLLECT_BLOCK_BUFFER_LEN]),
-            sort_values2: Box::new([None; COLLECT_BLOCK_BUFFER_LEN]),
+            sort_values1: vec![None; COLLECT_BLOCK_BUFFER_LEN]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap(),
+            sort_values2: vec![None; COLLECT_BLOCK_BUFFER_LEN]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap(),
             first,
             second,
         }
@@ -637,8 +619,14 @@ impl GenericQuickwitSegmentTopKCollector {
             segment_ord,
             search_after,
             precomp_search_after_order,
-            sort_values1: Box::new([None; COLLECT_BLOCK_BUFFER_LEN]),
-            sort_values2: Box::new([None; COLLECT_BLOCK_BUFFER_LEN]),
+            sort_values1: vec![None; COLLECT_BLOCK_BUFFER_LEN]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap(),
+            sort_values2: vec![None; COLLECT_BLOCK_BUFFER_LEN]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap(),
         }
     }
     #[inline]
