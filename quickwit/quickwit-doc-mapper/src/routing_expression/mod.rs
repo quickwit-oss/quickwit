@@ -323,8 +323,14 @@ impl Display for InnerRoutingExpr {
                     if index != 0 {
                         f.write_str(".")?;
                     }
-                    // TODO actually we should escape .
-                    f.write_str(part)?;
+                    if !part.contains('.') {
+                        f.write_str(part)?;
+                    } else {
+                        // TODO use std version once stabilized
+                        for subpart in itertools::Itertools::intersperse(part.split('.'), r"\.") {
+                            f.write_str(subpart)?;
+                        }
+                    }
                 }
             }
             InnerRoutingExpr::Composite(children) => {
@@ -417,7 +423,7 @@ mod expression_dsl {
 
     fn identifier(input: &str) -> IResult<&str, &str> {
         input.split_at_position1_complete(
-            |item| !(item.is_alphanum() || item == '_' || item == '.' || item == '\\'),
+            |item| !(item.is_alphanum() || ['_', '-', '.', '\\', '/', '@', '$'].contains(&item)),
             ErrorKind::AlphaNumeric,
         )
     }
@@ -450,7 +456,7 @@ mod expression_dsl {
 
     fn key_identifier(input: &str) -> IResult<&str, &str> {
         input.split_at_position1_complete(
-            |item| !(item.is_alphanum() || item == '_'),
+            |item| !(item.is_alphanum() || ['_', '-', '/', '@', '$'].contains(&item)),
             ErrorKind::Fail,
         )
     }
@@ -512,6 +518,15 @@ mod tests {
         assert_eq!(
             routing_expr,
             InnerRoutingExpr::Field(vec!["tenant_id".to_owned()])
+        );
+    }
+
+    #[test]
+    fn test_routing_expr_single_field_special_char() {
+        let routing_expr = deser_util(r"abCD01-_/@$\.a.bc");
+        assert_eq!(
+            routing_expr,
+            InnerRoutingExpr::Field(vec![r"abCD01-_/@$.a".to_owned(), "bc".to_string()])
         );
     }
 
@@ -594,10 +609,17 @@ mod tests {
         let keys = expression_dsl::parse_keys("abc.def").unwrap();
         assert_eq!(keys, vec![String::from("abc"), String::from("def")]);
     }
+
     #[test]
     fn test_parse_keys_with_escaped_dot() {
         let keys = expression_dsl::parse_keys("abc\\.def.hij").unwrap();
         assert_eq!(keys, vec![String::from("abc.def"), String::from("hij")]);
+    }
+
+    #[test]
+    fn test_parse_keys_with_special_char() {
+        let keys = expression_dsl::parse_keys("abCD01-_/@$").unwrap();
+        assert_eq!(keys, vec![String::from("abCD01-_/@$")]);
     }
 
     #[test]
