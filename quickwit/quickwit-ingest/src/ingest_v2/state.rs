@@ -138,7 +138,11 @@ impl IngesterState {
         info!("opening WAL located at `{}`", wal_dir_path.display());
         let open_result = MultiRecordLogAsync::open_with_prefs(
             wal_dir_path,
-            mrecordlog::SyncPolicy::OnDelay(Duration::from_secs(5)),
+            mrecordlog::PersistPolicy::OnDelay {
+                interval: Duration::from_secs(5),
+                // TODO maybe we want to fsync too?
+                action: mrecordlog::PersistAction::Flush,
+            },
         )
         .await;
 

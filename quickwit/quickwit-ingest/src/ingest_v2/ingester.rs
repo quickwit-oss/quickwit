@@ -45,6 +45,7 @@ use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, DecommissionRequest,
     DecommissionResponse, FetchMessage, IngesterService, IngesterServiceClient,
     IngesterServiceStream, IngesterStatus, InitShardsRequest, InitShardsResponse,
+    MrecordlogQueueSummary, MrecordlogSummaryRequest, MrecordlogSummaryResponse,
     ObservationMessage, OpenFetchStreamRequest, OpenObservationStreamRequest,
     OpenReplicationStreamRequest, OpenReplicationStreamResponse, PersistFailure,
     PersistFailureReason, PersistRequest, PersistResponse, PersistSuccess, ReplicateFailureReason,
@@ -961,6 +962,35 @@ impl Ingester {
 
         Ok(DecommissionResponse {})
     }
+
+    async fn mrecordlog_summary_inner(&mut self) -> IngestV2Result<MrecordlogSummaryResponse> {
+        let rw_mrecordlog = self.state.mrecordlog();
+        // this is a debug api endpoint, with_lock_metrics! doesn't seem necessary
+        let maybe_mrecordlog = rw_mrecordlog.read().await;
+
+        let summary = match &*maybe_mrecordlog {
+            Some(mrecordlog) => mrecordlog.summary(),
+            None => {
+                return Err(IngestV2Error::Internal(
+                    "mrecordlog isn't initialized".to_string(),
+                ))
+            }
+        };
+        drop(maybe_mrecordlog);
+
+        let queues = summary
+            .queues
+            .into_iter()
+            .map(|(id, summary)| MrecordlogQueueSummary {
+                id,
+                start: summary.start,
+                end: summary.end,
+                file_number: summary.file_number,
+            })
+            .collect();
+
+        Ok(MrecordlogSummaryResponse { queues })
+    }
 }
 
 #[async_trait]
@@ -1068,6 +1098,13 @@ impl IngesterService for Ingester {
         decommission_request: DecommissionRequest,
     ) -> IngestV2Result<DecommissionResponse> {
         self.decommission_inner(decommission_request).await
+    }
+
+    async fn mrecordlog_summary(
+        &mut self,
+        _: MrecordlogSummaryRequest,
+    ) -> IngestV2Result<MrecordlogSummaryResponse> {
+        self.mrecordlog_summary_inner().await
     }
 }
 
