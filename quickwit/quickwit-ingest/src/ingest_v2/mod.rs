@@ -158,9 +158,7 @@ impl IngestRequestV2Builder {
             .into_iter()
             .enumerate()
             .flat_map(|(subrequest_id, (index_id, doc_batch_builder))| {
-                let Some(doc_batch) = doc_batch_builder.build() else {
-                    return None;
-                };
+                let doc_batch = doc_batch_builder.build()?;
                 let ingest_subrequest = IngestSubrequest {
                     subrequest_id: subrequest_id as u32,
                     index_id,

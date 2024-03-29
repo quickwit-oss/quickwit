@@ -42,7 +42,7 @@ pub struct PostgresqlMetastoreFactory {
 impl PostgresqlMetastoreFactory {
     async fn get_from_cache(&self, uri: &Uri) -> Option<MetastoreServiceClient> {
         let cache_lock = self.cache.lock().await;
-        cache_lock.get(uri).map(MetastoreServiceClient::clone)
+        cache_lock.get(uri).cloned()
     }
 
     /// If there is a valid entry in the cache to begin with, we trash the new
