@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --->
 
+# [0.8.1]
+
+### Fixed
+
+- Bug in the chitchat digest message serialization (chitchat#144)
+
 ## [0.8.0]
 
 ### Added
@@ -99,7 +105,7 @@ Because we made some breaking changes in the gossip protocol (chitchat), nodes r
 - Allow $ and @ characters in field names (#4413)
 
 ### Fixed
-- Assign all sources/shards, even if this requires exceeding the indexer #4363 
+- Assign all sources/shards, even if this requires exceeding the indexer #4363
 - Fix traces doc mapping (service name set as  fast) and update default otel logs index ID to `otel-logs-v0_7` (#4401)
 - Fix parsing multi-line queries (#4409)
 - Fix range query for optional fast field panics with Index out of bounds (#4362)
