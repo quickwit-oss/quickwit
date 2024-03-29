@@ -24,9 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # [0.8.1]
 
+### Added
+
+- Add support for OTLP logs in Kafka source (#4807)
+
 ### Fixed
 
 - Bug in the chitchat digest message serialization (chitchat#144)
+- Fix parsing of date times without year (#4811)
 
 ## [0.8.0]
 
