@@ -260,6 +260,7 @@ impl ControlPlane {
         shard_ids: &[ShardId],
         progress: &Progress,
     ) -> anyhow::Result<()> {
+        info!(shard_ids=?shard_ids, source_uid=?source_uid, "deleting shards");
         let delete_shards_request = DeleteShardsRequest {
             index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.clone(),
@@ -352,6 +353,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
         shard_positions_update: ShardPositionsUpdate,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        debug!(shard_positions_update=?shard_positions_update, "shard positions update");
         let Some(shard_entries) = self
             .model
             .get_shards_for_source_mut(&shard_positions_update.source_uid)
