@@ -1,4 +1,3 @@
-// TODO doesn't currently compile because RawDocBatch changed
 use std::sync::Arc;
 
 use bytes::Bytes;
