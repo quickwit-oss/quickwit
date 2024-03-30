@@ -871,20 +871,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "backoff"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b62ddb9cb1ec0a098ad4bbf9344d0713fa193ae1a80af55febcff2627b6a00c1"
-dependencies = [
- "futures-core",
- "getrandom 0.2.12",
- "instant",
- "pin-project-lite",
- "rand 0.8.5",
- "tokio",
-]
-
-[[package]]
 name = "backon"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2539,28 +2525,6 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "google-cloud-auth"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bb6624c70caf330298b84a9ad1537ee7a5de788a5b9a06a3bbe206260943011"
-dependencies = [
- "async-trait",
- "base64 0.21.7",
- "google-cloud-metadata",
- "google-cloud-token",
- "home",
- "jsonwebtoken 8.3.0",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror",
- "time",
- "tokio",
- "tracing",
- "urlencoding",
-]
-
-[[package]]
-name = "google-cloud-auth"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "931bedb2264cb00f914b0a6a5c304e34865c34306632d3932e0951a073e4a67d"
@@ -2582,34 +2546,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "google-cloud-default"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2248865004b6e699fddb1b562cf7dadcdd006408aa6e50e1c61dd6f3b12dc02b"
-dependencies = [
- "async-trait",
- "google-cloud-auth 0.10.0",
- "google-cloud-gax 0.14.2",
- "google-cloud-pubsub 0.15.0",
-]
-
-[[package]]
-name = "google-cloud-gax"
-version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d08f4e75d0170d154414651d573ae01a928f9da0d62391bb6762007f5410443e"
-dependencies = [
- "google-cloud-token",
- "http 0.2.12",
- "thiserror",
- "tokio",
- "tokio-retry",
- "tonic",
- "tower",
- "tracing",
-]
-
-[[package]]
 name = "google-cloud-gax"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2623,17 +2559,6 @@ dependencies = [
  "tonic",
  "tower",
  "tracing",
-]
-
-[[package]]
-name = "google-cloud-googleapis"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d905d01fe815c6894b309b18a1ba152371e2e2ba7fcc81f4d22e48865b3014c"
-dependencies = [
- "prost",
- "prost-types",
- "tonic",
 ]
 
 [[package]]
@@ -2660,33 +2585,15 @@ dependencies = [
 
 [[package]]
 name = "google-cloud-pubsub"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30dc010fd45992c6af011a506ce83186cc4aad8bdb449713cf003849cd29f464"
-dependencies = [
- "async-channel",
- "async-stream",
- "google-cloud-gax 0.14.2",
- "google-cloud-googleapis 0.9.0",
- "google-cloud-token",
- "prost-types",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "google-cloud-pubsub"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "095b104502b6e1abbad9b9768af944b9202e032dbc7f0947d3c30d4191761071"
 dependencies = [
  "async-channel",
  "async-stream",
- "google-cloud-auth 0.12.0",
- "google-cloud-gax 0.15.0",
- "google-cloud-googleapis 0.10.0",
+ "google-cloud-auth",
+ "google-cloud-gax",
+ "google-cloud-googleapis",
  "google-cloud-token",
  "prost-types",
  "thiserror",
@@ -5474,7 +5381,6 @@ dependencies = [
 name = "quickwit-aws"
 version = "0.8.0"
 dependencies = [
- "async-trait",
  "aws-config",
  "aws-sdk-kinesis",
  "aws-sdk-s3",
@@ -5484,12 +5390,8 @@ dependencies = [
  "futures",
  "hyper 0.14.28",
  "hyper-rustls 0.24.2",
- "once_cell",
  "quickwit-common",
- "rand 0.8.5",
  "tokio",
- "tower",
- "tracing",
 ]
 
 [[package]]
@@ -5497,8 +5399,6 @@ name = "quickwit-cli"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "async-trait",
- "bytes",
  "bytesize",
  "chrono",
  "clap",
@@ -5519,7 +5419,6 @@ dependencies = [
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
- "quickwit-directories",
  "quickwit-doc-mapper",
  "quickwit-index-management",
  "quickwit-indexing",
@@ -5531,7 +5430,6 @@ dependencies = [
  "quickwit-serve",
  "quickwit-storage",
  "quickwit-telemetry",
- "regex",
  "reqwest",
  "serde_json",
  "tabled",
@@ -5542,9 +5440,7 @@ dependencies = [
  "tikv-jemallocator",
  "time",
  "tokio",
- "tokio-util",
  "toml",
- "tonic",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -5568,14 +5464,11 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "tempfile",
- "thiserror",
  "time",
  "tokio",
  "tokio-stream",
  "tonic",
  "tracing",
- "ulid",
  "utoipa",
 ]
 
@@ -5588,7 +5481,6 @@ dependencies = [
  "heck",
  "prettyplease 0.2.17",
  "proc-macro2",
- "prost",
  "prost-build",
  "quote",
  "serde",
@@ -5606,13 +5498,11 @@ dependencies = [
  "dyn-clone",
  "futures",
  "http 0.2.12",
- "hyper 0.14.28",
  "mockall",
  "prost",
  "quickwit-actors",
  "quickwit-codegen",
  "quickwit-common",
- "quickwit-macros",
  "quickwit-proto",
  "serde",
  "thiserror",
@@ -5647,7 +5537,6 @@ dependencies = [
  "pnet",
  "prometheus",
  "proptest",
- "quickwit-macros",
  "rand 0.8.5",
  "regex",
  "serde",
@@ -5702,16 +5591,12 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "dyn-clone",
  "fnv",
  "futures",
- "http 0.2.12",
- "hyper 0.14.28",
  "itertools 0.12.1",
  "mockall",
  "once_cell",
  "proptest",
- "prost",
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",
@@ -5720,15 +5605,11 @@ dependencies = [
  "quickwit-ingest",
  "quickwit-metastore",
  "quickwit-proto",
- "quickwit-storage",
  "rand 0.8.5",
  "serde",
  "serde_json",
- "thiserror",
  "time",
  "tokio",
- "tokio-stream",
- "tonic",
  "tower",
  "tracing",
  "ulid",
@@ -5754,16 +5635,12 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "futures",
- "once_cell",
  "postcard",
  "quickwit-common",
  "quickwit-storage",
  "serde",
- "serde_json",
  "tantivy",
  "tempfile",
- "thiserror",
  "time",
  "tokio",
  "tracing",
@@ -5782,14 +5659,11 @@ dependencies = [
  "indexmap 2.1.0",
  "itertools 0.12.1",
  "matches",
- "mockall",
  "nom",
  "once_cell",
- "proptest",
  "quickwit-common",
  "quickwit-datetime",
  "quickwit-macros",
- "quickwit-proto",
  "quickwit-query",
  "regex",
  "serde",
@@ -5809,30 +5683,18 @@ name = "quickwit-index-management"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "futures",
  "futures-util",
  "itertools 0.12.1",
- "mockall",
  "quickwit-common",
  "quickwit-config",
- "quickwit-directories",
- "quickwit-doc-mapper",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-storage",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "serde_yaml",
- "tantivy",
- "tempfile",
  "thiserror",
  "time",
  "tokio",
- "tokio-stream",
- "tokio-util",
  "tracing",
 ]
 
@@ -5844,10 +5706,7 @@ dependencies = [
  "arc-swap",
  "async-compression",
  "async-trait",
- "aws-config",
  "aws-sdk-kinesis",
- "aws-smithy-client",
- "backoff",
  "bytes",
  "bytesize",
  "criterion",
@@ -5855,11 +5714,10 @@ dependencies = [
  "flume",
  "fnv",
  "futures",
- "google-cloud-auth 0.12.0",
- "google-cloud-default",
- "google-cloud-gax 0.15.0",
- "google-cloud-googleapis 0.10.0",
- "google-cloud-pubsub 0.18.0",
+ "google-cloud-auth",
+ "google-cloud-gax",
+ "google-cloud-googleapis",
+ "google-cloud-pubsub",
  "itertools 0.12.1",
  "libz-sys",
  "mockall",
@@ -5893,12 +5751,10 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
- "tokio-stream",
  "tracing",
  "ulid",
  "utoipa",
  "vrl",
- "zstd 0.13.1",
 ]
 
 [[package]]
@@ -5911,10 +5767,8 @@ dependencies = [
  "bytesize",
  "dyn-clone",
  "fail",
- "flume",
  "futures",
  "http 0.2.12",
- "hyper 0.14.28",
  "itertools 0.12.1",
  "mockall",
  "mrecordlog",
@@ -5945,30 +5799,21 @@ name = "quickwit-integration-tests"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "bytes",
- "chitchat",
  "futures-util",
  "hyper 0.14.28",
  "itertools 0.12.1",
  "quickwit-actors",
- "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
- "quickwit-indexing",
- "quickwit-janitor",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-rest-client",
- "quickwit-search",
  "quickwit-serve",
  "quickwit-storage",
- "rand 0.8.5",
  "reqwest",
- "serde",
  "serde_json",
  "tempfile",
  "tokio",
- "tokio-stream",
  "tonic",
  "tracing",
 ]
@@ -5977,9 +5822,7 @@ dependencies = [
 name = "quickwit-jaeger"
 version = "0.8.0"
 dependencies = [
- "anyhow",
  "async-trait",
- "base64 0.22.0",
  "itertools 0.12.1",
  "once_cell",
  "prost",
@@ -6013,16 +5856,13 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "chrono",
  "futures",
  "itertools 0.12.1",
  "mockall",
  "once_cell",
  "quickwit-actors",
- "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
- "quickwit-directories",
  "quickwit-doc-mapper",
  "quickwit-index-management",
  "quickwit-indexing",
@@ -6038,9 +5878,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
- "tokio-stream",
  "tracing",
- "ulid",
  "utoipa",
 ]
 
@@ -6062,15 +5900,12 @@ dependencies = [
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
- "quickwit-directories",
- "quickwit-doc-mapper",
  "quickwit-index-management",
  "quickwit-indexing",
  "quickwit-ingest",
  "quickwit-janitor",
  "quickwit-metastore",
  "quickwit-proto",
- "quickwit-rest-client",
  "quickwit-search",
  "quickwit-serve",
  "quickwit-storage",
@@ -6147,7 +5982,6 @@ dependencies = [
  "hex",
  "once_cell",
  "prost",
- "quickwit-actors",
  "quickwit-common",
  "quickwit-config",
  "quickwit-ingest",
@@ -6175,7 +6009,6 @@ dependencies = [
  "futures",
  "glob",
  "http 0.2.12",
- "hyper 0.14.28",
  "mockall",
  "opentelemetry",
  "prost",
@@ -6206,7 +6039,6 @@ dependencies = [
  "anyhow",
  "base64 0.22.0",
  "criterion",
- "fnv",
  "hex",
  "lindera-core",
  "lindera-dictionary",
@@ -6221,7 +6053,6 @@ dependencies = [
  "tantivy",
  "thiserror",
  "time",
- "tracing",
  "whichlang",
 ]
 
@@ -6229,9 +6060,7 @@ dependencies = [
 name = "quickwit-rest-client"
 version = "0.8.0"
 dependencies = [
- "anyhow",
  "bytes",
- "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
@@ -6259,16 +6088,12 @@ dependencies = [
  "base64 0.22.0",
  "bytes",
  "bytesize",
- "chitchat",
  "fnv",
  "futures",
  "http 0.2.12",
- "hyper 0.14.28",
  "itertools 0.12.1",
- "lru",
  "mockall",
  "once_cell",
- "opentelemetry",
  "postcard",
  "proptest",
  "prost",
@@ -6285,16 +6110,12 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "serde_with 3.7.0",
  "tantivy",
- "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",
- "tokio-util",
  "tower",
  "tracing",
- "tracing-opentelemetry",
  "ttl_cache",
  "typetag",
  "ulid",
@@ -6333,7 +6154,6 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-control-plane",
- "quickwit-directories",
  "quickwit-doc-mapper",
  "quickwit-index-management",
  "quickwit-indexing",
@@ -6347,7 +6167,6 @@ dependencies = [
  "quickwit-search",
  "quickwit-storage",
  "quickwit-telemetry",
- "rand 0.8.5",
  "regex",
  "rust-embed",
  "serde",
@@ -6355,7 +6174,6 @@ dependencies = [
  "serde_qs 0.12.0",
  "serde_with 3.7.0",
  "tempfile",
- "termcolor",
  "thiserror",
  "time",
  "tokio",
@@ -6364,7 +6182,6 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
- "tracing-opentelemetry",
  "utoipa",
  "warp",
  "zstd 0.13.1",
@@ -6381,7 +6198,6 @@ dependencies = [
  "aws-sdk-s3",
  "aws-smithy-client",
  "aws-smithy-http",
- "aws-smithy-types",
  "azure_core",
  "azure_storage",
  "azure_storage_blobs",
