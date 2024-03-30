@@ -14,30 +14,21 @@ license.workspace = true
 
 [dev-dependencies]
 anyhow = { workspace = true }
-bytes = { workspace = true }
-chitchat = { workspace = true }
 futures-util = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
-rand = { workspace = true }
 reqwest = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
-quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
-quickwit-indexing = { workspace = true, features = ["testsuite"] }
-quickwit-janitor = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true }
 quickwit-rest-client = { workspace = true }
-quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-serve = { workspace = true }
 quickwit-storage = { workspace = true, features = ["testsuite"] }

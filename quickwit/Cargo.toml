@@ -85,7 +85,6 @@ assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
 async-trait = "0.1"
-backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.22"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "1.3.0", features = ["serde"] }
@@ -113,7 +112,6 @@ flate2 = "1.0"
 futures = "0.3"
 futures-util = { version = "0.3.25", default-features = false }
 google-cloud-auth = "0.12.0"
-google-cloud-default = { version = "0.3.0", features = ["pubsub"] }
 google-cloud-gax = "0.15.0"
 google-cloud-googleapis = { version = "0.10.0", features = ["pubsub"] }
 google-cloud-pubsub = "0.18.0"
@@ -123,7 +121,6 @@ home = "0.5.4"
 hostname = "0.3"
 http = "0.2.9"
 http-serde = "1.1.2"
-humansize = "2.1.3"
 humantime = "2.1.0"
 hyper = { version = "0.14", features = [
   "client",
@@ -227,7 +224,6 @@ syn = { version = "2.0.11", features = ["extra-traits", "full", "parsing"] }
 sync_wrapper = "0.1.2"
 tabled = { version = "0.14", features = ["color"] }
 tempfile = "3"
-termcolor = "1"
 thiserror = "1"
 thousands = "0.2.0"
 tikv-jemalloc-ctl = "0.5"
@@ -280,7 +276,6 @@ aws-sdk-s3 = "0.28.0"
 aws-smithy-async = "0.55.0"
 aws-smithy-client = "0.55.0"
 aws-smithy-http = "0.55.0"
-aws-smithy-types = "0.55.0"
 aws-types = "0.55.0"
 
 azure_core = { version = "0.13.0", features = ["enable_reqwest_rustls"] }

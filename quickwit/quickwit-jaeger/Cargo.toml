@@ -11,9 +11,7 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
 async-trait = { workspace = true }
-base64 = { workspace = true }
 itertools = { workspace = true }
 once_cell = { workspace = true }
 prost = { workspace = true }
@@ -45,6 +43,7 @@ quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-opentelemetry = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 

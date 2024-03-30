@@ -1,3 +1,4 @@
+// TODO doesn't currently compile because RawDocBatch changed
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -32,11 +33,7 @@ macro_rules! bench_func {
                 |docs| async {
                     let (mailbox, handle, universe) = $func;
                     mailbox
-                        .send_message(RawDocBatch {
-                            docs,
-                            checkpoint_delta: checkpoint_delta.clone(),
-                            force_commit: false,
-                        })
+                        .send_message(RawDocBatch::new(docs, checkpoint_delta.clone(), false))
                         .await
                         .unwrap();
 

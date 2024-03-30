@@ -18,7 +18,6 @@ fnv = { workspace = true }
 hex = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
-mockall = { workspace = true, optional = true }
 nom = { workspace = true }
 once_cell = { workspace = true }
 regex = { workspace = true }
@@ -39,11 +38,9 @@ quickwit-query = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 matches = { workspace = true }
-proptest = { workspace = true }
 serde_yaml = { workspace = true }
 time = { workspace = true }
 
-quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true, features = ["multilang"] }
 
 [features]

@@ -17,10 +17,8 @@ bytes = { workspace = true }
 bytesize = { workspace = true }
 dyn-clone = { workspace = true }
 fail = { workspace = true, optional = true }
-flume = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
-hyper = { workspace = true }
 mockall = { workspace = true, optional = true }
 mrecordlog = { workspace = true }
 once_cell = { workspace = true }
