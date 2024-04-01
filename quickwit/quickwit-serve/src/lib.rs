@@ -187,7 +187,7 @@ struct QuickwitServices {
     pub ingest_service: IngestServiceClient,
     // Ingest v2
     pub ingest_router_service: IngestRouterServiceClient,
-    pub ingester_service_opt: Option<IngesterServiceClient>,
+    pub ingester_opt: Option<Ingester>,
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
@@ -345,7 +345,7 @@ async fn start_control_plane_if_needed(
 }
 
 fn start_shard_positions_service(
-    ingester_service_opt: Option<IngesterServiceClient>,
+    ingester_opt: Option<Ingester>,
     cluster: Cluster,
     event_broker: EventBroker,
     spawn_ctx: SpawnContext,
@@ -353,8 +353,8 @@ fn start_shard_positions_service(
     // We spawn a task here, because we need the ingester to be ready before spawning the
     // the `ShardPositionsService`. If we don't, all the events we emit too early will be dismissed.
     tokio::spawn(async move {
-        if let Some(ingester_service) = ingester_service_opt {
-            if wait_for_ingester_status(ingester_service, IngesterStatus::Ready)
+        if let Some(ingester) = ingester_opt {
+            if wait_for_ingester_status(ingester, IngesterStatus::Ready)
                 .await
                 .is_err()
             {
@@ -491,7 +491,7 @@ pub async fn serve_quickwit(
     );
 
     // Setup ingest service v2.
-    let (ingest_router_service, ingester_service_opt) = setup_ingest_v2(
+    let (ingest_router_service, ingester_opt) = setup_ingest_v2(
         &node_config,
         &cluster,
         &event_broker,
@@ -505,7 +505,7 @@ pub async fn serve_quickwit(
         || node_config.is_service_enabled(QuickwitService::ControlPlane)
     {
         start_shard_positions_service(
-            ingester_service_opt.clone(),
+            ingester_opt.clone(),
             cluster.clone(),
             event_broker.clone(),
             universe.spawn_ctx().clone(),
@@ -654,7 +654,7 @@ pub async fn serve_quickwit(
         indexing_service_opt,
         ingest_router_service,
         ingest_service,
-        ingester_service_opt: ingester_service_opt.clone(),
+        ingester_opt: ingester_opt.clone(),
         janitor_service_opt,
         jaeger_service_opt,
         otlp_logs_service_opt,
@@ -708,7 +708,7 @@ pub async fn serve_quickwit(
         node_readiness_reporting_task(
             cluster,
             metastore_through_control_plane,
-            ingester_service_opt.clone(),
+            ingester_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
         ),
@@ -720,8 +720,8 @@ pub async fn serve_quickwit(
 
         // We must decommission the ingester first before terminating the indexing pipelines that
         // may consume from it. We also need to keep the gRPC server running while doing so.
-        if let Some(ingester_service) = ingester_service_opt {
-            if let Err(error) = wait_for_ingester_decommission(ingester_service).await {
+        if let Some(ingester) = ingester_opt {
+            if let Err(error) = wait_for_ingester_decommission(ingester).await {
                 error!("failed to decommission ingester gracefully: {:?}", error);
             }
         }
@@ -759,7 +759,7 @@ async fn setup_ingest_v2(
     event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
-) -> anyhow::Result<(IngestRouterServiceClient, Option<IngesterServiceClient>)> {
+) -> anyhow::Result<(IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
     let content_length_limit = node_config.ingest_api_config.content_length_limit;
@@ -792,7 +792,8 @@ async fn setup_ingest_v2(
     };
 
     // Instantiate ingester.
-    let ingester_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+    let ingester_opt: Option<Ingester> = if node_config.is_service_enabled(QuickwitService::Indexer)
+    {
         let wal_dir_path = node_config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
 
@@ -876,12 +877,7 @@ async fn setup_ingest_v2(
     });
     ingester_pool.listen_for_changes(ingester_change_stream);
 
-    let ingester_service_opt = ingester_opt.map(|ingester| {
-        IngesterServiceClient::tower()
-            .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
-            .build(ingester)
-    });
-    Ok((ingest_router_service, ingester_service_opt))
+    Ok((ingest_router_service, ingester_opt))
 }
 
 async fn setup_searcher(
@@ -1100,7 +1096,7 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 async fn node_readiness_reporting_task(
     cluster: Cluster,
     mut metastore: MetastoreServiceClient,
-    ingester_service_opt: Option<IngesterServiceClient>,
+    ingester_opt: Option<Ingester>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
 ) {
@@ -1116,9 +1112,8 @@ async fn node_readiness_reporting_task(
     };
     info!("REST server is ready");
 
-    if let Some(ingester_service) = ingester_service_opt {
-        if let Err(error) = wait_for_ingester_status(ingester_service, IngesterStatus::Ready).await
-        {
+    if let Some(ingester) = ingester_opt {
+        if let Err(error) = wait_for_ingester_status(ingester, IngesterStatus::Ready).await {
             error!("failed to initialize ingester: {:?}", error);
             info!("shutting down");
             return;
