@@ -372,18 +372,18 @@ pub struct DecommissionResponse {}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MrecordlogSummaryRequest {}
+pub struct MRecordlogSummaryRequest {}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MrecordlogSummaryResponse {
+pub struct MRecordlogSummaryResponse {
     #[prost(message, repeated, tag = "1")]
-    pub queues: ::prost::alloc::vec::Vec<MrecordlogQueueSummary>,
+    pub queues: ::prost::alloc::vec::Vec<MRecordlogQueueSummary>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MrecordlogQueueSummary {
+pub struct MRecordlogQueueSummary {
     #[prost(string, tag = "1")]
     pub id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "2")]
@@ -590,7 +590,7 @@ impl RpcName for DecommissionRequest {
         "decommission"
     }
 }
-impl RpcName for MrecordlogSummaryRequest {
+impl RpcName for MRecordlogSummaryRequest {
     fn rpc_name() -> &'static str {
         "mrecordlog_summary"
     }
@@ -651,8 +651,8 @@ pub trait IngesterService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync +
     /// Get mrecordlog summary
     async fn mrecordlog_summary(
         &mut self,
-        request: MrecordlogSummaryRequest,
-    ) -> crate::ingest::IngestV2Result<MrecordlogSummaryResponse>;
+        request: MRecordlogSummaryRequest,
+    ) -> crate::ingest::IngestV2Result<MRecordlogSummaryResponse>;
 }
 dyn_clone::clone_trait_object!(IngesterService);
 #[cfg(any(test, feature = "testsuite"))]
@@ -797,8 +797,8 @@ impl IngesterService for IngesterServiceClient {
     }
     async fn mrecordlog_summary(
         &mut self,
-        request: MrecordlogSummaryRequest,
-    ) -> crate::ingest::IngestV2Result<MrecordlogSummaryResponse> {
+        request: MRecordlogSummaryRequest,
+    ) -> crate::ingest::IngestV2Result<MRecordlogSummaryResponse> {
         self.inner.mrecordlog_summary(request).await
     }
 }
@@ -871,8 +871,8 @@ pub mod ingester_service_mock {
         }
         async fn mrecordlog_summary(
             &mut self,
-            request: super::MrecordlogSummaryRequest,
-        ) -> crate::ingest::IngestV2Result<super::MrecordlogSummaryResponse> {
+            request: super::MRecordlogSummaryRequest,
+        ) -> crate::ingest::IngestV2Result<super::MRecordlogSummaryResponse> {
             self.inner.lock().await.mrecordlog_summary(request).await
         }
     }
@@ -1036,8 +1036,8 @@ impl tower::Service<DecommissionRequest> for Box<dyn IngesterService> {
         Box::pin(fut)
     }
 }
-impl tower::Service<MrecordlogSummaryRequest> for Box<dyn IngesterService> {
-    type Response = MrecordlogSummaryResponse;
+impl tower::Service<MRecordlogSummaryRequest> for Box<dyn IngesterService> {
+    type Response = MRecordlogSummaryResponse;
     type Error = crate::ingest::IngestV2Error;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
@@ -1046,7 +1046,7 @@ impl tower::Service<MrecordlogSummaryRequest> for Box<dyn IngesterService> {
     ) -> std::task::Poll<Result<(), Self::Error>> {
         std::task::Poll::Ready(Ok(()))
     }
-    fn call(&mut self, request: MrecordlogSummaryRequest) -> Self::Future {
+    fn call(&mut self, request: MRecordlogSummaryRequest) -> Self::Future {
         let mut svc = self.clone();
         let fut = async move { svc.mrecordlog_summary(request).await };
         Box::pin(fut)
@@ -1102,8 +1102,8 @@ struct IngesterServiceTowerServiceStack {
         crate::ingest::IngestV2Error,
     >,
     mrecordlog_summary_svc: quickwit_common::tower::BoxService<
-        MrecordlogSummaryRequest,
-        MrecordlogSummaryResponse,
+        MRecordlogSummaryRequest,
+        MRecordlogSummaryResponse,
         crate::ingest::IngestV2Error,
     >,
 }
@@ -1182,8 +1182,8 @@ impl IngesterService for IngesterServiceTowerServiceStack {
     }
     async fn mrecordlog_summary(
         &mut self,
-        request: MrecordlogSummaryRequest,
-    ) -> crate::ingest::IngestV2Result<MrecordlogSummaryResponse> {
+        request: MRecordlogSummaryRequest,
+    ) -> crate::ingest::IngestV2Result<MRecordlogSummaryResponse> {
         self.mrecordlog_summary_svc.ready().await?.call(request).await
     }
 }
@@ -1279,12 +1279,12 @@ type DecommissionLayer = quickwit_common::tower::BoxLayer<
 >;
 type MrecordlogSummaryLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
-        MrecordlogSummaryRequest,
-        MrecordlogSummaryResponse,
+        MRecordlogSummaryRequest,
+        MRecordlogSummaryResponse,
         crate::ingest::IngestV2Error,
     >,
-    MrecordlogSummaryRequest,
-    MrecordlogSummaryResponse,
+    MRecordlogSummaryRequest,
+    MRecordlogSummaryResponse,
     crate::ingest::IngestV2Error,
 >;
 #[derive(Debug, Default)]
@@ -1534,29 +1534,29 @@ impl IngesterServiceTowerLayerStack {
         >>::Service as tower::Service<DecommissionRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
-                    MrecordlogSummaryRequest,
-                    MrecordlogSummaryResponse,
+                    MRecordlogSummaryRequest,
+                    MRecordlogSummaryResponse,
                     crate::ingest::IngestV2Error,
                 >,
             > + Clone + Send + Sync + 'static,
         <L as tower::Layer<
             quickwit_common::tower::BoxService<
-                MrecordlogSummaryRequest,
-                MrecordlogSummaryResponse,
+                MRecordlogSummaryRequest,
+                MRecordlogSummaryResponse,
                 crate::ingest::IngestV2Error,
             >,
         >>::Service: tower::Service<
-                MrecordlogSummaryRequest,
-                Response = MrecordlogSummaryResponse,
+                MRecordlogSummaryRequest,
+                Response = MRecordlogSummaryResponse,
                 Error = crate::ingest::IngestV2Error,
             > + Clone + Send + Sync + 'static,
         <<L as tower::Layer<
             quickwit_common::tower::BoxService<
-                MrecordlogSummaryRequest,
-                MrecordlogSummaryResponse,
+                MRecordlogSummaryRequest,
+                MRecordlogSummaryResponse,
                 crate::ingest::IngestV2Error,
             >,
-        >>::Service as tower::Service<MrecordlogSummaryRequest>>::Future: Send + 'static,
+        >>::Service as tower::Service<MRecordlogSummaryRequest>>::Future: Send + 'static,
     {
         self.persist_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.open_replication_stream_layers
@@ -1760,17 +1760,17 @@ impl IngesterServiceTowerLayerStack {
     where
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
-                    MrecordlogSummaryRequest,
-                    MrecordlogSummaryResponse,
+                    MRecordlogSummaryRequest,
+                    MRecordlogSummaryResponse,
                     crate::ingest::IngestV2Error,
                 >,
             > + Send + Sync + 'static,
         L::Service: tower::Service<
-                MrecordlogSummaryRequest,
-                Response = MrecordlogSummaryResponse,
+                MRecordlogSummaryRequest,
+                Response = MRecordlogSummaryResponse,
                 Error = crate::ingest::IngestV2Error,
             > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<MrecordlogSummaryRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<MRecordlogSummaryRequest>>::Future: Send + 'static,
     {
         self.mrecordlog_summary_layers
             .push(quickwit_common::tower::BoxLayer::new(layer));
@@ -2054,10 +2054,10 @@ where
             Future = BoxFuture<DecommissionResponse, crate::ingest::IngestV2Error>,
         >
         + tower::Service<
-            MrecordlogSummaryRequest,
-            Response = MrecordlogSummaryResponse,
+            MRecordlogSummaryRequest,
+            Response = MRecordlogSummaryResponse,
             Error = crate::ingest::IngestV2Error,
-            Future = BoxFuture<MrecordlogSummaryResponse, crate::ingest::IngestV2Error>,
+            Future = BoxFuture<MRecordlogSummaryResponse, crate::ingest::IngestV2Error>,
         >,
 {
     async fn persist(
@@ -2116,8 +2116,8 @@ where
     }
     async fn mrecordlog_summary(
         &mut self,
-        request: MrecordlogSummaryRequest,
-    ) -> crate::ingest::IngestV2Result<MrecordlogSummaryResponse> {
+        request: MRecordlogSummaryRequest,
+    ) -> crate::ingest::IngestV2Result<MRecordlogSummaryResponse> {
         self.call(request).await
     }
 }
@@ -2298,15 +2298,15 @@ where
     }
     async fn mrecordlog_summary(
         &mut self,
-        request: MrecordlogSummaryRequest,
-    ) -> crate::ingest::IngestV2Result<MrecordlogSummaryResponse> {
+        request: MRecordlogSummaryRequest,
+    ) -> crate::ingest::IngestV2Result<MRecordlogSummaryResponse> {
         self.inner
             .mrecordlog_summary(request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                MrecordlogSummaryRequest::rpc_name(),
+                MRecordlogSummaryRequest::rpc_name(),
             ))
     }
 }
@@ -2444,8 +2444,8 @@ for IngesterServiceGrpcServerAdapter {
     }
     async fn mrecordlog_summary(
         &self,
-        request: tonic::Request<MrecordlogSummaryRequest>,
-    ) -> Result<tonic::Response<MrecordlogSummaryResponse>, tonic::Status> {
+        request: tonic::Request<MRecordlogSummaryRequest>,
+    ) -> Result<tonic::Response<MRecordlogSummaryResponse>, tonic::Status> {
         self.inner
             .clone()
             .mrecordlog_summary(request.into_inner())
@@ -2825,9 +2825,9 @@ pub mod ingester_service_grpc_client {
         /// Get mrecordlog summary
         pub async fn mrecordlog_summary(
             &mut self,
-            request: impl tonic::IntoRequest<super::MrecordlogSummaryRequest>,
+            request: impl tonic::IntoRequest<super::MRecordlogSummaryRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::MrecordlogSummaryResponse>,
+            tonic::Response<super::MRecordlogSummaryResponse>,
             tonic::Status,
         > {
             self.inner
@@ -2954,9 +2954,9 @@ pub mod ingester_service_grpc_server {
         /// Get mrecordlog summary
         async fn mrecordlog_summary(
             &self,
-            request: tonic::Request<super::MrecordlogSummaryRequest>,
+            request: tonic::Request<super::MRecordlogSummaryRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::MrecordlogSummaryResponse>,
+            tonic::Response<super::MRecordlogSummaryResponse>,
             tonic::Status,
         >;
     }
@@ -3461,16 +3461,16 @@ pub mod ingester_service_grpc_server {
                     struct MrecordlogSummarySvc<T: IngesterServiceGrpc>(pub Arc<T>);
                     impl<
                         T: IngesterServiceGrpc,
-                    > tonic::server::UnaryService<super::MrecordlogSummaryRequest>
+                    > tonic::server::UnaryService<super::MRecordlogSummaryRequest>
                     for MrecordlogSummarySvc<T> {
-                        type Response = super::MrecordlogSummaryResponse;
+                        type Response = super::MRecordlogSummaryResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::MrecordlogSummaryRequest>,
+                            request: tonic::Request<super::MRecordlogSummaryRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

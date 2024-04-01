@@ -45,7 +45,7 @@ use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, DecommissionRequest,
     DecommissionResponse, FetchMessage, IngesterService, IngesterServiceClient,
     IngesterServiceStream, IngesterStatus, InitShardsRequest, InitShardsResponse,
-    MrecordlogQueueSummary, MrecordlogSummaryRequest, MrecordlogSummaryResponse,
+    MRecordlogQueueSummary, MRecordlogSummaryRequest, MRecordlogSummaryResponse,
     ObservationMessage, OpenFetchStreamRequest, OpenObservationStreamRequest,
     OpenReplicationStreamRequest, OpenReplicationStreamResponse, PersistFailure,
     PersistFailureReason, PersistRequest, PersistResponse, PersistSuccess, ReplicateFailureReason,
@@ -963,7 +963,7 @@ impl Ingester {
         Ok(DecommissionResponse {})
     }
 
-    async fn mrecordlog_summary_inner(&mut self) -> IngestV2Result<MrecordlogSummaryResponse> {
+    async fn mrecordlog_summary_inner(&mut self) -> IngestV2Result<MRecordlogSummaryResponse> {
         let rw_mrecordlog = self.state.mrecordlog();
         // this is a debug api endpoint, with_lock_metrics! doesn't seem necessary
         let maybe_mrecordlog = rw_mrecordlog.read().await;
@@ -981,7 +981,7 @@ impl Ingester {
         let queues = summary
             .queues
             .into_iter()
-            .map(|(id, summary)| MrecordlogQueueSummary {
+            .map(|(id, summary)| MRecordlogQueueSummary {
                 id,
                 start: summary.start,
                 end: summary.end,
@@ -989,7 +989,7 @@ impl Ingester {
             })
             .collect();
 
-        Ok(MrecordlogSummaryResponse { queues })
+        Ok(MRecordlogSummaryResponse { queues })
     }
 }
 
@@ -1102,8 +1102,8 @@ impl IngesterService for Ingester {
 
     async fn mrecordlog_summary(
         &mut self,
-        _: MrecordlogSummaryRequest,
-    ) -> IngestV2Result<MrecordlogSummaryResponse> {
+        _: MRecordlogSummaryRequest,
+    ) -> IngestV2Result<MRecordlogSummaryResponse> {
         self.mrecordlog_summary_inner().await
     }
 }

@@ -23,7 +23,7 @@ use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetDebugStateRequest,
 };
 use quickwit_proto::ingest::ingester::{
-    IngesterService, IngesterServiceClient, MrecordlogSummaryRequest,
+    IngesterService, IngesterServiceClient, MRecordlogSummaryRequest,
 };
 use warp::{Filter, Rejection};
 
@@ -88,7 +88,7 @@ pub fn control_plane_debugging_handler(
     tag = "Get debug informations about the mrecordlog of the node",
     path = "/mrecordlog",
     responses(
-        (status = 200, description = "Successfully fetched debugging info.", body = MrecordlogSummaryResponse),
+        (status = 200, description = "Successfully fetched debugging info.", body = MRecordlogSummaryResponse),
     ),
 )]
 /// Get mrecordlog related debug information information.
@@ -111,7 +111,7 @@ pub fn mrecordlog_debugging_handler(
                     );
                 };
                 let debug_info = ingester_service
-                    .mrecordlog_summary(MrecordlogSummaryRequest {})
+                    .mrecordlog_summary(MRecordlogSummaryRequest {})
                     .await;
                 crate::rest_api_response::RestApiResponse::new(
                     &debug_info,
