@@ -26,6 +26,7 @@ use quickwit_cluster::cluster_grpc_server;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::indexing::IndexingServiceClient;
+use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
@@ -35,7 +36,9 @@ use quickwit_proto::tonic::transport::Server;
 use tracing::*;
 
 use crate::search_api::GrpcSearchAdapter;
-use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
+use crate::{
+    QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER, INGEST_GRPC_SERVER_METRICS_LAYER,
+};
 
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(
@@ -102,10 +105,12 @@ pub(crate) async fn start_grpc_server(
         .is_service_enabled(QuickwitService::Indexer)
     {
         enabled_grpc_services.insert("ingester");
-        services
-            .ingester_service_opt
-            .as_ref()
-            .map(|ingester_service| ingester_service.as_grpc_service(max_message_size))
+        services.ingester_opt.clone().map(|ingester| {
+            IngesterServiceClient::tower()
+                .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
+                .build(ingester)
+                .as_grpc_service(max_message_size)
+        })
     } else {
         None
     };

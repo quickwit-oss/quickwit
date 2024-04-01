@@ -1136,7 +1136,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
 }
 
 pub async fn wait_for_ingester_status(
-    mut ingester: IngesterServiceClient,
+    mut ingester: Ingester,
     status: IngesterStatus,
 ) -> anyhow::Result<()> {
     let mut observation_stream = ingester
@@ -1155,9 +1155,7 @@ pub async fn wait_for_ingester_status(
     Ok(())
 }
 
-pub async fn wait_for_ingester_decommission(
-    mut ingester: IngesterServiceClient,
-) -> anyhow::Result<()> {
+pub async fn wait_for_ingester_decommission(mut ingester: Ingester) -> anyhow::Result<()> {
     let now = Instant::now();
 
     ingester
