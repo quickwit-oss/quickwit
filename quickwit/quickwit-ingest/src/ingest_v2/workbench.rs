@@ -120,7 +120,7 @@ impl IngestWorkbench {
                     "failure reason for subrequest `{}` is unspecified",
                     open_shards_failure.subrequest_id
                 );
-                SubworkbenchFailure::Internal("unspecified failure reason".to_string())
+                SubworkbenchFailure::Internal
             }
         };
         self.record_failure(open_shards_failure.subrequest_id, last_failure);
@@ -164,7 +164,7 @@ impl IngestWorkbench {
             | IngestV2Error::ShardNotFound { .. }
             | IngestV2Error::TooManyRequests => {
                 for subrequest_id in persist_summary.subrequest_ids {
-                    self.record_internal_error(subrequest_id, persist_error.to_string());
+                    self.record_internal_error(subrequest_id);
                 }
             }
         }
@@ -195,8 +195,8 @@ impl IngestWorkbench {
         self.record_failure(subrequest_id, SubworkbenchFailure::Unavailable);
     }
 
-    fn record_internal_error(&mut self, subrequest_id: SubrequestId, error_message: String) {
-        self.record_failure(subrequest_id, SubworkbenchFailure::Internal(error_message));
+    fn record_internal_error(&mut self, subrequest_id: SubrequestId) {
+        self.record_failure(subrequest_id, SubworkbenchFailure::Internal);
     }
 
     pub fn into_ingest_result(self) -> IngestV2Result<IngestResponseV2> {
@@ -277,7 +277,7 @@ pub(super) enum SubworkbenchFailure {
     // This is an error returned by the ingester: e.g. shard not found, shard closed, rate
     // limited, resource exhausted, etc.
     Persist(PersistFailureReason),
-    Internal(String),
+    Internal,
     // The ingester is no longer in the pool or a transport error occurred.
     Unavailable,
 }
@@ -288,7 +288,7 @@ impl SubworkbenchFailure {
         match self {
             Self::IndexNotFound => IngestFailureReason::IndexNotFound,
             Self::SourceNotFound => IngestFailureReason::SourceNotFound,
-            Self::Internal(_) => IngestFailureReason::Internal,
+            Self::Internal => IngestFailureReason::Internal,
             Self::NoShardsAvailable => IngestFailureReason::NoShardsAvailable,
             // In our last attempt, we did not manage to reach the ingester.
             // We can consider that as a no shards available.
@@ -327,7 +327,7 @@ impl IngestSubworkbench {
         match self.last_failure_opt {
             Some(SubworkbenchFailure::IndexNotFound) => false,
             Some(SubworkbenchFailure::SourceNotFound) => false,
-            Some(SubworkbenchFailure::Internal(_)) => true,
+            Some(SubworkbenchFailure::Internal) => true,
             Some(SubworkbenchFailure::NoShardsAvailable) => true,
             Some(SubworkbenchFailure::Persist(_)) => true,
             Some(SubworkbenchFailure::Unavailable) => true,
@@ -356,8 +356,7 @@ mod tests {
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 
-        subworkbench.last_failure_opt =
-            Some(SubworkbenchFailure::Internal("internal error".to_string()));
+        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Internal);
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 
@@ -604,7 +603,7 @@ mod tests {
 
         assert!(matches!(
             &subworkbench.last_failure_opt,
-            Some(SubworkbenchFailure::Internal(message)) if message.contains("IO error")
+            Some(SubworkbenchFailure::Internal)
         ));
         assert!(subworkbench.persist_success_opt.is_none());
     }

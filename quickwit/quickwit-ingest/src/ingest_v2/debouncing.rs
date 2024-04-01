@@ -42,7 +42,7 @@ impl Debouncer {
 }
 
 #[derive(Debug)]
-pub(super) struct PermitGuard(OwnedRwLockWriteGuard<()>);
+pub(super) struct PermitGuard(#[allow(dead_code)] OwnedRwLockWriteGuard<()>);
 
 #[derive(Debug)]
 pub(super) struct BarrierGuard(Arc<RwLock<()>>);

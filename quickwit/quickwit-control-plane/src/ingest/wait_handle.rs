@@ -36,7 +36,7 @@ impl WaitHandle {
     }
 }
 
-pub struct WaitDropGuard(oneshot::Sender<()>);
+pub struct WaitDropGuard(#[allow(dead_code)] oneshot::Sender<()>);
 
 #[cfg(test)]
 mod tests {

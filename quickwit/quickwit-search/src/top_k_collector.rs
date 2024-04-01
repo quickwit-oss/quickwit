@@ -831,15 +831,12 @@ pub(crate) struct SearchAfterSegment {
 }
 impl SearchAfterSegment {
     pub fn new(
-        search_after: Option<PartialHit>,
+        search_after_opt: Option<PartialHit>,
         sort_order1: SortOrder,
         sort_order2: SortOrder,
         score_extractor: &SortingFieldExtractorPair,
     ) -> Option<Self> {
-        let Some(search_after) = search_after else {
-            return None;
-        };
-
+        let search_after = search_after_opt?;
         let mut sort_value = None;
         if let Some(search_after_sort_value) = search_after
             .sort_value
@@ -856,7 +853,6 @@ impl SearchAfterSegment {
                 return None;
             }
         }
-
         let mut sort_value2 = None;
         if let Some(search_after_sort_value) = search_after
             .sort_value2
@@ -872,7 +868,6 @@ impl SearchAfterSegment {
                 sort_value2 = Some(new_value);
             }
         }
-
         Some(Self {
             sort_value,
             sort_value2,
