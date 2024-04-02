@@ -113,7 +113,18 @@ fn get_credentials_provider(
         &s3_storage_config.secret_access_key,
     ) {
         (Some(access_key_id), Some(secret_access_key)) => {
-            info!("using S3 credentials defined in storage config");
+            let secret_len = secret_access_key.len();
+            let redacted_secret_access_key = format!(
+                "{}...{}",
+                &secret_access_key[0..2],
+                &secret_access_key[secret_len - 2..secret_len]
+            );
+
+            info!(
+                access_key_id = access_key_id,
+                secret_access_key = redacted_secret_access_key,
+                "using S3 credentials defined in storage config"
+            );
             let credentials = Credentials::from_keys(access_key_id, secret_access_key, None);
             let credentials_provider = SharedCredentialsProvider::new(credentials);
             Some(credentials_provider)
