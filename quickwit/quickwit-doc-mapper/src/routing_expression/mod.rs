@@ -323,14 +323,7 @@ impl Display for InnerRoutingExpr {
                     if index != 0 {
                         f.write_str(".")?;
                     }
-                    if !part.contains('.') {
-                        f.write_str(part)?;
-                    } else {
-                        // TODO use std version once stabilized
-                        for subpart in itertools::Itertools::intersperse(part.split('.'), r"\.") {
-                            f.write_str(subpart)?;
-                        }
-                    }
+                    f.write_str(&part.replace('.', r"\."))?;
                 }
             }
             InnerRoutingExpr::Composite(children) => {
