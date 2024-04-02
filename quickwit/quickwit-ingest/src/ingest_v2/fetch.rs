@@ -75,7 +75,7 @@ impl fmt::Debug for FetchStreamTask {
 }
 
 impl FetchStreamTask {
-    pub const DEFAULT_BATCH_NUM_BYTES: usize = 1024 * 1024; // 1 MiB
+    pub const DEFAULT_BATCH_NUM_BYTES: usize = 256 * 1024; // 256 KiB
 
     pub fn spawn(
         open_fetch_stream_request: OpenFetchStreamRequest,

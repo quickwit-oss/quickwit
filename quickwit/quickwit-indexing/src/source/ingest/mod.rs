@@ -474,7 +474,6 @@ impl Source for IngestSource {
                 Ok(Ok(fetch_message)) => match fetch_message.message {
                     Some(fetch_message::Message::Payload(fetch_payload)) => {
                         self.process_fetch_payload(&mut batch_builder, fetch_payload)?;
-
                         if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
                             break;
                         }
