@@ -23,7 +23,6 @@ use quickwit_ingest::Ingester;
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetDebugStateRequest,
 };
-use quickwit_proto::ingest::ingester::{IngesterService, MRecordlogSummaryRequest};
 use warp::{Filter, Rejection};
 
 use crate::{with_arg, QuickwitServices};
@@ -108,9 +107,7 @@ pub fn mrecordlog_debugging_handler(
                     crate::format::BodyFormat::PrettyJson,
                 );
             };
-            let debug_info = ingester
-                .mrecordlog_summary(MRecordlogSummaryRequest {})
-                .await;
+            let debug_info = ingester.mrecordlog_summary().await;
             crate::rest_api_response::RestApiResponse::new(
                 &debug_info,
                 // TODO error code on error

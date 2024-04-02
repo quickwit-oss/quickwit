@@ -45,7 +45,6 @@ use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, DecommissionRequest,
     DecommissionResponse, FetchMessage, IngesterService, IngesterServiceClient,
     IngesterServiceStream, IngesterStatus, InitShardsRequest, InitShardsResponse,
-    MRecordlogQueueSummary, MRecordlogSummaryRequest, MRecordlogSummaryResponse,
     ObservationMessage, OpenFetchStreamRequest, OpenObservationStreamRequest,
     OpenReplicationStreamRequest, OpenReplicationStreamResponse, PersistFailure,
     PersistFailureReason, PersistRequest, PersistResponse, PersistSuccess, ReplicateFailureReason,
@@ -963,7 +962,7 @@ impl Ingester {
         Ok(DecommissionResponse {})
     }
 
-    async fn mrecordlog_summary_inner(&mut self) -> IngestV2Result<MRecordlogSummaryResponse> {
+    pub async fn mrecordlog_summary(&mut self) -> IngestV2Result<MRecordlogSummary> {
         let rw_mrecordlog = self.state.mrecordlog();
         // this is a debug api endpoint, with_lock_metrics! doesn't seem necessary
         let maybe_mrecordlog = rw_mrecordlog.read().await;
@@ -989,8 +988,21 @@ impl Ingester {
             })
             .collect();
 
-        Ok(MRecordlogSummaryResponse { queues })
+        Ok(MRecordlogSummary { queues })
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MRecordlogSummary {
+    pub queues: Vec<MRecordlogQueueSummary>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MRecordlogQueueSummary {
+    pub id: String,
+    pub start: u64,
+    pub end: Option<u64>,
+    pub file_number: Option<u64>,
 }
 
 #[async_trait]
@@ -1098,13 +1110,6 @@ impl IngesterService for Ingester {
         decommission_request: DecommissionRequest,
     ) -> IngestV2Result<DecommissionResponse> {
         self.decommission_inner(decommission_request).await
-    }
-
-    async fn mrecordlog_summary(
-        &mut self,
-        _: MRecordlogSummaryRequest,
-    ) -> IngestV2Result<MRecordlogSummaryResponse> {
-        self.mrecordlog_summary_inner().await
     }
 }
 
