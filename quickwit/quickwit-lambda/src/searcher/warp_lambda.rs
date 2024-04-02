@@ -123,8 +123,10 @@ where
     type Error = LambdaError;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'a>>;
 
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        core::task::Poll::Ready(Ok(()))
+    fn poll_ready(&mut self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.warp_service
+            .poll_ready(ctx)
+            .map_err(|err| match err {})
     }
 
     fn call(&mut self, req: Request) -> Self::Future {
