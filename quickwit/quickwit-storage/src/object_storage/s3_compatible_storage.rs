@@ -129,7 +129,10 @@ fn get_credentials_provider(
             let credentials_provider = SharedCredentialsProvider::new(credentials);
             Some(credentials_provider)
         }
-        _ => None,
+        _ => {
+            info!("using default S3 credentials provider");
+            None
+        }
     }
 }
 
