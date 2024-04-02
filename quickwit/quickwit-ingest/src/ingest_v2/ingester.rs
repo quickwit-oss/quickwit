@@ -1136,7 +1136,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
 }
 
 pub async fn wait_for_ingester_status(
-    mut ingester: Ingester,
+    mut ingester: impl IngesterService,
     status: IngesterStatus,
 ) -> anyhow::Result<()> {
     let mut observation_stream = ingester
@@ -1321,12 +1321,9 @@ mod tests {
             .await
             .unwrap();
 
-            wait_for_ingester_status(
-                IngesterServiceClient::new(ingester.clone()),
-                IngesterStatus::Ready,
-            )
-            .await
-            .unwrap();
+            wait_for_ingester_status(ingester.clone(), IngesterStatus::Ready)
+                .await
+                .unwrap();
 
             let ingester_env = IngesterContext {
                 tempdir,

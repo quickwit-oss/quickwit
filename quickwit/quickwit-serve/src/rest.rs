@@ -618,7 +618,7 @@ mod tests {
             indexing_service_opt: None,
             index_manager: index_service,
             ingest_service: ingest_service_client(),
-            ingester_service_opt: None,
+            ingester_opt: None,
             ingest_router_service: IngestRouterServiceClient::from(
                 IngestRouterServiceClient::mock(),
             ),

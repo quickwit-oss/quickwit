@@ -19,12 +19,11 @@
 
 use std::sync::Arc;
 
+use quickwit_ingest::Ingester;
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetDebugStateRequest,
 };
-use quickwit_proto::ingest::ingester::{
-    IngesterService, IngesterServiceClient, MRecordlogSummaryRequest,
-};
+use quickwit_proto::ingest::ingester::{IngesterService, MRecordlogSummaryRequest};
 use warp::{Filter, Rejection};
 
 use crate::{with_arg, QuickwitServices};
@@ -45,7 +44,7 @@ pub(crate) fn debugging_routes(
 
     debugging_routes.and(
         control_plane_debugging_handler(quickwit_services.control_plane_service.clone()).or(
-            mrecordlog_debugging_handler(quickwit_services.ingester_service_opt.clone()),
+            mrecordlog_debugging_handler(quickwit_services.ingester_opt.clone()),
         ),
     )
 }
@@ -96,29 +95,27 @@ pub fn control_plane_debugging_handler(
 /// The format is not guaranteed to ever be stable, and is meant to provide some introspection to
 /// help with debugging.
 pub fn mrecordlog_debugging_handler(
-    ingester_service_opt: Option<IngesterServiceClient>,
+    ingester_opt: Option<Ingester>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path("mrecordlog")
         .and(warp::path::end())
-        .and(with_arg(ingester_service_opt))
-        .then(
-            |ingester_service_opt: Option<IngesterServiceClient>| async move {
-                let Some(mut ingester_service) = ingester_service_opt else {
-                    return crate::rest_api_response::RestApiResponse::new(
-                        &Result::<&str, &str>::Err("ingester disabled"),
-                        hyper::StatusCode::MISDIRECTED_REQUEST,
-                        crate::format::BodyFormat::PrettyJson,
-                    );
-                };
-                let debug_info = ingester_service
-                    .mrecordlog_summary(MRecordlogSummaryRequest {})
-                    .await;
-                crate::rest_api_response::RestApiResponse::new(
-                    &debug_info,
-                    // TODO error code on error
-                    hyper::StatusCode::OK,
+        .and(with_arg(ingester_opt))
+        .then(|ingester_opt: Option<Ingester>| async move {
+            let Some(mut ingester) = ingester_opt else {
+                return crate::rest_api_response::RestApiResponse::new(
+                    &Result::<&str, &str>::Err("ingester disabled"),
+                    hyper::StatusCode::MISDIRECTED_REQUEST,
                     crate::format::BodyFormat::PrettyJson,
-                )
-            },
-        )
+                );
+            };
+            let debug_info = ingester
+                .mrecordlog_summary(MRecordlogSummaryRequest {})
+                .await;
+            crate::rest_api_response::RestApiResponse::new(
+                &debug_info,
+                // TODO error code on error
+                hyper::StatusCode::OK,
+                crate::format::BodyFormat::PrettyJson,
+            )
+        })
 }
