@@ -31,6 +31,7 @@ use fnv::FnvHashMap;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use mrecordlog::error::CreateQueueError;
+use once_cell::sync::OnceCell;
 use quickwit_cluster::Cluster;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
@@ -87,6 +88,28 @@ const MIN_RESET_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "testsui
 } else {
     Duration::from_secs(60)
 };
+
+
+const DEFAULT_BATCH_NUM_BYTES: usize = 1024 * 1024; // 1 MiB
+const QW_INGEST_BATCH_NUM_BYTES: &'static str = "QW_INGEST_BATCH_NUM_BYTES";
+
+fn default_batch_num_bytes() -> usize {
+    static BATCH_NUM_BYTES: OnceCell<usize> = OnceCell::new();
+    *BATCH_NUM_BYTES.get_or_init(|| {
+        // Load and parse the environment variable called QW_INGEST_BATCH_NUM_BYTES
+        // If it is not set, return DEFAULT_BATCH_NUM_BYTES.
+        // If it is not a number, logs an error and return DEFAULT_BATCH_NUM_BYTES.
+        if let Ok(ingest_batch_num_bytes_str) = std::env::var(QW_INGEST_BATCH_NUM_BYTES) {
+            if let Ok(ingest_batch_num_bytes) = ingest_batch_num_bytes_str.parse::<usize>() {
+                info!("Setting the batch number of bytes for ingest v2 to {ingest_batch_num_bytes}");
+                return ingest_batch_num_bytes;
+            } else {
+                error!(err=ingest_batch_num_bytes_str, "failed to parse ingest batch num bytes");
+            }
+        }
+        DEFAULT_BATCH_NUM_BYTES
+    })
+}
 
 /// Duration after which persist requests time out with
 /// [`quickwit_proto::ingest::IngestV2Error::Timeout`].
@@ -850,7 +873,7 @@ impl Ingester {
             open_fetch_stream_request,
             mrecordlog,
             shard_status_rx,
-            FetchStreamTask::DEFAULT_BATCH_NUM_BYTES,
+            default_batch_num_bytes()
         );
         Ok(service_stream)
     }
