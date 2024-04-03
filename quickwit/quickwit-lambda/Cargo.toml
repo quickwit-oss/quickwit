@@ -24,8 +24,10 @@ aws_lambda_events = "0.15.0"
 chitchat = { workspace = true }
 chrono = { workspace = true }
 flate2 = { workspace = true }
-lambda_http = "0.10.0"
-lambda_runtime = "0.10.0"
+http = { workspace = true }
+lambda_http = "0.8.0"
+lambda_runtime = "0.11.1"
+mime_guess =  { workspace = true }
 once_cell = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true, features = [
@@ -34,6 +36,7 @@ opentelemetry-otlp = { workspace = true, features = [
     "http-proto",
 ] }
 rand = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }
@@ -41,6 +44,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["json"] }
+warp = {  workspace = true , features = ["compression-gzip"] }
+
 
 quickwit-actors = { workspace = true }
 quickwit-cli = { workspace = true }

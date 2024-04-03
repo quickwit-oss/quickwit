@@ -21,7 +21,7 @@ use std::env::var;
 
 use once_cell::sync::Lazy;
 
-pub const CONFIGURATION_TEMPLATE: &str = "version: 0.6
+pub const CONFIGURATION_TEMPLATE: &str = "version: 0.7
 node_id: lambda-indexer
 cluster_id: lambda-ephemeral
 metastore_uri: s3://${QW_LAMBDA_METASTORE_BUCKET}/index
