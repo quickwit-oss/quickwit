@@ -423,8 +423,8 @@ name: my_default_field
 type: concatenate
 concatenated_fields:
   - text # things inside text, tokenized with the `default` tokenizer
-  - resource.author # all fields in resource.author, assuming resource is a `json` field
-  - _dynamic # content of the dynamic field, assuming indexing mode is `dynamic` (see below)
+  - resource.author # all fields in resource.author, assuming resource is an `object` field.
+include_dynamic_fields: true
 tokenizer: default
 record: basic
 ```
@@ -432,16 +432,27 @@ record: basic
 Concatenate fields don't support fast fields, and are never stored. They uses their own tokenizer, independantly of the
 tokenizer configured on the individual fields.
 At query time, concatenate fields don't support range queries.
-Only the following types are supported inside a concatenate field: text, bool, i64, u64, json. Other types are reject
-at index creation, or discarded during indexation if they are found inside a json field.
-For json fields, they path is not indexed, only values are.
+Only the following types are supported inside a concatenate field: text, bool, i64, u64, json. Other types are rejected
+at index creation, or silently discarded during indexation if they are found inside a json field.
+Adding an object field to a concatenate field doesn't automatically add its subfields (yet).
+<!-- typing is made so it wouldn't be too hard do add, as well as things like params_* matching all fields which starts name with params_ , but the feature isn't implemented yet -->
+
+For json fields and dynamic fields, the path is not indexed, only values are. For instance, given the following document:
+```json
+{
+  "421312": {
+    "my-key": "my-value"
+  }
+}
+```
+It is possible to search for `my-value` despite not knowing the full path, but it isn't possible to search for all documents containing a key `my-key`.
 
 <!--
 when the features are supported, add these:
   - params_* # shortcut for all fields starting with `params_`
   - resource.author # all fields in resource.author, assuming resource is either of type `object` or `json`
 ---
-Only the following types are supported inside a concatenate field: text, datetime, bool, i64, u64, ip, json. Other types are reject
+Only the following types are supported inside a concatenate field: text, datetime, bool, i64, u64, ip, json. Other types are rejected
 ---
 Datetime can only be queried in their RFC-3339 form, possibly omiting later components. # todo! will have to confirm this is achievable
 ---

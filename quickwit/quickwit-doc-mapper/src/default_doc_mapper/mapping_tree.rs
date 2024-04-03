@@ -56,14 +56,14 @@ pub enum LeafType {
 }
 
 fn value_to_pretokenized<T: ToString>(val: T) -> PreTokenizedString {
-    let val = val.to_string();
+    let text = val.to_string();
     PreTokenizedString {
-        text: val.clone(),
+        text: text.clone(),
         tokens: vec![Token {
             offset_from: 0,
-            offset_to: 0,
+            offset_to: 1,
             position: 0,
-            text: val,
+            text,
             position_length: 1,
         }],
     }
@@ -811,11 +811,6 @@ fn build_mapping_tree_from_entries<'a>(
         let text_options: TextOptions = options.clone().into();
         let field = schema.add_text_field(name, text_options);
         for sub_field in &options.concatenate_fields {
-            if sub_field == "_dynamic" {
-                // TODO prevent pushing twice
-                concatenate_dynamic_fields.push(field);
-                continue;
-            }
             for matched_field in
                 mapping_node
                     .find_field_mapping_leaf(sub_field)
@@ -831,6 +826,9 @@ fn build_mapping_tree_from_entries<'a>(
                 }
                 matched_field.concatenate.push(field);
             }
+        }
+        if options.include_dynamic_fields {
+            concatenate_dynamic_fields.push(field);
         }
     }
     Ok((mapping_node, concatenate_dynamic_fields))
@@ -1068,12 +1066,12 @@ fn build_mapping_from_field_type<'a>(
             Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
         }
         FieldMappingType::Object(entries) => {
-            let (mapping_node, concate_dynamic_fields) = build_mapping_tree_from_entries(
+            let (mapping_node, concatenate_dynamic_fields) = build_mapping_tree_from_entries(
                 &entries.field_mappings,
                 field_path,
                 schema_builder,
             )?;
-            Ok((MappingTree::Node(mapping_node), concate_dynamic_fields))
+            Ok((MappingTree::Node(mapping_node), concatenate_dynamic_fields))
         }
         FieldMappingType::Concatenate(_) => {
             bail!("Concatenate shouldn't reach build_mapping_from_field_type: this is a bug")

@@ -32,8 +32,8 @@ json:
           - boolean
           - int
           - json
-          - _dynamic
         tokenizer: raw
+        include_dynamic_fields: true
       - name: concat_default
         type: concatenate
         concatenate_fields:

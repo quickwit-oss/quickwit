@@ -661,6 +661,8 @@ pub struct QuickwitConcatenateOptions {
     pub description: Option<String>,
     /// Fields to concatenate
     pub concatenate_fields: Vec<String>,
+    #[serde(default)]
+    pub include_dynamic_fields: bool,
     #[serde_multikey(
         deserializer = TextIndexingOptions::from_parts_concatenate,
         serializer = TextIndexingOptions::to_parts_concatenate,
@@ -687,6 +689,7 @@ impl Default for QuickwitConcatenateOptions {
         QuickwitConcatenateOptions {
             description: None,
             concatenate_fields: Vec::new(),
+            include_dynamic_fields: false,
             indexing_options: TextIndexingOptions {
                 tokenizer: QuickwitTextTokenizer::default(),
                 record: IndexRecordOption::Basic,
@@ -725,7 +728,9 @@ fn deserialize_mapping_type(
         }
         QuickwitFieldType::Concatenate => {
             let concatenate_options: QuickwitConcatenateOptions = serde_json::from_value(json)?;
-            if concatenate_options.concatenate_fields.is_empty() {
+            if concatenate_options.concatenate_fields.is_empty()
+                && !concatenate_options.include_dynamic_fields
+            {
                 anyhow::bail!("concatenate type must have at least one sub-field");
             }
             return Ok(FieldMappingType::Concatenate(concatenate_options));
