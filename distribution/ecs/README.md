@@ -31,7 +31,8 @@ file.
 
 Metastore database backups are disabled as restoring one would lead to
 inconsistencies with the index store on S3. To ensure high availability, you
-should enable `rds_config.multi_az` instead.
+should enable `rds_config.multi_az` instead. The module currently doesn't allow
+using an externally provided metastore.
 
 Using NAT Gateways for the image registry is quite costly (~$0.05/hour/AZ). If
 you are not already using NAT Gateways in the AZs where Quickwit will be
@@ -45,11 +46,11 @@ must match the `quickwit_cpu_architecture` variable (`ARM64` by default).
 
 Sidecar container and custom logging configurations can be configured using the
 variables `sidecar_container_definitions`, `sidecar_container_dependencies`,
-`log_configuration`, `enable_cloudwatch_logging`. A more concrete example can be
-found in the `./example/logging.tf` file.
+`log_configuration`, `enable_cloudwatch_logging`. See [custom log
+routing](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_firelens.html).
 
-You can also use sidecars to inject additional secrets as files. This can be
-useful for configuring sources such as Kafka. See `./exaple/kafka.tf` for an
+You can use sidecars to inject additional secrets as files. This can be
+useful for configuring sources such as Kafka. See `./example/kafka.tf` for an
 example.
 
 ## Running the example stack
@@ -60,14 +61,14 @@ We provide an example of self contained deployment with an ad-hoc VPC.
 > and RDS)
 
 To make it easy to access your the Quickwit cluster, this stack includes a
-bastion instance. Access is secured using an RSA key pair that you need to
-provide (e.g generated with `ssh-keygen -t rsa`).
+bastion instance. Access is secured using an SSH key pair that you need to
+provide (e.g generated with `ssh-keygen -t ed25519`).
 
 In the `./example` directory create a `terraform.tfvars` file with the public
 key of your RSA key pair:
 
 ```terraform
-bastion_public_key = "ssh-rsa ..."
+bastion_public_key = "ssh-ed25519 ..."
 ```
 
 > [!NOTE] You can skip the creation of the bastion by not specifying the
@@ -105,8 +106,8 @@ wget https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10
 curl -X POST \
   -H "content-type: application/json" \
   --data-binary @hdfs-logs-multitenants-10000.json \
-  http://indexer.quickwit:7280/api/v1/hdfs-logs/ingest
+  http://indexer.quickwit:7280/api/v1/hdfs-logs/ingest?commit=force
 ```
 
 If your SSH tunnel to the searcher is still running, you should be able to see
-the ingested data in the UI as soon as it is committed (~30 seconds).
+the ingested data in the UI.

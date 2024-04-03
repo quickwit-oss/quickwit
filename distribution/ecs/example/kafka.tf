@@ -35,15 +35,15 @@ locals {
       secrets = [
         {
           name      = "CA_PEM"
-          valueFrom = "arn:aws:secretsmanager:eu-west-1:542709600413:secret:your_kafka_ca_pem"
+          valueFrom = "arn:aws:secretsmanager:eu-west-1:123456789:secret:your_kafka_ca_pem"
         },
         {
           name      = "SERVICE_CERT"
-          valueFrom = "arn:aws:secretsmanager:eu-west-1:542709600413:secret:your_kafka_service_cert"
+          valueFrom = "arn:aws:secretsmanager:eu-west-1:123456789:secret:your_kafka_service_cert"
         },
         {
           name      = "SERVICE_KEY"
-          valueFrom = "arn:aws:secretsmanager:eu-west-1:542709600413:secret:your_kafka_service_key"
+          valueFrom = "arn:aws:secretsmanager:eu-west-1:123456789:secret:your_kafka_service_key"
         }
       ]
     }

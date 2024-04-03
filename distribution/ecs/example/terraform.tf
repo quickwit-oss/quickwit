@@ -69,10 +69,12 @@ module "quickwit" {
   #   multi_az       = false
   # }
 
-  ## Example logging configuration (see logging.tf)
-  # sidecar_container_definitions  = local.example_sidecar_container_definitions
-  # sidecar_container_dependencies = local.example_sidecar_container_dependencies
-  # log_configuration              = local.example_log_configuration
+  ## Example logging configuration 
+  # sidecar_container_definitions  = {
+  #   my_sidecar_container = see http://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_ContainerDefinition.html
+  # }
+  # sidecar_container_dependencies = [{condition = "START", containerName = "my_sidecar_container"}]
+  # log_configuration              = see https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ecs_service#log_configuration
   # enable_cloudwatch_logging      = false
 
   ## Example Kafka key injection (see kafka.tf)
