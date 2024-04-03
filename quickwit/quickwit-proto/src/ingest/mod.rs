@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use bytes::Bytes;
+use bytesize::ByteSize;
 
 use self::ingester::{PersistFailureReason, ReplicateFailureReason};
 use self::router::IngestFailureReason;
@@ -105,7 +106,7 @@ impl DocBatchV2 {
     }
 
     pub fn num_bytes(&self) -> usize {
-        self.doc_buffer.len()
+        self.doc_buffer.len() + self.doc_lengths.len() * 4
     }
 
     pub fn num_docs(&self) -> usize {
@@ -144,8 +145,8 @@ impl MRecordBatch {
         self.mrecord_lengths.is_empty()
     }
 
-    pub fn num_bytes(&self) -> usize {
-        self.mrecord_buffer.len()
+    pub fn estimate_size(&self) -> ByteSize {
+        ByteSize((self.mrecord_buffer.len() + self.mrecord_lengths.len() * 4) as u64)
     }
 
     pub fn num_mrecords(&self) -> usize {
@@ -276,6 +277,7 @@ impl From<PersistFailureReason> for IngestFailureReason {
             PersistFailureReason::ShardClosed => IngestFailureReason::NoShardsAvailable,
             PersistFailureReason::ResourceExhausted => IngestFailureReason::ResourceExhausted,
             PersistFailureReason::RateLimited => IngestFailureReason::RateLimited,
+            PersistFailureReason::Timeout => IngestFailureReason::Timeout,
         }
     }
 }

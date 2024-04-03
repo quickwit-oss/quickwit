@@ -27,11 +27,11 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use async_trait::async_trait;
 use bytesize::ByteSize;
-use fnv::FnvHashMap;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use mrecordlog::error::CreateQueueError;
 use quickwit_cluster::Cluster;
+use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -190,11 +190,15 @@ impl Ingester {
         };
         match mrecordlog.create_queue(&queue_id).await {
             Ok(_) => {}
-            Err(CreateQueueError::AlreadyExists) => panic!("queue should not exist"),
+            Err(CreateQueueError::AlreadyExists) => {
+                error!("WAL queue `{queue_id}` already exists");
+                let message = format!("WAL queue `{queue_id}` already exists");
+                return Err(IngestV2Error::Internal(message));
+            }
             Err(CreateQueueError::IoError(io_error)) => {
-                // TODO: Close all shards and set readiness to false.
-                error!("failed to create mrecordlog queue `{queue_id}`: {io_error}");
-                return Err(IngestV2Error::Internal(format!("Io Error: {io_error}")));
+                error!("failed to create WAL queue `{queue_id}`: {io_error}",);
+                let message = format!("failed to create WAL queue `{queue_id}`: {io_error}");
+                return Err(IngestV2Error::Internal(message));
             }
         };
         let rate_limiter = RateLimiter::from_settings(self.rate_limiter_settings);
@@ -348,7 +352,7 @@ impl Ingester {
 
     async fn init_replication_stream(
         &self,
-        replication_streams: &mut FnvHashMap<FollowerId, ReplicationStreamTaskHandle>,
+        replication_streams: &mut HashMap<FollowerId, ReplicationStreamTaskHandle>,
         leader_id: NodeId,
         follower_id: NodeId,
     ) -> IngestV2Result<ReplicationClient> {
@@ -460,7 +464,8 @@ impl Ingester {
 
         // first verify if we would locally accept each subrequest
         {
-            let mut sum_of_requested_capacity = bytesize::ByteSize::b(0);
+            let mut total_requested_capacity = bytesize::ByteSize::b(0);
+
             for subrequest in persist_request.subrequests {
                 let queue_id = subrequest.queue_id();
 
@@ -515,7 +520,7 @@ impl Ingester {
                     &state_guard.mrecordlog,
                     self.disk_capacity,
                     self.memory_capacity,
-                    requested_capacity + sum_of_requested_capacity,
+                    requested_capacity + total_requested_capacity,
                 ) {
                     rate_limited_warn!(
                         limit_per_min = 10,
@@ -553,7 +558,7 @@ impl Ingester {
 
                 let batch_num_bytes = doc_batch.num_bytes() as u64;
                 rate_meter.update(batch_num_bytes);
-                sum_of_requested_capacity += requested_capacity;
+                total_requested_capacity += requested_capacity;
 
                 if let Some(follower_id) = follower_id_opt {
                     let replicate_subrequest = ReplicateSubrequest {
@@ -736,7 +741,6 @@ impl Ingester {
                 persist_successes.push(persist_success);
             }
         }
-
         if !shards_to_close.is_empty() {
             for queue_id in &shards_to_close {
                 let shard = state_guard
@@ -745,18 +749,15 @@ impl Ingester {
                     .expect("shard should exist");
 
                 shard.close();
+                warn!("closed shard `{queue_id}` following IO error");
             }
-            info!(
-                "closed {} shard(s) following IO error(s)",
-                shards_to_close.len()
-            );
         }
         if !shards_to_delete.is_empty() {
             for queue_id in &shards_to_delete {
                 state_guard.shards.remove(queue_id);
                 state_guard.rate_trackers.remove(queue_id);
+                warn!("deleted dangling shard `{queue_id}`");
             }
-            info!("deleted {} dangling shard(s)", shards_to_delete.len());
         }
         let wal_usage = state_guard.mrecordlog.resource_usage();
         drop(state_guard);
@@ -968,6 +969,19 @@ impl IngesterService for Ingester {
         &mut self,
         persist_request: PersistRequest,
     ) -> IngestV2Result<PersistResponse> {
+        // If the request is local, the amount of memory it occupies is already
+        // accounted for in the router.
+        let request_size_bytes = persist_request
+            .subrequests
+            .iter()
+            .flat_map(|subrequest| match &subrequest.doc_batch {
+                Some(doc_batch) if doc_batch.doc_buffer.is_unique() => Some(doc_batch.num_bytes()),
+                _ => None,
+            })
+            .sum::<usize>();
+        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingester_persist);
+        gauge_guard.add(request_size_bytes as i64);
+
         self.persist_inner(persist_request).await
     }
 
@@ -1613,10 +1627,13 @@ mod tests {
         );
     }
 
-    // This test should be run manually and independently of other tests with the `fail/failpoints`
-    // feature enabled.
+    // This test should be run manually and independently of other tests with the `failpoints`
+    // feature enabled:
+    // ```sh
+    // cargo test --manifest-path quickwit/Cargo.toml -p quickwit-ingest --features failpoints -- test_ingester_persist_closes_shard_on_io_error
+    // ```
+    #[cfg(feature = "failpoints")]
     #[tokio::test]
-    #[ignore]
     async fn test_ingester_persist_closes_shard_on_io_error() {
         let scenario = fail::FailScenario::setup();
         fail::cfg("ingester:append_records", "return").unwrap();

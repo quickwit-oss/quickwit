@@ -17,13 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use fnv::FnvHashMap;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -56,12 +56,12 @@ pub(super) struct IngesterState {
 }
 
 pub(super) struct InnerIngesterState {
-    pub shards: FnvHashMap<QueueId, IngesterShard>,
-    pub rate_trackers: FnvHashMap<QueueId, (RateLimiter, RateMeter)>,
+    pub shards: HashMap<QueueId, IngesterShard>,
+    pub rate_trackers: HashMap<QueueId, (RateLimiter, RateMeter)>,
     // Replication stream opened with followers.
-    pub replication_streams: FnvHashMap<FollowerId, ReplicationStreamTaskHandle>,
+    pub replication_streams: HashMap<FollowerId, ReplicationStreamTaskHandle>,
     // Replication tasks running for each replication stream opened with leaders.
-    pub replication_tasks: FnvHashMap<LeaderId, ReplicationTaskHandle>,
+    pub replication_tasks: HashMap<LeaderId, ReplicationTaskHandle>,
     status: IngesterStatus,
     status_tx: watch::Sender<IngesterStatus>,
 }

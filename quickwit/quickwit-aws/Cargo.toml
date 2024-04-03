@@ -18,15 +18,10 @@ aws-smithy-async = { workspace = true }
 aws-smithy-client = { workspace = true }
 aws-types = { workspace = true }
 
-async-trait = { workspace = true }
 futures = { workspace = true }
 hyper = { workspace = true }
 hyper-rustls = { workspace = true }
-once_cell = { workspace = true }
-rand = { workspace = true }
 tokio = { workspace = true }
-tower = { workspace = true }
-tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
 

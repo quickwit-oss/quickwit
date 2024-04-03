@@ -243,7 +243,7 @@ impl IndexerState {
             last_delete_opstamp,
             memory_usage: GaugeGuard::from_gauge(
                 &quickwit_common::metrics::MEMORY_METRICS
-                    .in_flight_data
+                    .in_flight
                     .index_writer,
             ),
             split_builders_guard,

@@ -156,12 +156,12 @@ mod tests {
                 assert_eq!(subrequests[0].index_id, "my-index-1");
                 assert_eq!(subrequests[0].source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(subrequests[0].doc_batch.as_ref().unwrap().num_docs(), 2);
-                assert_eq!(subrequests[0].doc_batch.as_ref().unwrap().num_bytes(), 96);
+                assert_eq!(subrequests[0].doc_batch.as_ref().unwrap().num_bytes(), 104);
 
                 assert_eq!(subrequests[1].index_id, "my-index-2");
                 assert_eq!(subrequests[1].source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(subrequests[1].doc_batch.as_ref().unwrap().num_docs(), 1);
-                assert_eq!(subrequests[1].doc_batch.as_ref().unwrap().num_bytes(), 48);
+                assert_eq!(subrequests[1].doc_batch.as_ref().unwrap().num_bytes(), 52);
 
                 Ok(IngestResponseV2 {
                     successes: vec![
@@ -238,7 +238,7 @@ mod tests {
                 assert_eq!(subrequest_0.index_id, "my-index-1");
                 assert_eq!(subrequest_0.source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(subrequest_0.doc_batch.as_ref().unwrap().num_docs(), 1);
-                assert_eq!(subrequest_0.doc_batch.as_ref().unwrap().num_bytes(), 48);
+                assert_eq!(subrequest_0.doc_batch.as_ref().unwrap().num_bytes(), 52);
 
                 Ok(IngestResponseV2 {
                     successes: vec![IngestSuccess {

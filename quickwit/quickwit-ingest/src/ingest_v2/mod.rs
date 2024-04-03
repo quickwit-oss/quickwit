@@ -33,6 +33,7 @@ mod routing_table;
 mod state;
 mod workbench;
 
+use std::collections::HashMap;
 use std::ops::{Add, AddAssign};
 use std::time::Duration;
 use std::{env, fmt};
@@ -40,7 +41,6 @@ use std::{env, fmt};
 pub use broadcast::{setup_local_shards_update_listener, LocalShardsUpdate, ShardInfo, ShardInfos};
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
-use fnv::FnvHashMap;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
@@ -138,7 +138,7 @@ impl DocBatchV2Builder {
 /// Helper struct to build an [`IngestRequestV2`].
 #[derive(Debug, Default)]
 pub struct IngestRequestV2Builder {
-    per_index_id_doc_batch_builders: FnvHashMap<IndexId, DocBatchV2Builder>,
+    per_index_id_doc_batch_builders: HashMap<IndexId, DocBatchV2Builder>,
 }
 
 impl IngestRequestV2Builder {
@@ -158,9 +158,7 @@ impl IngestRequestV2Builder {
             .into_iter()
             .enumerate()
             .flat_map(|(subrequest_id, (index_id, doc_batch_builder))| {
-                let Some(doc_batch) = doc_batch_builder.build() else {
-                    return None;
-                };
+                let doc_batch = doc_batch_builder.build()?;
                 let ingest_subrequest = IngestSubrequest {
                     subrequest_id: subrequest_id as u32,
                     index_id,
@@ -236,7 +234,7 @@ mod tests {
         let doc_batch = doc_batch_builder.build().unwrap();
 
         assert_eq!(doc_batch.num_docs(), 2);
-        assert_eq!(doc_batch.num_bytes(), 13);
+        assert_eq!(doc_batch.num_bytes(), 21);
         assert_eq!(doc_batch.doc_lengths, [7, 6]);
         assert_eq!(doc_batch.doc_buffer, Bytes::from(&b"Hello, World!"[..]));
     }
@@ -278,7 +276,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .num_bytes(),
-            13
+            21
         );
         assert_eq!(
             ingest_request.subrequests[0]
@@ -313,7 +311,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .num_bytes(),
-            12
+            20
         );
         assert_eq!(
             ingest_request.subrequests[1]
@@ -345,6 +343,6 @@ mod tests {
             doc_buffer: vec![0u8; 100].into(),
             doc_lengths: vec![10, 20, 30],
         };
-        assert_eq!(estimate_size(&doc_batch), ByteSize(106));
+        assert_eq!(estimate_size(&doc_batch), ByteSize(118));
     }
 }

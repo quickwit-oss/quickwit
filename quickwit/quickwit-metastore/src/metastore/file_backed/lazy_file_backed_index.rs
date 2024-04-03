@@ -79,7 +79,7 @@ impl LazyFileBackedIndex {
                 )
             })
             .await
-            .map(|index| index.clone())
+            .cloned()
     }
 }
 

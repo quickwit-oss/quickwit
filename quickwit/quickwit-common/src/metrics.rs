@@ -218,7 +218,7 @@ pub struct MemoryMetrics {
     pub active_bytes: IntGauge,
     pub allocated_bytes: IntGauge,
     pub resident_bytes: IntGauge,
-    pub in_flight_data: InFlightDataGauges,
+    pub in_flight: InFlightDataGauges,
 }
 
 impl Default for MemoryMetrics {
@@ -245,7 +245,7 @@ impl Default for MemoryMetrics {
                 "memory",
                 &[],
             ),
-            in_flight_data: InFlightDataGauges::default(),
+            in_flight: InFlightDataGauges::default(),
         }
     }
 }
@@ -254,7 +254,11 @@ impl Default for MemoryMetrics {
 pub struct InFlightDataGauges {
     pub rest_server: IntGauge,
     pub ingest_router: IntGauge,
+    pub ingester_persist: IntGauge,
+    pub ingester_replicate: IntGauge,
     pub wal: IntGauge,
+    pub fetch_stream: IntGauge,
+    pub multi_fetch_stream: IntGauge,
     pub sources: InFlightDataSourceGauges,
     pub doc_processor_mailbox: IntGauge,
     pub indexer_mailbox: IntGauge,
@@ -273,7 +277,11 @@ impl Default for InFlightDataGauges {
         Self {
             rest_server: in_flight_gauge_vec.with_label_values(["rest_server"]),
             ingest_router: in_flight_gauge_vec.with_label_values(["ingest_router"]),
+            ingester_persist: in_flight_gauge_vec.with_label_values(["ingester_persist"]),
+            ingester_replicate: in_flight_gauge_vec.with_label_values(["ingester_replicate"]),
             wal: in_flight_gauge_vec.with_label_values(["wal"]),
+            fetch_stream: in_flight_gauge_vec.with_label_values(["fetch_stream"]),
+            multi_fetch_stream: in_flight_gauge_vec.with_label_values(["multi_fetch_stream"]),
             sources: InFlightDataSourceGauges::new(&in_flight_gauge_vec),
             doc_processor_mailbox: in_flight_gauge_vec.with_label_values(["doc_processor_mailbox"]),
             indexer_mailbox: in_flight_gauge_vec.with_label_values(["indexer_mailbox"]),

@@ -91,7 +91,7 @@ pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
         .wal_disk_used_bytes
         .set(wal_usage.disk_used_bytes as i64);
     quickwit_common::metrics::MEMORY_METRICS
-        .in_flight_data
+        .in_flight
         .wal
         .set(wal_usage.memory_allocated_bytes as i64);
     INGEST_V2_METRICS

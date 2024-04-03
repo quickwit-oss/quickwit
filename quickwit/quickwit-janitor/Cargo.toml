@@ -13,7 +13,6 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-chrono = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
 once_cell = { workspace = true }
@@ -23,16 +22,12 @@ tantivy = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
 tracing = { workspace = true }
-ulid = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
-quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
-quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
