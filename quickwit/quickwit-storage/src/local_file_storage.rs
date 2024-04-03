@@ -333,7 +333,7 @@ impl Storage for LocalFileStorage {
                     Ok(metadata.len())
                 } else {
                     Err(StorageErrorKind::NotFound.with_error(anyhow::anyhow!(
-                        "file `{}` is actually a directory",
+                        "file `{}` is not a regular file, cannot determine its size",
                         path.display()
                     )))
                 }
