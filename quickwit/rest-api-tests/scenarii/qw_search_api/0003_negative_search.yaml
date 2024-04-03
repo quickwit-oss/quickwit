@@ -1,0 +1,24 @@
+# regression test for bizare handling of - vs NOT when no positive clause is present
+endpoint: simple/search
+params:
+  query: "-ts:1234567890 AND -ts:1234567891"
+expected:
+  num_hits: 4
+---
+endpoint: simple/search
+params:
+  query: "NOT ts:1234567890 AND NOT ts:1234567891"
+expected:
+  num_hits: 4
+---
+endpoint: simple/search
+params:
+  query: "NOT ts:1234567890 AND -ts:1234567891"
+expected:
+  num_hits: 4
+---
+endpoint: simple/search
+params:
+  query: "-ts:1234567890 AND NOT ts:1234567891"
+expected:
+  num_hits: 4
