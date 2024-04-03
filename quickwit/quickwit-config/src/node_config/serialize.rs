@@ -663,7 +663,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_node_config_default_values_minimal() {
-        let config_yaml = "version: 0.7";
+        let config_yaml = "version: 0.8";
         let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
@@ -712,7 +712,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_node_config_env_var_override() {
-        let config_yaml = "version: 0.7";
+        let config_yaml = "version: 0.8";
         let mut env_vars = HashMap::new();
         env_vars.insert("QW_CLUSTER_ID".to_string(), "test-cluster".to_string());
         env_vars.insert("QW_NODE_ID".to_string(), "test-node".to_string());
@@ -794,7 +794,7 @@ mod tests {
     #[tokio::test]
     async fn test_quickwwit_config_default_values_storage() {
         let config_yaml = r#"
-            version: 0.7
+            version: 0.8
             node_id: "node-1"
             metastore_uri: postgres://username:password@host:port/db
         "#;
@@ -816,7 +816,7 @@ mod tests {
     #[tokio::test]
     async fn test_node_config_config_default_values_default_indexer_searcher_config() {
         let config_yaml = r#"
-            version: 0.7
+            version: 0.8
             metastore_uri: postgres://username:password@host:port/db
             data_dir: /opt/quickwit/data
         "#;
@@ -990,7 +990,7 @@ mod tests {
     async fn test_config_validates_uris() {
         {
             let config_yaml = r#"
-            version: 0.7
+            version: 0.8
             node_id: 1
             metastore_uri: ''
         "#;
@@ -1004,7 +1004,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-            version: 0.7
+            version: 0.8
             node_id: 1
             metastore_uri: postgres://username:password@host:port/db
             default_index_root_uri: ''
@@ -1023,7 +1023,7 @@ mod tests {
     async fn test_node_config_data_dir_accepts_both_file_uris_and_file_paths() {
         {
             let config_yaml = r#"
-                version: 0.7
+                version: 0.8
                 data_dir: /opt/quickwit/data
             "#;
             let config = load_node_config_with_env(
@@ -1037,7 +1037,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-                version: 0.7
+                version: 0.8
                 data_dir: file:///opt/quickwit/data
             "#;
             let config = load_node_config_with_env(
@@ -1051,7 +1051,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-                version: 0.7
+                version: 0.8
                 data_dir: s3://indexes/foo
             "#;
             let error = load_node_config_with_env(
@@ -1068,7 +1068,7 @@ mod tests {
     #[tokio::test]
     async fn test_config_invalid_when_both_listen_ports_params_are_configured() {
         let config_yaml = r#"
-                version: 0.7
+                version: 0.8
                 rest_listen_port: 1789
                 rest:
                   listen_port: 1789
@@ -1103,7 +1103,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_config_accepts_wildcard() {
         let rest_config_yaml = r#"
-            version: 0.7
+            version: 0.8
             rest:
               cors_allow_origins: '*'
         "#;
@@ -1120,7 +1120,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_config_accepts_single_origin() {
         let rest_config_yaml = r#"
-            version: 0.7
+            version: 0.8
             rest:
               cors_allow_origins:
                 - https://www.my-domain.com
@@ -1138,7 +1138,7 @@ mod tests {
         );
 
         let rest_config_yaml = r#"
-            version: 0.7
+            version: 0.8
             rest:
               cors_allow_origins: http://192.168.0.108:7280
         "#;
@@ -1158,7 +1158,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_config_accepts_multi_origin() {
         let rest_config_yaml = r#"
-            version: 0.7
+            version: 0.8
             rest:
               cors_allow_origins:
                 - https://www.my-domain.com
@@ -1176,7 +1176,7 @@ mod tests {
         );
 
         let rest_config_yaml = r#"
-            version: 0.7
+            version: 0.8
             rest:
               cors_allow_origins:
                 - https://www.my-domain.com
@@ -1198,7 +1198,7 @@ mod tests {
         );
 
         let rest_config_yaml = r#"
-            version: 0.7
+            version: 0.8
             rest:
               rest_cors_allow_origins:
         "#;
@@ -1211,7 +1211,7 @@ mod tests {
         .expect_err("Config should not allow empty origins.");
 
         let rest_config_yaml = r#"
-            version: 0.7
+            version: 0.8
             rest:
               cors_allow_origins:
                 -
@@ -1242,7 +1242,7 @@ mod tests {
         assert!(error_message.contains("either 1 or 2, got `3`"));
 
         let node_config_yaml = r#"
-            version: 0.7
+            version: 0.8
             ingest_api:
               replication_factor: 0
         "#;
