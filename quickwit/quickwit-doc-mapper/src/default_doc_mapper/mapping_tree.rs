@@ -220,7 +220,7 @@ impl LeafType {
         }
     }
 
-    fn string_value_from_json(
+    fn tantivy_string_value_from_json(
         &self,
         json_val: JsonValue,
     ) -> Result<impl Iterator<Item = TantivyValue>, String> {
@@ -314,7 +314,7 @@ impl MappingLeaf {
                 if !self.concatenate.is_empty() {
                     let concat_values = self
                         .typ
-                        .string_value_from_json(el_json_val.clone())
+                        .tantivy_string_value_from_json(el_json_val.clone())
                         .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
                     for concat_value in concat_values {
                         for field in &self.concatenate {
@@ -334,7 +334,7 @@ impl MappingLeaf {
         if !self.concatenate.is_empty() {
             let concat_values = self
                 .typ
-                .string_value_from_json(json_val.clone())
+                .tantivy_string_value_from_json(json_val.clone())
                 .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
             for concat_value in concat_values {
                 for field in &self.concatenate {
