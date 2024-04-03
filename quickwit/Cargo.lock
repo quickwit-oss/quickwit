@@ -5889,6 +5889,7 @@ dependencies = [
  "anyhow",
  "aws_lambda_events",
  "chitchat",
+ "chrono",
  "flate2",
  "lambda_http",
  "lambda_runtime",
