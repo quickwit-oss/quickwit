@@ -1605,7 +1605,7 @@ mod tests {
             .header("content-type", "application/yaml")
             .body(
                 r#"
-            version: 0.7
+            version: 0.8
             index_id: hdfs-logs
             doc_mapping:
               field_mappings:

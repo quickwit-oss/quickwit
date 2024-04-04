@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub(crate) const CONFIGURATION_TEMPLATE: &str = "version: 0.7
+pub(crate) const CONFIGURATION_TEMPLATE: &str = "version: 0.8
 node_id: lambda-searcher
 metastore_uri: s3://${QW_LAMBDA_METASTORE_BUCKET}/index
 default_index_root_uri: s3://${QW_LAMBDA_INDEX_BUCKET}/index
