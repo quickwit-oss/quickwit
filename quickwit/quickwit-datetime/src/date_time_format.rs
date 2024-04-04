@@ -28,7 +28,7 @@ use time::error::Format;
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 use time::format_description::FormatItem;
 use time::parsing::Parsed;
-use time::{OffsetDateTime, PrimitiveDateTime};
+use time::{Month, OffsetDateTime, PrimitiveDateTime};
 use time_fmt::parse::time_format_item::parse_to_format_item;
 
 use crate::TantivyDateTime;
@@ -83,6 +83,11 @@ impl StrptimeParser {
             parsed.set_hour_24(0u8);
             parsed.set_minute(0u8);
             parsed.set_second(0u8);
+        }
+        if parsed.year().is_none() {
+            let now = OffsetDateTime::now_utc();
+            let year = infer_year(parsed.month(), now.month(), now.year());
+            parsed.set_year(year);
         }
         let date_time = parsed.try_into()?;
         Ok(date_time)
@@ -318,9 +323,26 @@ impl<'de> Deserialize<'de> for DateTimeOutputFormat {
     }
 }
 
+/// Infers the year of a parsed date time. It assumes that events appear more often delayed than in
+/// the future and, as a result, skews towards the past year.
+pub(super) fn infer_year(
+    parsed_month_opt: Option<Month>,
+    this_month: Month,
+    this_year: i32,
+) -> i32 {
+    let Some(parsed_month) = parsed_month_opt else {
+        return this_year;
+    };
+    if parsed_month as u8 > this_month as u8 + 3 {
+        return this_year - 1;
+    }
+    this_year
+}
+
 #[cfg(test)]
 mod tests {
     use time::macros::datetime;
+    use time::Month;
 
     use super::*;
 
@@ -452,5 +474,29 @@ mod tests {
             error,
             "datetime string `2021-01-01TABC` does not match strptime format `%Y-%m-%d`"
         );
+    }
+
+    #[test]
+    fn test_infer_year() {
+        let inferred_year = infer_year(None, Month::January, 2024);
+        assert_eq!(inferred_year, 2024);
+
+        let inferred_year = infer_year(Some(Month::December), Month::January, 2024);
+        assert_eq!(inferred_year, 2023);
+
+        let inferred_year = infer_year(Some(Month::January), Month::January, 2024);
+        assert_eq!(inferred_year, 2024);
+
+        let inferred_year = infer_year(Some(Month::February), Month::January, 2024);
+        assert_eq!(inferred_year, 2024);
+
+        let inferred_year = infer_year(Some(Month::March), Month::January, 2024);
+        assert_eq!(inferred_year, 2024);
+
+        let inferred_year = infer_year(Some(Month::April), Month::January, 2024);
+        assert_eq!(inferred_year, 2024);
+
+        let inferred_year = infer_year(Some(Month::May), Month::January, 2024);
+        assert_eq!(inferred_year, 2023);
     }
 }

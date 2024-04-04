@@ -40,7 +40,6 @@ aws-config = { workspace = true }
 aws-credential-types = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 aws-smithy-http = { workspace = true }
-aws-smithy-types = { workspace = true }
 
 azure_core = { workspace = true, optional = true }
 azure_storage = { workspace = true, optional = true }

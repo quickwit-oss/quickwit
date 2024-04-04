@@ -38,14 +38,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_qs = { workspace = true }
 serde_with = { workspace = true }
-termcolor = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 tracing = { workspace = true }
-tracing-opentelemetry = { workspace = true }
 utoipa = { workspace = true }
 warp = { workspace = true }
 zstd = { workspace = true }
@@ -55,7 +53,6 @@ quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-control-plane = { workspace = true }
-quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
@@ -77,7 +74,6 @@ time = { workspace = true }
 assert-json-diff = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
-rand = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }

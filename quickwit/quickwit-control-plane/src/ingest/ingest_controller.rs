@@ -39,9 +39,9 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::ingest::{IngestV2Error, Shard, ShardIdPosition, ShardIdPositions, ShardIds};
 use quickwit_proto::metastore;
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
+use quickwit_proto::types::{IndexUid, NodeId, Position, ShardId, SourceUid};
 use serde::{Deserialize, Serialize};
-use tracing::{error, info, warn};
+use tracing::{debug, enabled, error, info, warn, Level};
 use ulid::Ulid;
 
 use crate::ingest::wait_handle::WaitHandle;
@@ -631,6 +631,9 @@ impl IngestController {
         request: AdviseResetShardsRequest,
         model: &ControlPlaneModel,
     ) -> AdviseResetShardsResponse {
+        info!("advise reset shards");
+        debug!(shard_ids=?summarize_shard_ids(&request.shard_ids), "advise reset shards");
+
         let mut shards_to_delete: Vec<ShardIds> = Vec::new();
         let mut shards_to_truncate: Vec<ShardIdPositions> = Vec::new();
 
@@ -678,6 +681,25 @@ impl IngestController {
                 });
             }
         }
+
+        if enabled!(Level::DEBUG) {
+            let shards_to_truncate: Vec<(&str, &Position)> = shards_to_truncate
+                .iter()
+                .flat_map(|shard_positions| {
+                    shard_positions
+                        .shard_positions
+                        .iter()
+                        .map(|shard_id_position| {
+                            (
+                                shard_id_position.shard_id().as_str(),
+                                shard_id_position.publish_position_inclusive(),
+                            )
+                        })
+                })
+                .collect();
+            debug!(shard_ids_to_delete=?summarize_shard_ids(&shards_to_delete), shards_to_truncate=?shards_to_truncate, "advise reset shards response");
+        }
+
         AdviseResetShardsResponse {
             shards_to_delete,
             shards_to_truncate,
@@ -688,6 +710,18 @@ impl IngestController {
         // TODO: As of now, it is only used for unit testing.
         self.stats.num_rebalance_shards_ops += 1;
     }
+}
+
+fn summarize_shard_ids(shard_ids: &[ShardIds]) -> Vec<&str> {
+    shard_ids
+        .iter()
+        .flat_map(|source_shard_ids| {
+            source_shard_ids
+                .shard_ids
+                .iter()
+                .map(|shard_id| shard_id.as_str())
+        })
+        .collect()
 }
 
 /// Finds the shard with the highest ingestion rate on the ingester with the least number of open

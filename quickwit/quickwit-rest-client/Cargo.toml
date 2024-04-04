@@ -11,7 +11,6 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
 bytes = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
@@ -32,7 +31,6 @@ quickwit-serve = { workspace = true }
 [dev-dependencies]
 wiremock = { workspace = true }
 
-quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }

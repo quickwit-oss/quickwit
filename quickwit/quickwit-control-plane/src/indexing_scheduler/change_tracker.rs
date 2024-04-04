@@ -17,20 +17,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use tokio::sync::watch;
 
 /// This object makes it possible to track for the completion of the next rebuild.
 pub struct RebuildNotifier {
-    generation_processed_tx: Arc<Mutex<tokio::sync::watch::Sender<usize>>>,
-    generation_processed_rx: tokio::sync::watch::Receiver<usize>,
+    generation_processed_tx: watch::Sender<usize>,
+    generation_processed_rx: watch::Receiver<usize>,
     generation: usize,
 }
 
 impl Default for RebuildNotifier {
     fn default() -> Self {
-        let (generation_processed_tx, generation_processed_rx) = tokio::sync::watch::channel(0);
-        RebuildNotifier {
-            generation_processed_tx: Arc::new(Mutex::new(generation_processed_tx)),
+        let (generation_processed_tx, generation_processed_rx) = watch::channel(0);
+
+        Self {
+            generation_processed_tx,
             generation_processed_rx,
             generation: 1,
         }
@@ -70,16 +73,15 @@ impl RebuildNotifier {
 
 pub struct NotifyChangeOnDrop {
     generation: usize,
-    generation_processed_tx: Arc<Mutex<tokio::sync::watch::Sender<usize>>>,
+    generation_processed_tx: watch::Sender<usize>,
 }
 
 impl Drop for NotifyChangeOnDrop {
     fn drop(&mut self) {
-        let generation_processed_tx = self.generation_processed_tx.lock().unwrap();
-        if self.generation < *generation_processed_tx.borrow() {
+        if self.generation < *self.generation_processed_tx.borrow() {
             return;
         }
-        let _ = generation_processed_tx.send(self.generation);
+        let _ = self.generation_processed_tx.send(self.generation);
     }
 }
 

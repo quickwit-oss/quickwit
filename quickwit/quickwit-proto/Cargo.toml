@@ -18,7 +18,6 @@ bytestring = { workspace = true }
 dyn-clone = { workspace = true }
 futures = { workspace = true, optional = true }
 http = { workspace = true }
-hyper = { workspace = true }
 mockall = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
 prost = { workspace = true }

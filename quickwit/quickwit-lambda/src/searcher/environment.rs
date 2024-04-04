@@ -17,11 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::env::var;
-
-use once_cell::sync::Lazy;
-
-pub(crate) const CONFIGURATION_TEMPLATE: &str = "version: 0.6
+pub(crate) const CONFIGURATION_TEMPLATE: &str = "version: 0.7
 node_id: lambda-searcher
 metastore_uri: s3://${QW_LAMBDA_METASTORE_BUCKET}/index
 default_index_root_uri: s3://${QW_LAMBDA_INDEX_BUCKET}/index
@@ -29,6 +25,3 @@ data_dir: /tmp
 searcher:
   partial_request_cache_capacity: ${QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY:-64M}
 ";
-
-pub(crate) static DISABLE_SEARCH_CACHE: Lazy<bool> =
-    Lazy::new(|| var("QW_LAMBDA_DISABLE_SEARCH_CACHE").is_ok_and(|v| v.as_str() == "true"));

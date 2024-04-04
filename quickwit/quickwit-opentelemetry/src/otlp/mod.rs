@@ -34,7 +34,10 @@ mod test_utils;
 mod trace_id;
 mod traces;
 
-pub use logs::{OtlpGrpcLogsService, OTEL_LOGS_INDEX_ID};
+pub use logs::{
+    parse_otlp_logs_json, parse_otlp_logs_protobuf, JsonLogIterator, OtlpGrpcLogsService,
+    OtlpLogsError, OTEL_LOGS_INDEX_ID,
+};
 pub use span_id::{SpanId, TryFromSpanIdError};
 #[cfg(any(test, feature = "testsuite"))]
 pub use test_utils::make_resource_spans_for_test;
@@ -42,7 +45,7 @@ use tonic::Status;
 pub use trace_id::{TraceId, TryFromTraceIdError};
 pub use traces::{
     parse_otlp_spans_json, parse_otlp_spans_protobuf, Event, JsonSpanIterator, Link,
-    OtlpGrpcTracesService, OtlpTraceError, Span, SpanFingerprint, SpanKind, SpanStatus,
+    OtlpGrpcTracesService, OtlpTracesError, Span, SpanFingerprint, SpanKind, SpanStatus,
     OTEL_TRACES_INDEX_ID, OTEL_TRACES_INDEX_ID_PATTERN,
 };
 
@@ -68,8 +71,14 @@ impl OtelSignal {
     }
 }
 
-impl From<OtlpTraceError> for tonic::Status {
-    fn from(error: OtlpTraceError) -> Self {
+impl From<OtlpLogsError> for tonic::Status {
+    fn from(error: OtlpLogsError) -> Self {
+        tonic::Status::invalid_argument(error.to_string())
+    }
+}
+
+impl From<OtlpTracesError> for tonic::Status {
+    fn from(error: OtlpTracesError) -> Self {
         tonic::Status::invalid_argument(error.to_string())
     }
 }
@@ -197,14 +206,14 @@ pub(crate) fn extract_otel_index_id_from_metadata(
         .transpose()
         .map_err(|error| {
             Status::internal(format!(
-                "Failed to extract index ID from request metadata: {}",
+                "failed to extract index ID from request metadata: {}",
                 error
             ))
         })?
         .unwrap_or_else(|| otel_signal.default_index_id());
     validate_identifier("index_id", index_id).map_err(|error| {
         Status::internal(format!(
-            "Invalid index ID pattern in request metadata: {}",
+            "invalid index ID pattern in request metadata: {}",
             error
         ))
     })?;

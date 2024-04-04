@@ -1184,6 +1184,18 @@ async fn check_cluster_configuration(
     Ok(())
 }
 
+pub mod lambda_search_api {
+    pub use crate::elasticsearch_api::{
+        es_compat_cat_indices_handler, es_compat_index_cat_indices_handler,
+        es_compat_index_count_handler, es_compat_index_field_capabilities_handler,
+        es_compat_index_multi_search_handler, es_compat_index_search_handler,
+        es_compat_index_stats_handler, es_compat_scroll_handler, es_compat_search_handler,
+        es_compat_stats_handler,
+    };
+    pub use crate::rest::recover_fn;
+    pub use crate::search_api::{search_get_handler, search_post_handler};
+}
+
 #[cfg(test)]
 mod tests {
     use quickwit_cluster::{create_cluster_for_test, ChannelTransport, ClusterNode};

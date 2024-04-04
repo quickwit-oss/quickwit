@@ -1227,7 +1227,7 @@ mod tests {
         let subworkbench = workbench.subworkbenches.get(&0).unwrap();
         assert!(matches!(
             &subworkbench.last_failure_opt,
-            Some(SubworkbenchFailure::Internal(msg)) if msg.contains("internal")
+            Some(SubworkbenchFailure::Internal)
         ));
 
         assert!(!workbench

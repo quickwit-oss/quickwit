@@ -48,4 +48,4 @@ service:
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp/qw]
+      exporters: [kafka, otlp/qw]
