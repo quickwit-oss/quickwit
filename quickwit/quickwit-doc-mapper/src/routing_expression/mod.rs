@@ -273,7 +273,7 @@ fn convert_ast(ast: Vec<expression_dsl::ExpressionAst>) -> anyhow::Result<InnerR
         .into_iter()
         .map(|ast_elem| match ast_elem {
             ExpressionAst::Field(field_name) => {
-                let field_path = expression_dsl::parse_keys(&field_name)?
+                let field_path = expression_dsl::parse_field_name(&field_name)?
                     .into_iter()
                     .map(Cow::into_owned)
                     .collect();
@@ -384,22 +384,31 @@ mod expression_dsl {
         Ok(res)
     }
 
+    // tag, but ignore leading and trailing whitespaces
+    pub fn wtag<'a, Error: nom::error::ParseError<&'a str>>(
+        t: &'a str,
+    ) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, Error> {
+        delimited(multispace0, tag(t), multispace0)
+    }
+
     // DSL:
     //
     // RoutingExpr := RoutingSubExpr [ , RoutingExpr ]
     // RougingSubExpr := Identifier [ \( Arguments \) ]
     // Identifier := FieldChar [ Identifier ]
-    // FieldChar := { a..z | A..Z | 0..9 | _ | . }
+    // FieldChar := { a..z | A..Z | 0..9 | _ | . | \ | / | @ | $ }
     // Arguments := Argument [ , Arguments ]
     // Argument := { \( RoutingExpr \) | RoutingSubExpr | DirectValue }
     // # We may want other DirectValue in the future
     // DirectValue := Number
     // Number := { 0..9 } [ Number ]
 
+    /// An entire routing expression, containing comma separated routing sub-expressions
     fn routing_expr(input: &str) -> IResult<&str, Vec<ExpressionAst>> {
         separated_list0(wtag(","), routing_sub_expr)(input)
     }
 
+    /// A sub-part of a routing expression
     fn routing_sub_expr(input: &str) -> IResult<&str, ExpressionAst> {
         let (input, identifier) = identifier(input)?;
         let (input, args) = opt(tuple((wtag("("), arguments, wtag(")"))))(input)?;
@@ -414,6 +423,8 @@ mod expression_dsl {
         Ok((input, res))
     }
 
+    /// An identifier, it can be either a field name, or a function name. It's returned as is,
+    /// without de-escaping.
     fn identifier(input: &str) -> IResult<&str, &str> {
         input.split_at_position1_complete(
             |item| !(item.is_alphanum() || ['_', '-', '.', '\\', '/', '@', '$'].contains(&item)),
@@ -421,10 +432,12 @@ mod expression_dsl {
         )
     }
 
+    /// Arguments for a function
     fn arguments(input: &str) -> IResult<&str, Vec<Argument>> {
         separated_list0(wtag(","), argument)(input)
     }
 
+    /// A single argument for a function
     fn argument(input: &str) -> IResult<&str, Argument> {
         if let Ok((input, number)) = number(input) {
             Ok((input, Argument::Number(number)))
@@ -436,17 +449,15 @@ mod expression_dsl {
         }
     }
 
+    /// A number
     fn number(input: &str) -> IResult<&str, u64> {
         nom::character::complete::u64(input)
     }
 
-    // tag, but ignore leading and trailing whitespaces
-    pub fn wtag<'a, Error: nom::error::ParseError<&'a str>>(
-        t: &'a str,
-    ) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, Error> {
-        delimited(multispace0, tag(t), multispace0)
-    }
+    // functions after this are meant to parse a field into its path component, de-escaping where
+    // appropriate
 
+    /// Parse part of a path component, stop at the first . or \
     fn key_identifier(input: &str) -> IResult<&str, &str> {
         input.split_at_position1_complete(
             |item| !(item.is_alphanum() || ['_', '-', '/', '@', '$'].contains(&item)),
@@ -454,6 +465,7 @@ mod expression_dsl {
         )
     }
 
+    /// Parse a single path component, separated by dots. De-escape any escaped dot it may contain.
     fn escaped_key(input: &str) -> IResult<&str, Cow<str>> {
         map(escaped(key_identifier, '\\', tag(".")), |s: &str| {
             if s.contains("\\.") {
@@ -464,7 +476,8 @@ mod expression_dsl {
         })(input)
     }
 
-    pub(crate) fn parse_keys(input: &str) -> anyhow::Result<Vec<Cow<str>>> {
+    /// Parse a field name into a path, de-escaping where appropirate.
+    pub(crate) fn parse_field_name(input: &str) -> anyhow::Result<Vec<Cow<str>>> {
         let (i, res) = separated_list0(tag("."), escaped_key)(input)
             .finish()
             .map_err(|e| anyhow::anyhow!("error parsing key expression: {e}"))?;
@@ -592,33 +605,33 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_keys() {
-        let keys = expression_dsl::parse_keys("abc").unwrap();
+    fn test_parse_field_name() {
+        let keys = expression_dsl::parse_field_name("abc").unwrap();
         assert_eq!(keys, vec![String::from("abc")]);
     }
 
     #[test]
-    fn test_parse_keys_multiple() {
-        let keys = expression_dsl::parse_keys("abc.def").unwrap();
+    fn test_parse_field_name_multiple() {
+        let keys = expression_dsl::parse_field_name("abc.def").unwrap();
         assert_eq!(keys, vec![String::from("abc"), String::from("def")]);
     }
 
     #[test]
-    fn test_parse_keys_with_escaped_dot() {
-        let keys = expression_dsl::parse_keys("abc\\.def.hij").unwrap();
+    fn test_parse_field_name_with_escaped_dot() {
+        let keys = expression_dsl::parse_field_name("abc\\.def.hij").unwrap();
         assert_eq!(keys, vec![String::from("abc.def"), String::from("hij")]);
     }
 
     #[test]
-    fn test_parse_keys_with_special_char() {
-        let keys = expression_dsl::parse_keys("abCD01-_/@$").unwrap();
+    fn test_parse_field_name_with_special_char() {
+        let keys = expression_dsl::parse_field_name("abCD01-_/@$").unwrap();
         assert_eq!(keys, vec![String::from("abCD01-_/@$")]);
     }
 
     #[test]
     fn test_find_value_with_escaped_dot() {
         let ctx = serde_json::from_str(r#"{"tenant.id": "happy", "app": "happy"}"#).unwrap();
-        let keys: Vec<_> = expression_dsl::parse_keys("tenant\\.id")
+        let keys: Vec<_> = expression_dsl::parse_field_name("tenant\\.id")
             .unwrap()
             .into_iter()
             .map(Cow::into_owned)
@@ -634,7 +647,7 @@ mod tests {
             r#"{"tenant_id": "happy", "app": {"name": "happy", "id": "123"}}"#,
         )
         .unwrap();
-        let keys: Vec<_> = expression_dsl::parse_keys("app.id")
+        let keys: Vec<_> = expression_dsl::parse_field_name("app.id")
             .unwrap()
             .into_iter()
             .map(Cow::into_owned)
