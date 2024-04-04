@@ -21,9 +21,10 @@ use lambda_runtime::{Error, LambdaEvent};
 use serde_json::Value;
 use tracing::{debug_span, error, info, info_span, Instrument};
 
-use super::environment::{DISABLE_MERGE, INDEX_CONFIG_URI, INDEX_ID};
+use super::environment::{DISABLE_JANITOR, DISABLE_MERGE, INDEX_CONFIG_URI};
 use super::ingest::{ingest, IngestArgs};
 use super::model::IndexerEvent;
+use crate::environment::INDEX_ID;
 use crate::logger;
 use crate::utils::LambdaContainerContext;
 
@@ -37,6 +38,8 @@ async fn indexer_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         input_format: quickwit_config::SourceInputFormat::Json,
         overwrite: false,
         vrl_script: None,
+        // TODO: instead of clearing the cache, we use a cache and set its max
+        // size with indexer_config.split_store_max_num_bytes
         clear_cache: true,
     })
     .instrument(debug_span!(
@@ -45,6 +48,7 @@ async fn indexer_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         env.INDEX_CONFIG_URI = *INDEX_CONFIG_URI,
         env.INDEX_ID = *INDEX_ID,
         env.DISABLE_MERGE = *DISABLE_MERGE,
+        env.DISABLE_JANITOR = *DISABLE_JANITOR,
         cold = container_ctx.cold,
         container_id = container_ctx.container_id,
     ))

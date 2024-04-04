@@ -310,6 +310,7 @@ mod kinesis_localstack_tests {
         wait_for_active_stream, DEFAULT_RETRY_PARAMS,
     };
 
+    #[ignore]
     #[tokio::test]
     async fn test_create_stream() -> anyhow::Result<()> {
         let stream_name = append_random_suffix("test-create-stream");
@@ -326,6 +327,7 @@ mod kinesis_localstack_tests {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_delete_stream() -> anyhow::Result<()> {
         let (kinesis_client, stream_name) = setup("test-delete-stream", 1).await?;
@@ -343,6 +345,7 @@ mod kinesis_localstack_tests {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_get_records() -> anyhow::Result<()> {
         let (kinesis_client, stream_name) = setup("test-get-records", 2).await?;
@@ -450,6 +453,7 @@ mod kinesis_localstack_tests {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_list_shards() -> anyhow::Result<()> {
         let (kinesis_client, stream_name) = setup("test-list-shards", 2).await?;

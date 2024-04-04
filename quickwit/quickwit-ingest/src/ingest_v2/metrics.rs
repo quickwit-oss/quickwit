@@ -26,11 +26,11 @@ use quickwit_common::metrics::{
 
 pub(super) struct IngestV2Metrics {
     pub reset_shards_operations_total: IntCounterVec<1>,
-    pub shards: IntGaugeVec<2>,
+    pub open_shards: IntGauge,
+    pub closed_shards: IntGauge,
     pub wal_acquire_lock_requests_in_flight: IntGaugeVec<2>,
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
     pub wal_disk_used_bytes: IntGauge,
-    pub wal_memory_allocated_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
 }
 
@@ -44,12 +44,17 @@ impl Default for IngestV2Metrics {
                 &[],
                 ["status"],
             ),
-            shards: new_gauge_vec(
+            open_shards: new_gauge(
                 "shards",
-                "Number of shards.",
+                "Number of shards hosted by the ingester.",
                 "ingest",
-                &[],
-                ["state", "index_id"],
+                &[("state", "open")],
+            ),
+            closed_shards: new_gauge(
+                "shards",
+                "Number of shards hosted by the ingester.",
+                "ingest",
+                &[("state", "closed")],
             ),
             wal_acquire_lock_requests_in_flight: new_gauge_vec(
                 "wal_acquire_lock_requests_in_flight",
@@ -71,12 +76,6 @@ impl Default for IngestV2Metrics {
                 "ingest",
                 &[],
             ),
-            wal_memory_allocated_bytes: new_gauge(
-                "wal_memory_allocated_bytes",
-                "WAL memory allocated in bytes.",
-                "ingest",
-                &[],
-            ),
             wal_memory_used_bytes: new_gauge(
                 "wal_memory_used_bytes",
                 "WAL memory used in bytes.",
@@ -91,8 +90,9 @@ pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
     INGEST_V2_METRICS
         .wal_disk_used_bytes
         .set(wal_usage.disk_used_bytes as i64);
-    INGEST_V2_METRICS
-        .wal_memory_allocated_bytes
+    quickwit_common::metrics::MEMORY_METRICS
+        .in_flight
+        .wal
         .set(wal_usage.memory_allocated_bytes as i64);
     INGEST_V2_METRICS
         .wal_memory_used_bytes

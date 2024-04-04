@@ -43,18 +43,12 @@ use crate::control_plane::{ControlPlane, CONTROL_PLAN_LOOP_INTERVAL};
 use crate::indexing_scheduler::MIN_DURATION_BETWEEN_SCHEDULING;
 use crate::IndexerNodeInfo;
 
-fn index_metadata_for_test(
-    index_id: &str,
-    source_id: &str,
-    desired_num_pipelines: usize,
-    max_num_pipelines_per_indexer: usize,
-) -> IndexMetadata {
+fn index_metadata_for_test(index_id: &str, source_id: &str, num_pipelines: usize) -> IndexMetadata {
     let mut index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/test-index");
     let source_config = SourceConfig {
         enabled: true,
         source_id: source_id.to_string(),
-        max_num_pipelines_per_indexer: NonZeroUsize::new(max_num_pipelines_per_indexer).unwrap(),
-        desired_num_pipelines: NonZeroUsize::new(desired_num_pipelines).unwrap(),
+        num_pipelines: NonZeroUsize::new(num_pipelines).unwrap(),
         source_params: SourceParams::Kafka(KafkaSourceParams {
             topic: "topic".to_string(),
             client_log_level: None,
@@ -115,14 +109,14 @@ async fn start_control_plane(
     let source_1 = "source-1";
     let index_2 = "test-indexing-plan-2";
     let source_2 = "source-2";
-    let index_metadata_1 = index_metadata_for_test(index_1, source_1, 2, 2);
-    let mut index_metadata_2 = index_metadata_for_test(index_2, source_2, 1, 1);
+    let index_metadata_1 = index_metadata_for_test(index_1, source_1, 2);
+    let mut index_metadata_2 = index_metadata_for_test(index_2, source_2, 1);
     index_metadata_2.create_timestamp = index_metadata_1.create_timestamp + 1;
     let mut metastore = MetastoreServiceClient::mock();
     metastore.expect_list_indexes_metadata().returning(
         move |_list_indexes_request: quickwit_proto::metastore::ListIndexesMetadataRequest| {
             let indexes_metadata = vec![index_metadata_2.clone(), index_metadata_1.clone()];
-            Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata).unwrap())
+            Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
         },
     );
     metastore.expect_list_shards().returning(|_| {

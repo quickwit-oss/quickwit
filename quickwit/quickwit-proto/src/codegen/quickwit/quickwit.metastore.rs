@@ -34,8 +34,14 @@ pub struct ListIndexesMetadataRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadataResponse {
-    #[prost(string, tag = "1")]
-    pub indexes_metadata_serialized_json: ::prost::alloc::string::String,
+    /// Deprecated (v0.9.0), use `indexes_metadata_json_zstd` instead.
+    #[prost(string, optional, tag = "1")]
+    pub indexes_metadata_json_opt: ::core::option::Option<
+        ::prost::alloc::string::String,
+    >,
+    /// A JSON serialized then ZSTD compressed list of `IndexMetadata`: `Vec<IndexMetadata> | JSON | ZSTD`.
+    #[prost(bytes = "bytes", tag = "2")]
+    pub indexes_metadata_json_zstd: ::prost::bytes::Bytes,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4380,7 +4386,10 @@ where
             .create_index(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                CreateIndexRequest::rpc_name(),
+            ))
     }
     async fn index_metadata(
         &mut self,
@@ -4390,7 +4399,10 @@ where
             .index_metadata(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                IndexMetadataRequest::rpc_name(),
+            ))
     }
     async fn list_indexes_metadata(
         &mut self,
@@ -4400,7 +4412,10 @@ where
             .list_indexes_metadata(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ListIndexesMetadataRequest::rpc_name(),
+            ))
     }
     async fn delete_index(
         &mut self,
@@ -4410,7 +4425,10 @@ where
             .delete_index(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                DeleteIndexRequest::rpc_name(),
+            ))
     }
     async fn list_splits(
         &mut self,
@@ -4422,9 +4440,16 @@ where
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
                 let stream = quickwit_common::ServiceStream::from(streaming);
-                stream.map_err(crate::error::grpc_status_to_service_error)
+                stream
+                    .map_err(|status| crate::error::grpc_status_to_service_error(
+                        status,
+                        ListSplitsRequest::rpc_name(),
+                    ))
             })
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ListSplitsRequest::rpc_name(),
+            ))
     }
     async fn stage_splits(
         &mut self,
@@ -4434,7 +4459,10 @@ where
             .stage_splits(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                StageSplitsRequest::rpc_name(),
+            ))
     }
     async fn publish_splits(
         &mut self,
@@ -4444,7 +4472,10 @@ where
             .publish_splits(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                PublishSplitsRequest::rpc_name(),
+            ))
     }
     async fn mark_splits_for_deletion(
         &mut self,
@@ -4454,7 +4485,10 @@ where
             .mark_splits_for_deletion(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                MarkSplitsForDeletionRequest::rpc_name(),
+            ))
     }
     async fn delete_splits(
         &mut self,
@@ -4464,7 +4498,10 @@ where
             .delete_splits(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                DeleteSplitsRequest::rpc_name(),
+            ))
     }
     async fn add_source(
         &mut self,
@@ -4474,7 +4511,10 @@ where
             .add_source(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                AddSourceRequest::rpc_name(),
+            ))
     }
     async fn toggle_source(
         &mut self,
@@ -4484,7 +4524,10 @@ where
             .toggle_source(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ToggleSourceRequest::rpc_name(),
+            ))
     }
     async fn delete_source(
         &mut self,
@@ -4494,7 +4537,10 @@ where
             .delete_source(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                DeleteSourceRequest::rpc_name(),
+            ))
     }
     async fn reset_source_checkpoint(
         &mut self,
@@ -4504,7 +4550,10 @@ where
             .reset_source_checkpoint(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ResetSourceCheckpointRequest::rpc_name(),
+            ))
     }
     async fn last_delete_opstamp(
         &mut self,
@@ -4514,7 +4563,10 @@ where
             .last_delete_opstamp(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                LastDeleteOpstampRequest::rpc_name(),
+            ))
     }
     async fn create_delete_task(
         &mut self,
@@ -4524,7 +4576,10 @@ where
             .create_delete_task(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                DeleteQuery::rpc_name(),
+            ))
     }
     async fn update_splits_delete_opstamp(
         &mut self,
@@ -4534,7 +4589,10 @@ where
             .update_splits_delete_opstamp(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                UpdateSplitsDeleteOpstampRequest::rpc_name(),
+            ))
     }
     async fn list_delete_tasks(
         &mut self,
@@ -4544,7 +4602,10 @@ where
             .list_delete_tasks(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ListDeleteTasksRequest::rpc_name(),
+            ))
     }
     async fn list_stale_splits(
         &mut self,
@@ -4554,7 +4615,10 @@ where
             .list_stale_splits(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ListStaleSplitsRequest::rpc_name(),
+            ))
     }
     async fn open_shards(
         &mut self,
@@ -4564,7 +4628,10 @@ where
             .open_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                OpenShardsRequest::rpc_name(),
+            ))
     }
     async fn acquire_shards(
         &mut self,
@@ -4574,7 +4641,10 @@ where
             .acquire_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                AcquireShardsRequest::rpc_name(),
+            ))
     }
     async fn delete_shards(
         &mut self,
@@ -4584,7 +4654,10 @@ where
             .delete_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                DeleteShardsRequest::rpc_name(),
+            ))
     }
     async fn list_shards(
         &mut self,
@@ -4594,7 +4667,10 @@ where
             .list_shards(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ListShardsRequest::rpc_name(),
+            ))
     }
     async fn create_index_template(
         &mut self,
@@ -4604,7 +4680,10 @@ where
             .create_index_template(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                CreateIndexTemplateRequest::rpc_name(),
+            ))
     }
     async fn get_index_template(
         &mut self,
@@ -4614,7 +4693,10 @@ where
             .get_index_template(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                GetIndexTemplateRequest::rpc_name(),
+            ))
     }
     async fn find_index_template_matches(
         &mut self,
@@ -4624,7 +4706,10 @@ where
             .find_index_template_matches(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                FindIndexTemplateMatchesRequest::rpc_name(),
+            ))
     }
     async fn list_index_templates(
         &mut self,
@@ -4634,7 +4719,10 @@ where
             .list_index_templates(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ListIndexTemplatesRequest::rpc_name(),
+            ))
     }
     async fn delete_index_templates(
         &mut self,
@@ -4644,7 +4732,10 @@ where
             .delete_index_templates(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                DeleteIndexTemplatesRequest::rpc_name(),
+            ))
     }
     async fn check_connectivity(&mut self) -> anyhow::Result<()> {
         if self.connection_addrs_rx.borrow().len() == 0 {

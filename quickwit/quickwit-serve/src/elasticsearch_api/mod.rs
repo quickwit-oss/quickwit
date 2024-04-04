@@ -34,19 +34,16 @@ use quickwit_ingest::IngestServiceClient;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::SearchService;
-use rest_handler::{
-    es_compat_cluster_info_handler, es_compat_index_multi_search_handler,
-    es_compat_index_search_handler, es_compat_scroll_handler, es_compat_search_handler,
+pub use rest_handler::{
+    es_compat_cat_indices_handler, es_compat_cluster_info_handler, es_compat_delete_index_handler,
+    es_compat_index_cat_indices_handler, es_compat_index_count_handler,
+    es_compat_index_field_capabilities_handler, es_compat_index_multi_search_handler,
+    es_compat_index_search_handler, es_compat_index_stats_handler, es_compat_scroll_handler,
+    es_compat_search_handler, es_compat_stats_handler,
 };
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
-use self::rest_handler::{
-    es_compat_cat_indices_handler, es_compat_delete_index_handler,
-    es_compat_index_cat_indices_handler, es_compat_index_count_handler,
-    es_compat_index_field_capabilities_handler, es_compat_index_stats_handler,
-    es_compat_stats_handler,
-};
 use crate::elasticsearch_api::model::ElasticsearchError;
 use crate::rest_api_response::RestApiResponse;
 use crate::{BodyFormat, BuildInfo};
@@ -93,7 +90,7 @@ pub fn elastic_api_handlers(
 ///
 /// When set to `Count` with an integer value `n`, the response accurately tracks the total
 /// hit count that match the query up to `n` documents.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TrackTotalHits {
     /// Track the number of hits that match the query accurately.

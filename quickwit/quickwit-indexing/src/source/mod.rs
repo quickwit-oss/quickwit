@@ -492,15 +492,15 @@ impl BatchBuilder {
 
     pub fn with_capacity(capacity: usize, source_type: SourceType) -> Self {
         let gauge = match source_type {
-            SourceType::File => &MEMORY_METRICS.in_flight_data.sources.file,
-            SourceType::IngestV2 => &MEMORY_METRICS.in_flight_data.sources.ingest,
-            SourceType::Kafka => &MEMORY_METRICS.in_flight_data.sources.kafka,
-            SourceType::Kinesis => &MEMORY_METRICS.in_flight_data.sources.kinesis,
-            SourceType::PubSub => &MEMORY_METRICS.in_flight_data.sources.pubsub,
-            SourceType::Pulsar => &MEMORY_METRICS.in_flight_data.sources.pulsar,
-            _ => &MEMORY_METRICS.in_flight_data.sources.other,
+            SourceType::File => &MEMORY_METRICS.in_flight.sources.file,
+            SourceType::IngestV2 => &MEMORY_METRICS.in_flight.sources.ingest,
+            SourceType::Kafka => &MEMORY_METRICS.in_flight.sources.kafka,
+            SourceType::Kinesis => &MEMORY_METRICS.in_flight.sources.kinesis,
+            SourceType::PubSub => &MEMORY_METRICS.in_flight.sources.pubsub,
+            SourceType::Pulsar => &MEMORY_METRICS.in_flight.sources.pulsar,
+            _ => &MEMORY_METRICS.in_flight.sources.other,
         };
-        let gauge_guard = GaugeGuard::from_gauge(gauge, 0);
+        let gauge_guard = GaugeGuard::from_gauge(gauge);
 
         Self {
             docs: Vec::with_capacity(capacity),
@@ -549,8 +549,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "void".to_string(),
-                desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
                 source_params: SourceParams::void(),
                 transform_config: None,
@@ -561,8 +560,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "vec".to_string(),
-                desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
                 transform_config: None,
@@ -573,8 +571,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
                 source_params: SourceParams::file("file-does-not-exist.json"),
                 transform_config: None,
@@ -589,8 +586,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                num_pipelines: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
                 source_params: SourceParams::file("data/test_corpus.json"),
                 transform_config: None,

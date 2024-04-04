@@ -55,7 +55,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use bytesize::ByteSize;
 pub(crate) use decompression::Body;
 pub use format::BodyFormat;
@@ -98,7 +98,7 @@ use quickwit_metastore::{
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
-use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
+use quickwit_proto::ingest::ingester::{IngesterService, IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::metastore::{
     EntityKind, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
@@ -187,7 +187,7 @@ struct QuickwitServices {
     pub ingest_service: IngestServiceClient,
     // Ingest v2
     pub ingest_router_service: IngestRouterServiceClient,
-    pub ingester_service_opt: Option<IngesterServiceClient>,
+    pub ingester_opt: Option<Ingester>,
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
@@ -345,7 +345,7 @@ async fn start_control_plane_if_needed(
 }
 
 fn start_shard_positions_service(
-    ingester_service_opt: Option<IngesterServiceClient>,
+    ingester_opt: Option<Ingester>,
     cluster: Cluster,
     event_broker: EventBroker,
     spawn_ctx: SpawnContext,
@@ -353,8 +353,8 @@ fn start_shard_positions_service(
     // We spawn a task here, because we need the ingester to be ready before spawning the
     // the `ShardPositionsService`. If we don't, all the events we emit too early will be dismissed.
     tokio::spawn(async move {
-        if let Some(ingester_service) = ingester_service_opt {
-            if wait_for_ingester_status(ingester_service, IngesterStatus::Ready)
+        if let Some(ingester) = ingester_opt {
+            if wait_for_ingester_status(ingester, IngesterStatus::Ready)
                 .await
                 .is_err()
             {
@@ -373,7 +373,9 @@ pub async fn serve_quickwit(
     shutdown_signal: BoxFutureInfaillible<()>,
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
-    let cluster = start_cluster_service(&node_config).await?;
+    let cluster = start_cluster_service(&node_config)
+        .await
+        .context("failed to start cluster service")?;
 
     let event_broker = EventBroker::default();
     let indexer_pool = IndexerPool::default();
@@ -386,7 +388,13 @@ pub async fn serve_quickwit(
         if node_config.is_service_enabled(QuickwitService::Metastore) {
             let metastore: MetastoreServiceClient = metastore_resolver
                 .resolve(&node_config.metastore_uri)
-                .await?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed to resolve metastore uri `{}`",
+                        node_config.metastore_uri
+                    )
+                })?;
             let broker_layer = EventListenerLayer::new(event_broker.clone());
             let metastore = MetastoreServiceClient::tower()
                 .stack_create_index_layer(broker_layer.clone())
@@ -412,7 +420,7 @@ pub async fn serve_quickwit(
                 .is_err()
             {
                 error!("no metastore service found among cluster members, stopping server");
-                anyhow::bail!(
+                bail!(
                     "failed to start server: no metastore service was found among cluster \
                      members. try running Quickwit with additional metastore service `quickwit \
                      run --service metastore`"
@@ -442,7 +450,8 @@ pub async fn serve_quickwit(
         &indexer_pool,
         &ingester_pool,
     )
-    .await?;
+    .await
+    .context("failed to start control plane service")?;
 
     // Set up the "control plane proxy" for the metastore.
     let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
@@ -451,7 +460,9 @@ pub async fn serve_quickwit(
     ));
 
     // Setup ingest service v1.
-    let ingest_service = start_ingest_client_if_needed(&node_config, &universe, &cluster).await?;
+    let ingest_service = start_ingest_client_if_needed(&node_config, &universe, &cluster)
+        .await
+        .context("failed to start ingest v1 service")?;
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         let indexing_service = start_indexing_service(
@@ -464,7 +475,8 @@ pub async fn serve_quickwit(
             storage_resolver.clone(),
             event_broker.clone(),
         )
-        .await?;
+        .await
+        .context("failed to start indexing service")?;
         Some(indexing_service)
     } else {
         None
@@ -479,20 +491,21 @@ pub async fn serve_quickwit(
     );
 
     // Setup ingest service v2.
-    let (ingest_router_service, ingester_service_opt) = setup_ingest_v2(
+    let (ingest_router_service, ingester_opt) = setup_ingest_v2(
         &node_config,
         &cluster,
         &event_broker,
         control_plane_service.clone(),
         ingester_pool,
     )
-    .await?;
+    .await
+    .context("failed to start ingest v2 service")?;
 
     if node_config.is_service_enabled(QuickwitService::Indexer)
         || node_config.is_service_enabled(QuickwitService::ControlPlane)
     {
         start_shard_positions_service(
-            ingester_service_opt.clone(),
+            ingester_opt.clone(),
             cluster.clone(),
             event_broker.clone(),
             universe.spawn_ctx().clone(),
@@ -511,18 +524,23 @@ pub async fn serve_quickwit(
     {
         {
             let otel_logs_index_config =
-                OtlpGrpcLogsService::index_config(&node_config.default_index_root_uri)?;
+                OtlpGrpcLogsService::index_config(&node_config.default_index_root_uri)
+                    .context("failed to load OTEL logs index config")?;
             let otel_traces_index_config =
-                OtlpGrpcTracesService::index_config(&node_config.default_index_root_uri)?;
+                OtlpGrpcTracesService::index_config(&node_config.default_index_root_uri)
+                    .context("failed to load OTEL traces index config")?;
 
-            for index_config in [otel_logs_index_config, otel_traces_index_config] {
+            for (index_name, index_config) in [
+                ("OTEL logs", otel_logs_index_config),
+                ("OTEL traces", otel_traces_index_config),
+            ] {
                 match index_manager.create_index(index_config, false).await {
                     Ok(_)
                     | Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(
                         EntityKind::Index { .. },
-                    ))) => Ok(()),
-                    Err(error) => Err(error),
-                }?;
+                    ))) => {}
+                    Err(error) => bail!("failed to create {index_name} index: {error}",),
+                };
             }
         }
     }
@@ -553,7 +571,8 @@ pub async fn serve_quickwit(
         storage_resolver.clone(),
         searcher_context,
     )
-    .await?;
+    .await
+    .context("failed to start searcher service")?;
 
     // The control plane listens for local shards updates to learn about each shard's ingestion
     // throughput. Ingesters (routers) do so to update their shard table.
@@ -586,7 +605,8 @@ pub async fn serve_quickwit(
             event_broker.clone(),
             std::env::var(DISABLE_DELETE_TASK_SERVICE_ENV_KEY).is_err(),
         )
-        .await?;
+        .await
+        .context("failed to start janitor service")?;
         Some(janitor_service)
     } else {
         None
@@ -634,7 +654,7 @@ pub async fn serve_quickwit(
         indexing_service_opt,
         ingest_router_service,
         ingest_service,
-        ingester_service_opt: ingester_service_opt.clone(),
+        ingester_opt: ingester_opt.clone(),
         janitor_service_opt,
         jaeger_service_opt,
         otlp_logs_service_opt,
@@ -688,7 +708,7 @@ pub async fn serve_quickwit(
         node_readiness_reporting_task(
             cluster,
             metastore_through_control_plane,
-            ingester_service_opt.clone(),
+            ingester_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
         ),
@@ -700,8 +720,8 @@ pub async fn serve_quickwit(
 
         // We must decommission the ingester first before terminating the indexing pipelines that
         // may consume from it. We also need to keep the gRPC server running while doing so.
-        if let Some(ingester_service) = ingester_service_opt {
-            if let Err(error) = wait_for_ingester_decommission(ingester_service).await {
+        if let Some(ingester) = ingester_opt {
+            if let Err(error) = wait_for_ingester_decommission(ingester).await {
                 error!("failed to decommission ingester gracefully: {:?}", error);
             }
         }
@@ -719,7 +739,7 @@ pub async fn serve_quickwit(
     let rest_join_handle = spawn_named_task(rest_server, "rest_server");
 
     let (grpc_res, rest_res) = tokio::try_join!(grpc_join_handle, rest_join_handle)
-        .expect("the tasks running the gRPC and REST servers should not panic or be cancelled");
+        .expect("tasks running the gRPC and REST servers should not panic or be cancelled");
 
     if let Err(grpc_err) = grpc_res {
         error!("gRPC server failed: {:?}", grpc_err);
@@ -727,7 +747,9 @@ pub async fn serve_quickwit(
     if let Err(rest_err) = rest_res {
         error!("REST server failed: {:?}", rest_err);
     }
-    let actor_exit_statuses = shutdown_handle.await?;
+    let actor_exit_statuses = shutdown_handle
+        .await
+        .context("failed to gracefully shutdown services")?;
     Ok(actor_exit_statuses)
 }
 
@@ -737,7 +759,7 @@ async fn setup_ingest_v2(
     event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
-) -> anyhow::Result<(IngestRouterServiceClient, Option<IngesterServiceClient>)> {
+) -> anyhow::Result<(IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
     let content_length_limit = node_config.ingest_api_config.content_length_limit;
@@ -770,7 +792,8 @@ async fn setup_ingest_v2(
     };
 
     // Instantiate ingester.
-    let ingester_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+    let ingester_opt: Option<Ingester> = if node_config.is_service_enabled(QuickwitService::Indexer)
+    {
         let wal_dir_path = node_config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
 
@@ -854,12 +877,7 @@ async fn setup_ingest_v2(
     });
     ingester_pool.listen_for_changes(ingester_change_stream);
 
-    let ingester_service_opt = ingester_opt.map(|ingester| {
-        IngesterServiceClient::tower()
-            .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
-            .build(ingester)
-    });
-    Ok((ingest_router_service, ingester_service_opt))
+    Ok((ingest_router_service, ingester_opt))
 }
 
 async fn setup_searcher(
@@ -1078,7 +1096,7 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 async fn node_readiness_reporting_task(
     cluster: Cluster,
     mut metastore: MetastoreServiceClient,
-    ingester_service_opt: Option<IngesterServiceClient>,
+    ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
 ) {
@@ -1094,9 +1112,8 @@ async fn node_readiness_reporting_task(
     };
     info!("REST server is ready");
 
-    if let Some(ingester_service) = ingester_service_opt {
-        if let Err(error) = wait_for_ingester_status(ingester_service, IngesterStatus::Ready).await
-        {
+    if let Some(ingester) = ingester_opt {
+        if let Err(error) = wait_for_ingester_status(ingester, IngesterStatus::Ready).await {
             error!("failed to initialize ingester: {:?}", error);
             info!("shutting down");
             return;
@@ -1144,7 +1161,8 @@ async fn check_cluster_configuration(
     let file_backed_indexes = metastore
         .list_indexes_metadata(ListIndexesMetadataRequest::all())
         .await?
-        .deserialize_indexes_metadata()?
+        .deserialize_indexes_metadata()
+        .await?
         .into_iter()
         .filter(|index_metadata| index_metadata.index_uri().protocol().is_file_storage())
         .collect::<Vec<_>>();
@@ -1164,6 +1182,18 @@ async fn check_cluster_configuration(
         );
     }
     Ok(())
+}
+
+pub mod lambda_search_api {
+    pub use crate::elasticsearch_api::{
+        es_compat_cat_indices_handler, es_compat_index_cat_indices_handler,
+        es_compat_index_count_handler, es_compat_index_field_capabilities_handler,
+        es_compat_index_multi_search_handler, es_compat_index_search_handler,
+        es_compat_index_stats_handler, es_compat_scroll_handler, es_compat_search_handler,
+        es_compat_stats_handler,
+    };
+    pub use crate::rest::recover_fn;
+    pub use crate::search_api::{search_get_handler, search_post_handler};
 }
 
 #[cfg(test)]
@@ -1194,10 +1224,9 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadata()
             .return_once(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     IndexMetadata::for_test("test-index", "file:///qwdata/indexes/test-index"),
-                ])
-                .unwrap())
+                ]))
             });
 
         check_cluster_configuration(
@@ -1246,7 +1275,7 @@ mod tests {
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
             MetastoreServiceClient::from(mock_metastore),
-            Some(IngesterServiceClient::from(mock_ingester)),
+            Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
         ));

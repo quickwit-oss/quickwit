@@ -4,6 +4,12 @@ api_root: http://localhost:7280/api/v1/
 endpoint: indexes/gharchive
 status_code: null
 ---
+# Delete possibly remaining index
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/empty_index
+status_code: null
+---
 # Create index
 method: POST
 api_root: http://localhost:7280/api/v1/
@@ -16,6 +22,7 @@ json:
         - name: created_at
           type: datetime
           fast: true
+sleep_after: 3
 ---
 # Create index
 method: POST
@@ -55,3 +62,4 @@ params:
   refresh: "true"
 headers: {"Content-Type": "application/json", "content-encoding": "gzip"}
 body_from_file: gharchive-bulk.json.gz
+sleep_after: 3

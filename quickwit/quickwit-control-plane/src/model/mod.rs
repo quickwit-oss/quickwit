@@ -21,6 +21,7 @@ mod shard_table;
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std::mem;
 use std::ops::Deref;
 use std::time::Instant;
 
@@ -38,7 +39,6 @@ use quickwit_proto::metastore::{
     MetastoreError, MetastoreService, MetastoreServiceClient, SourceType,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
-use serde::Serialize;
 pub(super) use shard_table::{ScalingMode, ShardEntry, ShardStats, ShardTable};
 use tracing::{info, instrument, warn};
 
@@ -58,25 +58,23 @@ pub(crate) struct ControlPlaneModel {
     shard_table: ShardTable,
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize)]
-pub struct ControlPlaneModelMetrics {
-    pub num_indexes: usize,
-    pub num_sources: usize,
-    pub num_shards: usize,
-}
-
 impl ControlPlaneModel {
     /// Clears the entire state of the model.
     pub fn clear(&mut self) {
         *self = Default::default();
     }
 
-    pub fn observable_state(&self) -> ControlPlaneModelMetrics {
-        ControlPlaneModelMetrics {
-            num_indexes: self.index_table.len(),
-            num_sources: self.shard_table.num_sources(),
-            num_shards: self.shard_table.num_shards(),
-        }
+    pub fn num_indexes(&self) -> usize {
+        self.index_table.len()
+    }
+
+    pub fn num_sources(&self) -> usize {
+        self.shard_table.num_sources()
+    }
+
+    #[cfg(test)]
+    pub fn num_shards(&self) -> usize {
+        self.shard_table.num_shards()
     }
 
     #[instrument(skip_all)]
@@ -85,59 +83,61 @@ impl ControlPlaneModel {
         metastore: &mut MetastoreServiceClient,
         progress: &Progress,
     ) -> ControlPlaneResult<()> {
+        const BATCH_SIZE: usize = 500;
+
         let now = Instant::now();
         self.clear();
 
-        let index_metadatas = progress
+        let indexes_metadata = progress
             .protect_future(metastore.list_indexes_metadata(ListIndexesMetadataRequest::all()))
             .await?
-            .deserialize_indexes_metadata()?;
+            .deserialize_indexes_metadata()
+            .await?;
 
-        let num_indexes = index_metadatas.len();
+        let num_indexes = indexes_metadata.len();
         self.index_table.reserve(num_indexes);
 
+        for index_metadata in indexes_metadata {
+            self.add_index(index_metadata);
+        }
         let mut num_sources = 0;
         let mut num_shards = 0;
 
-        let mut subrequests = Vec::with_capacity(index_metadatas.len());
+        let mut next_list_shards_request = metastore::ListShardsRequest::default();
 
-        for index_metadata in index_metadatas {
-            self.add_index(index_metadata);
-        }
-
-        for index_metadata in self.index_table.values() {
+        for (idx, index_metadata) in self.index_table.values().enumerate() {
             for source_config in index_metadata.sources.values() {
                 num_sources += 1;
 
-                if source_config.source_type() != SourceType::IngestV2 {
-                    continue;
+                if source_config.source_type() == SourceType::IngestV2 {
+                    let request = ListShardsSubrequest {
+                        index_uid: index_metadata.index_uid.clone().into(),
+                        source_id: source_config.source_id.clone(),
+                        shard_state: None,
+                    };
+                    next_list_shards_request.subrequests.push(request);
                 }
-                let request = ListShardsSubrequest {
-                    index_uid: index_metadata.index_uid.clone().into(),
-                    source_id: source_config.source_id.clone(),
-                    shard_state: None,
-                };
-                subrequests.push(request);
             }
-        }
-        if !subrequests.is_empty() {
-            // TODO: Limit the number of subrequests and perform multiple requests if needed.
-            let list_shards_request = metastore::ListShardsRequest { subrequests };
-            let list_shard_response = progress
-                .protect_future(metastore.list_shards(list_shards_request))
-                .await?;
+            let num_subrequests = next_list_shards_request.subrequests.len();
 
-            for list_shards_subresponse in list_shard_response.subresponses {
-                num_shards += list_shards_subresponse.shards.len();
+            if num_subrequests > 0 && (num_subrequests >= BATCH_SIZE || idx == num_indexes - 1) {
+                let list_shards_request = mem::take(&mut next_list_shards_request);
+                let list_shards_response = progress
+                    .protect_future(metastore.list_shards(list_shards_request))
+                    .await?;
 
-                let ListShardsSubresponse {
-                    index_uid,
-                    source_id,
-                    shards,
-                } = list_shards_subresponse;
-                let index_uid = index_uid.expect("`index_uid` should be a required field");
-                self.shard_table
-                    .insert_shards(&index_uid, &source_id, shards);
+                for list_shards_subresponse in list_shards_response.subresponses {
+                    num_shards += list_shards_subresponse.shards.len();
+
+                    let ListShardsSubresponse {
+                        index_uid,
+                        source_id,
+                        shards,
+                    } = list_shards_subresponse;
+                    let index_uid = index_uid.expect("`index_uid` should be a required field");
+                    self.shard_table
+                        .insert_shards(&index_uid, &source_id, shards);
+                }
             }
         }
         info!(
@@ -150,6 +150,12 @@ impl ControlPlaneModel {
 
     pub fn index_uid(&self, index_id: &str) -> Option<IndexUid> {
         self.index_uid_table.get(index_id).cloned()
+    }
+
+    fn update_metrics(&self) {
+        crate::metrics::CONTROL_PLANE_METRICS
+            .indexes_total
+            .set(self.index_table.len() as i64);
     }
 
     pub(crate) fn source_configs(&self) -> impl Iterator<Item = (SourceUid, &SourceConfig)> + '_ {
@@ -181,12 +187,14 @@ impl ControlPlaneModel {
             }
         }
         self.index_table.insert(index_uid, index_metadata);
+        self.update_metrics();
     }
 
     pub(crate) fn delete_index(&mut self, index_uid: &IndexUid) {
         self.index_table.remove(index_uid);
         self.index_uid_table.remove(&index_uid.index_id);
         self.shard_table.delete_index(&index_uid.index_id);
+        self.update_metrics();
     }
 
     /// Adds a source to a given index. Returns an error if the source already
@@ -247,11 +255,11 @@ impl ControlPlaneModel {
         Ok(has_changed)
     }
 
-    pub(crate) fn all_shards_mut(&mut self) -> impl Iterator<Item = &mut ShardEntry> + '_ {
-        self.shard_table.all_shards_mut()
+    pub(crate) fn set_shards_as_unavailable(&mut self, unavailable_leaders: &FnvHashSet<NodeId>) {
+        self.shard_table
+            .set_shards_as_unavailable(unavailable_leaders);
     }
 
-    #[cfg(test)]
     pub(crate) fn all_shards(&self) -> impl Iterator<Item = &ShardEntry> + '_ {
         self.shard_table.all_shards()
     }
@@ -397,7 +405,7 @@ mod tests {
                 index_2.add_source(SourceConfig::cli()).unwrap();
 
                 let indexes = vec![index_0, index_1, index_2];
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(indexes).unwrap())
+                Ok(ListIndexesMetadataResponse::for_test(indexes))
             });
         let index_uid_clone = index_uid.clone();
         let index_uid2_clone = index_uid2.clone();

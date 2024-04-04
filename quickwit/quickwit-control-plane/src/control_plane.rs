@@ -55,13 +55,13 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::Serialize;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::ingest_controller::IngestControllerStats;
 use crate::ingest::IngestController;
-use crate::model::{ControlPlaneModel, ControlPlaneModelMetrics};
+use crate::model::ControlPlaneModel;
 use crate::IndexerPool;
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
@@ -139,7 +139,8 @@ impl ControlPlane {
 pub struct ControlPlaneObservableState {
     pub indexing_scheduler: IndexingSchedulerState,
     pub ingest_controller: IngestControllerStats,
-    pub model_metrics: ControlPlaneModelMetrics,
+    pub num_indexes: usize,
+    pub num_sources: usize,
 }
 
 #[async_trait]
@@ -154,7 +155,8 @@ impl Actor for ControlPlane {
         ControlPlaneObservableState {
             indexing_scheduler: self.indexing_scheduler.observable_state(),
             ingest_controller: self.ingest_controller.stats,
-            model_metrics: self.model.observable_state(),
+            num_indexes: self.model.num_indexes(),
+            num_sources: self.model.num_sources(),
         }
     }
 
@@ -163,7 +165,7 @@ impl Actor for ControlPlane {
         self.model
             .load_from_metastore(&mut self.metastore, ctx.progress())
             .await
-            .context("failed to initialize the model")?;
+            .context("failed to initialize control plane model")?;
 
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
 
@@ -258,6 +260,7 @@ impl ControlPlane {
         shard_ids: &[ShardId],
         progress: &Progress,
     ) -> anyhow::Result<()> {
+        info!(shard_ids=?shard_ids, source_uid=?source_uid, "deleting shards");
         let delete_shards_request = DeleteShardsRequest {
             index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.clone(),
@@ -350,6 +353,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
         shard_positions_update: ShardPositionsUpdate,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        debug!(shard_positions_update=?shard_positions_update, "shard positions update");
         let Some(shard_entries) = self
             .model
             .get_shards_for_source_mut(&shard_positions_update.source_uid)
@@ -465,7 +469,10 @@ impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
         reply: impl FnOnce(Self::Reply) + Send + Sync + 'static,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let response = match self.metastore.create_index(request).await {
+        let response = match ctx
+            .protect_future(self.metastore.create_index(request))
+            .await
+        {
             Ok(response) => response,
             Err(metastore_error) => {
                 reply(convert_metastore_error(metastore_error)?);
@@ -511,10 +518,15 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid().clone();
+        debug!(%index_uid, "deleting index");
 
-        if let Err(metastore_error) = self.metastore.delete_index(request).await {
+        if let Err(metastore_error) = ctx
+            .protect_future(self.metastore.delete_index(request))
+            .await
+        {
             return convert_metastore_error(metastore_error);
         };
+        info!(%index_uid, "deleted index");
 
         let ingester_needing_resync: BTreeSet<NodeId> = self
             .model
@@ -555,13 +567,17 @@ impl Handler<AddSourceRequest> for ControlPlane {
                     return Ok(Err(ControlPlaneError::from(error)));
                 }
             };
-        if let Err(error) = self.metastore.add_source(request).await {
+        let source_id = source_config.source_id.clone();
+        debug!(%index_uid, source_id, "adding source");
+
+        if let Err(error) = ctx.protect_future(self.metastore.add_source(request)).await {
             return Ok(Err(ControlPlaneError::from(error)));
         };
-
         self.model
             .add_source(&index_uid, source_config)
             .context("failed to add source")?;
+
+        info!(%index_uid, source_id, "added source");
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
@@ -586,10 +602,16 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
         let enable = request.enable;
+        debug!(%index_uid, source_id, enable, "toggling source");
 
-        if let Err(error) = self.metastore.toggle_source(request).await {
+        if let Err(error) = ctx
+            .protect_future(self.metastore.toggle_source(request))
+            .await
+        {
             return Ok(Err(ControlPlaneError::from(error)));
         };
+        info!(%index_uid, source_id, enabled=enable, "toggled source");
+
         let mutation_occured = self.model.toggle_source(&index_uid, &source_id, enable)?;
 
         if mutation_occured {
@@ -618,7 +640,10 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
             source_id: source_id.clone(),
         };
 
-        if let Err(metastore_error) = self.metastore.delete_source(request).await {
+        if let Err(metastore_error) = ctx
+            .protect_future(self.metastore.delete_source(request))
+            .await
+        {
             // TODO If the metastore fails returns an error but somehow succeed deleting the source,
             // the control plane will restart and the shards will be remaining on the ingesters.
             //
@@ -879,7 +904,9 @@ mod tests {
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
     };
-    use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
+    use quickwit_proto::control_plane::{
+        GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsSubrequest,
+    };
     use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
     use quickwit_proto::ingest::ingester::{IngesterServiceClient, RetainShardsResponse};
     use quickwit_proto::ingest::{Shard, ShardState};
@@ -923,9 +950,7 @@ mod tests {
             });
         mock_metastore
             .expect_list_indexes_metadata()
-            .returning(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
-            });
+            .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
         let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
@@ -967,9 +992,7 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
         mock_metastore
             .expect_list_indexes_metadata()
-            .returning(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
-            });
+            .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
@@ -1019,10 +1042,9 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(move |_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata.clone()
-                ])
-                .unwrap())
+                ]))
             });
 
         let cluster_config = ClusterConfig::for_test();
@@ -1065,12 +1087,7 @@ mod tests {
         index_metadata.add_source(test_source_config).unwrap();
         mock_metastore
             .expect_list_indexes_metadata()
-            .return_once(|_| {
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(vec![index_metadata])
-                        .unwrap(),
-                )
-            });
+            .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata])));
 
         let index_uid_clone = index_uid.clone();
         mock_metastore
@@ -1146,9 +1163,7 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
         mock_metastore
             .expect_list_indexes_metadata()
-            .returning(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
-            });
+            .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
@@ -1192,10 +1207,7 @@ mod tests {
                 let mut source_config = SourceConfig::ingest_v2();
                 source_config.enabled = true;
                 index_metadata.add_source(source_config).unwrap();
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(vec![index_metadata])
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata]))
             });
         let index_uid_clone = index_uid.clone();
         mock_metastore
@@ -1275,7 +1287,7 @@ mod tests {
             .times(2) // 1 for the first initialization, 1 after the respawn of the control plane.
             .returning(|list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
-                Ok(ListIndexesMetadataResponse::empty())
+                Ok(ListIndexesMetadataResponse::for_test(Vec::new()))
             });
         mock_metastore.expect_list_shards().return_once(
             |_list_shards_request: ListShardsRequest| {
@@ -1414,10 +1426,9 @@ mod tests {
         mock_metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_0_clone.clone()
-                ])
-                .unwrap())
+                ]))
             },
         );
         let index_uid_clone = index_0.index_uid.clone();
@@ -1563,10 +1574,9 @@ mod tests {
         mock_metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_0_clone.clone()
-                ])
-                .unwrap())
+                ]))
             },
         );
 
@@ -1648,10 +1658,9 @@ mod tests {
         mock_metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_0_clone.clone()
-                ])
-                .unwrap())
+                ]))
             },
         );
         let index_uid_clone = index_0.index_uid.clone();
@@ -1733,10 +1742,9 @@ mod tests {
             .in_sequence(&mut seq)
             .returning(move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_0_clone.clone()
-                ])
-                .unwrap())
+                ]))
             });
         mock_metastore
             .expect_list_shards()
@@ -1861,10 +1869,9 @@ mod tests {
         mock_metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_0_clone.clone()
-                ])
-                .unwrap())
+                ]))
             },
         );
 
@@ -1930,9 +1937,7 @@ mod tests {
 
         mock_metastore
             .expect_list_indexes_metadata()
-            .return_once(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
-            });
+            .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
 
         mock_metastore
             .expect_find_index_template_matches()
@@ -1987,7 +1992,7 @@ mod tests {
             MetastoreServiceClient::from(mock_metastore),
         );
 
-        let error = control_plane_mailbox
+        let response = control_plane_mailbox
             .ask(GetOrCreateOpenShardsRequest {
                 subrequests: vec![GetOrCreateOpenShardsSubrequest {
                     subrequest_id: 0,
@@ -1999,12 +2004,17 @@ mod tests {
             })
             .await
             .unwrap()
-            .unwrap_err();
-        assert!(matches!(error, ControlPlaneError::Unavailable { .. }));
+            .unwrap();
+        assert!(response.successes.is_empty());
+        assert_eq!(response.failures.len(), 1);
+        assert!(matches!(
+            response.failures[0].reason(),
+            GetOrCreateOpenShardsFailureReason::NoIngestersAvailable
+        ));
 
         let control_plane_state = control_plane_mailbox.ask(Observe).await.unwrap();
-        assert_eq!(control_plane_state.model_metrics.num_indexes, 1);
-        assert_eq!(control_plane_state.model_metrics.num_sources, 1);
+        assert_eq!(control_plane_state.num_indexes, 1);
+        assert_eq!(control_plane_state.num_sources, 1);
 
         universe.assert_quit().await;
     }
@@ -2056,9 +2066,7 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_list_indexes_metadata()
-            .return_once(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
-            });
+            .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
         let metastore = MetastoreServiceClient::from(mock_metastore);
         let (_control_plane_mailbox, control_plane_handle) = ControlPlane::spawn(
             &universe,

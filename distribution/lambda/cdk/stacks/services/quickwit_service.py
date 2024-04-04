@@ -12,8 +12,12 @@ DEFAULT_LAMBDA_MEMORY_SIZE = 3008
 
 
 def extract_local_env() -> dict[str, str]:
-    """Extracts local environment variables that start with QW_LAMBDA_"""
-    return {k: os.environ[k] for k in os.environ.keys() if k.startswith("QW_LAMBDA_")}
+    """Extracts local environment variables QW_LAMBDA_* and QW_DISABLE_TELEMETRY"""
+    return {
+        k: os.environ[k]
+        for k in os.environ.keys()
+        if (k.startswith("QW_LAMBDA_") or k == "QW_DISABLE_TELEMETRY")
+    }
 
 
 class QuickwitService(Construct):

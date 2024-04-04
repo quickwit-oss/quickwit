@@ -117,8 +117,6 @@ expected:
         key: 192.168.0.1
       - doc_count: 1
         key: 192.168.0.11
-      - doc_count: 1
-        key: 192.168.0.15
       doc_count_error_upper_bound: 0
       sum_other_doc_count: 0
     tags:

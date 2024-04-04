@@ -42,6 +42,7 @@ mod search_response_rest;
 mod search_stream;
 mod service;
 mod thread_pool;
+pub(crate) mod top_k_collector;
 
 mod metrics;
 
@@ -225,10 +226,10 @@ pub async fn resolve_index_patterns(
 
     // Get the index ids from the request
     let indexes_metadata = metastore
-        .clone()
         .list_indexes_metadata(list_indexes_metadata_request)
         .await?
-        .deserialize_indexes_metadata()?;
+        .deserialize_indexes_metadata()
+        .await?;
     check_all_index_metadata_found(&indexes_metadata, index_id_patterns)?;
     Ok(indexes_metadata)
 }

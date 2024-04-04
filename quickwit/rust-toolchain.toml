@@ -1,4 +1,4 @@
 [toolchain]
-channel = "1.76"
+channel = "1.77"
 components = ["cargo", "clippy", "rustfmt", "rust-docs"]
 

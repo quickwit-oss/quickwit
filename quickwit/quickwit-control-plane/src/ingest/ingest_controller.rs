@@ -28,28 +28,23 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_common::Progress;
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_proto::control_plane::{
-    AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
+    AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneResult,
     GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess,
 };
 use quickwit_proto::ingest::ingester::{
-    CloseShardsRequest, IngesterService, InitShardsRequest, PingRequest, RetainShardsForSource,
+    CloseShardsRequest, IngesterService, InitShardsRequest, RetainShardsForSource,
     RetainShardsRequest,
 };
-use quickwit_proto::ingest::{
-    IngestV2Error, Shard, ShardIdPosition, ShardIdPositions, ShardIds, ShardState,
-};
+use quickwit_proto::ingest::{IngestV2Error, Shard, ShardIdPosition, ShardIdPositions, ShardIds};
 use quickwit_proto::metastore;
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
-use rand::seq::SliceRandom;
+use quickwit_proto::types::{IndexUid, NodeId, Position, ShardId, SourceUid};
 use serde::{Deserialize, Serialize};
-use tokio::time::timeout;
-use tracing::{error, info, warn};
+use tracing::{debug, enabled, error, info, warn, Level};
 use ulid::Ulid;
 
 use crate::ingest::wait_handle::WaitHandle;
-use crate::metrics::CONTROL_PLANE_METRICS;
 use crate::model::{ControlPlaneModel, ScalingMode, ShardEntry, ShardStats};
 
 const MAX_SHARD_INGESTION_THROUGHPUT_MIB_PER_SEC: f32 = 5.;
@@ -62,15 +57,9 @@ const SCALE_UP_SHARDS_THRESHOLD_MIB_PER_SEC: f32 =
 const SCALE_DOWN_SHARDS_THRESHOLD_MIB_PER_SEC: f32 =
     MAX_SHARD_INGESTION_THROUGHPUT_MIB_PER_SEC * 2. / 10.;
 
-const PING_LEADER_TIMEOUT: Duration = if cfg!(test) {
-    Duration::from_millis(50)
-} else {
-    Duration::from_secs(2)
-};
-
 const FIRE_AND_FORGET_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Spawn a new task to execute the given future,
+/// Spawns a new task to execute the given future,
 /// and stops polling it/drops it after a timeout.
 ///
 /// All errors are ignored, and not even logged.
@@ -181,103 +170,6 @@ impl IngestController {
         wait_handle
     }
 
-    /// Pings an ingester to determine whether it is available for hosting a shard. If a follower ID
-    /// is provided, the leader candidate is in charge of pinging the follower candidate as
-    /// well.
-    async fn ping_leader_and_follower(
-        &mut self,
-        leader_id: &NodeId,
-        follower_id_opt: Option<&NodeId>,
-        progress: &Progress,
-    ) -> Result<(), PingError> {
-        let mut leader_ingester = self
-            .ingester_pool
-            .get(leader_id)
-            .ok_or(PingError::LeaderUnavailable)?;
-
-        let ping_request = PingRequest {
-            leader_id: leader_id.clone().into(),
-            follower_id: follower_id_opt
-                .cloned()
-                .map(|follower_id| follower_id.into()),
-        };
-        progress.protect_future(timeout(
-            PING_LEADER_TIMEOUT,
-            leader_ingester.ping(ping_request),
-        ))
-        .await
-        .map_err(|_| PingError::LeaderUnavailable)? // The leader timed out.
-        .map_err(|error| {
-            if let Some(follower_id) = follower_id_opt {
-                if matches!(error, IngestV2Error::IngesterUnavailable { ingester_id } if ingester_id == *follower_id) {
-                    return PingError::FollowerUnavailable;
-                }
-            }
-            PingError::LeaderUnavailable
-        })?;
-        Ok(())
-    }
-
-    /// Finds an available leader-follower pair to host a shard. If the replication factor is set to
-    /// 1, only a leader is returned. If no nodes are available, `None` is returned.
-    async fn find_leader_and_follower(
-        &mut self,
-        unavailable_ingesters: &mut FnvHashSet<NodeId>,
-        progress: &Progress,
-    ) -> Option<(NodeId, Option<NodeId>)> {
-        let mut candidates: Vec<NodeId> = self
-            .ingester_pool
-            .keys()
-            .into_iter()
-            .filter(|node_id| !unavailable_ingesters.contains(node_id))
-            .collect();
-        candidates.shuffle(&mut rand::thread_rng());
-
-        #[cfg(test)]
-        candidates.sort();
-
-        if self.replication_factor == 1 {
-            for leader_id in candidates {
-                if unavailable_ingesters.contains(&leader_id) {
-                    continue;
-                }
-                if self
-                    .ping_leader_and_follower(&leader_id, None, progress)
-                    .await
-                    .is_ok()
-                {
-                    return Some((leader_id, None));
-                }
-            }
-        } else {
-            for (leader_id, follower_id) in candidates.into_iter().tuple_combinations() {
-                // We must perform this check here since the `unavailable_ingesters` set can grow as
-                // we go through the loop.
-                if unavailable_ingesters.contains(&leader_id)
-                    || unavailable_ingesters.contains(&follower_id)
-                {
-                    continue;
-                }
-                match self
-                    .ping_leader_and_follower(&leader_id, Some(&follower_id), progress)
-                    .await
-                {
-                    Ok(_) => return Some((leader_id, Some(follower_id))),
-                    Err(PingError::LeaderUnavailable) => {
-                        unavailable_ingesters.insert(leader_id);
-                    }
-                    Err(PingError::FollowerUnavailable) => {
-                        // We do not mark the follower as unavailable here. The issue could be
-                        // specific to the link between the leader and follower. We define
-                        // unavailability as being unavailable from the point of view of the control
-                        // plane.
-                    }
-                }
-            }
-        }
-        None
-    }
-
     fn handle_closed_shards(&self, closed_shards: Vec<ShardIds>, model: &mut ControlPlaneModel) {
         for closed_shard in closed_shards {
             let index_uid: IndexUid = closed_shard.index_uid().clone();
@@ -343,13 +235,7 @@ impl IngestController {
             }
         }
         if !confirmed_unavailable_leaders.is_empty() {
-            for shard_entry in model.all_shards_mut() {
-                if shard_entry.is_open()
-                    && confirmed_unavailable_leaders.contains(&shard_entry.leader_id)
-                {
-                    shard_entry.set_shard_state(ShardState::Unavailable);
-                }
-            }
+            model.set_shards_as_unavailable(&confirmed_unavailable_leaders);
         }
     }
 
@@ -365,7 +251,7 @@ impl IngestController {
     ) -> ControlPlaneResult<GetOrCreateOpenShardsResponse> {
         self.handle_closed_shards(get_open_shards_request.closed_shards, model);
 
-        let mut unavailable_leaders: FnvHashSet<NodeId> = get_open_shards_request
+        let unavailable_leaders: FnvHashSet<NodeId> = get_open_shards_request
             .unavailable_leaders
             .into_iter()
             .map(|ingester_id| ingester_id.into())
@@ -416,66 +302,171 @@ impl IngestController {
                 };
                 get_or_create_open_shards_successes.push(get_or_create_open_shards_success);
             } else {
-                // TODO: Find leaders in batches.
-                // TODO: Round-robin leader-follower pairs or choose according to load.
-                let (leader_id, follower_id) = self
-                    .find_leader_and_follower(&mut unavailable_leaders, progress)
-                    .await
-                    .ok_or_else(|| {
-                        ControlPlaneError::Unavailable("no ingester available".to_string())
-                    })?;
                 let shard_id = ShardId::from(Ulid::new());
                 let open_shards_subrequest = metastore::OpenShardsSubrequest {
                     subrequest_id: get_open_shards_subrequest.subrequest_id,
                     index_uid: index_uid.into(),
                     source_id: get_open_shards_subrequest.source_id,
                     shard_id: Some(shard_id),
-                    leader_id: leader_id.into(),
-                    follower_id: follower_id.map(|follower_id| follower_id.into()),
+                    // These attributes will be overwritten in the next stage.
+                    leader_id: "".to_string(),
+                    follower_id: None,
                 };
                 open_shards_subrequests.push(open_shards_subrequest);
             }
         }
         if !open_shards_subrequests.is_empty() {
-            let open_shards_request = metastore::OpenShardsRequest {
-                subrequests: open_shards_subrequests,
-            };
-            let open_shards_response = progress
-                .protect_future(self.metastore.open_shards(open_shards_request))
-                .await?;
-
-            // TODO: Handle failures.
-            let _ = self.init_shards(&open_shards_response, progress).await;
-
-            for open_shards_subresponse in open_shards_response.subresponses {
-                let index_uid: IndexUid = open_shards_subresponse.index_uid().clone();
-                let source_id = open_shards_subresponse.source_id.clone();
-                model.insert_shards(
-                    &index_uid,
-                    &source_id,
-                    open_shards_subresponse.opened_shards,
-                );
-                if let Some(open_shard_entries) =
-                    model.find_open_shards(&index_uid, &source_id, &unavailable_leaders)
+            if let Some(leader_follower_pairs) =
+                self.allocate_shards(open_shards_subrequests.len(), &unavailable_leaders, model)
+            {
+                for (open_shards_subrequest, (leader_id, follower_opt)) in open_shards_subrequests
+                    .iter_mut()
+                    .zip(leader_follower_pairs)
                 {
-                    let open_shards = open_shard_entries
-                        .into_iter()
-                        .map(|shard_entry| shard_entry.shard)
-                        .collect();
-                    let get_or_create_open_shards_success = GetOrCreateOpenShardsSuccess {
-                        subrequest_id: open_shards_subresponse.subrequest_id,
-                        index_uid: index_uid.into(),
-                        source_id: open_shards_subresponse.source_id,
-                        open_shards,
+                    open_shards_subrequest.leader_id = leader_id.into();
+                    open_shards_subrequest.follower_id = follower_opt.map(Into::into);
+                }
+                let open_shards_request = metastore::OpenShardsRequest {
+                    subrequests: open_shards_subrequests,
+                };
+                let open_shards_response = progress
+                    .protect_future(self.metastore.open_shards(open_shards_request))
+                    .await?;
+
+                // TODO: Handle failures.
+                let _ = self.init_shards(&open_shards_response, progress).await;
+
+                for open_shards_subresponse in open_shards_response.subresponses {
+                    let index_uid: IndexUid = open_shards_subresponse.index_uid().clone();
+                    let source_id = open_shards_subresponse.source_id.clone();
+                    model.insert_shards(
+                        &index_uid,
+                        &source_id,
+                        open_shards_subresponse.opened_shards,
+                    );
+                    if let Some(open_shard_entries) =
+                        model.find_open_shards(&index_uid, &source_id, &unavailable_leaders)
+                    {
+                        let open_shards = open_shard_entries
+                            .into_iter()
+                            .map(|shard_entry| shard_entry.shard)
+                            .collect();
+                        let get_or_create_open_shards_success = GetOrCreateOpenShardsSuccess {
+                            subrequest_id: open_shards_subresponse.subrequest_id,
+                            index_uid: index_uid.into(),
+                            source_id: open_shards_subresponse.source_id,
+                            open_shards,
+                        };
+                        get_or_create_open_shards_successes.push(get_or_create_open_shards_success);
+                    }
+                }
+            } else {
+                for open_shards_subrequest in open_shards_subrequests {
+                    let get_or_create_open_shards_failure = GetOrCreateOpenShardsFailure {
+                        subrequest_id: open_shards_subrequest.subrequest_id,
+                        index_id: open_shards_subrequest.index_uid().index_id.clone(),
+                        source_id: open_shards_subrequest.source_id,
+                        reason: GetOrCreateOpenShardsFailureReason::NoIngestersAvailable as i32,
                     };
-                    get_or_create_open_shards_successes.push(get_or_create_open_shards_success);
+                    get_or_create_open_shards_failures.push(get_or_create_open_shards_failure);
                 }
             }
         }
-        Ok(GetOrCreateOpenShardsResponse {
+        let response = GetOrCreateOpenShardsResponse {
             successes: get_or_create_open_shards_successes,
             failures: get_or_create_open_shards_failures,
-        })
+        };
+        Ok(response)
+    }
+
+    /// Allocates and assigns new shards to ingesters.
+    fn allocate_shards(
+        &self,
+        num_shards_to_allocate: usize,
+        unavailable_leaders: &FnvHashSet<NodeId>,
+        model: &ControlPlaneModel,
+    ) -> Option<Vec<(NodeId, Option<NodeId>)>> {
+        let ingesters: Vec<NodeId> = self
+            .ingester_pool
+            .keys()
+            .into_iter()
+            .filter(|ingester| !unavailable_leaders.contains(ingester))
+            .sorted_by(|left, right| left.cmp(right))
+            .collect();
+
+        let num_ingesters = ingesters.len();
+
+        if num_ingesters == 0 {
+            warn!("failed to allocate {num_shards_to_allocate} shards: no ingesters available");
+            return None;
+        } else if self.replication_factor > num_ingesters {
+            warn!(
+                "failed to allocate {num_shards_to_allocate} shards: replication factor is \
+                 greater than the number of available ingesters"
+            );
+            return None;
+        }
+        let mut leader_follower_pairs = Vec::with_capacity(num_shards_to_allocate);
+
+        let mut num_open_shards: usize = 0;
+        let mut num_open_shards_per_ingester: HashMap<&str, usize> =
+            HashMap::with_capacity(num_ingesters);
+
+        for shard in model.all_shards() {
+            if shard.is_open() && !unavailable_leaders.contains(&shard.leader_id) {
+                num_open_shards += 1;
+
+                *num_open_shards_per_ingester
+                    .entry(&shard.leader_id)
+                    .or_default() += 1;
+            }
+        }
+        let mut num_remaining_shards_to_allocate = num_shards_to_allocate;
+        let num_open_shards_target = num_shards_to_allocate + num_open_shards;
+        let max_num_shards_to_allocate_per_node = num_open_shards_target / num_ingesters;
+
+        // Allocate at most `max_num_shards_to_allocate_per_node` shards to each ingester.
+        for (leader_id, follower_id) in ingesters.iter().zip(ingesters.iter().cycle().skip(1)) {
+            if num_remaining_shards_to_allocate == 0 {
+                break;
+            }
+            let num_open_shards_inner = num_open_shards_per_ingester
+                .get(leader_id.as_str())
+                .copied()
+                .unwrap_or_default();
+
+            let num_shards_to_allocate_inner = max_num_shards_to_allocate_per_node
+                .saturating_sub(num_open_shards_inner)
+                .min(num_remaining_shards_to_allocate);
+
+            for _ in 0..num_shards_to_allocate_inner {
+                num_remaining_shards_to_allocate -= 1;
+
+                let leader = leader_id.clone();
+                let mut follower_opt = None;
+
+                if self.replication_factor > 1 {
+                    follower_opt = Some(follower_id.clone());
+                }
+                leader_follower_pairs.push((leader, follower_opt));
+            }
+        }
+        // Allocate remaining shards one by one.
+        for (leader_id, follower_id) in ingesters.iter().zip(ingesters.iter().cycle().skip(1)) {
+            if num_remaining_shards_to_allocate == 0 {
+                break;
+            }
+            num_remaining_shards_to_allocate -= 1;
+
+            let leader = leader_id.clone();
+            let mut follower_opt = None;
+
+            if self.replication_factor > 1 {
+                follower_opt = Some(follower_id.clone());
+            }
+            leader_follower_pairs.push((leader, follower_opt));
+        }
+        Some(leader_follower_pairs)
     }
 
     /// Calls init shards on the leaders hosting newly opened shards.
@@ -535,13 +526,13 @@ impl IngestController {
             source_id=%source_uid.source_id,
             "scaling up number of shards to {new_num_open_shards}"
         );
-        let mut unavailable_leaders: FnvHashSet<NodeId> = FnvHashSet::default();
+        let unavailable_leaders: FnvHashSet<NodeId> = FnvHashSet::default();
 
         let Some((leader_id, follower_id)) = self
-            .find_leader_and_follower(&mut unavailable_leaders, progress)
-            .await
+            .allocate_shards(1, &unavailable_leaders, model)
+            .and_then(|pairs| pairs.into_iter().next())
         else {
-            warn!("failed to scale up number of shards: no ingester available");
+            warn!("failed to scale up number of shards: no ingesters available");
             model.release_scaling_permits(&source_uid, ScalingMode::Up, NUM_PERMITS);
             return;
         };
@@ -551,7 +542,7 @@ impl IngestController {
             index_uid: source_uid.index_uid.clone().into(),
             source_id: source_uid.source_id.clone(),
             shard_id: Some(shard_id),
-            leader_id: leader_id.into(),
+            leader_id: leader_id.to_string(),
             follower_id: follower_id.map(Into::into),
         };
         let open_shards_request = metastore::OpenShardsRequest {
@@ -583,14 +574,6 @@ impl IngestController {
                 open_shards_subresponse.opened_shards,
             );
         }
-        let label_values = [
-            source_uid.index_uid.index_id.as_str(),
-            &source_uid.source_id,
-        ];
-        CONTROL_PLANE_METRICS
-            .open_shards_total
-            .with_label_values(label_values)
-            .set(new_num_open_shards as i64);
     }
 
     /// Attempts to decrease the number of shards. This operation is rate limited to avoid closing
@@ -641,15 +624,6 @@ impl IngestController {
             return;
         }
         model.close_shards(&source_uid, &[shard_id]);
-
-        let label_values = [
-            source_uid.index_uid.index_id.as_str(),
-            &source_uid.source_id,
-        ];
-        CONTROL_PLANE_METRICS
-            .open_shards_total
-            .with_label_values(label_values)
-            .set(new_num_open_shards as i64);
     }
 
     pub(crate) fn advise_reset_shards(
@@ -657,6 +631,9 @@ impl IngestController {
         request: AdviseResetShardsRequest,
         model: &ControlPlaneModel,
     ) -> AdviseResetShardsResponse {
+        info!("advise reset shards");
+        debug!(shard_ids=?summarize_shard_ids(&request.shard_ids), "advise reset shards");
+
         let mut shards_to_delete: Vec<ShardIds> = Vec::new();
         let mut shards_to_truncate: Vec<ShardIdPositions> = Vec::new();
 
@@ -704,6 +681,25 @@ impl IngestController {
                 });
             }
         }
+
+        if enabled!(Level::DEBUG) {
+            let shards_to_truncate: Vec<(&str, &Position)> = shards_to_truncate
+                .iter()
+                .flat_map(|shard_positions| {
+                    shard_positions
+                        .shard_positions
+                        .iter()
+                        .map(|shard_id_position| {
+                            (
+                                shard_id_position.shard_id().as_str(),
+                                shard_id_position.publish_position_inclusive(),
+                            )
+                        })
+                })
+                .collect();
+            debug!(shard_ids_to_delete=?summarize_shard_ids(&shards_to_delete), shards_to_truncate=?shards_to_truncate, "advise reset shards response");
+        }
+
         AdviseResetShardsResponse {
             shards_to_delete,
             shards_to_truncate,
@@ -714,6 +710,18 @@ impl IngestController {
         // TODO: As of now, it is only used for unit testing.
         self.stats.num_rebalance_shards_ops += 1;
     }
+}
+
+fn summarize_shard_ids(shard_ids: &[ShardIds]) -> Vec<&str> {
+    shard_ids
+        .iter()
+        .flat_map(|source_shard_ids| {
+            source_shard_ids
+                .shard_ids
+                .iter()
+                .map(|shard_id| shard_id.as_str())
+        })
+        .collect()
 }
 
 /// Finds the shard with the highest ingestion rate on the ingester with the least number of open
@@ -752,12 +760,6 @@ fn find_scale_down_candidate(
         })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PingError {
-    LeaderUnavailable,
-    FollowerUnavailable,
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -772,214 +774,13 @@ mod tests {
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
     use quickwit_proto::ingest::ingester::{
         CloseShardsResponse, IngesterServiceClient, InitShardsResponse, MockIngesterService,
-        PingResponse, RetainShardsResponse,
+        RetainShardsResponse,
     };
     use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::MetastoreError;
     use quickwit_proto::types::{Position, SourceId};
 
     use super::*;
-
-    #[tokio::test]
-    async fn test_ingest_controller_ping_leader() {
-        let progress = Progress::default();
-
-        let mock_metastore = MetastoreServiceClient::mock();
-        let ingester_pool = IngesterPool::default();
-        let replication_factor = 1;
-        let mut ingest_controller = IngestController::new(
-            MetastoreServiceClient::from(mock_metastore),
-            ingester_pool.clone(),
-            replication_factor,
-        );
-
-        let leader_id: NodeId = "test-ingester-0".into();
-        let error = ingest_controller
-            .ping_leader_and_follower(&leader_id, None, &progress)
-            .await
-            .unwrap_err();
-        assert!(matches!(error, PingError::LeaderUnavailable));
-
-        let mut mock_ingester = MockIngesterService::default();
-        mock_ingester.expect_ping().once().returning(|request| {
-            assert_eq!(request.leader_id, "test-ingester-0");
-            assert!(request.follower_id.is_none());
-
-            Ok(PingResponse {})
-        });
-        let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
-
-        ingest_controller
-            .ping_leader_and_follower(&leader_id, None, &progress)
-            .await
-            .unwrap();
-
-        let mut mock_ingester = MockIngesterService::default();
-        mock_ingester.expect_ping().once().returning(|request| {
-            assert_eq!(request.leader_id, "test-ingester-0");
-            assert!(request.follower_id.is_none());
-
-            let leader_id: NodeId = "test-ingester-0".into();
-            Err(IngestV2Error::IngesterUnavailable {
-                ingester_id: leader_id,
-            })
-        });
-        let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
-
-        let error = ingest_controller
-            .ping_leader_and_follower(&leader_id, None, &progress)
-            .await
-            .unwrap_err();
-        assert!(matches!(error, PingError::LeaderUnavailable));
-
-        let mut mock_ingester = MockIngesterService::default();
-        mock_ingester.expect_ping().once().returning(|request| {
-            assert_eq!(request.leader_id, "test-ingester-0");
-            assert_eq!(request.follower_id.unwrap(), "test-ingester-1");
-
-            let follower_id: NodeId = "test-ingester-1".into();
-            Err(IngestV2Error::IngesterUnavailable {
-                ingester_id: follower_id,
-            })
-        });
-        let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
-
-        let follower_id: NodeId = "test-ingester-1".into();
-        let error = ingest_controller
-            .ping_leader_and_follower(&leader_id, Some(&follower_id), &progress)
-            .await
-            .unwrap_err();
-        assert!(matches!(error, PingError::FollowerUnavailable));
-    }
-
-    #[tokio::test]
-    async fn test_ingest_controller_find_leader_replication_factor_1() {
-        let progress = Progress::default();
-
-        let mock_metastore = MetastoreServiceClient::mock();
-        let ingester_pool = IngesterPool::default();
-        let replication_factor = 1;
-        let mut ingest_controller = IngestController::new(
-            MetastoreServiceClient::from(mock_metastore),
-            ingester_pool.clone(),
-            replication_factor,
-        );
-
-        let leader_follower_pair = ingest_controller
-            .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
-            .await;
-        assert!(leader_follower_pair.is_none());
-
-        let mut mock_ingester = MockIngesterService::default();
-        mock_ingester.expect_ping().times(2).returning(|request| {
-            assert_eq!(request.leader_id, "test-ingester-0");
-            assert!(request.follower_id.is_none());
-
-            Err(IngestV2Error::Internal("Io error".to_string()))
-        });
-        let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
-
-        let leader_follower_pair = ingest_controller
-            .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
-            .await;
-        assert!(leader_follower_pair.is_none());
-
-        let mut mock_ingester = MockIngesterService::default();
-        mock_ingester.expect_ping().once().returning(|request| {
-            assert_eq!(request.leader_id, "test-ingester-1");
-            assert!(request.follower_id.is_none());
-
-            Ok(PingResponse {})
-        });
-        let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool.insert("test-ingester-1".into(), ingester);
-
-        let (leader_id, follower_id) = ingest_controller
-            .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
-            .await
-            .unwrap();
-        assert_eq!(leader_id.as_str(), "test-ingester-1");
-        assert!(follower_id.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_ingest_controller_find_leader_replication_factor_2() {
-        let progress = Progress::default();
-
-        let mock_metastore = MetastoreServiceClient::mock();
-        let ingester_pool = IngesterPool::default();
-        let replication_factor = 2;
-        let mut ingest_controller = IngestController::new(
-            MetastoreServiceClient::from(mock_metastore),
-            ingester_pool.clone(),
-            replication_factor,
-        );
-
-        let leader_follower_pair = ingest_controller
-            .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
-            .await;
-        assert!(leader_follower_pair.is_none());
-
-        let mut mock_ingester = MockIngesterService::default();
-        mock_ingester.expect_ping().once().returning(|request| {
-            assert_eq!(request.leader_id, "test-ingester-0");
-            assert_eq!(request.follower_id.unwrap(), "test-ingester-1");
-
-            Err(IngestV2Error::IngesterUnavailable {
-                ingester_id: "test-ingester-1".into(),
-            })
-        });
-        let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
-
-        let mut mock_ingester = MockIngesterService::default();
-        mock_ingester.expect_ping().returning(|_request| {
-            panic!("`test-ingester-1` should not be pinged.");
-        });
-        let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool.insert("test-ingester-1".into(), ingester.clone());
-
-        let leader_follower_pair = ingest_controller
-            .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
-            .await;
-        assert!(leader_follower_pair.is_none());
-
-        let mut mock_ingester = MockIngesterService::default();
-        mock_ingester.expect_ping().once().returning(|request| {
-            assert_eq!(request.leader_id, "test-ingester-0");
-            assert_eq!(request.follower_id.unwrap(), "test-ingester-1");
-
-            Err(IngestV2Error::IngesterUnavailable {
-                ingester_id: "test-ingester-1".into(),
-            })
-        });
-        mock_ingester.expect_ping().once().returning(|request| {
-            assert_eq!(request.leader_id, "test-ingester-0");
-            assert_eq!(request.follower_id.unwrap(), "test-ingester-2");
-
-            Ok(PingResponse {})
-        });
-        let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
-
-        let mut mock_ingester = MockIngesterService::default();
-        mock_ingester.expect_ping().returning(|_request| {
-            panic!("`test-ingester-2` should not be pinged.");
-        });
-        let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool.insert("test-ingester-2".into(), ingester.clone());
-
-        let (leader_id, follower_id) = ingest_controller
-            .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
-            .await
-            .unwrap();
-        assert_eq!(leader_id.as_str(), "test-ingester-0");
-        assert_eq!(follower_id.unwrap().as_str(), "test-ingester-2");
-    }
 
     #[tokio::test]
     async fn test_ingest_controller_get_or_create_open_shards() {
@@ -1023,13 +824,7 @@ mod tests {
         });
         let ingester_pool = IngesterPool::default();
 
-        let mut mock_ingester = MockIngesterService::default();
-        mock_ingester.expect_ping().once().returning(|request| {
-            assert_eq!(request.leader_id, "test-ingester-1");
-            assert_eq!(request.follower_id.unwrap(), "test-ingester-2");
-
-            Ok(PingResponse {})
-        });
+        let mock_ingester = MockIngesterService::default();
         let ingester: IngesterServiceClient = mock_ingester.into();
         ingester_pool.insert("test-ingester-1".into(), ingester.clone());
 
@@ -1175,7 +970,7 @@ mod tests {
             GetOrCreateOpenShardsFailureReason::SourceNotFound
         );
 
-        assert_eq!(model.observable_state().num_shards, 3);
+        assert_eq!(model.num_shards(), 3);
     }
 
     #[tokio::test]
@@ -1300,9 +1095,205 @@ mod tests {
         assert!(shard_3.is_open());
     }
 
+    #[test]
+    fn test_ingest_controller_allocate_shards() {
+        let metastore = MetastoreServiceClient::mock().into();
+        let ingester_pool = IngesterPool::default();
+        let replication_factor = 2;
+
+        let ingest_controller =
+            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+
+        let mut model = ControlPlaneModel::default();
+
+        let leader_follower_pairs_opt =
+            ingest_controller.allocate_shards(0, &FnvHashSet::default(), &model);
+        assert!(leader_follower_pairs_opt.is_none());
+
+        ingester_pool.insert(
+            "test-ingester-1".into(),
+            IngesterServiceClient::mock().into(),
+        );
+
+        let leader_follower_pairs_opt =
+            ingest_controller.allocate_shards(0, &FnvHashSet::default(), &model);
+        assert!(leader_follower_pairs_opt.is_none());
+
+        ingester_pool.insert(
+            "test-ingester-2".into(),
+            IngesterServiceClient::mock().into(),
+        );
+
+        let leader_follower_pairs = ingest_controller
+            .allocate_shards(0, &FnvHashSet::default(), &model)
+            .unwrap();
+        assert!(leader_follower_pairs.is_empty());
+
+        let leader_follower_pairs = ingest_controller
+            .allocate_shards(1, &FnvHashSet::default(), &model)
+            .unwrap();
+        assert_eq!(leader_follower_pairs.len(), 1);
+        assert_eq!(leader_follower_pairs[0].0, "test-ingester-1");
+        assert_eq!(
+            leader_follower_pairs[0].1,
+            Some(NodeId::from("test-ingester-2"))
+        );
+
+        let leader_follower_pairs = ingest_controller
+            .allocate_shards(2, &FnvHashSet::default(), &model)
+            .unwrap();
+        assert_eq!(leader_follower_pairs.len(), 2);
+        assert_eq!(leader_follower_pairs[0].0, "test-ingester-1");
+        assert_eq!(
+            leader_follower_pairs[0].1,
+            Some(NodeId::from("test-ingester-2"))
+        );
+
+        assert_eq!(leader_follower_pairs[1].0, "test-ingester-2");
+        assert_eq!(
+            leader_follower_pairs[1].1,
+            Some(NodeId::from("test-ingester-1"))
+        );
+
+        let leader_follower_pairs = ingest_controller
+            .allocate_shards(3, &FnvHashSet::default(), &model)
+            .unwrap();
+        assert_eq!(leader_follower_pairs.len(), 3);
+        assert_eq!(leader_follower_pairs[0].0, "test-ingester-1");
+        assert_eq!(
+            leader_follower_pairs[0].1,
+            Some(NodeId::from("test-ingester-2"))
+        );
+
+        assert_eq!(leader_follower_pairs[1].0, "test-ingester-2");
+        assert_eq!(
+            leader_follower_pairs[1].1,
+            Some(NodeId::from("test-ingester-1"))
+        );
+
+        assert_eq!(leader_follower_pairs[2].0, "test-ingester-1");
+        assert_eq!(
+            leader_follower_pairs[2].1,
+            Some(NodeId::from("test-ingester-2"))
+        );
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id: SourceId = "test-source".into();
+        let open_shards = vec![Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(1)),
+            shard_state: ShardState::Open as i32,
+            leader_id: "test-ingester-1".to_string(),
+            ..Default::default()
+        }];
+        model.insert_shards(&index_uid, &source_id, open_shards);
+
+        let leader_follower_pairs = ingest_controller
+            .allocate_shards(3, &FnvHashSet::default(), &model)
+            .unwrap();
+        assert_eq!(leader_follower_pairs.len(), 3);
+        assert_eq!(leader_follower_pairs[0].0, "test-ingester-1");
+        assert_eq!(
+            leader_follower_pairs[0].1,
+            Some(NodeId::from("test-ingester-2"))
+        );
+
+        assert_eq!(leader_follower_pairs[1].0, "test-ingester-2");
+        assert_eq!(
+            leader_follower_pairs[1].1,
+            Some(NodeId::from("test-ingester-1"))
+        );
+
+        assert_eq!(leader_follower_pairs[2].0, "test-ingester-2");
+        assert_eq!(
+            leader_follower_pairs[2].1,
+            Some(NodeId::from("test-ingester-1"))
+        );
+
+        let open_shards = vec![
+            Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(2)),
+                shard_state: ShardState::Open as i32,
+                leader_id: "test-ingester-1".to_string(),
+                ..Default::default()
+            },
+            Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(3)),
+                shard_state: ShardState::Open as i32,
+                leader_id: "test-ingester-1".to_string(),
+                ..Default::default()
+            },
+        ];
+        model.insert_shards(&index_uid, &source_id, open_shards);
+
+        let leader_follower_pairs = ingest_controller
+            .allocate_shards(1, &FnvHashSet::default(), &model)
+            .unwrap();
+        assert_eq!(leader_follower_pairs.len(), 1);
+        assert_eq!(leader_follower_pairs[0].0, "test-ingester-2");
+        assert_eq!(
+            leader_follower_pairs[0].1,
+            Some(NodeId::from("test-ingester-1"))
+        );
+
+        ingester_pool.insert(
+            "test-ingester-3".into(),
+            IngesterServiceClient::mock().into(),
+        );
+        let unavailable_leaders = FnvHashSet::from_iter([NodeId::from("test-ingester-2")]);
+        let leader_follower_pairs = ingest_controller
+            .allocate_shards(4, &unavailable_leaders, &model)
+            .unwrap();
+        assert_eq!(leader_follower_pairs.len(), 4);
+        assert_eq!(leader_follower_pairs[0].0, "test-ingester-3");
+        assert_eq!(
+            leader_follower_pairs[0].1,
+            Some(NodeId::from("test-ingester-1"))
+        );
+
+        assert_eq!(leader_follower_pairs[1].0, "test-ingester-3");
+        assert_eq!(
+            leader_follower_pairs[1].1,
+            Some(NodeId::from("test-ingester-1"))
+        );
+
+        assert_eq!(leader_follower_pairs[2].0, "test-ingester-3");
+        assert_eq!(
+            leader_follower_pairs[2].1,
+            Some(NodeId::from("test-ingester-1"))
+        );
+
+        assert_eq!(leader_follower_pairs[3].0, "test-ingester-1");
+        assert_eq!(
+            leader_follower_pairs[3].1,
+            Some(NodeId::from("test-ingester-3"))
+        );
+    }
+
     #[tokio::test]
     async fn test_ingest_controller_handle_local_shards_update() {
-        let metastore = MetastoreServiceClient::mock().into();
+        let mut mock_metastore = MetastoreServiceClient::mock();
+        mock_metastore
+            .expect_open_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.subrequests.len(), 1);
+                let subrequest = &request.subrequests[0];
+
+                assert_eq!(subrequest.index_uid(), &IndexUid::for_test("test-index", 0));
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.leader_id, "test-ingester");
+
+                Err(MetastoreError::InvalidArgument {
+                    message: "failed to open shards".to_string(),
+                })
+            });
+        let metastore = MetastoreServiceClient::from(mock_metastore);
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
 
@@ -1381,11 +1372,6 @@ mod tests {
                     "failed to close shards".to_string(),
                 ))
             });
-        ingester_mock.expect_ping().returning(|request| {
-            assert_eq!(request.leader_id, "test-ingester");
-
-            Err(IngestV2Error::Internal("failed ping ingester".to_string()))
-        });
         ingester_pool.insert("test-ingester".into(), ingester_mock.into());
 
         let shard_infos = BTreeSet::from_iter([
@@ -1514,11 +1500,6 @@ mod tests {
 
         let mut ingester_mock = IngesterServiceClient::mock();
 
-        ingester_mock.expect_ping().returning(|request| {
-            assert_eq!(request.leader_id, "test-ingester");
-
-            Ok(PingResponse {})
-        });
         let index_uid_clone = index_uid.clone();
         ingester_mock
             .expect_init_shards()

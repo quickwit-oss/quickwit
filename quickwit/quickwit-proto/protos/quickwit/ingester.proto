@@ -51,12 +51,8 @@ service IngesterService {
   // Closes a set of shards. This RPC is called by the control plane.
   rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
 
-  // Pings an ingester to check if it is ready to host shards and serve requests.
-  rpc Ping(PingRequest) returns (PingResponse);
-
   // Decommissions the ingester.
   rpc Decommission(DecommissionRequest) returns (DecommissionResponse);
-
 }
 
 message RetainShardsForSource {
@@ -106,6 +102,7 @@ enum PersistFailureReason {
   PERSIST_FAILURE_REASON_SHARD_CLOSED = 2;
   PERSIST_FAILURE_REASON_RATE_LIMITED = 3;
   PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED = 4;
+  PERSIST_FAILURE_REASON_TIMEOUT = 5;
 }
 
 message PersistFailure {
@@ -263,14 +260,6 @@ message CloseShardsRequest {
 }
 
 message CloseShardsResponse {
-}
-
-message PingRequest {
-  string leader_id = 1;
-  optional string follower_id = 2;
-}
-
-message PingResponse {
 }
 
 message DecommissionRequest {

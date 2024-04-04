@@ -72,17 +72,17 @@ engines:
 endpoint: "_cat/indices/gharchive?format=json&health=red"
 expected: []
 ---
+# Quickwit only supports JSON output. (Elastic has a table like text output.)
 method: [GET]
 engines:
   - quickwit
-  - elasticsearch
 endpoint: "_cat/indices/gharchive" # missing format=json
 status_code: 400
 ---
+# Quickwit does not supports the `v` parameter.
 method: [GET]
 engines:
   - quickwit
-  - elasticsearch
 endpoint: "_cat/indices/gharchive?format=json&v=true" # invalid h=true
 status_code: 400
 ---
@@ -92,4 +92,3 @@ engines:
   - elasticsearch
 endpoint: "_cat/indices/gharchive?format=json&b=b" # unsupported bytes parameter
 status_code: 400
-

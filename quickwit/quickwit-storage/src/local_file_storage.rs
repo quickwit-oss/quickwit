@@ -215,12 +215,15 @@ impl Storage for LocalFileStorage {
         let full_path = self.full_path(path)?;
         tokio::task::spawn_blocking(move || {
             use std::io::{Read, Seek};
-
             // we run these io in a spawn_blocking so there is no scheduling delay between each
             // step, as there would be if using tokio async File.
             let mut file = std::fs::File::open(full_path)?;
             file.seek(SeekFrom::Start(range.start as u64))?;
-            let mut content_bytes: Vec<u8> = vec![0u8; range.len()];
+            let mut content_bytes: Vec<u8> = Vec::with_capacity(range.len());
+            #[allow(clippy::uninit_vec)]
+            unsafe {
+                content_bytes.set_len(range.len());
+            }
             file.read_exact(&mut content_bytes)?;
             Ok(OwnedBytes::new(content_bytes))
         })
@@ -330,7 +333,7 @@ impl Storage for LocalFileStorage {
                     Ok(metadata.len())
                 } else {
                     Err(StorageErrorKind::NotFound.with_error(anyhow::anyhow!(
-                        "file `{}` is actually a directory",
+                        "file `{}` is not a regular file, cannot determine its size",
                         path.display()
                     )))
                 }

@@ -1,41 +1,4 @@
 {
-  "__inputs": [
-    {
-      "name": "datasource",
-      "label": "Prometheus",
-      "description": "",
-      "type": "datasource",
-      "pluginId": "prometheus",
-      "pluginName": "Prometheus"
-    }
-  ],
-  "__elements": {},
-  "__requires": [
-    {
-      "type": "grafana",
-      "id": "grafana",
-      "name": "Grafana",
-      "version": "10.0.1"
-    },
-    {
-      "type": "datasource",
-      "id": "prometheus",
-      "name": "Prometheus",
-      "version": "1.0.0"
-    },
-    {
-      "type": "panel",
-      "id": "stat",
-      "name": "Stat",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "timeseries",
-      "name": "Time series",
-      "version": ""
-    }
-  ],
   "annotations": {
     "list": [
       {
@@ -62,7 +25,6 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": null,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -113,9 +75,11 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
-      "pluginVersion": "10.0.1",
+      "pluginVersion": "10.4.1",
       "targets": [
         {
           "datasource": {
@@ -123,7 +87,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "sum by(docs_processed_status) (rate(quickwit_indexing_processed_bytes{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\", pod=~\"$pod\"}[$quickwit_rate_interval]))",
+          "expr": "sum by(docs_processed_status) (rate(quickwit_indexing_processed_bytes{instance=~\"$instance\"}[$__rate_interval]))",
           "legendFormat": "{{docs_processed_status}}",
           "range": true,
           "refId": "A"
@@ -179,9 +143,11 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
-      "pluginVersion": "10.0.1",
+      "pluginVersion": "10.4.1",
       "targets": [
         {
           "datasource": {
@@ -189,7 +155,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "sum by(docs_processed_status) (rate(quickwit_indexing_processed_docs_total{index=~\"$index\", namespace=\"$namespace\", pod=~\"$pod\"}[$quickwit_rate_interval]))",
+          "expr": "sum by(docs_processed_status) (rate(quickwit_indexing_processed_docs_total{instance=~\"$pod|$instance\"}[$__rate_interval]))",
           "legendFormat": "{{docs_processed_status}}",
           "range": true,
           "refId": "A"
@@ -209,6 +175,7 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
@@ -224,6 +191,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -319,7 +287,7 @@
           },
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "sum by(docs_processed_status, index) (rate(quickwit_indexing_processed_bytes{index=~\"$index\", namespace=\"$namespace\", pod=~\"$pod\", instance=~\"$instance\"}[$quickwit_rate_interval]))",
+          "expr": "sum by(docs_processed_status, index) (rate(quickwit_indexing_processed_bytes{instance=~\"$instance\"}[$__rate_interval]))",
           "format": "time_series",
           "instant": false,
           "interval": "",
@@ -329,7 +297,6 @@
         }
       ],
       "title": "Indexing throughput",
-      "transformations": [],
       "type": "timeseries"
     },
     {
@@ -344,6 +311,7 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
@@ -357,6 +325,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -419,10 +388,10 @@
           },
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "rate(quickwit_write_bytes{index=~\"$index\", pod=~\"$pod\", namespace=\"$namespace\"}[$quickwit_rate_interval])",
+          "expr": "rate(quickwit_write_bytes{instance=~\"$instance\"}[$__rate_interval])",
           "hide": false,
           "instant": false,
-          "legendFormat": "{{component}} {{index}} pod:{{pod}}",
+          "legendFormat": "{{instance}} {{component}}",
           "range": true,
           "refId": "Writes"
         }
@@ -441,6 +410,7 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
@@ -454,6 +424,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -502,7 +473,7 @@
             "max",
             "mean"
           ],
-          "displayMode": "list",
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
@@ -519,8 +490,8 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "quickwit_allocated_num_bytes{namespace=\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "allocated-{{pod}}",
+          "expr": "quickwit_memory_allocated_bytes{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} allocated",
           "range": true,
           "refId": "A"
         },
@@ -530,14 +501,14 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "process_resident_memory_bytes{namespace=\"$namespace\", pod=~\"$pod\"}",
+          "expr": "quickwit_memory_resident_bytes{instance=~\"$instance\"}",
           "hide": false,
-          "legendFormat": "rss-{{pod}}",
+          "legendFormat": "{{instance}} RSS",
           "range": true,
-          "refId": "B"
+          "refId": "C"
         }
       ],
-      "title": "Memory consumption (allocated and RSS)",
+      "title": "Memory usage (allocated and RSS)",
       "type": "timeseries"
     },
     {
@@ -551,6 +522,7 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
@@ -564,6 +536,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineStyle": {
               "fill": "solid"
@@ -632,14 +605,26 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "quickwit_indexing_ongoing_merge_operations{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\", pod=~\"$pod\"}",
+          "expr": "quickwit_indexing_ongoing_merge_operations{instance=~\"$instance\"}",
           "hide": false,
-          "legendFormat": "{{index}} {{pod}}",
+          "legendFormat": "{{instance}} ongoing",
           "range": true,
           "refId": "Processed docs"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "expr": "quickwit_indexing_pending_merge_operations{instance=~\"$instance\"}",
+          "hide": false,
+          "legendFormat": "{{instance}} pending",
+          "range": true,
+          "refId": "A"
         }
       ],
-      "title": "Ongoing merge operations",
+      "title": "Merge operations (ongoing and pending)",
       "type": "timeseries"
     },
     {
@@ -653,6 +638,7 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
@@ -666,6 +652,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineStyle": {
               "fill": "solid"
@@ -747,7 +734,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "sum by(pod) (rate(quickwit_storage_object_storage_download_num_bytes{namespace=\"$namespace\", instance=~\"$instance\", pod=~\"$pod\"}[$quickwit_rate_interval]))",
+          "expr": "sum by(pod) (rate(quickwit_storage_object_storage_download_num_bytes{instance=~\"$instance\"}[$__rate_interval]))",
           "legendFormat": "Download bytes / sec - {{pod}}",
           "range": true,
           "refId": "Download"
@@ -779,6 +766,7 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
@@ -792,6 +780,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineStyle": {
               "fill": "solid"
@@ -860,7 +849,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "sum by(docs_processed_status, index) (rate(quickwit_indexing_processed_docs_total{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\", pod=~\"$pod\"}[$quickwit_rate_interval]))",
+          "expr": "sum by(docs_processed_status, index) (rate(quickwit_indexing_processed_docs_total{instance=~\"$instance\"}[$__rate_interval]))",
           "hide": false,
           "legendFormat": "{{docs_processed_status}}-{{index}}",
           "range": true,
@@ -881,6 +870,7 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
@@ -894,6 +884,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineStyle": {
               "fill": "solid"
@@ -975,7 +966,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "sum(rate(quickwit_storage_object_storage_gets_total{namespace=\"$namespace\", instance=~\"$instance\", pod=~\"$pod\"}[$quickwit_rate_interval]))",
+          "expr": "sum(rate(quickwit_storage_object_storage_gets_total{instance=~\"$instance\"}[$__rate_interval]))",
           "legendFormat": "GET req/sec",
           "range": true,
           "refId": "Download"
@@ -1007,6 +998,7 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
@@ -1020,6 +1012,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -1080,7 +1073,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.75, rate(quickwit_cli_thread_unpark_duration_microseconds_bucket{namespace=\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "expr": "histogram_quantile(0.75, rate(quickwit_cli_thread_unpark_duration_microseconds_bucket{instance=~\"$instance\"}[$__rate_interval]))",
           "instant": false,
           "legendFormat": "{{pod}}",
           "range": true,
@@ -1101,6 +1094,7 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
@@ -1114,6 +1108,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -1175,7 +1170,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "rate(quickwit_indexing_backpressure_micros{namespace=\"$namespace\", pod=~\"$pod\"}[$__rate_interval])",
+          "expr": "rate(quickwit_indexing_backpressure_micros{instance=~\"$instance\"}[$__rate_interval])",
           "legendFormat": "{{actor_name}}-{{pod}}",
           "range": true,
           "refId": "A"
@@ -1185,9 +1180,9 @@
       "type": "timeseries"
     }
   ],
-  "refresh": "10s",
-  "schemaVersion": 38,
-  "style": "dark",
+  "refresh": "30s",
+  "revision": 1,
+  "schemaVersion": 39,
   "tags": [
     "quickwit",
     "indexer"
@@ -1196,9 +1191,9 @@
     "list": [
       {
         "current": {
-          "selected": false,
+          "selected": true,
           "text": "Prometheus",
-          "value": "Prometheus"
+          "value": "PBFA97CFB590B2093"
         },
         "hide": 0,
         "includeAll": false,
@@ -1214,81 +1209,16 @@
         "type": "datasource"
       },
       {
-        "current": {},
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(quickwit_write_bytes,namespace)",
-        "hide": 0,
-        "includeAll": false,
-        "label": "Namespace",
-        "multi": false,
-        "name": "namespace",
-        "options": [],
-        "query": {
-          "query": "label_values(quickwit_write_bytes,namespace)",
-          "refId": "StandardVariableQuery"
-        },
-        "refresh": 2,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
-        "type": "query"
-      },
-      {
-        "current": {},
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
-        "definition": "label_values(quickwit_write_bytes,index)",
-        "hide": 0,
-        "includeAll": true,
-        "label": "Index",
-        "multi": false,
-        "name": "index",
-        "options": [],
-        "query": {
-          "query": "label_values(quickwit_write_bytes,index)",
-          "refId": "StandardVariableQuery"
-        },
-        "refresh": 2,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
-        "type": "query"
-      },
-      {
-        "current": {},
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
-        "definition": "label_values(quickwit_write_bytes,pod)",
-        "hide": 0,
-        "includeAll": true,
-        "label": "Pod",
-        "multi": true,
-        "name": "pod",
-        "options": [],
-        "query": {
-          "query": "label_values(quickwit_write_bytes,pod)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
-        },
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
-        "type": "query"
-      },
-      {
-        "current": {},
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
-        "definition": "label_values(quickwit_write_bytes, instance)",
+        "definition": "label_values(quickwit_memory_in_flight_data_bytes, instance)",
         "hide": 0,
         "includeAll": true,
         "label": "Instance",
@@ -1296,7 +1226,7 @@
         "name": "instance",
         "options": [],
         "query": {
-          "query": "label_values(quickwit_write_bytes, instance)",
+          "query": "label_values(quickwit_memory_in_flight_data_bytes, instance)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
@@ -1304,87 +1234,6 @@
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
-      },
-      {
-        "auto": false,
-        "auto_count": 30,
-        "auto_min": "10s",
-        "current": {
-          "selected": false,
-          "text": "30s",
-          "value": "30s"
-        },
-        "description": "",
-        "hide": 0,
-        "label": "Rate interval",
-        "name": "quickwit_rate_interval",
-        "options": [
-          {
-            "selected": false,
-            "text": "10s",
-            "value": "10s"
-          },
-          {
-            "selected": true,
-            "text": "30s",
-            "value": "30s"
-          },
-          {
-            "selected": false,
-            "text": "1m",
-            "value": "1m"
-          },
-          {
-            "selected": false,
-            "text": "10m",
-            "value": "10m"
-          },
-          {
-            "selected": false,
-            "text": "30m",
-            "value": "30m"
-          },
-          {
-            "selected": false,
-            "text": "1h",
-            "value": "1h"
-          },
-          {
-            "selected": false,
-            "text": "6h",
-            "value": "6h"
-          },
-          {
-            "selected": false,
-            "text": "12h",
-            "value": "12h"
-          },
-          {
-            "selected": false,
-            "text": "1d",
-            "value": "1d"
-          },
-          {
-            "selected": false,
-            "text": "7d",
-            "value": "7d"
-          },
-          {
-            "selected": false,
-            "text": "14d",
-            "value": "14d"
-          },
-          {
-            "selected": false,
-            "text": "30d",
-            "value": "30d"
-          }
-        ],
-        "query": "10s,30s,1m,10m,30m,1h,6h,12h,1d,7d,14d,30d",
-        "queryValue": "",
-        "refresh": 2,
-        "skipUrlSync": false,
-        "type": "interval"
       }
     ]
   },
@@ -1396,6 +1245,6 @@
   "timezone": "utc",
   "title": "Quickwit Indexers",
   "uid": "quickwit-indexers",
-  "version": 50,
+  "version": 2,
   "weekStart": ""
 }

@@ -144,11 +144,11 @@ impl IngesterShard {
     }
 
     pub fn notify_shard_status(&self) {
-        // `shard_status_tx` is guaranteed to be open because `self` also holds a receiver.
         let shard_status = (
             self.shard_state,
             self.replication_position_inclusive.clone(),
         );
+        // `shard_status_tx` is guaranteed to be open because `self` also holds a receiver.
         self.shard_status_tx
             .send(shard_status)
             .expect("channel should be open");

@@ -173,11 +173,19 @@ pub struct GaugeGuard {
     delta: i64,
 }
 
-impl GaugeGuard {
-    pub fn from_gauge(gauge: &'static IntGauge, delta: i64) -> Self {
-        gauge.add(delta);
+impl std::fmt::Debug for GaugeGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.delta.fmt(f)
+    }
+}
 
-        Self { gauge, delta }
+impl GaugeGuard {
+    pub fn from_gauge(gauge: &'static IntGauge) -> Self {
+        Self { gauge, delta: 0i64 }
+    }
+
+    pub fn get(&self) -> i64 {
+        self.delta
     }
 
     pub fn add(&mut self, delta: i64) {
@@ -210,7 +218,7 @@ pub struct MemoryMetrics {
     pub active_bytes: IntGauge,
     pub allocated_bytes: IntGauge,
     pub resident_bytes: IntGauge,
-    pub in_flight_data: InFlightDataGauges,
+    pub in_flight: InFlightDataGauges,
 }
 
 impl Default for MemoryMetrics {
@@ -237,54 +245,52 @@ impl Default for MemoryMetrics {
                 "memory",
                 &[],
             ),
-            in_flight_data: InFlightDataGauges::default(),
+            in_flight: InFlightDataGauges::default(),
         }
     }
 }
 
 #[derive(Clone)]
 pub struct InFlightDataGauges {
+    pub rest_server: IntGauge,
+    pub ingest_router: IntGauge,
+    pub ingester_persist: IntGauge,
+    pub ingester_replicate: IntGauge,
+    pub wal: IntGauge,
+    pub fetch_stream: IntGauge,
+    pub multi_fetch_stream: IntGauge,
+    pub sources: InFlightDataSourceGauges,
     pub doc_processor_mailbox: IntGauge,
     pub indexer_mailbox: IntGauge,
-    pub ingest_router: IntGauge,
-    pub rest_server: IntGauge,
-    pub sources: InFlightDataSourceGauges,
+    pub index_writer: IntGauge,
 }
-
-const IN_FLIGHT_DATA_GAUGES_HELP: &str = "Amount of data in-flight in various buffers in bytes.";
 
 impl Default for InFlightDataGauges {
     fn default() -> Self {
+        let in_flight_gauge_vec = new_gauge_vec(
+            "in_flight_data_bytes",
+            "Amount of data in-flight in various buffers in bytes.",
+            "memory",
+            &[],
+            ["component"],
+        );
         Self {
-            doc_processor_mailbox: new_gauge(
-                "in_flight_data_bytes",
-                IN_FLIGHT_DATA_GAUGES_HELP,
-                "memory",
-                &[("component", "doc_processor_mailbox")],
-            ),
-            indexer_mailbox: new_gauge(
-                "in_flight_data_bytes",
-                IN_FLIGHT_DATA_GAUGES_HELP,
-                "memory",
-                &[("component", "indexer_mailbox")],
-            ),
-            ingest_router: new_gauge(
-                "in_flight_data_bytes",
-                IN_FLIGHT_DATA_GAUGES_HELP,
-                "memory",
-                &[("component", "ingest_router")],
-            ),
-            rest_server: new_gauge(
-                "in_flight_data_bytes",
-                IN_FLIGHT_DATA_GAUGES_HELP,
-                "memory",
-                &[("component", "rest_server")],
-            ),
-            sources: InFlightDataSourceGauges::default(),
+            rest_server: in_flight_gauge_vec.with_label_values(["rest_server"]),
+            ingest_router: in_flight_gauge_vec.with_label_values(["ingest_router"]),
+            ingester_persist: in_flight_gauge_vec.with_label_values(["ingester_persist"]),
+            ingester_replicate: in_flight_gauge_vec.with_label_values(["ingester_replicate"]),
+            wal: in_flight_gauge_vec.with_label_values(["wal"]),
+            fetch_stream: in_flight_gauge_vec.with_label_values(["fetch_stream"]),
+            multi_fetch_stream: in_flight_gauge_vec.with_label_values(["multi_fetch_stream"]),
+            sources: InFlightDataSourceGauges::new(&in_flight_gauge_vec),
+            doc_processor_mailbox: in_flight_gauge_vec.with_label_values(["doc_processor_mailbox"]),
+            indexer_mailbox: in_flight_gauge_vec.with_label_values(["indexer_mailbox"]),
+            index_writer: in_flight_gauge_vec.with_label_values(["index_writer"]),
         }
     }
 }
 
+/// TODO make those lazy.
 #[derive(Clone)]
 pub struct InFlightDataSourceGauges {
     pub file: IntGauge,
@@ -296,51 +302,16 @@ pub struct InFlightDataSourceGauges {
     pub other: IntGauge,
 }
 
-impl Default for InFlightDataSourceGauges {
-    fn default() -> Self {
+impl InFlightDataSourceGauges {
+    pub fn new(in_flight_gauge_vec: &IntGaugeVec<1>) -> Self {
         Self {
-            file: new_gauge(
-                "in_flight_data_bytes",
-                IN_FLIGHT_DATA_GAUGES_HELP,
-                "memory",
-                &[("component", "file_source")],
-            ),
-            ingest: new_gauge(
-                "in_flight_data_bytes",
-                IN_FLIGHT_DATA_GAUGES_HELP,
-                "memory",
-                &[("component", "ingest_source")],
-            ),
-            kafka: new_gauge(
-                "in_flight_data_bytes",
-                IN_FLIGHT_DATA_GAUGES_HELP,
-                "memory",
-                &[("component", "kafka_source")],
-            ),
-            kinesis: new_gauge(
-                "in_flight_data_bytes",
-                IN_FLIGHT_DATA_GAUGES_HELP,
-                "memory",
-                &[("component", "kinesis_source")],
-            ),
-            pubsub: new_gauge(
-                "in_flight_data_bytes",
-                IN_FLIGHT_DATA_GAUGES_HELP,
-                "memory",
-                &[("component", "pubsub_source")],
-            ),
-            pulsar: new_gauge(
-                "in_flight_data_bytes",
-                IN_FLIGHT_DATA_GAUGES_HELP,
-                "memory",
-                &[("component", "pulsar")],
-            ),
-            other: new_gauge(
-                "in_flight_data_bytes",
-                IN_FLIGHT_DATA_GAUGES_HELP,
-                "memory",
-                &[("component", "other")],
-            ),
+            file: in_flight_gauge_vec.with_label_values(["file_source"]),
+            ingest: in_flight_gauge_vec.with_label_values(["ingest_source"]),
+            kafka: in_flight_gauge_vec.with_label_values(["kafka_source"]),
+            kinesis: in_flight_gauge_vec.with_label_values(["kinesis_source"]),
+            pubsub: in_flight_gauge_vec.with_label_values(["pubsub_source"]),
+            pulsar: in_flight_gauge_vec.with_label_values(["pulsar_source"]),
+            other: in_flight_gauge_vec.with_label_values(["other"]),
         }
     }
 }

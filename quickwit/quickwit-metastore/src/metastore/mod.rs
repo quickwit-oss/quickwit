@@ -27,6 +27,7 @@ pub mod control_plane_metastore;
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use futures::TryStreamExt;
 pub use index_metadata::IndexMetadata;
 use itertools::Itertools;
@@ -183,40 +184,57 @@ impl IndexMetadataResponseExt for IndexMetadataResponse {
 }
 
 /// Helper trait to build a `ListIndexesResponse` and deserialize its payload.
+#[async_trait]
 pub trait ListIndexesMetadataResponseExt {
-    /// Creates a new `ListIndexesResponse` from a list of [`IndexMetadata`].
-    fn try_from_indexes_metadata(
-        indexes_metadata: impl IntoIterator<Item = IndexMetadata>,
+    /// Creates a new `ListIndexesMetadataResponse` from a `Vec` of [`IndexMetadata`].
+    async fn try_from_indexes_metadata(
+        indexes_metadata: Vec<IndexMetadata>,
     ) -> MetastoreResult<ListIndexesMetadataResponse>;
 
-    /// Deserializes the `indexes_metadata_serialized_json` field of a `ListIndexesResponse` into
-    /// a list of [`IndexMetadata`].
-    fn deserialize_indexes_metadata(&self) -> MetastoreResult<Vec<IndexMetadata>>;
+    /// Deserializes the payload of a `ListIndexesResponse` into a `Vec`` of [`IndexMetadata`].
+    async fn deserialize_indexes_metadata(self) -> MetastoreResult<Vec<IndexMetadata>>;
 
-    /// Creates an empty `ListIndexesResponse`.
-    fn empty() -> Self;
+    /// Creates a new `ListIndexesMetadataResponse` from a `Vec` of [`IndexMetadata`] synchronously.
+    #[cfg(any(test, feature = "testsuite"))]
+    fn for_test(indexes_metadata: Vec<IndexMetadata>) -> ListIndexesMetadataResponse {
+        use futures::executor;
+
+        executor::block_on(Self::try_from_indexes_metadata(indexes_metadata)).unwrap()
+    }
 }
 
+#[async_trait]
 impl ListIndexesMetadataResponseExt for ListIndexesMetadataResponse {
-    fn try_from_indexes_metadata(
-        indexes_metadata: impl IntoIterator<Item = IndexMetadata>,
+    async fn try_from_indexes_metadata(
+        indexes_metadata: Vec<IndexMetadata>,
     ) -> MetastoreResult<Self> {
-        let indexes_metadata: Vec<IndexMetadata> = indexes_metadata.into_iter().collect();
-        let indexes_metadata_serialized_json = serde_utils::to_json_str(&indexes_metadata)?;
-        let request = Self {
-            indexes_metadata_serialized_json,
+        let indexes_metadata_json_zstd = tokio::task::spawn_blocking(move || {
+            serde_utils::to_json_zstd(&indexes_metadata, 0).map(Bytes::from)
+        })
+        .await
+        .map_err(|join_error| MetastoreError::Internal {
+            message: "failed to serialize indexes metadata".to_string(),
+            cause: join_error.to_string(),
+        })??;
+        let response = Self {
+            indexes_metadata_json_zstd,
+            indexes_metadata_json_opt: None,
         };
-        Ok(request)
+        Ok(response)
     }
 
-    fn empty() -> Self {
-        Self {
-            indexes_metadata_serialized_json: "[]".to_string(),
-        }
-    }
-
-    fn deserialize_indexes_metadata(&self) -> MetastoreResult<Vec<IndexMetadata>> {
-        serde_utils::from_json_str(&self.indexes_metadata_serialized_json)
+    async fn deserialize_indexes_metadata(self) -> MetastoreResult<Vec<IndexMetadata>> {
+        tokio::task::spawn_blocking(move || {
+            if let Some(indexes_metadata_json) = &self.indexes_metadata_json_opt {
+                return serde_utils::from_json_str(indexes_metadata_json);
+            };
+            serde_utils::from_json_zstd(&self.indexes_metadata_json_zstd)
+        })
+        .await
+        .map_err(|join_error| MetastoreError::Internal {
+            message: "failed to deserialize indexes metadata".to_string(),
+            cause: join_error.to_string(),
+        })?
     }
 }
 
@@ -816,9 +834,39 @@ mod tests {
         assert_eq!(response.deserialize_splits().unwrap(), Vec::new());
     }
 
-    #[test]
-    fn test_list_indexes_metadata_empty() {
-        let response = ListIndexesMetadataResponse::empty();
-        assert_eq!(response.deserialize_indexes_metadata().unwrap(), Vec::new());
+    #[tokio::test]
+    async fn test_list_indexes_metadata_response_serde() {
+        let response = ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new())
+            .await
+            .unwrap();
+        let indexes_metadata = response.deserialize_indexes_metadata().await.unwrap();
+        assert!(indexes_metadata.is_empty());
+
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let response = ListIndexesMetadataResponse::for_test(vec![index_metadata.clone()]);
+        let indexes_metadata = response.deserialize_indexes_metadata().await.unwrap();
+        assert_eq!(indexes_metadata.len(), 1);
+        assert_eq!(indexes_metadata[0], index_metadata);
+    }
+
+    #[tokio::test]
+    async fn test_list_indexes_metadata_backward_compatible_serde() {
+        let indexes_metadata_json = serde_json::to_string(&Vec::<IndexMetadata>::new()).unwrap();
+        let response = ListIndexesMetadataResponse {
+            indexes_metadata_json_opt: Some(indexes_metadata_json),
+            indexes_metadata_json_zstd: Bytes::from_static(b""),
+        };
+        let indexes_metadata = response.deserialize_indexes_metadata().await.unwrap();
+        assert!(indexes_metadata.is_empty());
+
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let indexes_metadata_json = serde_json::to_string(&vec![index_metadata.clone()]).unwrap();
+        let response = ListIndexesMetadataResponse {
+            indexes_metadata_json_opt: Some(indexes_metadata_json),
+            indexes_metadata_json_zstd: Bytes::from_static(b""),
+        };
+        let indexes_metadata = response.deserialize_indexes_metadata().await.unwrap();
+        assert_eq!(indexes_metadata.len(), 1);
+        assert_eq!(indexes_metadata[0], index_metadata);
     }
 }

@@ -182,8 +182,10 @@ mod tests {
     use std::str::FromStr;
 
     use time::macros::datetime;
+    use time::Month;
 
     use super::*;
+    use crate::date_time_format::infer_year;
     use crate::StrptimeParser;
 
     #[test]
@@ -247,6 +249,12 @@ mod tests {
                 "2024-01-31 18:40:19.950188123",
                 datetime!(2024-01-31 18:40:19.950188123 UTC),
             ),
+            ("%b %d %H:%M:%S", "Mar  6 17:40:02", {
+                let dt = datetime!(1900-03-06 17:40:02 UTC);
+                let now = OffsetDateTime::now_utc();
+                let year = infer_year(Some(Month::March), now.month(), now.year());
+                dt.replace_year(year).unwrap()
+            }),
         ];
         for (fmt, date_time_str, expected) in test_data {
             let parser = StrptimeParser::from_str(fmt).unwrap();

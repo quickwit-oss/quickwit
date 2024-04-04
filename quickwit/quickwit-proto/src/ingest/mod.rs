@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use bytes::Bytes;
+use bytesize::ByteSize;
 
 use self::ingester::{PersistFailureReason, ReplicateFailureReason};
 use self::router::IngestFailureReason;
@@ -36,9 +37,6 @@ pub type IngestV2Result<T> = std::result::Result<T, IngestV2Error>;
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IngestV2Error {
-    // TODO: Get rid of this variant.
-    #[error("failed to connect to ingester `{ingester_id}`")]
-    IngesterUnavailable { ingester_id: NodeId },
     #[error("internal error: {0}")]
     Internal(String),
     #[error("shard `{shard_id}` not found")]
@@ -54,7 +52,6 @@ pub enum IngestV2Error {
 impl ServiceError for IngestV2Error {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::IngesterUnavailable { .. } => ServiceErrorCode::Unavailable,
             Self::Internal(_) => ServiceErrorCode::Internal,
             Self::ShardNotFound { .. } => ServiceErrorCode::NotFound,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
@@ -109,7 +106,7 @@ impl DocBatchV2 {
     }
 
     pub fn num_bytes(&self) -> usize {
-        self.doc_buffer.len()
+        self.doc_buffer.len() + self.doc_lengths.len() * 4
     }
 
     pub fn num_docs(&self) -> usize {
@@ -148,8 +145,8 @@ impl MRecordBatch {
         self.mrecord_lengths.is_empty()
     }
 
-    pub fn num_bytes(&self) -> usize {
-        self.mrecord_buffer.len()
+    pub fn estimate_size(&self) -> ByteSize {
+        ByteSize((self.mrecord_buffer.len() + self.mrecord_lengths.len() * 4) as u64)
     }
 
     pub fn num_mrecords(&self) -> usize {
@@ -280,6 +277,7 @@ impl From<PersistFailureReason> for IngestFailureReason {
             PersistFailureReason::ShardClosed => IngestFailureReason::NoShardsAvailable,
             PersistFailureReason::ResourceExhausted => IngestFailureReason::ResourceExhausted,
             PersistFailureReason::RateLimited => IngestFailureReason::RateLimited,
+            PersistFailureReason::Timeout => IngestFailureReason::Timeout,
         }
     }
 }

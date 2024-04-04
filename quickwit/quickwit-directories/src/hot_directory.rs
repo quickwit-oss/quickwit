@@ -202,7 +202,7 @@ impl StaticDirectoryCache {
     }
 
     pub fn get_file_length(&self, path: &Path) -> Option<u64> {
-        self.file_lengths.get(path).map(u64::clone)
+        self.file_lengths.get(path).copied()
     }
 
     /// return the files and their cached lengths

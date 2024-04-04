@@ -174,7 +174,7 @@ fn convert_ingest_response_v2(
     let ingest_failure = response.failures.pop().unwrap();
     Err(match ingest_failure.reason() {
         IngestFailureReason::Unspecified => {
-            IngestServiceError::Internal("Unknown reason".to_string())
+            IngestServiceError::Internal("unknown error".to_string())
         }
         IngestFailureReason::IndexNotFound => IngestServiceError::IndexNotFound {
             index_id: ingest_failure.index_id,
@@ -183,10 +183,13 @@ fn convert_ingest_response_v2(
             "Ingest v2 source not found for index {}",
             ingest_failure.index_id
         )),
-        IngestFailureReason::Internal => IngestServiceError::Internal("Internal error".to_string()),
+        IngestFailureReason::Internal => IngestServiceError::Internal("internal error".to_string()),
         IngestFailureReason::NoShardsAvailable => IngestServiceError::Unavailable,
         IngestFailureReason::RateLimited => IngestServiceError::RateLimited,
         IngestFailureReason::ResourceExhausted => IngestServiceError::RateLimited,
+        IngestFailureReason::Timeout => {
+            IngestServiceError::Internal("request timed out".to_string())
+        }
     })
 }
 

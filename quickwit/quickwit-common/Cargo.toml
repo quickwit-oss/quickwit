@@ -15,6 +15,7 @@ anyhow = { workspace = true }
 async-speed-limit = { workspace = true }
 async-trait = { workspace = true }
 bytesize = { workspace = true }
+coarsetime = { workspace = true }
 dyn-clone = { workspace = true }
 env_logger = { workspace = true }
 fnv = { workspace = true }
@@ -48,5 +49,4 @@ named_tasks = ["tokio/tracing"]
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-quickwit-macros = { workspace = true }
 proptest = { workspace = true }

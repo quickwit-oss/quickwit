@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use super::{TransformConfig, RESERVED_SOURCE_IDS};
 use crate::{validate_identifier, ConfigFormat, SourceConfig, SourceInputFormat, SourceParams};
 
-type SourceConfigForSerialization = SourceConfigV0_7;
+type SourceConfigForSerialization = SourceConfigV0_8;
 
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -37,12 +37,15 @@ pub enum VersionedSourceConfig {
     #[serde(alias = "0.5")]
     #[serde(alias = "0.4")]
     V0_7(SourceConfigV0_7),
+    #[serde(rename = "0.8")]
+    V0_8(SourceConfigV0_8),
 }
 
 impl From<VersionedSourceConfig> for SourceConfigForSerialization {
     fn from(versioned_source_config: VersionedSourceConfig) -> Self {
         match versioned_source_config {
-            VersionedSourceConfig::V0_7(v0_6) => v0_6,
+            VersionedSourceConfig::V0_7(v0_7) => v0_7.into(),
+            VersionedSourceConfig::V0_8(v0_8) => v0_8,
         }
     }
 }
@@ -73,12 +76,8 @@ impl SourceConfigForSerialization {
         if !RESERVED_SOURCE_IDS.contains(&self.source_id.as_str()) {
             validate_identifier("Source ID", &self.source_id)?;
         }
-        let desired_num_pipelines = NonZeroUsize::new(self.desired_num_pipelines)
+        let num_pipelines = NonZeroUsize::new(self.num_pipelines)
             .ok_or_else(|| anyhow::anyhow!("`desired_num_pipelines` must be strictly positive"))?;
-        let max_num_pipelines_per_indexer = NonZeroUsize::new(self.max_num_pipelines_per_indexer)
-            .ok_or_else(|| {
-            anyhow::anyhow!("`max_num_pipelines_per_indexer` must be strictly positive")
-        })?;
         match &self.source_params {
             // We want to forbid source_config with no filepath
             SourceParams::File(file_params) => {
@@ -102,7 +101,7 @@ impl SourceConfigForSerialization {
         match &self.source_params {
             SourceParams::PubSub(_) | SourceParams::Kafka(_) => {}
             _ => {
-                if self.desired_num_pipelines > 1 || self.max_num_pipelines_per_indexer > 1 {
+                if self.num_pipelines > 1 {
                     bail!("Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka sources. open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types");
                 }
             }
@@ -111,7 +110,10 @@ impl SourceConfigForSerialization {
         if let Some(transform_config) = &self.transform {
             if matches!(
                 self.input_format,
-                SourceInputFormat::OtlpTraceJson | SourceInputFormat::OtlpTraceProtobuf
+                SourceInputFormat::OtlpLogsJson
+                    | SourceInputFormat::OtlpLogsProtobuf
+                    | SourceInputFormat::OtlpTracesJson
+                    | SourceInputFormat::OtlpTracesProtobuf
             ) {
                 bail!("VRL transforms are not supported for OTLP input formats");
             }
@@ -120,8 +122,7 @@ impl SourceConfigForSerialization {
 
         Ok(SourceConfig {
             source_id: self.source_id,
-            max_num_pipelines_per_indexer,
-            desired_num_pipelines,
+            num_pipelines,
             enabled: self.enabled,
             source_params: self.source_params,
             transform_config: self.transform,
@@ -130,12 +131,11 @@ impl SourceConfigForSerialization {
     }
 }
 
-impl From<SourceConfig> for SourceConfigV0_7 {
+impl From<SourceConfig> for SourceConfigV0_8 {
     fn from(source_config: SourceConfig) -> Self {
-        SourceConfigV0_7 {
+        SourceConfigV0_8 {
             source_id: source_config.source_id,
-            max_num_pipelines_per_indexer: source_config.max_num_pipelines_per_indexer.get(),
-            desired_num_pipelines: source_config.desired_num_pipelines.get(),
+            num_pipelines: source_config.num_pipelines.get(),
             enabled: source_config.enabled,
             source_params: source_config.source_params,
             transform: source_config.transform_config,
@@ -146,7 +146,7 @@ impl From<SourceConfig> for SourceConfigV0_7 {
 
 impl From<SourceConfig> for VersionedSourceConfig {
     fn from(source_config: SourceConfig) -> Self {
-        VersionedSourceConfig::V0_7(source_config.into())
+        VersionedSourceConfig::V0_8(source_config.into())
     }
 }
 
@@ -154,7 +154,7 @@ impl TryFrom<VersionedSourceConfig> for SourceConfig {
     type Error = anyhow::Error;
 
     fn try_from(versioned_source_config: VersionedSourceConfig) -> anyhow::Result<Self> {
-        let v1: SourceConfigV0_7 = versioned_source_config.into();
+        let v1: SourceConfigV0_8 = versioned_source_config.into();
         v1.validate_and_build()
     }
 }
@@ -163,7 +163,7 @@ fn default_max_num_pipelines_per_indexer() -> usize {
     1
 }
 
-fn default_desired_num_pipelines() -> usize {
+fn default_num_pipelines() -> usize {
     1
 }
 
@@ -172,6 +172,7 @@ fn default_source_enabled() -> bool {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SourceConfigV0_7 {
     pub source_id: String,
 
@@ -181,7 +182,7 @@ pub struct SourceConfigV0_7 {
     )]
     pub max_num_pipelines_per_indexer: usize,
 
-    #[serde(default = "default_desired_num_pipelines")]
+    #[serde(default = "default_num_pipelines")]
     pub desired_num_pipelines: usize,
 
     // Denotes if this source is enabled.
@@ -197,4 +198,49 @@ pub struct SourceConfigV0_7 {
     // Denotes the input data format.
     #[serde(default)]
     pub input_format: SourceInputFormat,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SourceConfigV0_8 {
+    pub source_id: String,
+
+    #[serde(default = "default_num_pipelines")]
+    pub num_pipelines: usize,
+
+    // Denotes if this source is enabled.
+    #[serde(default = "default_source_enabled")]
+    pub enabled: bool,
+
+    #[serde(flatten)]
+    pub source_params: SourceParams,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transform: Option<TransformConfig>,
+
+    // Denotes the input data format.
+    #[serde(default)]
+    pub input_format: SourceInputFormat,
+}
+
+impl From<SourceConfigV0_7> for SourceConfigV0_8 {
+    fn from(source_config_v0_7: SourceConfigV0_7) -> Self {
+        let SourceConfigV0_7 {
+            source_id,
+            max_num_pipelines_per_indexer: _,
+            desired_num_pipelines,
+            enabled,
+            source_params,
+            transform,
+            input_format,
+        } = source_config_v0_7;
+        SourceConfigV0_8 {
+            source_id,
+            num_pipelines: desired_num_pipelines,
+            enabled,
+            source_params,
+            transform,
+            input_format,
+        }
+    }
 }

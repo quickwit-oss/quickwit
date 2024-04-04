@@ -21,11 +21,14 @@ use std::any::TypeId;
 use std::fmt;
 use std::pin::Pin;
 
+use bytesize::ByteSize;
 use futures::{stream, Stream, StreamExt, TryStreamExt};
+use prometheus::IntGauge;
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream, WatchStream};
 use tracing::warn;
 
+use crate::metrics::GaugeGuard;
 use crate::tower::RpcName;
 
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + Unpin + 'static>>;
@@ -77,9 +80,34 @@ where T: Send + 'static
         (sender, receiver.into())
     }
 
+    pub fn new_bounded_with_gauge(
+        capacity: usize,
+        gauge: &'static IntGauge,
+    ) -> (TrackedSender<T>, Self) {
+        let (sender, receiver) = mpsc::channel(capacity);
+        let tracked_sender = TrackedSender { sender, gauge };
+        let receiver_stream =
+            ReceiverStream::new(receiver).map(|value: InFlightValue<T>| value.into_inner());
+        let service_stream = Self {
+            inner: Box::pin(receiver_stream),
+        };
+        (tracked_sender, service_stream)
+    }
+
     pub fn new_unbounded() -> (mpsc::UnboundedSender<T>, Self) {
         let (sender, receiver) = mpsc::unbounded_channel();
         (sender, receiver.into())
+    }
+
+    pub fn new_unbounded_with_gauge(gauge: &'static IntGauge) -> (TrackedUnboundedSender<T>, Self) {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let tracked_sender = TrackedUnboundedSender { sender, gauge };
+        let receiver_stream = UnboundedReceiverStream::new(receiver)
+            .map(|value: InFlightValue<T>| value.into_inner());
+        let service_stream = Self {
+            inner: Box::pin(receiver_stream),
+        };
+        (tracked_sender, service_stream)
     }
 }
 
@@ -205,9 +233,66 @@ where T: RpcName
     }
 }
 
+pub struct InFlightValue<T>(T, #[allow(dead_code)] GaugeGuard);
+
+impl<T> fmt::Debug for InFlightValue<T>
+where T: fmt::Debug
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
+
+impl<T> InFlightValue<T> {
+    pub fn new(value: T, value_size: ByteSize, gauge: &'static IntGauge) -> Self {
+        let mut gauge_guard = GaugeGuard::from_gauge(gauge);
+        gauge_guard.add(value_size.as_u64() as i64);
+
+        Self(value, gauge_guard)
+    }
+
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+pub struct TrackedSender<T> {
+    sender: mpsc::Sender<InFlightValue<T>>,
+    gauge: &'static IntGauge,
+}
+
+impl<T> TrackedSender<T> {
+    pub async fn send(
+        &self,
+        value: T,
+        value_size: ByteSize,
+    ) -> Result<(), mpsc::error::SendError<T>> {
+        self.sender
+            .send(InFlightValue::new(value, value_size, self.gauge))
+            .await
+            .map_err(|send_error| mpsc::error::SendError(send_error.0 .0))
+    }
+}
+
+pub struct TrackedUnboundedSender<T> {
+    sender: mpsc::UnboundedSender<InFlightValue<T>>,
+    gauge: &'static IntGauge,
+}
+
+impl<T> TrackedUnboundedSender<T> {
+    pub fn send(&self, value: T, value_size: ByteSize) -> Result<(), mpsc::error::SendError<T>> {
+        self.sender
+            .send(InFlightValue::new(value, value_size, self.gauge))
+            .map_err(|send_error| mpsc::error::SendError(send_error.0 .0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use once_cell::sync::Lazy;
+
     use super::*;
+    use crate::metrics::new_gauge;
 
     #[tokio::test]
     async fn test_service_stream_map() {
@@ -216,5 +301,49 @@ mod tests {
             .collect::<Vec<_>>()
             .await;
         assert_eq!(mapped_values, vec![0, 2, 4, 6]);
+    }
+
+    #[tokio::test]
+    async fn test_tracked_service_stream_bounded() {
+        static TEST_GAUGE: Lazy<IntGauge> =
+            Lazy::new(|| new_gauge("common", "help", "test_tracked_service_stream_bounded", &[]));
+
+        let (service_stream_tx, mut service_stream) =
+            ServiceStream::new_bounded_with_gauge(3, &TEST_GAUGE);
+
+        service_stream_tx.send(1, ByteSize(42)).await.unwrap();
+        assert_eq!(TEST_GAUGE.get(), 42);
+
+        service_stream_tx.send(2, ByteSize(1337)).await.unwrap();
+        assert_eq!(TEST_GAUGE.get(), 1379);
+
+        let value = service_stream.next().await.unwrap();
+        assert_eq!(value, 1);
+        assert_eq!(TEST_GAUGE.get(), 1337);
+    }
+
+    #[tokio::test]
+    async fn test_tracked_service_stream_unbounded() {
+        static TEST_GAUGE: Lazy<IntGauge> = Lazy::new(|| {
+            new_gauge(
+                "common",
+                "help",
+                "test_tracked_service_stream_unbounded",
+                &[],
+            )
+        });
+
+        let (service_stream_tx, mut service_stream) =
+            ServiceStream::new_unbounded_with_gauge(&TEST_GAUGE);
+
+        service_stream_tx.send(1, ByteSize(42)).unwrap();
+        assert_eq!(TEST_GAUGE.get(), 42);
+
+        service_stream_tx.send(2, ByteSize(1337)).unwrap();
+        assert_eq!(TEST_GAUGE.get(), 1379);
+
+        let value = service_stream.next().await.unwrap();
+        assert_eq!(value, 1);
+        assert_eq!(TEST_GAUGE.get(), 1337);
     }
 }

@@ -26,7 +26,7 @@ use quickwit_proto::ingest::ingester::{PersistFailure, PersistFailureReason, Per
 use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
-use quickwit_proto::ingest::IngestV2Error;
+use quickwit_proto::ingest::{IngestV2Error, IngestV2Result};
 use quickwit_proto::types::{NodeId, SubrequestId};
 use tracing::warn;
 
@@ -112,12 +112,15 @@ impl IngestWorkbench {
             GetOrCreateOpenShardsFailureReason::SourceNotFound => {
                 SubworkbenchFailure::SourceNotFound
             }
+            GetOrCreateOpenShardsFailureReason::NoIngestersAvailable => {
+                SubworkbenchFailure::NoShardsAvailable
+            }
             GetOrCreateOpenShardsFailureReason::Unspecified => {
                 warn!(
                     "failure reason for subrequest `{}` is unspecified",
                     open_shards_failure.subrequest_id
                 );
-                SubworkbenchFailure::Internal("unspecified failure reason".to_string())
+                SubworkbenchFailure::Internal
             }
         };
         self.record_failure(open_shards_failure.subrequest_id, last_failure);
@@ -141,11 +144,16 @@ impl IngestWorkbench {
         persist_error: IngestV2Error,
         persist_summary: PersistRequestSummary,
     ) {
-        // Persist responses use dedicated failure reasons for `IngesterUnavailable`,
-        // `NotFound`, and `TooManyRequests`: in reality, we should never have to handle these cases
-        // here.
+        // Persist responses use dedicated failure reasons for `ShardNotFound` and
+        // `TooManyRequests`: in reality, we should never have to handle these cases here.
         match persist_error {
-            IngestV2Error::IngesterUnavailable { .. } | IngestV2Error::Unavailable(_) => {
+            IngestV2Error::Timeout(_) => {
+                for subrequest_id in persist_summary.subrequest_ids {
+                    let failure = SubworkbenchFailure::Persist(PersistFailureReason::Timeout);
+                    self.record_failure(subrequest_id, failure);
+                }
+            }
+            IngestV2Error::Unavailable(_) => {
                 self.unavailable_leaders.insert(persist_summary.leader_id);
 
                 for subrequest_id in persist_summary.subrequest_ids {
@@ -154,10 +162,9 @@ impl IngestWorkbench {
             }
             IngestV2Error::Internal(_)
             | IngestV2Error::ShardNotFound { .. }
-            | IngestV2Error::Timeout(_)
             | IngestV2Error::TooManyRequests => {
                 for subrequest_id in persist_summary.subrequest_ids {
-                    self.record_internal_error(subrequest_id, persist_error.to_string());
+                    self.record_internal_error(subrequest_id);
                 }
             }
         }
@@ -188,11 +195,11 @@ impl IngestWorkbench {
         self.record_failure(subrequest_id, SubworkbenchFailure::Unavailable);
     }
 
-    fn record_internal_error(&mut self, subrequest_id: SubrequestId, error_message: String) {
-        self.record_failure(subrequest_id, SubworkbenchFailure::Internal(error_message));
+    fn record_internal_error(&mut self, subrequest_id: SubrequestId) {
+        self.record_failure(subrequest_id, SubworkbenchFailure::Internal);
     }
 
-    pub fn into_ingest_response(self) -> IngestResponseV2 {
+    pub fn into_ingest_result(self) -> IngestV2Result<IngestResponseV2> {
         let num_subworkbenches = self.subworkbenches.len();
         let mut successes = Vec::with_capacity(self.num_successes);
         let mut failures = Vec::with_capacity(num_subworkbenches - self.num_successes);
@@ -217,12 +224,28 @@ impl IngestWorkbench {
                 failures.push(failure);
             }
         }
-        assert_eq!(successes.len() + failures.len(), num_subworkbenches);
+        let num_successes = successes.len();
+        let num_failures = failures.len();
+        assert_eq!(num_successes + num_failures, num_subworkbenches);
 
-        IngestResponseV2 {
+        if self.num_successes == 0
+            && num_failures > 0
+            && failures.iter().all(|failure| {
+                matches!(
+                    failure.reason(),
+                    IngestFailureReason::RateLimited
+                        | IngestFailureReason::ResourceExhausted
+                        | IngestFailureReason::Timeout
+                )
+            })
+        {
+            return Err(IngestV2Error::TooManyRequests);
+        }
+        let response = IngestResponseV2 {
             successes,
             failures,
-        }
+        };
+        Ok(response)
     }
 
     #[cfg(test)]
@@ -254,7 +277,7 @@ pub(super) enum SubworkbenchFailure {
     // This is an error returned by the ingester: e.g. shard not found, shard closed, rate
     // limited, resource exhausted, etc.
     Persist(PersistFailureReason),
-    Internal(String),
+    Internal,
     // The ingester is no longer in the pool or a transport error occurred.
     Unavailable,
 }
@@ -265,7 +288,7 @@ impl SubworkbenchFailure {
         match self {
             Self::IndexNotFound => IngestFailureReason::IndexNotFound,
             Self::SourceNotFound => IngestFailureReason::SourceNotFound,
-            Self::Internal(_) => IngestFailureReason::Internal,
+            Self::Internal => IngestFailureReason::Internal,
             Self::NoShardsAvailable => IngestFailureReason::NoShardsAvailable,
             // In our last attempt, we did not manage to reach the ingester.
             // We can consider that as a no shards available.
@@ -304,7 +327,7 @@ impl IngestSubworkbench {
         match self.last_failure_opt {
             Some(SubworkbenchFailure::IndexNotFound) => false,
             Some(SubworkbenchFailure::SourceNotFound) => false,
-            Some(SubworkbenchFailure::Internal(_)) => true,
+            Some(SubworkbenchFailure::Internal) => true,
             Some(SubworkbenchFailure::NoShardsAvailable) => true,
             Some(SubworkbenchFailure::Persist(_)) => true,
             Some(SubworkbenchFailure::Unavailable) => true,
@@ -333,8 +356,7 @@ mod tests {
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 
-        subworkbench.last_failure_opt =
-            Some(SubworkbenchFailure::Internal("timed out".to_string()));
+        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Internal);
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 
@@ -508,6 +530,32 @@ mod tests {
     }
 
     #[test]
+    fn test_ingest_workbench_record_persist_error_timeout() {
+        let ingest_subrequests = vec![IngestSubrequest {
+            subrequest_id: 0,
+            ..Default::default()
+        }];
+        let mut workbench = IngestWorkbench::new(ingest_subrequests, 1);
+
+        let persist_error = IngestV2Error::Timeout("request timed out".to_string());
+        let leader_id = NodeId::from("test-leader");
+        let persist_summary = PersistRequestSummary {
+            leader_id: leader_id.clone(),
+            subrequest_ids: vec![0],
+        };
+        workbench.record_persist_error(persist_error, persist_summary);
+
+        let subworkbench = workbench.subworkbenches.get(&0).unwrap();
+        assert_eq!(subworkbench.num_attempts, 1);
+
+        assert!(matches!(
+            subworkbench.last_failure_opt,
+            Some(SubworkbenchFailure::Persist(PersistFailureReason::Timeout))
+        ));
+        assert!(subworkbench.persist_success_opt.is_none());
+    }
+
+    #[test]
     fn test_ingest_workbench_record_persist_error_unavailable() {
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -555,7 +603,7 @@ mod tests {
 
         assert!(matches!(
             &subworkbench.last_failure_opt,
-            Some(SubworkbenchFailure::Internal(message)) if message.contains("IO error")
+            Some(SubworkbenchFailure::Internal)
         ));
         assert!(subworkbench.persist_success_opt.is_none());
     }
@@ -612,5 +660,54 @@ mod tests {
             Some(SubworkbenchFailure::NoShardsAvailable)
         ));
         assert_eq!(subworkbench.num_attempts, 1);
+    }
+
+    #[test]
+    fn test_ingest_workbench_into_ingest_result() {
+        let workbench = IngestWorkbench::new(Vec::new(), 0);
+        let response = workbench.into_ingest_result().unwrap();
+        assert!(response.successes.is_empty());
+        assert!(response.failures.is_empty());
+
+        let ingest_subrequests = vec![
+            IngestSubrequest {
+                subrequest_id: 0,
+                ..Default::default()
+            },
+            IngestSubrequest {
+                subrequest_id: 1,
+                ..Default::default()
+            },
+        ];
+        let mut workbench = IngestWorkbench::new(ingest_subrequests, 1);
+        let persist_success = PersistSuccess {
+            ..Default::default()
+        };
+        let subworkbench = workbench.subworkbenches.get_mut(&0).unwrap();
+        subworkbench.persist_success_opt = Some(persist_success);
+
+        workbench.record_no_shards_available(1);
+
+        let response = workbench.into_ingest_result().unwrap();
+        assert_eq!(response.successes.len(), 1);
+        assert_eq!(response.successes[0].subrequest_id, 0);
+
+        assert_eq!(response.failures.len(), 1);
+        assert_eq!(response.failures[0].subrequest_id, 1);
+        assert_eq!(
+            response.failures[0].reason(),
+            IngestFailureReason::NoShardsAvailable
+        );
+
+        let ingest_subrequests = vec![IngestSubrequest {
+            subrequest_id: 0,
+            ..Default::default()
+        }];
+        let mut workbench = IngestWorkbench::new(ingest_subrequests, 1);
+        let failure = SubworkbenchFailure::Persist(PersistFailureReason::Timeout);
+        workbench.record_failure(0, failure);
+
+        let error = workbench.into_ingest_result().unwrap_err();
+        assert_eq!(error, IngestV2Error::TooManyRequests);
     }
 }

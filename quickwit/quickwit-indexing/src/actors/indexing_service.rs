@@ -711,13 +711,13 @@ impl IndexingService {
             .collect();
         debug!(queues=?queues, "list ingest API queues");
 
-        let indexes_metadatas = self
+        let indexes_metadata = self
             .metastore
-            .clone()
             .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await?
-            .deserialize_indexes_metadata()?;
-        let index_ids: HashSet<String> = indexes_metadatas
+            .deserialize_indexes_metadata()
+            .await?;
+        let index_ids: HashSet<String> = indexes_metadata
             .into_iter()
             .map(|index_metadata| index_metadata.index_id().to_string())
             .collect();
@@ -964,8 +964,7 @@ mod tests {
         // Test `spawn_pipeline`.
         let source_config_0 = SourceConfig {
             source_id: "test-indexing-service--source-0".to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1052,8 +1051,7 @@ mod tests {
         // Test `supervise_pipelines`
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Vec(VecSourceParams {
                 docs: Vec::new(),
@@ -1123,8 +1121,7 @@ mod tests {
         // Test `apply plan`.
         let source_config_1 = SourceConfig {
             source_id: "test-indexing-service--source-1".to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1173,8 +1170,7 @@ mod tests {
         };
         let source_config_2 = SourceConfig {
             source_id: "test-indexing-service--source-2".to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-            desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+            num_pipelines: NonZeroUsize::new(2).unwrap(),
             enabled: true,
             source_params: SourceParams::Kafka(kafka_params),
             transform_config: None,
@@ -1330,8 +1326,7 @@ mod tests {
 
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1460,8 +1455,7 @@ mod tests {
         let mut index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
-            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1474,13 +1468,10 @@ mod tests {
         let index_metadata_clone = index_metadata.clone();
         metastore
             .expect_list_indexes_metadata()
-            .returning(move |_request| {
-                let list_indexes_metadatas_response =
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
-                        index_metadata_clone.clone(),
-                    ])
-                    .unwrap();
-                Ok(list_indexes_metadatas_response)
+            .return_once(move |_request| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata_clone,
+                ]))
             });
         metastore.expect_index_metadata().returning(move |_| {
             Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())

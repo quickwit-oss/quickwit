@@ -744,7 +744,10 @@ where
             .hello(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                HelloRequest::rpc_name(),
+            ))
     }
     async fn goodbye(
         &mut self,
@@ -754,7 +757,10 @@ where
             .goodbye(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                GoodbyeRequest::rpc_name(),
+            ))
     }
     async fn ping(
         &mut self,
@@ -766,9 +772,16 @@ where
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
                 let stream = quickwit_common::ServiceStream::from(streaming);
-                stream.map_err(crate::error::grpc_status_to_service_error)
+                stream
+                    .map_err(|status| crate::error::grpc_status_to_service_error(
+                        status,
+                        PingRequest::rpc_name(),
+                    ))
             })
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                PingRequest::rpc_name(),
+            ))
     }
     async fn check_connectivity(&mut self) -> anyhow::Result<()> {
         if self.connection_addrs_rx.borrow().len() == 0 {

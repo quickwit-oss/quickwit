@@ -118,15 +118,14 @@
           "message"
         ]
       },
-      "version": "0.7"
+      "version": "0.8"
     },
     "index_uid": "my-index:00000000000000000000000000",
     "sources": [
       {
-        "desired_num_pipelines": 2,
         "enabled": true,
         "input_format": "json",
-        "max_num_pipelines_per_indexer": 2,
+        "num_pipelines": 2,
         "params": {
           "client_params": {},
           "topic": "kafka-topic"
@@ -137,10 +136,10 @@
           "script": ".message = downcase(string!(.message))",
           "timezone": "UTC"
         },
-        "version": "0.7"
+        "version": "0.8"
       }
     ],
-    "version": "0.7"
+    "version": "0.8"
   },
   "splits": [
     {
@@ -173,8 +172,8 @@
       },
       "uncompressed_docs_size_in_bytes": 234234,
       "update_timestamp": 1789,
-      "version": "0.7"
+      "version": "0.8"
     }
   ],
-  "version": "0.7"
+  "version": "0.8"
 }

@@ -552,7 +552,7 @@ mod tests {
         let hello = HelloImpl::default();
         let grpc_server_adapter = HelloGrpcServerAdapter::new(hello);
         let grpc_server = HelloGrpcServer::new(grpc_server_adapter);
-        let addr: SocketAddr = "127.0.0.1:8888".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:11111".parse().unwrap();
 
         tokio::spawn({
             async move {
@@ -564,7 +564,7 @@ mod tests {
             }
         });
         let (balance_channel, balance_channel_tx) = BalanceChannel::new();
-        let channel = Endpoint::from_static("http://127.0.0.1:8888").connect_lazy();
+        let channel = Endpoint::from_static("http://127.0.0.1:11111").connect_lazy();
         balance_channel_tx
             .send(Change::Insert("foo", channel))
             .unwrap();
@@ -624,6 +624,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_transport_errors_handling() {
+        quickwit_common::setup_logging_for_tests();
+
         let addr: SocketAddr = "127.0.0.1:9999".parse().unwrap();
         let channel = Endpoint::from_static("http://127.0.0.1:9999")
             .timeout(Duration::from_millis(100))

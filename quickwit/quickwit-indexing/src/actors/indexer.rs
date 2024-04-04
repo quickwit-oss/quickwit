@@ -33,6 +33,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Command, Handler, Mailbox, QueueCapacity,
 };
 use quickwit_common::io::IoControls;
+use quickwit_common::metrics::GaugeGuard;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
@@ -151,10 +152,10 @@ impl IndexerState {
         other_split_opt: &'a mut Option<IndexedSplitBuilder>,
         counter: &'a mut IndexerCounters,
         ctx: &ActorContext<Indexer>,
-    ) -> anyhow::Result<&'a mut IndexedSplitBuilder> {
+    ) -> anyhow::Result<(&'a mut IndexedSplitBuilder, bool)> {
         let num_splits = splits.len();
         match splits.entry(partition_id) {
-            Entry::Occupied(indexed_split) => Ok(indexed_split.into_mut()),
+            Entry::Occupied(indexed_split) => Ok((indexed_split.into_mut(), false)),
             Entry::Vacant(vacant_entry) => {
                 if num_splits as u32 >= self.max_num_partitions.get() {
                     // In order to avoid exceeding max_num_partitions, we map the document to the
@@ -172,11 +173,11 @@ impl IndexerState {
                         )?;
                         *other_split_opt = Some(new_other_split);
                     }
-                    Ok(other_split_opt.as_mut().unwrap())
+                    Ok((other_split_opt.as_mut().unwrap(), true))
                 } else {
                     let indexed_split =
                         self.create_indexed_split_builder(partition_id, last_delete_opstamp, ctx)?;
-                    Ok(vacant_entry.insert(indexed_split))
+                    Ok((vacant_entry.insert(indexed_split), true))
                 }
             }
         }
@@ -224,6 +225,10 @@ impl IndexerState {
         let publish_lock = self.publish_lock.clone();
         let publish_token_opt = self.publish_token_opt.clone();
 
+        let mut split_builders_guard =
+            GaugeGuard::from_gauge(&crate::metrics::INDEXER_METRICS.split_builders);
+        split_builders_guard.add(1);
+
         let workbench = IndexingWorkbench {
             workbench_id,
             create_instant: Instant::now(),
@@ -236,7 +241,12 @@ impl IndexerState {
             publish_lock,
             publish_token_opt,
             last_delete_opstamp,
-            memory_usage: ByteSize(0),
+            memory_usage: GaugeGuard::from_gauge(
+                &quickwit_common::metrics::MEMORY_METRICS
+                    .in_flight
+                    .index_writer,
+            ),
+            split_builders_guard,
         };
         Ok(workbench)
     }
@@ -294,7 +304,7 @@ impl IndexerState {
             .source_delta
             .extend(batch.checkpoint_delta)
             .context("batch delta does not follow indexer checkpoint")?;
-        let mut memory_usage_delta: u64 = 0;
+        let mut memory_usage_delta: i64 = 0;
         counters.num_doc_batches_in_workbench += 1;
         for doc in batch.docs {
             let ProcessedDoc {
@@ -304,7 +314,7 @@ impl IndexerState {
                 num_bytes,
             } = doc;
             counters.num_docs_in_workbench += 1;
-            let indexed_split: &mut IndexedSplitBuilder = self.get_or_create_indexed_split(
+            let (indexed_split, split_created) = self.get_or_create_indexed_split(
                 partition,
                 *last_delete_opstamp,
                 indexed_splits,
@@ -313,6 +323,11 @@ impl IndexerState {
                 ctx,
             )?;
             let mem_usage_before = indexed_split.index_writer.mem_usage() as u64;
+            if split_created {
+                // The split was just created. We need to account for the initial index writer's
+                // memory usage.
+                memory_usage_delta += mem_usage_before as i64;
+            }
             indexed_split.split_attrs.uncompressed_docs_size_in_bytes += num_bytes as u64;
             indexed_split.split_attrs.num_docs += 1;
             if let Some(timestamp) = timestamp_opt {
@@ -324,10 +339,10 @@ impl IndexerState {
                 .add_document(doc)
                 .context("failed to add document")?;
             let mem_usage_after = indexed_split.index_writer.mem_usage() as u64;
-            memory_usage_delta += mem_usage_after - mem_usage_before;
+            memory_usage_delta += mem_usage_after as i64 - mem_usage_before as i64;
             ctx.record_progress();
         }
-        *memory_usage = ByteSize(memory_usage.as_u64() + memory_usage_delta);
+        memory_usage.add(memory_usage_delta);
         Ok(())
     }
 }
@@ -353,7 +368,8 @@ struct IndexingWorkbench {
     // We use this value to set the `delete_opstamp` of the workbench splits.
     last_delete_opstamp: u64,
     // Number of bytes declared as used by tantivy.
-    memory_usage: ByteSize,
+    memory_usage: GaugeGuard,
+    split_builders_guard: GaugeGuard,
 }
 
 pub struct Indexer {
@@ -570,9 +586,9 @@ impl Indexer {
 
     fn memory_usage(&self) -> ByteSize {
         if let Some(workbench) = &self.indexing_workbench_opt {
-            workbench.memory_usage
+            ByteSize(workbench.memory_usage.get() as u64)
         } else {
-            ByteSize(0)
+            ByteSize(0u64)
         }
     }
 
@@ -591,7 +607,8 @@ impl Indexer {
                 ctx,
             )
             .await?;
-        if self.memory_usage() >= self.indexer_state.indexing_settings.resources.heap_size {
+        let memory_usage = self.memory_usage();
+        if memory_usage >= self.indexer_state.indexing_settings.resources.heap_size {
             self.send_to_serializer(CommitTrigger::MemoryLimit, ctx)
                 .await?;
         }
@@ -623,6 +640,8 @@ impl Indexer {
             publish_token_opt,
             batch_parent_span,
             indexing_permit,
+            memory_usage,
+            split_builders_guard,
             ..
         }) = self.indexing_workbench_opt.take()
         else {
@@ -674,6 +693,8 @@ impl Indexer {
                 publish_token_opt,
                 commit_trigger,
                 batch_parent_span,
+                memory_usage,
+                _split_builders_guard: split_builders_guard,
             },
         )
         .await?;
@@ -883,7 +904,7 @@ mod tests {
         let body_field = schema.get_field("body").unwrap();
         let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
-        indexing_settings.resources.heap_size = ByteSize::mb(5);
+        indexing_settings.resources.heap_size = ByteSize::mb(16);
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MetastoreServiceClient::mock();
         metastore.expect_publish_splits().never();
@@ -1214,7 +1235,8 @@ mod tests {
         let body_field = schema.get_field("body").unwrap();
 
         let indexing_directory = TempDirectory::for_test();
-        let indexing_settings = IndexingSettings::for_test();
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.resources.heap_size = ByteSize::mb(100);
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MetastoreServiceClient::mock();
         metastore.expect_publish_splits().never();
@@ -1310,7 +1332,8 @@ mod tests {
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
         let indexing_directory = TempDirectory::for_test();
-        let indexing_settings = IndexingSettings::for_test();
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.resources.heap_size = ByteSize::gb(5);
         let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_last_delete_opstamp()

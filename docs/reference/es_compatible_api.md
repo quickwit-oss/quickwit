@@ -278,12 +278,6 @@ First, the client needs to call the `search api` with a `scroll` query parameter
 
 Each subsequent call to the `_search/scroll` endpoint will return a new `scroll_id` pointing to the next page.
 
-:::caution
-
-The scroll API should not be used to fetch above the 10,000th result.
-
-:::
-
 ## Query DSL
 
 [Elasticsearch Query DSL reference](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl.html).

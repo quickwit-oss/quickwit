@@ -26,13 +26,14 @@ use crate::{DocMapping, IndexingSettings, RetentionPolicy, SearchSettings};
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub enum VersionedIndexTemplate {
-    #[serde(rename = "0.7")]
-    V0_7(IndexTemplateV0_7),
+    #[serde(rename = "0.8")]
+    #[serde(alias = "0.7")]
+    V0_8(IndexTemplateV0_8),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct IndexTemplateV0_7 {
+pub struct IndexTemplateV0_8 {
     #[schema(value_type = String)]
     pub template_id: IndexTemplateId,
     #[schema(value_type = Vec<String>)]
@@ -56,36 +57,36 @@ pub struct IndexTemplateV0_7 {
 impl From<VersionedIndexTemplate> for IndexTemplate {
     fn from(versioned_index_template: VersionedIndexTemplate) -> Self {
         match versioned_index_template {
-            VersionedIndexTemplate::V0_7(v0_7) => v0_7.into(),
+            VersionedIndexTemplate::V0_8(v0_8) => v0_8.into(),
         }
     }
 }
 
 impl From<IndexTemplate> for VersionedIndexTemplate {
     fn from(index_template: IndexTemplate) -> Self {
-        VersionedIndexTemplate::V0_7(index_template.into())
+        VersionedIndexTemplate::V0_8(index_template.into())
     }
 }
 
-impl From<IndexTemplateV0_7> for IndexTemplate {
-    fn from(index_template_v0_7: IndexTemplateV0_7) -> Self {
+impl From<IndexTemplateV0_8> for IndexTemplate {
+    fn from(index_template_v0_8: IndexTemplateV0_8) -> Self {
         IndexTemplate {
-            template_id: index_template_v0_7.template_id,
-            index_id_patterns: index_template_v0_7.index_id_patterns,
-            index_root_uri: index_template_v0_7.index_root_uri,
-            priority: index_template_v0_7.priority,
-            description: index_template_v0_7.description,
-            doc_mapping: index_template_v0_7.doc_mapping,
-            indexing_settings: index_template_v0_7.indexing_settings,
-            search_settings: index_template_v0_7.search_settings,
-            retention_policy_opt: index_template_v0_7.retention,
+            template_id: index_template_v0_8.template_id,
+            index_id_patterns: index_template_v0_8.index_id_patterns,
+            index_root_uri: index_template_v0_8.index_root_uri,
+            priority: index_template_v0_8.priority,
+            description: index_template_v0_8.description,
+            doc_mapping: index_template_v0_8.doc_mapping,
+            indexing_settings: index_template_v0_8.indexing_settings,
+            search_settings: index_template_v0_8.search_settings,
+            retention_policy_opt: index_template_v0_8.retention,
         }
     }
 }
 
-impl From<IndexTemplate> for IndexTemplateV0_7 {
+impl From<IndexTemplate> for IndexTemplateV0_8 {
     fn from(index_template: IndexTemplate) -> Self {
-        IndexTemplateV0_7 {
+        IndexTemplateV0_8 {
             template_id: index_template.template_id,
             index_id_patterns: index_template.index_id_patterns,
             index_root_uri: index_template.index_root_uri,

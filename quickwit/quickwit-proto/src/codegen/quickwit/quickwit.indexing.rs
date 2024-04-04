@@ -460,7 +460,10 @@ where
             .apply_indexing_plan(request)
             .await
             .map(|response| response.into_inner())
-            .map_err(crate::error::grpc_status_to_service_error)
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ApplyIndexingPlanRequest::rpc_name(),
+            ))
     }
 }
 #[derive(Debug)]

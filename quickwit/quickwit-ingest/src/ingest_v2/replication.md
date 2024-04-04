@@ -9,14 +9,20 @@ Two gRPC streams back the independent streams of requests and responses between 
 ### Life of a happy persist request
 1. Leader receives a persist request pre-assigned to a shard from a router.
 
-1. Leader writes the data to the corresponding mrecordlog queue and records the new position of the queue called `primary_position`.
-
-1. Leader sends replicate request to follower of the shard via the SYN replication stream.
+1. Leader forwards replicate request to follower of the shard via the SYN replication stream.
 
 1. Follower receives the replicate request, writes the data to its replica queue, and records the new position of the queue called `replica_position`.
 
 1. Follower returns replicate response to leader via the ACK replication stream.
 
-1. Leader records the new position of the replica queue. It should match the `primary_position`.
+1. Leader records the new position of the replica queue.
+
+1. Leader writes the data to its local mrecordlog queue and records the new position of the queue called `primary_position`.  It should match the `replica_position`.
 
 1. Leader return success persist response to router.
+
+### Replication stream errors
+
+- When a replication request fails, the leader and follower close the shard(s) targetted by the request.
+
+- When a replication stream fails (transport error, timeout), the leader and follower close the shard(s) targetted by the stream. Then, the leader reopens a new stream if necessary.

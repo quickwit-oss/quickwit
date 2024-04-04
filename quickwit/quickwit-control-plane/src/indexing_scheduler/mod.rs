@@ -172,7 +172,7 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::NonSharded {
-                        num_pipelines: source_config.desired_num_pipelines.get() as u32,
+                        num_pipelines: source_config.num_pipelines.get() as u32,
                         // FIXME
                         load_per_pipeline: NonZeroU32::new(PIPELINE_FULL_CAPACITY.cpu_millis())
                             .unwrap(),
@@ -681,8 +681,7 @@ mod tests {
                 &index_uid,
                 SourceConfig {
                     source_id: "source_disabled".to_string(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(3).unwrap(),
-                    desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
+                    num_pipelines: NonZeroUsize::new(3).unwrap(),
                     enabled: false,
                     source_params: SourceParams::Kafka(kafka_source_params.clone()),
                     transform_config: None,
@@ -695,8 +694,7 @@ mod tests {
                 &index_uid,
                 SourceConfig {
                     source_id: "source_enabled".to_string(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    num_pipelines: NonZeroUsize::new(2).unwrap(),
                     enabled: true,
                     source_params: SourceParams::Kafka(kafka_source_params.clone()),
                     transform_config: None,
@@ -709,8 +707,7 @@ mod tests {
                 &index_uid,
                 SourceConfig {
                     source_id: "ingest_v1".to_string(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    num_pipelines: NonZeroUsize::new(2).unwrap(),
                     enabled: true,
                     // ingest v1
                     source_params: SourceParams::IngestApi,
@@ -724,8 +721,7 @@ mod tests {
                 &index_uid,
                 SourceConfig {
                     source_id: "ingest_v2".to_string(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    num_pipelines: NonZeroUsize::new(2).unwrap(),
                     enabled: true,
                     // ingest v2
                     source_params: SourceParams::Ingest,
@@ -740,8 +736,7 @@ mod tests {
                 &index_uid,
                 SourceConfig {
                     source_id: "ingest_v2_without_shard".to_string(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    num_pipelines: NonZeroUsize::new(2).unwrap(),
                     enabled: true,
                     // ingest v2
                     source_params: SourceParams::Ingest,
@@ -755,8 +750,7 @@ mod tests {
                 &index_uid,
                 SourceConfig {
                     source_id: "ingest_cli".to_string(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    num_pipelines: NonZeroUsize::new(2).unwrap(),
                     enabled: true,
                     // ingest v1
                     source_params: SourceParams::IngestCli,
@@ -857,13 +851,12 @@ mod tests {
 
     prop_compose! {
       fn gen_kafka_source()
-        (index_idx in 0usize..100usize, desired_num_pipelines in 1usize..51usize, max_num_pipelines_per_indexer in 1usize..5usize) -> (IndexUid, SourceConfig) {
+        (index_idx in 0usize..100usize, num_pipelines in 1usize..51usize) -> (IndexUid, SourceConfig) {
           let index_uid = IndexUid::from_parts(&format!("index-id-{index_idx}"), 0 /* this is the index uid */);
           let source_id = quickwit_common::rand::append_random_suffix("kafka-source");
           (index_uid, SourceConfig {
               source_id,
-              desired_num_pipelines: NonZeroUsize::new(desired_num_pipelines).unwrap(),
-              max_num_pipelines_per_indexer: NonZeroUsize::new(max_num_pipelines_per_indexer).unwrap(),
+              num_pipelines: NonZeroUsize::new(num_pipelines).unwrap(),
               enabled: true,
               source_params: kafka_source_params_for_test(),
               transform_config: None,

@@ -348,7 +348,7 @@ pub mod busy_detector {
 
     // LAST_UNPARK_TIMESTAMP and NEXT_DEBUG_TIMESTAMP are semantically micro-second
     // precision timestamps, but we use atomics to allow accessing them without locks.
-    thread_local!(static LAST_UNPARK_TIMESTAMP: AtomicU64 = AtomicU64::new(0));
+    thread_local!(static LAST_UNPARK_TIMESTAMP: AtomicU64 = const { AtomicU64::new(0) });
     static NEXT_DEBUG_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
     static SUPPRESSED_DEBUG_COUNT: AtomicU64 = AtomicU64::new(0);
 
