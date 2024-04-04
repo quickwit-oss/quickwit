@@ -382,6 +382,24 @@ mod tests {
                 Some(MatchAllOrNone::MatchAll)
             );
         }
+        {
+            let simplified_ast = TantivyBoolQuery {
+                must_not: vec![EmptyQuery.into(), EmptyQuery.into()],
+                ..Default::default()
+            }
+            .simplify();
+            let simplified_ast_bool = simplified_ast.as_bool_query().unwrap();
+            assert_eq!(simplified_ast_bool.must_not.len(), 2);
+            assert_eq!(
+                simplified_ast_bool.should.len() + simplified_ast_bool.filter.len(),
+                0
+            );
+            assert_eq!(simplified_ast_bool.must.len(), 1);
+            assert_eq!(
+                simplified_ast_bool.must[0].const_predicate(),
+                Some(MatchAllOrNone::MatchAll)
+            );
+        }
     }
 
     #[test]
