@@ -962,47 +962,18 @@ impl Ingester {
         Ok(DecommissionResponse {})
     }
 
-    pub async fn mrecordlog_summary(&mut self) -> IngestV2Result<MRecordlogSummary> {
+    pub async fn mrecordlog_summary(&mut self) -> IngestV2Result<mrecordlog::QueuesSummary> {
         let rw_mrecordlog = self.state.mrecordlog();
         // this is a debug api endpoint, with_lock_metrics! doesn't seem necessary
         let maybe_mrecordlog = rw_mrecordlog.read().await;
 
-        let summary = match &*maybe_mrecordlog {
-            Some(mrecordlog) => mrecordlog.summary(),
-            None => {
-                return Err(IngestV2Error::Internal(
-                    "mrecordlog isn't initialized".to_string(),
-                ))
-            }
-        };
-        drop(maybe_mrecordlog);
+        let summary = maybe_mrecordlog
+            .as_ref()
+            .ok_or_else(|| IngestV2Error::Internal("mrecordlog isn't initialized".to_string()))?
+            .summary();
 
-        let queues = summary
-            .queues
-            .into_iter()
-            .map(|(id, summary)| MRecordlogQueueSummary {
-                id,
-                start: summary.start,
-                end: summary.end,
-                file_number: summary.file_number,
-            })
-            .collect();
-
-        Ok(MRecordlogSummary { queues })
+        Ok(summary)
     }
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct MRecordlogSummary {
-    pub queues: Vec<MRecordlogQueueSummary>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct MRecordlogQueueSummary {
-    pub id: String,
-    pub start: u64,
-    pub end: Option<u64>,
-    pub file_number: Option<u64>,
 }
 
 #[async_trait]

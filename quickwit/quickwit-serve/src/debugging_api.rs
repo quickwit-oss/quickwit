@@ -51,19 +51,19 @@ pub(crate) fn debugging_routes(
 #[utoipa::path(
     get,
     tag = "Get debug informations about the control plane from the node viewpoint",
-    path = "/shard",
+    path = "/control_plane",
     responses(
         (status = 200, description = "Successfully fetched debugging info.", body = GetDebugStateRequestResponse),
     ),
 )]
-/// Get shard delated debug information.
+/// Get control plane related debug information.
 ///
 /// The format is not guaranteed to ever be stable, and is meant to provide some introspection to
 /// help with debugging.
 pub fn control_plane_debugging_handler(
     control_plane_service_client: ControlPlaneServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path("shard")
+    warp::path("control_plane")
         .and(warp::path::end())
         .and(with_arg(control_plane_service_client))
         .then(
