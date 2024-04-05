@@ -217,19 +217,27 @@ impl TantivyBoolQuery {
                 return TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchNone);
             }
         }
-        let num_children =
-            self.must.len() + self.should.len() + self.must_not.len() + self.filter.len();
-        if num_children == 1 {
-            if self.must_not.len() == 1 {
-                if self.must_not[0].const_predicate() == Some(MatchAllOrNone::MatchNone) {
-                    return MatchAllOrNone::MatchAll.into();
-                }
-                self.must.push(TantivyQueryAst::match_all());
-            } else if let Some(ast) = self.must.pop().or(self.should.pop()) {
-                return ast;
+        let has_positive_children =
+            !(self.must.is_empty() && self.should.is_empty() && self.filter.is_empty());
+        if !has_positive_children {
+            if self
+                .must_not
+                .iter()
+                .all(|must_not| must_not.const_predicate() == Some(MatchAllOrNone::MatchNone))
+            {
+                return MatchAllOrNone::MatchAll.into();
             }
-            // We do not optimize a single filter clause for the moment.
-            // We do need a mechanism to make sure we keep the boost of 0.
+            self.must.push(TantivyQueryAst::match_all());
+        } else {
+            let num_children =
+                self.must.len() + self.should.len() + self.must_not.len() + self.filter.len();
+            if num_children == 1 {
+                if let Some(ast) = self.must.pop().or(self.should.pop()) {
+                    return ast;
+                }
+                // We do not optimize a single filter clause for the moment.
+                // We do need a mechanism to make sure we keep the boost of 0.
+            }
         }
         TantivyQueryAst::Bool(self)
     }
@@ -355,25 +363,65 @@ mod tests {
             // const-score.
             assert!(bool_query.simplify().as_leaf().is_none());
         }
-        {
-            let tantivy_query = EmptyQuery.into();
-            let simplified_ast = TantivyBoolQuery {
-                must_not: vec![tantivy_query],
-                ..Default::default()
-            }
-            .simplify();
-            let simplified_ast_bool = simplified_ast.as_bool_query().unwrap();
-            assert_eq!(simplified_ast_bool.must_not.len(), 1);
-            assert_eq!(
-                simplified_ast_bool.should.len() + simplified_ast_bool.filter.len(),
-                0
-            );
-            assert_eq!(simplified_ast_bool.must.len(), 1);
-            assert_eq!(
-                simplified_ast_bool.must[0].const_predicate(),
-                Some(MatchAllOrNone::MatchAll)
-            );
+    }
+
+    #[test]
+    fn test_bool_negative_query_add_wildcard() {
+        let tantivy_query = EmptyQuery.into();
+        let simplified_ast = TantivyBoolQuery {
+            must_not: vec![tantivy_query],
+            ..Default::default()
         }
+        .simplify();
+        let simplified_ast_bool = simplified_ast.as_bool_query().unwrap();
+        assert_eq!(simplified_ast_bool.must_not.len(), 1);
+        assert_eq!(
+            simplified_ast_bool.should.len() + simplified_ast_bool.filter.len(),
+            0
+        );
+        assert_eq!(simplified_ast_bool.must.len(), 1);
+        assert_eq!(
+            simplified_ast_bool.must[0].const_predicate(),
+            Some(MatchAllOrNone::MatchAll)
+        );
+    }
+
+    #[test]
+    fn test_bool_multiple_negative_query_add_wildcard() {
+        let simplified_ast = TantivyBoolQuery {
+            must_not: vec![EmptyQuery.into(), EmptyQuery.into()],
+            ..Default::default()
+        }
+        .simplify();
+        let simplified_ast_bool = simplified_ast.as_bool_query().unwrap();
+        assert_eq!(simplified_ast_bool.must_not.len(), 2);
+        assert_eq!(
+            simplified_ast_bool.should.len() + simplified_ast_bool.filter.len(),
+            0
+        );
+        assert_eq!(simplified_ast_bool.must.len(), 1);
+        assert_eq!(
+            simplified_ast_bool.must[0].const_predicate(),
+            Some(MatchAllOrNone::MatchAll)
+        );
+    }
+
+    #[test]
+    fn test_bool_multiple_negative_query_with_positive() {
+        let simplified_ast = TantivyBoolQuery {
+            must: vec![EmptyQuery.into()],
+            must_not: vec![EmptyQuery.into(), EmptyQuery.into()],
+            ..Default::default()
+        }
+        .simplify();
+        let simplified_ast_bool = simplified_ast.as_bool_query().unwrap();
+        assert_eq!(simplified_ast_bool.must_not.len(), 2);
+        assert_eq!(
+            simplified_ast_bool.should.len() + simplified_ast_bool.filter.len(),
+            0
+        );
+        assert_eq!(simplified_ast_bool.must.len(), 1);
+        assert!(simplified_ast_bool.must[0].const_predicate().is_none(),);
     }
 
     #[test]
