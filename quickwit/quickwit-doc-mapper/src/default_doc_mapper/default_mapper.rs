@@ -519,7 +519,7 @@ fn zip_cloneable<T, I: Iterator<Item = T>, U: Clone>(iter: I, item: U) -> ZipClo
     }
 }
 
-/// An iterator which zip a value alongside another iterator, clonning it each time it yields,
+/// An iterator which zip a value alongside another iterator, cloning it each time it yields,
 /// except for the last iteration.
 #[derive(Default, Debug)]
 enum ZipCloneable<T, I: Iterator<Item = T>, U: Clone> {
@@ -714,6 +714,8 @@ impl DocMapper for DefaultDocMapper {
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     use quickwit_common::PathHasher;
     use quickwit_query::query_ast::query_ast_from_user_text;
@@ -2044,6 +2046,61 @@ mod tests {
                 default_token_stream.next().unwrap().text,
                 token_stream.next().unwrap().text
             );
+        }
+    }
+
+    struct CloneLimiter {
+        clone_left: Arc<AtomicUsize>,
+    }
+
+    impl Clone for CloneLimiter {
+        fn clone(&self) -> Self {
+            if self.clone_left.fetch_sub(1, Ordering::Relaxed) == 0 {
+                panic!("clone count exceeded");
+            }
+            CloneLimiter {
+                clone_left: self.clone_left.clone(),
+            }
+        }
+    }
+
+    impl CloneLimiter {
+        fn new(max_clone: usize) -> Self {
+            CloneLimiter {
+                clone_left: Arc::new(AtomicUsize::new(max_clone)),
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "clone count exceeded")]
+    fn test_clone_limiter_panic() {
+        let limiter = CloneLimiter::new(1);
+        let _ = limiter.clone();
+        let _ = limiter.clone();
+    }
+
+    #[test]
+    fn test_clone_limiter_doesnt_panic_early() {
+        let limiter = CloneLimiter::new(1);
+        let _ = limiter.clone();
+    }
+
+    #[test]
+    fn test_zip_cloneable() {
+        for (_val, _limiter) in super::zip_cloneable(std::iter::empty::<()>(), CloneLimiter::new(0))
+        {
+        }
+
+        for iter_len in 1..5 {
+            // to generate an iter with X items, we need only X-1 clone. In particular, for X=1, we
+            // don't need to clone
+            let limiter = CloneLimiter::new(iter_len - 1);
+            for ((val, _limiter), expected) in
+                super::zip_cloneable(0..iter_len, limiter).zip(0..iter_len)
+            {
+                assert_eq!(val, expected);
+            }
         }
     }
 }

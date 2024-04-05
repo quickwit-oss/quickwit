@@ -357,7 +357,9 @@ impl TextIndexingOptions {
         tokenizer: Option<QuickwitTextTokenizer>,
         record: Option<IndexRecordOption>,
     ) -> anyhow::Result<Self> {
-        Self::from_parts_text(true, tokenizer, record, false).map(Option::unwrap)
+        let text_index_options_opt = Self::from_parts_text(true, tokenizer, record, false)?;
+        let text_index_options = text_index_options_opt.expect("concatenate field must be indexed");
+        Ok(text_index_options)
     }
 
     fn to_parts_text(
