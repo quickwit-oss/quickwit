@@ -24,10 +24,11 @@ use once_cell::sync::Lazy;
 pub static INDEX_ID: Lazy<String> =
     Lazy::new(|| var("QW_LAMBDA_INDEX_ID").expect("QW_LAMBDA_INDEX_ID must be set"));
 
-/// Configure the fmt tracing subscriber to log span boundaries. This is very verbose and is
-/// only used to generate advanced KPIs from Lambda runs (e.g for blogpost benchmarks)
-pub static LOG_SPAN_BOUNDARIES: Lazy<bool> =
-    Lazy::new(|| var("QW_LAMBDA_LOG_SPAN_BOUNDARIES").is_ok_and(|v| v.as_str() == "true"));
+/// Configure the fmt tracing subscriber to log as json and include span
+/// boundaries. This is very verbose and is only used to generate advanced KPIs
+/// from Lambda runs (e.g for blog post benchmarks)
+pub static ENABLE_VERBOSE_JSON_LOGS: Lazy<bool> =
+    Lazy::new(|| var("QW_LAMBDA_ENABLE_VERBOSE_JSON_LOGS").is_ok_and(|v| v.as_str() == "true"));
 
 pub static OPENTELEMETRY_URL: Lazy<Option<String>> =
     Lazy::new(|| var("QW_LAMBDA_OPENTELEMETRY_URL").ok());

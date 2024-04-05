@@ -2,7 +2,7 @@
 # Index config file for mock-sales data generator.
 #
 
-version: 0.6
+version: 0.8
 
 index_id: mock-sales
 

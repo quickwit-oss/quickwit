@@ -961,6 +961,19 @@ impl Ingester {
 
         Ok(DecommissionResponse {})
     }
+
+    pub async fn mrecordlog_summary(&mut self) -> IngestV2Result<mrecordlog::QueuesSummary> {
+        let rw_mrecordlog = self.state.mrecordlog();
+        // this is a debug api endpoint, with_lock_metrics! doesn't seem necessary
+        let maybe_mrecordlog = rw_mrecordlog.read().await;
+
+        let summary = maybe_mrecordlog
+            .as_ref()
+            .ok_or_else(|| IngestV2Error::Internal("mrecordlog isn't initialized".to_string()))?
+            .summary();
+
+        Ok(summary)
+    }
 }
 
 #[async_trait]
@@ -1099,7 +1112,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
 }
 
 pub async fn wait_for_ingester_status(
-    mut ingester: IngesterServiceClient,
+    mut ingester: impl IngesterService,
     status: IngesterStatus,
 ) -> anyhow::Result<()> {
     let mut observation_stream = ingester
@@ -1118,9 +1131,7 @@ pub async fn wait_for_ingester_status(
     Ok(())
 }
 
-pub async fn wait_for_ingester_decommission(
-    mut ingester: IngesterServiceClient,
-) -> anyhow::Result<()> {
+pub async fn wait_for_ingester_decommission(mut ingester: Ingester) -> anyhow::Result<()> {
     let now = Instant::now();
 
     ingester
@@ -1286,12 +1297,9 @@ mod tests {
             .await
             .unwrap();
 
-            wait_for_ingester_status(
-                IngesterServiceClient::new(ingester.clone()),
-                IngesterStatus::Ready,
-            )
-            .await
-            .unwrap();
+            wait_for_ingester_status(ingester.clone(), IngesterStatus::Ready)
+                .await
+                .unwrap();
 
             let ingester_env = IngesterContext {
                 tempdir,

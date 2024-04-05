@@ -17,6 +17,7 @@ from ..services import quickwit_service
 SEARCHER_FUNCTION_NAME_EXPORT_NAME = "mock-data-searcher-function-name"
 INDEX_STORE_BUCKET_NAME_EXPORT_NAME = "mock-data-index-store-bucket-name"
 SOURCE_BUCKET_NAME_EXPORT_NAME = "mock-data-source-bucket-name"
+API_GATEWAY_EXPORT_NAME = "mock-data-api-gateway-url"
 
 
 class Source(Construct):
@@ -98,11 +99,12 @@ class SearchAPI(Construct):
         searcher_integration = aws_apigateway.LambdaIntegration(
             qw_svc.searcher.lambda_function
         )
-        search_resource = (
-            api.root.add_resource("v1").add_resource(index_id).add_resource("search")
-        )
+        search_resource = api.root.add_resource("v1").add_resource("{proxy+}")
         search_resource.add_method("POST", searcher_integration, api_key_required=True)
-        api_deployment = aws_apigateway.Deployment(self, "api-deployment", api=api)
+        search_resource.add_method("GET", searcher_integration, api_key_required=True)
+        # Change the deployment id (api-deployment-x) each time the API changes,
+        # otherwise changes are not deployed.
+        api_deployment = aws_apigateway.Deployment(self, "api-deployment-1", api=api)
         api_stage = aws_apigateway.Stage(
             self, "api", deployment=api_deployment, stage_name="api"
         )
@@ -122,7 +124,10 @@ class SearchAPI(Construct):
         api.deployment_stage = api_stage
 
         aws_cdk.CfnOutput(
-            self, "search-api-url", value=api.url.rstrip("/") + search_resource.path
+            self,
+            "search-api-url",
+            value=api.url.rstrip("/") + search_resource.path,
+            export_name=API_GATEWAY_EXPORT_NAME,
         )
 
 

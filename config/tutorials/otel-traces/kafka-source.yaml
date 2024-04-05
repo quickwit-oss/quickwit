@@ -1,4 +1,4 @@
-version: 0.7
+version: 0.8
 source_id: kafka-source
 source_type: kafka
 input_format: otlp_traces_proto
