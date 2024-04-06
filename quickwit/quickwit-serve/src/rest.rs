@@ -601,11 +601,10 @@ mod tests {
             HeaderName::from_static("x-custom-header-2"),
             HeaderValue::from_static("custom-value-2"),
         );
-        let metastore_client = MetastoreServiceClient::from(MetastoreServiceClient::mock());
+        let metastore_client = MetastoreServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_client.clone(), StorageResolver::unconfigured());
-        let control_plane_service =
-            ControlPlaneServiceClient::from(ControlPlaneServiceClient::mock());
+        let control_plane_service = ControlPlaneServiceClient::mocked();
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
@@ -619,9 +618,7 @@ mod tests {
             index_manager: index_service,
             ingest_service: ingest_service_client(),
             ingester_opt: None,
-            ingest_router_service: IngestRouterServiceClient::from(
-                IngestRouterServiceClient::mock(),
-            ),
+            ingest_router_service: IngestRouterServiceClient::mocked(),
             janitor_service_opt: None,
             otlp_logs_service_opt: None,
             otlp_traces_service_opt: None,

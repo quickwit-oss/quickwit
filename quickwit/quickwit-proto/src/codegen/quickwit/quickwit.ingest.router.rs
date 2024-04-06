@@ -214,8 +214,15 @@ impl IngestRouterServiceClient {
         IngestRouterServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockIngestRouterService {
-        MockIngestRouterService::new()
+    pub fn from_mock(mock: MockIngestRouterService) -> Self {
+        let mock_wrapper = mock_ingest_router_service::MockIngestRouterServiceWrapper {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockIngestRouterService::new())
     }
 }
 #[async_trait::async_trait]
@@ -228,11 +235,11 @@ impl IngestRouterService for IngestRouterServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod ingest_router_service_mock {
+pub mod mock_ingest_router_service {
     use super::*;
     #[derive(Debug, Clone)]
-    struct MockIngestRouterServiceWrapper {
-        inner: std::sync::Arc<tokio::sync::Mutex<MockIngestRouterService>>,
+    pub struct MockIngestRouterServiceWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockIngestRouterService>>,
     }
     #[async_trait::async_trait]
     impl IngestRouterService for MockIngestRouterServiceWrapper {
@@ -241,14 +248,6 @@ pub mod ingest_router_service_mock {
             request: super::IngestRequestV2,
         ) -> crate::ingest::IngestV2Result<super::IngestResponseV2> {
             self.inner.lock().await.ingest(request).await
-        }
-    }
-    impl From<MockIngestRouterService> for IngestRouterServiceClient {
-        fn from(mock: MockIngestRouterService) -> Self {
-            let mock_wrapper = MockIngestRouterServiceWrapper {
-                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
-            };
-            IngestRouterServiceClient::new(mock_wrapper)
         }
     }
 }

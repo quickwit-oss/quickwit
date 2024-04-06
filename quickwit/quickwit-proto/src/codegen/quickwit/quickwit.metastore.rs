@@ -877,8 +877,15 @@ impl MetastoreServiceClient {
         MetastoreServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockMetastoreService {
-        MockMetastoreService::new()
+    pub fn from_mock(mock: MockMetastoreService) -> Self {
+        let mock_wrapper = mock_metastore_service::MockMetastoreServiceWrapper {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockMetastoreService::new())
     }
 }
 #[async_trait::async_trait]
@@ -1053,11 +1060,11 @@ impl MetastoreService for MetastoreServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod metastore_service_mock {
+pub mod mock_metastore_service {
     use super::*;
     #[derive(Debug, Clone)]
-    struct MockMetastoreServiceWrapper {
-        inner: std::sync::Arc<tokio::sync::Mutex<MockMetastoreService>>,
+    pub struct MockMetastoreServiceWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockMetastoreService>>,
     }
     #[async_trait::async_trait]
     impl MetastoreService for MockMetastoreServiceWrapper {
@@ -1232,14 +1239,6 @@ pub mod metastore_service_mock {
         }
         fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
             futures::executor::block_on(self.inner.lock()).endpoints()
-        }
-    }
-    impl From<MockMetastoreService> for MetastoreServiceClient {
-        fn from(mock: MockMetastoreService) -> Self {
-            let mock_wrapper = MockMetastoreServiceWrapper {
-                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
-            };
-            MetastoreServiceClient::new(mock_wrapper)
         }
     }
 }

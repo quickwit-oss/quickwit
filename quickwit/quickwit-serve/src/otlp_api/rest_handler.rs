@@ -169,7 +169,7 @@ async fn otlp_ingest_traces(
 #[cfg(test)]
 mod tests {
     use prost::Message;
-    use quickwit_ingest::{CommitType, IngestResponse, IngestServiceClient};
+    use quickwit_ingest::{CommitType, IngestResponse, IngestServiceClient, MockIngestService};
     use quickwit_opentelemetry::otlp::{
         make_resource_spans_for_test, OtlpGrpcLogsService, OtlpGrpcTracesService,
     };
@@ -188,8 +188,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_otlp_ingest_logs_handler() {
-        let mut ingest_service_mock = IngestServiceClient::mock();
-        ingest_service_mock
+        let mut mock_ingest_service = MockIngestService::new();
+        mock_ingest_service
             .expect_ingest()
             .withf(|request| {
                 request.doc_batches.len() == 1
@@ -201,7 +201,7 @@ mod tests {
                     num_docs_for_processing: 1,
                 })
             });
-        let ingest_service_client = IngestServiceClient::from(ingest_service_mock);
+        let ingest_service_client = IngestServiceClient::from_mock(mock_ingest_service);
         let logs_service = OtlpGrpcLogsService::new(ingest_service_client.clone());
         let traces_service =
             OtlpGrpcTracesService::new(ingest_service_client, Some(CommitType::Force));
@@ -279,8 +279,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_otlp_ingest_traces_handler() {
-        let mut ingest_service_mock = IngestServiceClient::mock();
-        ingest_service_mock
+        let mut mock_ingest_service = MockIngestService::new();
+        mock_ingest_service
             .expect_ingest()
             .withf(|request| {
                 request.doc_batches.len() == 1
@@ -292,7 +292,7 @@ mod tests {
                     num_docs_for_processing: 1,
                 })
             });
-        let ingest_service_client = IngestServiceClient::from(ingest_service_mock);
+        let ingest_service_client = IngestServiceClient::from_mock(mock_ingest_service);
         let logs_service = OtlpGrpcLogsService::new(ingest_service_client.clone());
         let traces_service =
             OtlpGrpcTracesService::new(ingest_service_client, Some(CommitType::Force));

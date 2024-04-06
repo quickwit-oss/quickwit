@@ -1216,8 +1216,8 @@ mod tests {
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{metastore_for_test, IndexMetadata};
     use quickwit_proto::indexing::IndexingTask;
-    use quickwit_proto::ingest::ingester::ObservationMessage;
-    use quickwit_proto::metastore::ListIndexesMetadataResponse;
+    use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
+    use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
     use tokio::sync::watch;
@@ -1228,7 +1228,7 @@ mod tests {
     async fn test_check_cluster_configuration() {
         let services = HashSet::from_iter([QuickwitService::Metastore]);
         let peer_seeds = ["192.168.0.12:7280".to_string()];
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
 
         mock_metastore
             .expect_endpoints()
@@ -1244,7 +1244,7 @@ mod tests {
         check_cluster_configuration(
             &services,
             &peer_seeds,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         )
         .await
         .unwrap();
@@ -1257,7 +1257,7 @@ mod tests {
             .await
             .unwrap();
         let (metastore_readiness_tx, metastore_readiness_rx) = watch::channel(false);
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_check_connectivity()
             .returning(move || {
@@ -1268,7 +1268,7 @@ mod tests {
                 }
             });
         let (ingester_status_tx, ingester_status_rx) = watch::channel(IngesterStatus::Initializing);
-        let mut mock_ingester = IngesterServiceClient::mock();
+        let mut mock_ingester = MockIngesterService::new();
         mock_ingester
             .expect_open_observation_stream()
             .returning(move |_| {
@@ -1286,7 +1286,7 @@ mod tests {
         let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,

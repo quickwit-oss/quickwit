@@ -286,8 +286,15 @@ impl ControlPlaneServiceClient {
         ControlPlaneServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockControlPlaneService {
-        MockControlPlaneService::new()
+    pub fn from_mock(mock: MockControlPlaneService) -> Self {
+        let mock_wrapper = mock_control_plane_service::MockControlPlaneServiceWrapper {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockControlPlaneService::new())
     }
 }
 #[async_trait::async_trait]
@@ -344,11 +351,11 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod control_plane_service_mock {
+pub mod mock_control_plane_service {
     use super::*;
     #[derive(Debug, Clone)]
-    struct MockControlPlaneServiceWrapper {
-        inner: std::sync::Arc<tokio::sync::Mutex<MockControlPlaneService>>,
+    pub struct MockControlPlaneServiceWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockControlPlaneService>>,
     }
     #[async_trait::async_trait]
     impl ControlPlaneService for MockControlPlaneServiceWrapper {
@@ -411,14 +418,6 @@ pub mod control_plane_service_mock {
             request: super::GetDebugStateRequest,
         ) -> crate::control_plane::ControlPlaneResult<super::GetDebugStateResponse> {
             self.inner.lock().await.get_debug_state(request).await
-        }
-    }
-    impl From<MockControlPlaneService> for ControlPlaneServiceClient {
-        fn from(mock: MockControlPlaneService) -> Self {
-            let mock_wrapper = MockControlPlaneServiceWrapper {
-                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
-            };
-            ControlPlaneServiceClient::new(mock_wrapper)
         }
     }
 }

@@ -1207,7 +1207,7 @@ mod tests {
             mock_control_plane
                 .expect_advise_reset_shards()
                 .returning(|_| Ok(AdviseResetShardsResponse::default()));
-            let control_plane = ControlPlaneServiceClient::from(mock_control_plane);
+            let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
 
             Self {
                 node_id: "test-ingester".into(),
@@ -2626,7 +2626,7 @@ mod tests {
                 };
                 Ok(response)
             });
-        let control_plane = ControlPlaneServiceClient::from(mock_control_plane);
+        let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
 
         let (_ingester_ctx, mut ingester) = IngesterForTest::default()
             .with_control_plane(control_plane)

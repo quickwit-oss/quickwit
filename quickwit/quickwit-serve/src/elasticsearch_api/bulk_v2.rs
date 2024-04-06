@@ -113,6 +113,7 @@ pub(crate) async fn elastic_bulk_ingest_v2(
 mod tests {
     use quickwit_proto::ingest::router::{
         IngestFailure, IngestFailureReason, IngestResponseV2, IngestSuccess,
+        MockIngestRouterService,
     };
     use quickwit_proto::types::{IndexUid, Position, ShardId};
     use warp::{Filter, Rejection, Reply};
@@ -139,8 +140,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_api_happy_path() {
-        let mut ingest_router_mock = IngestRouterServiceClient::mock();
-        ingest_router_mock
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
             .expect_ingest()
             .once()
             .returning(|ingest_request| {
@@ -183,7 +184,7 @@ mod tests {
                     failures: Vec::new(),
                 })
             });
-        let ingest_router = IngestRouterServiceClient::from(ingest_router_mock);
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
         let handler = es_compat_bulk_handler_v2(ingest_router);
 
         let payload = r#"
@@ -208,7 +209,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_api_accepts_empty_requests() {
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let handler = es_compat_bulk_handler_v2(ingest_router);
 
         let response = warp::test::request()
@@ -225,8 +226,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_api_ignores_blank_lines() {
-        let mut ingest_router_mock = IngestRouterServiceClient::mock();
-        ingest_router_mock
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
             .expect_ingest()
             .once()
             .returning(|ingest_request| {
@@ -251,7 +252,7 @@ mod tests {
                     failures: Vec::new(),
                 })
             });
-        let ingest_router = IngestRouterServiceClient::from(ingest_router_mock);
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
         let handler = es_compat_bulk_handler_v2(ingest_router);
 
         let payload = r#"
@@ -274,7 +275,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_api_handles_malformed_requests() {
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let handler = es_compat_bulk_handler_v2(ingest_router);
 
         let payload = r#"
@@ -340,8 +341,8 @@ mod tests {
     // Airmail-specific test. It should go away when we straighten out the API response.
     #[tokio::test]
     async fn test_bulk_api_returns_404_on_index_not_found() {
-        let mut ingest_router_mock = IngestRouterServiceClient::mock();
-        ingest_router_mock.expect_ingest().once().returning(|_| {
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router.expect_ingest().once().returning(|_| {
             Ok(IngestResponseV2 {
                 successes: Vec::new(),
                 failures: vec![IngestFailure {
@@ -352,7 +353,7 @@ mod tests {
                 }],
             })
         });
-        let ingest_router = IngestRouterServiceClient::from(ingest_router_mock);
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
         let handler = es_compat_bulk_handler_v2(ingest_router);
 
         let payload = r#"

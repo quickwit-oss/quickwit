@@ -199,7 +199,7 @@ mod tests {
         IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
     };
     use quickwit_metastore::{PublishSplitsRequestExt, SplitMetadata};
-    use quickwit_proto::metastore::EmptyResponse;
+    use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
     use quickwit_proto::types::{IndexUid, Position};
     use tracing::Span;
 
@@ -210,7 +210,7 @@ mod tests {
     async fn test_publisher_publish_operation() {
         let universe = Universe::with_accelerated_time();
         let ref_index_uid: IndexUid = IndexUid::for_test("index", 1);
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
             .expect_publish_splits()
@@ -233,7 +233,7 @@ mod tests {
 
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             Some(merge_planner_mailbox),
             Some(source_mailbox),
         );
@@ -286,7 +286,7 @@ mod tests {
     async fn test_publisher_publish_operation_with_empty_splits() {
         let universe = Universe::with_accelerated_time();
         let ref_index_uid: IndexUid = IndexUid::for_test("index", 1);
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
             .expect_publish_splits()
@@ -309,7 +309,7 @@ mod tests {
 
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             Some(merge_planner_mailbox),
             Some(source_mailbox),
         );
@@ -359,7 +359,7 @@ mod tests {
     #[tokio::test]
     async fn test_publisher_replace_operation() {
         let universe = Universe::with_accelerated_time();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let ref_index_uid: IndexUid = IndexUid::for_test("index", 1);
         let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
@@ -377,7 +377,7 @@ mod tests {
         let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             Some(merge_planner_mailbox),
             None,
         );
@@ -411,13 +411,13 @@ mod tests {
     #[tokio::test]
     async fn publisher_acquires_publish_lock() {
         let universe = Universe::with_accelerated_time();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore.expect_publish_splits().never();
         let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
 
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             Some(merge_planner_mailbox),
             None,
         );

@@ -701,8 +701,15 @@ impl IngesterServiceClient {
         IngesterServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockIngesterService {
-        MockIngesterService::new()
+    pub fn from_mock(mock: MockIngesterService) -> Self {
+        let mock_wrapper = mock_ingester_service::MockIngesterServiceWrapper {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockIngesterService::new())
     }
 }
 #[async_trait::async_trait]
@@ -763,11 +770,11 @@ impl IngesterService for IngesterServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod ingester_service_mock {
+pub mod mock_ingester_service {
     use super::*;
     #[derive(Debug, Clone)]
-    struct MockIngesterServiceWrapper {
-        inner: std::sync::Arc<tokio::sync::Mutex<MockIngesterService>>,
+    pub struct MockIngesterServiceWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockIngesterService>>,
     }
     #[async_trait::async_trait]
     impl IngesterService for MockIngesterServiceWrapper {
@@ -828,14 +835,6 @@ pub mod ingester_service_mock {
             request: super::DecommissionRequest,
         ) -> crate::ingest::IngestV2Result<super::DecommissionResponse> {
             self.inner.lock().await.decommission(request).await
-        }
-    }
-    impl From<MockIngesterService> for IngesterServiceClient {
-        fn from(mock: MockIngesterService) -> Self {
-            let mock_wrapper = MockIngesterServiceWrapper {
-                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
-            };
-            IngesterServiceClient::new(mock_wrapper)
         }
     }
 }

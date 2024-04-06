@@ -208,7 +208,7 @@ impl CodegenContext {
         generate_extra_service_methods: bool,
     ) -> Self {
         let service_name = quote::format_ident!("{}", service.name);
-        let mock_mod_name = quote::format_ident!("{}_mock", service.name.to_snake_case());
+        let mock_mod_name = quote::format_ident!("mock_{}", service.name.to_snake_case());
         let mock_name = quote::format_ident!("Mock{}", service.name);
 
         let result_type = syn::parse_str::<syn::Path>(result_type_path)
@@ -604,8 +604,16 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             }
 
             #[cfg(any(test, feature = "testsuite"))]
-            pub fn mock() -> #mock_name {
-                #mock_name::new()
+            pub fn from_mock(mock: #mock_name) -> Self {
+                let mock_wrapper = #mock_mod_name::#mock_wrapper_name {
+                    inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock))
+                };
+                Self::new(mock_wrapper)
+            }
+
+            #[cfg(any(test, feature = "testsuite"))]
+            pub fn mocked() -> Self {
+                Self::from_mock(#mock_name::new())
             }
         }
 
@@ -620,23 +628,14 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             use super::*;
 
             #[derive(Debug, Clone)]
-            struct #mock_wrapper_name {
-                inner: std::sync::Arc<tokio::sync::Mutex<#mock_name>>
+            pub struct #mock_wrapper_name {
+                pub(super) inner: std::sync::Arc<tokio::sync::Mutex<#mock_name>>
             }
 
             #[async_trait::async_trait]
             impl #service_name for #mock_wrapper_name {
                 #mock_methods
                 #extra_mock_methods
-            }
-
-            impl From<#mock_name> for #client_name {
-                fn from(mock: #mock_name) -> Self {
-                    let mock_wrapper = #mock_wrapper_name {
-                        inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock))
-                    };
-                    #client_name::new(mock_wrapper)
-                }
             }
         }
     }

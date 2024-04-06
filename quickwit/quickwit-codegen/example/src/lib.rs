@@ -588,14 +588,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_hello_codegen_mock() {
-        let mut hello_mock = HelloClient::mock();
-        hello_mock.expect_hello().returning(|_| {
+        let mut mock_hello = MockHello::new();
+        mock_hello.expect_hello().returning(|_| {
             Ok(HelloResponse {
                 message: "Hello, mock!".to_string(),
             })
         });
-        hello_mock.expect_check_connectivity().returning(|| Ok(()));
-        let mut hello: HelloClient = hello_mock.into();
+        mock_hello.expect_check_connectivity().returning(|| Ok(()));
+        let mut hello = HelloClient::from_mock(mock_hello);
+
         assert_eq!(
             hello
                 .hello(HelloRequest {

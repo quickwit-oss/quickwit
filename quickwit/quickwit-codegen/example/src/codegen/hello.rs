@@ -150,8 +150,15 @@ impl HelloClient {
         HelloTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockHello {
-        MockHello::new()
+    pub fn from_mock(mock: MockHello) -> Self {
+        let mock_wrapper = mock_hello::MockHelloWrapper {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockHello::new())
     }
 }
 #[async_trait::async_trait]
@@ -182,11 +189,11 @@ impl Hello for HelloClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod hello_mock {
+pub mod mock_hello {
     use super::*;
     #[derive(Debug, Clone)]
-    struct MockHelloWrapper {
-        inner: std::sync::Arc<tokio::sync::Mutex<MockHello>>,
+    pub struct MockHelloWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockHello>>,
     }
     #[async_trait::async_trait]
     impl Hello for MockHelloWrapper {
@@ -213,14 +220,6 @@ pub mod hello_mock {
         }
         fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
             futures::executor::block_on(self.inner.lock()).endpoints()
-        }
-    }
-    impl From<MockHello> for HelloClient {
-        fn from(mock: MockHello) -> Self {
-            let mock_wrapper = MockHelloWrapper {
-                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
-            };
-            HelloClient::new(mock_wrapper)
         }
     }
 }

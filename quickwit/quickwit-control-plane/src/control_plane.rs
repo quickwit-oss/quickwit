@@ -927,12 +927,14 @@ mod tests {
         GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsSubrequest,
     };
     use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
-    use quickwit_proto::ingest::ingester::{IngesterServiceClient, RetainShardsResponse};
+    use quickwit_proto::ingest::ingester::{
+        IngesterServiceClient, MockIngesterService, RetainShardsResponse,
+    };
     use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::{
         EntityKind, FindIndexTemplateMatchesResponse, ListIndexesMetadataRequest,
         ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
-        MetastoreError, SourceType,
+        MetastoreError, MockMetastoreService, SourceType,
     };
     use quickwit_proto::types::Position;
 
@@ -946,7 +948,7 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let index_uid_clone = index_uid.clone();
         mock_metastore
@@ -979,7 +981,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
         let index_config = IndexConfig::for_test("test-index", "ram:///test-index");
         let create_index_request =
@@ -1003,7 +1005,7 @@ mod tests {
         let ingester_pool = IngesterPool::default();
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_delete_index()
@@ -1022,7 +1024,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
         let delete_index_request = DeleteIndexRequest {
             index_uid: Some(index_uid),
@@ -1046,7 +1048,7 @@ mod tests {
 
         let index_metadata = IndexMetadata::for_test("test-index", "ram://test");
         let index_uid = index_metadata.index_uid.clone();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_add_source()
             .withf(|add_source_request| {
@@ -1075,7 +1077,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
         let source_config = SourceConfig::for_test("test-source", SourceParams::void());
         let add_source_request = AddSourceRequest {
@@ -1099,7 +1101,7 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let mut index_metadata = IndexMetadata::for_test("test-index", "ram://toto");
         let test_source_config = SourceConfig::for_test("test-source", SourceParams::void());
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
@@ -1137,7 +1139,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
         let enable_source_request = ToggleSourceRequest {
             index_uid: Some(index_uid.clone()),
@@ -1169,7 +1171,7 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let index_uid_clone = index_uid.clone();
         mock_metastore
@@ -1193,7 +1195,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
         let delete_source_request = DeleteSourceRequest {
             index_uid: Some(index_uid),
@@ -1217,7 +1219,7 @@ mod tests {
 
         let ingester_pool = IngesterPool::default();
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         mock_metastore
             .expect_list_indexes_metadata()
@@ -1262,7 +1264,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
         let get_open_shards_request = GetOrCreateOpenShardsRequest {
             subrequests: vec![GetOrCreateOpenShardsSubrequest {
@@ -1295,7 +1297,7 @@ mod tests {
         let node_id = NodeId::new("test_node".to_string());
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let source = SourceConfig::ingest_v2();
@@ -1354,7 +1356,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
         tokio::time::timeout(
             Duration::from_secs(5),
@@ -1442,7 +1444,7 @@ mod tests {
         };
         indexer_pool.insert("indexer-node-1".to_string(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let mut source = SourceConfig::ingest_v2();
@@ -1502,7 +1504,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
         let source_uid = SourceUid {
             index_uid: index_0.index_uid.clone(),
@@ -1590,7 +1592,7 @@ mod tests {
         };
         indexer_pool.insert("indexer-node-1".to_string(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let mut source = SourceConfig::ingest_v2();
@@ -1640,7 +1642,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
 
         let control_plane_state = control_plane_mailbox
@@ -1674,7 +1676,7 @@ mod tests {
         };
         indexer_pool.insert("indexer-node-1".to_string(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let mut source = SourceConfig::ingest_v2();
@@ -1724,7 +1726,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
         let source_uid = SourceUid {
             index_uid: index_0.index_uid.clone(),
@@ -1751,7 +1753,7 @@ mod tests {
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
-        let mut ingester_mock = IngesterServiceClient::mock();
+        let mut mock_ingester = MockIngesterService::new();
         let mut seq = Sequence::new();
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
@@ -1762,7 +1764,7 @@ mod tests {
         let index_uid_clone = index_0.index_uid.clone();
         let index_0_clone = index_0.clone();
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .times(1)
@@ -1797,7 +1799,7 @@ mod tests {
                 Ok(list_shards_resp)
             });
 
-        ingester_mock
+        mock_ingester
             .expect_retain_shards()
             .times(1)
             .in_sequence(&mut seq)
@@ -1819,7 +1821,7 @@ mod tests {
                 assert_eq!(delete_index_request.index_uid(), &index_uid_clone);
                 Ok(EmptyResponse {})
             });
-        ingester_mock
+        mock_ingester
             .expect_retain_shards()
             .times(1)
             .in_sequence(&mut seq)
@@ -1829,7 +1831,8 @@ mod tests {
                 assert!(&retain_shards_for_source.shard_ids.is_empty());
                 Ok(RetainShardsResponse {})
             });
-        ingester_pool.insert("node1".into(), ingester_mock.into());
+        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        ingester_pool.insert("node1".into(), ingester);
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
@@ -1840,7 +1843,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
         // This update should not trigger anything in the control plane.
         control_plane_mailbox
@@ -1862,8 +1865,8 @@ mod tests {
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
-        let mut ingester_mock = IngesterServiceClient::mock();
-        ingester_mock
+        let mut mock_ingester = MockIngesterService::new();
+        mock_ingester
             .expect_retain_shards()
             .times(2)
             .returning(|request| {
@@ -1874,12 +1877,13 @@ mod tests {
                 );
                 Ok(RetainShardsResponse {})
             });
-        ingester_pool.insert("node1".into(), ingester_mock.into());
+        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        ingester_pool.insert("node1".into(), ingester);
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let index_uid_clone = index_0.index_uid.clone();
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore.expect_delete_source().return_once(
             move |delete_source_request: DeleteSourceRequest| {
                 assert_eq!(delete_source_request.index_uid(), &index_uid_clone);
@@ -1933,7 +1937,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
         // This update should not trigger anything in the control plane.
         control_plane_mailbox
@@ -1960,7 +1964,7 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
 
         mock_metastore
             .expect_list_indexes_metadata()
@@ -2016,7 +2020,7 @@ mod tests {
             cluster_change_stream_factory,
             indexer_pool,
             ingester_pool,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         );
 
         let response = control_plane_mailbox
@@ -2090,11 +2094,11 @@ mod tests {
 
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
-        let metastore = MetastoreServiceClient::from(mock_metastore);
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let (_control_plane_mailbox, control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,

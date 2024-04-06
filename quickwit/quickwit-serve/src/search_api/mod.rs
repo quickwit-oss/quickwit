@@ -38,7 +38,7 @@ mod tests {
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, ListSplitsResponseExt};
     use quickwit_proto::metastore::{
-        IndexMetadataResponse, ListSplitsResponse, MetastoreServiceClient,
+        IndexMetadataResponse, ListSplitsResponse, MetastoreServiceClient, MockMetastoreService,
     };
     use quickwit_proto::search::search_service_server::SearchServiceServer;
     use quickwit_proto::search::OutputFormat;
@@ -81,13 +81,13 @@ mod tests {
             output_format: OutputFormat::Csv as i32,
             partition_by_field: None,
         };
-        let mut metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
         let index_uid = index_metadata.index_uid.clone();
-        metastore.expect_index_metadata().returning(move |_| {
+        mock_metastore.expect_index_metadata().returning(move |_| {
             Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
-        metastore.expect_list_splits().returning(move |_| {
+        mock_metastore.expect_list_splits().returning(move |_| {
             let splits = vec![
                 MockSplitBuilder::new("split_1")
                     .with_index_uid(&index_uid)
@@ -137,7 +137,7 @@ mod tests {
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let stream = root_search_stream(
             request,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             cluster_client,
         )
         .await?;

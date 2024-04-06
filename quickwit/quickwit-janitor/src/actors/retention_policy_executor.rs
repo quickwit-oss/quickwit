@@ -266,7 +266,7 @@ mod tests {
         SplitState,
     };
     use quickwit_proto::metastore::{
-        EmptyResponse, ListIndexesMetadataResponse, ListSplitsResponse,
+        EmptyResponse, ListIndexesMetadataResponse, ListSplitsResponse, MockMetastoreService,
     };
 
     use super::*;
@@ -353,7 +353,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retention_executor_refresh() -> anyhow::Result<()> {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
 
         let mut sequence = Sequence::new();
         mock_metastore
@@ -400,7 +400,7 @@ mod tests {
             });
 
         let retention_policy_executor =
-            RetentionPolicyExecutor::new(MetastoreServiceClient::from(mock_metastore));
+            RetentionPolicyExecutor::new(MetastoreServiceClient::from_mock(mock_metastore));
         let universe = Universe::with_accelerated_time();
         let (mailbox, handle) = universe.spawn_builder().spawn(retention_policy_executor);
 
@@ -440,7 +440,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retention_policy_execution_calls_dependencies() -> anyhow::Result<()> {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .times(..)
@@ -488,7 +488,7 @@ mod tests {
             });
 
         let retention_policy_executor =
-            RetentionPolicyExecutor::new(MetastoreServiceClient::from(mock_metastore));
+            RetentionPolicyExecutor::new(MetastoreServiceClient::from_mock(mock_metastore));
         let universe = Universe::with_accelerated_time();
         let (_mailbox, handle) = universe.spawn_builder().spawn(retention_policy_executor);
 
