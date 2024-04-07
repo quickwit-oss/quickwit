@@ -662,6 +662,7 @@ pub struct QuickwitConcatenateOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// Fields to concatenate
+    #[serde(default)]
     pub concatenate_fields: Vec<String>,
     #[serde(default)]
     pub include_dynamic_fields: bool,

@@ -724,6 +724,7 @@ mod tests {
 
     use super::DefaultDocMapper;
     use crate::default_doc_mapper::field_mapping_entry::DEFAULT_TOKENIZER_NAME;
+    use crate::default_doc_mapper::mapping_tree::value_to_pretokenized;
     use crate::{
         DefaultDocMapperBuilder, DocMapper, DocParsingError, DYNAMIC_FIELD_NAME,
         FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
@@ -1581,119 +1582,406 @@ mod tests {
         assert_eq!(doc.len(), 0);
     }
 
+    fn test_doc_mapper_get_all_aux(
+        doc_mapper: &str,
+        field: &str,
+        document: &str,
+        expected: Vec<TantivyValue>,
+    ) {
+        let default_doc_mapper: DefaultDocMapper = serde_json::from_str(doc_mapper).unwrap();
+        let schema = default_doc_mapper.schema();
+        let field = schema.get_field(field).unwrap();
+        let (_, doc) = default_doc_mapper.doc_from_json_str(document).unwrap();
+        let vals: Vec<&TantivyValue> = doc.get_all(field).collect();
+        assert_eq!(vals.len(), expected.len());
+        for (val, exp) in vals.into_iter().zip(expected.iter()) {
+            assert_eq!(val, exp);
+        }
+    }
+
     #[test]
     fn test_dymamic_mode_simple() {
-        let default_doc_mapper: DefaultDocMapper =
-            serde_json::from_str(r#"{ "mode": "dynamic" }"#).unwrap();
-        let schema = default_doc_mapper.schema();
-        let dynamic_field = schema.get_field(DYNAMIC_FIELD_NAME).unwrap();
-        let (_, doc) = default_doc_mapper
-            .doc_from_json_str(r#"{ "a": { "b": 5, "c": 6 } }"#)
-            .unwrap();
-        let vals: Vec<&TantivyValue> = doc.get_all(dynamic_field).collect();
-        assert_eq!(vals.len(), 1);
-        if let TantivyValue::Object(json_val) = &vals[0] {
-            assert_eq!(
-                serde_json::to_value(json_val).unwrap(),
-                json!({
-                    "a": {
-                        "b": 5,
-                        "c": 6
-                    }
-                })
-            );
-        } else {
-            panic!("Expected json");
-        }
+        test_doc_mapper_get_all_aux(
+            r#"{ "mode": "dynamic" }"#,
+            DYNAMIC_FIELD_NAME,
+            r#"{ "a": { "b": 5, "c": 6 } }"#,
+            vec![json!({
+                "a": {
+                    "b": 5,
+                    "c": 6
+                }
+            })
+            .into()],
+        );
     }
 
     #[test]
     fn test_dymamic_mode_inner() {
-        let default_doc_mapper: DefaultDocMapper = serde_json::from_str(
+        test_doc_mapper_get_all_aux(
             r#"{
-            "field_mappings": [
-                {
-                    "name": "some_obj",
-                    "type": "object",
-                    "field_mappings": [
-                        {
-                            "name": "child_a",
-                            "type": "text"
-                        }
-                    ]
-                }
-            ],
-            "mode": "dynamic"
-        }"#,
-        )
-        .unwrap();
-        let (_, doc) = default_doc_mapper
-            .doc_from_json_str(
-                r#"{ "some_obj": { "child_a": "", "child_b": {"c": 3} }, "some_obj2": 4 }"#,
-            )
-            .unwrap();
-        let dynamic_field = default_doc_mapper
-            .schema()
-            .get_field(DYNAMIC_FIELD_NAME)
-            .unwrap();
-        let vals: Vec<&TantivyValue> = doc.get_all(dynamic_field).collect();
-        assert_eq!(vals.len(), 1);
-        if let TantivyValue::Object(json_val) = &vals[0] {
-            assert_eq!(
-                serde_json::to_value(json_val).unwrap(),
-                serde_json::json!({
-                    "some_obj": {
-                        "child_b": {
-                            "c": 3
-                        }
-                    },
-                    "some_obj2": 4
-                })
-            );
-        } else {
-            panic!("Expected json");
-        }
+                "field_mappings": [
+                    {
+                        "name": "some_obj",
+                        "type": "object",
+                        "field_mappings": [
+                            {
+                                "name": "child_a",
+                                "type": "text"
+                            }
+                        ]
+                    }
+                ],
+                "mode": "dynamic"
+            }"#,
+            DYNAMIC_FIELD_NAME,
+            r#"{ "some_obj": { "child_a": "", "child_b": {"c": 3} }, "some_obj2": 4 }"#,
+            vec![json!({
+                "some_obj": {
+                    "child_b": {
+                        "c": 3
+                    }
+                },
+                "some_obj2": 4
+            })
+            .into()],
+        );
     }
 
     #[test]
     fn test_json_object_in_mapping() {
-        let default_doc_mapper: DefaultDocMapper = serde_json::from_str(
+        test_doc_mapper_get_all_aux(
             r#"{
-            "field_mappings": [
-                {
-                    "name": "some_obj",
-                    "type": "object",
-                    "field_mappings": [
-                        {
-                            "name": "json_obj",
-                            "type": "json"
-                        }
-                    ]
-                }
-            ],
-            "mode": "strict"
-        }"#,
+                "field_mappings": [
+                    {
+                        "name": "some_obj",
+                        "type": "object",
+                        "field_mappings": [
+                            {
+                                "name": "json_obj",
+                                "type": "json"
+                            }
+                        ]
+                    }
+                ],
+                "mode": "strict"
+            }"#,
+            "some_obj.json_obj",
+            r#"{ "some_obj": { "json_obj": {"hello": 2} } }"#,
+            vec![json!({
+                "hello": 2
+            })
+            .into()],
+        );
+    }
+
+    #[test]
+    fn test_reject_invalid_concatenate_field() {
+        assert!(serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "concatenate_fields": ["inexistant_field"]
+                    }
+                ]
+            }"#
         )
-        .unwrap();
-        let (_, doc) = default_doc_mapper
-            .doc_from_json_str(r#"{ "some_obj": { "json_obj": {"hello": 2} } }"#)
-            .unwrap();
-        let json_field = default_doc_mapper
-            .schema()
-            .get_field("some_obj.json_obj")
-            .unwrap();
-        let vals: Vec<&TantivyValue> = doc.get_all(json_field).collect();
-        assert_eq!(vals.len(), 1);
-        if let TantivyValue::Object(json_val) = &vals[0] {
-            assert_eq!(
-                serde_json::to_value(json_val).unwrap(),
-                serde_json::json!({
-                    "hello": 2
-                })
-            );
-        } else {
-            panic!("expected json");
-        }
+        .unwrap_err()
+        .to_string()
+        .contains("uses an unknown field"));
+        assert!(serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "include_dynamic_fields": true
+                    }
+                ],
+                "mode": "strict"
+            }"#
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("concatenate field has `include_dynamic_fields` set, but index isn't dynamic"));
+        assert!(serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "concat",
+                        "type": "concatenate"
+                    }
+                ]
+            }"#
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("concatenate type must have at least one sub-field"));
+    }
+
+    #[test]
+    fn test_concatenate_field_in_mapping() {
+        test_doc_mapper_get_all_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "some_text",
+                        "type": "text"
+                    },
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "concatenate_fields": ["some_text"]
+                    }
+                ],
+                "mode": "strict"
+            }"#,
+            "concat",
+            r#"{"some_text": "this is a text"}"#,
+            vec!["this is a text".into()],
+        );
+    }
+
+    #[test]
+    fn test_concatenate_field_in_mapping_dynamic() {
+        test_doc_mapper_get_all_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "include_dynamic_fields": true
+                    }
+                ],
+                "mode": "dynamic"
+            }"#,
+            "concat",
+            r#"{"other_field": "this is a text"}"#,
+            vec!["this is a text".into()],
+        );
+        test_doc_mapper_get_all_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "include_dynamic_fields": true
+                    }
+                ],
+                "mode": "dynamic"
+            }"#,
+            "concat",
+            r#"{"first_field": "this is a text", "second_field": "this is a text field too"}"#,
+            vec!["this is a text".into(), "this is a text field too".into()],
+        );
+    }
+
+    #[test]
+    fn test_concatenate_field_in_mapping_integer() {
+        test_doc_mapper_get_all_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "some_int",
+                        "type": "u64"
+                    },
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "concatenate_fields": ["some_int"]
+                    }
+                ],
+                "mode": "strict"
+            }"#,
+            "concat",
+            r#"{"some_int": 25}"#,
+            vec![value_to_pretokenized(25).into()],
+        );
+        test_doc_mapper_get_all_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "include_dynamic_fields": true
+                    }
+                ],
+                "mode": "dynamic"
+            }"#,
+            "concat",
+            r#"{"some_int": 25}"#,
+            vec![value_to_pretokenized(25).into()],
+        );
+    }
+
+    #[test]
+    fn test_concatenate_field_in_mapping_boolean() {
+        test_doc_mapper_get_all_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "some_bool",
+                        "type": "bool"
+                    },
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "concatenate_fields": ["some_bool"]
+                    }
+                ],
+                "mode": "strict"
+            }"#,
+            "concat",
+            r#"{"some_bool": false}"#,
+            vec![value_to_pretokenized(false).into()],
+        );
+        test_doc_mapper_get_all_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "include_dynamic_fields": true
+                    }
+                ],
+                "mode": "dynamic"
+            }"#,
+            "concat",
+            r#"{"some_bool": true}"#,
+            vec![value_to_pretokenized(true).into()],
+        );
+    }
+
+    #[test]
+    fn test_concatenate_field_array() {
+        test_doc_mapper_get_all_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "some_text",
+                        "type": "array<text>"
+                    },
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "concatenate_fields": ["some_text"]
+                    }
+                ],
+                "mode": "strict"
+            }"#,
+            "concat",
+            r#"{"some_text": ["this is a text", "this is a text too"]}"#,
+            vec!["this is a text".into(), "this is a text too".into()],
+        );
+    }
+
+    #[test]
+    fn test_concatenate_multiple_field() {
+        test_doc_mapper_get_all_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "some_text",
+                        "type": "text"
+                    },
+                    {
+                        "name": "other_text",
+                        "type": "text"
+                    },
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "concatenate_fields": ["some_text", "other_text"]
+                    }
+                ],
+                "mode": "strict"
+            }"#,
+            "concat",
+            r#"{"some_text": "this is a text", "other_text": "this is a text too"}"#,
+            vec!["this is a text too".into(), "this is a text".into()],
+        );
+    }
+
+    #[test]
+    fn test_concatenate_field_object() {
+        test_doc_mapper_get_all_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "some_obj",
+                        "type": "object",
+                        "field_mappings": [
+                            {
+                                "name": "json_obj",
+                                "type": "json"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "concatenate_fields": ["some_obj.json_obj"]
+                    }
+                ],
+                "mode": "strict"
+            }"#,
+            "concat",
+            r#"{ "some_obj": { "json_obj": {"hello": "world"} } }"#,
+            vec!["world".into()],
+        );
+    }
+
+    #[test]
+    fn test_concatenate_() {
+        test_doc_mapper_get_all_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "some_text",
+                        "type": "text"
+                    },
+                    {
+                        "name": "concat1",
+                        "type": "concatenate",
+                        "concatenate_fields": ["some_text"]
+                    },
+                    {
+                        "name": "concat2",
+                        "type": "concatenate",
+                        "concatenate_fields": ["some_text"]
+                    }
+                ],
+                "mode": "strict"
+            }"#,
+            "concat1",
+            r#"{"some_text": "this is a text"}"#,
+            vec!["this is a text".into()],
+        );
+        test_doc_mapper_get_all_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "some_text",
+                        "type": "text"
+                    },
+                    {
+                        "name": "concat1",
+                        "type": "concatenate",
+                        "concatenate_fields": ["some_text"]
+                    },
+                    {
+                        "name": "concat2",
+                        "type": "concatenate",
+                        "concatenate_fields": ["some_text"]
+                    }
+                ],
+                "mode": "strict"
+            }"#,
+            "concat2",
+            r#"{"some_text": "this is a text"}"#,
+            vec!["this is a text".into()],
+        );
     }
 
     fn default_doc_mapper_query_aux(

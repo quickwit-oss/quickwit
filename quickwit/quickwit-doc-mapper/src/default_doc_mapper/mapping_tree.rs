@@ -55,7 +55,7 @@ pub enum LeafType {
     Text(QuickwitTextOptions),
 }
 
-fn value_to_pretokenized<T: ToString>(val: T) -> PreTokenizedString {
+pub(crate) fn value_to_pretokenized<T: ToString>(val: T) -> PreTokenizedString {
     let text = val.to_string();
     PreTokenizedString {
         text: text.clone(),
@@ -1089,7 +1089,7 @@ mod tests {
     use time::macros::datetime;
     use time::OffsetDateTime;
 
-    use super::{value_to_json, LeafType, MappingLeaf};
+    use super::{value_to_json, JsonValueIterator, LeafType, MapOrArrayIter, MappingLeaf};
     use crate::default_doc_mapper::date_time_type::QuickwitDateTimeOptions;
     use crate::default_doc_mapper::field_mapping_entry::{
         BinaryFormat, NumericOutputFormat, QuickwitBoolOptions, QuickwitBytesOptions,
@@ -1667,5 +1667,55 @@ mod tests {
         assert_eq!(super::build_field_path_from_str("\\."), vec!["."]);
         assert_eq!(super::build_field_path_from_str("a."), vec!["a"]);
         assert_eq!(super::build_field_path_from_str(".a"), vec!["", "a"]);
+    }
+
+    #[test]
+    fn test_map_or_array_iter() {
+        // single element
+        let single_value = MapOrArrayIter::Value(json!({"a": "b", "c": 4}));
+        let res: Vec<_> = single_value.collect();
+        assert_eq!(res, vec![json!({"a": "b", "c": 4})]);
+
+        // array of elements
+        let multiple_values =
+            MapOrArrayIter::Array(vec![json!({"a": "b", "c": 4}), json!(5)].into_iter());
+        let res: Vec<_> = multiple_values.collect();
+        assert_eq!(res, vec![json!({"a": "b", "c": 4}), json!(5)]);
+
+        // map of elements
+        let multiple_values = MapOrArrayIter::Map(
+            json!({"a": {"a": "b", "c": 4}, "b":5})
+                .as_object()
+                .unwrap()
+                .clone()
+                .into_iter(),
+        );
+        let res: Vec<_> = multiple_values.collect();
+        assert_eq!(res, vec![json!({"a": "b", "c": 4}), json!(5)]);
+    }
+
+    #[test]
+    fn test_json_value_iterator() {
+        assert_eq!(
+            JsonValueIterator::new(json!(5)).collect::<Vec<_>>(),
+            vec![json!(5)]
+        );
+        assert_eq!(
+            JsonValueIterator::new(json!([5, "a"])).collect::<Vec<_>>(),
+            vec![json!(5), json!("a")]
+        );
+        assert_eq!(
+            JsonValueIterator::new(json!({"a":1, "b": 2})).collect::<Vec<_>>(),
+            vec![json!(1), json!(2)]
+        );
+        assert_eq!(
+            JsonValueIterator::new(json!([{"a":1, "b": 2}, "a"])).collect::<Vec<_>>(),
+            vec![json!(1), json!(2), json!("a")]
+        );
+        assert_eq!(
+            JsonValueIterator::new(json!([{"a":1, "b": 2}, {"a": {"b": [3, 4]}}]))
+                .collect::<Vec<_>>(),
+            vec![json!(1), json!(2), json!(3), json!(4)]
+        );
     }
 }
