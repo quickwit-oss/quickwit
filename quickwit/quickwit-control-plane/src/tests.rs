@@ -34,7 +34,7 @@ use quickwit_indexing::IndexingService;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
 use quickwit_proto::metastore::{
-    ListIndexesMetadataResponse, ListShardsResponse, MetastoreServiceClient,
+    ListIndexesMetadataResponse, ListShardsResponse, MetastoreServiceClient, MockMetastoreService,
 };
 use quickwit_proto::types::NodeId;
 use serde_json::json;
@@ -112,14 +112,14 @@ async fn start_control_plane(
     let index_metadata_1 = index_metadata_for_test(index_1, source_1, 2);
     let mut index_metadata_2 = index_metadata_for_test(index_2, source_2, 1);
     index_metadata_2.create_timestamp = index_metadata_1.create_timestamp + 1;
-    let mut metastore = MetastoreServiceClient::mock();
-    metastore.expect_list_indexes_metadata().returning(
+    let mut mock_metastore = MockMetastoreService::new();
+    mock_metastore.expect_list_indexes_metadata().returning(
         move |_list_indexes_request: quickwit_proto::metastore::ListIndexesMetadataRequest| {
             let indexes_metadata = vec![index_metadata_2.clone(), index_metadata_1.clone()];
             Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
         },
     );
-    metastore.expect_list_shards().returning(|_| {
+    mock_metastore.expect_list_shards().returning(|_| {
         Ok(ListShardsResponse {
             subresponses: Vec::new(),
         })
@@ -143,14 +143,14 @@ async fn start_control_plane(
     cluster_config.cluster_id = cluster.cluster_id().to_string();
 
     let self_node_id: NodeId = cluster.self_node_id().to_string().into();
-    let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+    let (control_plane_mailbox, _control_plane_handle, _is_ready_rx) = ControlPlane::spawn(
         universe,
         cluster_config,
         self_node_id,
         cluster,
         indexer_pool,
         ingester_pool,
-        MetastoreServiceClient::from(metastore),
+        MetastoreServiceClient::from_mock(mock_metastore),
     );
 
     (indexer_inboxes, control_plane_mailbox)

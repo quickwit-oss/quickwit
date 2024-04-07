@@ -30,7 +30,7 @@ Quickwit attempts to find an AWS region in multiple locations and with the follo
 
 2. Config file, typically located at `~/.aws/config` or otherwise specified by the `AWS_CONFIG_FILE` environment variable if set and not empty.
 
-3. Amazon EC2 instance metadata service determining the region of the currently running Amazon EC2 instance.
+3. Amazon EC2 instance metadata service indicating the region of the currently running Amazon EC2 instance.
 
 4. Default value: `us-east-1`
 
@@ -45,12 +45,47 @@ AWS credentials or region resolution may take a few seconds, especially if the A
 ### Amazon S3
 
 Required authorized actions:
-- `ListObjects`
-- `GetObject`
-- `PutObject`
+- `ListBucket` (on the bucket directly)
+- `AbortMultipartUpload`
 - `DeleteObject`
+- `GetObject`
+- `ListMultipartUploadParts`
+- `ListObjects`
+- `PutObject`
 
-You can run the following commands to verify that AWS credentials, region, and IAM permissions are property configured for Amazon S3:
+Here is an example of a bucket policy:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::my-bucket"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:AbortMultipartUpload",
+        "s3:DeleteObject",
+        "s3:GetObject",
+        "s3:ListMultipartUploadParts",
+        "S3:ListObjects",
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::my-bucket/*"
+      ]
+    }
+  ]
+}
+```
+
+You can run the following commands to verify that AWS credentials, region, and IAM permissions are properly configured for Amazon S3:
 
 ```bash
 MY_BUCKET=<bucket name>
@@ -67,7 +102,7 @@ aws s3 rm $MY_BUCKET/hello
 - `GetShardIterator`
 - `ListShards`
 
-You can run the following commands to verify that AWS credentials, region, and IAM permissions are property configured for Amazon Kinesis:
+You can run the following commands to verify that AWS credentials, region, and IAM permissions are properly configured for Amazon Kinesis:
 
 ```bash
 MY_STREAM=<my stream name>
@@ -94,18 +129,18 @@ aws kinesis get-records --shard-iterator $SHARD_ITERATOR | jq -r .Records[0]
 
 ### Security groups
 
-In order to communicate with each other, nodes must reside in security groups that allow inbound and outbound traffic on one UDP port and two TCP ports. Please, refer to the [ports configuration](/configuration/ports-config.md) page for more details.
+To communicate with each other, nodes must reside in security groups that allow inbound and outbound traffic on one UDP port and two TCP ports. Please, refer to the [ports configuration](/configuration/ports-config.md) page for more details.
 
 ## Common errors
 
 If you set the wrong credentials, you will see this error message with `Unauthorized` in your terminal:
 
 ```bash
-Command failed: Another error occurred. `Metastore error`. Cause: `StorageError(kind=Unauthorized, source=Failed to fetch object: s3://quickwit-dev/my-hdfs/metastore.json)`
+Command failed: Another error occurred. `Metastore error`. Cause: `StorageError(kind=Unauthorized, source=failed to fetch object: s3://quickwit-dev/my-hdfs/metastore.json)`
 ```
 
 If you put the wrong region, you will see this one:
 
 ```bash
-Command failed: Another error occurred. `Metastore error`. Cause: `StorageError(kind=InternalError, source=Failed to fetch object: s3://your-bucket/your-index/metastore.json)`.
+Command failed: Another error occurred. `Metastore error`. Cause: `StorageError(kind=Internal, source=failed to fetch object: s3://your-bucket/your-index/metastore.json)`.
 ```

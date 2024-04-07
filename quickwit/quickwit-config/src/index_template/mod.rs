@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn test_index_template_serde() {
         let index_template_yaml = r#"
-            version: 0.7
+            version: 0.8
 
             template_id: test-template
             index_id_patterns:

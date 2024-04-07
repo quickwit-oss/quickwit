@@ -64,8 +64,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use quickwit_actors::{ActorExitStatus, Mailbox, SpawnContext, Universe};
 use quickwit_cluster::{
-    start_cluster_service, Cluster, ClusterChange, ClusterChangeStream, ClusterMember,
-    ListenerHandle,
+    start_cluster_service, Cluster, ClusterChange, ClusterChangeStream, ListenerHandle,
 };
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
@@ -98,7 +97,7 @@ use quickwit_metastore::{
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
-use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
+use quickwit_proto::ingest::ingester::{IngesterService, IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::metastore::{
     EntityKind, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
@@ -187,7 +186,7 @@ struct QuickwitServices {
     pub ingest_service: IngestServiceClient,
     // Ingest v2
     pub ingest_router_service: IngestRouterServiceClient,
-    pub ingester_service_opt: Option<IngesterServiceClient>,
+    pub ingester_opt: Option<Ingester>,
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
@@ -204,14 +203,6 @@ struct QuickwitServices {
     /// notifications. Otherwise, the subscriptions are dropped.
     _local_shards_update_listener_handle_opt: Option<ListenerHandle>,
     _report_splits_subscription_handle_opt: Option<EventSubscriptionHandle>,
-}
-
-fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
-    members.iter().any(|member| {
-        member
-            .enabled_services
-            .contains(&QuickwitService::Metastore)
-    })
 }
 
 async fn balance_channel_for_service(
@@ -330,22 +321,36 @@ async fn start_control_plane_if_needed(
             replication_factor,
         )
         .await?;
-        let server = ControlPlaneServiceClient::tower()
+        let control_plane_server = ControlPlaneServiceClient::tower()
             .stack_layer(CP_GRPC_SERVER_METRICS_LAYER.clone())
             .build_from_mailbox(control_plane_mailbox);
-        Ok(server)
+        Ok(control_plane_server)
     } else {
         let balance_channel =
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
-        let client = ControlPlaneServiceClient::tower()
+
+        // If the node is a metastore, we skip this check in order to avoid a deadlock.
+        if !node_config.is_service_enabled(QuickwitService::Metastore) {
+            info!("connecting to control plane");
+
+            if !balance_channel
+                .wait_for(Duration::from_secs(300), |connections| {
+                    !connections.is_empty()
+                })
+                .await
+            {
+                bail!("could not find control plane in the cluster");
+            }
+        }
+        let control_plane_client = ControlPlaneServiceClient::tower()
             .stack_layer(CP_GRPC_CLIENT_METRICS_LAYER.clone())
             .build_from_balance_channel(balance_channel, node_config.grpc_config.max_message_size);
-        Ok(client)
+        Ok(control_plane_client)
     }
 }
 
 fn start_shard_positions_service(
-    ingester_service_opt: Option<IngesterServiceClient>,
+    ingester_opt: Option<Ingester>,
     cluster: Cluster,
     event_broker: EventBroker,
     spawn_ctx: SpawnContext,
@@ -353,8 +358,8 @@ fn start_shard_positions_service(
     // We spawn a task here, because we need the ingester to be ready before spawning the
     // the `ShardPositionsService`. If we don't, all the events we emit too early will be dismissed.
     tokio::spawn(async move {
-        if let Some(ingester_service) = ingester_service_opt {
-            if wait_for_ingester_status(ingester_service, IngesterStatus::Ready)
+        if let Some(ingester) = ingester_opt {
+            if wait_for_ingester_status(ingester, IngesterStatus::Ready)
                 .await
                 .is_err()
             {
@@ -413,21 +418,19 @@ pub async fn serve_quickwit(
         if let Some(metastore_server) = &metastore_server_opt {
             metastore_server.clone()
         } else {
-            // Wait for a metastore service to be available for at most 5 minutes.
-            if cluster
-                .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(300))
-                .await
-                .is_err()
-            {
-                error!("no metastore service found among cluster members, stopping server");
-                bail!(
-                    "failed to start server: no metastore service was found among cluster \
-                     members. try running Quickwit with additional metastore service `quickwit \
-                     run --service metastore`"
-                )
-            }
+            info!("connecting to metastore");
+
             let balance_channel =
                 balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
+
+            if !balance_channel
+                .wait_for(Duration::from_secs(300), |connections| {
+                    !connections.is_empty()
+                })
+                .await
+            {
+                bail!("could not find any metastore node in the cluster");
+            }
             let layers = ServiceBuilder::new()
                 .layer(RetryLayer::new(RetryPolicy::default()))
                 .layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
@@ -491,7 +494,7 @@ pub async fn serve_quickwit(
     );
 
     // Setup ingest service v2.
-    let (ingest_router_service, ingester_service_opt) = setup_ingest_v2(
+    let (ingest_router_service, ingester_opt) = setup_ingest_v2(
         &node_config,
         &cluster,
         &event_broker,
@@ -505,7 +508,7 @@ pub async fn serve_quickwit(
         || node_config.is_service_enabled(QuickwitService::ControlPlane)
     {
         start_shard_positions_service(
-            ingester_service_opt.clone(),
+            ingester_opt.clone(),
             cluster.clone(),
             event_broker.clone(),
             universe.spawn_ctx().clone(),
@@ -654,7 +657,7 @@ pub async fn serve_quickwit(
         indexing_service_opt,
         ingest_router_service,
         ingest_service,
-        ingester_service_opt: ingester_service_opt.clone(),
+        ingester_opt: ingester_opt.clone(),
         janitor_service_opt,
         jaeger_service_opt,
         otlp_logs_service_opt,
@@ -708,7 +711,7 @@ pub async fn serve_quickwit(
         node_readiness_reporting_task(
             cluster,
             metastore_through_control_plane,
-            ingester_service_opt.clone(),
+            ingester_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
         ),
@@ -720,8 +723,8 @@ pub async fn serve_quickwit(
 
         // We must decommission the ingester first before terminating the indexing pipelines that
         // may consume from it. We also need to keep the gRPC server running while doing so.
-        if let Some(ingester_service) = ingester_service_opt {
-            if let Err(error) = wait_for_ingester_decommission(ingester_service).await {
+        if let Some(ingester) = ingester_opt {
+            if let Err(error) = wait_for_ingester_decommission(ingester).await {
                 error!("failed to decommission ingester gracefully: {:?}", error);
             }
         }
@@ -759,7 +762,7 @@ async fn setup_ingest_v2(
     event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
-) -> anyhow::Result<(IngestRouterServiceClient, Option<IngesterServiceClient>)> {
+) -> anyhow::Result<(IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
     let content_length_limit = node_config.ingest_api_config.content_length_limit;
@@ -792,7 +795,8 @@ async fn setup_ingest_v2(
     };
 
     // Instantiate ingester.
-    let ingester_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+    let ingester_opt: Option<Ingester> = if node_config.is_service_enabled(QuickwitService::Indexer)
+    {
         let wal_dir_path = node_config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
 
@@ -876,12 +880,7 @@ async fn setup_ingest_v2(
     });
     ingester_pool.listen_for_changes(ingester_change_stream);
 
-    let ingester_service_opt = ingester_opt.map(|ingester| {
-        IngesterServiceClient::tower()
-            .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
-            .build(ingester)
-    });
-    Ok((ingest_router_service, ingester_service_opt))
+    Ok((ingest_router_service, ingester_opt))
 }
 
 async fn setup_searcher(
@@ -967,7 +966,7 @@ async fn setup_control_plane(
         default_index_root_uri,
         replication_factor,
     };
-    let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+    let (control_plane_mailbox, _control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
         universe,
         cluster_config,
         self_node_id,
@@ -984,6 +983,15 @@ async fn setup_control_plane(
         .subscribe_without_timeout::<ShardPositionsUpdate>(subscriber)
         .forever();
 
+    tokio::time::timeout(
+        Duration::from_secs(300),
+        readiness_rx.wait_for(|readiness| *readiness),
+    )
+    .await
+    .context("control plane initialization timed out")?
+    .context("control plane was killled or quit")?;
+
+    info!("control plane is ready");
     Ok(control_plane_mailbox)
 }
 
@@ -1100,7 +1108,7 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 async fn node_readiness_reporting_task(
     cluster: Cluster,
     mut metastore: MetastoreServiceClient,
-    ingester_service_opt: Option<IngesterServiceClient>,
+    ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
 ) {
@@ -1116,9 +1124,8 @@ async fn node_readiness_reporting_task(
     };
     info!("REST server is ready");
 
-    if let Some(ingester_service) = ingester_service_opt {
-        if let Err(error) = wait_for_ingester_status(ingester_service, IngesterStatus::Ready).await
-        {
+    if let Some(ingester) = ingester_opt {
+        if let Err(error) = wait_for_ingester_status(ingester, IngesterStatus::Ready).await {
             error!("failed to initialize ingester: {:?}", error);
             info!("shutting down");
             return;
@@ -1209,8 +1216,8 @@ mod tests {
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{metastore_for_test, IndexMetadata};
     use quickwit_proto::indexing::IndexingTask;
-    use quickwit_proto::ingest::ingester::ObservationMessage;
-    use quickwit_proto::metastore::ListIndexesMetadataResponse;
+    use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
+    use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
     use tokio::sync::watch;
@@ -1221,7 +1228,7 @@ mod tests {
     async fn test_check_cluster_configuration() {
         let services = HashSet::from_iter([QuickwitService::Metastore]);
         let peer_seeds = ["192.168.0.12:7280".to_string()];
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
 
         mock_metastore
             .expect_endpoints()
@@ -1237,7 +1244,7 @@ mod tests {
         check_cluster_configuration(
             &services,
             &peer_seeds,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
         )
         .await
         .unwrap();
@@ -1250,7 +1257,7 @@ mod tests {
             .await
             .unwrap();
         let (metastore_readiness_tx, metastore_readiness_rx) = watch::channel(false);
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_check_connectivity()
             .returning(move || {
@@ -1261,7 +1268,7 @@ mod tests {
                 }
             });
         let (ingester_status_tx, ingester_status_rx) = watch::channel(IngesterStatus::Initializing);
-        let mut mock_ingester = IngesterServiceClient::mock();
+        let mut mock_ingester = MockIngesterService::new();
         mock_ingester
             .expect_open_observation_stream()
             .returning(move |_| {
@@ -1279,8 +1286,8 @@ mod tests {
         let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
-            MetastoreServiceClient::from(mock_metastore),
-            Some(IngesterServiceClient::from(mock_ingester)),
+            MetastoreServiceClient::from_mock(mock_metastore),
+            Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
         ));

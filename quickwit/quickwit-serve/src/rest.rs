@@ -32,7 +32,7 @@ use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
-use crate::debugging_api::debugging_handler;
+use crate::debugging_api::debugging_routes;
 use crate::decompression::{CorruptedData, UnsupportedEncoding};
 use crate::delete_task_api::delete_task_api_handlers;
 use crate::elasticsearch_api::elastic_api_handlers;
@@ -90,11 +90,8 @@ pub(crate) async fn start_rest_server(
     // `/metrics` route.
     let metrics_routes = warp::path("metrics").and(warp::get()).map(metrics_handler);
 
-    // `/debugging` route.
-    let control_plane_service = quickwit_services.control_plane_service.clone();
-    let debugging_routes = warp::path("debugging")
-        .and(warp::get())
-        .then(move || debugging_handler(control_plane_service.clone()));
+    // `/api/debugging/*` route.
+    let debugging_routes = debugging_routes(quickwit_services.clone());
 
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
@@ -604,11 +601,10 @@ mod tests {
             HeaderName::from_static("x-custom-header-2"),
             HeaderValue::from_static("custom-value-2"),
         );
-        let metastore_client = MetastoreServiceClient::from(MetastoreServiceClient::mock());
+        let metastore_client = MetastoreServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_client.clone(), StorageResolver::unconfigured());
-        let control_plane_service =
-            ControlPlaneServiceClient::from(ControlPlaneServiceClient::mock());
+        let control_plane_service = ControlPlaneServiceClient::mocked();
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
@@ -621,10 +617,8 @@ mod tests {
             indexing_service_opt: None,
             index_manager: index_service,
             ingest_service: ingest_service_client(),
-            ingester_service_opt: None,
-            ingest_router_service: IngestRouterServiceClient::from(
-                IngestRouterServiceClient::mock(),
-            ),
+            ingester_opt: None,
+            ingest_router_service: IngestRouterServiceClient::mocked(),
             janitor_service_opt: None,
             otlp_logs_service_opt: None,
             otlp_traces_service_opt: None,

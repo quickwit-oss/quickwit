@@ -85,7 +85,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     // Routing
     docs_base.merge_components_and_paths(HealthCheckApi::openapi().with_path_prefix("/health"));
     docs_base.merge_components_and_paths(MetricsApi::openapi().with_path_prefix("/metrics"));
-    docs_base.merge_components_and_paths(DebugApi::openapi().with_path_prefix("/debugging"));
+    docs_base.merge_components_and_paths(DebugApi::openapi().with_path_prefix("/api/debugging"));
     docs_base.merge_components_and_paths(ClusterApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(DeleteTaskApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(IndexApi::openapi().with_path_prefix("/api/v1"));

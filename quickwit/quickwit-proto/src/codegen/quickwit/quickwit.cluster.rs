@@ -179,8 +179,15 @@ impl ClusterServiceClient {
         ClusterServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockClusterService {
-        MockClusterService::new()
+    pub fn from_mock(mock: MockClusterService) -> Self {
+        let mock_wrapper = mock_cluster_service::MockClusterServiceWrapper {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockClusterService::new())
     }
 }
 #[async_trait::async_trait]
@@ -193,11 +200,11 @@ impl ClusterService for ClusterServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod cluster_service_mock {
+pub mod mock_cluster_service {
     use super::*;
     #[derive(Debug, Clone)]
-    struct MockClusterServiceWrapper {
-        inner: std::sync::Arc<tokio::sync::Mutex<MockClusterService>>,
+    pub struct MockClusterServiceWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockClusterService>>,
     }
     #[async_trait::async_trait]
     impl ClusterService for MockClusterServiceWrapper {
@@ -206,14 +213,6 @@ pub mod cluster_service_mock {
             request: super::FetchClusterStateRequest,
         ) -> crate::cluster::ClusterResult<super::FetchClusterStateResponse> {
             self.inner.lock().await.fetch_cluster_state(request).await
-        }
-    }
-    impl From<MockClusterService> for ClusterServiceClient {
-        fn from(mock: MockClusterService) -> Self {
-            let mock_wrapper = MockClusterServiceWrapper {
-                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
-            };
-            ClusterServiceClient::new(mock_wrapper)
         }
     }
 }

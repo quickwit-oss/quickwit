@@ -886,7 +886,7 @@ mod tests {
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::metastore::{
         AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, IndexMetadataResponse,
-        ListIndexesMetadataResponse,
+        ListIndexesMetadataResponse, MockMetastoreService,
     };
 
     use super::*;
@@ -1464,19 +1464,19 @@ mod tests {
         index_metadata
             .sources
             .insert(source_config.source_id.clone(), source_config.clone());
-        let mut metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_metadata_clone = index_metadata.clone();
-        metastore
+        mock_metastore
             .expect_list_indexes_metadata()
             .return_once(move |_request| {
                 Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata_clone,
                 ]))
             });
-        metastore.expect_index_metadata().returning(move |_| {
+        mock_metastore.expect_index_metadata().returning(move |_| {
             Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
-        metastore
+        mock_metastore
             .expect_list_splits()
             .returning(|_| Ok(ServiceStream::empty()));
         let universe = Universe::new();
@@ -1484,7 +1484,7 @@ mod tests {
         let (indexing_service, indexing_service_handle) = spawn_indexing_service_for_test(
             temp_dir.path(),
             &universe,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             cluster,
         )
         .await;

@@ -777,7 +777,7 @@ mod tests {
         RetainShardsResponse,
     };
     use quickwit_proto::ingest::{Shard, ShardState};
-    use quickwit_proto::metastore::MetastoreError;
+    use quickwit_proto::metastore::{MetastoreError, MockMetastoreService};
     use quickwit_proto::types::{Position, SourceId};
 
     use super::*;
@@ -796,7 +796,7 @@ mod tests {
 
         let progress = Progress::default();
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore.expect_open_shards().once().returning({
             let index_uid_1 = index_uid_1.clone();
 
@@ -822,10 +822,12 @@ mod tests {
                 Ok(response)
             }
         });
-        let ingester_pool = IngesterPool::default();
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
 
         let mock_ingester = MockIngesterService::default();
-        let ingester: IngesterServiceClient = mock_ingester.into();
+        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+
+        let ingester_pool = IngesterPool::default();
         ingester_pool.insert("test-ingester-1".into(), ingester.clone());
 
         let mut mock_ingester = MockIngesterService::default();
@@ -842,15 +844,12 @@ mod tests {
 
                 Ok(InitShardsResponse {})
             });
-        let ingester: IngesterServiceClient = mock_ingester.into();
+        let ingester = IngesterServiceClient::from_mock(mock_ingester);
         ingester_pool.insert("test-ingester-2".into(), ingester.clone());
 
         let replication_factor = 2;
-        let mut ingest_controller = IngestController::new(
-            MetastoreServiceClient::from(mock_metastore),
-            ingester_pool.clone(),
-            replication_factor,
-        );
+        let mut ingest_controller =
+            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
         let mut model = ControlPlaneModel::default();
         model.add_index(index_metadata_0.clone());
@@ -975,7 +974,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_controller_get_open_shards_handles_closed_shards() {
-        let metastore = MetastoreServiceClient::mock().into();
+        let metastore = MetastoreServiceClient::mocked();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 2;
 
@@ -1021,10 +1020,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_controller_get_open_shards_handles_unavailable_leaders() {
-        let metastore = MetastoreServiceClient::mock().into();
+        let metastore = MetastoreServiceClient::mocked();
 
         let ingester_pool = IngesterPool::default();
-        let ingester_1 = IngesterServiceClient::mock().into();
+        let ingester_1 = IngesterServiceClient::mocked();
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
         let replication_factor = 2;
@@ -1097,7 +1096,7 @@ mod tests {
 
     #[test]
     fn test_ingest_controller_allocate_shards() {
-        let metastore = MetastoreServiceClient::mock().into();
+        let metastore = MetastoreServiceClient::mocked();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 2;
 
@@ -1112,7 +1111,7 @@ mod tests {
 
         ingester_pool.insert(
             "test-ingester-1".into(),
-            IngesterServiceClient::mock().into(),
+            IngesterServiceClient::from_mock(MockIngesterService::new()),
         );
 
         let leader_follower_pairs_opt =
@@ -1121,7 +1120,7 @@ mod tests {
 
         ingester_pool.insert(
             "test-ingester-2".into(),
-            IngesterServiceClient::mock().into(),
+            IngesterServiceClient::from_mock(MockIngesterService::new()),
         );
 
         let leader_follower_pairs = ingest_controller
@@ -1243,7 +1242,7 @@ mod tests {
 
         ingester_pool.insert(
             "test-ingester-3".into(),
-            IngesterServiceClient::mock().into(),
+            IngesterServiceClient::from_mock(MockIngesterService::new()),
         );
         let unavailable_leaders = FnvHashSet::from_iter([NodeId::from("test-ingester-2")]);
         let leader_follower_pairs = ingest_controller
@@ -1277,7 +1276,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_controller_handle_local_shards_update() {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_open_shards()
             .once()
@@ -1293,7 +1292,7 @@ mod tests {
                     message: "failed to open shards".to_string(),
                 })
             });
-        let metastore = MetastoreServiceClient::from(mock_metastore);
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
 
@@ -1357,10 +1356,10 @@ mod tests {
         let shard_entries: Vec<ShardEntry> = model.all_shards().cloned().collect();
         assert_eq!(shard_entries.len(), 2);
 
-        let mut ingester_mock = IngesterServiceClient::mock();
+        let mut mock_ingester = MockIngesterService::new();
 
         let index_uid_clone = index_uid.clone();
-        ingester_mock
+        mock_ingester
             .expect_close_shards()
             .returning(move |request| {
                 assert_eq!(request.shards.len(), 1);
@@ -1372,7 +1371,8 @@ mod tests {
                     "failed to close shards".to_string(),
                 ))
             });
-        ingester_pool.insert("test-ingester".into(), ingester_mock.into());
+        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        ingester_pool.insert("test-ingester".into(), ingester);
 
         let shard_infos = BTreeSet::from_iter([
             ShardInfo {
@@ -1420,7 +1420,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_controller_try_scale_up_shards() {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
 
         let index_uid = IndexUid::from_str("test-index:00000000000000000000000000").unwrap();
         let index_uid_clone = index_uid.clone();
@@ -1462,15 +1462,13 @@ mod tests {
                 let response = metastore::OpenShardsResponse { subresponses };
                 Ok(response)
             });
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
 
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
 
-        let mut ingest_controller = IngestController::new(
-            mock_metastore.into(),
-            ingester_pool.clone(),
-            replication_factor,
-        );
+        let mut ingest_controller =
+            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = INGEST_V2_SOURCE_ID.to_string();
@@ -1498,10 +1496,10 @@ mod tests {
             .try_scale_up_shards(source_uid.clone(), shard_stats, &mut model, &progress)
             .await;
 
-        let mut ingester_mock = IngesterServiceClient::mock();
+        let mut mock_ingester = MockIngesterService::new();
 
         let index_uid_clone = index_uid.clone();
-        ingester_mock
+        mock_ingester
             .expect_init_shards()
             .once()
             .returning(move |request| {
@@ -1514,7 +1512,7 @@ mod tests {
                 Err(IngestV2Error::Internal("failed to init shards".to_string()))
             });
         let index_uid_clone = index_uid.clone();
-        ingester_mock
+        mock_ingester
             .expect_init_shards()
             .returning(move |request| {
                 assert_eq!(request.shards.len(), 1);
@@ -1525,7 +1523,8 @@ mod tests {
 
                 Ok(InitShardsResponse {})
             });
-        ingester_pool.insert("test-ingester".into(), ingester_mock.into());
+        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        ingester_pool.insert("test-ingester".into(), ingester);
 
         // Test failed to open shards.
         ingest_controller
@@ -1551,7 +1550,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_controller_try_scale_down_shards() {
-        let metastore = MetastoreServiceClient::mock().into();
+        let metastore = MetastoreServiceClient::mocked();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
 
@@ -1592,10 +1591,10 @@ mod tests {
             .try_scale_down_shards(source_uid.clone(), shard_stats, &mut model, &progress)
             .await;
 
-        let mut ingester_mock = IngesterServiceClient::mock();
+        let mut mock_ingester = MockIngesterService::new();
 
         let index_uid_clone = index_uid.clone();
-        ingester_mock
+        mock_ingester
             .expect_close_shards()
             .once()
             .returning(move |request| {
@@ -1609,7 +1608,7 @@ mod tests {
                 ))
             });
         let index_uid_clone = index_uid.clone();
-        ingester_mock
+        mock_ingester
             .expect_close_shards()
             .once()
             .returning(move |request| {
@@ -1620,7 +1619,8 @@ mod tests {
 
                 Ok(CloseShardsResponse {})
             });
-        ingester_pool.insert("test-ingester".into(), ingester_mock.into());
+        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        ingester_pool.insert("test-ingester".into(), ingester);
 
         // Test failed to close shard.
         ingest_controller
@@ -1757,7 +1757,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_with_ingesters() {
-        let metastore = MetastoreServiceClient::mock().into();
+        let metastore = MetastoreServiceClient::mocked();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 2;
 
@@ -1798,13 +1798,13 @@ mod tests {
         ];
         model.insert_shards(&index_uid, &source_id, shards);
 
-        let mut ingester_mock1 = IngesterServiceClient::mock();
-        let ingester_mock2 = IngesterServiceClient::mock();
-        let ingester_mock3 = IngesterServiceClient::mock();
+        let mut mock_ingester_1 = MockIngesterService::new();
+        let mock_ingester_2 = MockIngesterService::new();
+        let mock_ingester_3 = MockIngesterService::new();
 
         let count_calls = Arc::new(AtomicUsize::new(0));
         let count_calls_clone = count_calls.clone();
-        ingester_mock1
+        mock_ingester_1
             .expect_retain_shards()
             .once()
             .returning(move |request| {
@@ -1816,9 +1816,18 @@ mod tests {
                 count_calls_clone.fetch_add(1, Ordering::Release);
                 Ok(RetainShardsResponse {})
             });
-        ingester_pool.insert("node-1".into(), ingester_mock1.into());
-        ingester_pool.insert("node-2".into(), ingester_mock2.into());
-        ingester_pool.insert("node-3".into(), ingester_mock3.into());
+        ingester_pool.insert(
+            "node-1".into(),
+            IngesterServiceClient::from_mock(mock_ingester_1),
+        );
+        ingester_pool.insert(
+            "node-2".into(),
+            IngesterServiceClient::from_mock(mock_ingester_2),
+        );
+        ingester_pool.insert(
+            "node-3".into(),
+            IngesterServiceClient::from_mock(mock_ingester_3),
+        );
         let node_id = "node-1".into();
         let wait_handle = ingest_controller.sync_with_ingester(&node_id, &model);
         wait_handle.wait().await;
@@ -1827,7 +1836,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_controller_advise_reset_shards() {
-        let metastore = MetastoreServiceClient::mock().into();
+        let metastore = MetastoreServiceClient::mocked();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 2;
 

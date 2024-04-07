@@ -279,8 +279,15 @@ impl IngestServiceClient {
         IngestServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockIngestService {
-        MockIngestService::new()
+    pub fn from_mock(mock: MockIngestService) -> Self {
+        let mock_wrapper = mock_ingest_service::MockIngestServiceWrapper {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockIngestService::new())
     }
 }
 #[async_trait::async_trait]
@@ -296,11 +303,11 @@ impl IngestService for IngestServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod ingest_service_mock {
+pub mod mock_ingest_service {
     use super::*;
     #[derive(Debug, Clone)]
-    struct MockIngestServiceWrapper {
-        inner: std::sync::Arc<tokio::sync::Mutex<MockIngestService>>,
+    pub struct MockIngestServiceWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockIngestService>>,
     }
     #[async_trait::async_trait]
     impl IngestService for MockIngestServiceWrapper {
@@ -321,14 +328,6 @@ pub mod ingest_service_mock {
             request: super::TailRequest,
         ) -> crate::Result<super::FetchResponse> {
             self.inner.lock().await.tail(request).await
-        }
-    }
-    impl From<MockIngestService> for IngestServiceClient {
-        fn from(mock: MockIngestService) -> Self {
-            let mock_wrapper = MockIngestServiceWrapper {
-                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
-            };
-            IngestServiceClient::new(mock_wrapper)
         }
     }
 }

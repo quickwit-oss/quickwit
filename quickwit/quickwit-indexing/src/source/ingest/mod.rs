@@ -661,10 +661,10 @@ mod tests {
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::ingest::ingester::{
-        FetchMessage, IngesterServiceClient, TruncateShardsResponse,
+        FetchMessage, IngesterServiceClient, MockIngesterService, TruncateShardsResponse,
     };
     use quickwit_proto::ingest::{IngestV2Error, MRecordBatch, Shard, ShardState};
-    use quickwit_proto::metastore::AcquireShardsResponse;
+    use quickwit_proto::metastore::{AcquireShardsResponse, MockMetastoreService};
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_storage::StorageResolver;
     use tokio::sync::mpsc::error::TryRecvError;
@@ -691,7 +691,7 @@ mod tests {
         let publish_token = "indexer/test-node/test-index:0/test-source/\
                              00000000000000000000000000/00000000000000000000000000";
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_acquire_shards()
             .withf(|request| request.shard_ids == [ShardId::from(0)])
@@ -775,9 +775,9 @@ mod tests {
         // request.
         let (sequence_tx, mut sequence_rx) = tokio::sync::mpsc::unbounded_channel::<usize>();
 
-        let mut ingester_mock_0 = IngesterServiceClient::mock();
+        let mut mock_ingester_0 = MockIngesterService::new();
         let sequence_tx_clone1 = sequence_tx.clone();
-        ingester_mock_0
+        mock_ingester_0
             .expect_open_fetch_stream()
             .withf(|request| {
                 request.from_position_exclusive() == Position::offset(10u64)
@@ -798,7 +798,7 @@ mod tests {
                 Ok(service_stream)
             });
         let sequence_tx_clone2 = sequence_tx.clone();
-        ingester_mock_0
+        mock_ingester_0
             .expect_open_fetch_stream()
             .withf(|request| {
                 request.from_position_exclusive() == Position::offset(11u64)
@@ -819,7 +819,7 @@ mod tests {
                 Ok(service_stream)
             });
         let sequence_tx_clone3 = sequence_tx.clone();
-        ingester_mock_0
+        mock_ingester_0
             .expect_open_fetch_stream()
             .withf(|request| {
                 request.from_position_exclusive() == Position::offset(12u64)
@@ -839,7 +839,7 @@ mod tests {
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
                 Ok(service_stream)
             });
-        ingester_mock_0
+        mock_ingester_0
             .expect_truncate_shards()
             .withf(|truncate_req| truncate_req.subrequests[0].shard_id() == ShardId::from(0))
             .once()
@@ -859,7 +859,7 @@ mod tests {
                 Ok(response)
             });
 
-        ingester_mock_0
+        mock_ingester_0
             .expect_truncate_shards()
             .withf(|truncate_req| truncate_req.subrequests[0].shard_id() == ShardId::from(1))
             .once()
@@ -877,7 +877,7 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        ingester_mock_0
+        mock_ingester_0
             .expect_truncate_shards()
             .withf(|truncate_req| {
                 truncate_req.subrequests.len() == 2
@@ -908,7 +908,7 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -916,7 +916,7 @@ mod tests {
         let runtime_args: Arc<SourceRuntimeArgs> = Arc::new(SourceRuntimeArgs {
             pipeline_id,
             source_config,
-            metastore: MetastoreServiceClient::from(mock_metastore),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
@@ -1036,7 +1036,7 @@ mod tests {
         let publish_token = "indexer/test-node/test-index:0/test-source/\
                              00000000000000000000000000/00000000000000000000000000";
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_acquire_shards()
             .once()
@@ -1073,8 +1073,8 @@ mod tests {
             });
         let ingester_pool = IngesterPool::default();
 
-        let mut ingester_mock_0 = IngesterServiceClient::mock();
-        ingester_mock_0
+        let mut mock_ingester_0 = MockIngesterService::new();
+        mock_ingester_0
             .expect_truncate_shards()
             .once()
             .returning(|request| {
@@ -1103,7 +1103,7 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1118,7 +1118,7 @@ mod tests {
         let runtime_args = Arc::new(SourceRuntimeArgs {
             pipeline_id,
             source_config,
-            metastore: MetastoreServiceClient::from(mock_metastore),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
@@ -1176,7 +1176,7 @@ mod tests {
         let publish_token = "indexer/test-node/test-index:0/test-source/\
                              00000000000000000000000000/00000000000000000000000000";
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_acquire_shards()
             .once()
@@ -1213,8 +1213,8 @@ mod tests {
             });
         let ingester_pool = IngesterPool::default();
 
-        let mut ingester_mock_0 = IngesterServiceClient::mock();
-        ingester_mock_0
+        let mut mock_ingester_0 = MockIngesterService::new();
+        mock_ingester_0
             .expect_open_fetch_stream()
             .once()
             .returning(|request| {
@@ -1231,7 +1231,7 @@ mod tests {
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
                 Ok(service_stream)
             });
-        ingester_mock_0
+        mock_ingester_0
             .expect_truncate_shards()
             .once()
             .returning(|mut request| {
@@ -1263,7 +1263,7 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1278,7 +1278,7 @@ mod tests {
         let runtime_args = Arc::new(SourceRuntimeArgs {
             pipeline_id,
             source_config,
-            metastore: MetastoreServiceClient::from(mock_metastore),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
@@ -1336,14 +1336,14 @@ mod tests {
             pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let mock_metastore = MetastoreServiceClient::mock();
+        let mock_metastore = MockMetastoreService::new();
         let ingester_pool = IngesterPool::default();
         let event_broker = EventBroker::default();
 
         let runtime_args = Arc::new(SourceRuntimeArgs {
             pipeline_id,
             source_config,
-            metastore: MetastoreServiceClient::from(mock_metastore),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
@@ -1527,7 +1527,7 @@ mod tests {
         let publish_token = "indexer/test-node/test-index:0/test-source/\
                              00000000000000000000000000/00000000000000000000000000";
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_acquire_shards()
             .once()
@@ -1552,8 +1552,8 @@ mod tests {
             });
         let ingester_pool = IngesterPool::default();
 
-        let mut ingester_mock_0 = IngesterServiceClient::mock();
-        ingester_mock_0
+        let mut mock_ingester_0 = MockIngesterService::new();
+        mock_ingester_0
             .expect_open_fetch_stream()
             .once()
             .returning(|request| {
@@ -1567,14 +1567,14 @@ mod tests {
                 })
             });
 
-        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
         let runtime_args = Arc::new(SourceRuntimeArgs {
             pipeline_id,
             source_config,
-            metastore: MetastoreServiceClient::from(mock_metastore),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
             ingester_pool,
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
@@ -1631,12 +1631,12 @@ mod tests {
             pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let mock_metastore = MetastoreServiceClient::mock();
+        let mock_metastore = MockMetastoreService::new();
 
         let ingester_pool = IngesterPool::default();
 
-        let mut ingester_mock_0 = IngesterServiceClient::mock();
-        ingester_mock_0
+        let mut mock_ingester_0 = MockIngesterService::new();
+        mock_ingester_0
             .expect_truncate_shards()
             .once()
             .returning(|request| {
@@ -1666,11 +1666,11 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
-        let mut ingester_mock_1 = IngesterServiceClient::mock();
-        ingester_mock_1
+        let mut mock_ingester_1 = MockIngesterService::new();
+        mock_ingester_1
             .expect_truncate_shards()
             .once()
             .returning(|request| {
@@ -1693,11 +1693,11 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_1: IngesterServiceClient = ingester_mock_1.into();
+        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
         ingester_pool.insert("test-ingester-1".into(), ingester_1.clone());
 
-        let mut ingester_mock_3 = IngesterServiceClient::mock();
-        ingester_mock_3
+        let mut mock_ingester_3 = MockIngesterService::new();
+        mock_ingester_3
             .expect_truncate_shards()
             .once()
             .returning(|request| {
@@ -1713,7 +1713,7 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_3: IngesterServiceClient = ingester_mock_3.into();
+        let ingester_3 = IngesterServiceClient::from_mock(mock_ingester_3);
         ingester_pool.insert("test-ingester-3".into(), ingester_3.clone());
 
         let event_broker = EventBroker::default();
@@ -1728,7 +1728,7 @@ mod tests {
         let runtime_args = Arc::new(SourceRuntimeArgs {
             pipeline_id,
             source_config,
-            metastore: MetastoreServiceClient::from(mock_metastore),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),

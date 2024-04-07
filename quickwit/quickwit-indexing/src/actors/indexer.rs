@@ -715,7 +715,9 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
-    use quickwit_proto::metastore::{EmptyResponse, LastDeleteOpstampResponse};
+    use quickwit_proto::metastore::{
+        EmptyResponse, LastDeleteOpstampResponse, MockMetastoreService,
+    };
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use tantivy::{doc, DateTime};
 
@@ -770,20 +772,20 @@ mod tests {
         indexing_settings.split_num_docs_target = 3;
         let universe = Universe::with_accelerated_time();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore.expect_publish_splits().never();
-        metastore
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_publish_splits().never();
+        mock_metastore
             .expect_last_delete_opstamp()
             .times(2)
             .returning(move |delete_opstamp_request| {
                 assert_eq!(delete_opstamp_request.index_uid(), &index_uid);
                 Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
-        metastore.expect_publish_splits().never();
+        mock_metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -906,20 +908,20 @@ mod tests {
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.resources.heap_size = ByteSize::mb(16);
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore.expect_publish_splits().never();
-        metastore
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_publish_splits().never();
+        mock_metastore
             .expect_last_delete_opstamp()
             .times(1..=2)
             .returning(move |last_delete_opstamp_request| {
                 assert_eq!(last_delete_opstamp_request.index_uid(), &index_uid);
                 Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
-        metastore.expect_publish_splits().never();
+        mock_metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -984,18 +986,18 @@ mod tests {
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.commit_timeout_secs = 1;
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore.expect_publish_splits().never();
-        metastore
-            .expect_last_delete_opstamp()
-            .returning(move |_last_delete_opstamp_request| {
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_publish_splits().never();
+        mock_metastore.expect_last_delete_opstamp().returning(
+            move |_last_delete_opstamp_request| {
                 Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
-            });
-        metastore.expect_publish_splits().never();
+            },
+        );
+        mock_metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1067,17 +1069,17 @@ mod tests {
         let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore.expect_publish_splits().never();
-        metastore
-            .expect_last_delete_opstamp()
-            .returning(move |_last_delete_opstamp_request| {
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_publish_splits().never();
+        mock_metastore.expect_last_delete_opstamp().returning(
+            move |_last_delete_opstamp_request| {
                 Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
-            });
+            },
+        );
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
             Some(Arc::new(Semaphore::new(1))),
@@ -1154,17 +1156,17 @@ mod tests {
         let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore.expect_publish_splits().never();
-        metastore
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_publish_splits().never();
+        mock_metastore
             .expect_last_delete_opstamp()
             .once()
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
-        metastore.expect_publish_splits().never();
+        mock_metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1238,17 +1240,17 @@ mod tests {
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.resources.heap_size = ByteSize::mb(100);
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore.expect_publish_splits().never();
-        metastore
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_publish_splits().never();
+        mock_metastore
             .expect_last_delete_opstamp()
             .once()
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
-        metastore.expect_publish_splits().never();
+        mock_metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1334,17 +1336,17 @@ mod tests {
         let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.resources.heap_size = ByteSize::gb(5);
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
             .expect_last_delete_opstamp()
             .times(1)
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
-        metastore.expect_publish_splits().never();
+        mock_metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1405,17 +1407,17 @@ mod tests {
         let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
             .expect_last_delete_opstamp()
             .times(2)
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
-        metastore.expect_publish_splits().never();
+        mock_metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1477,17 +1479,17 @@ mod tests {
         let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
             .expect_last_delete_opstamp()
             .times(1)
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
-        metastore.expect_publish_splits().never();
+        mock_metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1541,17 +1543,17 @@ mod tests {
         let body_field = doc_mapper.schema().get_field("body").unwrap();
         let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
             .expect_last_delete_opstamp()
             .times(1)
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
-        metastore.expect_publish_splits().never();
+        mock_metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1604,7 +1606,7 @@ mod tests {
         let commit_timeout = indexing_settings.commit_timeout();
         let universe = Universe::with_accelerated_time();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_publish_splits()
             .returning(move |publish_splits_request| {
@@ -1619,7 +1621,7 @@ mod tests {
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             indexing_directory,
             indexing_settings,
             None,
