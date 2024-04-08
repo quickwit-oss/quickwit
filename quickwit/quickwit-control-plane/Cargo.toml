@@ -21,6 +21,7 @@ once_cell = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+smallvec = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }

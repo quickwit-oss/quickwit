@@ -22,6 +22,12 @@ use quickwit_common::metrics::{
     new_counter, new_gauge, new_gauge_vec, IntCounter, IntGauge, IntGaugeVec,
 };
 
+#[derive(Debug, Clone, Copy)]
+pub struct ShardLocalityMetrics {
+    pub num_remote_shards: usize,
+    pub num_local_shards: usize,
+}
+
 pub struct ControlPlaneMetrics {
     pub indexes_total: IntGauge,
     pub restart_total: IntCounter,
@@ -29,10 +35,30 @@ pub struct ControlPlaneMetrics {
     pub metastore_error_aborted: IntCounter,
     pub metastore_error_maybe_executed: IntCounter,
     pub open_shards_total: IntGaugeVec<1>,
+    pub local_shards: IntGauge,
+    pub remote_shards: IntGauge,
+}
+
+impl ControlPlaneMetrics {
+    pub fn set_shard_locality_metrics(&self, shard_locality_metrics: ShardLocalityMetrics) {
+        self.local_shards
+            .set(shard_locality_metrics.num_local_shards as i64);
+        self.remote_shards
+            .set(shard_locality_metrics.num_remote_shards as i64);
+    }
 }
 
 impl Default for ControlPlaneMetrics {
     fn default() -> Self {
+        let shards = new_gauge_vec(
+            "shards",
+            "Number of (remote/local) shards in the indexing plan",
+            "control_plane",
+            &[],
+            ["locality"],
+        );
+        let local_shards = shards.with_label_values(["local"]);
+        let remote_shards = shards.with_label_values(["remote"]);
         ControlPlaneMetrics {
             indexes_total: new_gauge("indexes_total", "Number of indexes.", "control_plane", &[]),
             restart_total: new_counter(
@@ -64,6 +90,8 @@ impl Default for ControlPlaneMetrics {
                 &[],
                 ["index_id"],
             ),
+            local_shards,
+            remote_shards,
         }
     }
 }
