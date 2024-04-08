@@ -52,6 +52,10 @@ impl PhysicalIndexingPlan {
         &self.indexing_tasks_per_indexer_id
     }
 
+    pub fn num_indexers(&self) -> usize {
+        self.indexing_tasks_per_indexer_id.len()
+    }
+
     /// Returns the hashmap of (indexer ID, indexing tasks).
     pub fn indexing_tasks_per_indexer_mut(&mut self) -> &mut FnvHashMap<String, Vec<IndexingTask>> {
         &mut self.indexing_tasks_per_indexer_id

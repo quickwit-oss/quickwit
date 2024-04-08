@@ -214,6 +214,7 @@ serde_qs = { version = "0.12", features = ["warp"] }
 serde_with = "3.6.0"
 serde_yaml = "0.9"
 siphasher = "0.3"
+smallvec = "1"
 sqlx = { version = "0.7", features = [
   "migrate",
   "postgres",
