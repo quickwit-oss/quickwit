@@ -119,12 +119,12 @@ impl ControlPlane {
         ActorHandle<Supervisor<Self>>,
         watch::Receiver<bool>,
     ) {
+        info!("starting control plane");
         let (readiness_tx, readiness_rx) = watch::channel(false);
         let (control_plane_mailbox, control_plane_handle) =
             universe.spawn_builder().supervise_fn(move || {
                 let cluster_id = cluster_config.cluster_id.clone();
                 let replication_factor = cluster_config.replication_factor;
-
                 let indexing_scheduler =
                     IndexingScheduler::new(cluster_id, self_node_id.clone(), indexer_pool.clone());
                 let ingest_controller = IngestController::new(
@@ -388,6 +388,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
                     Some(shard.publish_position_inclusive().max(&position).clone());
                 if position.is_eof() {
                     // identify shards that have reached EOF but have not yet been removed.
+                    info!(shard_id=%shard_id, position=?position, "received eof shard via gossip");
                     shard_ids_to_close.push(shard_id);
                 }
             }

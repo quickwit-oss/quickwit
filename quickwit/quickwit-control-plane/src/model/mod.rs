@@ -344,6 +344,7 @@ impl ControlPlaneModel {
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
     pub fn delete_shards(&mut self, source_uid: &SourceUid, shard_ids: &[ShardId]) {
+        info!(source_uid=%source_uid, shard_ids=?shard_ids, "removing shards from model");
         self.shard_table.delete_shards(source_uid, shard_ids);
     }
 
