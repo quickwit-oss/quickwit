@@ -112,6 +112,12 @@ pub trait CreateIndexRequestExt {
     /// Creates a new [`CreateIndexRequest`] from an [`IndexConfig`].
     fn try_from_index_config(index_config: &IndexConfig) -> MetastoreResult<CreateIndexRequest>;
 
+    /// Creates a new [`CreateIndexRequest`] from an [`IndexConfig`] and a list of [`SourceConfig`].
+    fn try_from_index_and_source_configs(
+        index_config: &IndexConfig,
+        source_configs: &[SourceConfig],
+    ) -> MetastoreResult<CreateIndexRequest>;
+
     /// Deserializes the `index_config_json` field of a [`CreateIndexRequest`] into an
     /// [`IndexConfig`].
     fn deserialize_index_config(&self) -> MetastoreResult<IndexConfig>;
@@ -125,6 +131,22 @@ impl CreateIndexRequestExt for CreateIndexRequest {
     fn try_from_index_config(index_config: &IndexConfig) -> MetastoreResult<CreateIndexRequest> {
         let index_config_json = serde_utils::to_json_str(index_config)?;
         let source_configs_json = Vec::new();
+        let request = Self {
+            index_config_json,
+            source_configs_json,
+        };
+        Ok(request)
+    }
+
+    fn try_from_index_and_source_configs(
+        index_config: &IndexConfig,
+        source_configs: &[SourceConfig],
+    ) -> MetastoreResult<CreateIndexRequest> {
+        let index_config_json = serde_utils::to_json_str(index_config)?;
+        let source_configs_json: Vec<String> = source_configs
+            .iter()
+            .map(serde_utils::to_json_str)
+            .collect::<MetastoreResult<_>>()?;
         let request = Self {
             index_config_json,
             source_configs_json,

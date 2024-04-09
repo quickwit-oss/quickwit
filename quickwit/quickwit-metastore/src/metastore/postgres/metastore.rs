@@ -40,8 +40,8 @@ use quickwit_proto::metastore::{
     ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
     ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardsRequest,
-    OpenShardsResponse, OpenShardsSubrequest, OpenShardsSubresponse, PublishSplitsRequest,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
+    OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest,
     ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
@@ -1182,14 +1182,12 @@ impl MetastoreService for PostgresqlMetastore {
         let mut subresponses = Vec::with_capacity(request.subrequests.len());
 
         for subrequest in request.subrequests {
-            let shard: Shard = open_or_fetch_shard(&self.connection_pool, &subrequest).await?;
-
-            subresponses.push(OpenShardsSubresponse {
+            let open_shard: Shard = open_or_fetch_shard(&self.connection_pool, &subrequest).await?;
+            let subresponse = OpenShardSubresponse {
                 subrequest_id: subrequest.subrequest_id,
-                index_uid: subrequest.index_uid,
-                source_id: subrequest.source_id,
-                opened_shards: vec![shard],
-            });
+                open_shard: Some(open_shard),
+            };
+            subresponses.push(subresponse);
         }
         Ok(OpenShardsResponse { subresponses })
     }
@@ -1437,7 +1435,7 @@ impl MetastoreService for PostgresqlMetastore {
 
 async fn open_or_fetch_shard<'e>(
     executor: impl Executor<'e, Database = Postgres> + Clone,
-    subrequest: &OpenShardsSubrequest,
+    subrequest: &OpenShardSubrequest,
 ) -> MetastoreResult<Shard> {
     const OPEN_SHARDS_QUERY: &str = include_str!("queries/shards/open.sql");
 

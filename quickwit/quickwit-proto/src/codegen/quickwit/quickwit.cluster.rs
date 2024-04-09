@@ -369,6 +369,10 @@ impl ClusterServiceTowerLayerStack {
     {
         self.build_from_boxed(Box::new(ClusterServiceMailbox::new(mailbox)))
     }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockClusterService) -> ClusterServiceClient {
+        self.build_from_boxed(Box::new(ClusterServiceClient::from_mock(mock)))
+    }
     fn build_from_boxed(
         self,
         boxed_instance: Box<dyn ClusterService>,

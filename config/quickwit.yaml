@@ -128,7 +128,7 @@ indexer:
 #   max_queue_disk_usage: 4GiB
 #
 # -------------------------------- Searcher settings --------------------------------
-# 
+#
 # searcher:
 #   fast_field_cache_capacity: 1G
 #   split_footer_cache_capacity: 500M

@@ -523,6 +523,16 @@ impl ShardTable {
         Some(scaling_rate_limiter.acquire(num_permits))
     }
 
+    pub fn drain_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
+        if let Some(table_entry) = self.table_entries.get_mut(source_uid) {
+            let scaling_rate_limiter = match scaling_mode {
+                ScalingMode::Up => &mut table_entry.scaling_up_rate_limiter,
+                ScalingMode::Down => &mut table_entry.scaling_down_rate_limiter,
+            };
+            scaling_rate_limiter.drain();
+        }
+    }
+
     pub fn release_scaling_permits(
         &mut self,
         source_uid: &SourceUid,

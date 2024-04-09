@@ -404,6 +404,13 @@ impl IngestRouterServiceTowerLayerStack {
     {
         self.build_from_boxed(Box::new(IngestRouterServiceMailbox::new(mailbox)))
     }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(
+        self,
+        mock: MockIngestRouterService,
+    ) -> IngestRouterServiceClient {
+        self.build_from_boxed(Box::new(IngestRouterServiceClient::from_mock(mock)))
+    }
     fn build_from_boxed(
         self,
         boxed_instance: Box<dyn IngestRouterService>,
