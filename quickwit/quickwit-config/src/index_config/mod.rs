@@ -223,7 +223,7 @@ pub struct SearchSettings {
 #[serde(deny_unknown_fields)]
 pub struct RetentionPolicy {
     /// Duration of time for which the splits should be retained, expressed in a human-friendly way
-    /// (`1 hour`, `3 days`, `a week`, ...).
+    /// (`1 hour`, `3 days`, `1 week`, ...).
     #[serde(rename = "period")]
     pub retention_period: String,
 
