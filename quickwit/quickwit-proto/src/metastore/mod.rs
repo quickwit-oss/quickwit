@@ -22,7 +22,7 @@ use std::fmt;
 use quickwit_common::retry::Retryable;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{IndexId, IndexUid, QueueId, ShardId, SourceId, SplitId};
+use crate::types::{IndexId, IndexUid, QueueId, SourceId, SplitId};
 use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 pub mod events;
@@ -368,13 +368,5 @@ impl ListIndexesMetadataRequest {
         ListIndexesMetadataRequest {
             index_id_patterns: vec!["*".to_string()],
         }
-    }
-}
-
-impl OpenShardsSubrequest {
-    pub fn shard_id(&self) -> &ShardId {
-        self.shard_id
-            .as_ref()
-            .expect("`shard_id` should be a required field")
     }
 }

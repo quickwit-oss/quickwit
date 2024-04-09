@@ -312,6 +312,10 @@ impl IndexingServiceTowerLayerStack {
     {
         self.build_from_boxed(Box::new(IndexingServiceMailbox::new(mailbox)))
     }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockIndexingService) -> IndexingServiceClient {
+        self.build_from_boxed(Box::new(IndexingServiceClient::from_mock(mock)))
+    }
     fn build_from_boxed(
         self,
         boxed_instance: Box<dyn IndexingService>,

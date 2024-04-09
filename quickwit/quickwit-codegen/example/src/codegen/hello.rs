@@ -548,6 +548,10 @@ impl HelloTowerLayerStack {
     {
         self.build_from_boxed(Box::new(HelloMailbox::new(mailbox)))
     }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockHello) -> HelloClient {
+        self.build_from_boxed(Box::new(HelloClient::from_mock(mock)))
+    }
     fn build_from_boxed(self, boxed_instance: Box<dyn Hello>) -> HelloClient {
         let hello_svc = self
             .hello_layers

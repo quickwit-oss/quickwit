@@ -358,6 +358,11 @@ impl ControlPlaneModel {
             .acquire_scaling_permits(source_uid, scaling_mode, num_permits)
     }
 
+    pub fn drain_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
+        self.shard_table
+            .drain_scaling_permits(source_uid, scaling_mode)
+    }
+
     pub fn release_scaling_permits(
         &mut self,
         source_uid: &SourceUid,

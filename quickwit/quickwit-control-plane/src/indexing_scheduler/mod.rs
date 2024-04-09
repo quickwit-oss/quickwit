@@ -256,7 +256,7 @@ impl IndexingScheduler {
     /// - If indexing tasks differ, apply again the last plan.
     pub(crate) fn control_running_plan(&mut self, model: &ControlPlaneModel) {
         let last_applied_plan =
-            if let Some(last_applied_plan) = self.state.last_applied_physical_plan.as_ref() {
+            if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
                 last_applied_plan
             } else {
                 // If there is no plan, the node is probably starting and the scheduler did not find
@@ -265,7 +265,6 @@ impl IndexingScheduler {
                 self.rebuild_plan(model);
                 return;
             };
-
         if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp {
             if Instant::now().duration_since(last_applied_plan_timestamp)
                 < MIN_DURATION_BETWEEN_SCHEDULING
@@ -273,7 +272,6 @@ impl IndexingScheduler {
                 return;
             }
         }
-
         let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
         let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
             .iter()

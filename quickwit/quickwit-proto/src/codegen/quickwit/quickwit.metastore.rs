@@ -265,12 +265,12 @@ pub struct ListDeleteTasksResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OpenShardsRequest {
     #[prost(message, repeated, tag = "1")]
-    pub subrequests: ::prost::alloc::vec::Vec<OpenShardsSubrequest>,
+    pub subrequests: ::prost::alloc::vec::Vec<OpenShardSubrequest>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct OpenShardsSubrequest {
+pub struct OpenShardSubrequest {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
     #[prost(message, optional, tag = "2")]
@@ -289,20 +289,16 @@ pub struct OpenShardsSubrequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OpenShardsResponse {
     #[prost(message, repeated, tag = "1")]
-    pub subresponses: ::prost::alloc::vec::Vec<OpenShardsSubresponse>,
+    pub subresponses: ::prost::alloc::vec::Vec<OpenShardSubresponse>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct OpenShardsSubresponse {
+pub struct OpenShardSubresponse {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(message, optional, tag = "2")]
-    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
-    #[prost(string, tag = "3")]
-    pub source_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "4")]
-    pub opened_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
+    #[prost(message, optional, tag = "4")]
+    pub open_shard: ::core::option::Option<super::ingest::Shard>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3658,6 +3654,10 @@ impl MetastoreServiceTowerLayerStack {
         MetastoreServiceMailbox<A>: MetastoreService,
     {
         self.build_from_boxed(Box::new(MetastoreServiceMailbox::new(mailbox)))
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockMetastoreService) -> MetastoreServiceClient {
+        self.build_from_boxed(Box::new(MetastoreServiceClient::from_mock(mock)))
     }
     fn build_from_boxed(
         self,
