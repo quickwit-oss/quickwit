@@ -34,10 +34,10 @@ inconsistencies with the index store on S3. To ensure high availability, you
 should enable `rds_config.multi_az` instead. The module currently doesn't allow
 using an externally provided metastore.
 
-Using NAT Gateways for the image registry is quite costly (~$0.05/hour/AZ). If
+Using NAT Gateways for the image registry is quite costly (approx. $0.05/hour/AZ). If
 you are not already using NAT Gateways in the AZs where Quickwit will be
 deployed, you should probably push the Quickwit image to ECR and use ECR
-interface VPC endpoints instead (~$0.01/hour/AZ).
+interface VPC endpoints instead (approx. ~$0.01/hour/AZ).
 
 When using the default image, you will quickly run into the Docker Hub rate
 limiting. We recommand pushing the Quickwit image to ECR and configure that as
@@ -57,7 +57,8 @@ example.
 
 We provide an example of self contained deployment with an ad-hoc VPC. 
 
-> [!IMPORTANT] This stack costs ~$150/month to run (Fargate tasks, NAT Gateways
+> [!IMPORTANT]
+> This stack costs ~$150/month to run (Fargate tasks, NAT Gateways
 > and RDS)
 
 To make it easy to access your the Quickwit cluster, this stack includes a
@@ -71,7 +72,8 @@ key of your RSA key pair:
 bastion_public_key = "ssh-ed25519 ..."
 ```
 
-> [!NOTE] You can skip the creation of the bastion by not specifying the
+> [!NOTE]
+> You can skip the creation of the bastion by not specifying the
 > `bastion_public_key` variable, but that would make it hard to access and
 > experiment with the created Quickwit cluster.
 
