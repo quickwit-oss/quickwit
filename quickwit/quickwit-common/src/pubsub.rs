@@ -25,8 +25,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::sync::Mutex as TokioMutex;
-use tracing::warn;
 
+use crate::rate_limited_warn;
 use crate::type_map::TypeMap;
 
 const EVENT_SUBSCRIPTION_CALLBACK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -192,7 +192,8 @@ impl<E: Event> EventSubscription<E> {
         let log_timeout_task_handle = tokio::task::spawn(async move {
             tokio::time::sleep(EVENT_SUBSCRIPTION_CALLBACK_TIMEOUT).await;
             let event_name = std::any::type_name::<E>();
-            warn!(
+            rate_limited_warn!(
+                limit_per_min = 10,
                 "{subscriber_name}'s handler for {event_name} did not finished within {}ms",
                 EVENT_SUBSCRIPTION_CALLBACK_TIMEOUT.as_millis()
             );
@@ -219,7 +220,10 @@ impl<E: Event> EventSubscription<E> {
             .is_err()
             {
                 let event_name = std::any::type_name::<E>();
-                warn!("{subscriber_name}'s handler for {event_name} timed out, abort");
+                rate_limited_warn!(
+                    limit_per_min = 10,
+                    "{subscriber_name}'s handler for {event_name} timed out, abort"
+                );
             }
         };
         tokio::task::spawn(fut);
