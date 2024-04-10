@@ -90,6 +90,9 @@ pub struct DefaultDocMapper {
     tokenizer_entries: Vec<TokenizerEntry>,
     /// Tokenizer manager.
     tokenizer_manager: TokenizerManager,
+    /// Record document length
+    #[allow(dead_code)]
+    document_length: bool,
 }
 
 impl DefaultDocMapper {
@@ -261,6 +264,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             mode: builder.mode,
             tokenizer_entries: builder.tokenizers,
             tokenizer_manager,
+            document_length: builder.document_length,
         })
     }
 }
@@ -366,6 +370,7 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             partition_key: partition_key_opt,
             max_num_partitions: default_doc_mapper.max_num_partitions,
             tokenizers: default_doc_mapper.tokenizer_entries,
+            document_length: false,
         }
     }
 }

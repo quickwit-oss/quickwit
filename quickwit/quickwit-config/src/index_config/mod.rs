@@ -90,6 +90,9 @@ pub struct DocMapping {
     pub max_num_partitions: NonZeroU32,
     #[serde(default)]
     pub tokenizers: Vec<TokenizerEntry>,
+    /// Record document length
+    #[serde(default)]
+    pub document_length: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -454,6 +457,7 @@ impl TestableForRegression for IndexConfig {
             max_num_partitions: NonZeroU32::new(100).unwrap(),
             timestamp_field: Some("timestamp".to_string()),
             tokenizers: vec![tokenizer],
+            document_length: false,
         };
         let retention_policy = Some(RetentionPolicy {
             retention_period: "90 days".to_string(),
@@ -531,6 +535,7 @@ pub fn build_doc_mapper(
         partition_key: doc_mapping.partition_key.clone(),
         max_num_partitions: doc_mapping.max_num_partitions,
         tokenizers: doc_mapping.tokenizers.clone(),
+        document_length: doc_mapping.document_length,
     };
     Ok(Arc::new(builder.try_build()?))
 }

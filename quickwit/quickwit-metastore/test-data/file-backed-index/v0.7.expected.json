@@ -18,6 +18,7 @@
     "create_timestamp": 1789,
     "index_config": {
       "doc_mapping": {
+        "document_length": false,
         "dynamic_mapping": {
           "expand_dots": true,
           "fast": {

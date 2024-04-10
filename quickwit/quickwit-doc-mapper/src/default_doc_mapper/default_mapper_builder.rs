@@ -80,6 +80,9 @@ pub struct DefaultDocMapperBuilder {
     /// User-defined tokenizers.
     #[serde(default)]
     pub tokenizers: Vec<TokenizerEntry>,
+    /// Record document length
+    #[serde(default)]
+    pub document_length: bool,
 }
 
 /// Defines how an unmapped field should be handled.
