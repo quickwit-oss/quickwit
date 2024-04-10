@@ -73,7 +73,7 @@ impl TypedSourceFactory for IngestSourceFactory {
         // unassigned.
         let retry_params = RetryParams {
             max_attempts: usize::MAX,
-            base_delay: Duration::from_secs(1),
+            base_delay: Duration::from_secs(5),
             max_delay: Duration::from_secs(10 * 60), // 10 minutes
         };
         IngestSource::try_new(runtime_args, retry_params).await
@@ -922,10 +922,7 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
         });
-        let retry_params = RetryParams {
-            max_attempts: 1,
-            ..Default::default()
-        };
+        let retry_params = RetryParams::no_retries();
         let mut source = IngestSource::try_new(runtime_args, retry_params)
             .await
             .unwrap();

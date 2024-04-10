@@ -19,6 +19,7 @@
 
 use bytes::Bytes;
 use bytesize::ByteSize;
+use quickwit_common::tower::MakeLoadShedError;
 
 use self::ingester::{PersistFailureReason, ReplicateFailureReason};
 use self::router::IngestFailureReason;
@@ -76,8 +77,18 @@ impl GrpcServiceError for IngestV2Error {
         Self::Timeout(message)
     }
 
+    fn new_too_many_requests() -> Self {
+        Self::TooManyRequests
+    }
+
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
+    }
+}
+
+impl MakeLoadShedError for IngestV2Error {
+    fn make_load_shed_error() -> Self {
+        IngestV2Error::TooManyRequests
     }
 }
 

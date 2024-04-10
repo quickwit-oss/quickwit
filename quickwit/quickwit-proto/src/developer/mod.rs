@@ -34,6 +34,8 @@ pub enum DeveloperError {
     InvalidArgument(String),
     #[error("request timed out: {0}")]
     Timeout(String),
+    #[error("too many requests")]
+    TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
 }
@@ -44,6 +46,7 @@ impl ServiceError for DeveloperError {
             Self::Internal(_) => ServiceErrorCode::Internal,
             Self::InvalidArgument(_) => ServiceErrorCode::BadRequest,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
+            Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
@@ -56,6 +59,10 @@ impl GrpcServiceError for DeveloperError {
 
     fn new_timeout(message: String) -> Self {
         Self::Timeout(message)
+    }
+
+    fn new_too_many_requests() -> Self {
+        Self::TooManyRequests
     }
 
     fn new_unavailable(message: String) -> Self {

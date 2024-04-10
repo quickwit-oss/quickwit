@@ -492,7 +492,8 @@ fn convert_metastore_error<T>(
         | MetastoreError::InvalidArgument { .. }
         | MetastoreError::JsonDeserializeError { .. }
         | MetastoreError::JsonSerializeError { .. }
-        | MetastoreError::NotFound(_) => true,
+        | MetastoreError::NotFound(_)
+        | MetastoreError::TooManyRequests => true,
 
         MetastoreError::Connection { .. }
         | MetastoreError::Db { .. }

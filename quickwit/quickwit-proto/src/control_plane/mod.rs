@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_actors::AskError;
-use quickwit_common::tower::RpcName;
+use quickwit_common::tower::{MakeLoadShedError, RpcName};
 use thiserror;
 
 use crate::metastore::MetastoreError;
@@ -37,6 +37,8 @@ pub enum ControlPlaneError {
     Metastore(#[from] MetastoreError),
     #[error("request timed out: {0}")]
     Timeout(String),
+    #[error("too many requests")]
+    TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
 }
@@ -53,6 +55,7 @@ impl ServiceError for ControlPlaneError {
             Self::Internal(_) => ServiceErrorCode::Internal,
             Self::Metastore(metastore_error) => metastore_error.error_code(),
             Self::Timeout(_) => ServiceErrorCode::Timeout,
+            Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
@@ -67,8 +70,18 @@ impl GrpcServiceError for ControlPlaneError {
         Self::Timeout(message)
     }
 
+    fn new_too_many_requests() -> Self {
+        Self::TooManyRequests
+    }
+
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
+    }
+}
+
+impl MakeLoadShedError for ControlPlaneError {
+    fn make_load_shed_error() -> Self {
+        Self::TooManyRequests
     }
 }
 
@@ -81,6 +94,7 @@ impl From<ControlPlaneError> for MetastoreError {
             },
             ControlPlaneError::Metastore(error) => error,
             ControlPlaneError::Timeout(message) => MetastoreError::Timeout(message),
+            ControlPlaneError::TooManyRequests => MetastoreError::TooManyRequests,
             ControlPlaneError::Unavailable(message) => MetastoreError::Unavailable(message),
         }
     }

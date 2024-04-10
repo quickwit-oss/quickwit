@@ -157,6 +157,7 @@ impl Hello for HelloImpl {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt;
     use std::net::SocketAddr;
     use std::str::FromStr;
     use std::sync::atomic::Ordering;
@@ -536,6 +537,108 @@ mod tests {
         assert_eq!(hello_layer.counter.load(Ordering::Relaxed), 1);
         assert_eq!(goodbye_layer.counter.load(Ordering::Relaxed), 1);
         assert_eq!(ping_layer.counter.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn test_hello_codegen_tower_stack_layer_ordering() {
+        trait AppendSuffix {
+            fn append_suffix(&mut self, suffix: &'static str);
+        }
+
+        impl AppendSuffix for HelloRequest {
+            fn append_suffix(&mut self, suffix: &'static str) {
+                self.name.push_str(suffix);
+            }
+        }
+
+        impl AppendSuffix for GoodbyeRequest {
+            fn append_suffix(&mut self, suffix: &'static str) {
+                self.name.push_str(suffix);
+            }
+        }
+
+        impl AppendSuffix for PingRequest {
+            fn append_suffix(&mut self, suffix: &'static str) {
+                self.name.push_str(suffix);
+            }
+        }
+
+        impl AppendSuffix for ServiceStream<PingRequest> {
+            fn append_suffix(&mut self, _suffix: &'static str) {}
+        }
+
+        #[derive(Debug, Clone)]
+        struct AppendSuffixService<S> {
+            inner: S,
+            suffix: &'static str,
+        }
+
+        impl<S, R> Service<R> for AppendSuffixService<S>
+        where
+            S: Service<R, Error = HelloError>,
+            S::Response: fmt::Debug,
+            S::Future: Send + 'static,
+            R: AppendSuffix,
+        {
+            type Response = S::Response;
+            type Error = HelloError;
+            type Future = BoxFuture<S::Response, S::Error>;
+
+            fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+                self.inner.poll_ready(cx)
+            }
+
+            fn call(&mut self, mut req: R) -> Self::Future {
+                req.append_suffix(self.suffix);
+                let inner = self.inner.call(req);
+                Box::pin(inner)
+            }
+        }
+
+        #[derive(Debug, Clone)]
+        struct AppendSuffixLayer {
+            suffix: &'static str,
+        }
+
+        impl AppendSuffixLayer {
+            fn new(suffix: &'static str) -> Self {
+                Self { suffix }
+            }
+        }
+
+        impl<S> Layer<S> for AppendSuffixLayer {
+            type Service = AppendSuffixService<S>;
+
+            fn layer(&self, inner: S) -> Self::Service {
+                AppendSuffixService {
+                    inner,
+                    suffix: self.suffix,
+                }
+            }
+        }
+        let mut hello_tower = HelloClient::tower()
+            .stack_layer(AppendSuffixLayer::new("->foo"))
+            .stack_hello_layer(AppendSuffixLayer::new("->bar"))
+            .stack_layer(AppendSuffixLayer::new("->qux"))
+            .stack_hello_layer(AppendSuffixLayer::new("->tox"))
+            .stack_goodbye_layer(AppendSuffixLayer::new("->moo"))
+            .build(HelloImpl::default());
+
+        let response = hello_tower
+            .hello(HelloRequest {
+                name: "".to_string(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.message, "Hello, ->foo->bar->qux->tox!");
+
+        let response = hello_tower
+            .goodbye(GoodbyeRequest {
+                name: "".to_string(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.message, "Goodbye, ->foo->qux->moo!");
     }
 
     #[tokio::test]

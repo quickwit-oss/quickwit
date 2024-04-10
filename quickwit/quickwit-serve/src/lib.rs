@@ -67,12 +67,13 @@ use quickwit_cluster::{
 };
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
+use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::spawn_named_task;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
-    EventListenerLayer, GrpcMetricsLayer, RateLimitLayer, RetryLayer, RetryPolicy,
-    SmaRateEstimator,
+    EventListenerLayer, GrpcMetricsLayer, LoadShedLayer, OneTaskPerCallLayer, RateLimitLayer,
+    RetryLayer, RetryPolicy, SmaRateEstimator,
 };
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
@@ -321,15 +322,22 @@ async fn start_control_plane_if_needed(
             replication_factor,
         )
         .await?;
+
         let control_plane_server_opt = Some(control_plane_mailbox.clone());
+
+        // These layers apply to all the RPCs of the control plane.
+        let shared_layers = ServiceBuilder::new()
+            .layer(CP_GRPC_SERVER_METRICS_LAYER.clone())
+            .layer(LoadShedLayer::new(100))
+            .into_inner();
         let control_plane_client = ControlPlaneServiceClient::tower()
-            .stack_create_index_layer(quickwit_common::tower::OneTaskPerCallLayer)
-            .stack_delete_index_layer(quickwit_common::tower::OneTaskPerCallLayer)
-            .stack_add_source_layer(quickwit_common::tower::OneTaskPerCallLayer)
-            .stack_toggle_source_layer(quickwit_common::tower::OneTaskPerCallLayer)
-            .stack_delete_source_layer(quickwit_common::tower::OneTaskPerCallLayer)
-            .stack_get_or_create_open_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
-            .stack_layer(CP_GRPC_SERVER_METRICS_LAYER.clone())
+            .stack_layer(shared_layers)
+            .stack_create_index_layer(OneTaskPerCallLayer)
+            .stack_delete_index_layer(OneTaskPerCallLayer)
+            .stack_add_source_layer(OneTaskPerCallLayer)
+            .stack_toggle_source_layer(OneTaskPerCallLayer)
+            .stack_delete_source_layer(OneTaskPerCallLayer)
+            .stack_get_or_create_open_shards_layer(OneTaskPerCallLayer)
             .build_from_mailbox(control_plane_mailbox);
         Ok((control_plane_server_opt, control_plane_client))
     } else {
@@ -408,14 +416,29 @@ pub async fn serve_quickwit(
                         node_config.metastore_uri
                     )
                 })?;
+            let max_in_flight_requests = if node_config.metastore_uri.protocol().is_database() {
+                node_config
+                    .metastore_configs
+                    .find_postgres()
+                    .map(|config| config.max_connections.get() * 2)
+                    .unwrap_or_default()
+                    .max(100)
+            } else {
+                100
+            };
+            // These layers apply to all the RPCs of the metastore.
+            let shared_layer = ServiceBuilder::new()
+                .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
+                .layer(LoadShedLayer::new(max_in_flight_requests))
+                .into_inner();
             let broker_layer = EventListenerLayer::new(event_broker.clone());
             let metastore = MetastoreServiceClient::tower()
+                .stack_layer(shared_layer)
                 .stack_create_index_layer(broker_layer.clone())
                 .stack_delete_index_layer(broker_layer.clone())
                 .stack_add_source_layer(broker_layer.clone())
                 .stack_delete_source_layer(broker_layer.clone())
                 .stack_toggle_source_layer(broker_layer)
-                .stack_layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
                 .build(metastore);
             Some(metastore)
         } else {
@@ -439,15 +462,16 @@ pub async fn serve_quickwit(
             {
                 bail!("could not find any metastore node in the cluster");
             }
-            let layers = ServiceBuilder::new()
-                .layer(RetryLayer::new(RetryPolicy::default()))
+            // These layers applies to all the RPCs of the metastore.
+            let shared_layers = ServiceBuilder::new()
+                .layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
                 .layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
                 .layer(tower::limit::GlobalConcurrencyLimitLayer::new(
                     get_metastore_client_max_concurrency(),
                 ))
                 .into_inner();
             MetastoreServiceClient::tower()
-                .stack_layer(layers)
+                .stack_layer(shared_layers)
                 .build_from_balance_channel(balance_channel, grpc_config.max_message_size)
         };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
@@ -854,12 +878,12 @@ async fn setup_ingest_v2(
                         // metrics, so we use both metrics layers.
                         let ingester = ingester_opt_clone_clone
                             .expect("ingester service should be initialized");
-                        let layers = ServiceBuilder::new()
+                        let shared_layers = ServiceBuilder::new()
                             .layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
                             .layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
                             .into_inner();
                         let ingester_service = IngesterServiceClient::tower()
-                            .stack_layer(layers)
+                            .stack_layer(shared_layers)
                             .build(ingester);
                         Some(Change::Insert(node_id, ingester_service))
                     } else {
@@ -1037,12 +1061,13 @@ fn setup_indexer_pool(
                         // so we use both metrics layers.
                         let indexing_service_mailbox = indexing_service_clone_opt
                             .expect("indexing service should be initialized");
-                        let layers = ServiceBuilder::new()
+                        // These layers apply to all the RPCs of the indexing service.
+                        let shared_layers = ServiceBuilder::new()
                             .layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
                             .layer(INDEXING_GRPC_SERVER_METRICS_LAYER.clone())
                             .into_inner();
                         let client = IndexingServiceClient::tower()
-                            .stack_layer(layers)
+                            .stack_layer(shared_layers)
                             .build_from_mailbox(indexing_service_mailbox);
                         let change = Change::Insert(
                             node_id.clone(),
