@@ -570,11 +570,7 @@ impl MappingNode {
 
     fn internal_find_field_mapping_type(&self, field_path: &[String]) -> Option<FieldMappingType> {
         let (first_path_fragment, sub_field_path) = field_path.split_first()?;
-        let field_name = self
-            .branches_order
-            .iter()
-            .find(|name| name == &first_path_fragment)?;
-        let child_tree = self.branches.get(field_name).expect("Missing field");
+        let child_tree = self.branches.get(first_path_fragment)?;
         match (child_tree, sub_field_path.is_empty()) {
             (_, true) => Some(child_tree.clone().into()),
             (MappingTree::Leaf(_), false) => None,
@@ -600,11 +596,7 @@ impl MappingNode {
         field_path: &[String],
     ) -> Option<impl Iterator<Item = &mut MappingLeaf>> {
         let (first_path_fragment, sub_field_path) = field_path.split_first()?;
-        let field_name = self
-            .branches_order
-            .iter()
-            .find(|name| name == &first_path_fragment)?;
-        let child_tree = self.branches.get_mut(field_name).expect("Missing field");
+        let child_tree = self.branches.get_mut(first_path_fragment)?;
         match (child_tree, sub_field_path.is_empty()) {
             (MappingTree::Leaf(_), false) => None,
             (MappingTree::Node(child_node), false) => {
@@ -769,10 +761,17 @@ impl MappingTree {
     }
 }
 
+pub(crate) struct MappingNodeRoot {
+    /// The root of a mapping tree
+    pub field_mappings: MappingNode,
+    /// The list of concatenate fields which includes the dynamic field
+    pub concatenate_dynamic_fields: Vec<Field>,
+}
+
 pub(crate) fn build_mapping_tree(
     entries: &[FieldMappingEntry],
     schema: &mut SchemaBuilder,
-) -> anyhow::Result<(MappingNode, Vec<Field>)> {
+) -> anyhow::Result<MappingNodeRoot> {
     let mut field_path = Vec::new();
     build_mapping_tree_from_entries(entries, &mut field_path, schema)
 }
@@ -781,7 +780,7 @@ fn build_mapping_tree_from_entries<'a>(
     entries: &'a [FieldMappingEntry],
     field_path: &mut Vec<&'a str>,
     schema: &mut SchemaBuilder,
-) -> anyhow::Result<(MappingNode, Vec<Field>)> {
+) -> anyhow::Result<MappingNodeRoot> {
     let mut mapping_node = MappingNode::default();
     let mut concatenate_fields = Vec::new();
     let mut concatenate_dynamic_fields = Vec::new();
@@ -802,7 +801,8 @@ fn build_mapping_tree_from_entries<'a>(
     }
     for concatenate_field_entry in concatenate_fields {
         let FieldMappingType::Concatenate(options) = &concatenate_field_entry.mapping_type else {
-            continue; // unreachable
+            // we only pushed Concatenate fields in `concatenate_fields`
+            unreachable!();
         };
         let name = &concatenate_field_entry.name;
         if mapping_node.branches.contains_key(name) {
@@ -831,7 +831,10 @@ fn build_mapping_tree_from_entries<'a>(
             concatenate_dynamic_fields.push(field);
         }
     }
-    Ok((mapping_node, concatenate_dynamic_fields))
+    Ok(MappingNodeRoot {
+        field_mappings: mapping_node,
+        concatenate_dynamic_fields,
+    })
 }
 
 fn get_numeric_options_for_bool_field(
@@ -959,6 +962,9 @@ fn escape_dots(field_name: &str) -> String {
     escaped_field_name
 }
 
+/// build a sub-mapping tree from the fields it contains.
+///
+/// also returns the list of concatenate fields which consume the dynamic field
 fn build_mapping_from_field_type<'a>(
     field_mapping_type: &'a FieldMappingType,
     field_path: &mut Vec<&'a str>,
@@ -1066,12 +1072,18 @@ fn build_mapping_from_field_type<'a>(
             Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
         }
         FieldMappingType::Object(entries) => {
-            let (mapping_node, concatenate_dynamic_fields) = build_mapping_tree_from_entries(
+            let MappingNodeRoot {
+                field_mappings,
+                concatenate_dynamic_fields,
+            } = build_mapping_tree_from_entries(
                 &entries.field_mappings,
                 field_path,
                 schema_builder,
             )?;
-            Ok((MappingTree::Node(mapping_node), concatenate_dynamic_fields))
+            Ok((
+                MappingTree::Node(field_mappings),
+                concatenate_dynamic_fields,
+            ))
         }
         FieldMappingType::Concatenate(_) => {
             bail!("Concatenate shouldn't reach build_mapping_from_field_type: this is a bug")

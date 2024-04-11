@@ -38,6 +38,7 @@ use super::field_mapping_entry::RAW_TOKENIZER_NAME;
 use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{
     build_mapping_tree, map_primitive_json_to_tantivy, JsonValueIterator, MappingNode,
+    MappingNodeRoot,
 };
 use crate::default_doc_mapper::FieldMappingType;
 use crate::doc_mapper::{JsonObject, Partition};
@@ -158,8 +159,10 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         };
 
         // Adding regular fields.
-        let (field_mappings, concatenate_dynamic_fields) =
-            build_mapping_tree(&builder.field_mappings, &mut schema_builder)?;
+        let MappingNodeRoot {
+            field_mappings,
+            concatenate_dynamic_fields,
+        } = build_mapping_tree(&builder.field_mappings, &mut schema_builder)?;
         if !concatenate_dynamic_fields.is_empty() && dynamic_field.is_none() {
             bail!("concatenate field has `include_dynamic_fields` set, but index isn't dynamic");
         }
@@ -1582,16 +1585,16 @@ mod tests {
         assert_eq!(doc.len(), 0);
     }
 
-    fn test_doc_mapper_get_all_aux(
-        doc_mapper: &str,
+    fn test_doc_from_json_test_aux(
+        doc_mapper_json: &str,
         field: &str,
-        document: &str,
+        document_json: &str,
         expected: Vec<TantivyValue>,
     ) {
-        let default_doc_mapper: DefaultDocMapper = serde_json::from_str(doc_mapper).unwrap();
+        let default_doc_mapper: DefaultDocMapper = serde_json::from_str(doc_mapper_json).unwrap();
         let schema = default_doc_mapper.schema();
         let field = schema.get_field(field).unwrap();
-        let (_, doc) = default_doc_mapper.doc_from_json_str(document).unwrap();
+        let (_, doc) = default_doc_mapper.doc_from_json_str(document_json).unwrap();
         let vals: Vec<&TantivyValue> = doc.get_all(field).collect();
         assert_eq!(vals.len(), expected.len());
         for (val, exp) in vals.into_iter().zip(expected.iter()) {
@@ -1601,7 +1604,7 @@ mod tests {
 
     #[test]
     fn test_dymamic_mode_simple() {
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{ "mode": "dynamic" }"#,
             DYNAMIC_FIELD_NAME,
             r#"{ "a": { "b": 5, "c": 6 } }"#,
@@ -1617,7 +1620,7 @@ mod tests {
 
     #[test]
     fn test_dymamic_mode_inner() {
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1649,7 +1652,7 @@ mod tests {
 
     #[test]
     fn test_json_object_in_mapping() {
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1722,7 +1725,7 @@ mod tests {
 
     #[test]
     fn test_concatenate_field_in_mapping() {
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1745,7 +1748,7 @@ mod tests {
 
     #[test]
     fn test_concatenate_field_in_mapping_dynamic() {
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1760,7 +1763,7 @@ mod tests {
             r#"{"other_field": "this is a text"}"#,
             vec!["this is a text".into()],
         );
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1779,7 +1782,7 @@ mod tests {
 
     #[test]
     fn test_concatenate_field_in_mapping_integer() {
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1798,7 +1801,7 @@ mod tests {
             r#"{"some_int": 25}"#,
             vec![value_to_pretokenized(25).into()],
         );
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1817,7 +1820,7 @@ mod tests {
 
     #[test]
     fn test_concatenate_field_in_mapping_boolean() {
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1836,7 +1839,7 @@ mod tests {
             r#"{"some_bool": false}"#,
             vec![value_to_pretokenized(false).into()],
         );
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1855,7 +1858,7 @@ mod tests {
 
     #[test]
     fn test_concatenate_field_array() {
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1878,7 +1881,7 @@ mod tests {
 
     #[test]
     fn test_concatenate_multiple_field() {
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1905,7 +1908,7 @@ mod tests {
 
     #[test]
     fn test_concatenate_field_object() {
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1932,9 +1935,36 @@ mod tests {
         );
     }
 
+    /*
+     * in the future we may want to make this works. Currently it isn't supported and fail at index
+     * creation
     #[test]
-    fn test_concatenate_() {
-        test_doc_mapper_get_all_aux(
+    fn test_concatenate_field_json_subpath() {
+        test_doc_from_json_test_aux(
+            r#"{
+                "field_mappings": [
+                    {
+                        "name": "json_obj",
+                        "type": "json"
+                    },
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "concatenate_fields": ["json_obj.hello"]
+                    }
+                ],
+                "mode": "strict"
+            }"#,
+            "concat",
+            r#"{ "json_obj": { "hello": "1", "world": "2"} }"#,
+            vec!["1".into()],
+        );
+    }
+    */
+
+    #[test]
+    fn test_concatenate_field_text() {
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
@@ -1958,7 +1988,7 @@ mod tests {
             r#"{"some_text": "this is a text"}"#,
             vec!["this is a text".into()],
         );
-        test_doc_mapper_get_all_aux(
+        test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
                     {
