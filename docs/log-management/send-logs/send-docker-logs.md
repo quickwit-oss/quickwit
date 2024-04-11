@@ -58,7 +58,6 @@ processors:
 exporters:
   otlp/qw:
     endpoint: quickwit:7281
-    compression: none
     tls:
       insecure: true
 
