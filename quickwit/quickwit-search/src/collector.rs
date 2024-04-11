@@ -1488,6 +1488,7 @@ mod tests {
         fn doc_from_json_obj(
             &self,
             _json_obj: quickwit_doc_mapper::JsonObject,
+            _doc_len: u64,
         ) -> Result<(u64, TantivyDocument), quickwit_doc_mapper::DocParsingError> {
             unimplemented!()
         }
