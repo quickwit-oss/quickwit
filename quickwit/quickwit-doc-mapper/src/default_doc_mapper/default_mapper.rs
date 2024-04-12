@@ -2031,23 +2031,16 @@ mod tests {
 
     #[test]
     fn test_lenght_field() {
-        // TODO once concatenated fields are merged, use test_doc_mapper_get_all_aux
-        let default_doc_mapper: DefaultDocMapper = serde_json::from_str(
-            r#"{
-            "document_length": true,
-            "mode": "dynamic"
-        }"#,
-        )
-        .unwrap();
         let raw_doc = r#"{ "some_obj": { "json_obj": {"hello": 2} } }"#;
-        let (_, doc) = default_doc_mapper.doc_from_json_str(raw_doc).unwrap();
-        let json_field = default_doc_mapper
-            .schema()
-            .get_field(DOCUMENT_LEN_FIELD_NAME)
-            .unwrap();
-        let vals: Vec<&TantivyValue> = doc.get_all(json_field).collect();
-        assert_eq!(vals.len(), 1);
-        assert_eq!(vals[0], &(raw_doc.len() as u64).into());
+        test_doc_from_json_test_aux(
+            r#"{
+                "document_length": true,
+                "mode": "dynamic"
+            }"#,
+            DOCUMENT_LEN_FIELD_NAME,
+            raw_doc,
+            vec![(raw_doc.len() as u64).into()],
+        );
     }
 
     fn default_doc_mapper_query_aux(
