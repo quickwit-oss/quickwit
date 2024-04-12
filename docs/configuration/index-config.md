@@ -169,6 +169,8 @@ Quickwit handles three numeric types: `i64`, `u64`, and `f64`.
 
 Numeric values can be stored in a fast field (the equivalent of Lucene's `DocValues`), which is a column-oriented storage used for range queries and aggregations.
 
+When querying negative numbers without precising a field (using `default_search_fields`), you should single-quote the number (for instance '-5'), otherwise it will be interpreted as wanting to match anything but that number.
+
 Example of a mapping for an u64 field:
 
 ```yaml
@@ -409,6 +411,65 @@ field_mappings:
   - name: service
     type: text
 ```
+
+#### concatenate
+
+Quickwit supports mapping the content of multiple fields to a single one. This can be more efficient at query time than
+searching through dozens of `default_search_fields`. It also allow querying inside a json field without knowing the path
+to the field being searched.
+
+```yaml
+name: my_default_field
+type: concatenate
+concatenated_fields:
+  - text # things inside text, tokenized with the `default` tokenizer
+  - resource.author # all fields in resource.author, assuming resource is an `object` field.
+include_dynamic_fields: true
+tokenizer: default
+record: basic
+```
+
+Concatenate fields don't support fast fields, and are never stored. They uses their own tokenizer, independantly of the
+tokenizer configured on the individual fields.
+At query time, concatenate fields don't support range queries.
+Only the following types are supported inside a concatenate field: text, bool, i64, u64, json. Other types are rejected
+at index creation, or silently discarded during indexation if they are found inside a json field.
+Adding an object field to a concatenate field doesn't automatically add its subfields (yet).
+<!-- typing is made so it wouldn't be too hard do add, as well as things like params_* matching all fields which starts name with params_ , but the feature isn't implemented yet -->
+It isn't possible to add subfields from a json field to a concatenate field. For instance if `attributes` is a json field, it's not possible to add only `attributes.color` to a concatenate field.
+
+For json fields and dynamic fields, the path is not indexed, only values are. For instance, given the following document:
+```json
+{
+  "421312": {
+    "my-key": "my-value"
+  }
+}
+```
+It is possible to search for `my-value` despite not knowing the full path, but it isn't possible to search for all documents containing a key `my-key`.
+
+<!--
+when the features are supported, add these:
+  - params_* # shortcut for all fields starting with `params_`
+  - resource.author # all fields in resource.author, assuming resource is either of type `object` or `json`
+---
+Only the following types are supported inside a concatenate field: text, datetime, bool, i64, u64, ip, json. Other types are rejected
+---
+Datetime can only be queried in their RFC-3339 form, possibly omiting later components. # todo! will have to confirm this is achievable
+---
+plan:
+- implement text/bool/i64/u64 (nothing to do on search side for it to work). all gets converted to strings
+- add json
+- add object
+- add dynamic
+-- you are here
+- add wildcard
+- add json sub-fields?
+- add datetime (at index time, generate multiple tokens for yyyy, yyyy-MM... to yyyy-MM-ddThh:mm:ss; at search time, emit both tokenized and "raw" version of what may look like a datetime)
+- check negative i64 works as intended for non-raw tokenizer, and leverage datetime code if it doesn't
+- add ip (at index time, convert to single token; at search time, emit both tokenized and "raw" version of the ip)
+- allow optionally indexing json path (how do we tokenize it? split at each dot, or not?)
+-->
 
 ### Mode
 
