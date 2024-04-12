@@ -436,6 +436,7 @@ Only the following types are supported inside a concatenate field: text, bool, i
 at index creation, or silently discarded during indexation if they are found inside a json field.
 Adding an object field to a concatenate field doesn't automatically add its subfields (yet).
 <!-- typing is made so it wouldn't be too hard do add, as well as things like params_* matching all fields which starts name with params_ , but the feature isn't implemented yet -->
+It isn't possible to add subfields from a json field to a concatenate field. For instance if `attributes` is a json field, it's not possible to add only `attributes.color` to a concatenate field.
 
 For json fields and dynamic fields, the path is not indexed, only values are. For instance, given the following document:
 ```json
