@@ -344,6 +344,7 @@ impl ControlPlaneModel {
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
     pub fn delete_shards(&mut self, source_uid: &SourceUid, shard_ids: &[ShardId]) {
+        info!(source_uid=%source_uid, shard_ids=?shard_ids, "removing shards from model");
         self.shard_table.delete_shards(source_uid, shard_ids);
     }
 
@@ -355,6 +356,11 @@ impl ControlPlaneModel {
     ) -> Option<bool> {
         self.shard_table
             .acquire_scaling_permits(source_uid, scaling_mode, num_permits)
+    }
+
+    pub fn drain_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
+        self.shard_table
+            .drain_scaling_permits(source_uid, scaling_mode)
     }
 
     pub fn release_scaling_permits(

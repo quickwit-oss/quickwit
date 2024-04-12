@@ -1203,6 +1203,13 @@ impl ControlPlaneServiceTowerLayerStack {
     {
         self.build_from_boxed(Box::new(ControlPlaneServiceMailbox::new(mailbox)))
     }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(
+        self,
+        mock: MockControlPlaneService,
+    ) -> ControlPlaneServiceClient {
+        self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_mock(mock)))
+    }
     fn build_from_boxed(
         self,
         boxed_instance: Box<dyn ControlPlaneService>,

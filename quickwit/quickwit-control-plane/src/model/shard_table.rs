@@ -28,7 +28,7 @@ use quickwit_common::tower::ConstantRate;
 use quickwit_ingest::{RateMibPerSec, ShardInfo, ShardInfos};
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 /// Limits the number of shards that can be opened for scaling up a source to 5 per minute.
 const SCALING_UP_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
@@ -124,6 +124,7 @@ pub(crate) struct ShardTable {
 // Removes the shards from the ingester_shards map.
 //
 // This function is used to maintain the shard table invariant.
+// Logs an error if the shard was not found in the ingester_shards map.
 fn remove_shard_from_ingesters_internal(
     source_uid: &SourceUid,
     shard: &Shard,
@@ -134,7 +135,13 @@ fn remove_shard_from_ingesters_internal(
             .get_mut(&node)
             .expect("shard table reached inconsistent state");
         let shard_ids = ingester_shards.get_mut(source_uid).unwrap();
-        shard_ids.remove(shard.shard_id());
+        let shard_was_removed = shard_ids.remove(shard.shard_id());
+        if !shard_was_removed {
+            error!(
+                "shard table has reached an inconsistent state. shard {shard:?} was removed from \
+                 the shard table but was apparently not in the ingester_shards map."
+            );
+        }
     }
 }
 
@@ -470,6 +477,8 @@ impl ShardTable {
                         shard_entry.set_shard_state(ShardState::Closed);
                         closed_shard_ids.push(shard_id.clone());
                     }
+                } else {
+                    info!(shard=%shard_id, "ignoring attempt to close shard: it is unknown (probably because it has been deleted)");
                 }
             }
         }
@@ -512,6 +521,16 @@ impl ShardTable {
             ScalingMode::Down => &mut table_entry.scaling_down_rate_limiter,
         };
         Some(scaling_rate_limiter.acquire(num_permits))
+    }
+
+    pub fn drain_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
+        if let Some(table_entry) = self.table_entries.get_mut(source_uid) {
+            let scaling_rate_limiter = match scaling_mode {
+                ScalingMode::Up => &mut table_entry.scaling_up_rate_limiter,
+                ScalingMode::Down => &mut table_entry.scaling_down_rate_limiter,
+            };
+            scaling_rate_limiter.drain();
+        }
     }
 
     pub fn release_scaling_permits(

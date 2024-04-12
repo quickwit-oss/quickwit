@@ -854,6 +854,7 @@ fn generate_layer_stack_impl(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let client_name = &context.client_name;
     let mailbox_name = &context.mailbox_name;
+    let mock_name = &context.mock_name;
     let tower_svc_stack_name = &context.tower_svc_stack_name;
     let tower_layer_stack_name = &context.tower_layer_stack_name;
     let error_type = &context.error_type;
@@ -945,6 +946,11 @@ fn generate_layer_stack_impl(context: &CodegenContext) -> TokenStream {
                 #mailbox_name<A>: #service_name,
             {
                 self.build_from_boxed(Box::new(#mailbox_name::new(mailbox)))
+            }
+
+            #[cfg(any(test, feature = "testsuite"))]
+            pub fn build_from_mock(self, mock: #mock_name) -> #client_name {
+                self.build_from_boxed(Box::new(#client_name::from_mock(mock)))
             }
 
             fn build_from_boxed(self, boxed_instance: Box<dyn #service_name>) -> #client_name

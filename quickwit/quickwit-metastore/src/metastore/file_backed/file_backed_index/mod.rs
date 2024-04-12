@@ -34,7 +34,7 @@ use quickwit_config::{SourceConfig, INGEST_V2_SOURCE_ID};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest, DeleteTask,
     EntityKind, ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
-    OpenShardsSubrequest, OpenShardsSubresponse,
+    OpenShardSubrequest, OpenShardSubresponse,
 };
 use quickwit_proto::types::{IndexUid, PublishToken, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
@@ -575,15 +575,15 @@ impl FileBackedIndex {
 
     pub(crate) fn open_shards(
         &mut self,
-        subrequests: Vec<OpenShardsSubrequest>,
-    ) -> MetastoreResult<MutationOccurred<Vec<OpenShardsSubresponse>>> {
+        subrequests: Vec<OpenShardSubrequest>,
+    ) -> MetastoreResult<MutationOccurred<Vec<OpenShardSubresponse>>> {
         let mut mutation_occurred = false;
         let mut subresponses = Vec::with_capacity(subrequests.len());
 
         for subrequest in subrequests {
             let subresponse = match self
                 .get_shards_for_source_mut(&subrequest.source_id)?
-                .open_shards(subrequest)?
+                .open_shard(subrequest)?
             {
                 MutationOccurred::Yes(subresponse) => {
                     mutation_occurred = true;

@@ -322,6 +322,12 @@ async fn start_control_plane_if_needed(
         )
         .await?;
         let control_plane_server = ControlPlaneServiceClient::tower()
+            .stack_create_index_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_delete_index_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_add_source_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_toggle_source_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_delete_source_layer(quickwit_common::tower::OneTaskPerCallLayer)
+            .stack_get_or_create_open_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
             .stack_layer(CP_GRPC_SERVER_METRICS_LAYER.clone())
             .build_from_mailbox(control_plane_mailbox);
         Ok(control_plane_server)
@@ -879,7 +885,6 @@ async fn setup_ingest_v2(
         })
     });
     ingester_pool.listen_for_changes(ingester_change_stream);
-
     Ok((ingest_router_service, ingester_opt))
 }
 

@@ -10,7 +10,7 @@ All the API endpoints start with the `api/v1/` prefix. `v1` indicates that we ar
 
 ## OpenAPI specification
 
-The OpenAPI specification of the REST API is available at `/openapi.json` and a Swagger UI version is available at `/swagger-ui`.
+The OpenAPI specification of the REST API is available at `/openapi.json` and a Swagger UI version is available at `/ui/api-playground`.
 
 ## Parameters
 

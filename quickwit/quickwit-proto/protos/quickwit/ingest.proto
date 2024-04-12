@@ -39,6 +39,12 @@ message ShardId {
   bytes shard_id = 1;
 }
 
+message ShardPKey {
+  quickwit.common.IndexUid index_uid = 1;
+  string source_id = 2;
+  ShardId shard_id = 3;
+}
+
 enum CommitTypeV2 {
   COMMIT_TYPE_V2_UNSPECIFIED = 0;
   COMMIT_TYPE_V2_AUTO = 1;

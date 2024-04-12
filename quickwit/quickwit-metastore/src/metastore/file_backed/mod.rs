@@ -53,8 +53,8 @@ use quickwit_proto::metastore::{
     ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
     ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
     ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardsRequest,
-    OpenShardsResponse, OpenShardsSubrequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
+    OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest,
     StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse,
 };
@@ -765,7 +765,7 @@ impl MetastoreService for FileBackedMetastore {
         };
         // We must group the subrequests by `index_uid` to mutate each index only once, since each
         // mutation triggers an IO.
-        let grouped_subrequests: HashMap<IndexUid, Vec<OpenShardsSubrequest>> = request
+        let grouped_subrequests: HashMap<IndexUid, Vec<OpenShardSubrequest>> = request
             .subrequests
             .into_iter()
             .into_group_map_by(|subrequest| subrequest.index_uid().clone());

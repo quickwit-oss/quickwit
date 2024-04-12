@@ -39,7 +39,7 @@ use quickwit_common::Progress;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
-use quickwit_metastore::IndexMetadata;
+use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
     GetDebugStateRequest, GetDebugStateResponse, GetOrCreateOpenShardsRequest,
@@ -60,7 +60,7 @@ use tracing::{debug, error, info};
 
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
-use crate::ingest::ingest_controller::IngestControllerStats;
+use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
 use crate::ingest::IngestController;
 use crate::model::ControlPlaneModel;
 use crate::IndexerPool;
@@ -97,6 +97,8 @@ pub struct ControlPlane {
     model: ControlPlaneModel,
     rebuild_plan_debouncer: Debouncer,
     readiness_tx: watch::Sender<bool>,
+    // Disables the control loop. This is useful for unit testing.
+    disable_control_loop: bool,
 }
 
 impl fmt::Debug for ControlPlane {
@@ -119,12 +121,42 @@ impl ControlPlane {
         ActorHandle<Supervisor<Self>>,
         watch::Receiver<bool>,
     ) {
+        let disable_control_loop = false;
+
+        Self::spawn_inner(
+            universe,
+            cluster_config,
+            self_node_id,
+            cluster_change_stream_factory,
+            indexer_pool,
+            ingester_pool,
+            metastore,
+            disable_control_loop,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_inner(
+        universe: &Universe,
+        cluster_config: ClusterConfig,
+        self_node_id: NodeId,
+        cluster_change_stream_factory: impl ClusterChangeStreamFactory,
+        indexer_pool: IndexerPool,
+        ingester_pool: IngesterPool,
+        metastore: MetastoreServiceClient,
+        disable_control_loop: bool,
+    ) -> (
+        Mailbox<Self>,
+        ActorHandle<Supervisor<Self>>,
+        watch::Receiver<bool>,
+    ) {
+        info!("starting control plane");
+
         let (readiness_tx, readiness_rx) = watch::channel(false);
         let (control_plane_mailbox, control_plane_handle) =
             universe.spawn_builder().supervise_fn(move || {
                 let cluster_id = cluster_config.cluster_id.clone();
                 let replication_factor = cluster_config.replication_factor;
-
                 let indexing_scheduler =
                     IndexingScheduler::new(cluster_id, self_node_id.clone(), indexer_pool.clone());
                 let ingest_controller = IngestController::new(
@@ -145,6 +177,7 @@ impl ControlPlane {
                     model: Default::default(),
                     rebuild_plan_debouncer: Debouncer::new(REBUILD_PLAN_COOLDOWN_PERIOD),
                     readiness_tx,
+                    disable_control_loop,
                 }
             });
         (control_plane_mailbox, control_plane_handle, readiness_rx)
@@ -240,18 +273,13 @@ impl ControlPlane {
                 index_template_match,
                 &self.cluster_config.default_index_root_uri,
             )?;
-            let index_config_json = serde_utils::to_json_str(&index_config)?;
+            // We disable ingest V1 for index templates.
+            let source_configs = [SourceConfig::ingest_v2(), SourceConfig::cli()];
 
-            let source_configs_json = vec![
-                // We disable ingest V1 for index templates.
-                // serde_utils::to_json_str(&SourceConfig::ingest_api_default())?,
-                serde_utils::to_json_str(&SourceConfig::ingest_v2())?,
-                serde_utils::to_json_str(&SourceConfig::cli())?,
-            ];
-            let create_index_request = CreateIndexRequest {
-                index_config_json,
-                source_configs_json,
-            };
+            let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
+                &index_config,
+                &source_configs,
+            )?;
             let create_index_future = {
                 let mut metastore = self.metastore.clone();
                 async move { metastore.create_index(create_index_request).await }
@@ -263,8 +291,7 @@ impl ControlPlane {
         {
             // Same here.
             let create_index_response = create_index_response_result?;
-            let index_metadata: IndexMetadata =
-                serde_utils::from_json_str(&create_index_response.index_metadata_json)?;
+            let index_metadata = create_index_response.deserialize_index_metadata()?;
             self.model.add_index(index_metadata);
         }
         Ok(())
@@ -388,6 +415,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
                     Some(shard.publish_position_inclusive().max(&position).clone());
                 if position.is_eof() {
                     // identify shards that have reached EOF but have not yet been removed.
+                    info!(shard_id=%shard_id, position=?position, "received eof shard via gossip");
                     shard_ids_to_close.push(shard_id);
                 }
             }
@@ -415,6 +443,12 @@ impl Handler<ControlPlanLoop> for ControlPlane {
         _message: ControlPlanLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        if self.disable_control_loop {
+            return Ok(());
+        }
+        self.ingest_controller
+            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
+            .await;
         self.indexing_scheduler.control_running_plan(&self.model);
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop);
         Ok(())
@@ -498,14 +532,13 @@ impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
                 return Ok(());
             }
         };
-        let index_metadata: IndexMetadata =
-            match serde_utils::from_json_str(&response.index_metadata_json) {
-                Ok(index_metadata) => index_metadata,
-                Err(serde_error) => {
-                    error!(error=?serde_error, "failed to deserialize index metadata");
-                    return Err(ActorExitStatus::from(anyhow::anyhow!(serde_error)));
-                }
-            };
+        let index_metadata = match response.deserialize_index_metadata() {
+            Ok(index_metadata) => index_metadata,
+            Err(serde_error) => {
+                error!(error=?serde_error, "failed to deserialize index metadata");
+                return Err(ActorExitStatus::from(anyhow::anyhow!(serde_error)));
+            }
+        };
         // Now, create index can also add sources to support creating indexes automatically from
         // index and source config templates.
         let should_rebuild_plan = !index_metadata.sources.is_empty();
@@ -836,16 +869,16 @@ impl Handler<IndexerJoined> for ControlPlane {
     async fn handle(
         &mut self,
         message: IndexerJoined,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         info!(
-            "indexer `{}` joined the cluster: rebuilding indexing plan",
+            "indexer `{}` joined the cluster: rebalancing shards and rebuilding indexing plan",
             message.0.node_id()
         );
-        // TODO:
-        // 1. Update shard table.
-        // 2. Rebalance shards if necessary.
-        self.ingest_controller.rebalance_shards();
+        // TODO: Update shard table.
+        self.ingest_controller
+            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
+            .await;
         self.indexing_scheduler.rebuild_plan(&self.model);
         Ok(())
     }
@@ -862,16 +895,45 @@ impl Handler<IndexerLeft> for ControlPlane {
     async fn handle(
         &mut self,
         message: IndexerLeft,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        info!(
+            "indexer `{}` left the cluster: rebalancing shards and rebuilding indexing plan",
+            message.0.node_id()
+        );
+        // TODO: Update shard table.
+        self.ingest_controller
+            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
+            .await;
+        self.indexing_scheduler.rebuild_plan(&self.model);
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<RebalanceShardsCallback> for ControlPlane {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: RebalanceShardsCallback,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         info!(
-            "indexer `{}` left the cluster: rebuilding indexing plan",
-            message.0.node_id()
+            "closing {} shards after rebalance",
+            message.closed_shards.len()
         );
-        // 1. Update shard table.
-        // 2. Rebalance shards if necessary.
-        self.ingest_controller.rebalance_shards();
-        self.indexing_scheduler.rebuild_plan(&self.model);
+        for closed_shard in message.closed_shards {
+            let shard_id = closed_shard.shard_id().clone();
+            let source_uid = SourceUid {
+                index_uid: closed_shard.index_uid().clone(),
+                source_id: closed_shard.source_id,
+            };
+            self.model.close_shards(&source_uid, &[shard_id]);
+        }
+        // We drop the rebalance guard explicitly here to put some emphasis on where a the rebalance
+        // lock is released.
+        drop(message.rebalance_guard);
         Ok(())
     }
 }
@@ -915,6 +977,8 @@ async fn watcher_indexers(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use mockall::Sequence;
     use quickwit_actors::{AskError, Observe, SupervisorMetrics};
     use quickwit_cluster::ClusterChangeStreamFactoryForTest;
@@ -928,15 +992,17 @@ mod tests {
     };
     use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
     use quickwit_proto::ingest::ingester::{
-        IngesterServiceClient, MockIngesterService, RetainShardsResponse,
+        IngesterServiceClient, InitShardSuccess, InitShardsResponse, MockIngesterService,
+        RetainShardsResponse,
     };
-    use quickwit_proto::ingest::{Shard, ShardState};
+    use quickwit_proto::ingest::{Shard, ShardPKey, ShardState};
     use quickwit_proto::metastore::{
         EntityKind, FindIndexTemplateMatchesResponse, ListIndexesMetadataRequest,
         ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
-        MetastoreError, MockMetastoreService, SourceType,
+        MetastoreError, MockMetastoreService, OpenShardSubresponse, OpenShardsResponse, SourceType,
     };
     use quickwit_proto::types::Position;
+    use tokio::sync::Mutex;
 
     use super::*;
     use crate::IndexerNodeInfo;
@@ -2099,15 +2165,18 @@ mod tests {
             .expect_list_indexes_metadata()
             .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
-        let (_control_plane_mailbox, control_plane_handle, _readiness_rx) = ControlPlane::spawn(
-            &universe,
-            cluster_config,
-            node_id,
-            cluster_change_stream_factory.clone(),
-            indexer_pool.clone(),
-            ingester_pool,
-            metastore,
-        );
+        let disable_control_loop = true;
+        let (_control_plane_mailbox, control_plane_handle, _readiness_rx) =
+            ControlPlane::spawn_inner(
+                &universe,
+                cluster_config,
+                node_id,
+                cluster_change_stream_factory.clone(),
+                indexer_pool.clone(),
+                ingester_pool,
+                metastore,
+                disable_control_loop,
+            );
         let cluster_change_stream_tx = cluster_change_stream_factory.change_stream_tx();
         let indexer_node =
             ClusterNode::for_test("test-indexer", 1515, false, &["indexer"], &[]).await;
@@ -2138,6 +2207,145 @@ mod tests {
             .unwrap()
             .ingest_controller;
         assert_eq!(ingest_controller_stats.num_rebalance_shards_ops, 2);
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_control_plane_handles_rebalance_shards_callback() {
+        let universe = Universe::with_accelerated_time();
+
+        let cluster_config = ClusterConfig::for_test();
+        let node_id = NodeId::from("test-control-plane");
+        let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
+
+        let indexer_pool = IndexerPool::default();
+        let ingester_pool = IngesterPool::default();
+        let ingester_id = NodeId::from("test-ingester");
+        let mut mock_ingester = MockIngesterService::new();
+        mock_ingester
+            .expect_retain_shards()
+            .return_once(|_| Ok(RetainShardsResponse {}));
+        mock_ingester.expect_init_shards().return_once(|request| {
+            let shard = request.subrequests[0].shard().clone();
+            let response = InitShardsResponse {
+                successes: vec![InitShardSuccess {
+                    subrequest_id: 0,
+                    shard: Some(shard),
+                }],
+                failures: Vec::new(),
+            };
+            Ok(response)
+        });
+        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        ingester_pool.insert(ingester_id, ingester);
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
+
+        mock_metastore.expect_create_index().return_once(|request| {
+            let index_config = request.deserialize_index_config().unwrap();
+            let source_configs = request.deserialize_source_configs().unwrap();
+            let mut index_metadata = IndexMetadata::new_with_index_uid(
+                IndexUid::for_test(&index_config.index_id, 0),
+                index_config,
+            );
+            for source_config in source_configs {
+                index_metadata.add_source(source_config).unwrap();
+            }
+            let index_metadata_json = serde_json::to_string(&index_metadata).unwrap();
+            let response = CreateIndexResponse {
+                index_uid: Some(IndexUid::for_test("test-index", 0u128)),
+                index_metadata_json,
+            };
+            Ok(response)
+        });
+        mock_metastore.expect_open_shards().return_once(|_| {
+            let response = OpenShardsResponse {
+                subresponses: vec![OpenShardSubresponse {
+                    subrequest_id: 0,
+                    open_shard: Some(Shard {
+                        index_uid: Some(IndexUid::for_test("test-index", 0u128)),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                        shard_id: Some(ShardId::from(0u64)),
+                        leader_id: "test-ingester".to_string(),
+                        follower_id: None,
+                        shard_state: ShardState::Open as i32,
+                        publish_position_inclusive: Some(Position::Beginning),
+                        publish_token: None,
+                    }),
+                }],
+            };
+            Ok(response)
+        });
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
+            &universe,
+            cluster_config,
+            node_id,
+            cluster_change_stream_factory.clone(),
+            indexer_pool.clone(),
+            ingester_pool,
+            metastore,
+        );
+        let index_config = IndexConfig::for_test("test-index", "ram:///test-index");
+        let mut source_config = SourceConfig::ingest_v2();
+        source_config.enabled = true;
+
+        let create_index_request =
+            CreateIndexRequest::try_from_index_and_source_configs(&index_config, &[source_config])
+                .unwrap();
+        control_plane_mailbox
+            .ask(create_index_request)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let get_or_create_open_shards_request = GetOrCreateOpenShardsRequest {
+            subrequests: vec![GetOrCreateOpenShardsSubrequest {
+                subrequest_id: 0,
+                index_id: "test-index".to_string(),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+            }],
+            closed_shards: Vec::new(),
+            unavailable_leaders: Vec::new(),
+        };
+        control_plane_mailbox
+            .ask(get_or_create_open_shards_request)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let closed_shards = vec![
+            ShardPKey {
+                index_uid: Some(IndexUid::for_test("test-index", 0u128)),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+                shard_id: Some(ShardId::from(0u64)),
+            },
+            ShardPKey {
+                index_uid: Some(IndexUid::for_test("test-index", 0u128)),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+                shard_id: Some(ShardId::from(1u64)),
+            },
+        ];
+        let rebalance_lock = Arc::new(Mutex::new(()));
+        let rebalance_guard = rebalance_lock.clone().lock_owned().await;
+        let callback = RebalanceShardsCallback {
+            closed_shards,
+            rebalance_guard,
+        };
+        control_plane_mailbox.ask(callback).await.unwrap();
+
+        let control_plane_debug_state = control_plane_mailbox
+            .ask(GetDebugStateRequest {})
+            .await
+            .unwrap()
+            .unwrap();
+        let shard = control_plane_debug_state.shard_table[0].shards[0].clone();
+        assert_eq!(shard.shard_id(), ShardId::from(0u64));
+        assert_eq!(shard.shard_state(), ShardState::Closed);
 
         universe.assert_quit().await;
     }
