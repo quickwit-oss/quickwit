@@ -105,6 +105,19 @@ impl FetchEof {
     }
 }
 
+impl IngesterStatus {
+    pub fn as_json_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "unspecified",
+            Self::Initializing => "initializing",
+            Self::Ready => "ready",
+            Self::Decommissioning => "decommissioning",
+            Self::Decommissioned => "decommissioned",
+            Self::Failed => "failed",
+        }
+    }
+}
+
 impl OpenFetchStreamRequest {
     pub fn shard_id(&self) -> &ShardId {
         self.shard_id

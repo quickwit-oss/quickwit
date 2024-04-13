@@ -28,8 +28,8 @@ use utoipa::openapi::Tag;
 use utoipa::OpenApi;
 
 use crate::cluster_api::ClusterApi;
-use crate::debugging_api::DebugApi;
 use crate::delete_task_api::DeleteTaskApi;
+use crate::developer_api::DeveloperApi;
 use crate::elasticsearch_api::ElasticCompatibleApi;
 use crate::health_check_api::HealthCheckApi;
 use crate::index_api::IndexApi;
@@ -83,20 +83,21 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     docs_base.tags = Some(tags);
 
     // Routing
-    docs_base.merge_components_and_paths(HealthCheckApi::openapi().with_path_prefix("/health"));
-    docs_base.merge_components_and_paths(MetricsApi::openapi().with_path_prefix("/metrics"));
-    docs_base.merge_components_and_paths(DebugApi::openapi().with_path_prefix("/api/debugging"));
     docs_base.merge_components_and_paths(ClusterApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(DeleteTaskApi::openapi().with_path_prefix("/api/v1"));
-    docs_base.merge_components_and_paths(IndexApi::openapi().with_path_prefix("/api/v1"));
-    docs_base.merge_components_and_paths(IndexingApi::openapi().with_path_prefix("/api/v1"));
-    docs_base.merge_components_and_paths(IngestApi::openapi().with_path_prefix("/api/v1"));
-    docs_base.merge_components_and_paths(SearchApi::openapi().with_path_prefix("/api/v1"));
+    docs_base
+        .merge_components_and_paths(DeveloperApi::openapi().with_path_prefix("/api/developer"));
     docs_base
         .merge_components_and_paths(ElasticCompatibleApi::openapi().with_path_prefix("/api/v1"));
-    docs_base.merge_components_and_paths(NodeInfoApi::openapi().with_path_prefix("/api/v1"));
-    docs_base.merge_components_and_paths(JaegerApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(HealthCheckApi::openapi().with_path_prefix("/health"));
+    docs_base.merge_components_and_paths(IndexApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(IndexingApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(IndexTemplateApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(IngestApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(JaegerApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(MetricsApi::openapi().with_path_prefix("/metrics"));
+    docs_base.merge_components_and_paths(NodeInfoApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(SearchApi::openapi().with_path_prefix("/api/v1"));
 
     // Schemas
     docs_base.merge_components_and_paths(MetastoreApiSchemas::openapi());

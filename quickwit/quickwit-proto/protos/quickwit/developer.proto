@@ -17,29 +17,21 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub mod control_plane;
-pub mod indexing_plan;
-pub mod indexing_scheduler;
-pub mod ingest;
-pub(crate) mod metrics;
-pub(crate) mod model;
+syntax = "proto3";
 
-use quickwit_common::tower::Pool;
-use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask};
-use quickwit_proto::types::NodeId;
+package quickwit.developer;
 
-/// Indexer-node specific information stored in the pool of available indexer nodes
-#[derive(Debug, Clone)]
-pub struct IndexerNodeInfo {
-    pub node_id: NodeId,
-    pub generation_id: u64,
-    pub client: IndexingServiceClient,
-    pub indexing_tasks: Vec<IndexingTask>,
-    pub indexing_capacity: CpuCapacity,
+service DeveloperService {
+  rpc GetDebugInfo(GetDebugInfoRequest) returns (GetDebugInfoResponse);
+
+  // rpc SetLogLevel(SetLogLevelRequest) returns (SetLogLevelResponse);
 }
 
-pub type IndexerPool = Pool<NodeId, IndexerNodeInfo>;
+message GetDebugInfoRequest {
+  // Restricts the debug info to the given roles.
+  repeated string roles = 1;
+}
 
-mod debouncer;
-#[cfg(test)]
-mod tests;
+message GetDebugInfoResponse {
+  bytes debug_info_json = 1;
+}

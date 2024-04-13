@@ -29,22 +29,22 @@ struct EnvFilter {
     filter: String,
 }
 
-#[utoipa::path(get, tag = "Log level", path = "/log_level")]
+#[utoipa::path(get, tag = "Log level", path = "/log-level")]
 pub fn log_level_handler(
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path("log_level")
+    warp::path("log-level")
         .and(warp::get().or(warp::post()).unify())
         .and(warp::path::end())
         .and(with_arg(env_filter_reload_fn))
         .and(warp::query::<EnvFilter>())
         .then(
             |env_filter_reload_fn: EnvFilterReloadFn, env_filter: EnvFilter| async move {
-                match env_filter_reload_fn(env_filter.filter.as_str()) {
+                match env_filter_reload_fn(&env_filter.filter) {
                     Ok(_) => {
-                        info!(filter = env_filter.filter, "change log level");
+                        info!(filter = env_filter.filter, "setting log level");
                         warp::reply::with_status(
-                            format!("changed log level to:[{}]", env_filter.filter),
+                            format!("set log level to:[{}]", env_filter.filter),
                             StatusCode::OK,
                         )
                     }
