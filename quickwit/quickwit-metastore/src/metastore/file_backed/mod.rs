@@ -663,9 +663,8 @@ impl MetastoreService for FileBackedMetastore {
         let index_uid = request.index_uid();
 
         self.mutate(index_uid, |index| {
-            index
-                .delete_source(&request.source_id)
-                .map(MutationOccurred::from)
+            index.delete_source(&request.source_id)?;
+            Ok(MutationOccurred::Yes(()))
         })
         .await?;
         Ok(EmptyResponse {})

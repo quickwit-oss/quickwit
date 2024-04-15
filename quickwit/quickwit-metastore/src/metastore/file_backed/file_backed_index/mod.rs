@@ -506,7 +506,7 @@ impl FileBackedIndex {
     }
 
     /// Deletes the source. Returns whether a mutation occurred.
-    pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
+    pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<()> {
         self.metadata.delete_source(source_id)
     }
 
