@@ -213,14 +213,14 @@ impl FileBackedIndex {
         &self.metadata
     }
 
-    /// Replace the search settings in the index config, returning whether a mutation occurred.
+    /// Replaces the search settings in the index config, returning whether a mutation occurred.
     pub fn set_search_settings(&mut self, search_settings: SearchSettings) -> bool {
         let is_mutation = self.metadata.index_config.search_settings != search_settings;
         self.metadata.index_config.search_settings = search_settings;
         is_mutation
     }
 
-    /// Replace the retention policy in the index config, returning whether a mutation occurred.
+    /// Replaces the retention policy in the index config, returning whether a mutation occurred.
     pub fn set_retention_policy(&mut self, retention_policy_opt: Option<RetentionPolicy>) -> bool {
         let is_mutation = self.metadata.index_config.retention_policy_opt != retention_policy_opt;
         self.metadata.index_config.retention_policy_opt = retention_policy_opt;

@@ -181,19 +181,19 @@ impl CreateIndexResponseExt for CreateIndexResponse {
 
 /// Helper trait to build a [`UpdateIndexRequest`] and deserialize its payload.
 pub trait UpdateIndexRequestExt {
-    /// Updates a new [`UpdateIndexRequest`] from an [`IndexConfig`].
+    /// Creates a new [`UpdateIndexRequest`] from the different updated fields.
     fn try_from_updates(
         index_uid: impl Into<IndexUid>,
         search_settings: &SearchSettings,
         retention_policy_opt: &Option<RetentionPolicy>,
     ) -> MetastoreResult<UpdateIndexRequest>;
 
-    /// Deserializes the `index_config_json` field of a [`UpdateIndexRequest`] into an
-    /// [`IndexConfig`].
+    /// Deserializes the `search_settings_json` field of an [`UpdateIndexRequest`] into a
+    /// [`SearchSettings`] object.
     fn deserialize_search_settings(&self) -> MetastoreResult<SearchSettings>;
 
-    /// Deserializes the `source_configs_json` field of a [`UpdateIndexRequest`] into an
-    /// `Vec` of [`SourceConfig`].
+    /// Deserializes the `retention_policy_json` field of an [`UpdateIndexRequest`] into a
+    /// [`RetentionPolicy`] object.
     fn deserialize_retention_policy(&self) -> MetastoreResult<Option<RetentionPolicy>>;
 }
 

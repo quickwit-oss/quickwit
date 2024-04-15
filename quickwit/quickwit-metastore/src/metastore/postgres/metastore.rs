@@ -296,22 +296,21 @@ async fn mutate_index_metadata<E, M>(
 ) -> MetastoreResult<IndexMetadata>
 where
     MetastoreError: From<E>,
-    M: FnOnce(IndexMetadata) -> Result<MutationOccurred<IndexMetadata>, E>,
+    M: FnOnce(&mut IndexMetadata) -> Result<MutationOccurred<()>, E>,
 {
     let index_id = &index_uid.index_id;
-    let index_metadata = index_metadata(tx, index_id).await?;
+    let mut index_metadata = index_metadata(tx, index_id).await?;
     if index_metadata.index_uid != index_uid {
         return Err(MetastoreError::NotFound(EntityKind::Index {
             index_id: index_id.to_string(),
         }));
     }
 
-    let mutated_index_metadata = match mutate_fn(index_metadata)? {
-        MutationOccurred::Yes(index_metadata) => index_metadata,
-        MutationOccurred::No(index_metadata) => return Ok(index_metadata),
-    };
+    if let MutationOccurred::No(()) = mutate_fn(&mut index_metadata)? {
+        return Ok(index_metadata);
+    }
 
-    let index_metadata_json = serde_json::to_string(&mutated_index_metadata).map_err(|error| {
+    let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
         MetastoreError::JsonSerializeError {
             struct_name: "IndexMetadata".to_string(),
             message: error.to_string(),
@@ -333,7 +332,7 @@ where
             index_id: index_id.to_string(),
         }));
     }
-    Ok(mutated_index_metadata)
+    Ok(index_metadata)
 }
 
 #[async_trait]
@@ -411,21 +410,17 @@ impl MetastoreService for PostgresqlMetastore {
         let search_settings = request.deserialize_search_settings()?;
         let index_uid: IndexUid = request.index_uid().clone();
         let updated_metadata = run_with_tx!(self.connection_pool, tx, {
-            mutate_index_metadata::<MetastoreError, _>(
-                tx,
-                index_uid,
-                |mut index_metadata: IndexMetadata| {
-                    if index_metadata.index_config.search_settings != search_settings
-                        || index_metadata.index_config.retention_policy_opt != retention_policy_opt
-                    {
-                        index_metadata.index_config.search_settings = search_settings;
-                        index_metadata.index_config.retention_policy_opt = retention_policy_opt;
-                        Ok(MutationOccurred::Yes(index_metadata))
-                    } else {
-                        Ok(MutationOccurred::No(index_metadata))
-                    }
-                },
-            )
+            mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
+                if index_metadata.index_config.search_settings != search_settings
+                    || index_metadata.index_config.retention_policy_opt != retention_policy_opt
+                {
+                    index_metadata.index_config.search_settings = search_settings;
+                    index_metadata.index_config.retention_policy_opt = retention_policy_opt;
+                    Ok(MutationOccurred::Yes(()))
+                } else {
+                    Ok(MutationOccurred::No(()))
+                }
+            })
             .await
         })?;
         IndexMetadataResponse::try_from_index_metadata(&updated_metadata)
@@ -969,14 +964,10 @@ impl MetastoreService for PostgresqlMetastore {
         let source_config = request.deserialize_source_config()?;
         let index_uid: IndexUid = request.index_uid().clone();
         run_with_tx!(self.connection_pool, tx, {
-            mutate_index_metadata::<MetastoreError, _>(
-                tx,
-                index_uid,
-                |mut index_metadata: IndexMetadata| {
-                    index_metadata.add_source(source_config)?;
-                    Ok(MutationOccurred::Yes(index_metadata))
-                },
-            )
+            mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
+                index_metadata.add_source(source_config)?;
+                Ok(MutationOccurred::Yes(()))
+            })
             .await?;
             Ok(())
         })?;
@@ -990,11 +981,11 @@ impl MetastoreService for PostgresqlMetastore {
     ) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
         run_with_tx!(self.connection_pool, tx, {
-            mutate_index_metadata(tx, index_uid, |mut index_metadata| {
+            mutate_index_metadata(tx, index_uid, |index_metadata| {
                 if index_metadata.toggle_source(&request.source_id, request.enable)? {
-                    Ok::<_, MetastoreError>(MutationOccurred::Yes(index_metadata))
+                    Ok::<_, MetastoreError>(MutationOccurred::Yes(()))
                 } else {
-                    Ok::<_, MetastoreError>(MutationOccurred::No(index_metadata))
+                    Ok::<_, MetastoreError>(MutationOccurred::No(()))
                 }
             })
             .await?;
@@ -1011,9 +1002,9 @@ impl MetastoreService for PostgresqlMetastore {
         let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
         run_with_tx!(self.connection_pool, tx, {
-            mutate_index_metadata(tx, index_uid.clone(), |mut index_metadata| {
+            mutate_index_metadata(tx, index_uid.clone(), |index_metadata| {
                 index_metadata.delete_source(&source_id)?;
-                Ok::<_, MetastoreError>(MutationOccurred::Yes(index_metadata))
+                Ok::<_, MetastoreError>(MutationOccurred::Yes(()))
             })
             .await?;
             sqlx::query(
@@ -1040,11 +1031,11 @@ impl MetastoreService for PostgresqlMetastore {
     ) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
         run_with_tx!(self.connection_pool, tx, {
-            mutate_index_metadata(tx, index_uid, |mut index_metadata| {
+            mutate_index_metadata(tx, index_uid, |index_metadata| {
                 if index_metadata.checkpoint.reset_source(&request.source_id) {
-                    Ok::<_, MetastoreError>(MutationOccurred::Yes(index_metadata))
+                    Ok::<_, MetastoreError>(MutationOccurred::Yes(()))
                 } else {
-                    Ok::<_, MetastoreError>(MutationOccurred::No(index_metadata))
+                    Ok::<_, MetastoreError>(MutationOccurred::No(()))
                 }
             })
             .await?;
