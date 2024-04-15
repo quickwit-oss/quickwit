@@ -54,13 +54,16 @@ use tabled::{Table, Tabled};
 use thousands::Separable;
 use tracing::{debug, Level};
 
+use self::update::{build_index_update_command, IndexUpdateCliCommand};
 use crate::checklist::GREEN_COLOR;
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{client_args, make_table, prompt_confirmation, ClientArgs, THROUGHPUT_WINDOW_SIZE};
 
+mod update;
+
 pub fn build_index_command() -> Command {
     Command::new("index")
-        .about("Manages indexes: creates, deletes, ingests, searches, describes...")
+        .about("Manages indexes: creates, updates, deletes, ingests, searches, describes...")
         .args(client_args())
         .subcommand(
             Command::new("create")
@@ -75,8 +78,11 @@ pub fn build_index_command() -> Command {
                 ])
             )
         .subcommand(
+            build_index_update_command()
+        )
+        .subcommand(
             Command::new("clear")
-                .display_order(2)
+                .display_order(3)
                 .alias("clr")
                 .about("Clears an index: deletes all splits and resets checkpoint.")
                 .long_about("Deletes all its splits and resets its checkpoint. This operation is destructive and cannot be undone, proceed with caution.")
@@ -88,7 +94,7 @@ pub fn build_index_command() -> Command {
             )
         .subcommand(
             Command::new("delete")
-                .display_order(3)
+                .display_order(4)
                 .alias("del")
                 .about("Deletes an index.")
                 .long_about("Deletes an index. This operation is destructive and cannot be undone, proceed with caution.")
@@ -102,7 +108,7 @@ pub fn build_index_command() -> Command {
             )
         .subcommand(
             Command::new("describe")
-                .display_order(4)
+                .display_order(5)
                 .about("Displays descriptive statistics of an index.")
                 .long_about("Displays descriptive statistics of an index. Displayed statistics are: number of published splits, number of documents, splits min/max timestamps, size of splits.")
                 .args(&[
@@ -113,12 +119,12 @@ pub fn build_index_command() -> Command {
         .subcommand(
             Command::new("list")
                 .alias("ls")
-                .display_order(5)
+                .display_order(6)
                 .about("List indexes.")
             )
         .subcommand(
             Command::new("ingest")
-                .display_order(6)
+                .display_order(7)
                 .about("Ingest NDJSON documents with the ingest API.")
                 .long_about("Reads NDJSON documents from a file or streamed from stdin and sends them into ingest API.")
                 .args(&[
@@ -155,7 +161,7 @@ pub fn build_index_command() -> Command {
             )
         .subcommand(
             Command::new("search")
-                .display_order(7)
+                .display_order(8)
                 .about("Searches an index.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
@@ -256,6 +262,7 @@ pub enum IndexCliCommand {
     Ingest(IngestDocsArgs),
     List(ListIndexesArgs),
     Search(SearchIndexArgs),
+    Update(IndexUpdateCliCommand),
 }
 
 impl IndexCliCommand {
@@ -278,6 +285,7 @@ impl IndexCliCommand {
             "ingest" => Self::parse_ingest_args(submatches),
             "list" => Self::parse_list_args(submatches),
             "search" => Self::parse_search_args(submatches),
+            "update" => Ok(Self::Update(IndexUpdateCliCommand::parse_args(matches)?)),
             _ => bail!("unknown index subcommand `{subcommand}`"),
         }
     }
@@ -438,6 +446,7 @@ impl IndexCliCommand {
             Self::Ingest(args) => ingest_docs_cli(args).await,
             Self::List(args) => list_index_cli(args).await,
             Self::Search(args) => search_index_cli(args).await,
+            Self::Update(args) => args.execute().await,
         }
     }
 }
