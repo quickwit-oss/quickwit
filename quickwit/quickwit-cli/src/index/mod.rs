@@ -154,7 +154,7 @@ pub fn build_index_command() -> Command {
                         .conflicts_with("wait"),
                     Arg::new("commit-timeout")
                         .long("commit-timeout")
-                        .help("Timeout for ingest operations that require waiting for the final commit (`--wait` or `--force`). This is different from the `commit_timeout_secs` indexing setting which sets the maximum time before commiting splits after their creation.")
+                        .help("Timeout for ingest operations that require waiting for the final commit (`--wait` or `--force`). This is different from the `commit_timeout_secs` indexing setting, which sets the maximum time before commiting splits after their creation.")
                         .required(false)
                         .global(true),
                 ])

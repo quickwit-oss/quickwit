@@ -25,12 +25,13 @@
 //  - list_indexes
 //  - delete_index
 
-use std::vec;
+use std::collections::BTreeSet;
 
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::{
     IndexConfig, RetentionPolicy, SearchSettings, SourceConfig, CLI_SOURCE_ID, INGEST_V2_SOURCE_ID,
 };
+use quickwit_doc_mapper::FieldMappingType;
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataRequest,
     ListIndexesMetadataRequest, MetastoreError, MetastoreService, StageSplitsRequest,
@@ -107,13 +108,24 @@ pub async fn test_metastore_update_index<
         .deserialize_index_metadata()
         .unwrap();
 
-    let new_search_setting = SearchSettings {
-        default_search_fields: vec!["body".to_string(), "owner".to_string()],
-    };
-    assert_ne!(
-        index_metadata.index_config.search_settings, new_search_setting,
-        "original and updated value are the same, test became inefficient"
+    // use all fields that are currently not set as default
+    let current_defaults = BTreeSet::from_iter(
+        index_metadata
+            .index_config
+            .search_settings
+            .default_search_fields,
     );
+    let new_search_setting = SearchSettings {
+        default_search_fields: index_metadata
+            .index_config
+            .doc_mapping
+            .field_mappings
+            .iter()
+            .filter(|f| matches!(f.mapping_type, FieldMappingType::Text(..)))
+            .filter(|f| !current_defaults.contains(&f.name))
+            .map(|f| f.name.clone())
+            .collect(),
+    };
 
     let new_retention_policy_opt = Some(RetentionPolicy {
         retention_period: String::from("3 days"),
@@ -124,7 +136,7 @@ pub async fn test_metastore_update_index<
         "original and updated value are the same, test became inefficient"
     );
 
-    // run same update twice to check indempotence, then None as a corner case check
+    // run same update twice to check idempotence, then None as a corner case check
     for loop_retention_policy_opt in [
         new_retention_policy_opt.clone(),
         new_retention_policy_opt.clone(),

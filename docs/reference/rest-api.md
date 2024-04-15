@@ -309,13 +309,13 @@ The response is the index metadata of the created index, and the content type is
 | `sources`          | List of the index sources configurations. | `Array<SourceConfig>` |
 
 
-### Update an index
+### Update an index (search settings and retention policy only)
 
 ```
 PUT api/v1/indexes/<index id>
 ```
 
-Update an index with the updatable subset of the `IndexConfig` payload. This endpoint follows PUT semantics (not PATCH), which means that all the updatable fields of the index configuration are replaced by the values specified in this request. In particular, omitting an optional field like retention_policy will delete the associated configuration. Unlike the create endpoint, this API only accepts JSON payloads.
+Updates the search settings and retention policy of an index. This endpoint follows PUT semantics (not PATCH), which means that all the updatable fields of the index configuration are replaced by the values specified in this request. In particular, omitting an optional field like retention_policy will delete the associated configuration. Unlike the create endpoint, this API only accepts JSON payloads.
 
 #### PUT payload
 
@@ -337,6 +337,16 @@ curl -XPUT http://0.0.0.0:8080/api/v1/indexes --data @index_update.json -H "Cont
     "retention": {
         "period": "3 days",
         "schedule": "@daily"
+    }
+}
+```
+
+:::warning
+Calling the update endpoint with the following payload will remove the current retention policy.
+```json
+{
+    "search_settings": {
+        "default_search_fields": ["body"]
     }
 }
 ```

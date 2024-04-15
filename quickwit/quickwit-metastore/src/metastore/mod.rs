@@ -204,11 +204,10 @@ impl UpdateIndexRequestExt for UpdateIndexRequest {
         retention_policy_opt: &Option<RetentionPolicy>,
     ) -> MetastoreResult<UpdateIndexRequest> {
         let search_settings_json = serde_utils::to_json_str(&search_settings)?;
-        let retention_policy_json = if let Some(retention_policy) = &retention_policy_opt {
-            Some(serde_utils::to_json_str(retention_policy)?)
-        } else {
-            None
-        };
+        let retention_policy_json = retention_policy_opt
+            .as_ref()
+            .map(serde_utils::to_json_str)
+            .transpose()?;
 
         let update_request = UpdateIndexRequest {
             index_uid: Some(index_uid.into()),
@@ -223,11 +222,10 @@ impl UpdateIndexRequestExt for UpdateIndexRequest {
     }
 
     fn deserialize_retention_policy(&self) -> MetastoreResult<Option<RetentionPolicy>> {
-        if let Some(retention_policy_json) = &self.retention_policy_json {
-            serde_utils::from_json_str(retention_policy_json).map(Some)
-        } else {
-            Ok(None)
-        }
+        self.retention_policy_json
+            .as_ref()
+            .map(|policy| serde_utils::from_json_str(policy))
+            .transpose()
     }
 }
 

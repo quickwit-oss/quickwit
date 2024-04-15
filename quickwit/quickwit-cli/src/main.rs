@@ -101,7 +101,6 @@ mod tests {
 
     use bytesize::ByteSize;
     use quickwit_cli::cli::{build_cli, CliCommand};
-    use quickwit_cli::index::update::{IndexUpdateCliCommand, RetentionPolicyArgs};
     use quickwit_cli::index::{
         ClearIndexArgs, CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, IndexCliCommand,
         IngestDocsArgs, SearchIndexArgs,
@@ -187,35 +186,6 @@ mod tests {
         assert_eq!(command, expected_cmd);
 
         Ok(())
-    }
-
-    #[test]
-    fn test_cmd_update_subsubcommand() {
-        let app = build_cli().no_binary_name(true);
-        let matches = app
-            .try_get_matches_from([
-                "index",
-                "update",
-                "retention-policy",
-                "--index",
-                "my-index",
-                "--period",
-                "1 day",
-            ])
-            .unwrap();
-        let command = CliCommand::parse_cli_args(matches).unwrap();
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::Update(
-                IndexUpdateCliCommand::RetentionPolicy(RetentionPolicyArgs {
-                    client_args: _,
-                    index_id,
-                    disable: false,
-                    period: Some(period),
-                    schedule: None,
-                })
-            )) if &index_id == "my-index" &&  &period == "1 day"
-        ));
     }
 
     #[test]

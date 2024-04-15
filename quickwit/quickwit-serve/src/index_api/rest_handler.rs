@@ -532,7 +532,6 @@ async fn create_index(
 #[serde(deny_unknown_fields)] // Remove when adding new fields to allow to ensure forward compatibility
 pub struct IndexUpdates {
     pub search_settings: SearchSettings,
-    /// The
     #[serde(rename = "retention_policy")]
     pub retention_policy_opt: Option<RetentionPolicy>,
 }

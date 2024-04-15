@@ -44,7 +44,7 @@ pub fn build_index_update_command() -> Command {
                 ]))
         .subcommand(
             Command::new("retention-policy")
-                .about("Configure or disable the retention policy.")
+                .about("Configures or disables the retention policy.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1)
@@ -55,7 +55,7 @@ pub fn build_index_update_command() -> Command {
                     arg!(--"schedule" <RETENTION_SCHEDULE> "Frequency at which the retention policy is evaluated and applied. Expressed as a cron expression (0 0 * * * *) or human-readable form (hourly, daily, weekly, ...).")
                         .display_order(3)
                         .required(false),
-                    arg!(--"disable" "Disable the retention policy. Old indexed data will not be cleaned up anymore.")
+                    arg!(--"disable" "Disables the retention policy. Old indexed data will not be cleaned up anymore.")
                         .display_order(4)
                         .required(false),
                 ])
@@ -217,4 +217,40 @@ pub async fn update_search_settings_cli(args: SearchSettingsArgs) -> anyhow::Res
         .await?;
     println!("{} Index successfully updated.", "✔".color(GREEN_COLOR));
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::cli::{build_cli, CliCommand};
+    use crate::index::IndexCliCommand;
+
+    #[test]
+    fn test_cmd_update_subsubcommand() {
+        let app = build_cli().no_binary_name(true);
+        let matches = app
+            .try_get_matches_from([
+                "index",
+                "update",
+                "retention-policy",
+                "--index",
+                "my-index",
+                "--period",
+                "1 day",
+            ])
+            .unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Update(
+                IndexUpdateCliCommand::RetentionPolicy(RetentionPolicyArgs {
+                    client_args: _,
+                    index_id,
+                    disable: false,
+                    period: Some(period),
+                    schedule: None,
+                })
+            )) if &index_id == "my-index" &&  &period == "1 day"
+        ));
+    }
 }
