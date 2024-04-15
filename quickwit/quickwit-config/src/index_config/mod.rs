@@ -239,7 +239,7 @@ pub struct RetentionPolicy {
 }
 
 impl RetentionPolicy {
-    fn default_schedule() -> String {
+    pub fn default_schedule() -> String {
         "hourly".to_string()
     }
 

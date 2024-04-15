@@ -126,8 +126,8 @@ impl IndexMetadata {
         Ok(mutation_occurred)
     }
 
-    /// Deletes a source from the index. Returns whether the index was modified (true).
-    pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
+    /// Deletes a source from the index.
+    pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<()> {
         self.sources.remove(source_id).ok_or_else(|| {
             MetastoreError::NotFound(EntityKind::Source {
                 index_id: self.index_id().to_string(),
@@ -135,7 +135,7 @@ impl IndexMetadata {
             })
         })?;
         self.checkpoint.remove_source(source_id);
-        Ok(true)
+        Ok(())
     }
 }
 
