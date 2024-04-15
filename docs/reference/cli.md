@@ -787,41 +787,6 @@ quickwit tool local-ingest
 | `--overwrite` | Overwrites pre-existing index. |  |
 | `--transform-script` | VRL program to transform docs before ingesting. |  |
 | `--keep-cache` | Does not clear local cache directory upon completion. |  |
-### tool local-search
-
-Searches an index locally.  
-`quickwit tool local-search [args]`
-
-*Synopsis*
-
-```bash
-quickwit tool local-search
-    --index <index>
-    --query <query>
-    [--aggregation <aggregation>]
-    [--max-hits <max-hits>]
-    [--start-offset <start-offset>]
-    [--search-fields <search-fields>]
-    [--snippet-fields <snippet-fields>]
-    [--start-timestamp <start-timestamp>]
-    [--end-timestamp <end-timestamp>]
-    [--sort-by-field <sort-by-field>]
-```
-
-*Options*
-
-| Option | Description | Default |
-|-----------------|-------------|--------:|
-| `--index` | ID of the target index |  |
-| `--query` | Query expressed in natural query language ((barack AND obama) OR "president of united states"). Learn more on https://quickwit.io/docs/reference/search-language. |  |
-| `--aggregation` | JSON serialized aggregation request in tantivy/elasticsearch format. |  |
-| `--max-hits` | Maximum number of hits returned. | `20` |
-| `--start-offset` | Offset in the global result set of the first hit returned. | `0` |
-| `--search-fields` | List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2".  |  |
-| `--snippet-fields` | List of fields that Quickwit will return snippet highlight on. Space-separated list, e.g. "field1 field2".  |  |
-| `--start-timestamp` | Filters out documents before that timestamp (time-series indexes only). |  |
-| `--end-timestamp` | Filters out documents after that timestamp (time-series indexes only). |  |
-| `--sort-by-field` | Sort by field. |  |
 ### tool extract-split
 
 Downloads and extracts a split to a directory.  

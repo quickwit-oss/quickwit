@@ -197,7 +197,7 @@ fn generate_markdown_from_clap(command: &Command) {
             continue;
         }
 
-        let excluded_doc_commands = ["merge"];
+        let excluded_doc_commands = ["merge", "local-search"];
         for subcommand in command
             .get_subcommands()
             .filter(|subcommand| !excluded_doc_commands.contains(&subcommand.get_name()))
