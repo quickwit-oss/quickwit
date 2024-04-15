@@ -55,6 +55,7 @@ use crate::with_arg;
 #[openapi(
     paths(
         create_index,
+        update_index,
         clear_index,
         delete_index,
         list_indexes_metadata,
@@ -66,7 +67,7 @@ use crate::with_arg;
         toggle_source,
         delete_source,
     ),
-    components(schemas(ToggleSource, SplitsForDeletion, IndexStats))
+    components(schemas(ToggleSource, SplitsForDeletion, IndexStats, IndexUpdates))
 )]
 pub struct IndexApi;
 
@@ -525,14 +526,14 @@ async fn create_index(
         .await
 }
 
-/// The body of the index update request
-///
-/// Remove #[serde(deny_unknown_fields)] when adding new fields to allow to ensure forward
-/// compatibility.
+/// The body of the index update request. All fields will be replaced in the
+/// existing configuration.
 #[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Default, utoipa::ToSchema)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields)] // Remove when adding new fields to allow to ensure forward compatibility
 pub struct IndexUpdates {
     pub search_settings: SearchSettings,
+    /// The
+    #[serde(rename = "retention_policy")]
     pub retention_policy_opt: Option<RetentionPolicy>,
 }
 
@@ -553,14 +554,19 @@ fn update_index_handler(
     put,
     tag = "Indexes",
     path = "/indexes/{index_id}",
-    request_body = UpdateIndexRequest,
+    request_body = IndexUpdates,
     responses(
-        (status = 200, description = "Successfully marked splits for deletion.")
+        (status = 200, description = "Successfully updated the index configuration.")
     ),
     params(
         ("index_id" = String, Path, description = "The index ID to update."),
     )
 )]
+/// Updates an existing index.
+///
+/// This endpoint has PUT semantics, which means that all the updatable fields of the index
+/// configuration are replaced by the values specified in the request. In particular, omitting an
+/// optional field like `retention_policy` will delete the associated configuration.
 async fn update_index(
     index_id: String,
     request: IndexUpdates,
@@ -1775,7 +1781,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_index() {
-        let metastore = metastore_for_test();
+        let mut metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
         node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
@@ -1819,6 +1825,20 @@ mod tests {
             });
             assert_json_include!(actual: resp_json, expected: expected_response_json);
         }
+        // check that the metastore was updated
+        let index_metadata = metastore
+            .index_metadata(IndexMetadataRequest::for_index_id("hdfs-logs".to_string()))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert_eq!(
+            index_metadata
+                .index_config
+                .search_settings
+                .default_search_fields,
+            ["severity_text", "body"]
+        );
     }
 
     #[tokio::test]
