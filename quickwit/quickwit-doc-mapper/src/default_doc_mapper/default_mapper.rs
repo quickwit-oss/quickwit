@@ -46,7 +46,7 @@ use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
     Cardinality, DocMapper, DocParsingError, Mode, QueryParserError, TokenizerEntry, WarmupInfo,
-    DYNAMIC_FIELD_NAME, FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
+    DOCUMENT_LEN_FIELD_NAME, DYNAMIC_FIELD_NAME, FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
 };
 
 const FIELD_PRESENCE_FIELD: Field = Field::from_field_id(0u32);
@@ -69,6 +69,8 @@ pub struct DefaultDocMapper {
     /// This field is only valid when using the schema associated with the default
     /// doc mapper, and therefore cannot be used in the `query` method.
     dynamic_field: Option<Field>,
+    /// Field in which the len of the source document is stored as a fast field.
+    document_len_field: Option<Field>,
     /// Default list of field names used for search.
     default_search_field_names: Vec<String>,
     /// Timestamp field name.
@@ -158,6 +160,13 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             None
         };
 
+        let document_len_field = if builder.document_length {
+            let document_len_field_options = tantivy::schema::NumericOptions::default().set_fast();
+            Some(schema_builder.add_u64_field(DOCUMENT_LEN_FIELD_NAME, document_len_field_options))
+        } else {
+            None
+        };
+
         // Adding regular fields.
         let MappingNodeRoot {
             field_mappings,
@@ -226,7 +235,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
                     default_search_field_name
                 )
             }
-            let dynamic_field = schema.get_field(DYNAMIC_FIELD_NAME).ok();
             let (default_search_field, _json_path) = schema
                 .find_field_with_default(default_search_field_name, dynamic_field)
                 .with_context(|| {
@@ -262,6 +270,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             index_field_presence: builder.index_field_presence,
             source_field,
             dynamic_field,
+            document_len_field,
             default_search_field_names,
             timestamp_field_name: builder.timestamp_field,
             field_mappings,
@@ -378,6 +387,7 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             partition_key: partition_key_opt,
             max_num_partitions: default_doc_mapper.max_num_partitions,
             tokenizers: default_doc_mapper.tokenizer_entries,
+            document_length: false,
         }
     }
 }
@@ -561,6 +571,7 @@ impl DocMapper for DefaultDocMapper {
     fn doc_from_json_obj(
         &self,
         json_obj: JsonObject,
+        document_len: u64,
     ) -> Result<(Partition, Document), DocParsingError> {
         let partition: Partition = self.partition_key.eval_hash(&json_obj);
 
@@ -611,6 +622,10 @@ impl DocMapper for DefaultDocMapper {
                         .collect(),
                 );
             }
+        }
+
+        if let Some(document_len_field) = self.document_len_field {
+            document.add_u64(document_len_field, document_len);
         }
 
         // The capacity is inexact here.
@@ -729,8 +744,8 @@ mod tests {
     use crate::default_doc_mapper::field_mapping_entry::DEFAULT_TOKENIZER_NAME;
     use crate::default_doc_mapper::mapping_tree::value_to_pretokenized;
     use crate::{
-        DefaultDocMapperBuilder, DocMapper, DocParsingError, DYNAMIC_FIELD_NAME,
-        FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
+        DefaultDocMapperBuilder, DocMapper, DocParsingError, DOCUMENT_LEN_FIELD_NAME,
+        DYNAMIC_FIELD_NAME, FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
     };
 
     fn example_json_doc_value() -> JsonValue {
@@ -786,7 +801,7 @@ mod tests {
         let json_doc = example_json_doc_value();
         let doc_mapper = crate::default_doc_mapper_for_test();
         let (_, document) = doc_mapper
-            .doc_from_json_obj(json_doc.as_object().unwrap().clone())
+            .doc_from_json_obj(json_doc.as_object().unwrap().clone(), 0)
             .unwrap();
         let schema = doc_mapper.schema();
         // 9 property entry + 1 field "_source" + 2 fields values for "tags" field
@@ -1265,7 +1280,7 @@ mod tests {
             "image": "YWJj"
         });
         let (_, document) = doc_mapper
-            .doc_from_json_obj(json_doc_value.as_object().unwrap().clone())
+            .doc_from_json_obj(json_doc_value.as_object().unwrap().clone(), 0)
             .unwrap();
 
         // 2 properties, + 1 value for "_source" + 2 for field presence.
@@ -2011,6 +2026,20 @@ mod tests {
             "concat2",
             r#"{"some_text": "this is a text"}"#,
             vec!["this is a text".into()],
+        );
+    }
+
+    #[test]
+    fn test_length_field() {
+        let raw_doc = r#"{ "some_obj": { "json_obj": {"hello": 2} } }"#;
+        test_doc_from_json_test_aux(
+            r#"{
+                "document_length": true,
+                "mode": "dynamic"
+            }"#,
+            DOCUMENT_LEN_FIELD_NAME,
+            raw_doc,
+            vec![(raw_doc.len() as u64).into()],
         );
     }
 

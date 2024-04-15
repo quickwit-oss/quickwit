@@ -52,6 +52,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     fn doc_from_json_obj(
         &self,
         json_obj: JsonObject,
+        document_len: u64,
     ) -> Result<(Partition, Document), DocParsingError>;
 
     /// Parses a JSON byte slice into a tantivy [`Document`].
@@ -65,7 +66,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
                 .unwrap_or_else(|_| "document contains some invalid UTF-8 characters".to_string());
             DocParsingError::NotJsonObject(json_doc_sample)
         })?;
-        self.doc_from_json_obj(json_obj)
+        self.doc_from_json_obj(json_obj, json_doc.len() as u64)
     }
 
     /// Parses a JSON string into a tantivy [`Document`].
@@ -74,7 +75,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
             let json_doc_sample: String = json_doc.chars().take(20).chain("...".chars()).collect();
             DocParsingError::NotJsonObject(json_doc_sample)
         })?;
-        self.doc_from_json_obj(json_obj)
+        self.doc_from_json_obj(json_obj, json_doc.len() as u64)
     }
 
     /// Converts a tantivy named Document to the json format.
