@@ -529,7 +529,7 @@ async fn create_index(
 ///
 /// Remove #[serde(deny_unknown_fields)] when adding new fields to allow to ensure forward
 /// compatibility.
-#[derive(Deserialize, Debug, Eq, PartialEq, Default, utoipa::ToSchema)]
+#[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Default, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IndexUpdates {
     pub search_settings: SearchSettings,
@@ -1791,7 +1791,13 @@ mod tests {
                 .await;
             assert_eq!(resp.status(), 200);
             let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
-            let expected_response_json = serde_json::json!({"default_search_fields":["body"]});
+            let expected_response_json = serde_json::json!({
+                "index_config": {
+                    "search_settings": {
+                        "default_search_fields": ["body"]
+                    }
+                }
+            });
             assert_json_include!(actual: resp_json, expected: expected_response_json);
         }
         {
@@ -1804,8 +1810,13 @@ mod tests {
                 .await;
             assert_eq!(resp.status(), 200);
             let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
-            let expected_response_json =
-                serde_json::json!({"default_search_fields":["severity_text","body"]});
+            let expected_response_json = serde_json::json!({
+                "index_config": {
+                    "search_settings": {
+                        "default_search_fields": ["severity_text", "body"]
+                    }
+                }
+            });
             assert_json_include!(actual: resp_json, expected: expected_response_json);
         }
     }
