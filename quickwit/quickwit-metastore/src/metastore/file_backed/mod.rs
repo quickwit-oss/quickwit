@@ -467,15 +467,15 @@ impl MetastoreService for FileBackedMetastore {
 
         let metadata = self
             .mutate(index_uid, |index| {
-                let metadata = index.metadata_mut();
-                if metadata.index_config.search_settings != search_settings
-                    || metadata.index_config.retention_policy_opt != retention_policy_opt
+                let index_config = index.index_config_mut();
+                if index_config.search_settings != search_settings
+                    || index_config.retention_policy_opt != retention_policy_opt
                 {
-                    metadata.index_config.search_settings = search_settings;
-                    metadata.index_config.retention_policy_opt = retention_policy_opt;
-                    Ok(MutationOccurred::Yes(metadata.clone()))
+                    index_config.search_settings = search_settings;
+                    index_config.retention_policy_opt = retention_policy_opt;
+                    Ok(MutationOccurred::Yes(index.metadata().clone()))
                 } else {
-                    Ok(MutationOccurred::No(metadata.clone()))
+                    Ok(MutationOccurred::No(index.metadata().clone()))
                 }
             })
             .await?;

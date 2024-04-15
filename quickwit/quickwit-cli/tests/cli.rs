@@ -544,10 +544,6 @@ async fn test_cmd_update_index() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
-        .await
-        .unwrap();
-
     // add a policy
     update_retention_policy_cli(RetentionPolicyArgs {
         index_id: index_id.clone(),

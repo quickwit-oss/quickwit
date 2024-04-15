@@ -30,7 +30,7 @@ use std::ops::Bound;
 
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
-use quickwit_config::{SourceConfig, INGEST_V2_SOURCE_ID};
+use quickwit_config::{IndexConfig, SourceConfig, INGEST_V2_SOURCE_ID};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest, DeleteTask,
     EntityKind, ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
@@ -213,9 +213,9 @@ impl FileBackedIndex {
         &self.metadata
     }
 
-    /// Mutable ref to index metadata.
-    pub fn metadata_mut(&mut self) -> &mut IndexMetadata {
-        &mut self.metadata
+    /// Mutable ref to index config.
+    pub fn index_config_mut(&mut self) -> &mut IndexConfig {
+        &mut self.metadata.index_config
     }
 
     /// Stages a single split.
