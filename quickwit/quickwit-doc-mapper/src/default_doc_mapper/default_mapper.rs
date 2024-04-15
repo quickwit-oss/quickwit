@@ -2030,7 +2030,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lenght_field() {
+    fn test_length_field() {
         let raw_doc = r#"{ "some_obj": { "json_obj": {"hello": 2} } }"#;
         test_doc_from_json_test_aux(
             r#"{
