@@ -315,7 +315,7 @@ The response is the index metadata of the created index, and the content type is
 PUT api/v1/indexes/<index id>
 ```
 
-Update an index with the updatables parts of the `IndexConfig` payload. Note that this follows the PUT semantics and not PATCH, so all the fields must be specified and Unlike the create endpoint, this API accepts JSON only.
+Update an index with the updatable subset of the `IndexConfig` payload. This endpoint follows PUT semantics (not PATCH), which means that all the updatable fields of the index configuration are replaced by the values specified in this request. In particular, omitting an optional field like retention_policy will delete the associated configuration. Unlike the create endpoint, this API only accepts JSON payloads.
 
 #### PUT payload
 
