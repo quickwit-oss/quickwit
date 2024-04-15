@@ -116,7 +116,7 @@ quickwit run
 | Option | Description | Default |
 |-----------------|-------------|--------:|
 | `--config` | Config file location | `config/quickwit.yaml` |
-| `--service` | Services (indexer,searcher,janitor,metastore or control-plane) to run. If unspecified, all the supported services are started. |  |
+| `--service` | Services (`indexer`, `searcher`, `metastore`, `control-plane`, or `janitor`) to run. If unspecified, all the supported services are started. |  |
 
 *Examples*
 
@@ -141,7 +141,7 @@ curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+obama"
 ```
 
 ## index
-Manages indexes: creates, deletes, ingests, searches, describes...
+Manages indexes: creates, updates, deletes, ingests, searches, describes...
 
 ### index create
 
@@ -180,6 +180,51 @@ quickwit index create --endpoint=http://127.0.0.1:7280 --index-config wikipedia_
 
 ```
 
+### index update
+
+`quickwit index update [args]`
+#### index update search-settings
+
+Updates default search settings.  
+`quickwit index update search-settings [args]`
+
+*Synopsis*
+
+```bash
+quickwit index update search-settings
+    --index <index>
+    [--default-search-fields <default-search-fields>]
+```
+
+*Options*
+
+| Option | Description |
+|-----------------|-------------|
+| `--index` | ID of the target index |
+| `--default-search-fields` | List of fields that Quickwit will search into if the user query does not explicitly target a field. If not specified, default fields are removed and queries without target field will fail. Space-separated list, e.g. "field1 field2". |
+#### index update retention-policy
+
+Configure or disable the retention policy.  
+`quickwit index update retention-policy [args]`
+
+*Synopsis*
+
+```bash
+quickwit index update retention-policy
+    --index <index>
+    [--period <period>]
+    [--schedule <schedule>]
+    [--disable]
+```
+
+*Options*
+
+| Option | Description |
+|-----------------|-------------|
+| `--index` | ID of the target index |
+| `--period` | Duration after which splits are dropped. Expressed in a human-readable way (`1 day`, `2 hours`, `1 week`, ...) |
+| `--schedule` | Frequency at which the retention policy is evaluated and applied. Expressed as a cron expression (0 0 * * * *) or human-readable form (hourly, daily, weekly, ...). |
+| `--disable` | Disable the retention policy. Old indexed data will not be cleaned up anymore. |
 ### index clear
 
 Clears an index: deletes all splits and resets checkpoint.  
@@ -661,8 +706,8 @@ quickwit split list
 | Option | Description |
 |-----------------|-------------|
 | `--index` | Target index ID |
-| `--offset` | Number of splits to skip |
-| `--limit` | Maximum number of splits to retrieve |
+| `--offset` | Number of splits to skip. |
+| `--limit` | Maximum number of splits to retrieve. |
 | `--states` | Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`. |
 | `--create-date` | Selects the splits whose creation dates are before this date. |
 | `--start-date` | Selects the splits that contain documents after this date (time-series indexes only). |
@@ -742,6 +787,41 @@ quickwit tool local-ingest
 | `--overwrite` | Overwrites pre-existing index. |  |
 | `--transform-script` | VRL program to transform docs before ingesting. |  |
 | `--keep-cache` | Does not clear local cache directory upon completion. |  |
+### tool local-search
+
+Searches an index locally.  
+`quickwit tool local-search [args]`
+
+*Synopsis*
+
+```bash
+quickwit tool local-search
+    --index <index>
+    --query <query>
+    [--aggregation <aggregation>]
+    [--max-hits <max-hits>]
+    [--start-offset <start-offset>]
+    [--search-fields <search-fields>]
+    [--snippet-fields <snippet-fields>]
+    [--start-timestamp <start-timestamp>]
+    [--end-timestamp <end-timestamp>]
+    [--sort-by-field <sort-by-field>]
+```
+
+*Options*
+
+| Option | Description | Default |
+|-----------------|-------------|--------:|
+| `--index` | ID of the target index |  |
+| `--query` | Query expressed in natural query language ((barack AND obama) OR "president of united states"). Learn more on https://quickwit.io/docs/reference/search-language. |  |
+| `--aggregation` | JSON serialized aggregation request in tantivy/elasticsearch format. |  |
+| `--max-hits` | Maximum number of hits returned. | `20` |
+| `--start-offset` | Offset in the global result set of the first hit returned. | `0` |
+| `--search-fields` | List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2".  |  |
+| `--snippet-fields` | List of fields that Quickwit will return snippet highlight on. Space-separated list, e.g. "field1 field2".  |  |
+| `--start-timestamp` | Filters out documents before that timestamp (time-series indexes only). |  |
+| `--end-timestamp` | Filters out documents after that timestamp (time-series indexes only). |  |
+| `--sort-by-field` | Sort by field. |  |
 ### tool extract-split
 
 Downloads and extracts a split to a directory.  

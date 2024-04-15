@@ -29,101 +29,46 @@ use crate::ClientArgs;
 
 pub fn build_index_update_command() -> Command {
     Command::new("update")
-        .display_order(2)
-        .about("Updates an index configuration.")
+        .subcommand_required(true)
         .subcommand(
             Command::new("search-settings")
-                .about("Updates an default search settings.")
+                .about("Updates default search settings.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1)
                         .required(true),
-                    arg!(--"default-search-fields" <FIELD_NAME> "Comma separated list of fields that will be searched by default.")
+                    arg!(--"default-search-fields" <FIELD_NAME> "List of fields that Quickwit will search into if the user query does not explicitly target a field. If not specified, default fields are removed and queries without target field will fail. Space-separated list, e.g. \"field1 field2\".")
                         .display_order(2)
+                        .num_args(1..)
                         .required(false),
-                ])
+                ]))
         .subcommand(
             Command::new("retention-policy")
-                .about("Set or unset a retention policy.")
+                .about("Configure or disable the retention policy.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1)
                         .required(true),
-                    arg!(--"retention-policy-period" <RETENTION_PERIOD> "Duration after which splits are dropped.")
+                    arg!(--"period" <RETENTION_PERIOD> "Duration after which splits are dropped. Expressed in a human-readable way (`1 day`, `2 hours`, `1 week`, ...)")
                         .display_order(2)
                         .required(false),
-                    arg!(--"retention-policy-schedule" <RETENTION_SCHEDULE> "Frequency at which the retention policy is evaluated and applied.")
+                    arg!(--"schedule" <RETENTION_SCHEDULE> "Frequency at which the retention policy is evaluated and applied. Expressed as a cron expression (0 0 * * * *) or human-readable form (hourly, daily, weekly, ...).")
                         .display_order(3)
                         .required(false),
-                    arg!(--"disable-retention-policy" "Disables the retention policy.")
+                    arg!(--"disable" "Disable the retention policy. Old indexed data will not be cleaned up anymore.")
                         .display_order(4)
                         .required(false),
                 ])
         )
-    )
-}
-
-// Structured representation of the retention policy args
-#[derive(Debug, Eq, PartialEq)]
-pub enum RetentionPolicyUpdate {
-    Noop,
-    Update {
-        period: Option<String>,
-        schedule: Option<String>,
-    },
-    Disable,
-}
-
-impl RetentionPolicyUpdate {
-    pub fn apply_update(
-        self,
-        retention_policy_opt: Option<RetentionPolicy>,
-    ) -> anyhow::Result<Option<RetentionPolicy>> {
-        match (self, retention_policy_opt) {
-            (Self::Noop, policy_opt) => Ok(policy_opt),
-            (Self::Update { period: None, .. }, None) => {
-                bail!("`--retention-policy-period` is required when creating a retention policy");
-            }
-            (
-                Self::Update {
-                    period: None,
-                    schedule,
-                },
-                Some(mut policy),
-            ) => {
-                policy.evaluation_schedule = schedule.unwrap_or(policy.evaluation_schedule.clone());
-                Ok(Some(policy))
-            }
-            (
-                Self::Update {
-                    period: Some(period),
-                    schedule,
-                },
-                None,
-            ) => Ok(Some(RetentionPolicy {
-                retention_period: period,
-                evaluation_schedule: schedule.unwrap_or(RetentionPolicy::default_schedule()),
-            })),
-            (
-                Self::Update {
-                    period: Some(period),
-                    schedule,
-                },
-                Some(policy),
-            ) => Ok(Some(RetentionPolicy {
-                retention_period: period,
-                evaluation_schedule: schedule.unwrap_or(policy.evaluation_schedule.clone()),
-            })),
-            (Self::Disable, _) => Ok(None),
-        }
-    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct RetentionPolicyArgs {
     pub client_args: ClientArgs,
     pub index_id: String,
-    pub retention_policy_update: RetentionPolicyUpdate,
+    pub disable: bool,
+    pub period: Option<String>,
+    pub schedule: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -143,7 +88,7 @@ impl IndexUpdateCliCommand {
     pub fn parse_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
             .remove_subcommand()
-            .context("failed to parse index subcommand")?;
+            .context("failed to parse index update subcommand")?;
         match subcommand.as_str() {
             "retention-policy" => Self::parse_update_retention_policy_args(submatches),
             "search-settings" => Self::parse_update_search_settings_args(submatches),
@@ -156,28 +101,15 @@ impl IndexUpdateCliCommand {
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
-        let disable_retention_policy = matches.get_flag("disable-retention-policy");
-        let retention_policy_period = matches.remove_one::<String>("retention-policy-period");
-        let retention_policy_schedule = matches.remove_one::<String>("retention-policy-schedule");
-
-        let retention_policy_update = match (
-            disable_retention_policy,
-            retention_policy_period,
-            retention_policy_schedule,
-        ) {
-            (true, Some(_), Some(_)) | (true, None, Some(_)) | (true, Some(_), None) => bail!(
-                "`--retention-policy-period` and `--retention-policy-schedule` cannot be used \
-                 together with `--disable-retention-policy`"
-            ),
-            (true, None, None) => RetentionPolicyUpdate::Disable,
-            (false, None, None) => RetentionPolicyUpdate::Noop,
-            (false, period, schedule) => RetentionPolicyUpdate::Update { period, schedule },
-        };
-
+        let disable = matches.get_flag("disable");
+        let period = matches.remove_one::<String>("period");
+        let schedule = matches.remove_one::<String>("schedule");
         Ok(Self::RetentionPolicy(RetentionPolicyArgs {
             client_args,
             index_id,
-            retention_policy_update,
+            disable,
+            period,
+            schedule,
         }))
     }
 
@@ -209,16 +141,40 @@ pub async fn update_retention_policy_cli(args: RetentionPolicyArgs) -> anyhow::R
     println!("❯ Updating index retention policy...");
     let qw_client = args.client_args.client();
     let metadata = qw_client.indexes().get(&args.index_id).await?;
-    let new_retention_policy_opt = args
-        .retention_policy_update
-        .apply_update(metadata.index_config.retention_policy_opt)?;
+    let new_retention_policy_opt = match (
+        args.disable,
+        args.period,
+        args.schedule,
+        metadata.index_config.retention_policy_opt,
+    ) {
+        (true, Some(_), Some(_), _) | (true, None, Some(_), _) | (true, Some(_), None, _) => {
+            bail!("`--period` and `--schedule` cannot be used together with `--disable`")
+        }
+        (false, None, None, _) => bail!("either `--period` or `--disable` must be specified"),
+        (false, None, Some(_), None) => {
+            bail!("`--period` is required when creating a retention policy")
+        }
+        (true, None, None, _) => None,
+        (false, None, Some(schedule), Some(policy)) => Some(RetentionPolicy {
+            retention_period: policy.retention_period,
+            evaluation_schedule: schedule,
+        }),
+        (false, Some(period), schedule_opt, None) => Some(RetentionPolicy {
+            retention_period: period,
+            evaluation_schedule: schedule_opt.unwrap_or(RetentionPolicy::default_schedule()),
+        }),
+        (false, Some(period), schedule_opt, Some(policy)) => Some(RetentionPolicy {
+            retention_period: period,
+            evaluation_schedule: schedule_opt.unwrap_or(policy.evaluation_schedule.clone()),
+        }),
+    };
     if let Some(new_retention_policy) = new_retention_policy_opt.as_ref() {
         println!(
             "New retention policy: {}",
             serde_json::to_string(&new_retention_policy)?
         );
     } else {
-        println!("Retention policy disabled.");
+        println!("Disable retention policy.");
     }
     qw_client
         .indexes()
@@ -230,6 +186,7 @@ pub async fn update_retention_policy_cli(args: RetentionPolicyArgs) -> anyhow::R
             },
         )
         .await?;
+    println!("{} Index successfully updated.", "✔".color(GREEN_COLOR));
     Ok(())
 }
 
@@ -239,8 +196,7 @@ pub async fn update_search_settings_cli(args: SearchSettingsArgs) -> anyhow::Res
     let qw_client = args.client_args.client();
     let metadata = qw_client.indexes().get(&args.index_id).await?;
     let search_settings = SearchSettings {
-        default_search_fields: args.default_search_fields.unwrap_or(vec![]),
-        ..metadata.index_config.search_settings
+        default_search_fields: args.default_search_fields.unwrap_or_default(),
     };
     println!(
         "New search settings: {}",

@@ -29,6 +29,7 @@ use clap::error::ErrorKind;
 use helpers::{TestEnv, TestStorageType};
 use quickwit_cli::checklist::ChecklistError;
 use quickwit_cli::cli::build_cli;
+use quickwit_cli::index::update::{update_retention_policy_cli, RetentionPolicyArgs};
 use quickwit_cli::index::{
     create_index_cli, delete_index_cli, search_index, CreateIndexArgs, DeleteIndexArgs,
     SearchIndexArgs,
@@ -40,7 +41,7 @@ use quickwit_cli::ClientArgs;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
-use quickwit_config::{SourceInputFormat, CLI_SOURCE_ID};
+use quickwit_config::{RetentionPolicy, SourceInputFormat, CLI_SOURCE_ID};
 use quickwit_metastore::{
     ListSplitsRequestExt, MetastoreResolver, MetastoreServiceExt, MetastoreServiceStreamSplitsExt,
     SplitMetadata, SplitState, StageSplitsRequestExt,
@@ -531,6 +532,73 @@ async fn test_search_index_cli() {
     // search_index_cli calls search_index and prints the SearchResponse
     let search_res = search_index(args).await.unwrap();
     assert_eq!(search_res.num_hits, 0);
+}
+
+#[tokio::test]
+async fn test_cmd_update_index() {
+    quickwit_common::setup_logging_for_tests();
+    let index_id = append_random_suffix("test-update-cmd");
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
+    test_env.start_server().await.unwrap();
+    create_logs_index(&test_env).await.unwrap();
+
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+        .await
+        .unwrap();
+
+    // add a policy
+    update_retention_policy_cli(RetentionPolicyArgs {
+        index_id: index_id.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
+        disable: false,
+        period: Some(String::from("1 week")),
+        schedule: Some(String::from("daily")),
+    })
+    .await
+    .unwrap();
+    let index_metadata = test_env.index_metadata().await.unwrap();
+    assert_eq!(
+        index_metadata.index_config.retention_policy_opt,
+        Some(RetentionPolicy {
+            retention_period: String::from("1 week"),
+            evaluation_schedule: String::from("daily")
+        })
+    );
+
+    // invalid args
+    update_retention_policy_cli(RetentionPolicyArgs {
+        index_id: index_id.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
+        disable: true,
+        period: Some(String::from("a week")),
+        schedule: Some(String::from("daily")),
+    })
+    .await
+    .unwrap_err();
+
+    // remove the policy
+    update_retention_policy_cli(RetentionPolicyArgs {
+        index_id,
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
+        disable: true,
+        period: None,
+        schedule: None,
+    })
+    .await
+    .unwrap();
+    let index_metadata = test_env.index_metadata().await.unwrap();
+    assert_eq!(index_metadata.index_config.retention_policy_opt, None);
 }
 
 #[tokio::test]

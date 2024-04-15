@@ -59,7 +59,7 @@ use crate::checklist::GREEN_COLOR;
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{client_args, make_table, prompt_confirmation, ClientArgs, THROUGHPUT_WINDOW_SIZE};
 
-mod update;
+pub mod update;
 
 pub fn build_index_command() -> Command {
     Command::new("index")
@@ -78,7 +78,7 @@ pub fn build_index_command() -> Command {
                 ])
             )
         .subcommand(
-            build_index_update_command()
+            build_index_update_command().display_order(2)
         )
         .subcommand(
             Command::new("clear")
@@ -154,7 +154,7 @@ pub fn build_index_command() -> Command {
                         .conflicts_with("wait"),
                     Arg::new("commit-timeout")
                         .long("commit-timeout")
-                        .help("Duration of the commit timeout operation.")
+                        .help("Timeout for ingest operations that require waiting for the final commit (`--wait` or `--force`). This is different from the `commit_timeout_secs` indexing setting which sets the maximum time before commiting splits after their creation.")
                         .required(false)
                         .global(true),
                 ])
@@ -285,7 +285,7 @@ impl IndexCliCommand {
             "ingest" => Self::parse_ingest_args(submatches),
             "list" => Self::parse_list_args(submatches),
             "search" => Self::parse_search_args(submatches),
-            "update" => Ok(Self::Update(IndexUpdateCliCommand::parse_args(matches)?)),
+            "update" => Ok(Self::Update(IndexUpdateCliCommand::parse_args(submatches)?)),
             _ => bail!("unknown index subcommand `{subcommand}`"),
         }
     }
