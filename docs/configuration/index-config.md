@@ -12,8 +12,9 @@ In addition to the `index_id`, the index configuration lets you define five item
 - The **doc mapping**: it defines how a document and the fields it contains are stored and indexed for a given index.
 - The **indexing settings**: it defines the timestamp field used for sharding, and some more advanced parameters like the merge policy.
 - The **search settings**: it defines the default search fields `default_search_fields`, a list of fields that Quickwit will search into if the user query does not explicitly target a field.
+- The **retention policy**: it defines how long Quickwit should keep the indexed data. If not specified, the data is stored forever.
 
-Configuration is set at index creation and cannot be modified with the current version of Quickwit.
+In general, configuration is set at index creation and cannot be modified. Starting Quickwit 0.9, the search setttings and retention policy can be changed using the update endpoint.
 
 ## Config file format
 

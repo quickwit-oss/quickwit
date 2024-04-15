@@ -223,13 +223,13 @@ The response is a JSON object, and the content type is `application/json; charse
 POST api/v1/indexes
 ```
 
-Create an index by posting an `IndexConfig` payload. The API accepts JSON with `content-type: application/json`) and YAML `content-type: application/yaml`.
+Create an index by posting an `IndexConfig` payload. The API accepts JSON with `content-type: application/json` and YAML `content-type: application/yaml`.
 
 #### POST payload
 
-| Variable              | Type               | Description                                                                                                           | Default value                         |
-|-----------------------|--------------------|-----------------------------------------------------------------------------------------------------------------------|---------------------------------------|
-| `version`          | `String`           | Config format version, use the same as your Quickwit version. (mandatory)                                             |                                       |
+| Variable            | Type               | Description                                                                                                           | Default value                         |
+|---------------------|--------------------|-----------------------------------------------------------------------------------------------------------------------|---------------------------------------|
+| `version`           | `String`           | Config format version, use the same as your Quickwit version. (mandatory)                                             |                                       |
 | `index_id`          | `String`           | Index ID, see its [validation rules](../configuration/index-config.md#index-id) on identifiers. (mandatory)           |                                       |
 | `index_uri`         | `String`           | Defines where the index files are stored. This parameter expects a [storage URI](../configuration/storage-config.md#storage-uris).           | `{default_index_root_uri}/{index_id}` |
 | `doc_mapping`       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping) (mandatory)  |                                       |
@@ -301,8 +301,52 @@ curl -XPOST http://0.0.0.0:8080/api/v1/indexes --data @index_config.json -H "Con
 
 The response is the index metadata of the created index, and the content type is `application/json; charset=UTF-8.`
 
-| Field                | Description                               |         Type          |
-|----------------------|-------------------------------------------|:---------------------:|
+| Field                | Description                             |         Type          |
+|----------------------|-----------------------------------------|:---------------------:|
+| `index_config`     | The posted index config.                  |     `IndexConfig`     |
+| `checkpoint`       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
+| `create_timestamp` | Index creation timestamp                  |       `number`        |
+| `sources`          | List of the index sources configurations. | `Array<SourceConfig>` |
+
+
+### Update an index
+
+```
+PUT api/v1/indexes/<index id>
+```
+
+Update an index with the updatables parts of the `IndexConfig` payload. Note that this follows the PUT semantics and not PATCH, so all the fields must be specified and Unlike the create endpoint, this API accepts JSON only.
+
+#### PUT payload
+
+| Variable            | Type               | Description                                                                                                           | Default value                         |
+|---------------------|--------------------|-----------------------------------------------------------------------------------------------------------------------|---------------------------------------|
+| `search_settings`   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).     |                                       |
+| `retention`         | `Retention`        | Retention policy object as specified in the [index config docs](../configuration/index-config.md#retention-policy).   |                                       |
+
+
+**Payload Example**
+
+curl -XPUT http://0.0.0.0:8080/api/v1/indexes --data @index_update.json -H "Content-Type: application/json"
+
+```json title="index_update.json
+{
+    "search_settings": {
+        "default_search_fields": ["body"]
+    },
+    "retention": {
+        "period": "3 days",
+        "schedule": "@daily"
+    }
+}
+```
+
+#### Response
+
+The response is the index metadata of the updated index, and the content type is `application/json; charset=UTF-8.`
+
+| Field                | Description                             |         Type          |
+|----------------------|-----------------------------------------|:---------------------:|
 | `index_config`     | The posted index config.                  |     `IndexConfig`     |
 | `checkpoint`       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
 | `create_timestamp` | Index creation timestamp                  |       `number`        |

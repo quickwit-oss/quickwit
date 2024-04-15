@@ -213,6 +213,11 @@ impl FileBackedIndex {
         &self.metadata
     }
 
+    /// Mutable ref to index metadata.
+    pub fn metadata_mut(&mut self) -> &mut IndexMetadata {
+        &mut self.metadata
+    }
+
     /// Stages a single split.
     ///
     /// If a split already exists and is in the [SplitState::Staged] state,

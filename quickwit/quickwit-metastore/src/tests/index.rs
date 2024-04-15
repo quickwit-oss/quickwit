@@ -25,11 +25,16 @@
 //  - list_indexes
 //  - delete_index
 
+use std::vec;
+
 use quickwit_common::rand::append_random_suffix;
-use quickwit_config::{IndexConfig, SourceConfig, CLI_SOURCE_ID, INGEST_V2_SOURCE_ID};
+use quickwit_config::{
+    IndexConfig, RetentionPolicy, SearchSettings, SourceConfig, CLI_SOURCE_ID, INGEST_V2_SOURCE_ID,
+};
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataRequest,
     ListIndexesMetadataRequest, MetastoreError, MetastoreService, StageSplitsRequest,
+    UpdateIndexRequest,
 };
 use quickwit_proto::types::IndexUid;
 
@@ -37,7 +42,7 @@ use super::DefaultForTest;
 use crate::tests::cleanup_index;
 use crate::{
     CreateIndexRequestExt, IndexMetadataResponseExt, ListIndexesMetadataResponseExt,
-    MetastoreServiceExt, SplitMetadata, StageSplitsRequestExt,
+    MetastoreServiceExt, SplitMetadata, StageSplitsRequestExt, UpdateIndexRequestExt,
 };
 
 pub async fn test_metastore_create_index<
@@ -74,6 +79,86 @@ pub async fn test_metastore_create_index<
         .await
         .unwrap_err();
     assert!(matches!(error, MetastoreError::AlreadyExists { .. }));
+
+    cleanup_index(&mut metastore, index_uid).await;
+}
+
+pub async fn test_metastore_update_index<
+    MetastoreToTest: MetastoreService + MetastoreServiceExt + DefaultForTest,
+>() {
+    let mut metastore = MetastoreToTest::default_for_test().await;
+
+    let index_id = append_random_suffix("test-update-index");
+    let index_uri = format!("ram:///indexes/{index_id}");
+    let index_config = IndexConfig::for_test(&index_id, &index_uri);
+
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid = metastore
+        .create_index(create_index_request.clone())
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
+
+    let index_metadata = metastore
+        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .await
+        .unwrap()
+        .deserialize_index_metadata()
+        .unwrap();
+
+    let new_search_setting = SearchSettings {
+        default_search_fields: vec!["body".to_string(), "owner".to_string()],
+    };
+    assert_ne!(
+        index_metadata.index_config.search_settings, new_search_setting,
+        "original and updated value are the same, test became inefficient"
+    );
+
+    let new_retention_policy_opt = Some(RetentionPolicy {
+        retention_period: String::from("3 days"),
+        evaluation_schedule: String::from("daily"),
+    });
+    assert_ne!(
+        index_metadata.index_config.retention_policy_opt, new_retention_policy_opt,
+        "original and updated value are the same, test became inefficient"
+    );
+
+    // run same update twice to check indempotence, then None as a corner case check
+    for loop_retention_policy_opt in [
+        new_retention_policy_opt.clone(),
+        new_retention_policy_opt.clone(),
+        None,
+    ] {
+        let index_update = UpdateIndexRequest::try_from_updates(
+            index_uid.clone(),
+            &new_search_setting,
+            &loop_retention_policy_opt,
+        )
+        .unwrap();
+        let response_metadata = metastore
+            .update_index(index_update)
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert_eq!(response_metadata.index_uid, index_uid);
+        assert_eq!(
+            response_metadata.index_config.search_settings,
+            new_search_setting
+        );
+        assert_eq!(
+            response_metadata.index_config.retention_policy_opt,
+            loop_retention_policy_opt
+        );
+        let updated_metadata = metastore
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert_eq!(response_metadata, updated_metadata);
+    }
 
     cleanup_index(&mut metastore, index_uid).await;
 }

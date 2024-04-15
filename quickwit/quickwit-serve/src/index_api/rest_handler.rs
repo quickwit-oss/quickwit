@@ -23,18 +23,21 @@ use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     load_source_config_from_user_config, validate_index_id_pattern, ConfigFormat, NodeConfig,
-    SourceConfig, SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
+    RetentionPolicy, SearchSettings, SourceConfig, SourceParams, CLI_SOURCE_ID,
+    INGEST_API_SOURCE_ID,
 };
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
     ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitInfo, SplitState,
+    UpdateIndexRequestExt,
 };
 use quickwit_proto::metastore::{
     DeleteSourceRequest, EntityKind, IndexMetadataRequest, ListIndexesMetadataRequest,
     ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
     MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest, ToggleSourceRequest,
+    UpdateIndexRequest,
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_query::query_ast::{query_ast_from_user_text, QueryAst};
@@ -86,6 +89,7 @@ pub fn index_management_handlers(
     get_index_metadata_handler(index_service.metastore())
         .or(list_indexes_metadata_handler(index_service.metastore()))
         .or(create_index_handler(index_service.clone(), node_config))
+        .or(update_index_handler(index_service.metastore()))
         .or(clear_index_handler(index_service.clone()))
         .or(delete_index_handler(index_service.clone()))
         // Splits handlers
@@ -519,6 +523,64 @@ async fn create_index(
     index_service
         .create_index(index_config, create_index_query_params.overwrite)
         .await
+}
+
+/// The body of the index update request
+///
+/// Remove #[serde(deny_unknown_fields)] when adding new fields to allow to ensure forward
+/// compatibility.
+#[derive(Deserialize, Debug, Eq, PartialEq, Default, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct IndexUpdates {
+    pub search_settings: SearchSettings,
+    pub retention_policy_opt: Option<RetentionPolicy>,
+}
+
+fn update_index_handler(
+    metastore: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("indexes" / String)
+        .and(warp::put())
+        .and(json_body())
+        .and(with_arg(metastore))
+        .then(update_index)
+        .map(log_failure("failed to update index"))
+        .and(extract_format_from_qs())
+        .map(into_rest_api_response)
+}
+
+#[utoipa::path(
+    put,
+    tag = "Indexes",
+    path = "/indexes/{index_id}",
+    request_body = UpdateIndexRequest,
+    responses(
+        (status = 200, description = "Successfully marked splits for deletion.")
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to update."),
+    )
+)]
+async fn update_index(
+    index_id: String,
+    request: IndexUpdates,
+    mut metastore: MetastoreServiceClient,
+) -> Result<IndexMetadata, IndexServiceError> {
+    info!(index_id = %index_id, "update-index");
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+    let index_uid: IndexUid = metastore
+        .index_metadata(index_metadata_request)
+        .await?
+        .deserialize_index_metadata()?
+        .index_uid;
+
+    let update_request = UpdateIndexRequest::try_from_updates(
+        index_uid,
+        &request.search_settings,
+        &request.retention_policy_opt,
+    )?;
+    let update_resp = metastore.update_index(update_request).await?;
+    Ok(update_resp.deserialize_index_metadata()?)
 }
 
 fn clear_index_handler(
@@ -1709,6 +1771,43 @@ mod tests {
         let body = std::str::from_utf8(resp.body()).unwrap();
         assert!(body.contains("field `timestamp` has an unknown type"));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_update_index() {
+        let metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
+        let index_management_handler =
+            super::index_management_handlers(index_service, Arc::new(node_config));
+        {
+            let resp = warp::test::request()
+                .path("/indexes")
+                .method("POST")
+                .json(&true)
+                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["body"]}}"#)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
+            let expected_response_json = serde_json::json!({"default_search_fields":["body"]});
+            assert_json_include!(actual: resp_json, expected: expected_response_json);
+        }
+        {
+            let resp = warp::test::request()
+                .path("/indexes/hdfs-logs")
+                .method("PUT")
+                .json(&true)
+                .body(r#"{"search_settings":{"default_search_fields":["severity_text","body"]}}"#)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
+            let expected_response_json =
+                serde_json::json!({"default_search_fields":["severity_text","body"]});
+            assert_json_include!(actual: resp_json, expected: expected_response_json);
+        }
     }
 
     #[tokio::test]

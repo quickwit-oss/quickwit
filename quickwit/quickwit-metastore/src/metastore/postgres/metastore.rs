@@ -42,7 +42,7 @@ use quickwit_proto::metastore::{
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
     MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
     UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, SourceId};
@@ -65,7 +65,7 @@ use crate::metastore::{PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE};
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
     ListIndexesMetadataResponseExt, ListSplitsRequestExt, ListSplitsResponseExt,
-    MetastoreServiceExt, Split, SplitState, StageSplitsRequestExt,
+    MetastoreServiceExt, Split, SplitState, StageSplitsRequestExt, UpdateIndexRequestExt,
 };
 
 /// PostgreSQL metastore implementation.
@@ -397,6 +397,41 @@ impl MetastoreService for PostgresqlMetastore {
             index_metadata_json,
         };
         Ok(response)
+    }
+
+    async fn update_index(
+        &mut self,
+        request: UpdateIndexRequest,
+    ) -> MetastoreResult<IndexMetadataResponse> {
+        let retention_policy_opt = request.deserialize_retention_policy()?;
+        let search_settings = request.deserialize_search_settings()?;
+        let index_uid: IndexUid = request.index_uid().clone();
+        let mut mutated_metadata_opt = None;
+        let mutated_metadata_ref = &mut mutated_metadata_opt;
+        run_with_tx!(self.connection_pool, tx, {
+            mutate_index_metadata::<MetastoreError, _>(
+                tx,
+                index_uid,
+                |index_metadata: &mut IndexMetadata| {
+                    let mutated = if index_metadata.index_config.search_settings != search_settings
+                        || index_metadata.index_config.retention_policy_opt != retention_policy_opt
+                    {
+                        index_metadata.index_config.search_settings = search_settings;
+                        index_metadata.index_config.retention_policy_opt = retention_policy_opt;
+                        true
+                    } else {
+                        false
+                    };
+                    *mutated_metadata_ref = Some(index_metadata.clone());
+                    Ok(mutated)
+                },
+            )
+            .await?;
+            Ok(())
+        })?;
+        let mutated_metadata =
+            mutated_metadata_opt.expect("Mutated IndexMetadata should be set by transaction");
+        IndexMetadataResponse::try_from_index_metadata(&mutated_metadata)
     }
 
     #[instrument(skip_all, fields(index_id=%request.index_uid()))]

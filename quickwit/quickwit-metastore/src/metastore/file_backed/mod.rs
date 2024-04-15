@@ -55,7 +55,7 @@ use quickwit_proto::metastore::{
     ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
     MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
@@ -73,7 +73,8 @@ use self::store_operations::{delete_index, index_exists, load_index, put_index};
 use super::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadataResponseExt,
     ListIndexesMetadataResponseExt, ListSplitsRequestExt, ListSplitsResponseExt,
-    PublishSplitsRequestExt, StageSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
+    PublishSplitsRequestExt, StageSplitsRequestExt, UpdateIndexRequestExt,
+    STREAM_SPLITS_CHUNK_SIZE,
 };
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{IndexMetadata, ListSplitsQuery, MetastoreServiceExt, Split, SplitState};
@@ -454,6 +455,31 @@ impl MetastoreService for FileBackedMetastore {
             index_metadata_json,
         };
         Ok(response)
+    }
+
+    async fn update_index(
+        &mut self,
+        request: UpdateIndexRequest,
+    ) -> MetastoreResult<IndexMetadataResponse> {
+        let search_settings = request.deserialize_search_settings()?;
+        let retention_policy_opt = request.deserialize_retention_policy()?;
+        let index_uid = request.index_uid();
+
+        let metadata = self
+            .mutate(index_uid, |index| {
+                let metadata = index.metadata_mut();
+                if metadata.index_config.search_settings != search_settings
+                    || metadata.index_config.retention_policy_opt != retention_policy_opt
+                {
+                    metadata.index_config.search_settings = search_settings;
+                    metadata.index_config.retention_policy_opt = retention_policy_opt;
+                    Ok(MutationOccurred::Yes(metadata.clone()))
+                } else {
+                    Ok(MutationOccurred::No(metadata.clone()))
+                }
+            })
+            .await?;
+        IndexMetadataResponse::try_from_index_metadata(&metadata)
     }
 
     async fn delete_index(
