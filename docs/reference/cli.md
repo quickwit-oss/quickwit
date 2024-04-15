@@ -193,7 +193,7 @@ Updates default search settings.
 ```bash
 quickwit index update search-settings
     --index <index>
-    [--default-search-fields <default-search-fields>]
+    --default-search-fields <default-search-fields>
 ```
 
 *Options*
@@ -201,7 +201,7 @@ quickwit index update search-settings
 | Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
-| `--default-search-fields` | List of fields that Quickwit will search into if the user query does not explicitly target a field. If not specified, default fields are removed and queries without target field will fail. Space-separated list, e.g. "field1 field2". |
+| `--default-search-fields` | List of fields that Quickwit will search into if the user query does not explicitly target a field. Space-separated list, e.g. "field1 field2". If no value is provided, existing defaults are removed and queries without target field will fail. |
 #### index update retention-policy
 
 Configure or disable the retention policy.  

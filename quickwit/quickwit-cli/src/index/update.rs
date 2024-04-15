@@ -37,10 +37,10 @@ pub fn build_index_update_command() -> Command {
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1)
                         .required(true),
-                    arg!(--"default-search-fields" <FIELD_NAME> "List of fields that Quickwit will search into if the user query does not explicitly target a field. If not specified, default fields are removed and queries without target field will fail. Space-separated list, e.g. \"field1 field2\".")
+                    arg!(--"default-search-fields" <FIELD_NAME> "List of fields that Quickwit will search into if the user query does not explicitly target a field. Space-separated list, e.g. \"field1 field2\". If no value is provided, existing defaults are removed and queries without target field will fail.")
                         .display_order(2)
-                        .num_args(1..)
-                        .required(false),
+                        .num_args(0..)
+                        .required(true),
                 ]))
         .subcommand(
             Command::new("retention-policy")
@@ -75,7 +75,7 @@ pub struct RetentionPolicyArgs {
 pub struct SearchSettingsArgs {
     pub client_args: ClientArgs,
     pub index_id: String,
-    pub default_search_fields: Option<Vec<String>>,
+    pub default_search_fields: Vec<String>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -120,7 +120,10 @@ impl IndexUpdateCliCommand {
             .expect("`index` should be a required arg.");
         let default_search_fields = matches
             .remove_many::<String>("default-search-fields")
-            .map(|values| values.collect());
+            .map(|values| values.collect())
+            // --default-search-fields should be made optional if other fields
+            // are added to SearchSettings
+            .expect("`default-search-fields` should be a required arg.");
         Ok(Self::SearchSettings(SearchSettingsArgs {
             client_args,
             index_id,
@@ -196,7 +199,7 @@ pub async fn update_search_settings_cli(args: SearchSettingsArgs) -> anyhow::Res
     let qw_client = args.client_args.client();
     let metadata = qw_client.indexes().get(&args.index_id).await?;
     let search_settings = SearchSettings {
-        default_search_fields: args.default_search_fields.unwrap_or_default(),
+        default_search_fields: args.default_search_fields,
     };
     println!(
         "New search settings: {}",
