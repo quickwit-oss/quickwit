@@ -18,19 +18,21 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, IntCounter};
+use quickwit_common::metrics::{new_counter_vec, IntCounterVec};
 
 pub struct RestMetrics {
-    pub http_requests_total: IntCounter,
+    pub http_requests_total: IntCounterVec<2>,
 }
 
 impl Default for RestMetrics {
     fn default() -> Self {
         RestMetrics {
-            http_requests_total: new_counter(
+            http_requests_total: new_counter_vec(
                 "http_requests_total",
-                "Total number of HTTP requests received",
+                "Total number of HTTP requests processed.",
                 "",
+                &[],
+                ["method", "status_code"],
             ),
         }
     }
