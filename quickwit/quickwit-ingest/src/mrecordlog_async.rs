@@ -30,14 +30,19 @@ use tracing::error;
 /// A light wrapper to allow async operation in mrecordlog.
 pub struct MultiRecordLogAsync {
     mrecordlog_opt: Option<MultiRecordLog>,
+    operation: &'static str,
 }
 
 impl MultiRecordLogAsync {
-    fn take(&mut self) -> MultiRecordLog {
+    fn take(&mut self, operation: &'static str) -> MultiRecordLog {
         let Some(mrecordlog) = self.mrecordlog_opt.take() else {
-            error!("wal is poisoned, aborting process");
+            error!(
+                previous_operation = self.operation,
+                "wal is poisoned, aborting process"
+            );
             std::process::abort();
         };
+        self.operation = operation;
         mrecordlog
     }
 
@@ -71,15 +76,16 @@ impl MultiRecordLogAsync {
         })??;
         Ok(Self {
             mrecordlog_opt: Some(mrecordlog),
+            operation: "none",
         })
     }
 
-    async fn run_operation<F, T>(&mut self, operation: F) -> T
+    async fn run_operation<F, T>(&mut self, operation: F, operation_name: &'static str) -> T
     where
         F: FnOnce(&mut MultiRecordLog) -> T + Send + 'static,
         T: Send + 'static,
     {
-        let mut mrecordlog = self.take();
+        let mut mrecordlog = self.take(operation_name);
         let join_res: Result<(T, MultiRecordLog), JoinError> =
             tokio::task::spawn_blocking(move || {
                 let res = operation(&mut mrecordlog);
@@ -89,6 +95,7 @@ impl MultiRecordLogAsync {
         match join_res {
             Ok((operation_result, mrecordlog)) => {
                 self.mrecordlog_opt = Some(mrecordlog);
+                self.operation = "";
                 operation_result
             }
             Err(join_error) => {
@@ -101,14 +108,20 @@ impl MultiRecordLogAsync {
 
     pub async fn create_queue(&mut self, queue: &str) -> Result<(), CreateQueueError> {
         let queue = queue.to_string();
-        self.run_operation(move |mrecordlog| mrecordlog.create_queue(&queue))
-            .await
+        self.run_operation(
+            move |mrecordlog| mrecordlog.create_queue(&queue),
+            "create_queue",
+        )
+        .await
     }
 
     pub async fn delete_queue(&mut self, queue: &str) -> Result<(), DeleteQueueError> {
         let queue = queue.to_string();
-        self.run_operation(move |mrecordlog| mrecordlog.delete_queue(&queue))
-            .await
+        self.run_operation(
+            move |mrecordlog| mrecordlog.delete_queue(&queue),
+            "delete_queue",
+        )
+        .await
     }
 
     pub async fn append_records<T: Iterator<Item = impl Buf> + Send + 'static>(
@@ -118,9 +131,10 @@ impl MultiRecordLogAsync {
         payloads: T,
     ) -> Result<Option<u64>, AppendError> {
         let queue = queue.to_string();
-        self.run_operation(move |mrecordlog| {
-            mrecordlog.append_records(&queue, position_opt, payloads)
-        })
+        self.run_operation(
+            move |mrecordlog| mrecordlog.append_records(&queue, position_opt, payloads),
+            "append records",
+        )
         .await
     }
 
@@ -158,8 +172,11 @@ impl MultiRecordLogAsync {
 
     pub async fn truncate(&mut self, queue: &str, position: u64) -> Result<usize, TruncateError> {
         let queue = queue.to_string();
-        self.run_operation(move |mrecordlog| mrecordlog.truncate(&queue, position))
-            .await
+        self.run_operation(
+            move |mrecordlog| mrecordlog.truncate(&queue, position),
+            "truncate",
+        )
+        .await
     }
 
     pub fn range<R>(
