@@ -854,6 +854,7 @@ async fn setup_ingest_v2(
                         let layers = ServiceBuilder::new()
                             .layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
                             .layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
+                            .layer(quickwit_common::tower::OneTaskPerCallLayer)
                             .into_inner();
                         let ingester_service = IngesterServiceClient::tower()
                             .stack_layer(layers)
