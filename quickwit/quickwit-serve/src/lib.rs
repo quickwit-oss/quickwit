@@ -155,24 +155,27 @@ fn get_metastore_client_max_concurrency() -> usize {
 }
 
 static CP_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "client"));
+    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "client", "unk"));
 static CP_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "server"));
+    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "server", "unk"));
 
 static INDEXING_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("indexing", "client"));
+    Lazy::new(|| GrpcMetricsLayer::new("indexing", "client", "unk"));
 pub(crate) static INDEXING_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("indexing", "server"));
+    Lazy::new(|| GrpcMetricsLayer::new("indexing", "server", "unk"));
 
-static INGEST_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("ingest", "client"));
+static INGEST_GRPC_CLIENT_METRICS_REMOTE_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("ingest", "client", "remote"));
 static INGEST_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("ingest", "server"));
+    Lazy::new(|| GrpcMetricsLayer::new("ingest", "server", "unk"));
+
+static INGEST_GRPC_CLIENT_METRICS_LOCAL_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("ingest", "client", "local"));
 
 static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("metastore", "client"));
+    Lazy::new(|| GrpcMetricsLayer::new("metastore", "client", "unk"));
 static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
+    Lazy::new(|| GrpcMetricsLayer::new("metastore", "server", "unk"));
 
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
@@ -844,15 +847,15 @@ async fn setup_ingest_v2(
                         chitchat_id.node_id,
                     );
                     let node_id: NodeId = node.node_id().into();
-
                     if node.is_self_node() {
                         // Here, since the service is available locally, we bypass the network stack
                         // and use the instance directly. However, we still want client-side
                         // metrics, so we use both metrics layers.
+                        info!(node_id=%chitchat_id.node_id, "adding ingester client by passing grpc");
                         let ingester = ingester_opt_clone_clone
                             .expect("ingester service should be initialized");
                         let layers = ServiceBuilder::new()
-                            .layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .layer(INGEST_GRPC_CLIENT_METRICS_LOCAL_LAYER.clone())
                             .layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
                             .into_inner();
                         let ingester_service = IngesterServiceClient::tower()
@@ -860,8 +863,9 @@ async fn setup_ingest_v2(
                             .build(ingester);
                         Some(Change::Insert(node_id, ingester_service))
                     } else {
+                        info!(node_id=%chitchat_id.node_id, "adding grpc ingester client");
                         let ingester_service = IngesterServiceClient::tower()
-                            .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .stack_layer(INGEST_GRPC_CLIENT_METRICS_REMOTE_LAYER.clone())
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),

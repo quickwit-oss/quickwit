@@ -58,14 +58,12 @@ where
         let start = Instant::now();
         let rpc_name = R::rpc_name();
         let inner = self.inner.call(request);
-
         self.requests_in_flight.with_label_values([rpc_name]).inc();
-
         ResponseFuture {
             inner,
             start,
             rpc_name,
-            status: "canceled",
+            status: "cancelled",
             requests_total: self.requests_total.clone(),
             requests_in_flight: self.requests_in_flight.clone(),
             request_duration_seconds: self.request_duration_seconds.clone(),
@@ -81,13 +79,13 @@ pub struct GrpcMetricsLayer {
 }
 
 impl GrpcMetricsLayer {
-    pub fn new(subsystem: &'static str, kind: &'static str) -> Self {
+    pub fn new(subsystem: &'static str, kind: &'static str, transport: &'static str) -> Self {
         Self {
             requests_total: new_counter_vec(
                 "grpc_requests_total",
                 "Total number of gRPC requests processed.",
                 subsystem,
-                &[("kind", kind)],
+                &[("kind", kind), ("transport", transport)],
                 ["rpc", "status"],
             ),
             requests_in_flight: new_gauge_vec(
@@ -185,7 +183,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_grpc_metrics() {
-        let layer = GrpcMetricsLayer::new("quickwit_test", "server");
+        let layer = GrpcMetricsLayer::new("quickwit_test", "server", "grpc");
 
         let mut hello_service =
             layer

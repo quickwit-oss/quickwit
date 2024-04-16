@@ -213,6 +213,7 @@ async fn compute_cluster_change_events_on_updated(
     }
     let previous_channel = previous_node.channel();
     let is_self_node = self_chitchat_id == updated_chitchat_id;
+    info!(is_self_node=is_self_node, self_chitchat_id=?self_chitchat_id, updated_chitchat_id=?updated_chitchat_id, "cluster change event node");
     let updated_node = try_new_node_with_channel(
         cluster_id,
         updated_chitchat_id,

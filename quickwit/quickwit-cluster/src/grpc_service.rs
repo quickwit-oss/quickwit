@@ -36,9 +36,9 @@ use crate::Cluster;
 const MAX_MESSAGE_SIZE: ByteSize = ByteSize::mib(64);
 
 static CLUSTER_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("cluster", "client"));
+    Lazy::new(|| GrpcMetricsLayer::new("cluster", "client", "unk"));
 static CLUSTER_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("cluster", "server"));
+    Lazy::new(|| GrpcMetricsLayer::new("cluster", "server", "unk"));
 
 pub(crate) async fn cluster_grpc_client(socket_addr: SocketAddr) -> ClusterServiceClient {
     let channel = make_channel(socket_addr).await;
