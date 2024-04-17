@@ -182,7 +182,7 @@ impl CreateIndexResponseExt for CreateIndexResponse {
 
 /// Helper trait to build a [`UpdateIndexRequest`] and deserialize its payload.
 pub trait UpdateIndexRequestExt {
-    /// Creates a new [`UpdateIndexRequest`] from an `IndexUpdate`.
+    /// Creates a new [`UpdateIndexRequest`] from an [`IndexUpdate`].
     fn try_from_update(
         index_uid: impl Into<IndexUid>,
         update: &IndexUpdate,

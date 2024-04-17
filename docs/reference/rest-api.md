@@ -309,48 +309,60 @@ The response is the index metadata of the created index, and the content type is
 | `sources`          | List of the index sources configurations. | `Array<SourceConfig>` |
 
 
-### Update an index (search settings and retention policy only)
+### Update an index
 
 ```
-PUT api/v1/indexes/<index id>
+PUT api/v1/indexes/<index id>/indexing-settings
+PUT api/v1/indexes/<index id>/search-settings
+PUT api/v1/indexes/<index id>/retention-policy
 ```
 
-Updates the search settings and retention policy of an index. This endpoint follows PUT semantics (not PATCH), which means that all the updatable fields of the index configuration are replaced by the values specified in this request. In particular, omitting an optional field like retention_policy will delete the associated configuration. Unlike the create endpoint, this API only accepts JSON payloads.
+These endpoints follows PUT semantics (not PATCH), which means that all the fields of the updated configuration are replaced by the values specified in the request. Values that are not specified will be reset to their defaults. The API accepts JSON with `content-type: application/json` and YAML `content-type: application/yaml`.
+- The search settings update is automatically picked up by the janitor service on its next state refresh.
+- The retention policy update is automatically picked up when the next query is executed.
+- The indexing settings update is not automatically picked up by the indexer nodes, they need to be manually restarted.
 
-#### PUT payload
+#### PUT payloads
 
-| Variable            | Type               | Description                                                                                                           | Default value                         |
-|---------------------|--------------------|-----------------------------------------------------------------------------------------------------------------------|---------------------------------------|
-| `search_settings`   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).     |                                       |
-| `retention`         | `Retention`        | Retention policy object as specified in the [index config docs](../configuration/index-config.md#retention-policy).   |                                       |
+| Endpoint            | Type               | Description                                                                              |
+|---------------------|--------------------|------------------------------------------------------------------------------------------|
+| `/search-settings`  | `SearchSettings`   | See [search settings config docs](../configuration/index-config.md#search-settings).     |
+| `/retention-policy` | `Retention`        | See [retention policy config docs](../configuration/index-config.md#retention-policy).   |
+| `/indexing-settings`| `IndexingSettings` | See [indexing settings config docs](../configuration/index-config.md#indexing-settings). |
 
 
-**Payload Example**
+**Payload Examples**
 
-curl -XPUT http://0.0.0.0:8080/api/v1/indexes --data @index_update.json -H "Content-Type: application/json"
+curl -XPUT http://0.0.0.0:8080/api/v1/indexes/my-index/search-settings --data @search_settings_update.json -H "Content-Type: application/json"
 
-```json title="index_update.json
+```json title="search_settings_update.json
 {
-    "search_settings": {
-        "default_search_fields": ["body"]
-    },
-    "retention": {
-        "period": "3 days",
-        "schedule": "@daily"
-    }
+    "default_search_fields": ["body"]
 }
 ```
 
-:::warning
-Calling the update endpoint with the following payload will remove the current retention policy.
-```json
+curl -XPUT http://0.0.0.0:8080/api/v1/indexes/my-index/retention-policy --data @retention_policy_update.json -H "Content-Type: application/json"
+
+```json title="retention_policy_update.json
 {
-    "search_settings": {
-        "default_search_fields": ["body"]
-    }
+    "period": "3 days",
+    "schedule": "daily"
 }
 ```
-:::
+
+curl -XPUT http://0.0.0.0:8080/api/v1/indexes/my-index/indexing-settings --data @indexing_settings_update.json -H "Content-Type: application/json"
+
+```json title="indexing_settings_update.json
+{
+    "merge_policy": {
+        "type": "limit_merge",
+        "max_merge_ops": 3,
+        "merge_factor": 10,
+        "max_merge_factor": 12
+    }, 
+    "commit_timeout_secs": 5
+}
+```
 
 #### Response
 

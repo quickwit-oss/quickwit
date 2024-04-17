@@ -42,15 +42,17 @@ pub fn build_index_update_command() -> Command {
         .subcommand(
             Command::new("search-settings")
                 .about("Updates search settings.")
+                .long_about("Updates search settings. The update is automatically picked up when the next query is executed.")
                 .args(&[
-                    arg!(--"config-file" <PATH> "Location of a json, yaml or toml file containing the new search settings. See https://quickwit.io/docs/configuration/index-config#search-settings.")
+                    arg!(--"config-file" <PATH> "Location of a json or yaml file containing the new search settings. See https://quickwit.io/docs/configuration/index-config#search-settings.")
                         .required(true),
                 ]))
         .subcommand(
             Command::new("retention-policy")
                 .about("Updates or disables the retention policy.")
+                .long_about("Updates or disables the retention policy. The update is automatically picked up by the janitor service on its next state refresh.")
                 .args(&[
-                    arg!(--"config-file" <PATH> "Location of a json, yaml or toml file containing the new retention policy. See https://quickwit.io/docs/configuration/index-config#retention-policy.")
+                    arg!(--"config-file" <PATH> "Location of a json or yaml file containing the new retention policy. See https://quickwit.io/docs/configuration/index-config#retention-policy.")
                         .required(false),
                     arg!(--disable "Disables the retention policy. Old indexed data will not be cleaned up anymore.")
                         .required(false),
@@ -59,8 +61,9 @@ pub fn build_index_update_command() -> Command {
         .subcommand(
             Command::new("indexing-settings")
                 .about("Updates indexing settings.")
+                .long_about("Updates indexing settings. The update is not automatically picked up by the indexer nodes, they need to be manually restarted.")
                 .args(&[
-                    arg!(--"config-file" <PATH> "Location of a json, yaml or toml file containing the new indexing settings. See https://quickwit.io/docs/configuration/index-config#indexing-settings.")
+                    arg!(--"config-file" <PATH> "Location of a json or yaml file containing the new indexing settings. See https://quickwit.io/docs/configuration/index-config#indexing-settings.")
                         .required(true),
                 ])
 

@@ -586,7 +586,8 @@ pub fn update_indexing_setting_handler(
         ("index_id" = String, Path, description = "The index ID to update."),
     )
 )]
-/// For the indexing settings update to take effect, the indexer nodes must be restarted.
+/// The update is not automatically picked up by the indexer nodes, they need to be manually
+/// restarted.
 pub async fn update_index_indexing_settings(
     index_id: String,
     config_format: ConfigFormat,
@@ -621,6 +622,7 @@ pub fn update_search_settings_handler(
         ("index_id" = String, Path, description = "The index ID to update."),
     )
 )]
+/// The update is automatically picked up when the next query is executed.
 pub async fn update_index_search_settings(
     index_id: String,
     config_format: ConfigFormat,
@@ -655,6 +657,7 @@ pub fn update_retention_policy_handler(
         ("index_id" = String, Path, description = "The index ID to update."),
     )
 )]
+/// The update is automatically picked up by the janitor service on its next state refresh.
 pub async fn update_index_retention_policy(
     index_id: String,
     config_format: ConfigFormat,
@@ -664,7 +667,12 @@ pub async fn update_index_retention_policy(
     let update = config_format
         .parse(&config_bytes)
         .map_err(IndexServiceError::InvalidConfig)?;
-    update_index(index_id, IndexUpdate::RetentionPolicy(update), metastore).await
+    update_index(
+        index_id,
+        IndexUpdate::RetentionPolicy(Some(update)),
+        metastore,
+    )
+    .await
 }
 
 pub fn delete_retention_policy_handler(
@@ -684,12 +692,13 @@ pub fn delete_retention_policy_handler(
     tag = "Indexes",
     path = "/indexes/{index_id}/retention-policy",
     responses(
-        (status = 200, description = "Successfully updated the retention policy.")
+        (status = 200, description = "Successfully deleted the retention policy.")
     ),
     params(
         ("index_id" = String, Path, description = "The index ID to update."),
     )
 )]
+/// The deletion is automatically picked up by the janitor service on its next state refresh.
 pub async fn delete_index_retention_policy(
     index_id: String,
     metastore: MetastoreServiceClient,
@@ -1938,8 +1947,8 @@ mod tests {
             let resp = warp::test::request()
                 .path("/indexes/hdfs-logs/retention-policy")
                 .method("PUT")
-                .json(&true)
-                .body(r#"{"period":"90 days"}"#)
+                .header("content-type", "application/yaml")
+                .body("period: 90 days")
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -1957,8 +1966,13 @@ mod tests {
             let resp = warp::test::request()
                 .path("/indexes/hdfs-logs/indexing-settings")
                 .method("PUT")
-                .json(&true)
-                .body(r#"{"merge_policy":{"type":"limit_merge"}}"#)
+                .header("content-type", "application/toml")
+                .body(
+                    r#"
+                [merge_policy]
+                type = "limit_merge"
+                "#,
+                )
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
