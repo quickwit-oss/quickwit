@@ -31,13 +31,14 @@ use bytes::Bytes;
 use futures::TryStreamExt;
 pub use index_metadata::IndexMetadata;
 use itertools::Itertools;
-use quickwit_config::{IndexConfig, RetentionPolicy, SearchSettings, SourceConfig};
+use quickwit_config::{IndexConfig, IndexUpdate, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask,
     IndexMetadataRequest, IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsRequest,
     ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
     MetastoreServiceStream, PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
+    UpdatedIndexConfig,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use time::OffsetDateTime;
@@ -181,51 +182,78 @@ impl CreateIndexResponseExt for CreateIndexResponse {
 
 /// Helper trait to build a [`UpdateIndexRequest`] and deserialize its payload.
 pub trait UpdateIndexRequestExt {
-    /// Creates a new [`UpdateIndexRequest`] from the different updated fields.
-    fn try_from_updates(
+    /// Creates a new [`UpdateIndexRequest`] from an `IndexUpdate`.
+    fn try_from_update(
         index_uid: impl Into<IndexUid>,
-        search_settings: &SearchSettings,
-        retention_policy_opt: &Option<RetentionPolicy>,
+        update: &IndexUpdate,
     ) -> MetastoreResult<UpdateIndexRequest>;
 
-    /// Deserializes the `search_settings_json` field of an [`UpdateIndexRequest`] into a
-    /// [`SearchSettings`] object.
-    fn deserialize_search_settings(&self) -> MetastoreResult<SearchSettings>;
-
-    /// Deserializes the `retention_policy_json` field of an [`UpdateIndexRequest`] into a
-    /// [`RetentionPolicy`] object.
-    fn deserialize_retention_policy(&self) -> MetastoreResult<Option<RetentionPolicy>>;
+    /// Deserializes the `config_json` field of an [`UpdateIndexRequest`] into
+    /// the appropriate variant of `IndexUpdate`.
+    fn deserialize_update(&self) -> MetastoreResult<IndexUpdate>;
 }
 
 impl UpdateIndexRequestExt for UpdateIndexRequest {
-    fn try_from_updates(
+    fn try_from_update(
         index_uid: impl Into<IndexUid>,
-        search_settings: &SearchSettings,
-        retention_policy_opt: &Option<RetentionPolicy>,
+        update: &IndexUpdate,
     ) -> MetastoreResult<UpdateIndexRequest> {
-        let search_settings_json = serde_utils::to_json_str(&search_settings)?;
-        let retention_policy_json = retention_policy_opt
-            .as_ref()
-            .map(serde_utils::to_json_str)
-            .transpose()?;
-
-        let update_request = UpdateIndexRequest {
-            index_uid: Some(index_uid.into()),
-            search_settings_json,
-            retention_policy_json,
+        let index_uid = Some(index_uid.into());
+        let update_request = match update {
+            IndexUpdate::IndexingSettings(s) => UpdateIndexRequest {
+                index_uid,
+                target_config: UpdatedIndexConfig::IndexingSettings.into(),
+                config_json: Some(serde_utils::to_json_str(s)?),
+            },
+            IndexUpdate::SearchSettings(s) => UpdateIndexRequest {
+                index_uid,
+                target_config: UpdatedIndexConfig::SearchSettings.into(),
+                config_json: Some(serde_utils::to_json_str(s)?),
+            },
+            IndexUpdate::RetentionPolicy(s) => UpdateIndexRequest {
+                index_uid,
+                target_config: UpdatedIndexConfig::RetentionPolicy.into(),
+                config_json: s.as_ref().map(serde_utils::to_json_str).transpose()?,
+            },
         };
+
         Ok(update_request)
     }
 
-    fn deserialize_search_settings(&self) -> MetastoreResult<SearchSettings> {
-        serde_utils::from_json_str(&self.search_settings_json)
-    }
-
-    fn deserialize_retention_policy(&self) -> MetastoreResult<Option<RetentionPolicy>> {
-        self.retention_policy_json
-            .as_ref()
-            .map(|policy| serde_utils::from_json_str(policy))
-            .transpose()
+    fn deserialize_update(&self) -> MetastoreResult<IndexUpdate> {
+        let config_ref_opt = self.config_json.as_ref();
+        match self.target_config {
+            x if x == UpdatedIndexConfig::IndexingSettings as i32 => {
+                let indexing_settings = config_ref_opt
+                    .map(|json| serde_utils::from_json_str(json))
+                    .transpose()?
+                    .ok_or(MetastoreError::JsonDeserializeError {
+                        struct_name: "IndexingSettings".to_owned(),
+                        message: "Should not be empty".to_owned(),
+                    })?;
+                Ok(IndexUpdate::IndexingSettings(indexing_settings))
+            }
+            x if x == UpdatedIndexConfig::SearchSettings as i32 => {
+                let search_settings = config_ref_opt
+                    .map(|json| serde_utils::from_json_str(json))
+                    .transpose()?
+                    .ok_or(MetastoreError::JsonDeserializeError {
+                        struct_name: "IndexingSettings".to_owned(),
+                        message: "Should not be empty".to_owned(),
+                    })?;
+                Ok(IndexUpdate::SearchSettings(search_settings))
+            }
+            x if x == UpdatedIndexConfig::RetentionPolicy as i32 => {
+                let retention_policy = config_ref_opt
+                    .map(|json| serde_utils::from_json_str(json))
+                    .transpose()?;
+                Ok(IndexUpdate::RetentionPolicy(retention_policy))
+            }
+            _ => Err(MetastoreError::JsonDeserializeError {
+                struct_name: "IndexUpdate".to_owned(),
+                message: "Unexpected target config".to_owned(),
+            }),
+        }
     }
 }
 

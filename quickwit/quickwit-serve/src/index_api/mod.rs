@@ -20,5 +20,5 @@
 mod rest_handler;
 
 pub use self::rest_handler::{
-    index_management_handlers, IndexApi, IndexUpdates, ListSplitsQueryParams, ListSplitsResponse,
+    index_management_handlers, IndexApi, ListSplitsQueryParams, ListSplitsResponse,
 };

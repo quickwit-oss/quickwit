@@ -231,6 +231,11 @@ pub async fn create_test_env(
     fs::write(&log_docs_path, LOGS_JSON_DOCS)?;
     let wikipedia_docs_path = resources_dir_path.join("wikis.json");
     fs::write(&wikipedia_docs_path, WIKI_JSON_DOCS)?;
+    let retention_policy_update_path = resources_dir_path.join("retention_policy_update.json");
+    fs::write(
+        &retention_policy_update_path,
+        r#"{"period": "1 week", "schedule": "daily"}"#,
+    )?;
 
     let mut resource_files = HashMap::new();
     resource_files.insert("config", node_config_path);
@@ -238,6 +243,7 @@ pub async fn create_test_env(
     resource_files.insert("index_config_without_uri", index_config_without_uri_path);
     resource_files.insert("logs", log_docs_path);
     resource_files.insert("wiki", wikipedia_docs_path);
+    resource_files.insert("retention_policy_update", retention_policy_update_path);
 
     let config_uri =
         Uri::from_str(&format!("file://{}", resource_files["config"].display())).unwrap();

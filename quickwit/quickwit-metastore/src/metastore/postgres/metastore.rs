@@ -25,8 +25,8 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
 use quickwit_common::ServiceStream;
 use quickwit_config::{
-    validate_index_id_pattern, IndexTemplate, IndexTemplateId, PostgresMetastoreConfig,
-    INGEST_V2_SOURCE_ID,
+    validate_index_id_pattern, IndexTemplate, IndexTemplateId, IndexUpdate,
+    PostgresMetastoreConfig, INGEST_V2_SOURCE_ID,
 };
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
@@ -406,20 +406,30 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: UpdateIndexRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
-        let retention_policy_opt = request.deserialize_retention_policy()?;
-        let search_settings = request.deserialize_search_settings()?;
+        let update = request.deserialize_update()?;
         let index_uid: IndexUid = request.index_uid().clone();
         let updated_metadata = run_with_tx!(self.connection_pool, tx, {
-            mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
-                if index_metadata.index_config.search_settings != search_settings
-                    || index_metadata.index_config.retention_policy_opt != retention_policy_opt
+            mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| match update
+            {
+                IndexUpdate::SearchSettings(s)
+                    if index_metadata.index_config.search_settings != s =>
                 {
-                    index_metadata.index_config.search_settings = search_settings;
-                    index_metadata.index_config.retention_policy_opt = retention_policy_opt;
+                    index_metadata.index_config.search_settings = s;
                     Ok(MutationOccurred::Yes(()))
-                } else {
-                    Ok(MutationOccurred::No(()))
                 }
+                IndexUpdate::IndexingSettings(s)
+                    if index_metadata.index_config.indexing_settings != s =>
+                {
+                    index_metadata.index_config.indexing_settings = s;
+                    Ok(MutationOccurred::Yes(()))
+                }
+                IndexUpdate::RetentionPolicy(s)
+                    if index_metadata.index_config.retention_policy_opt != s =>
+                {
+                    index_metadata.index_config.retention_policy_opt = s;
+                    Ok(MutationOccurred::Yes(()))
+                }
+                _ => Ok(MutationOccurred::No(())),
             })
             .await
         })?;

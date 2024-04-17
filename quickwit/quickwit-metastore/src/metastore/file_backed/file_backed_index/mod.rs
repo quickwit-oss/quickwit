@@ -30,7 +30,9 @@ use std::ops::Bound;
 
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
-use quickwit_config::{RetentionPolicy, SearchSettings, SourceConfig, INGEST_V2_SOURCE_ID};
+use quickwit_config::{
+    IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig, INGEST_V2_SOURCE_ID,
+};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest, DeleteTask,
     EntityKind, ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
@@ -224,6 +226,13 @@ impl FileBackedIndex {
     pub fn set_retention_policy(&mut self, retention_policy_opt: Option<RetentionPolicy>) -> bool {
         let is_mutation = self.metadata.index_config.retention_policy_opt != retention_policy_opt;
         self.metadata.index_config.retention_policy_opt = retention_policy_opt;
+        is_mutation
+    }
+
+    /// Replaces the retention policy in the index config, returning whether a mutation occurred.
+    pub fn set_indexing_settings(&mut self, indexing_settings: IndexingSettings) -> bool {
+        let is_mutation = self.metadata.index_config.indexing_settings != indexing_settings;
+        self.metadata.index_config.indexing_settings = indexing_settings;
         is_mutation
     }
 

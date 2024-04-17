@@ -29,7 +29,7 @@ use clap::error::ErrorKind;
 use helpers::{TestEnv, TestStorageType};
 use quickwit_cli::checklist::ChecklistError;
 use quickwit_cli::cli::build_cli;
-use quickwit_cli::index::update::{update_retention_policy_cli, RetentionPolicyArgs};
+use quickwit_cli::index::update::{update_retention_policy_cli, OptionalFieldArgs};
 use quickwit_cli::index::{
     create_index_cli, delete_index_cli, search_index, CreateIndexArgs, DeleteIndexArgs,
     SearchIndexArgs,
@@ -543,17 +543,21 @@ async fn test_cmd_update_index() {
         .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
+    let test_update_uri = Uri::from_str(
+        &test_env.resource_files["retention_policy_update"]
+            .display()
+            .to_string(),
+    )
+    .unwrap();
 
-    // add a policy
-    update_retention_policy_cli(RetentionPolicyArgs {
+    // add a retention policy
+    update_retention_policy_cli(OptionalFieldArgs {
         index_id: index_id.clone(),
         client_args: ClientArgs {
             cluster_endpoint: test_env.cluster_endpoint.clone(),
             ..Default::default()
         },
-        disable: false,
-        period: Some(String::from("1 week")),
-        schedule: Some(String::from("daily")),
+        config_file_opt: Some(test_update_uri),
     })
     .await
     .unwrap();
@@ -566,30 +570,14 @@ async fn test_cmd_update_index() {
         })
     );
 
-    // invalid args
-    update_retention_policy_cli(RetentionPolicyArgs {
-        index_id: index_id.clone(),
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
-        disable: true,
-        period: Some(String::from("a week")),
-        schedule: Some(String::from("daily")),
-    })
-    .await
-    .unwrap_err();
-
     // remove the policy
-    update_retention_policy_cli(RetentionPolicyArgs {
+    update_retention_policy_cli(OptionalFieldArgs {
         index_id,
         client_args: ClientArgs {
             cluster_endpoint: test_env.cluster_endpoint.clone(),
             ..Default::default()
         },
-        disable: true,
-        period: None,
-        schedule: None,
+        config_file_opt: None,
     })
     .await
     .unwrap();

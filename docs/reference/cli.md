@@ -183,17 +183,12 @@ quickwit index create --endpoint=http://127.0.0.1:7280 --index-config wikipedia_
 ### index update
 
 `quickwit index update [args]`
-#### index update search-settings
-
-Updates default search settings.  
-`quickwit index update search-settings [args]`
 
 *Synopsis*
 
 ```bash
-quickwit index update search-settings
+quickwit index update
     --index <index>
-    --default-search-fields <default-search-fields>
 ```
 
 *Options*
@@ -201,19 +196,33 @@ quickwit index update search-settings
 | Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
-| `--default-search-fields` | List of fields that Quickwit will search into if the user query does not explicitly target a field. Space-separated list, e.g. "field1 field2". If no value is provided, existing defaults are removed and queries without target field will fail. |
+#### index update search-settings
+
+Updates search settings.  
+`quickwit index update search-settings [args]`
+
+*Synopsis*
+
+```bash
+quickwit index update search-settings
+    --config-file <config-file>
+```
+
+*Options*
+
+| Option | Description |
+|-----------------|-------------|
+| `--config-file` | Location of a json, yaml or toml file containing the new search settings. See https://quickwit.io/docs/configuration/index-config#search-settings. |
 #### index update retention-policy
 
-Configure or disable the retention policy.  
+Updates or disables the retention policy.  
 `quickwit index update retention-policy [args]`
 
 *Synopsis*
 
 ```bash
 quickwit index update retention-policy
-    --index <index>
-    [--period <period>]
-    [--schedule <schedule>]
+    [--config-file <config-file>]
     [--disable]
 ```
 
@@ -221,10 +230,25 @@ quickwit index update retention-policy
 
 | Option | Description |
 |-----------------|-------------|
-| `--index` | ID of the target index |
-| `--period` | Duration after which splits are dropped. Expressed in a human-readable way (`1 day`, `2 hours`, `1 week`, ...) |
-| `--schedule` | Frequency at which the retention policy is evaluated and applied. Expressed as a cron expression (0 0 * * * *) or human-readable form (hourly, daily, weekly, ...). |
-| `--disable` | Disable the retention policy. Old indexed data will not be cleaned up anymore. |
+| `--config-file` | Location of a json, yaml or toml file containing the new retention policy. See https://quickwit.io/docs/configuration/index-config#retention-policy. |
+| `--disable` | Disables the retention policy. Old indexed data will not be cleaned up anymore. |
+#### index update indexing-settings
+
+Updates indexing settings.  
+`quickwit index update indexing-settings [args]`
+
+*Synopsis*
+
+```bash
+quickwit index update indexing-settings
+    --config-file <config-file>
+```
+
+*Options*
+
+| Option | Description |
+|-----------------|-------------|
+| `--config-file` | Location of a json, yaml or toml file containing the new indexing settings. See https://quickwit.io/docs/configuration/index-config#indexing-settings. |
 ### index clear
 
 Clears an index: deletes all splits and resets checkpoint.  
@@ -368,6 +392,7 @@ quickwit index ingest
     [--input-path <input-path>]
     [--batch-size-limit <batch-size-limit>]
     [--wait]
+    [--v2]
     [--force]
     [--commit-timeout <commit-timeout>]
 ```
@@ -380,8 +405,9 @@ quickwit index ingest
 | `--input-path` | Location of the input file. |
 | `--batch-size-limit` | Size limit of each submitted document batch. |
 | `--wait` | Wait for all documents to be commited and available for search before exiting |
+| `--v2` | Ingest v2 (experimental! Do not use me.) |
 | `--force` | Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting |
-| `--commit-timeout` | Timeout for ingest operations that require waiting for the final commit (`--wait` or `--force`). This is different from the `commit_timeout_secs` indexing setting which sets the maximum time before commiting splits after their creation. |
+| `--commit-timeout` | Timeout for ingest operations that require waiting for the final commit (`--wait` or `--force`). This is different from the `commit_timeout_secs` indexing setting, which sets the maximum time before commiting splits after their creation. |
 
 *Examples*
 

@@ -187,9 +187,21 @@ macro_rules! metastore_test_suite {
             }
 
             #[tokio::test]
-            async fn test_metastore_update_index() {
+            async fn test_metastore_update_retention_policy() {
                 let _ = tracing_subscriber::fmt::try_init();
-                $crate::tests::index::test_metastore_update_index::<$metastore_type>().await;
+                $crate::tests::index::test_metastore_update_retention_policy::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_update_search_settings() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::index::test_metastore_update_search_settings::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_update_indexing_settings() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::index::test_metastore_update_indexing_settings::<$metastore_type>().await;
             }
 
             #[tokio::test]

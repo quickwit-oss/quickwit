@@ -17,71 +17,82 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::str::FromStr;
+
 use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
-use quickwit_config::{RetentionPolicy, SearchSettings};
-use quickwit_serve::IndexUpdates;
+use quickwit_common::uri::Uri;
+use quickwit_config::ConfigFormat;
+use quickwit_proto::bytes::Bytes;
+use quickwit_rest_client::rest_client::UpdateConfigField;
+use quickwit_storage::{load_file, StorageResolver};
 use tracing::debug;
 
-use crate::checklist::GREEN_COLOR;
+use crate::checklist::{BLUE_COLOR, GREEN_COLOR};
 use crate::ClientArgs;
 
 pub fn build_index_update_command() -> Command {
     Command::new("update")
+        .args(&[
+            arg!(--index <INDEX> "ID of the target index")
+            .required(true),
+        ])
         .subcommand_required(true)
         .subcommand(
             Command::new("search-settings")
-                .about("Updates default search settings.")
+                .about("Updates search settings.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index")
-                        .display_order(1)
-                        .required(true),
-                    arg!(--"default-search-fields" <FIELD_NAME> "List of fields that Quickwit will search into if the user query does not explicitly target a field. Space-separated list, e.g. \"field1 field2\". If no value is provided, existing defaults are removed and queries without target field will fail.")
-                        .display_order(2)
-                        .num_args(0..)
+                    arg!(--"config-file" <PATH> "Location of a json, yaml or toml file containing the new search settings. See https://quickwit.io/docs/configuration/index-config#search-settings.")
                         .required(true),
                 ]))
         .subcommand(
             Command::new("retention-policy")
-                .about("Configures or disables the retention policy.")
+                .about("Updates or disables the retention policy.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index")
-                        .display_order(1)
-                        .required(true),
-                    arg!(--"period" <RETENTION_PERIOD> "Duration after which splits are dropped. Expressed in a human-readable way (`1 day`, `2 hours`, `1 week`, ...)")
-                        .display_order(2)
+                    arg!(--"config-file" <PATH> "Location of a json, yaml or toml file containing the new retention policy. See https://quickwit.io/docs/configuration/index-config#retention-policy.")
                         .required(false),
-                    arg!(--"schedule" <RETENTION_SCHEDULE> "Frequency at which the retention policy is evaluated and applied. Expressed as a cron expression (0 0 * * * *) or human-readable form (hourly, daily, weekly, ...).")
-                        .display_order(3)
-                        .required(false),
-                    arg!(--"disable" "Disables the retention policy. Old indexed data will not be cleaned up anymore.")
-                        .display_order(4)
+                    arg!(--disable "Disables the retention policy. Old indexed data will not be cleaned up anymore.")
                         .required(false),
                 ])
+        )
+        .subcommand(
+            Command::new("indexing-settings")
+                .about("Updates indexing settings.")
+                .args(&[
+                    arg!(--"config-file" <PATH> "Location of a json, yaml or toml file containing the new indexing settings. See https://quickwit.io/docs/configuration/index-config#indexing-settings.")
+                        .required(true),
+                ])
+
         )
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct RetentionPolicyArgs {
+pub struct OptionalFieldArgs {
     pub client_args: ClientArgs,
     pub index_id: String,
-    pub disable: bool,
-    pub period: Option<String>,
-    pub schedule: Option<String>,
+    pub config_file_opt: Option<Uri>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct SearchSettingsArgs {
+pub struct RequiredFieldArgs {
     pub client_args: ClientArgs,
     pub index_id: String,
-    pub default_search_fields: Vec<String>,
+    pub config_file: Uri,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct IndexingSettingsArgs {
+    pub client_args: ClientArgs,
+    pub index_id: String,
+    pub config_file: Uri,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum IndexUpdateCliCommand {
-    RetentionPolicy(RetentionPolicyArgs),
-    SearchSettings(SearchSettingsArgs),
+    RetentionPolicy(OptionalFieldArgs),
+    SearchSettings(RequiredFieldArgs),
+    IndexingSettings(RequiredFieldArgs),
 }
 
 impl IndexUpdateCliCommand {
@@ -89,45 +100,57 @@ impl IndexUpdateCliCommand {
         let (subcommand, submatches) = matches
             .remove_subcommand()
             .context("failed to parse index update subcommand")?;
+        let index_id = matches
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
         match subcommand.as_str() {
-            "retention-policy" => Self::parse_update_retention_policy_args(submatches),
-            "search-settings" => Self::parse_update_search_settings_args(submatches),
+            "retention-policy" => Self::parse_update_optional_field_args(submatches, index_id),
+            "search-settings" => Self::parse_update_required_field_args(submatches, index_id),
+            "indexing-settings" => Self::parse_update_required_field_args(submatches, index_id),
             _ => bail!("unknown index update subcommand `{subcommand}`"),
         }
     }
 
-    fn parse_update_retention_policy_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
+    /// Parse args for optional fields (i.e retention policy).
+    fn parse_update_optional_field_args(
+        mut matches: ArgMatches,
+        index_id: String,
+    ) -> anyhow::Result<Self> {
         let client_args = ClientArgs::parse(&mut matches)?;
-        let index_id = matches
-            .remove_one::<String>("index")
-            .expect("`index` should be a required arg.");
+
+        let config_file_opt = matches
+            .remove_one::<String>("config-file")
+            .map(|uri| Uri::from_str(&uri))
+            .transpose()?;
         let disable = matches.get_flag("disable");
-        let period = matches.remove_one::<String>("period");
-        let schedule = matches.remove_one::<String>("schedule");
-        Ok(Self::RetentionPolicy(RetentionPolicyArgs {
+        if !disable && config_file_opt.is_none() {
+            bail!("either `--config-file` or `--disable` must be specified");
+        }
+        if disable && config_file_opt.is_some() {
+            bail!("both `--config-file` and `--disable` cannot be specified");
+        }
+        Ok(Self::RetentionPolicy(OptionalFieldArgs {
             client_args,
             index_id,
-            disable,
-            period,
-            schedule,
+            config_file_opt,
         }))
     }
 
-    fn parse_update_search_settings_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
+    /// Parse args for required fields (i.e. search and indexing settings).
+    fn parse_update_required_field_args(
+        mut matches: ArgMatches,
+        index_id: String,
+    ) -> anyhow::Result<Self> {
         let client_args = ClientArgs::parse(&mut matches)?;
-        let index_id = matches
-            .remove_one::<String>("index")
-            .expect("`index` should be a required arg.");
-        let default_search_fields = matches
-            .remove_many::<String>("default-search-fields")
-            .map(|values| values.collect())
-            // --default-search-fields should be made optional if other fields
-            // are added to SearchSettings
-            .expect("`default-search-fields` should be a required arg.");
-        Ok(Self::SearchSettings(SearchSettingsArgs {
+
+        let config_file = matches
+            .remove_one::<String>("config-file")
+            .map(|uri| Uri::from_str(&uri))
+            .expect("`config-file` should be a required arg.")?;
+        Ok(Self::SearchSettings(RequiredFieldArgs {
             client_args,
             index_id,
-            default_search_fields,
+            config_file,
         }))
     }
 
@@ -135,87 +158,92 @@ impl IndexUpdateCliCommand {
         match self {
             Self::RetentionPolicy(args) => update_retention_policy_cli(args).await,
             Self::SearchSettings(args) => update_search_settings_cli(args).await,
+            Self::IndexingSettings(args) => update_indexing_settings_cli(args).await,
         }
     }
 }
 
-pub async fn update_retention_policy_cli(args: RetentionPolicyArgs) -> anyhow::Result<()> {
-    debug!(args=?args, "update-index-retention-policy");
-    println!("❯ Updating index retention policy...");
-    let qw_client = args.client_args.client();
-    let metadata = qw_client.indexes().get(&args.index_id).await?;
-    let new_retention_policy_opt = match (
-        args.disable,
-        args.period,
-        args.schedule,
-        metadata.index_config.retention_policy_opt,
-    ) {
-        (true, Some(_), Some(_), _) | (true, None, Some(_), _) | (true, Some(_), None, _) => {
-            bail!("`--period` and `--schedule` cannot be used together with `--disable`")
-        }
-        (false, None, None, _) => bail!("either `--period` or `--disable` must be specified"),
-        (false, None, Some(_), None) => {
-            bail!("`--period` is required when creating a retention policy")
-        }
-        (true, None, None, _) => None,
-        (false, None, Some(schedule), Some(policy)) => Some(RetentionPolicy {
-            retention_period: policy.retention_period,
-            evaluation_schedule: schedule,
-        }),
-        (false, Some(period), schedule_opt, None) => Some(RetentionPolicy {
-            retention_period: period,
-            evaluation_schedule: schedule_opt.unwrap_or(RetentionPolicy::default_schedule()),
-        }),
-        (false, Some(period), schedule_opt, Some(policy)) => Some(RetentionPolicy {
-            retention_period: period,
-            evaluation_schedule: schedule_opt.unwrap_or(policy.evaluation_schedule.clone()),
-        }),
-    };
-    if let Some(new_retention_policy) = new_retention_policy_opt.as_ref() {
-        println!(
-            "New retention policy: {}",
-            serde_json::to_string(&new_retention_policy)?
-        );
-    } else {
-        println!("Disable retention policy.");
-    }
-    qw_client
+async fn update_from_file(
+    client_args: ClientArgs,
+    index_id: &str,
+    config_file: &Uri,
+    field: UpdateConfigField,
+) -> anyhow::Result<()> {
+    let storage_resolver = StorageResolver::unconfigured();
+    let content = load_file(&storage_resolver, config_file).await?;
+    client_args
+        .client()
         .indexes()
         .update(
-            &args.index_id,
-            IndexUpdates {
-                retention_policy_opt: new_retention_policy_opt,
-                search_settings: metadata.index_config.search_settings,
-            },
+            index_id,
+            field,
+            Bytes::from(content.as_slice().to_owned()),
+            ConfigFormat::sniff_from_uri(config_file)?,
         )
         .await?;
-    println!("{} Index successfully updated.", "✔".color(GREEN_COLOR));
     Ok(())
 }
 
-pub async fn update_search_settings_cli(args: SearchSettingsArgs) -> anyhow::Result<()> {
-    debug!(args=?args, "update-index-search-settings");
-    println!("❯ Updating index search settings...");
-    let qw_client = args.client_args.client();
-    let metadata = qw_client.indexes().get(&args.index_id).await?;
-    let search_settings = SearchSettings {
-        default_search_fields: args.default_search_fields,
-    };
-    println!(
-        "New search settings: {}",
-        serde_json::to_string(&search_settings)?
-    );
-    qw_client
-        .indexes()
-        .update(
+pub async fn update_retention_policy_cli(args: OptionalFieldArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "update-index-retention-policy");
+    println!("❯ Updating index retention policy...");
+    if let Some(uri) = args.config_file_opt {
+        update_from_file(
+            args.client_args,
             &args.index_id,
-            IndexUpdates {
-                retention_policy_opt: metadata.index_config.retention_policy_opt,
-                search_settings,
-            },
+            &uri,
+            UpdateConfigField::RetentionPolicy,
         )
         .await?;
-    println!("{} Index successfully updated.", "✔".color(GREEN_COLOR));
+    } else {
+        args.client_args
+            .client()
+            .indexes()
+            .delete_retention_policy(&args.index_id)
+            .await?;
+    }
+    println!(
+        "{} Index retention policy successfully updated.",
+        "✔".color(GREEN_COLOR)
+    );
+    Ok(())
+}
+
+pub async fn update_search_settings_cli(args: RequiredFieldArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "update-index-search-settings");
+    println!("❯ Updating index search settings...");
+    update_from_file(
+        args.client_args,
+        &args.index_id,
+        &args.config_file,
+        UpdateConfigField::SearchSettings,
+    )
+    .await?;
+    println!(
+        "{} Index search settings successfully updated.",
+        "✔".color(GREEN_COLOR)
+    );
+    Ok(())
+}
+
+pub async fn update_indexing_settings_cli(args: RequiredFieldArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "update-index-indexing-settings");
+    println!("❯ Updating index indexing settings...");
+    update_from_file(
+        args.client_args,
+        &args.index_id,
+        &args.config_file,
+        UpdateConfigField::IndexingSettings,
+    )
+    .await?;
+    println!(
+        "{} Index indexing settings successfully updated.",
+        "✔".color(GREEN_COLOR)
+    );
+    println!(
+        "{} Restart indexer nodes for the new configuration to take effect.",
+        "!".color(BLUE_COLOR)
+    );
     Ok(())
 }
 
@@ -232,25 +260,42 @@ mod test {
             .try_get_matches_from([
                 "index",
                 "update",
-                "retention-policy",
                 "--index",
                 "my-index",
-                "--period",
-                "1 day",
+                "retention-policy",
+                "--config-file",
+                "/tmp/hello.json",
             ])
             .unwrap();
         let command = CliCommand::parse_cli_args(matches).unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Update(
-                IndexUpdateCliCommand::RetentionPolicy(RetentionPolicyArgs {
+                IndexUpdateCliCommand::RetentionPolicy(OptionalFieldArgs {
                     client_args: _,
                     index_id,
-                    disable: false,
-                    period: Some(period),
-                    schedule: None,
+                    config_file_opt: Some(uri),
                 })
-            )) if &index_id == "my-index" &&  &period == "1 day"
+            )) if &index_id == "my-index" &&  uri.as_str() == "file:///tmp/hello.json"
         ));
+    }
+
+    #[test]
+    fn test_cmd_invalid_update_subsubcommand() {
+        let app = build_cli().no_binary_name(true);
+        let matches = app
+            .try_get_matches_from([
+                "index",
+                "update",
+                "--index",
+                "my-index",
+                "retention-policy",
+                "--config-file",
+                "/tmp/hello.json",
+                "--disable",
+            ])
+            .unwrap();
+        CliCommand::parse_cli_args(matches)
+            .expect_err("command with both `--config-file` and `--disable` should fail");
     }
 }

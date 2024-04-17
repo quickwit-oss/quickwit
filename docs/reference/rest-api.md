@@ -350,6 +350,7 @@ Calling the update endpoint with the following payload will remove the current r
     }
 }
 ```
+:::
 
 #### Response
 

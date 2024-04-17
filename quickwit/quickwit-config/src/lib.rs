@@ -46,7 +46,7 @@ pub use cluster_config::ClusterConfig;
 // See #2048
 use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
 pub use index_config::{
-    build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig,
+    build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig, IndexUpdate,
     IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
 };
 use serde::de::DeserializeOwned;
@@ -209,10 +209,11 @@ impl ConfigFormat {
             ConfigFormat::Json => {
                 let mut json_value: JsonValue =
                     serde_json::from_reader(StripComments::new(payload))?;
-                let version_value = json_value.get_mut("version").context("missing version")?;
-                if let Some(version_number) = version_value.as_u64() {
-                    warn!(version_value=?version_value, "`version` is supposed to be a string");
-                    *version_value = JsonValue::String(version_number.to_string());
+                if let Some(version_value) = json_value.get_mut("version") {
+                    if let Some(version_number) = version_value.as_u64() {
+                        warn!(version_value=?version_value, "`version` is supposed to be a string");
+                        *version_value = JsonValue::String(version_number.to_string());
+                    }
                 }
                 serde_json::from_value(json_value).context("failed to parse JSON file")
             }
@@ -221,16 +222,13 @@ impl ConfigFormat {
                     .context("configuration file contains invalid UTF-8 characters")?;
                 let mut toml_value: toml::Value =
                     toml::from_str(payload_str).context("failed to parse TOML file")?;
-                let version_value = toml_value.get_mut("version").context("missing version")?;
-                if let Some(version_number) = version_value.as_integer() {
-                    warn!(version_value=?version_value, "`version` is supposed to be a string");
-                    *version_value = toml::Value::String(version_number.to_string());
-                    let reserialized = toml::to_string(version_value)
-                        .context("failed to reserialize toml config")?;
-                    toml::from_str(&reserialized).context("failed to parse TOML file")
-                } else {
-                    toml::from_str(payload_str).context("failed to parse TOML file")
+                if let Some(version_value) = toml_value.get_mut("version") {
+                    if let Some(version_number) = version_value.as_integer() {
+                        warn!(version_value=?version_value, "`version` is supposed to be a string");
+                        *version_value = toml::Value::String(version_number.to_string());
+                    }
                 }
+                toml_value.try_into().context("failed to parse TOML file")
             }
             ConfigFormat::Yaml => {
                 serde_yaml::from_slice(payload).context("failed to parse YAML file")

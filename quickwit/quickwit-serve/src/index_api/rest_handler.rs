@@ -22,9 +22,8 @@ use std::sync::Arc;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    load_source_config_from_user_config, validate_index_id_pattern, ConfigFormat, NodeConfig,
-    RetentionPolicy, SearchSettings, SourceConfig, SourceParams, CLI_SOURCE_ID,
-    INGEST_API_SOURCE_ID,
+    load_source_config_from_user_config, validate_index_id_pattern, ConfigFormat, IndexUpdate,
+    NodeConfig, SourceConfig, SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
@@ -55,7 +54,10 @@ use crate::with_arg;
 #[openapi(
     paths(
         create_index,
-        update_index,
+        update_index_indexing_settings,
+        update_index_search_settings,
+        update_index_retention_policy,
+        delete_index_retention_policy,
         clear_index,
         delete_index,
         list_indexes_metadata,
@@ -67,7 +69,7 @@ use crate::with_arg;
         toggle_source,
         delete_source,
     ),
-    components(schemas(ToggleSource, SplitsForDeletion, IndexStats, IndexUpdates))
+    components(schemas(ToggleSource, SplitsForDeletion, IndexStats))
 )]
 pub struct IndexApi;
 
@@ -90,7 +92,10 @@ pub fn index_management_handlers(
     get_index_metadata_handler(index_service.metastore())
         .or(list_indexes_metadata_handler(index_service.metastore()))
         .or(create_index_handler(index_service.clone(), node_config))
-        .or(update_index_handler(index_service.metastore()))
+        .or(update_search_settings_handler(index_service.metastore()))
+        .or(update_indexing_setting_handler(index_service.metastore()))
+        .or(update_retention_policy_handler(index_service.metastore()))
+        .or(delete_retention_policy_handler(index_service.metastore()))
         .or(clear_index_handler(index_service.clone()))
         .or(delete_index_handler(index_service.clone()))
         // Splits handlers
@@ -526,49 +531,25 @@ async fn create_index(
         .await
 }
 
-/// The body of the index update request. All fields will be replaced in the
-/// existing configuration.
-#[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Default, utoipa::ToSchema)]
-#[serde(deny_unknown_fields)] // Remove when adding new fields to allow to ensure forward compatibility
-pub struct IndexUpdates {
-    pub search_settings: SearchSettings,
-    #[serde(rename = "retention_policy")]
-    pub retention_policy_opt: Option<RetentionPolicy>,
-}
-
-fn update_index_handler(
+pub fn pre_update_filter(
     metastore: MetastoreServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String)
+    path: &'static str,
+) -> impl Filter<Extract = (String, ConfigFormat, Bytes, MetastoreServiceClient), Error = Rejection>
+       + Clone {
+    warp::path("indexes")
+        .and(warp::path::param())
+        .and(warp::path(path))
+        .and(warp::path::end())
         .and(warp::put())
-        .and(json_body())
+        .and(extract_config_format())
+        .and(warp::body::content_length_limit(1024 * 1024))
+        .and(warp::filters::body::bytes())
         .and(with_arg(metastore))
-        .then(update_index)
-        .map(log_failure("failed to update index"))
-        .and(extract_format_from_qs())
-        .map(into_rest_api_response)
 }
 
-#[utoipa::path(
-    put,
-    tag = "Indexes",
-    path = "/indexes/{index_id}",
-    request_body = IndexUpdates,
-    responses(
-        (status = 200, description = "Successfully updated the index configuration.")
-    ),
-    params(
-        ("index_id" = String, Path, description = "The index ID to update."),
-    )
-)]
-/// Updates an existing index.
-///
-/// This endpoint has PUT semantics, which means that all the updatable fields of the index
-/// configuration are replaced by the values specified in the request. In particular, omitting an
-/// optional field like `retention_policy` will delete the associated configuration.
 async fn update_index(
     index_id: String,
-    request: IndexUpdates,
+    request: IndexUpdate,
     mut metastore: MetastoreServiceClient,
 ) -> Result<IndexMetadata, IndexServiceError> {
     info!(index_id = %index_id, "update-index");
@@ -578,14 +559,142 @@ async fn update_index(
         .await?
         .deserialize_index_metadata()?
         .index_uid;
-
-    let update_request = UpdateIndexRequest::try_from_updates(
-        index_uid,
-        &request.search_settings,
-        &request.retention_policy_opt,
-    )?;
+    let update_request = UpdateIndexRequest::try_from_update(index_uid, &request)?;
     let update_resp = metastore.update_index(update_request).await?;
     Ok(update_resp.deserialize_index_metadata()?)
+}
+
+pub fn update_indexing_setting_handler(
+    metastore: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    pre_update_filter(metastore, "indexing-settings")
+        .then(update_index_indexing_settings)
+        .map(log_failure("failed to update indexing settings"))
+        .and(extract_format_from_qs())
+        .map(into_rest_api_response)
+}
+
+#[utoipa::path(
+    put,
+    tag = "Indexes",
+    path = "/indexes/{index_id}/indexing-settings",
+    request_body = IndexingSettings,
+    responses(
+        (status = 200, description = "Successfully updated the indexing settings.")
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to update."),
+    )
+)]
+/// For the indexing settings update to take effect, the indexer nodes must be restarted.
+pub async fn update_index_indexing_settings(
+    index_id: String,
+    config_format: ConfigFormat,
+    config_bytes: Bytes,
+    metastore: MetastoreServiceClient,
+) -> Result<IndexMetadata, IndexServiceError> {
+    let update = config_format
+        .parse(&config_bytes)
+        .map_err(IndexServiceError::InvalidConfig)?;
+    update_index(index_id, IndexUpdate::IndexingSettings(update), metastore).await
+}
+
+pub fn update_search_settings_handler(
+    metastore: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    pre_update_filter(metastore, "search-settings")
+        .then(update_index_search_settings)
+        .map(log_failure("failed to update search settings"))
+        .and(extract_format_from_qs())
+        .map(into_rest_api_response)
+}
+
+#[utoipa::path(
+    put,
+    tag = "Indexes",
+    path = "/indexes/{index_id}/search-settings",
+    request_body = SearchSettings,
+    responses(
+        (status = 200, description = "Successfully updated the search settings.")
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to update."),
+    )
+)]
+pub async fn update_index_search_settings(
+    index_id: String,
+    config_format: ConfigFormat,
+    config_bytes: Bytes,
+    metastore: MetastoreServiceClient,
+) -> Result<IndexMetadata, IndexServiceError> {
+    let update = config_format
+        .parse(&config_bytes)
+        .map_err(IndexServiceError::InvalidConfig)?;
+    update_index(index_id, IndexUpdate::SearchSettings(update), metastore).await
+}
+
+pub fn update_retention_policy_handler(
+    metastore: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    pre_update_filter(metastore, "retention-policy")
+        .then(update_index_retention_policy)
+        .map(log_failure("failed to update retention policy"))
+        .and(extract_format_from_qs())
+        .map(into_rest_api_response)
+}
+
+#[utoipa::path(
+    put,
+    tag = "Indexes",
+    path = "/indexes/{index_id}/retention-policy",
+    request_body = RetentionPolicy,
+    responses(
+        (status = 200, description = "Successfully updated the retention policy.")
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to update."),
+    )
+)]
+pub async fn update_index_retention_policy(
+    index_id: String,
+    config_format: ConfigFormat,
+    config_bytes: Bytes,
+    metastore: MetastoreServiceClient,
+) -> Result<IndexMetadata, IndexServiceError> {
+    let update = config_format
+        .parse(&config_bytes)
+        .map_err(IndexServiceError::InvalidConfig)?;
+    update_index(index_id, IndexUpdate::RetentionPolicy(update), metastore).await
+}
+
+pub fn delete_retention_policy_handler(
+    metastore: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("indexes" / String / "retention-policy")
+        .and(warp::delete())
+        .and(with_arg(metastore))
+        .then(delete_index_retention_policy)
+        .map(log_failure("failed to delete index retention policy"))
+        .and(extract_format_from_qs())
+        .map(into_rest_api_response)
+}
+
+#[utoipa::path(
+    delete,
+    tag = "Indexes",
+    path = "/indexes/{index_id}/retention-policy",
+    responses(
+        (status = 200, description = "Successfully updated the retention policy.")
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to update."),
+    )
+)]
+pub async fn delete_index_retention_policy(
+    index_id: String,
+    metastore: MetastoreServiceClient,
+) -> Result<IndexMetadata, IndexServiceError> {
+    update_index(index_id, IndexUpdate::RetentionPolicy(None), metastore).await
 }
 
 fn clear_index_handler(
@@ -1001,6 +1110,7 @@ mod tests {
     use assert_json_diff::assert_json_include;
     use quickwit_common::uri::Uri;
     use quickwit_common::ServiceStream;
+    use quickwit_config::merge_policy_config::MergePolicyConfig;
     use quickwit_config::{SourceParams, VecSourceParams};
     use quickwit_indexing::{mock_split, MockSplitBuilder};
     use quickwit_metastore::{metastore_for_test, IndexMetadata, ListSplitsResponseExt};
@@ -1791,7 +1901,7 @@ mod tests {
                 .path("/indexes")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["body"]}}"#)
+                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"timestamp_field":"timestamp", "field_mappings":[{"name": "timestamp", "type": "datetime", "fast": true}]},"search_settings":{"default_search_fields":["body"]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -1807,10 +1917,10 @@ mod tests {
         }
         {
             let resp = warp::test::request()
-                .path("/indexes/hdfs-logs")
+                .path("/indexes/hdfs-logs/search-settings")
                 .method("PUT")
                 .json(&true)
-                .body(r#"{"search_settings":{"default_search_fields":["severity_text","body"]}}"#)
+                .body(r#"{"default_search_fields":["severity_text","body"]}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -1819,6 +1929,46 @@ mod tests {
                 "index_config": {
                     "search_settings": {
                         "default_search_fields": ["severity_text", "body"]
+                    }
+                }
+            });
+            assert_json_include!(actual: resp_json, expected: expected_response_json);
+        }
+        {
+            let resp = warp::test::request()
+                .path("/indexes/hdfs-logs/retention-policy")
+                .method("PUT")
+                .json(&true)
+                .body(r#"{"period":"90 days"}"#)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
+            let expected_response_json = serde_json::json!({
+                "index_config": {
+                    "retention": {
+                        "period": "90 days"
+                    }
+                }
+            });
+            assert_json_include!(actual: resp_json, expected: expected_response_json);
+        }
+        {
+            let resp = warp::test::request()
+                .path("/indexes/hdfs-logs/indexing-settings")
+                .method("PUT")
+                .json(&true)
+                .body(r#"{"merge_policy":{"type":"limit_merge"}}"#)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
+            let expected_response_json = serde_json::json!({
+                "index_config": {
+                    "indexing_settings": {
+                        "merge_policy": {
+                            "type": "limit_merge"
+                        }
                     }
                 }
             });
@@ -1838,6 +1988,18 @@ mod tests {
                 .default_search_fields,
             ["severity_text", "body"]
         );
+        assert_eq!(
+            index_metadata
+                .index_config
+                .retention_policy_opt
+                .unwrap()
+                .retention_period,
+            "90 days"
+        );
+        assert!(matches!(
+            index_metadata.index_config.indexing_settings.merge_policy,
+            MergePolicyConfig::ConstWriteAmplification(_)
+        ));
     }
 
     #[tokio::test]

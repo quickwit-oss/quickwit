@@ -20,7 +20,8 @@
 mod shard_table;
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeSet, HashMap};
 use std::mem;
 use std::ops::Deref;
 use std::time::Instant;
@@ -54,7 +55,7 @@ use tracing::{info, instrument, warn};
 #[derive(Default, Debug)]
 pub(crate) struct ControlPlaneModel {
     index_uid_table: FnvHashMap<IndexId, IndexUid>,
-    index_table: FnvHashMap<IndexUid, IndexMetadata>,
+    index_source_table: FnvHashMap<IndexUid, HashMap<SourceId, SourceConfig>>,
     shard_table: ShardTable,
 }
 
@@ -65,7 +66,7 @@ impl ControlPlaneModel {
     }
 
     pub fn num_indexes(&self) -> usize {
-        self.index_table.len()
+        self.index_source_table.len()
     }
 
     pub fn num_sources(&self) -> usize {
@@ -95,7 +96,7 @@ impl ControlPlaneModel {
             .await?;
 
         let num_indexes = indexes_metadata.len();
-        self.index_table.reserve(num_indexes);
+        self.index_source_table.reserve(num_indexes);
 
         for index_metadata in indexes_metadata {
             self.add_index(index_metadata);
@@ -105,13 +106,13 @@ impl ControlPlaneModel {
 
         let mut next_list_shards_request = metastore::ListShardsRequest::default();
 
-        for (idx, index_metadata) in self.index_table.values().enumerate() {
-            for source_config in index_metadata.sources.values() {
+        for (idx, (index_uid, index_metadata)) in self.index_source_table.iter().enumerate() {
+            for source_config in index_metadata.values() {
                 num_sources += 1;
 
                 if source_config.source_type() == SourceType::IngestV2 {
                     let request = ListShardsSubrequest {
-                        index_uid: index_metadata.index_uid.clone().into(),
+                        index_uid: Some(index_uid.clone()),
                         source_id: source_config.source_id.clone(),
                         shard_state: None,
                     };
@@ -155,24 +156,23 @@ impl ControlPlaneModel {
     fn update_metrics(&self) {
         crate::metrics::CONTROL_PLANE_METRICS
             .indexes_total
-            .set(self.index_table.len() as i64);
+            .set(self.index_source_table.len() as i64);
     }
 
     pub(crate) fn source_configs(&self) -> impl Iterator<Item = (SourceUid, &SourceConfig)> + '_ {
-        self.index_table.values().flat_map(|index_metadata| {
-            index_metadata
-                .sources
-                .iter()
-                .map(move |(source_id, source_config)| {
+        self.index_source_table
+            .iter()
+            .flat_map(|(index_uid, sources)| {
+                sources.iter().map(move |(source_id, source_config)| {
                     (
                         SourceUid {
-                            index_uid: index_metadata.index_uid.clone(),
+                            index_uid: index_uid.clone(),
                             source_id: source_id.clone(),
                         },
                         source_config,
                     )
                 })
-        })
+            })
     }
 
     pub(crate) fn add_index(&mut self, index_metadata: IndexMetadata) {
@@ -186,12 +186,13 @@ impl ControlPlaneModel {
                 self.shard_table.add_source(&index_uid, source_id);
             }
         }
-        self.index_table.insert(index_uid, index_metadata);
+        self.index_source_table
+            .insert(index_uid, index_metadata.sources);
         self.update_metrics();
     }
 
     pub(crate) fn delete_index(&mut self, index_uid: &IndexUid) {
-        self.index_table.remove(index_uid);
+        self.index_source_table.remove(index_uid);
         self.index_uid_table.remove(&index_uid.index_id);
         self.shard_table.delete_index(&index_uid.index_id);
         self.update_metrics();
@@ -204,13 +205,21 @@ impl ControlPlaneModel {
         index_uid: &IndexUid,
         source_config: SourceConfig,
     ) -> ControlPlaneResult<()> {
-        let index_metadata = self.index_table.get_mut(index_uid).ok_or_else(|| {
+        let index_sources = self.index_source_table.get_mut(index_uid).ok_or_else(|| {
             MetastoreError::NotFound(EntityKind::Index {
                 index_id: index_uid.to_string(),
             })
         })?;
-        index_metadata.add_source(source_config.clone())?;
-
+        match index_sources.entry(source_config.source_id.clone()) {
+            Entry::Occupied(_) => Err(MetastoreError::AlreadyExists(EntityKind::Source {
+                index_id: index_uid.index_id.clone(),
+                source_id: source_config.source_id.clone(),
+            })),
+            Entry::Vacant(entry) => {
+                entry.insert(source_config.clone());
+                Ok(())
+            }
+        }?;
         if source_config.source_type() == SourceType::IngestV2 {
             self.shard_table
                 .add_source(index_uid, &source_config.source_id);
@@ -223,15 +232,11 @@ impl ControlPlaneModel {
         self.shard_table
             .delete_source(&source_uid.index_uid, &source_uid.source_id);
         // Remove source from index metadata.
-        let Some(index_metadata) = self.index_table.get_mut(&source_uid.index_uid) else {
+        let Some(index_sources) = self.index_source_table.get_mut(&source_uid.index_uid) else {
             warn!(index_uid=%source_uid.index_uid, source_id=%source_uid.source_id, "delete source: index not found");
             return;
         };
-        if index_metadata
-            .sources
-            .remove(&source_uid.source_id)
-            .is_none()
-        {
+        if index_sources.remove(&source_uid.source_id).is_none() {
             warn!(index_uid=%source_uid.index_uid, source_id=%source_uid.source_id, "delete source: source not found");
         };
     }
@@ -244,10 +249,10 @@ impl ControlPlaneModel {
         source_id: &SourceId,
         enable: bool,
     ) -> anyhow::Result<bool> {
-        let Some(index_model) = self.index_table.get_mut(index_uid) else {
+        let Some(index_sources) = self.index_source_table.get_mut(index_uid) else {
             bail!("index `{}` not found", index_uid.index_id);
         };
-        let Some(source_config) = index_model.sources.get_mut(source_id) else {
+        let Some(source_config) = index_sources.get_mut(source_id) else {
             bail!("source `{source_id}` not found");
         };
         let has_changed = source_config.enabled != enable;
@@ -457,7 +462,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(model.index_table.len(), 3);
+        assert_eq!(model.index_source_table.len(), 3);
         assert_eq!(model.index_uid("test-index-0").unwrap(), index_uid);
         assert_eq!(model.index_uid("test-index-1").unwrap(), index_uid2);
         assert_eq!(model.index_uid("test-index-2").unwrap(), index_uid3);
@@ -497,8 +502,11 @@ mod tests {
         let index_uid = index_metadata.index_uid.clone();
         model.add_index(index_metadata.clone());
 
-        assert_eq!(model.index_table.len(), 1);
-        assert_eq!(model.index_table.get(&index_uid).unwrap(), &index_metadata);
+        assert_eq!(model.index_source_table.len(), 1);
+        assert_eq!(
+            model.index_source_table.get(&index_uid).unwrap(),
+            &index_metadata.sources
+        );
 
         assert_eq!(model.index_uid_table.len(), 1);
         assert_eq!(model.index_uid("test-index").unwrap(), index_uid);
@@ -515,8 +523,11 @@ mod tests {
         let index_uid = index_metadata.index_uid.clone();
         model.add_index(index_metadata.clone());
 
-        assert_eq!(model.index_table.len(), 1);
-        assert_eq!(model.index_table.get(&index_uid).unwrap(), &index_metadata);
+        assert_eq!(model.index_source_table.len(), 1);
+        assert_eq!(
+            model.index_source_table.get(&index_uid).unwrap(),
+            &index_metadata.sources
+        );
 
         assert_eq!(model.index_uid_table.len(), 1);
         assert_eq!(model.index_uid("test-index").unwrap(), index_uid);
@@ -545,7 +556,7 @@ mod tests {
 
         model.delete_index(&index_uid);
 
-        assert!(model.index_table.is_empty());
+        assert!(model.index_source_table.is_empty());
         assert!(model.index_uid_table.is_empty());
         assert_eq!(model.shard_table.num_sources(), 0);
     }

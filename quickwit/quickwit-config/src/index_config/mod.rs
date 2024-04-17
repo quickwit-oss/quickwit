@@ -519,6 +519,14 @@ impl TestableForRegression for IndexConfig {
     }
 }
 
+/// Represents an update to one of the updatable index configuration field.
+#[derive(Clone, Debug)]
+pub enum IndexUpdate {
+    SearchSettings(SearchSettings),
+    IndexingSettings(IndexingSettings),
+    RetentionPolicy(Option<RetentionPolicy>),
+}
+
 /// Builds and returns the doc mapper associated with index.
 pub fn build_doc_mapper(
     doc_mapping: &DocMapping,

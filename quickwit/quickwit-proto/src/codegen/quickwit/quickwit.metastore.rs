@@ -26,10 +26,10 @@ pub struct CreateIndexResponse {
 pub struct UpdateIndexRequest {
     #[prost(message, optional, tag = "1")]
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
-    #[prost(string, tag = "2")]
-    pub search_settings_json: ::prost::alloc::string::String,
+    #[prost(enumeration = "UpdatedIndexConfig", tag = "2")]
+    pub target_config: i32,
     #[prost(string, optional, tag = "3")]
-    pub retention_policy_json: ::core::option::Option<::prost::alloc::string::String>,
+    pub config_json: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -505,6 +505,37 @@ impl SourceType {
             "SOURCE_TYPE_PULSAR" => Some(Self::Pulsar),
             "SOURCE_TYPE_VEC" => Some(Self::Vec),
             "SOURCE_TYPE_VOID" => Some(Self::Void),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum UpdatedIndexConfig {
+    SearchSettings = 0,
+    IndexingSettings = 1,
+    RetentionPolicy = 2,
+}
+impl UpdatedIndexConfig {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            UpdatedIndexConfig::SearchSettings => "SEARCH_SETTINGS",
+            UpdatedIndexConfig::IndexingSettings => "INDEXING_SETTINGS",
+            UpdatedIndexConfig::RetentionPolicy => "RETENTION_POLICY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SEARCH_SETTINGS" => Some(Self::SearchSettings),
+            "INDEXING_SETTINGS" => Some(Self::IndexingSettings),
+            "RETENTION_POLICY" => Some(Self::RetentionPolicy),
             _ => None,
         }
     }

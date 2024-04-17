@@ -26,9 +26,7 @@ use quickwit_indexing::actors::IndexingServiceCounters;
 pub use quickwit_ingest::CommitType;
 use quickwit_metastore::{IndexMetadata, Split, SplitInfo};
 use quickwit_search::SearchResponseRest;
-use quickwit_serve::{
-    IndexUpdates, ListSplitsQueryParams, ListSplitsResponse, SearchRequestQueryString,
-};
+use quickwit_serve::{ListSplitsQueryParams, ListSplitsResponse, SearchRequestQueryString};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, ClientBuilder, Method, StatusCode, Url};
 use serde::Serialize;
@@ -326,6 +324,12 @@ pub struct IndexClient<'a> {
     timeout: Timeout,
 }
 
+pub enum UpdateConfigField {
+    RetentionPolicy,
+    SearchSettings,
+    IndexingSettings,
+}
+
 impl<'a> IndexClient<'a> {
     fn new(transport: &'a Transport, timeout: Timeout) -> Self {
         Self { transport, timeout }
@@ -357,13 +361,37 @@ impl<'a> IndexClient<'a> {
     pub async fn update(
         &self,
         index_id: &str,
-        index_updates: IndexUpdates,
+        config_field: UpdateConfigField,
+        config: Bytes,
+        config_format: ConfigFormat,
     ) -> Result<IndexMetadata, Error> {
-        let body = Bytes::from(serde_json::to_string(&index_updates)?);
-        let path = format!("indexes/{index_id}");
+        let header_map = header_from_config_format(config_format);
+        let path = match config_field {
+            UpdateConfigField::IndexingSettings => "indexing-settings",
+            UpdateConfigField::SearchSettings => "search-settings",
+            UpdateConfigField::RetentionPolicy => "retention-policy",
+        };
+        let path = format!("indexes/{index_id}/{path}");
         let response = self
             .transport
-            .send::<()>(Method::PUT, &path, None, None, Some(body), self.timeout)
+            .send::<()>(
+                Method::PUT,
+                &path,
+                Some(header_map),
+                None,
+                Some(config),
+                self.timeout,
+            )
+            .await?;
+        let index_metadata = response.deserialize().await?;
+        Ok(index_metadata)
+    }
+
+    pub async fn delete_retention_policy(&self, index_id: &str) -> Result<IndexMetadata, Error> {
+        let path = format!("indexes/{index_id}/retention-policy");
+        let response = self
+            .transport
+            .send::<()>(Method::DELETE, &path, None, None, None, self.timeout)
             .await?;
         let index_metadata = response.deserialize().await?;
         Ok(index_metadata)
