@@ -84,12 +84,6 @@ impl Display for SourceUid {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct NodeId(String);
 
-// #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-// pub struct GenerationId(u64);
-
-// #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-// pub struct NodeUid(NodeId, GenerationId);
-
 impl NodeId {
     /// Constructs a new [`NodeId`].
     pub const fn new(node_id: String) -> Self {
@@ -217,6 +211,12 @@ impl AsRef<str> for NodeIdRef {
 impl Borrow<str> for NodeIdRef {
     fn borrow(&self) -> &str {
         &self.0
+    }
+}
+
+impl Display for NodeIdRef {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", &self.0)
     }
 }
 

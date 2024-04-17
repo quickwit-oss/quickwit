@@ -111,9 +111,3 @@ impl RpcName for AdviseResetShardsRequest {
         "advise_reset_shards"
     }
 }
-
-impl RpcName for GetDebugStateRequest {
-    fn rpc_name() -> &'static str {
-        "get_debug_state"
-    }
-}

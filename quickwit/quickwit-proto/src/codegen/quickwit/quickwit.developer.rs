@@ -1,13 +1,17 @@
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetDebugInfoRequest {}
+pub struct GetDebugInfoRequest {
+    /// Restricts the debug info to the given roles.
+    #[prost(string, repeated, tag = "1")]
+    pub roles: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDebugInfoResponse {
-    #[prost(bytes = "vec", tag = "1")]
-    pub diagnostic_info_json: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "bytes", tag = "1")]
+    pub debug_info_json: ::prost::bytes::Bytes,
 }
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
@@ -16,49 +20,49 @@ use tower::{Layer, Service, ServiceExt};
 use quickwit_common::tower::RpcName;
 impl RpcName for GetDebugInfoRequest {
     fn rpc_name() -> &'static str {
-        "get_diagnostic_info"
+        "get_debug_info"
     }
 }
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
-pub trait DiagnosticService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
-    async fn get_diagnostic_info(
+pub trait DeveloperService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+    async fn get_debug_info(
         &mut self,
         request: GetDebugInfoRequest,
-    ) -> crate::ingest::IngestV2Result<GetDebugInfoResponse>;
+    ) -> crate::developer::DeveloperResult<GetDebugInfoResponse>;
 }
-dyn_clone::clone_trait_object!(DiagnosticService);
+dyn_clone::clone_trait_object!(DeveloperService);
 #[cfg(any(test, feature = "testsuite"))]
-impl Clone for MockDiagnosticService {
+impl Clone for MockDeveloperService {
     fn clone(&self) -> Self {
-        MockDiagnosticService::new()
+        MockDeveloperService::new()
     }
 }
 #[derive(Debug, Clone)]
-pub struct DiagnosticServiceClient {
-    inner: Box<dyn DiagnosticService>,
+pub struct DeveloperServiceClient {
+    inner: Box<dyn DeveloperService>,
 }
-impl DiagnosticServiceClient {
+impl DeveloperServiceClient {
     pub fn new<T>(instance: T) -> Self
     where
-        T: DiagnosticService,
+        T: DeveloperService,
     {
         #[cfg(any(test, feature = "testsuite"))]
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
-            MockDiagnosticService > (),
-            "`MockDiagnosticService` must be wrapped in a `MockDiagnosticServiceWrapper`. Use `MockDiagnosticService::from(mock)` to instantiate the client."
+            MockDeveloperService > (),
+            "`MockDeveloperService` must be wrapped in a `MockDeveloperServiceWrapper`. Use `MockDeveloperService::from(mock)` to instantiate the client."
         );
         Self { inner: Box::new(instance) }
     }
     pub fn as_grpc_service(
         &self,
         max_message_size: bytesize::ByteSize,
-    ) -> diagnostic_service_grpc_server::DiagnosticServiceGrpcServer<
-        DiagnosticServiceGrpcServerAdapter,
+    ) -> developer_service_grpc_server::DeveloperServiceGrpcServer<
+        DeveloperServiceGrpcServerAdapter,
     > {
-        let adapter = DiagnosticServiceGrpcServerAdapter::new(self.clone());
-        diagnostic_service_grpc_server::DiagnosticServiceGrpcServer::new(adapter)
+        let adapter = DeveloperServiceGrpcServerAdapter::new(self.clone());
+        developer_service_grpc_server::DeveloperServiceGrpcServer::new(adapter)
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize)
     }
@@ -70,12 +74,12 @@ impl DiagnosticServiceClient {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
-        let client = diagnostic_service_grpc_client::DiagnosticServiceGrpcClient::new(
+        let client = developer_service_grpc_client::DeveloperServiceGrpcClient::new(
                 channel,
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
-        let adapter = DiagnosticServiceGrpcClientAdapter::new(
+        let adapter = DeveloperServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
         );
@@ -84,14 +88,14 @@ impl DiagnosticServiceClient {
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
-    ) -> DiagnosticServiceClient {
+    ) -> DeveloperServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let client = diagnostic_service_grpc_client::DiagnosticServiceGrpcClient::new(
+        let client = developer_service_grpc_client::DeveloperServiceGrpcClient::new(
                 balance_channel,
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
-        let adapter = DiagnosticServiceGrpcClientAdapter::new(
+        let adapter = DeveloperServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
         );
@@ -100,57 +104,57 @@ impl DiagnosticServiceClient {
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
-        DiagnosticServiceMailbox<A>: DiagnosticService,
+        DeveloperServiceMailbox<A>: DeveloperService,
     {
-        DiagnosticServiceClient::new(DiagnosticServiceMailbox::new(mailbox))
+        DeveloperServiceClient::new(DeveloperServiceMailbox::new(mailbox))
     }
-    pub fn tower() -> DiagnosticServiceTowerLayerStack {
-        DiagnosticServiceTowerLayerStack::default()
+    pub fn tower() -> DeveloperServiceTowerLayerStack {
+        DeveloperServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn from_mock(mock: MockDiagnosticService) -> Self {
-        let mock_wrapper = mock_diagnostic_service::MockDiagnosticServiceWrapper {
+    pub fn from_mock(mock: MockDeveloperService) -> Self {
+        let mock_wrapper = mock_developer_service::MockDeveloperServiceWrapper {
             inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
         };
         Self::new(mock_wrapper)
     }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn mocked() -> Self {
-        Self::from_mock(MockDiagnosticService::new())
+        Self::from_mock(MockDeveloperService::new())
     }
 }
 #[async_trait::async_trait]
-impl DiagnosticService for DiagnosticServiceClient {
-    async fn get_diagnostic_info(
+impl DeveloperService for DeveloperServiceClient {
+    async fn get_debug_info(
         &mut self,
         request: GetDebugInfoRequest,
-    ) -> crate::ingest::IngestV2Result<GetDebugInfoResponse> {
-        self.inner.get_diagnostic_info(request).await
+    ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
+        self.inner.get_debug_info(request).await
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod mock_diagnostic_service {
+pub mod mock_developer_service {
     use super::*;
     #[derive(Debug, Clone)]
-    pub struct MockDiagnosticServiceWrapper {
-        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockDiagnosticService>>,
+    pub struct MockDeveloperServiceWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockDeveloperService>>,
     }
     #[async_trait::async_trait]
-    impl DiagnosticService for MockDiagnosticServiceWrapper {
-        async fn get_diagnostic_info(
+    impl DeveloperService for MockDeveloperServiceWrapper {
+        async fn get_debug_info(
             &mut self,
             request: super::GetDebugInfoRequest,
-        ) -> crate::ingest::IngestV2Result<super::GetDebugInfoResponse> {
-            self.inner.lock().await.get_diagnostic_info(request).await
+        ) -> crate::developer::DeveloperResult<super::GetDebugInfoResponse> {
+            self.inner.lock().await.get_debug_info(request).await
         }
     }
 }
 pub type BoxFuture<T, E> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
 >;
-impl tower::Service<GetDebugInfoRequest> for Box<dyn DiagnosticService> {
+impl tower::Service<GetDebugInfoRequest> for Box<dyn DeveloperService> {
     type Response = GetDebugInfoResponse;
-    type Error = crate::ingest::IngestV2Error;
+    type Error = crate::developer::DeveloperError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
         &mut self,
@@ -160,107 +164,106 @@ impl tower::Service<GetDebugInfoRequest> for Box<dyn DiagnosticService> {
     }
     fn call(&mut self, request: GetDebugInfoRequest) -> Self::Future {
         let mut svc = self.clone();
-        let fut = async move { svc.get_diagnostic_info(request).await };
+        let fut = async move { svc.get_debug_info(request).await };
         Box::pin(fut)
     }
 }
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
-struct DiagnosticServiceTowerServiceStack {
-    inner: Box<dyn DiagnosticService>,
-    get_diagnostic_info_svc: quickwit_common::tower::BoxService<
+struct DeveloperServiceTowerServiceStack {
+    inner: Box<dyn DeveloperService>,
+    get_debug_info_svc: quickwit_common::tower::BoxService<
         GetDebugInfoRequest,
         GetDebugInfoResponse,
-        crate::ingest::IngestV2Error,
+        crate::developer::DeveloperError,
     >,
 }
-impl Clone for DiagnosticServiceTowerServiceStack {
+impl Clone for DeveloperServiceTowerServiceStack {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            get_diagnostic_info_svc: self.get_diagnostic_info_svc.clone(),
+            get_debug_info_svc: self.get_debug_info_svc.clone(),
         }
     }
 }
 #[async_trait::async_trait]
-impl DiagnosticService for DiagnosticServiceTowerServiceStack {
-    async fn get_diagnostic_info(
+impl DeveloperService for DeveloperServiceTowerServiceStack {
+    async fn get_debug_info(
         &mut self,
         request: GetDebugInfoRequest,
-    ) -> crate::ingest::IngestV2Result<GetDebugInfoResponse> {
-        self.get_diagnostic_info_svc.ready().await?.call(request).await
+    ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
+        self.get_debug_info_svc.ready().await?.call(request).await
     }
 }
 type GetDebugInfoLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         GetDebugInfoRequest,
         GetDebugInfoResponse,
-        crate::ingest::IngestV2Error,
+        crate::developer::DeveloperError,
     >,
     GetDebugInfoRequest,
     GetDebugInfoResponse,
-    crate::ingest::IngestV2Error,
+    crate::developer::DeveloperError,
 >;
 #[derive(Debug, Default)]
-pub struct DiagnosticServiceTowerLayerStack {
-    get_diagnostic_info_layers: Vec<GetDebugInfoLayer>,
+pub struct DeveloperServiceTowerLayerStack {
+    get_debug_info_layers: Vec<GetDebugInfoLayer>,
 }
-impl DiagnosticServiceTowerLayerStack {
+impl DeveloperServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     GetDebugInfoRequest,
                     GetDebugInfoResponse,
-                    crate::ingest::IngestV2Error,
+                    crate::developer::DeveloperError,
                 >,
             > + Clone + Send + Sync + 'static,
         <L as tower::Layer<
             quickwit_common::tower::BoxService<
                 GetDebugInfoRequest,
                 GetDebugInfoResponse,
-                crate::ingest::IngestV2Error,
+                crate::developer::DeveloperError,
             >,
         >>::Service: tower::Service<
                 GetDebugInfoRequest,
                 Response = GetDebugInfoResponse,
-                Error = crate::ingest::IngestV2Error,
+                Error = crate::developer::DeveloperError,
             > + Clone + Send + Sync + 'static,
         <<L as tower::Layer<
             quickwit_common::tower::BoxService<
                 GetDebugInfoRequest,
                 GetDebugInfoResponse,
-                crate::ingest::IngestV2Error,
+                crate::developer::DeveloperError,
             >,
         >>::Service as tower::Service<GetDebugInfoRequest>>::Future: Send + 'static,
     {
-        self.get_diagnostic_info_layers
+        self.get_debug_info_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
-    pub fn stack_get_diagnostic_info_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_get_debug_info_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     GetDebugInfoRequest,
                     GetDebugInfoResponse,
-                    crate::ingest::IngestV2Error,
+                    crate::developer::DeveloperError,
                 >,
             > + Send + Sync + 'static,
         L::Service: tower::Service<
                 GetDebugInfoRequest,
                 Response = GetDebugInfoResponse,
-                Error = crate::ingest::IngestV2Error,
+                Error = crate::developer::DeveloperError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<GetDebugInfoRequest>>::Future: Send + 'static,
     {
-        self.get_diagnostic_info_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self.get_debug_info_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn build<T>(self, instance: T) -> DiagnosticServiceClient
+    pub fn build<T>(self, instance: T) -> DeveloperServiceClient
     where
-        T: DiagnosticService,
+        T: DeveloperService,
     {
         self.build_from_boxed(Box::new(instance))
     }
@@ -269,10 +272,10 @@ impl DiagnosticServiceTowerLayerStack {
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
-    ) -> DiagnosticServiceClient {
+    ) -> DeveloperServiceClient {
         self.build_from_boxed(
             Box::new(
-                DiagnosticServiceClient::from_channel(addr, channel, max_message_size),
+                DeveloperServiceClient::from_channel(addr, channel, max_message_size),
             ),
         )
     }
@@ -280,10 +283,10 @@ impl DiagnosticServiceTowerLayerStack {
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
-    ) -> DiagnosticServiceClient {
+    ) -> DeveloperServiceClient {
         self.build_from_boxed(
             Box::new(
-                DiagnosticServiceClient::from_balance_channel(
+                DeveloperServiceClient::from_balance_channel(
                     balance_channel,
                     max_message_size,
                 ),
@@ -293,37 +296,34 @@ impl DiagnosticServiceTowerLayerStack {
     pub fn build_from_mailbox<A>(
         self,
         mailbox: quickwit_actors::Mailbox<A>,
-    ) -> DiagnosticServiceClient
+    ) -> DeveloperServiceClient
     where
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
-        DiagnosticServiceMailbox<A>: DiagnosticService,
+        DeveloperServiceMailbox<A>: DeveloperService,
     {
-        self.build_from_boxed(Box::new(DiagnosticServiceMailbox::new(mailbox)))
+        self.build_from_boxed(Box::new(DeveloperServiceMailbox::new(mailbox)))
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn build_from_mock(
-        self,
-        mock: MockDiagnosticService,
-    ) -> DiagnosticServiceClient {
-        self.build_from_boxed(Box::new(DiagnosticServiceClient::from_mock(mock)))
+    pub fn build_from_mock(self, mock: MockDeveloperService) -> DeveloperServiceClient {
+        self.build_from_boxed(Box::new(DeveloperServiceClient::from_mock(mock)))
     }
     fn build_from_boxed(
         self,
-        boxed_instance: Box<dyn DiagnosticService>,
-    ) -> DiagnosticServiceClient {
-        let get_diagnostic_info_svc = self
-            .get_diagnostic_info_layers
+        boxed_instance: Box<dyn DeveloperService>,
+    ) -> DeveloperServiceClient {
+        let get_debug_info_svc = self
+            .get_debug_info_layers
             .into_iter()
             .rev()
             .fold(
                 quickwit_common::tower::BoxService::new(boxed_instance.clone()),
                 |svc, layer| layer.layer(svc),
             );
-        let tower_svc_stack = DiagnosticServiceTowerServiceStack {
+        let tower_svc_stack = DeveloperServiceTowerServiceStack {
             inner: boxed_instance.clone(),
-            get_diagnostic_info_svc,
+            get_debug_info_svc,
         };
-        DiagnosticServiceClient::new(tower_svc_stack)
+        DeveloperServiceClient::new(tower_svc_stack)
     }
 }
 #[derive(Debug, Clone)]
@@ -341,10 +341,10 @@ where
     }
 }
 #[derive(Debug)]
-pub struct DiagnosticServiceMailbox<A: quickwit_actors::Actor> {
-    inner: MailboxAdapter<A, crate::ingest::IngestV2Error>,
+pub struct DeveloperServiceMailbox<A: quickwit_actors::Actor> {
+    inner: MailboxAdapter<A, crate::developer::DeveloperError>,
 }
-impl<A: quickwit_actors::Actor> DiagnosticServiceMailbox<A> {
+impl<A: quickwit_actors::Actor> DeveloperServiceMailbox<A> {
     pub fn new(instance: quickwit_actors::Mailbox<A>) -> Self {
         let inner = MailboxAdapter {
             inner: instance,
@@ -353,7 +353,7 @@ impl<A: quickwit_actors::Actor> DiagnosticServiceMailbox<A> {
         Self { inner }
     }
 }
-impl<A: quickwit_actors::Actor> Clone for DiagnosticServiceMailbox<A> {
+impl<A: quickwit_actors::Actor> Clone for DeveloperServiceMailbox<A> {
     fn clone(&self) -> Self {
         let inner = MailboxAdapter {
             inner: self.inner.clone(),
@@ -362,7 +362,7 @@ impl<A: quickwit_actors::Actor> Clone for DiagnosticServiceMailbox<A> {
         Self { inner }
     }
 }
-impl<A, M, T, E> tower::Service<M> for DiagnosticServiceMailbox<A>
+impl<A, M, T, E> tower::Service<M> for DeveloperServiceMailbox<A>
 where
     A: quickwit_actors::Actor
         + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send
@@ -370,10 +370,10 @@ where
     M: std::fmt::Debug + Send + 'static,
     T: Send + 'static,
     E: std::fmt::Debug + Send + 'static,
-    crate::ingest::IngestV2Error: From<quickwit_actors::AskError<E>>,
+    crate::developer::DeveloperError: From<quickwit_actors::AskError<E>>,
 {
     type Response = T;
-    type Error = crate::ingest::IngestV2Error;
+    type Error = crate::developer::DeveloperError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
         &mut self,
@@ -393,34 +393,34 @@ where
     }
 }
 #[async_trait::async_trait]
-impl<A> DiagnosticService for DiagnosticServiceMailbox<A>
+impl<A> DeveloperService for DeveloperServiceMailbox<A>
 where
     A: quickwit_actors::Actor + std::fmt::Debug,
-    DiagnosticServiceMailbox<
+    DeveloperServiceMailbox<
         A,
     >: tower::Service<
         GetDebugInfoRequest,
         Response = GetDebugInfoResponse,
-        Error = crate::ingest::IngestV2Error,
-        Future = BoxFuture<GetDebugInfoResponse, crate::ingest::IngestV2Error>,
+        Error = crate::developer::DeveloperError,
+        Future = BoxFuture<GetDebugInfoResponse, crate::developer::DeveloperError>,
     >,
 {
-    async fn get_diagnostic_info(
+    async fn get_debug_info(
         &mut self,
         request: GetDebugInfoRequest,
-    ) -> crate::ingest::IngestV2Result<GetDebugInfoResponse> {
+    ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
         self.call(request).await
     }
 }
 #[derive(Debug, Clone)]
-pub struct DiagnosticServiceGrpcClientAdapter<T> {
+pub struct DeveloperServiceGrpcClientAdapter<T> {
     inner: T,
     #[allow(dead_code)]
     connection_addrs_rx: tokio::sync::watch::Receiver<
         std::collections::HashSet<std::net::SocketAddr>,
     >,
 }
-impl<T> DiagnosticServiceGrpcClientAdapter<T> {
+impl<T> DeveloperServiceGrpcClientAdapter<T> {
     pub fn new(
         instance: T,
         connection_addrs_rx: tokio::sync::watch::Receiver<
@@ -434,9 +434,9 @@ impl<T> DiagnosticServiceGrpcClientAdapter<T> {
     }
 }
 #[async_trait::async_trait]
-impl<T> DiagnosticService
-for DiagnosticServiceGrpcClientAdapter<
-    diagnostic_service_grpc_client::DiagnosticServiceGrpcClient<T>,
+impl<T> DeveloperService
+for DeveloperServiceGrpcClientAdapter<
+    developer_service_grpc_client::DeveloperServiceGrpcClient<T>,
 >
 where
     T: tonic::client::GrpcService<tonic::body::BoxBody> + std::fmt::Debug + Clone + Send
@@ -446,12 +446,12 @@ where
         + Send,
     T::Future: Send,
 {
-    async fn get_diagnostic_info(
+    async fn get_debug_info(
         &mut self,
         request: GetDebugInfoRequest,
-    ) -> crate::ingest::IngestV2Result<GetDebugInfoResponse> {
+    ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
         self.inner
-            .get_diagnostic_info(request)
+            .get_debug_info(request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -461,42 +461,42 @@ where
     }
 }
 #[derive(Debug)]
-pub struct DiagnosticServiceGrpcServerAdapter {
-    inner: Box<dyn DiagnosticService>,
+pub struct DeveloperServiceGrpcServerAdapter {
+    inner: Box<dyn DeveloperService>,
 }
-impl DiagnosticServiceGrpcServerAdapter {
+impl DeveloperServiceGrpcServerAdapter {
     pub fn new<T>(instance: T) -> Self
     where
-        T: DiagnosticService,
+        T: DeveloperService,
     {
         Self { inner: Box::new(instance) }
     }
 }
 #[async_trait::async_trait]
-impl diagnostic_service_grpc_server::DiagnosticServiceGrpc
-for DiagnosticServiceGrpcServerAdapter {
-    async fn get_diagnostic_info(
+impl developer_service_grpc_server::DeveloperServiceGrpc
+for DeveloperServiceGrpcServerAdapter {
+    async fn get_debug_info(
         &self,
         request: tonic::Request<GetDebugInfoRequest>,
     ) -> Result<tonic::Response<GetDebugInfoResponse>, tonic::Status> {
         self.inner
             .clone()
-            .get_diagnostic_info(request.into_inner())
+            .get_debug_info(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
     }
 }
 /// Generated client implementations.
-pub mod diagnostic_service_grpc_client {
+pub mod developer_service_grpc_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
-    pub struct DiagnosticServiceGrpcClient<T> {
+    pub struct DeveloperServiceGrpcClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl DiagnosticServiceGrpcClient<tonic::transport::Channel> {
+    impl DeveloperServiceGrpcClient<tonic::transport::Channel> {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -507,7 +507,7 @@ pub mod diagnostic_service_grpc_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> DiagnosticServiceGrpcClient<T>
+    impl<T> DeveloperServiceGrpcClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
         T::Error: Into<StdError>,
@@ -525,7 +525,7 @@ pub mod diagnostic_service_grpc_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> DiagnosticServiceGrpcClient<InterceptedService<T, F>>
+        ) -> DeveloperServiceGrpcClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
@@ -539,7 +539,7 @@ pub mod diagnostic_service_grpc_client {
                 http::Request<tonic::body::BoxBody>,
             >>::Error: Into<StdError> + Send + Sync,
         {
-            DiagnosticServiceGrpcClient::new(InterceptedService::new(inner, interceptor))
+            DeveloperServiceGrpcClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with the given encoding.
         ///
@@ -572,7 +572,7 @@ pub mod diagnostic_service_grpc_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        pub async fn get_diagnostic_info(
+        pub async fn get_debug_info(
             &mut self,
             request: impl tonic::IntoRequest<super::GetDebugInfoRequest>,
         ) -> std::result::Result<
@@ -590,14 +590,14 @@ pub mod diagnostic_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.common.DiagnosticService/get_diagnostic_info",
+                "/quickwit.developer.DeveloperService/GetDebugInfo",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
-                        "quickwit.common.DiagnosticService",
-                        "get_diagnostic_info",
+                        "quickwit.developer.DeveloperService",
+                        "GetDebugInfo",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -605,13 +605,13 @@ pub mod diagnostic_service_grpc_client {
     }
 }
 /// Generated server implementations.
-pub mod diagnostic_service_grpc_server {
+pub mod developer_service_grpc_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with DiagnosticServiceGrpcServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with DeveloperServiceGrpcServer.
     #[async_trait]
-    pub trait DiagnosticServiceGrpc: Send + Sync + 'static {
-        async fn get_diagnostic_info(
+    pub trait DeveloperServiceGrpc: Send + Sync + 'static {
+        async fn get_debug_info(
             &self,
             request: tonic::Request<super::GetDebugInfoRequest>,
         ) -> std::result::Result<
@@ -620,7 +620,7 @@ pub mod diagnostic_service_grpc_server {
         >;
     }
     #[derive(Debug)]
-    pub struct DiagnosticServiceGrpcServer<T: DiagnosticServiceGrpc> {
+    pub struct DeveloperServiceGrpcServer<T: DeveloperServiceGrpc> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
@@ -628,7 +628,7 @@ pub mod diagnostic_service_grpc_server {
         max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
-    impl<T: DiagnosticServiceGrpc> DiagnosticServiceGrpcServer<T> {
+    impl<T: DeveloperServiceGrpc> DeveloperServiceGrpcServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -681,9 +681,9 @@ pub mod diagnostic_service_grpc_server {
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>>
-    for DiagnosticServiceGrpcServer<T>
+    for DeveloperServiceGrpcServer<T>
     where
-        T: DiagnosticServiceGrpc,
+        T: DeveloperServiceGrpc,
         B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
@@ -699,13 +699,13 @@ pub mod diagnostic_service_grpc_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/quickwit.common.DiagnosticService/get_diagnostic_info" => {
+                "/quickwit.developer.DeveloperService/GetDebugInfo" => {
                     #[allow(non_camel_case_types)]
-                    struct get_diagnostic_infoSvc<T: DiagnosticServiceGrpc>(pub Arc<T>);
+                    struct GetDebugInfoSvc<T: DeveloperServiceGrpc>(pub Arc<T>);
                     impl<
-                        T: DiagnosticServiceGrpc,
+                        T: DeveloperServiceGrpc,
                     > tonic::server::UnaryService<super::GetDebugInfoRequest>
-                    for get_diagnostic_infoSvc<T> {
+                    for GetDebugInfoSvc<T> {
                         type Response = super::GetDebugInfoResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -717,7 +717,7 @@ pub mod diagnostic_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).get_diagnostic_info(request).await
+                                (*inner).get_debug_info(request).await
                             };
                             Box::pin(fut)
                         }
@@ -729,7 +729,7 @@ pub mod diagnostic_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = get_diagnostic_infoSvc(inner);
+                        let method = GetDebugInfoSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -760,7 +760,7 @@ pub mod diagnostic_service_grpc_server {
             }
         }
     }
-    impl<T: DiagnosticServiceGrpc> Clone for DiagnosticServiceGrpcServer<T> {
+    impl<T: DeveloperServiceGrpc> Clone for DeveloperServiceGrpcServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -772,7 +772,7 @@ pub mod diagnostic_service_grpc_server {
             }
         }
     }
-    impl<T: DiagnosticServiceGrpc> Clone for _Inner<T> {
+    impl<T: DeveloperServiceGrpc> Clone for _Inner<T> {
         fn clone(&self) -> Self {
             Self(Arc::clone(&self.0))
         }
@@ -782,8 +782,8 @@ pub mod diagnostic_service_grpc_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: DiagnosticServiceGrpc> tonic::server::NamedService
-    for DiagnosticServiceGrpcServer<T> {
-        const NAME: &'static str = "quickwit.common.DiagnosticService";
+    impl<T: DeveloperServiceGrpc> tonic::server::NamedService
+    for DeveloperServiceGrpcServer<T> {
+        const NAME: &'static str = "quickwit.developer.DeveloperService";
     }
 }

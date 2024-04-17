@@ -17,29 +17,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub mod control_plane;
-pub mod indexing_plan;
-pub mod indexing_scheduler;
-pub mod ingest;
-pub(crate) mod metrics;
-pub(crate) mod model;
+mod debug;
+mod log_level;
+mod server;
 
-use quickwit_common::tower::Pool;
-use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask};
-use quickwit_proto::types::NodeId;
+use debug::debug_handler;
+use log_level::log_level_handler;
+use quickwit_cluster::Cluster;
+pub(crate) use server::DeveloperApiServer;
+use warp::{Filter, Rejection};
 
-/// Indexer-node specific information stored in the pool of available indexer nodes
-#[derive(Debug, Clone)]
-pub struct IndexerNodeInfo {
-    pub node_id: NodeId,
-    pub generation_id: u64,
-    pub client: IndexingServiceClient,
-    pub indexing_tasks: Vec<IndexingTask>,
-    pub indexing_capacity: CpuCapacity,
+use crate::EnvFilterReloadFn;
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(debug::debug_handler, log_level::log_level_handler))]
+pub struct DeveloperApi;
+
+pub(crate) fn developer_api_routes(
+    cluster: Cluster,
+    env_filter_reload_fn: EnvFilterReloadFn,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("api" / "developer" / ..)
+        .and(debug_handler(cluster.clone()).or(log_level_handler(env_filter_reload_fn.clone())))
 }
-
-pub type IndexerPool = Pool<NodeId, IndexerNodeInfo>;
-
-mod debouncer;
-#[cfg(test)]
-mod tests;
