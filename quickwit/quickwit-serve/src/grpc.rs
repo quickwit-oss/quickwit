@@ -36,9 +36,7 @@ use quickwit_proto::tonic::transport::Server;
 use tracing::*;
 
 use crate::search_api::GrpcSearchAdapter;
-use crate::{
-    QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER, INGEST_GRPC_SERVER_METRICS_LAYER,
-};
+use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
 
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(
@@ -100,27 +98,14 @@ pub(crate) async fn start_grpc_server(
     } else {
         None
     };
-    let ingester_grpc_service = if services
-        .node_config
-        .is_service_enabled(QuickwitService::Indexer)
-    {
+
+    let ingester_grpc_service = if let Some(ingester_service) = services.ingester_service() {
         enabled_grpc_services.insert("ingester");
-        services.ingester_opt.clone().map(|ingester| {
-            IngesterServiceClient::tower()
-                .stack_persist_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_init_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_retain_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_truncate_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_close_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_decommission_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
-                .build(ingester)
-                .as_grpc_service(max_message_size)
-        })
+        Some(ingester_service.as_grpc_service(max_message_size))
     } else {
         None
     };
+
     // Mount gRPC control plane service if `QuickwitService::ControlPlane` is enabled on node.
     let control_plane_grpc_service = if services
         .node_config
