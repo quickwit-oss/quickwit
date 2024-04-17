@@ -127,3 +127,8 @@ variable "rds_config" {
   })
   default = {}
 }
+
+variable "external_postgres_uri_parameter_arn" {
+  description = "ARN of the SSM parameter containing the URI of a Postgres instance (postgres://{user}:{password}@{address}:{port}/{db_instance_name}). The Postgres instance should allow indbound connections from the subnets specified in `variable.subnet_ids`. If provided, the internal RDS will not be created and `var.rds_config` is ignored."
+  default     = ""
+}

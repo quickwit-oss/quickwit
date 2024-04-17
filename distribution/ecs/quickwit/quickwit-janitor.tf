@@ -3,7 +3,7 @@ module "quickwit_janitor" {
   service_name                   = "janitor"
   service_discovery_registry_arn = aws_service_discovery_service.janitor.arn
   cluster_arn                    = module.ecs_cluster.arn
-  postgres_credential_arn        = aws_ssm_parameter.postgres_credential.arn
+  postgres_credential_arn        = local.postgres_uri_parameter_arn
   quickwit_peer_list             = local.quickwit_peer_list
   s3_access_policy_arn           = aws_iam_policy.quickwit.arn
   module_id                      = local.module_id

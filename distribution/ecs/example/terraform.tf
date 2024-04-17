@@ -69,6 +69,9 @@ module "quickwit" {
   #   multi_az       = false
   # }
 
+  # external_postgres_uri_parameter_arn = aws_ssm_parameter.postgres_uri.arn
+  external_postgres_uri_parameter_arn = "yolo"
+
   ## Example logging configuration 
   # sidecar_container_definitions  = {
   #   my_sidecar_container = see http://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_ContainerDefinition.html
