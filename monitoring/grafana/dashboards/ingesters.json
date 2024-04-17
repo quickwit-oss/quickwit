@@ -637,7 +637,7 @@
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "utc",
+  "timezone": "browser",
   "title": "Quickwit Ingesters",
   "uid": "DjSPsTvSz",
   "version": 1,
