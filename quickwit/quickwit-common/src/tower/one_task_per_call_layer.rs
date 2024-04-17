@@ -43,7 +43,6 @@ use crate::tower::RpcName;
 ///
 /// It also can behave in an unexpected way when combined with layers like the
 /// `GlobalConcurrencyLimitLayer`.
-#[derive(Clone, Copy, Debug)]
 pub struct OneTaskPerCallLayer;
 
 impl<S: Clone> Layer<S> for OneTaskPerCallLayer {

@@ -97,7 +97,9 @@ use quickwit_metastore::{
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
-use quickwit_proto::ingest::ingester::{IngesterService, IngesterServiceClient, IngesterStatus};
+use quickwit_proto::ingest::ingester::{
+    IngesterService, IngesterServiceClient, IngesterServiceTowerLayerStack, IngesterStatus,
+};
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::metastore::{
     EntityKind, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
@@ -187,7 +189,8 @@ struct QuickwitServices {
     pub ingest_service: IngestServiceClient,
     // Ingest v2
     pub ingest_router_service: IngestRouterServiceClient,
-    pub ingester_opt: Option<Ingester>,
+    ingester_opt: Option<Ingester>,
+
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
@@ -204,6 +207,17 @@ struct QuickwitServices {
     /// notifications. Otherwise, the subscriptions are dropped.
     _local_shards_update_listener_handle_opt: Option<ListenerHandle>,
     _report_splits_subscription_handle_opt: Option<EventSubscriptionHandle>,
+}
+
+impl QuickwitServices {
+    /// Client in the type is a bit misleading here.
+    ///
+    /// The object returned is the implementation of the local ingester service,
+    /// with all of the appropriate tower layers.
+    pub fn ingester_service(&self) -> Option<IngesterServiceClient> {
+        let ingester = self.ingester_opt.clone()?;
+        Some(ingester_service_layer_stack(IngesterServiceClient::tower()).build(ingester))
+    }
 }
 
 async fn balance_channel_for_service(
@@ -789,6 +803,21 @@ pub async fn serve_quickwit(
     Ok(actor_exit_statuses)
 }
 
+/// Stack of layers to use on the server side of the ingester service.
+fn ingester_service_layer_stack(
+    layer_stack: IngesterServiceTowerLayerStack,
+) -> IngesterServiceTowerLayerStack {
+    layer_stack
+        .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
+        .stack_persist_layer(quickwit_common::tower::OneTaskPerCallLayer)
+        .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)
+        .stack_init_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+        .stack_retain_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+        .stack_truncate_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+        .stack_close_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
+        .stack_decommission_layer(quickwit_common::tower::OneTaskPerCallLayer)
+}
+
 async fn setup_ingest_v2(
     node_config: &NodeConfig,
     cluster: &Cluster,
@@ -878,14 +907,11 @@ async fn setup_ingest_v2(
                         // metrics, so we use both metrics layers.
                         let ingester = ingester_opt_clone_clone
                             .expect("ingester service should be initialized");
-                        let shared_layers = ServiceBuilder::new()
-                            .layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
-                            .layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
-                            .layer(quickwit_common::tower::OneTaskPerCallLayer)
-                            .into_inner();
-                        let ingester_service = IngesterServiceClient::tower()
-                            .stack_layer(shared_layers)
-                            .build(ingester);
+                        let ingester_service = ingester_service_layer_stack(
+                            IngesterServiceClient::tower()
+                                .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone()),
+                        )
+                        .build(ingester);
                         Some(Change::Insert(node_id, ingester_service))
                     } else {
                         let ingester_service = IngesterServiceClient::tower()

@@ -27,7 +27,6 @@ use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::developer::DeveloperServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
-use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
@@ -38,9 +37,7 @@ use tracing::*;
 
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
-use crate::{
-    QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER, INGEST_GRPC_SERVER_METRICS_LAYER,
-};
+use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
 
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(
@@ -102,27 +99,14 @@ pub(crate) async fn start_grpc_server(
     } else {
         None
     };
-    let ingester_grpc_service = if services
-        .node_config
-        .is_service_enabled(QuickwitService::Indexer)
-    {
+
+    let ingester_grpc_service = if let Some(ingester_service) = services.ingester_service() {
         enabled_grpc_services.insert("ingester");
-        services.ingester_opt.clone().map(|ingester| {
-            IngesterServiceClient::tower()
-                .stack_persist_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_init_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_retain_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_truncate_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_close_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_decommission_layer(quickwit_common::tower::OneTaskPerCallLayer)
-                .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
-                .build(ingester)
-                .as_grpc_service(max_message_size)
-        })
+        Some(ingester_service.as_grpc_service(max_message_size))
     } else {
         None
     };
+
     // Mount gRPC control plane service if `QuickwitService::ControlPlane` is enabled on node.
     let control_plane_grpc_service = if services
         .node_config
