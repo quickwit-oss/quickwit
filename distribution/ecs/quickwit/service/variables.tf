@@ -41,6 +41,7 @@ variable "service_config" {
     desired_count = optional(number, 1)
     memory        = number
     cpu           = number
+    storage       = optional(number, 21)
   })
 }
 

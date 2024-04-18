@@ -75,6 +75,7 @@ variable "quickwit_indexer" {
     desired_count = optional(number, 1)
     memory        = optional(number, 4096)
     cpu           = optional(number, 1024)
+    storage       = optional(number, 21)
   })
   default = {}
 }
@@ -95,6 +96,7 @@ variable "quickwit_searcher" {
     desired_count = optional(number, 1)
     memory        = optional(number, 2048)
     cpu           = optional(number, 1024)
+    storage       = optional(number, 21)
   })
   default = {}
 }
