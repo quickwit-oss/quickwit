@@ -40,7 +40,8 @@ use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
 use quickwit_ingest::{
-    DropQueueRequest, IngestApiService, IngesterPool, ListQueuesRequest, QUEUES_DIR_NAME,
+    DropQueueRequest, GetPartitionId, IngestApiService, IngesterPool, ListQueuesRequest,
+    QUEUES_DIR_NAME,
 };
 use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
 use quickwit_proto::indexing::{
@@ -723,6 +724,7 @@ impl IndexingService {
             .collect();
         debug!(index_ids=?index_ids, "list indexes");
 
+        let partition_id = ingest_api_service.ask(GetPartitionId).await?;
         let queue_ids_to_delete = queues.difference(&index_ids);
 
         for queue_id in queue_ids_to_delete {
@@ -732,10 +734,19 @@ impl IndexingService {
                 })
                 .await;
             if let Err(delete_queue_error) = delete_queue_res {
-                error!(error=?delete_queue_error, queue_id=%queue_id, "queue-delete-failure");
+                error!(
+                    index_id = %queue_id,
+                    partition_id,
+                    error = %delete_queue_error,
+                    "failed to delete queue"
+                );
                 self.counters.num_delete_queue_failures += 1;
             } else {
-                info!(queue_id=%queue_id, "queue-delete-success");
+                info!(
+                    index_id = %queue_id,
+                    partition_id,
+                    "deleted queue successfully"
+                );
                 self.counters.num_deleted_queues += 1;
             }
         }
