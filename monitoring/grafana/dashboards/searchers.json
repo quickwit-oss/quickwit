@@ -1204,7 +1204,7 @@
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "browser",
+  "timezone": "",
   "title": "Quickwit Searchers",
   "uid": "quickwit-searchers",
   "version": 1,

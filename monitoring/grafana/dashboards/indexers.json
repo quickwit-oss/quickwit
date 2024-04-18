@@ -1242,7 +1242,7 @@
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "browser",
+  "timezone": "",
   "title": "Quickwit Indexers",
   "uid": "quickwit-indexers",
   "version": 2,
