@@ -16,7 +16,7 @@ data "aws_iam_policy_document" "quickwit_task_permission" {
 }
 
 resource "aws_iam_policy" "quickwit_task_permission" {
-  name = "quickwit-task-execution-policy-${local.module_id}"
+  name = "quickwit-task-policy-${local.module_id}"
   path = "/"
 
   policy = data.aws_iam_policy_document.quickwit_task_permission.json
