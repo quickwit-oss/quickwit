@@ -24,13 +24,12 @@ module "quickwit_db" {
   username = "quickwit"
   password = random_password.quickwit_db[0].result
 
-  port                                 = "5432"
-  publicly_accessible                  = false
-  manage_master_user_password          = true
-  manage_master_user_password_rotation = false
-  iam_database_authentication_enabled  = true
-  vpc_security_group_ids               = [aws_security_group.quickwit_db[0].id]
-  db_subnet_group_name                 = aws_db_subnet_group.quickwit[0].name
+  port                                = "5432"
+  publicly_accessible                 = false
+  manage_master_user_password         = false
+  iam_database_authentication_enabled = true
+  vpc_security_group_ids              = [aws_security_group.quickwit_db[0].id]
+  db_subnet_group_name                = aws_db_subnet_group.quickwit[0].name
 
   maintenance_window = "Mon:00:00-Mon:03:00"
 
