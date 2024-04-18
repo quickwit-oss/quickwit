@@ -40,6 +40,7 @@ module "quickwit" {
   #   desired_count = 1
   #   memory        = 2048
   #   cpu           = 1024
+  #   storage       = 21
   # }
 
   # quickwit_metastore = {
@@ -52,6 +53,7 @@ module "quickwit" {
   #   desired_count = 1
   #   memory        = 2048
   #   cpu           = 1024
+  #   storage       = 21
   # }
 
   # quickwit_control_plane = {
@@ -70,7 +72,6 @@ module "quickwit" {
   # }
 
   # external_postgres_uri_parameter_arn = aws_ssm_parameter.postgres_uri.arn
-  external_postgres_uri_parameter_arn = "yolo"
 
   ## Example logging configuration 
   # sidecar_container_definitions  = {
