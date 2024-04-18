@@ -111,6 +111,7 @@ fnv = "1"
 flate2 = "1.0"
 futures = "0.3"
 futures-util = { version = "0.3.25", default-features = false }
+glob = "0.3"
 google-cloud-auth = "0.12.0"
 google-cloud-gax = "0.15.0"
 google-cloud-googleapis = { version = "0.10.0", features = ["pubsub"] }
@@ -318,7 +319,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "b644d78", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "74940e9", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

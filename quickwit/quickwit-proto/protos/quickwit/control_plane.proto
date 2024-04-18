@@ -64,9 +64,6 @@ service ControlPlaneService {
 
   // Asks the control plane whether the shards listed in the request should be deleted or truncated.
   rpc AdviseResetShards(AdviseResetShardsRequest) returns (AdviseResetShardsResponse);
-
-  // Return some innerstate of the control plane meant to assist debugging.
-  rpc GetDebugState(GetDebugStateRequest) returns (GetDebugStateResponse);
 }
 
 // Shard API
@@ -111,24 +108,6 @@ message GetOrCreateOpenShardsFailure {
   string index_id = 2;
   string source_id = 3;
   GetOrCreateOpenShardsFailureReason reason = 4;
-}
-
-message GetDebugStateRequest {
-}
-
-message GetDebugStateResponse {
-  repeated ShardTableEntry shard_table = 1;
-  repeated PhysicalIndexingPlanEntry physical_index_plan = 2;
-}
-
-message ShardTableEntry {
-  string source_id = 1;
-  repeated quickwit.ingest.Shard shards = 2;
-}
-
-message PhysicalIndexingPlanEntry {
-  string node_id = 1;
-  repeated quickwit.indexing.IndexingTask tasks = 2;
 }
 
 message AdviseResetShardsRequest {

@@ -21,9 +21,9 @@
 
 mod build_info;
 mod cluster_api;
-mod debugging_api;
 mod decompression;
 mod delete_task_api;
+mod developer_api;
 mod elasticsearch_api;
 mod format;
 mod grpc;
@@ -32,7 +32,6 @@ mod index_api;
 mod indexing_api;
 mod ingest_api;
 mod jaeger_api;
-mod log_level_handler;
 mod metrics;
 mod metrics_api;
 mod node_info_handler;
@@ -117,7 +116,7 @@ use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
 pub use crate::build_info::{BuildInfo, RuntimeInfo};
-pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
+pub use crate::index_api::{IndexUpdates, ListSplitsQueryParams, ListSplitsResponse};
 pub use crate::metrics::SERVE_METRICS;
 use crate::rate_modulator::RateModulator;
 #[cfg(test)]
@@ -179,7 +178,8 @@ struct QuickwitServices {
     pub cluster: Cluster,
     pub metastore_server_opt: Option<MetastoreServiceClient>,
     pub metastore_client: MetastoreServiceClient,
-    pub control_plane_service: ControlPlaneServiceClient,
+    pub control_plane_server_opt: Option<Mailbox<ControlPlane>>,
+    pub control_plane_client: ControlPlaneServiceClient,
     pub index_manager: IndexManager,
     pub indexing_service_opt: Option<Mailbox<IndexingService>>,
     // Ingest v1
@@ -293,7 +293,7 @@ async fn start_control_plane_if_needed(
     universe: &Universe,
     indexer_pool: &IndexerPool,
     ingester_pool: &IngesterPool,
-) -> anyhow::Result<ControlPlaneServiceClient> {
+) -> anyhow::Result<(Option<Mailbox<ControlPlane>>, ControlPlaneServiceClient)> {
     if node_config.is_service_enabled(QuickwitService::ControlPlane) {
         check_cluster_configuration(
             &node_config.enabled_services,
@@ -321,7 +321,8 @@ async fn start_control_plane_if_needed(
             replication_factor,
         )
         .await?;
-        let control_plane_server = ControlPlaneServiceClient::tower()
+        let control_plane_server_opt = Some(control_plane_mailbox.clone());
+        let control_plane_client = ControlPlaneServiceClient::tower()
             .stack_create_index_layer(quickwit_common::tower::OneTaskPerCallLayer)
             .stack_delete_index_layer(quickwit_common::tower::OneTaskPerCallLayer)
             .stack_add_source_layer(quickwit_common::tower::OneTaskPerCallLayer)
@@ -330,7 +331,7 @@ async fn start_control_plane_if_needed(
             .stack_get_or_create_open_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
             .stack_layer(CP_GRPC_SERVER_METRICS_LAYER.clone())
             .build_from_mailbox(control_plane_mailbox);
-        Ok(control_plane_server)
+        Ok((control_plane_server_opt, control_plane_client))
     } else {
         let balance_channel =
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
@@ -348,10 +349,11 @@ async fn start_control_plane_if_needed(
                 bail!("could not find control plane in the cluster");
             }
         }
+        let control_plane_server_opt = None;
         let control_plane_client = ControlPlaneServiceClient::tower()
             .stack_layer(CP_GRPC_CLIENT_METRICS_LAYER.clone())
             .build_from_balance_channel(balance_channel, node_config.grpc_config.max_message_size);
-        Ok(control_plane_client)
+        Ok((control_plane_server_opt, control_plane_client))
     }
 }
 
@@ -450,7 +452,7 @@ pub async fn serve_quickwit(
         };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
-    let control_plane_service: ControlPlaneServiceClient = start_control_plane_if_needed(
+    let (control_plane_server_opt, control_plane_client) = start_control_plane_if_needed(
         &node_config,
         &cluster,
         &event_broker,
@@ -464,7 +466,7 @@ pub async fn serve_quickwit(
 
     // Set up the "control plane proxy" for the metastore.
     let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
-        control_plane_service.clone(),
+        control_plane_client.clone(),
         metastore_client.clone(),
     ));
 
@@ -504,7 +506,7 @@ pub async fn serve_quickwit(
         &node_config,
         &cluster,
         &event_broker,
-        control_plane_service.clone(),
+        control_plane_client.clone(),
         ingester_pool,
     )
     .await
@@ -656,7 +658,8 @@ pub async fn serve_quickwit(
         cluster: cluster.clone(),
         metastore_server_opt,
         metastore_client: metastore_through_control_plane.clone(),
-        control_plane_service,
+        control_plane_server_opt,
+        control_plane_client,
         _local_shards_update_listener_handle_opt: local_shards_update_listener_handle_opt,
         _report_splits_subscription_handle_opt: report_splits_subscription_handle_opt,
         index_manager,
@@ -1024,7 +1027,7 @@ fn setup_indexer_pool(
             };
             match cluster_change {
                 ClusterChange::Add(node) | ClusterChange::Update(node) if node.is_indexer() => {
-                    let node_id = node.node_id().to_string();
+                    let node_id = node.node_id().to_owned();
                     let indexing_tasks = node.indexing_tasks().to_vec();
                     let indexing_capacity = node.indexing_capacity();
 
@@ -1044,7 +1047,7 @@ fn setup_indexer_pool(
                         let change = Change::Insert(
                             node_id.clone(),
                             IndexerNodeInfo {
-                                node_id: NodeId::from(node_id),
+                                node_id,
                                 generation_id: node.chitchat_id().generation_id,
                                 client,
                                 indexing_tasks,
@@ -1063,7 +1066,7 @@ fn setup_indexer_pool(
                         let change = Change::Insert(
                             node_id.clone(),
                             IndexerNodeInfo {
-                                node_id: NodeId::from(node_id),
+                                node_id,
                                 generation_id: node.chitchat_id().generation_id,
                                 client,
                                 indexing_tasks,
@@ -1081,7 +1084,7 @@ fn setup_indexer_pool(
                         "removing node `{}` from indexer pool",
                         chitchat_id.node_id,
                     );
-                    Some(Change::Remove(node.node_id().to_string()))
+                    Some(Change::Remove(node.node_id().to_owned()))
                 }
                 _ => None,
             }

@@ -22,8 +22,8 @@ use tantivy::schema::Type;
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::field_mapping_entry::QuickwitBoolOptions;
 use crate::default_doc_mapper::field_mapping_entry::{
-    QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitJsonOptions, QuickwitNumericOptions,
-    QuickwitObjectOptions, QuickwitTextOptions,
+    QuickwitBytesOptions, QuickwitConcatenateOptions, QuickwitIpAddrOptions, QuickwitJsonOptions,
+    QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
 };
 use crate::Cardinality;
 
@@ -51,6 +51,8 @@ pub enum FieldMappingType {
     Json(QuickwitJsonOptions, Cardinality),
     /// Object mapping type configuration.
     Object(QuickwitObjectOptions),
+    /// Concatenate field mapping type configuration.
+    Concatenate(QuickwitConcatenateOptions),
 }
 
 impl FieldMappingType {
@@ -69,6 +71,7 @@ impl FieldMappingType {
             FieldMappingType::Object(_) => {
                 return QuickwitFieldType::Object;
             }
+            FieldMappingType::Concatenate(_) => return QuickwitFieldType::Concatenate,
         };
         match cardinality {
             Cardinality::SingleValue => QuickwitFieldType::Simple(primitive_type),
@@ -81,6 +84,7 @@ impl FieldMappingType {
 pub enum QuickwitFieldType {
     Simple(Type),
     Object,
+    Concatenate,
     Array(Type),
 }
 
@@ -90,12 +94,16 @@ impl QuickwitFieldType {
             QuickwitFieldType::Simple(typ) => primitive_type_to_str(typ).to_string(),
             QuickwitFieldType::Object => "object".to_string(),
             QuickwitFieldType::Array(typ) => format!("array<{}>", primitive_type_to_str(typ)),
+            QuickwitFieldType::Concatenate => "concatenate".to_string(),
         }
     }
 
     pub fn parse_type_id(type_str: &str) -> Option<QuickwitFieldType> {
         if type_str == "object" {
             return Some(QuickwitFieldType::Object);
+        }
+        if type_str == "concatenate" {
+            return Some(QuickwitFieldType::Concatenate);
         }
         if type_str.starts_with("array<") && type_str.ends_with('>') {
             let parsed_type_str = parse_primitive_type(&type_str[6..type_str.len() - 1])?;

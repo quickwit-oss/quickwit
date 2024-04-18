@@ -38,7 +38,7 @@ pub struct IndexerNodeInfo {
     pub indexing_capacity: CpuCapacity,
 }
 
-pub type IndexerPool = Pool<String, IndexerNodeInfo>;
+pub type IndexerPool = Pool<NodeId, IndexerNodeInfo>;
 
 mod debouncer;
 #[cfg(test)]

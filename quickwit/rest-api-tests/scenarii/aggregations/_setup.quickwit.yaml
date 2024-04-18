@@ -18,6 +18,7 @@ json:
     dynamic_mapping:
       tokenizer: default
       fast: true
+    document_length: true
     field_mappings:
       - name: date
         type: datetime

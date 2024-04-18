@@ -20,6 +20,7 @@ elasticsearch-dsl = "0.4.15"
 flate2 = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
+glob = { workspace = true }
 hex = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }

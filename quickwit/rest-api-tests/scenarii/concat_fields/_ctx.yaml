@@ -1,0 +1,5 @@
+method: GET
+engines: ["quickwit"]
+api_root: "http://localhost:7280/api/v1/"
+headers:
+  Content-Type: application/json
