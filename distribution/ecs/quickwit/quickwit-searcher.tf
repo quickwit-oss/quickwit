@@ -5,7 +5,8 @@ module "quickwit_searcher" {
   cluster_arn                    = module.ecs_cluster.arn
   postgres_credential_arn        = local.postgres_uri_parameter_arn
   quickwit_peer_list             = local.quickwit_peer_list
-  s3_access_policy_arn           = aws_iam_policy.quickwit.arn
+  s3_access_policy_arn           = aws_iam_policy.quickwit_task_permission.arn
+  task_execution_policy_arn      = aws_iam_policy.quickwit_task_execution_permission.arn
   module_id                      = local.module_id
   quickwit_cluster_member_sg_id  = aws_security_group.quickwit_cluster_member_sg.id
 
