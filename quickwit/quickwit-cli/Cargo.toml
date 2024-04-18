@@ -43,6 +43,7 @@ tabled = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 thousands = { workspace = true }
+tcmalloc = { workspace = true }
 tikv-jemalloc-ctl = { workspace = true, optional = true }
 tikv-jemallocator = { workspace = true, optional = true }
 time = { workspace = true }

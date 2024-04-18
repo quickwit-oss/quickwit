@@ -226,6 +226,8 @@ tabled = { version = "0.14", features = ["color"] }
 tempfile = "3"
 thiserror = "1"
 thousands = "0.2.0"
+tcmalloc = "0.3"
+
 tikv-jemalloc-ctl = "0.5"
 tikv-jemallocator = "0.5"
 time = { version = "0.3", features = ["std", "formatting", "macros"] }

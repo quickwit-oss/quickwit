@@ -5503,6 +5503,7 @@ dependencies = [
  "reqwest",
  "serde_json",
  "tabled",
+ "tcmalloc",
  "tempfile",
  "thiserror",
  "thousands",
@@ -8009,6 +8010,12 @@ dependencies = [
  "libc",
  "xattr",
 ]
+
+[[package]]
+name = "tcmalloc"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "375205113d84a1c5eeed67beaa0ce08e41be1a9d5acc3425ad2381fddd9d819b"
 
 [[package]]
 name = "tempfile"

@@ -40,6 +40,13 @@ fn main() -> anyhow::Result<()> {
         .block_on(main_impl())
 }
 
+extern crate tcmalloc;
+
+use tcmalloc::TCMalloc;
+
+#[global_allocator]
+static GLOBAL: TCMalloc = TCMalloc;
+
 async fn main_impl() -> anyhow::Result<()> {
     #[cfg(feature = "openssl-support")]
     openssl_probe::init_ssl_cert_env_vars();
