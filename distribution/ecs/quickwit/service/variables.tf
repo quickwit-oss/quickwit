@@ -52,6 +52,8 @@ variable "quickwit_peer_list" {
 
 variable "s3_access_policy_arn" {}
 
+variable "task_execution_policy_arn" {}
+
 variable "quickwit_cpu_architecture" {}
 
 variable "module_id" {}
