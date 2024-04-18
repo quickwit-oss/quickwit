@@ -54,7 +54,7 @@ use tokio::sync::Semaphore;
 use tracing::{info, info_span, warn, Span};
 use ulid::Ulid;
 
-use crate::actors::cooperative_indexing::{CooperativeIndexing, CooperativeIndexingCycleGuard};
+use crate::actors::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
 use crate::actors::IndexSerializer;
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
@@ -101,7 +101,7 @@ struct IndexerState {
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
-    cooperative_indexing_opt: Option<CooperativeIndexing>,
+    cooperative_indexing_opt: Option<CooperativeIndexingCycle>,
 }
 
 impl IndexerState {
@@ -193,9 +193,12 @@ impl IndexerState {
             workbench_id=%workbench_id,
         );
         let indexing_span = info_span!(parent: batch_parent_span.id(), "indexer");
-        let cooperative_indexing_sleeper =
+        let cooperative_indexing_period =
             if let Some(cooperative_indexing) = &self.cooperative_indexing_opt {
-                Some(ctx.protect_future(cooperative_indexing.cycle_guard()).await)
+                Some(
+                    ctx.protect_future(cooperative_indexing.cooperative_indexing_period())
+                        .await,
+                )
             } else {
                 None
             };
@@ -238,7 +241,7 @@ impl IndexerState {
                     .in_flight
                     .index_writer,
             ),
-            cooperative_indexing_sleeper,
+            cooperative_indexing_period,
             split_builders_guard,
         };
         Ok(workbench)
@@ -360,8 +363,7 @@ struct IndexingWorkbench {
     // Number of bytes declared as used by tantivy.
     memory_usage: GaugeGuard,
     split_builders_guard: GaugeGuard,
-
-    cooperative_indexing_sleeper: Option<CooperativeIndexingCycleGuard>,
+    cooperative_indexing_period: Option<CooperativeIndexingPeriod>,
 }
 
 pub struct Indexer {
@@ -404,8 +406,8 @@ impl Actor for Indexer {
             return Ok(());
         };
 
-        let Some(cooperative_indexing_sleeper) =
-            indexing_workbench.cooperative_indexing_sleeper.take()
+        let Some(cooperative_indexing_period) =
+            indexing_workbench.cooperative_indexing_period.take()
         else {
             return Ok(());
         };
@@ -418,7 +420,7 @@ impl Actor for Indexer {
 
         // This also drops the indexing permit.
         let (sleep_duration, pipeline_metrics) =
-            cooperative_indexing_sleeper.end_of_indexing_cycle(uncompressed_num_bytes);
+            cooperative_indexing_period.end_of_work(uncompressed_num_bytes);
 
         self.counters.pipeline_metrics_opt = Some(pipeline_metrics);
 
@@ -545,9 +547,9 @@ impl Indexer {
             docstore_compress_dedicated_thread: true,
             ..Default::default()
         };
-        let cooperative_indexing_opt: Option<CooperativeIndexing> =
+        let cooperative_indexing_opt: Option<CooperativeIndexingCycle> =
             cooperative_indexing_permits_opt.map(|cooperative_indexing_permits| {
-                CooperativeIndexing::new(
+                CooperativeIndexingCycle::new(
                     &pipeline_id,
                     indexing_settings.commit_timeout(),
                     cooperative_indexing_permits,
