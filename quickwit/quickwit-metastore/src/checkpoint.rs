@@ -25,6 +25,7 @@ use std::iter::FromIterator;
 use std::ops::Range;
 use std::sync::Arc;
 
+use itertools::partition;
 use quickwit_proto::types::{Position, SourceId};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
@@ -400,6 +401,17 @@ impl fmt::Debug for IndexCheckpointDelta {
 #[derive(Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceCheckpointDelta {
     per_partition: BTreeMap<PartitionId, PartitionDelta>,
+}
+
+impl SourceCheckpointDelta {
+    pub fn heap_size(&self) -> usize {
+        self.per_partition
+            .iter()
+            .map(|(partition_id, delta)| {
+                partition_id.0.len() + delta.from.as_bytes().len() + delta.to.as_bytes().len()
+            })
+            .sum::<usize>() + self.per_partition.len() * std::mem::size_of::<(PartitionId, PartitionDelta)>()
+    }
 }
 
 impl fmt::Debug for SourceCheckpointDelta {

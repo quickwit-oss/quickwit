@@ -21,7 +21,8 @@ use std::fmt;
 
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
-use tantivy::{DateTime, TantivyDocument};
+use quickwit_proto::jaeger::api_v2::Process;
+use tantivy::{schema::{FieldValue, OwnedValue}, DateTime, Document, TantivyDocument};
 
 pub struct ProcessedDoc {
     pub doc: TantivyDocument,
@@ -40,6 +41,37 @@ impl fmt::Debug for ProcessedDoc {
     }
 }
 
+fn value_heap_size(value: &OwnedValue) -> usize {
+    match value {
+        OwnedValue::Null |
+        OwnedValue::IpAddr(_) |
+        OwnedValue::U64(_) |
+        OwnedValue::I64(_) |
+        OwnedValue::F64(_) |
+        OwnedValue::Bool(_) |
+        OwnedValue::Date(_) => 0,
+        OwnedValue::Str(s) => s.len(),
+        OwnedValue::PreTokStr(_) => todo!(),
+        OwnedValue::Facet(facet) => todo!(),
+        OwnedValue::Bytes(bytes) => bytes.len(),
+        OwnedValue::Array(arr) => {
+            arr.capacity() * std::mem::size_of::<OwnedValue>() + arr.iter().map(value_heap_size).sum::<usize>()
+        }
+        OwnedValue::Object(kvs) => {
+            kvs.capacity() * std::mem::size_of::<(String, OwnedValue)>() + kvs.iter().map(|(k, v)| k.len() + value_heap_size(v)).sum::<usize>()
+        },
+    }
+
+}
+
+fn doc_size(doc: &TantivyDocument) -> usize {
+    let mut total = std::mem::size_of::<TantivyDocument>() + std::mem::size_of::<FieldValue>() + std::mem::size_of::<FieldValue>() * doc.len(); // it should be capacity here
+    for (_, value) in doc.iter_fields_and_values() {
+        total += value_heap_size(value)
+    }
+    total
+}
+
 pub struct ProcessedDocBatch {
     // Do not directly append documents to this vector; otherwise, in-flight metrics will be
     // incorrect.
@@ -49,15 +81,22 @@ pub struct ProcessedDocBatch {
     _gauge_guard: GaugeGuard,
 }
 
+
+fn checkpoint_delta_heap_size(checkpoint_delta: &SourceCheckpointDelta) {
+}
+
 impl ProcessedDocBatch {
     pub fn new(
         docs: Vec<ProcessedDoc>,
         checkpoint_delta: SourceCheckpointDelta,
         force_commit: bool,
     ) -> Self {
-        let delta = docs.iter().map(|doc| doc.num_bytes as i64).sum::<i64>();
+        // let delta = docs.iter().map(|doc| doc.num_bytes as i64).sum::<i64>();
+        let delta = docs.iter().map(|doc| {
+            doc_size(&doc.doc)
+        }).sum::<usize>() + std::mem::size_of::<ProcessedDocBatch>() + checkpoint_delta.heap_size();
         let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.indexer_mailbox);
-        gauge_guard.add(delta);
+        gauge_guard.add(delta as i64);
         Self {
             docs,
             checkpoint_delta,

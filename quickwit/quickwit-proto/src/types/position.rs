@@ -168,7 +168,7 @@ impl Position {
         matches!(self, Self::Eof(_))
     }
 
-    fn as_bytes(&self) -> Bytes {
+    pub fn as_bytes(&self) -> Bytes {
         match self {
             Self::Beginning => Bytes::from_static(BEGINNING.as_bytes()),
             Self::Offset(offset) => offset.0.as_bytes().clone(),
