@@ -21,6 +21,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::bail;
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_ingest::{
@@ -32,6 +33,7 @@ use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use tracing::{error, info};
 
 use super::{BatchBuilder, Source, SourceActor, SourceContext, TypedSourceFactory};
 use crate::actors::DocProcessor;
@@ -83,8 +85,25 @@ impl IngestApiSource {
         let create_queue_req = CreateQueueIfNotExistsRequest {
             queue_id: runtime_args.index_id().to_string(),
         };
-        ingest_api_service.ask_for_res(create_queue_req).await?;
-
+        match ingest_api_service.ask_for_res(create_queue_req).await {
+            Ok(response) if response.created => {
+                info!(
+                    index_id = runtime_args.index_id(),
+                    %partition_id,
+                    "created queue successfully"
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                error!(
+                    index_id = runtime_args.index_id(),
+                    %partition_id,
+                    %error,
+                    "failed to create queue"
+                );
+                bail!(error);
+            }
+        }
         let previous_offset: Option<u64> = checkpoint
             .position_for_partition(&partition_id)
             .map(|position| position.as_u64().expect("offset should be stored as u64"));

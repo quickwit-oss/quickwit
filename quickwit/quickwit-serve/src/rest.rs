@@ -71,8 +71,11 @@ pub(crate) async fn start_rest_server(
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
-    let request_counter = warp::log::custom(|_| {
-        crate::SERVE_METRICS.http_requests_total.inc();
+    let request_counter = warp::log::custom(|info| {
+        crate::SERVE_METRICS
+            .http_requests_total
+            .with_label_values([info.method().as_str(), info.status().as_str()])
+            .inc();
     });
     // Docs routes
     let api_doc = warp::path("openapi.json")

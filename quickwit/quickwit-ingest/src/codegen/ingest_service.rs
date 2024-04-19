@@ -22,6 +22,15 @@ pub struct CreateQueueIfNotExistsRequest {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateQueueIfNotExistsResponse {
+    #[prost(string, tag = "1")]
+    pub queue_id: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub created: bool,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DropQueueRequest {
     #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,

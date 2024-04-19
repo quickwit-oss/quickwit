@@ -205,8 +205,8 @@ impl Queues {
             queues: self
                 .record_log
                 .list_queues()
-                .filter_map(|real_queue_id| real_queue_id.strip_prefix(QUICKWIT_CF_PREFIX))
-                .map(|queue| queue.to_owned())
+                .flat_map(|real_queue_id| real_queue_id.strip_prefix(QUICKWIT_CF_PREFIX))
+                .map(|queue| queue.to_string())
                 .collect(),
         })
     }

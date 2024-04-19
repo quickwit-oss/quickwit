@@ -33,10 +33,10 @@ use ulid::Ulid;
 use crate::metrics::INGEST_METRICS;
 use crate::notifications::Notifications;
 use crate::{
-    CommitType, CreateQueueIfNotExistsRequest, CreateQueueRequest, DocCommand, DropQueueRequest,
-    FetchRequest, FetchResponse, IngestRequest, IngestResponse, IngestServiceError,
-    ListQueuesRequest, ListQueuesResponse, MemoryCapacity, Queues, SuggestTruncateRequest,
-    TailRequest,
+    CommitType, CreateQueueIfNotExistsRequest, CreateQueueIfNotExistsResponse, CreateQueueRequest,
+    DocCommand, DropQueueRequest, FetchRequest, FetchResponse, IngestRequest, IngestResponse,
+    IngestServiceError, ListQueuesRequest, ListQueuesResponse, MemoryCapacity, Queues,
+    SuggestTruncateRequest, TailRequest,
 };
 
 impl Cost for IngestRequest {
@@ -153,7 +153,11 @@ impl IngestApiService {
             .find(|index_id| !self.queues.queue_exists(index_id));
 
         if let Some(index_id) = first_non_existing_queue_opt {
-            error!(index_id=%index_id, "failed to find index");
+            error!(
+                index_id,
+                partition_id = self.partition_id,
+                "could not find index"
+            );
             return Err(IngestServiceError::IndexNotFound {
                 index_id: index_id.to_string(),
             });
@@ -313,19 +317,27 @@ impl Handler<CreateQueueRequest> for IngestApiService {
 
 #[async_trait]
 impl Handler<CreateQueueIfNotExistsRequest> for IngestApiService {
-    type Reply = crate::Result<()>;
+    type Reply = crate::Result<CreateQueueIfNotExistsResponse>;
     async fn handle(
         &mut self,
         create_queue_inf_req: CreateQueueIfNotExistsRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         if self.queues.queue_exists(&create_queue_inf_req.queue_id) {
-            return Ok(Ok(()));
+            let response = CreateQueueIfNotExistsResponse {
+                queue_id: create_queue_inf_req.queue_id,
+                created: false,
+            };
+            return Ok(Ok(response));
         }
         Ok(self
             .queues
             .create_queue(&create_queue_inf_req.queue_id, ctx)
-            .await)
+            .await
+            .map(|_| CreateQueueIfNotExistsResponse {
+                queue_id: create_queue_inf_req.queue_id,
+                created: true,
+            }))
     }
 }
 
