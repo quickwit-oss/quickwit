@@ -24,7 +24,7 @@ use std::ops::{Add, Mul, Sub};
 
 use quickwit_actors::AskError;
 use quickwit_common::pubsub::Event;
-use quickwit_common::tower::RpcName;
+use quickwit_common::tower::{MakeLoadShedError, RpcName};
 use serde::{Deserialize, Serialize};
 use thiserror;
 
@@ -45,6 +45,8 @@ pub enum IndexingError {
     Metastore(#[from] MetastoreError),
     #[error("request timed out: {0}")]
     Timeout(String),
+    #[error("too many requests")]
+    TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
 }
@@ -55,6 +57,7 @@ impl ServiceError for IndexingError {
             Self::Internal(_) => ServiceErrorCode::Internal,
             Self::Metastore(metastore_error) => metastore_error.error_code(),
             Self::Timeout(_) => ServiceErrorCode::Timeout,
+            Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
@@ -69,8 +72,18 @@ impl GrpcServiceError for IndexingError {
         Self::Timeout(message)
     }
 
+    fn new_too_many_requests() -> Self {
+        Self::TooManyRequests
+    }
+
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
+    }
+}
+
+impl MakeLoadShedError for IndexingError {
+    fn make_load_shed_error() -> Self {
+        Self::TooManyRequests
     }
 }
 

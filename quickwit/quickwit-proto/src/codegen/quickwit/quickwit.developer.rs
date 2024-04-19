@@ -51,7 +51,7 @@ impl DeveloperServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
             MockDeveloperService > (),
-            "`MockDeveloperService` must be wrapped in a `MockDeveloperServiceWrapper`. Use `MockDeveloperService::from(mock)` to instantiate the client."
+            "`MockDeveloperService` must be wrapped in a `MockDeveloperServiceWrapper`: use `DeveloperServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }
