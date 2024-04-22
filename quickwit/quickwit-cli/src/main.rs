@@ -19,6 +19,8 @@
 
 #![recursion_limit = "256"]
 
+use std::collections::BTreeMap;
+
 use colored::Colorize;
 use opentelemetry::global;
 use quickwit_cli::busy_detector;
@@ -40,9 +42,25 @@ fn main() -> anyhow::Result<()> {
         .block_on(main_impl())
 }
 
+fn register_build_info_metric() {
+    use itertools::Itertools;
+    let build_info = BuildInfo::get();
+    let mut build_kvs = BTreeMap::default();
+    build_kvs.insert("build_date", build_info.build_date.to_string());
+    build_kvs.insert("commit_hash", build_info.commit_short_hash.to_string());
+    build_kvs.insert("version", build_info.version.to_string());
+    if !build_info.commit_tags.is_empty() {
+        let tags_str = build_info.commit_tags.iter().join(",");
+        build_kvs.insert("commit_tags", tags_str);
+    }
+    build_kvs.insert("target", build_info.build_target.to_string());
+    quickwit_common::metrics::register_info("build_info", "Quickwit's build info", build_kvs);
+}
+
 async fn main_impl() -> anyhow::Result<()> {
     #[cfg(feature = "openssl-support")]
     openssl_probe::init_ssl_cert_env_vars();
+    register_build_info_metric();
 
     let about_text = about_text();
     let version_text = BuildInfo::get_version_text();

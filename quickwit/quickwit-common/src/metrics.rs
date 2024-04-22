@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::OnceLock;
 
 use once_cell::sync::Lazy;
@@ -58,6 +58,16 @@ impl<const N: usize> IntGaugeVec<N> {
     pub fn with_label_values(&self, label_values: [&str; N]) -> IntGauge {
         self.underlying.with_label_values(&label_values)
     }
+}
+
+pub fn register_info(name: &'static str, help: &'static str, kvs: BTreeMap<&'static str, String>) {
+    let mut counter_opts = Opts::new(name, help).namespace("quickwit");
+    for (k, v) in kvs {
+        counter_opts = counter_opts.const_label(k, v);
+    }
+    let counter = IntCounter::with_opts(counter_opts).expect("failed to create counter");
+    counter.inc();
+    prometheus::register(Box::new(counter)).expect("failed to register counter");
 }
 
 pub fn new_counter(name: &str, help: &str, subsystem: &str) -> IntCounter {
