@@ -134,13 +134,16 @@ impl Hash for IndexingTask {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 pub struct PipelineMetrics {
-    pub cpu_millis: CpuCapacity,
+    pub cpu_load: CpuCapacity,
+    // Indexing throughput (when the CPU is working).
+    // This measure the theoretical maximum number of MB/s a full indexing pipeline could process
+    // provided enough data was being ingested.
     pub throughput_mb_per_sec: u16,
 }
 
 impl Display for PipelineMetrics {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{},{}MB/s", self.cpu_millis, self.throughput_mb_per_sec)
+        write!(f, "{},{}MB/s", self.cpu_load, self.throughput_mb_per_sec)
     }
 }
 
