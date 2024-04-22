@@ -33,7 +33,7 @@ Metastore database backups are disabled as restoring one would lead to
 inconsistencies with the index store on S3. To ensure high availability, you
 should enable `rds_config.multi_az` instead. To use your own Postgres database
 instead of creating a new RDS instance, configure the
-`external_postgres_uri_parameter_arn` variable (e.g
+`external_postgres_uri_ssm_parameter_arn` variable (e.g
 `postgres://user:password@domain:port/db`).
 
 Using NAT Gateways for the image registry is quite costly (approx. $0.05/hour/AZ). If

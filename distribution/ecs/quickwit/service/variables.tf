@@ -38,10 +38,10 @@ variable "quickwit_image" {}
 
 variable "service_config" {
   type = object({
-    desired_count = optional(number, 1)
-    memory        = number
-    cpu           = number
-    storage       = optional(number, 21)
+    desired_count         = optional(number, 1)
+    memory                = number
+    cpu                   = number
+    ephemeral_storage_gib = optional(number, 21)
   })
 }
 

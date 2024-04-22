@@ -72,10 +72,10 @@ variable "log_configuration" {
 variable "quickwit_indexer" {
   description = "Indexer service sizing configurations"
   type = object({
-    desired_count = optional(number, 1)
-    memory        = optional(number, 4096)
-    cpu           = optional(number, 1024)
-    storage       = optional(number, 21)
+    desired_count         = optional(number, 1)
+    memory                = optional(number, 4096)
+    cpu                   = optional(number, 1024)
+    ephemeral_storage_gib = optional(number, 21)
   })
   default = {}
 }
@@ -93,10 +93,10 @@ variable "quickwit_metastore" {
 variable "quickwit_searcher" {
   description = "Searcher service sizing configurations"
   type = object({
-    desired_count = optional(number, 1)
-    memory        = optional(number, 2048)
-    cpu           = optional(number, 1024)
-    storage       = optional(number, 21)
+    desired_count         = optional(number, 1)
+    memory                = optional(number, 2048)
+    cpu                   = optional(number, 1024)
+    ephemeral_storage_gib = optional(number, 21)
   })
   default = {}
 }
@@ -130,7 +130,7 @@ variable "rds_config" {
   default = {}
 }
 
-variable "external_postgres_uri_parameter_arn" {
+variable "external_postgres_uri_ssm_parameter_arn" {
   description = "ARN of the SSM parameter containing the URI of a Postgres instance (postgres://{user}:{password}@{address}:{port}/{db_instance_name}). The Postgres instance should allow indbound connections from the subnets specified in `variable.subnet_ids`. If provided, the internal RDS will not be created and `var.rds_config` is ignored."
   default     = ""
 }
