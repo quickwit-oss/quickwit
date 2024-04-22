@@ -1273,27 +1273,27 @@ impl SortKeyMapper<SegmentPartialHit> for HitSortingMapper {
 /// Incrementally merge segment results.
 #[derive(Clone)]
 pub(crate) struct IncrementalCollector {
-    inner: QuickwitCollector,
     top_k_hits: TopK<PartialHit, PartialHitSortingKey, HitSortingMapper>,
     incremental_aggregation: QuickwitIncrementalAggregations,
     num_hits: u64,
     failed_splits: Vec<SplitSearchError>,
     num_attempted_splits: u64,
+    start_offset: usize,
 }
 
 impl IncrementalCollector {
     /// Create a new incremental collector
-    pub(crate) fn new(inner: QuickwitCollector) -> Self {
-        let incremental_aggregation = inner
+    pub(crate) fn new(collector: QuickwitCollector) -> Self {
+        let incremental_aggregation = collector
             .aggregation
             .as_ref()
             .map(QuickwitAggregations::maybe_incremental_aggregator)
             .unwrap_or(QuickwitIncrementalAggregations::NoAggregation);
-        let (order1, order2) = inner.sort_by.sort_orders();
+        let (order1, order2) = collector.sort_by.sort_orders();
         let sort_key_mapper = HitSortingMapper { order1, order2 };
         IncrementalCollector {
-            top_k_hits: TopK::new(inner.max_hits + inner.start_offset, sort_key_mapper),
-            inner,
+            top_k_hits: TopK::new(collector.max_hits + collector.start_offset, sort_key_mapper),
+            start_offset: collector.start_offset,
             incremental_aggregation,
             num_hits: 0,
             failed_splits: Vec::new(),
@@ -1349,8 +1349,8 @@ impl IncrementalCollector {
     pub(crate) fn finalize(self) -> tantivy::Result<LeafSearchResponse> {
         let intermediate_aggregation_result = self.incremental_aggregation.finalize()?;
         let mut partial_hits = self.top_k_hits.finalize();
-        if self.inner.start_offset != 0 {
-            partial_hits.drain(0..self.inner.start_offset.min(partial_hits.len()));
+        if self.start_offset != 0 {
+            partial_hits.drain(0..self.start_offset.min(partial_hits.len()));
         }
         Ok(LeafSearchResponse {
             num_hits: self.num_hits,

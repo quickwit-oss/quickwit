@@ -187,6 +187,12 @@ macro_rules! metastore_test_suite {
             }
 
             #[tokio::test]
+            async fn test_metastore_update_index() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::index::test_metastore_update_index::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
             async fn test_metastore_create_index_with_sources() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::index::test_metastore_create_index_with_sources::<$metastore_type>().await;

@@ -20,6 +20,7 @@
 use std::fmt;
 
 use quickwit_common::retry::Retryable;
+use quickwit_common::tower::MakeLoadShedError;
 use serde::{Deserialize, Serialize};
 
 use crate::types::{IndexId, IndexUid, QueueId, SourceId, SplitId};
@@ -148,6 +149,9 @@ pub enum MetastoreError {
     #[error("request timed out: {0}")]
     Timeout(String),
 
+    #[error("too many requests")]
+    TooManyRequests,
+
     #[error("service unavailable: {0}")]
     Unavailable(String),
 }
@@ -176,6 +180,7 @@ impl ServiceError for MetastoreError {
             Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
             Self::NotFound(_) => ServiceErrorCode::NotFound,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
+            Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
@@ -193,6 +198,10 @@ impl GrpcServiceError for MetastoreError {
         Self::Timeout(message)
     }
 
+    fn new_too_many_requests() -> Self {
+        Self::TooManyRequests
+    }
+
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
     }
@@ -204,6 +213,12 @@ impl Retryable for MetastoreError {
             self,
             Self::Connection { .. } | Self::Db { .. } | Self::Io { .. } | Self::Internal { .. }
         )
+    }
+}
+
+impl MakeLoadShedError for MetastoreError {
+    fn make_load_shed_error() -> Self {
+        MetastoreError::TooManyRequests
     }
 }
 

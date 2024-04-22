@@ -54,16 +54,16 @@ impl<S: Clone> Layer<S> for OneTaskPerCallLayer {
 }
 
 #[derive(Clone)]
-pub struct OneTaskPerCallService<S: Clone> {
+pub struct OneTaskPerCallService<S> {
     service: S,
 }
 
 impl<S, Request> Service<Request> for OneTaskPerCallService<S>
 where
-    S: Service<Request> + Send + Clone + 'static,
-    S::Future: Send,
-    S::Response: Send,
-    S::Error: From<TaskCancelled> + Send,
+    S: Service<Request>,
+    S::Future: Send + 'static,
+    S::Response: Send + 'static,
+    S::Error: From<TaskCancelled> + Send + 'static,
     Request: fmt::Debug + Send + RpcName + 'static,
 {
     type Response = S::Response;
@@ -75,16 +75,12 @@ where
     }
 
     fn call(&mut self, request: Request) -> Self::Future {
-        let service_clone = self.service.clone();
-        // See https://docs.rs/tower/latest/tower/trait.Service.html##be-careful-when-cloning-inner-services
-        let mut service = std::mem::replace(&mut self.service, service_clone);
         let request_name: &'static str = Request::rpc_name();
+        let future = self.service.call(request);
+        let join_handle = tokio::spawn(future);
         UnwrapOrElseFuture {
             request_name,
-            join_handle: tokio::spawn(async move {
-                let fut = service.call(request);
-                fut.await
-            }),
+            join_handle,
         }
     }
 }

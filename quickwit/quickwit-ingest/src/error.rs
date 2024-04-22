@@ -111,6 +111,10 @@ impl GrpcServiceError for IngestServiceError {
         Self::Internal(message)
     }
 
+    fn new_too_many_requests() -> Self {
+        Self::RateLimited
+    }
+
     fn new_unavailable(_: String) -> Self {
         Self::Unavailable
     }

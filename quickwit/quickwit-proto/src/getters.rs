@@ -68,6 +68,7 @@ generate_getters! {
     ResetSourceCheckpointRequest,
     StageSplitsRequest,
     ToggleSourceRequest,
+    UpdateIndexRequest,
     UpdateSplitsDeleteOpstampRequest
 }
 
