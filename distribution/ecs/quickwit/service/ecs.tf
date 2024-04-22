@@ -8,7 +8,7 @@ module "quickwit_service" {
   cpu    = var.service_config.cpu
   memory = var.service_config.memory
   ephemeral_storage = {
-    size_in_gib = var.service_config.storage
+    size_in_gib = var.service_config.ephemeral_storage_gib
   }
 
   container_definitions = merge(var.sidecar_container_definitions, {

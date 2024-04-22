@@ -71,7 +71,7 @@ module "quickwit" {
   #   multi_az       = false
   # }
 
-  # external_postgres_uri_parameter_arn = aws_ssm_parameter.postgres_uri.arn
+  # external_postgres_uri_ssm_parameter_arn = aws_ssm_parameter.postgres_uri.arn
 
   ## Example logging configuration 
   # sidecar_container_definitions  = {
