@@ -23,6 +23,7 @@ use std::sync::Arc;
 use hyper::http::HeaderValue;
 use hyper::{http, Method, StatusCode};
 use quickwit_common::tower::BoxFutureInfaillible;
+use tower::limit::ConcurrencyLimitLayer;
 use tower::make::Shared;
 use tower::ServiceBuilder;
 use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove};
@@ -63,6 +64,11 @@ impl warp::reject::Reject for InvalidJsonRequest {}
 pub(crate) struct InvalidArgument(pub String);
 
 impl warp::reject::Reject for InvalidArgument {}
+
+/// Maximum number of rest request that we access to process concurrently.
+fn rest_max_concurrency() -> usize {
+    quickwit_common::get_from_env("QW_REST_MAX_CONCURRENCY", 10)
+}
 
 /// Starts REST services.
 pub(crate) async fn start_rest_server(
@@ -138,6 +144,7 @@ pub(crate) async fn start_rest_server(
                 .compress_when(compression_predicate),
         )
         .layer(cors)
+        .layer(ConcurrencyLimitLayer::new(rest_max_concurrency()))
         .service(warp_service);
 
     info!(
