@@ -40,6 +40,7 @@ module "quickwit" {
   #   desired_count = 1
   #   memory        = 2048
   #   cpu           = 1024
+  #   storage       = 21
   # }
 
   # quickwit_metastore = {
@@ -52,6 +53,7 @@ module "quickwit" {
   #   desired_count = 1
   #   memory        = 2048
   #   cpu           = 1024
+  #   storage       = 21
   # }
 
   # quickwit_control_plane = {
@@ -68,6 +70,8 @@ module "quickwit" {
   #   instance_class = "db.t4g.micro"
   #   multi_az       = false
   # }
+
+  # external_postgres_uri_ssm_parameter_arn = aws_ssm_parameter.postgres_uri.arn
 
   ## Example logging configuration 
   # sidecar_container_definitions  = {
