@@ -117,12 +117,12 @@ pub struct ShardLocations<'a> {
 }
 
 impl<'a> ShardLocations<'a> {
-    pub(crate) fn add_location(&mut self, shard_id: &'a ShardId, indexer_id: &'a NodeId) {
+    pub(crate) fn add_location(&mut self, shard_id: &'a ShardId, ingester_id: &'a NodeId) {
         let locations = self.shard_locations.entry(shard_id).or_default();
-        if locations.contains(&indexer_id) {
-            warn!("shard {shard_id:?} was registered twice the same indexer {indexer_id:?}");
+        if locations.contains(&ingester_id) {
+            warn!("shard {shard_id:?} was registered twice the same ingester {ingester_id:?}");
         } else {
-            locations.push(indexer_id);
+            locations.push(ingester_id);
         }
     }
 
@@ -144,7 +144,6 @@ impl<'a> ShardLocations<'a> {
 pub(crate) struct ShardTable {
     table_entries: FnvHashMap<SourceUid, ShardTableEntry>,
     ingester_shards: FnvHashMap<NodeId, FnvHashMap<SourceUid, BTreeSet<ShardId>>>,
-    // This map is only used at the moment to ensure that shard_ids are unique.
 }
 
 // Removes the shards from the ingester_shards map.
@@ -172,14 +171,14 @@ fn remove_shard_from_ingesters_internal(
 }
 
 impl ShardTable {
-    /// Returns a ShardLocations object that maps each shard to the list of indexers hosting it.
+    /// Returns a ShardLocations object that maps each shard to the list of ingesters hosting it.
     /// All shards are considered regardless of their state (including unavailable).
     pub fn shard_locations(&self) -> ShardLocations {
         let mut shard_locations = ShardLocations::default();
-        for (indexer, source_shards) in &self.ingester_shards {
+        for (ingester_id, source_shards) in &self.ingester_shards {
             for shard_ids in source_shards.values() {
                 for shard_id in shard_ids {
-                    shard_locations.add_location(shard_id, indexer);
+                    shard_locations.add_location(shard_id, ingester_id);
                 }
             }
         }

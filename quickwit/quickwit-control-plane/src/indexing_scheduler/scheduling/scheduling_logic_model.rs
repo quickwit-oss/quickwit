@@ -151,9 +151,8 @@ impl SchedulingProblem {
         source_ord
     }
 
-    /// Increase the affinity source <-> indexer.
-    ///
-    /// The scheduling algorithm will attempt to schedule sources on indexer with a
+    /// Increases the affinity source <-> indexer by 1.
+    /// This is done to record that the indexer is hosting one shard of the source.
     pub fn inc_affinity(&mut self, source_ord: SourceOrd, indexer_ord: IndexerOrd) {
         let affinity: &mut u32 = self.sources[source_ord as usize]
             .affinities

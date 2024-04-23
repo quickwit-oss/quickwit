@@ -49,10 +49,10 @@ pub fn solve(
     // have at least 110% of the total problem load. This is done proportionally
     // to their original capacity.
     inflate_node_capacities_if_necessary(&mut problem);
-    // As an heuristic, to offer stability, we work iteratively
+    // As a heuristic, to offer stability, we work iteratively
     // from the previous solution.
     let mut solution = previous_solution;
-    // We first run a few assert to ensure that the problem is correct.
+    // We first run a few asserts to ensure that the problem is correct.
     check_contract_conditions(&problem, &solution);
     // Due to scale down, or entire removal of sources some shards we might have
     // too many shards in the current solution.
