@@ -78,9 +78,9 @@ impl FullTextParams {
             self.text_analyzer(text_indexing_options, tokenizer_manager)?;
         let mut token_stream = text_analyzer.token_stream(text);
         let mut tokens = Vec::new();
-        let mut term =
-            Term::from_field_json_path(field, json_path, json_options.is_expand_dots_enabled());
         token_stream.process(&mut |token| {
+            let mut term =
+                Term::from_field_json_path(field, json_path, json_options.is_expand_dots_enabled());
             term.append_type_and_str(&token.text);
             tokens.push((token.position, term.clone()));
         });
