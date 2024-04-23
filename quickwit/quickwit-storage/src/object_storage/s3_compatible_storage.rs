@@ -30,9 +30,9 @@ use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
+use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
 use aws_sdk_s3::Client as S3Client;
-use aws_smithy_http::byte_stream::ByteStream;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use futures::{stream, StreamExt};
 use once_cell::sync::{Lazy, OnceCell};
@@ -132,14 +132,16 @@ fn get_region(s3_storage_config: &S3StorageConfig) -> Option<Region> {
 async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     let aws_config = get_aws_config().await;
     let credentials_provider =
-        get_credentials_provider(s3_storage_config).or(aws_config.credentials_provider().cloned());
+        get_credentials_provider(s3_storage_config).or(aws_config.credentials_provider());
     let region = get_region(s3_storage_config).or(aws_config.region().cloned());
     let mut s3_config = aws_sdk_s3::Config::builder().region(region);
 
-    s3_config.set_credentials_cache(aws_config.credentials_cache().cloned());
+    if let Some(identity_cache) = aws_config.identity_cache() {
+        s3_config.set_identity_cache(identity_cache);
+    }
     s3_config.set_credentials_provider(credentials_provider);
     s3_config.set_force_path_style(s3_storage_config.force_path_style_access());
-    s3_config.set_http_connector(aws_config.http_connector().cloned());
+    s3_config.set_http_client(aws_config.http_client());
     s3_config.set_retry_config(aws_config.retry_config().cloned());
     s3_config.set_sleep_impl(aws_config.sleep_impl());
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
@@ -598,11 +600,26 @@ impl S3CompatibleObjectStorage {
                 unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
                 continue;
             }
-            let objects: Vec<ObjectIdentifier> = chunk
+            let Ok(objects): Result<Vec<ObjectIdentifier>, _> = chunk
                 .iter()
                 .map(|path| ObjectIdentifier::builder().key(self.key(path)).build())
-                .collect();
-            let delete = Delete::builder().set_objects(Some(objects)).build();
+                .collect()
+            else {
+                error = Some(
+                    StorageErrorKind::Internal
+                        .with_error(anyhow!("failed to build object identifier")),
+                );
+                unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
+                continue;
+            };
+            let Ok(delete) = Delete::builder().set_objects(Some(objects)).build() else {
+                error = Some(
+                    StorageErrorKind::Internal
+                        .with_error(anyhow!("failed to build delete request")),
+                );
+                unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
+                continue;
+            };
             let delete_objects_res = aws_retry(&self.retry_params, || async {
                 self.s3_client
                     .delete_objects()
@@ -817,7 +834,7 @@ impl Storage for S3CompatibleObjectStorage {
         })
         .await?;
 
-        Ok(head_object_output.content_length() as u64)
+        Ok(head_object_output.content_length().unwrap_or(0) as u64)
     }
 
     fn uri(&self) -> &Uri {

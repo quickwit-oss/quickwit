@@ -15,7 +15,7 @@ aws-config = { workspace = true }
 aws-sdk-kinesis = { workspace = true, optional = true }
 aws-sdk-s3 = { workspace = true }
 aws-smithy-async = { workspace = true }
-aws-smithy-client = { workspace = true }
+aws-smithy-runtime = { workspace = true }
 aws-types = { workspace = true }
 
 futures = { workspace = true }
