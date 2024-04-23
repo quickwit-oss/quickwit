@@ -1,5 +1,3 @@
-version: "3.9"
-
 # By default, this docker compose script maps all services to localhost only.
 # If you need to make services available outside of your machine, add
 # appropriate service mappings to the .env file. See .env.example file for

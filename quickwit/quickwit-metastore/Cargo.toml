@@ -52,7 +52,7 @@ futures = { workspace = true }
 md5 = { workspace = true }
 mockall = { workspace = true }
 rand = { workspace = true }
-serial_test = "3.0.0"
+serial_test = "3.1.0"
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 
