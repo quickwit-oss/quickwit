@@ -202,6 +202,14 @@ impl TantivyBoolQuery {
             has_no_positive_ast_so_far,
         );
         has_no_positive_ast_so_far &= self.should.is_empty();
+        // we do that a second time in case must happens to have a MatchAll and nothing else,
+        // but filter and/or should had something
+        remove_with_guard(
+            &mut self.must,
+            MatchAllOrNone::MatchAll,
+            has_no_positive_ast_so_far,
+        );
+        has_no_positive_ast_so_far &= self.must.is_empty();
         remove_with_guard(
             &mut self.must_not,
             MatchAllOrNone::MatchNone,
