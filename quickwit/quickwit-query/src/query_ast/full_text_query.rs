@@ -19,7 +19,6 @@
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use tantivy::json_utils::JsonTermWriter;
 use tantivy::query::{
     PhrasePrefixQuery as TantivyPhrasePrefixQuery, PhraseQuery as TantivyPhraseQuery,
     TermQuery as TantivyTermQuery,
@@ -79,16 +78,11 @@ impl FullTextParams {
             self.text_analyzer(text_indexing_options, tokenizer_manager)?;
         let mut token_stream = text_analyzer.token_stream(text);
         let mut tokens = Vec::new();
-        let mut term = Term::with_capacity(100);
-        let mut json_term_writer = JsonTermWriter::from_field_and_json_path(
-            field,
-            json_path,
-            json_options.is_expand_dots_enabled(),
-            &mut term,
-        );
+        let mut term =
+            Term::from_field_json_path(field, json_path, json_options.is_expand_dots_enabled());
         token_stream.process(&mut |token| {
-            json_term_writer.set_str(&token.text);
-            tokens.push((token.position, json_term_writer.term().clone()));
+            term.append_type_and_str(&token.text);
+            tokens.push((token.position, term.clone()));
         });
         Ok(tokens)
     }
