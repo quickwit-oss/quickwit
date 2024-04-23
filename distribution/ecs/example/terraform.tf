@@ -37,10 +37,10 @@ module "quickwit" {
   # quickwit_cpu_architecture = "ARM64"
 
   # quickwit_indexer = {
-  #   desired_count = 1
-  #   memory        = 2048
-  #   cpu           = 1024
-  #   storage       = 21
+  #   desired_count         = 3
+  #   memory                = 8192
+  #   cpu                   = 4096
+  #   ephemeral_storage_gib = 50
   # }
 
   # quickwit_metastore = {
@@ -50,10 +50,10 @@ module "quickwit" {
   # }
 
   # quickwit_searcher = {
-  #   desired_count = 1
-  #   memory        = 2048
-  #   cpu           = 1024
-  #   storage       = 21
+  #   desired_count         = 1
+  #   memory                = 2048
+  #   cpu                   = 1024
+  #   ephemeral_storage_gib = 21
   # }
 
   # quickwit_control_plane = {
