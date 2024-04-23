@@ -12,8 +12,9 @@ In addition to the `index_id`, the index configuration lets you define five item
 - The **doc mapping**: it defines how a document and the fields it contains are stored and indexed for a given index.
 - The **indexing settings**: it defines the timestamp field used for sharding, and some more advanced parameters like the merge policy.
 - The **search settings**: it defines the default search fields `default_search_fields`, a list of fields that Quickwit will search into if the user query does not explicitly target a field.
+- The **retention policy**: it defines how long Quickwit should keep the indexed data. If not specified, the data is stored forever.
 
-Configuration is set at index creation and cannot be modified with the current version of Quickwit.
+Configuration is generally set at index creation and cannot be modified, except for some specific attributes like the search settings and retention policy, which can be changed using the [update endpoint](../reference/rest-api.md) or the [CLI](../reference/cli.md).
 
 ## Config file format
 
@@ -679,7 +680,7 @@ explicitly in the schema, or may refer to a field captured by the dynamic mode. 
 
 ## Retention policy
 
-This section describes how Quickwit manages data retention. In Quickwit, the retention policy manager drops data on a split basis as opposed to individually dropping documents. Splits are evaluated based on their `time_range` which is derived from the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings. Using this setting, the retention policy will delete a split when `now() - split.time_range.end >= retention_policy.period`
+This section describes how Quickwit manages data retention. In Quickwit, the retention policy manager drops data on a split basis as opposed to individually dropping documents. Splits are evaluated based on their `time_range` which is derived from the index timestamp field specified in the (`doc_mapping.timestamp_field`) settings. Using this setting, the retention policy will delete a split when `now() - split.time_range.end >= retention_policy.period`
 
 ```yaml
 version: 0.7

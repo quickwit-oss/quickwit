@@ -12,6 +12,9 @@ locals {
   s3_id     = var.module_id == "" ? random_id.module.hex : "${var.module_id}-${random_id.module.hex}"
 
   quickwit_index_s3_prefix = var.quickwit_index_s3_prefix == "" ? aws_s3_bucket.index[0].id : var.quickwit_index_s3_prefix
+
+  use_external_rds           = var.external_postgres_uri_ssm_parameter_arn != ""
+  postgres_uri_parameter_arn = var.external_postgres_uri_ssm_parameter_arn != "" ? var.external_postgres_uri_ssm_parameter_arn : aws_ssm_parameter.postgres_credential[0].arn
 }
 
 resource "random_id" "module" {

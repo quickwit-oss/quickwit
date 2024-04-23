@@ -30,7 +30,7 @@ use std::ops::Bound;
 
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
-use quickwit_config::{SourceConfig, INGEST_V2_SOURCE_ID};
+use quickwit_config::{RetentionPolicy, SearchSettings, SourceConfig, INGEST_V2_SOURCE_ID};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest, DeleteTask,
     EntityKind, ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
@@ -211,6 +211,20 @@ impl FileBackedIndex {
     /// Index metadata accessor.
     pub fn metadata(&self) -> &IndexMetadata {
         &self.metadata
+    }
+
+    /// Replaces the search settings in the index config, returning whether a mutation occurred.
+    pub fn set_search_settings(&mut self, search_settings: SearchSettings) -> bool {
+        let is_mutation = self.metadata.index_config.search_settings != search_settings;
+        self.metadata.index_config.search_settings = search_settings;
+        is_mutation
+    }
+
+    /// Replaces the retention policy in the index config, returning whether a mutation occurred.
+    pub fn set_retention_policy(&mut self, retention_policy_opt: Option<RetentionPolicy>) -> bool {
+        let is_mutation = self.metadata.index_config.retention_policy_opt != retention_policy_opt;
+        self.metadata.index_config.retention_policy_opt = retention_policy_opt;
+        is_mutation
     }
 
     /// Stages a single split.
@@ -492,7 +506,7 @@ impl FileBackedIndex {
     }
 
     /// Deletes the source. Returns whether a mutation occurred.
-    pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
+    pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<()> {
         self.metadata.delete_source(source_id)
     }
 

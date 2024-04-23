@@ -239,7 +239,7 @@ pub struct RetentionPolicy {
 }
 
 impl RetentionPolicy {
-    fn default_schedule() -> String {
+    pub fn default_schedule() -> String {
         "hourly".to_string()
     }
 
@@ -561,7 +561,7 @@ pub(super) fn validate_index_config(
 
         ensure!(
             doc_mapping.timestamp_field.is_some(),
-            "retention policy requires a timestamp field, but indexing settings do not declare one"
+            "retention policy requires a timestamp field, but doc mapping does not declare one"
         );
     }
     Ok(())

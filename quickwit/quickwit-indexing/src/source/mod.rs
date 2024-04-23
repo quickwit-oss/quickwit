@@ -492,13 +492,13 @@ impl BatchBuilder {
 
     pub fn with_capacity(capacity: usize, source_type: SourceType) -> Self {
         let gauge = match source_type {
-            SourceType::File => &MEMORY_METRICS.in_flight.sources.file,
-            SourceType::IngestV2 => &MEMORY_METRICS.in_flight.sources.ingest,
-            SourceType::Kafka => &MEMORY_METRICS.in_flight.sources.kafka,
-            SourceType::Kinesis => &MEMORY_METRICS.in_flight.sources.kinesis,
-            SourceType::PubSub => &MEMORY_METRICS.in_flight.sources.pubsub,
-            SourceType::Pulsar => &MEMORY_METRICS.in_flight.sources.pulsar,
-            _ => &MEMORY_METRICS.in_flight.sources.other,
+            SourceType::File => MEMORY_METRICS.in_flight.file(),
+            SourceType::IngestV2 => MEMORY_METRICS.in_flight.ingest(),
+            SourceType::Kafka => MEMORY_METRICS.in_flight.kafka(),
+            SourceType::Kinesis => MEMORY_METRICS.in_flight.kinesis(),
+            SourceType::PubSub => MEMORY_METRICS.in_flight.pubsub(),
+            SourceType::Pulsar => MEMORY_METRICS.in_flight.pulsar(),
+            _ => MEMORY_METRICS.in_flight.other(),
         };
         let gauge_guard = GaugeGuard::from_gauge(gauge);
 

@@ -680,7 +680,7 @@ impl IngesterServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
             MockIngesterService > (),
-            "`MockIngesterService` must be wrapped in a `MockIngesterServiceWrapper`. Use `MockIngesterService::from(mock)` to instantiate the client."
+            "`MockIngesterService` must be wrapped in a `MockIngesterServiceWrapper`: use `IngesterServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }

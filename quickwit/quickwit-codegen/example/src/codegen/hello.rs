@@ -101,7 +101,7 @@ impl HelloClient {
         #[cfg(any(test, feature = "testsuite"))]
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: < MockHello > (),
-            "`MockHello` must be wrapped in a `MockHelloWrapper`. Use `MockHello::from(mock)` to instantiate the client."
+            "`MockHello` must be wrapped in a `MockHelloWrapper`: use `HelloClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }

@@ -1242,7 +1242,7 @@
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "utc",
+  "timezone": "",
   "title": "Quickwit Indexers",
   "uid": "quickwit-indexers",
   "version": 2,

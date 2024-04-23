@@ -65,7 +65,7 @@ where
             inner,
             start,
             rpc_name,
-            status: "canceled",
+            status: "cancelled",
             requests_total: self.requests_total.clone(),
             requests_in_flight: self.requests_in_flight.clone(),
             request_duration_seconds: self.request_duration_seconds.clone(),
@@ -233,7 +233,7 @@ mod tests {
         assert_eq!(
             layer
                 .requests_total
-                .with_label_values(["hello", "canceled"])
+                .with_label_values(["hello", "cancelled"])
                 .get(),
             1
         );
