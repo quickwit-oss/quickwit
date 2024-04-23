@@ -55,6 +55,10 @@ You can use sidecars to inject additional secrets as files. This can be
 useful for configuring sources such as Kafka. See `./example/kafka.tf` for an
 example.
 
+To access external AWS services like the Kinesis source, use the
+`quickwit_indexer.extra_task_policy_arns` variable to attach the necessary
+IAM policies to the nodes.
+
 ## Running the example stack
 
 We provide an example of self contained deployment with an ad-hoc VPC. 

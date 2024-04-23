@@ -41,6 +41,7 @@ module "quickwit" {
   #   memory                = 8192
   #   cpu                   = 4096
   #   ephemeral_storage_gib = 50
+  #   extra_task_policy_arns = ["arn:aws:iam::aws:policy/AmazonKinesisFullAccess"]
   # }
 
   # quickwit_metastore = {
@@ -53,7 +54,6 @@ module "quickwit" {
   #   desired_count         = 1
   #   memory                = 2048
   #   cpu                   = 1024
-  #   ephemeral_storage_gib = 21
   # }
 
   # quickwit_control_plane = {
