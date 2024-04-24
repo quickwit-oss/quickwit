@@ -57,7 +57,7 @@ example.
 
 To access external AWS services like the Kinesis source, use the
 `quickwit_indexer.extra_task_policy_arns` variable to attach the necessary
-IAM policies to the nodes.
+IAM policies to indexers.
 
 ## Running the example stack
 
