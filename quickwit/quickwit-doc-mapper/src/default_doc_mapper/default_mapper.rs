@@ -500,7 +500,7 @@ fn populate_field_presence_for_json_value(
 }
 
 fn populate_field_presence_for_json_obj(
-    json_obj: &BTreeMap<String, TantivyValue>,
+    json_obj: &[(String, TantivyValue)],
     path_hasher: PathHasher,
     is_expand_dots_enabled: bool,
     output: &mut FnvHashSet<u64>,
