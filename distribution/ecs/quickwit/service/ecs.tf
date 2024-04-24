@@ -128,9 +128,7 @@ module "quickwit_service" {
     var.postgres_credential_arn
   ]
 
-  tasks_iam_role_policies = {
-    s3_access = var.s3_access_policy_arn
-  }
+  tasks_iam_role_policies = local.tasks_iam_role_policies
 
   task_exec_iam_role_policies = {
     policy = var.task_execution_policy_arn
