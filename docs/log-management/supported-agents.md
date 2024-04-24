@@ -25,8 +25,6 @@ config:
       # Replace quickwit-host with the hostname of your Quickwit node/service.
       # On k8s, it should be of the form `{quickwit-indexer-service-name}.{namespace}.svc.cluster.local:7281
       endpoint: quickwit-host:7281
-      # Quickwit OTEL gRPC endpoint does not support compression yet.
-      compression: none
       tls:
         insecure: true
   service:

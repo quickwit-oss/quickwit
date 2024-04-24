@@ -50,6 +50,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .run()
         .unwrap();
 
+    // Developer service.
+    let mut prost_config = prost_build::Config::default();
+    prost_config.bytes(["GetDebugInfoResponse.debug_info_json"]);
+
+    Codegen::builder()
+        .with_prost_config(prost_config)
+        .with_protos(&["protos/quickwit/developer.proto"])
+        .with_output_dir("src/codegen/quickwit")
+        .with_result_type_path("crate::developer::DeveloperResult")
+        .with_error_type_path("crate::developer::DeveloperError")
+        .generate_rpc_name_impls()
+        .run()
+        .unwrap();
+
     // Indexing Service.
     let mut prost_config = prost_build::Config::default();
     prost_config

@@ -620,6 +620,7 @@ mod tests {
     use quickwit_metastore::{IndexMetadata, PublishSplitsRequestExt};
     use quickwit_proto::metastore::{
         EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, MetastoreError,
+        MockMetastoreService,
     };
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_storage::RamStorage;
@@ -643,8 +644,8 @@ mod tests {
         test_file: &str,
     ) -> anyhow::Result<()> {
         let universe = Universe::new();
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
             .expect_index_metadata()
             .withf(|index_metadata_request| {
                 index_metadata_request.index_id.as_ref().unwrap() == "test-index"
@@ -660,13 +661,13 @@ mod tests {
                 num_fails -= 1;
                 Err(MetastoreError::Timeout("timeout error".to_string()))
             });
-        metastore
+        mock_metastore
             .expect_last_delete_opstamp()
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
-        metastore
+        mock_metastore
             .expect_mark_splits_for_deletion()
             .returning(|_| Ok(EmptyResponse {}));
-        metastore
+        mock_metastore
             .expect_stage_splits()
             .withf(|stage_splits_request| -> bool {
                 stage_splits_request.index_uid()
@@ -675,7 +676,7 @@ mod tests {
                         .unwrap()
             })
             .returning(|_| Ok(EmptyResponse {}));
-        metastore
+        mock_metastore
             .expect_publish_splits()
             .withf(|publish_splits_request| -> bool {
                 let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
@@ -720,7 +721,7 @@ mod tests {
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             ingester_pool: IngesterPool::default(),
-            metastore: MetastoreServiceClient::from(metastore),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
             storage,
             split_store,
             merge_policy: default_merge_policy(),
@@ -762,8 +763,8 @@ mod tests {
 
     async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {
         let index_uid: IndexUid = IndexUid::for_test("test-index", 1);
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
             .expect_index_metadata()
             .withf(|index_metadata_request| {
                 index_metadata_request.index_id.as_ref().unwrap() == "test-index"
@@ -774,17 +775,17 @@ mod tests {
                 Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         let index_uid_clone = index_uid.clone();
-        metastore
+        mock_metastore
             .expect_last_delete_opstamp()
             .withf(move |last_delete_opstamp| last_delete_opstamp.index_uid() == &index_uid_clone)
             .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
         let index_uid_clone = index_uid.clone();
-        metastore
+        mock_metastore
             .expect_stage_splits()
             .withf(move |stage_splits_request| stage_splits_request.index_uid() == &index_uid_clone)
             .returning(|_| Ok(EmptyResponse {}));
         let index_uid_clone = index_uid.clone();
-        metastore
+        mock_metastore
             .expect_publish_splits()
             .withf(move |publish_splits_request| -> bool {
                 let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
@@ -826,7 +827,7 @@ mod tests {
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             ingester_pool: IngesterPool::default(),
-            metastore: MetastoreServiceClient::from(metastore),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
             queues_dir_path: PathBuf::from("./queues"),
             storage,
             split_store,
@@ -860,7 +861,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_index_metadata()
             .withf(|index_metadata_request| {
@@ -891,7 +892,7 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        let metastore = MetastoreServiceClient::from(mock_metastore);
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let merge_pipeline_params = MergePipelineParams {
@@ -957,8 +958,8 @@ mod tests {
 
     async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
         let index_uid: IndexUid = IndexUid::for_test("test-index", 2);
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
             .expect_index_metadata()
             .withf(|index_metadata_request| {
                 index_metadata_request.index_id.as_ref().unwrap() == "test-index"
@@ -969,16 +970,16 @@ mod tests {
                 Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         let index_uid_clone = index_uid.clone();
-        metastore
+        mock_metastore
             .expect_last_delete_opstamp()
             .withf(move |last_delete_opstamp| last_delete_opstamp.index_uid() == &index_uid_clone)
             .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
-        metastore
+        mock_metastore
             .expect_stage_splits()
             .never()
             .returning(|_| Ok(EmptyResponse {}));
         let index_uid_clone = index_uid.clone();
-        metastore
+        mock_metastore
             .expect_publish_splits()
             .withf(move |publish_splits_request| -> bool {
                 let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
@@ -1038,7 +1039,7 @@ mod tests {
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             ingester_pool: IngesterPool::default(),
-            metastore: MetastoreServiceClient::from(metastore),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
             queues_dir_path: PathBuf::from("./queues"),
             storage,
             split_store,

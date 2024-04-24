@@ -87,7 +87,7 @@ async fn test_standalone_server() {
             .indexes()
             .create(
                 r#"
-                version: 0.7
+                version: 0.8
                 index_id: my-new-index
                 doc_mapping:
                   field_mappings:
@@ -156,7 +156,7 @@ async fn test_multi_nodes_cluster() {
         .indexes()
         .create(
             r#"
-            version: 0.7
+            version: 0.8
             index_id: my-new-multi-node-index
             doc_mapping:
               field_mappings:

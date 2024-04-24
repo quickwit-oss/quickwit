@@ -23,6 +23,17 @@ pub struct CreateIndexResponse {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateIndexRequest {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "2")]
+    pub search_settings_json: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "3")]
+    pub retention_policy_json: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadataRequest {
     /// List of patterns an index should match or not match to get considered
     /// An index must match at least one positive pattern (a pattern not starting
@@ -265,12 +276,12 @@ pub struct ListDeleteTasksResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OpenShardsRequest {
     #[prost(message, repeated, tag = "1")]
-    pub subrequests: ::prost::alloc::vec::Vec<OpenShardsSubrequest>,
+    pub subrequests: ::prost::alloc::vec::Vec<OpenShardSubrequest>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct OpenShardsSubrequest {
+pub struct OpenShardSubrequest {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
     #[prost(message, optional, tag = "2")]
@@ -289,20 +300,16 @@ pub struct OpenShardsSubrequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OpenShardsResponse {
     #[prost(message, repeated, tag = "1")]
-    pub subresponses: ::prost::alloc::vec::Vec<OpenShardsSubresponse>,
+    pub subresponses: ::prost::alloc::vec::Vec<OpenShardSubresponse>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct OpenShardsSubresponse {
+pub struct OpenShardSubresponse {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
-    #[prost(message, optional, tag = "2")]
-    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
-    #[prost(string, tag = "3")]
-    pub source_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "4")]
-    pub opened_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
+    #[prost(message, optional, tag = "4")]
+    pub open_shard: ::core::option::Option<super::ingest::Shard>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -512,6 +519,11 @@ impl RpcName for CreateIndexRequest {
         "create_index"
     }
 }
+impl RpcName for UpdateIndexRequest {
+    fn rpc_name() -> &'static str {
+        "update_index"
+    }
+}
 impl RpcName for IndexMetadataRequest {
     fn rpc_name() -> &'static str {
         "index_metadata"
@@ -656,6 +668,11 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
         &mut self,
         request: CreateIndexRequest,
     ) -> crate::metastore::MetastoreResult<CreateIndexResponse>;
+    /// Update an index.
+    async fn update_index(
+        &mut self,
+        request: UpdateIndexRequest,
+    ) -> crate::metastore::MetastoreResult<IndexMetadataResponse>;
     /// Returns the `IndexMetadata` of an index identified by its IndexID or its IndexUID.
     async fn index_metadata(
         &mut self,
@@ -816,7 +833,7 @@ impl MetastoreServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
             MockMetastoreService > (),
-            "`MockMetastoreService` must be wrapped in a `MockMetastoreServiceWrapper`. Use `MockMetastoreService::from(mock)` to instantiate the client."
+            "`MockMetastoreService` must be wrapped in a `MockMetastoreServiceWrapper`: use `MetastoreServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }
@@ -877,8 +894,15 @@ impl MetastoreServiceClient {
         MetastoreServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockMetastoreService {
-        MockMetastoreService::new()
+    pub fn from_mock(mock: MockMetastoreService) -> Self {
+        let mock_wrapper = mock_metastore_service::MockMetastoreServiceWrapper {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockMetastoreService::new())
     }
 }
 #[async_trait::async_trait]
@@ -888,6 +912,12 @@ impl MetastoreService for MetastoreServiceClient {
         request: CreateIndexRequest,
     ) -> crate::metastore::MetastoreResult<CreateIndexResponse> {
         self.inner.create_index(request).await
+    }
+    async fn update_index(
+        &mut self,
+        request: UpdateIndexRequest,
+    ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
+        self.inner.update_index(request).await
     }
     async fn index_metadata(
         &mut self,
@@ -1053,11 +1083,11 @@ impl MetastoreService for MetastoreServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod metastore_service_mock {
+pub mod mock_metastore_service {
     use super::*;
     #[derive(Debug, Clone)]
-    struct MockMetastoreServiceWrapper {
-        inner: std::sync::Arc<tokio::sync::Mutex<MockMetastoreService>>,
+    pub struct MockMetastoreServiceWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockMetastoreService>>,
     }
     #[async_trait::async_trait]
     impl MetastoreService for MockMetastoreServiceWrapper {
@@ -1066,6 +1096,12 @@ pub mod metastore_service_mock {
             request: super::CreateIndexRequest,
         ) -> crate::metastore::MetastoreResult<super::CreateIndexResponse> {
             self.inner.lock().await.create_index(request).await
+        }
+        async fn update_index(
+            &mut self,
+            request: super::UpdateIndexRequest,
+        ) -> crate::metastore::MetastoreResult<super::IndexMetadataResponse> {
+            self.inner.lock().await.update_index(request).await
         }
         async fn index_metadata(
             &mut self,
@@ -1234,14 +1270,6 @@ pub mod metastore_service_mock {
             futures::executor::block_on(self.inner.lock()).endpoints()
         }
     }
-    impl From<MockMetastoreService> for MetastoreServiceClient {
-        fn from(mock: MockMetastoreService) -> Self {
-            let mock_wrapper = MockMetastoreServiceWrapper {
-                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
-            };
-            MetastoreServiceClient::new(mock_wrapper)
-        }
-    }
 }
 pub type BoxFuture<T, E> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
@@ -1259,6 +1287,22 @@ impl tower::Service<CreateIndexRequest> for Box<dyn MetastoreService> {
     fn call(&mut self, request: CreateIndexRequest) -> Self::Future {
         let mut svc = self.clone();
         let fut = async move { svc.create_index(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<UpdateIndexRequest> for Box<dyn MetastoreService> {
+    type Response = IndexMetadataResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: UpdateIndexRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.update_index(request).await };
         Box::pin(fut)
     }
 }
@@ -1687,6 +1731,11 @@ struct MetastoreServiceTowerServiceStack {
         CreateIndexResponse,
         crate::metastore::MetastoreError,
     >,
+    update_index_svc: quickwit_common::tower::BoxService<
+        UpdateIndexRequest,
+        IndexMetadataResponse,
+        crate::metastore::MetastoreError,
+    >,
     index_metadata_svc: quickwit_common::tower::BoxService<
         IndexMetadataRequest,
         IndexMetadataResponse,
@@ -1823,6 +1872,7 @@ impl Clone for MetastoreServiceTowerServiceStack {
         Self {
             inner: self.inner.clone(),
             create_index_svc: self.create_index_svc.clone(),
+            update_index_svc: self.update_index_svc.clone(),
             index_metadata_svc: self.index_metadata_svc.clone(),
             list_indexes_metadata_svc: self.list_indexes_metadata_svc.clone(),
             delete_index_svc: self.delete_index_svc.clone(),
@@ -1863,6 +1913,12 @@ impl MetastoreService for MetastoreServiceTowerServiceStack {
         request: CreateIndexRequest,
     ) -> crate::metastore::MetastoreResult<CreateIndexResponse> {
         self.create_index_svc.ready().await?.call(request).await
+    }
+    async fn update_index(
+        &mut self,
+        request: UpdateIndexRequest,
+    ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
+        self.update_index_svc.ready().await?.call(request).await
     }
     async fn index_metadata(
         &mut self,
@@ -2035,6 +2091,16 @@ type CreateIndexLayer = quickwit_common::tower::BoxLayer<
     >,
     CreateIndexRequest,
     CreateIndexResponse,
+    crate::metastore::MetastoreError,
+>;
+type UpdateIndexLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        UpdateIndexRequest,
+        IndexMetadataResponse,
+        crate::metastore::MetastoreError,
+    >,
+    UpdateIndexRequest,
+    IndexMetadataResponse,
     crate::metastore::MetastoreError,
 >;
 type IndexMetadataLayer = quickwit_common::tower::BoxLayer<
@@ -2300,6 +2366,7 @@ type DeleteIndexTemplatesLayer = quickwit_common::tower::BoxLayer<
 #[derive(Debug, Default)]
 pub struct MetastoreServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
+    update_index_layers: Vec<UpdateIndexLayer>,
     index_metadata_layers: Vec<IndexMetadataLayer>,
     list_indexes_metadata_layers: Vec<ListIndexesMetadataLayer>,
     delete_index_layers: Vec<DeleteIndexLayer>,
@@ -2355,6 +2422,31 @@ impl MetastoreServiceTowerLayerStack {
                 crate::metastore::MetastoreError,
             >,
         >>::Service as tower::Service<CreateIndexRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    UpdateIndexRequest,
+                    IndexMetadataResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                UpdateIndexRequest,
+                IndexMetadataResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                UpdateIndexRequest,
+                Response = IndexMetadataResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                UpdateIndexRequest,
+                IndexMetadataResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<UpdateIndexRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     IndexMetadataRequest,
@@ -3024,6 +3116,8 @@ impl MetastoreServiceTowerLayerStack {
     {
         self.create_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.update_index_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.index_metadata_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.list_indexes_metadata_layers
@@ -3095,6 +3189,25 @@ impl MetastoreServiceTowerLayerStack {
         <L::Service as tower::Service<CreateIndexRequest>>::Future: Send + 'static,
     {
         self.create_index_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_update_index_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    UpdateIndexRequest,
+                    IndexMetadataResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                UpdateIndexRequest,
+                Response = IndexMetadataResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<UpdateIndexRequest>>::Future: Send + 'static,
+    {
+        self.update_index_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_index_metadata_layer<L>(mut self, layer: L) -> Self
@@ -3660,12 +3773,24 @@ impl MetastoreServiceTowerLayerStack {
     {
         self.build_from_boxed(Box::new(MetastoreServiceMailbox::new(mailbox)))
     }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockMetastoreService) -> MetastoreServiceClient {
+        self.build_from_boxed(Box::new(MetastoreServiceClient::from_mock(mock)))
+    }
     fn build_from_boxed(
         self,
         boxed_instance: Box<dyn MetastoreService>,
     ) -> MetastoreServiceClient {
         let create_index_svc = self
             .create_index_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let update_index_svc = self
+            .update_index_layers
             .into_iter()
             .rev()
             .fold(
@@ -3883,6 +4008,7 @@ impl MetastoreServiceTowerLayerStack {
         let tower_svc_stack = MetastoreServiceTowerServiceStack {
             inner: boxed_instance.clone(),
             create_index_svc,
+            update_index_svc,
             index_metadata_svc,
             list_indexes_metadata_svc,
             delete_index_svc,
@@ -3990,6 +4116,12 @@ where
             Response = CreateIndexResponse,
             Error = crate::metastore::MetastoreError,
             Future = BoxFuture<CreateIndexResponse, crate::metastore::MetastoreError>,
+        >
+        + tower::Service<
+            UpdateIndexRequest,
+            Response = IndexMetadataResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<IndexMetadataResponse, crate::metastore::MetastoreError>,
         >
         + tower::Service<
             IndexMetadataRequest,
@@ -4173,6 +4305,12 @@ where
         &mut self,
         request: CreateIndexRequest,
     ) -> crate::metastore::MetastoreResult<CreateIndexResponse> {
+        self.call(request).await
+    }
+    async fn update_index(
+        &mut self,
+        request: UpdateIndexRequest,
+    ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
         self.call(request).await
     }
     async fn index_metadata(
@@ -4389,6 +4527,19 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 CreateIndexRequest::rpc_name(),
+            ))
+    }
+    async fn update_index(
+        &mut self,
+        request: UpdateIndexRequest,
+    ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
+        self.inner
+            .update_index(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                UpdateIndexRequest::rpc_name(),
             ))
     }
     async fn index_metadata(
@@ -4775,6 +4926,17 @@ for MetastoreServiceGrpcServerAdapter {
         self.inner
             .clone()
             .create_index(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn update_index(
+        &self,
+        request: tonic::Request<UpdateIndexRequest>,
+    ) -> Result<tonic::Response<IndexMetadataResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .update_index(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5230,6 +5392,34 @@ pub mod metastore_service_grpc_client {
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new("quickwit.metastore.MetastoreService", "CreateIndex"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Update an index.
+        pub async fn update_index(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::IndexMetadataResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/UpdateIndex",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("quickwit.metastore.MetastoreService", "UpdateIndex"),
                 );
             self.inner.unary(req, path, codec).await
         }
@@ -6009,6 +6199,14 @@ pub mod metastore_service_grpc_server {
             tonic::Response<super::CreateIndexResponse>,
             tonic::Status,
         >;
+        /// Update an index.
+        async fn update_index(
+            &self,
+            request: tonic::Request<super::UpdateIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::IndexMetadataResponse>,
+            tonic::Status,
+        >;
         /// Returns the `IndexMetadata` of an index identified by its IndexID or its IndexUID.
         async fn index_metadata(
             &self,
@@ -6346,6 +6544,52 @@ pub mod metastore_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = CreateIndexSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/UpdateIndex" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateIndexSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::UpdateIndexRequest>
+                    for UpdateIndexSvc<T> {
+                        type Response = super::IndexMetadataResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateIndexRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).update_index(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateIndexSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

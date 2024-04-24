@@ -169,7 +169,7 @@ mod tests {
                 },
             ))
             .returning(|_| Ok(Default::default()));
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
@@ -177,7 +177,7 @@ mod tests {
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
-            MetastoreServiceClient::mock().into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let msearch_payload = r#"
@@ -223,7 +223,7 @@ mod tests {
                 }
             });
 
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
@@ -231,7 +231,7 @@ mod tests {
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
-            MetastoreServiceClient::mock().into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let msearch_payload = r#"
@@ -265,7 +265,7 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
 
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
@@ -273,7 +273,7 @@ mod tests {
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
-            MetastoreServiceClient::mock().into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let msearch_payload = r#"
@@ -300,7 +300,7 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
 
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = elastic_api_handlers(
@@ -308,7 +308,7 @@ mod tests {
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
-            MetastoreServiceClient::mock().into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let msearch_payload = r#"
@@ -335,7 +335,7 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
 
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
@@ -343,7 +343,7 @@ mod tests {
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
-            MetastoreServiceClient::mock().into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let msearch_payload = r#"
@@ -369,7 +369,7 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
 
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
@@ -377,7 +377,7 @@ mod tests {
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
-            MetastoreServiceClient::mock().into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let msearch_payload = r#"
@@ -415,7 +415,7 @@ mod tests {
                     ))
                 }
             });
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let es_search_api_handler = super::elastic_api_handlers(
@@ -423,7 +423,7 @@ mod tests {
             Arc::new(mock_search_service),
             ingest_service_client(),
             ingest_router,
-            MetastoreServiceClient::mock().into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let msearch_payload = r#"

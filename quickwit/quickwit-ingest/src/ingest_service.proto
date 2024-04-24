@@ -64,6 +64,11 @@ message CreateQueueIfNotExistsRequest {
     string queue_id = 1;
 }
 
+message CreateQueueIfNotExistsResponse {
+    string queue_id = 1;
+    bool created = 2;
+}
+
 message DropQueueRequest {
     string queue_id = 1;
 }

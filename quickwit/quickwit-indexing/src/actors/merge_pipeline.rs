@@ -493,7 +493,7 @@ mod tests {
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::ListSplitsRequestExt;
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::metastore::MetastoreServiceClient;
+    use quickwit_proto::metastore::{MetastoreServiceClient, MockMetastoreService};
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_storage::RamStorage;
 
@@ -503,7 +503,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_pipeline_simple() -> anyhow::Result<()> {
-        let mut metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
@@ -511,7 +511,7 @@ mod tests {
             node_id: "test-node".to_string(),
             pipeline_uid: PipelineUid::default(),
         };
-        metastore
+        mock_metastore
             .expect_list_splits()
             .times(1)
             .withf(move |list_splits_request| {
@@ -534,7 +534,7 @@ mod tests {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             indexing_directory: TempDirectory::for_test(),
-            metastore: MetastoreServiceClient::from(metastore),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
             merge_scheduler_service: universe.get_or_spawn_one(),
             split_store,
             merge_policy: default_merge_policy(),

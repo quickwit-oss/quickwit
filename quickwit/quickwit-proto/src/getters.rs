@@ -45,6 +45,7 @@ generate_getters! {
     RetainShardsForSource,
     Shard,
     ShardIds,
+    ShardPKey,
     TruncateShardsSubrequest,
 
     // Metastore API
@@ -62,11 +63,32 @@ generate_getters! {
     ListShardsSubresponse,
     ListStaleSplitsRequest,
     MarkSplitsForDeletionRequest,
-    OpenShardsSubrequest,
-    OpenShardsSubresponse,
+    OpenShardSubrequest,
     PublishSplitsRequest,
     ResetSourceCheckpointRequest,
     StageSplitsRequest,
     ToggleSourceRequest,
+    UpdateIndexRequest,
     UpdateSplitsDeleteOpstampRequest
+}
+
+generate_getters! {
+    impl fn shard() -> Shard {} for
+
+    InitShardSubrequest,
+    InitShardSuccess
+}
+
+generate_getters! {
+    impl fn open_shard() -> Shard {} for
+
+    OpenShardSubresponse
+}
+
+generate_getters! {
+    impl fn shard_id() -> ShardId {} for
+
+    InitShardFailure,
+    OpenShardSubrequest,
+    ShardPKey
 }

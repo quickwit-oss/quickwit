@@ -34,7 +34,7 @@ use quickwit_indexing::IndexingService;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
 use quickwit_proto::metastore::{
-    ListIndexesMetadataResponse, ListShardsResponse, MetastoreServiceClient,
+    ListIndexesMetadataResponse, ListShardsResponse, MetastoreServiceClient, MockMetastoreService,
 };
 use quickwit_proto::types::NodeId;
 use serde_json::json;
@@ -68,8 +68,8 @@ fn index_metadata_for_test(index_id: &str, source_id: &str, num_pipelines: usize
 
 pub fn test_indexer_change_stream(
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
-    indexing_clients: FnvHashMap<String, Mailbox<IndexingService>>,
-) -> impl Stream<Item = Change<String, IndexerNodeInfo>> + Send + 'static {
+    indexing_clients: FnvHashMap<NodeId, Mailbox<IndexingService>>,
+) -> impl Stream<Item = Change<NodeId, IndexerNodeInfo>> + Send + 'static {
     cluster_change_stream.filter_map(move |cluster_change| {
         let indexing_clients = indexing_clients.clone();
         Box::pin(async move {
@@ -77,23 +77,24 @@ pub fn test_indexer_change_stream(
                 ClusterChange::Add(node)
                     if node.enabled_services().contains(&QuickwitService::Indexer) =>
                 {
-                    let node_id = node.node_id().to_string();
+                    let node_id = node.node_id().to_owned();
                     let generation_id = node.chitchat_id().generation_id;
                     let indexing_tasks = node.indexing_tasks().to_vec();
                     let client_mailbox = indexing_clients.get(&node_id).unwrap().clone();
                     let client = IndexingServiceClient::from_mailbox(client_mailbox);
-                    Some(Change::Insert(
+                    let change = Change::Insert(
                         node_id.clone(),
                         IndexerNodeInfo {
-                            node_id: NodeId::from(node_id),
+                            node_id,
                             generation_id,
                             client,
                             indexing_tasks,
                             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
                         },
-                    ))
+                    );
+                    Some(change)
                 }
-                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_string())),
+                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_owned())),
                 _ => None,
             }
         })
@@ -112,14 +113,14 @@ async fn start_control_plane(
     let index_metadata_1 = index_metadata_for_test(index_1, source_1, 2);
     let mut index_metadata_2 = index_metadata_for_test(index_2, source_2, 1);
     index_metadata_2.create_timestamp = index_metadata_1.create_timestamp + 1;
-    let mut metastore = MetastoreServiceClient::mock();
-    metastore.expect_list_indexes_metadata().returning(
+    let mut mock_metastore = MockMetastoreService::new();
+    mock_metastore.expect_list_indexes_metadata().returning(
         move |_list_indexes_request: quickwit_proto::metastore::ListIndexesMetadataRequest| {
             let indexes_metadata = vec![index_metadata_2.clone(), index_metadata_1.clone()];
             Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
         },
     );
-    metastore.expect_list_shards().returning(|_| {
+    mock_metastore.expect_list_shards().returning(|_| {
         Ok(ListShardsResponse {
             subresponses: Vec::new(),
         })
@@ -132,7 +133,7 @@ async fn start_control_plane(
 
     for indexer in indexers {
         let (indexing_service_mailbox, indexing_service_inbox) = universe.create_test_mailbox();
-        indexing_clients.insert(indexer.self_node_id().to_string(), indexing_service_mailbox);
+        indexing_clients.insert(indexer.self_node_id().to_owned(), indexing_service_mailbox);
         indexer_inboxes.push(indexing_service_inbox);
     }
     let indexer_change_stream =
@@ -142,15 +143,15 @@ async fn start_control_plane(
     let mut cluster_config = ClusterConfig::for_test();
     cluster_config.cluster_id = cluster.cluster_id().to_string();
 
-    let self_node_id: NodeId = cluster.self_node_id().to_string().into();
-    let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+    let self_node_id = cluster.self_node_id().to_owned();
+    let (control_plane_mailbox, _control_plane_handle, _is_ready_rx) = ControlPlane::spawn(
         universe,
         cluster_config,
         self_node_id,
         cluster,
         indexer_pool,
         ingester_pool,
-        MetastoreServiceClient::from(metastore),
+        MetastoreServiceClient::from_mock(mock_metastore),
     );
 
     (indexer_inboxes, control_plane_mailbox)

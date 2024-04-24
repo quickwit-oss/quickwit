@@ -392,6 +392,7 @@ impl FullyLockedIngesterState<'_> {
     /// Deletes and truncates the shards as directed by the `advise_reset_shards_response` returned
     /// by the control plane.
     pub async fn reset_shards(&mut self, advise_reset_shards_response: &AdviseResetShardsResponse) {
+        info!("reset shards");
         for shard_ids in &advise_reset_shards_response.shards_to_delete {
             for queue_id in shard_ids.queue_ids() {
                 self.delete_shard(&queue_id).await;

@@ -25,7 +25,7 @@ use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteShardsRequest, EntityKind,
     ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
-    OpenShardsSubrequest, OpenShardsSubresponse,
+    OpenShardSubrequest, OpenShardSubresponse,
 };
 use quickwit_proto::types::{queue_id, IndexUid, Position, PublishToken, ShardId, SourceId};
 use tracing::{info, warn};
@@ -110,10 +110,10 @@ impl Shards {
         })
     }
 
-    pub(super) fn open_shards(
+    pub(super) fn open_shard(
         &mut self,
-        subrequest: OpenShardsSubrequest,
-    ) -> MetastoreResult<MutationOccurred<OpenShardsSubresponse>> {
+        subrequest: OpenShardSubrequest,
+    ) -> MetastoreResult<MutationOccurred<OpenShardSubresponse>> {
         let mut mutation_occurred = false;
 
         let shard_id = subrequest.shard_id();
@@ -145,12 +145,9 @@ impl Shards {
                 shard
             }
         };
-        let opened_shards = vec![shard];
-        let response = OpenShardsSubresponse {
+        let response = OpenShardSubresponse {
             subrequest_id: subrequest.subrequest_id,
-            index_uid: subrequest.index_uid,
-            source_id: subrequest.source_id,
-            opened_shards,
+            open_shard: Some(shard),
         };
         if mutation_occurred {
             Ok(MutationOccurred::Yes(response))
@@ -304,7 +301,7 @@ mod tests {
         let source_id = "test-source".to_string();
         let mut shards = Shards::empty(index_uid.clone(), source_id.clone());
 
-        let subrequest = OpenShardsSubrequest {
+        let subrequest = OpenShardSubrequest {
             subrequest_id: 0,
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
@@ -312,15 +309,13 @@ mod tests {
             leader_id: "leader_id".to_string(),
             follower_id: None,
         };
-        let MutationOccurred::Yes(subresponse) = shards.open_shards(subrequest.clone()).unwrap()
+        let MutationOccurred::Yes(subresponse) = shards.open_shard(subrequest.clone()).unwrap()
         else {
             panic!("Expected `MutationOccured::Yes`");
         };
-        assert_eq!(subresponse.index_uid(), &index_uid);
-        assert_eq!(subresponse.source_id, source_id);
-        assert_eq!(subresponse.opened_shards.len(), 1);
+        assert_eq!(subresponse.subrequest_id, 0);
 
-        let shard = &subresponse.opened_shards[0];
+        let shard = subresponse.open_shard();
         assert_eq!(shard.index_uid(), &index_uid);
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id(), ShardId::from(1));
@@ -329,17 +324,15 @@ mod tests {
         assert_eq!(shard.follower_id, None);
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
 
-        assert_eq!(shards.shards.get(&ShardId::from(1)).unwrap(), shard);
-
-        let MutationOccurred::No(subresponse) = shards.open_shards(subrequest).unwrap() else {
+        let MutationOccurred::No(subresponse) = shards.open_shard(subrequest).unwrap() else {
             panic!("Expected `MutationOccured::No`");
         };
-        assert_eq!(subresponse.opened_shards.len(), 1);
+        assert_eq!(subresponse.subrequest_id, 0);
 
-        let shard = &subresponse.opened_shards[0];
+        let shard = subresponse.open_shard();
         assert_eq!(shards.shards.get(&ShardId::from(1)).unwrap(), shard);
 
-        let subrequest = OpenShardsSubrequest {
+        let subrequest = OpenShardSubrequest {
             subrequest_id: 0,
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
@@ -347,14 +340,12 @@ mod tests {
             leader_id: "leader_id".to_string(),
             follower_id: Some("follower_id".to_string()),
         };
-        let MutationOccurred::Yes(subresponse) = shards.open_shards(subrequest).unwrap() else {
+        let MutationOccurred::Yes(subresponse) = shards.open_shard(subrequest).unwrap() else {
             panic!("Expected `MutationOccured::No`");
         };
-        assert_eq!(subresponse.index_uid(), &index_uid);
-        assert_eq!(subresponse.source_id, source_id);
-        assert_eq!(subresponse.opened_shards.len(), 1);
+        assert_eq!(subresponse.subrequest_id, 0);
 
-        let shard = &subresponse.opened_shards[0];
+        let shard = subresponse.open_shard();
         assert_eq!(shard.index_uid(), &index_uid);
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id(), ShardId::from(2));

@@ -75,8 +75,6 @@ impl fmt::Debug for FetchStreamTask {
 }
 
 impl FetchStreamTask {
-    pub const DEFAULT_BATCH_NUM_BYTES: usize = 1024 * 1024; // 1 MiB
-
     pub fn spawn(
         open_fetch_stream_request: OpenFetchStreamRequest,
         mrecordlog: Arc<RwLock<Option<MultiRecordLogAsync>>>,
@@ -626,7 +624,7 @@ pub(super) mod tests {
     use std::time::Duration;
 
     use bytes::Bytes;
-    use quickwit_proto::ingest::ingester::IngesterServiceClient;
+    use quickwit_proto::ingest::ingester::{IngesterServiceClient, MockIngesterService};
     use quickwit_proto::ingest::ShardState;
     use quickwit_proto::types::queue_id;
     use tokio::time::timeout;
@@ -1241,9 +1239,9 @@ pub(super) mod tests {
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
 
-        let mut ingester_mock_1 = IngesterServiceClient::mock();
+        let mut mock_ingester_1 = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
-        ingester_mock_1
+        mock_ingester_1
             .expect_open_fetch_stream()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
@@ -1254,7 +1252,7 @@ pub(super) mod tests {
 
                 Ok(service_stream_1)
             });
-        let ingester_1: IngesterServiceClient = ingester_mock_1.into();
+        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
 
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
@@ -1337,9 +1335,9 @@ pub(super) mod tests {
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
 
-        let mut ingester_mock_0 = IngesterServiceClient::mock();
+        let mut mock_ingester_0 = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
-        ingester_mock_0
+        mock_ingester_0
             .expect_open_fetch_stream()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
@@ -1352,11 +1350,11 @@ pub(super) mod tests {
                     "open fetch stream error".to_string(),
                 ))
             });
-        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
 
-        let mut ingester_mock_1 = IngesterServiceClient::mock();
+        let mut mock_ingester_1 = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
-        ingester_mock_1
+        mock_ingester_1
             .expect_open_fetch_stream()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
@@ -1367,7 +1365,7 @@ pub(super) mod tests {
 
                 Ok(service_stream_1)
             });
-        let ingester_1: IngesterServiceClient = ingester_mock_1.into();
+        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
 
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
@@ -1452,9 +1450,9 @@ pub(super) mod tests {
         let (service_stream_tx_0, service_stream_0) = ServiceStream::new_unbounded();
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
 
-        let mut ingester_mock_0 = IngesterServiceClient::mock();
+        let mut mock_ingester_0 = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
-        ingester_mock_0
+        mock_ingester_0
             .expect_open_fetch_stream()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
@@ -1465,11 +1463,11 @@ pub(super) mod tests {
 
                 Ok(service_stream_0)
             });
-        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
 
-        let mut ingester_mock_1 = IngesterServiceClient::mock();
+        let mut mock_ingester_1 = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
-        ingester_mock_1
+        mock_ingester_1
             .expect_open_fetch_stream()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
@@ -1480,7 +1478,7 @@ pub(super) mod tests {
 
                 Ok(service_stream_1)
             });
-        let ingester_1: IngesterServiceClient = ingester_mock_1.into();
+        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
 
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
@@ -1566,9 +1564,9 @@ pub(super) mod tests {
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
 
-        let mut ingester_mock_0 = IngesterServiceClient::mock();
+        let mut mock_ingester_0 = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
-        ingester_mock_0
+        mock_ingester_0
             .expect_open_fetch_stream()
             .return_once(move |request| {
                 assert_eq!(request.client_id, "test-client");
@@ -1581,7 +1579,7 @@ pub(super) mod tests {
                     shard_id: ShardId::from(1),
                 })
             });
-        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
 
         fault_tolerant_fetch_stream(
@@ -1627,9 +1625,9 @@ pub(super) mod tests {
         let mut retry_params = RetryParams::for_test();
         retry_params.max_attempts = 3;
 
-        let mut ingester_mock = IngesterServiceClient::mock();
+        let mut mock_ingester = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
-        ingester_mock
+        mock_ingester
             .expect_open_fetch_stream()
             .once()
             .returning(move |request| {
@@ -1644,7 +1642,7 @@ pub(super) mod tests {
                 ))
             });
         let index_uid_clone = index_uid.clone();
-        ingester_mock
+        mock_ingester
             .expect_open_fetch_stream()
             .once()
             .return_once(move |request| {
@@ -1657,7 +1655,7 @@ pub(super) mod tests {
                 Ok(service_stream_1)
             });
         let index_uid_clone = index_uid.clone();
-        ingester_mock
+        mock_ingester
             .expect_open_fetch_stream()
             .once()
             .return_once(move |request| {
@@ -1669,7 +1667,7 @@ pub(super) mod tests {
 
                 Ok(service_stream_2)
             });
-        let ingester: IngesterServiceClient = ingester_mock.into();
+        let ingester = IngesterServiceClient::from_mock(mock_ingester);
 
         ingester_pool.insert("test-ingester".into(), ingester);
 

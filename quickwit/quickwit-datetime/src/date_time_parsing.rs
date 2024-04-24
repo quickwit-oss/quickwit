@@ -255,6 +255,11 @@ mod tests {
                 let year = infer_year(Some(Month::March), now.month(), now.year());
                 dt.replace_year(year).unwrap()
             }),
+            (
+                "%Y-%m-%dT%H:%M:%S.%f%z",
+                "2024-03-21T03:45:02.561820768-0400",
+                datetime!(2024-03-21 03:45:02.561820768 -04:00),
+            ),
         ];
         for (fmt, date_time_str, expected) in test_data {
             let parser = StrptimeParser::from_str(fmt).unwrap();

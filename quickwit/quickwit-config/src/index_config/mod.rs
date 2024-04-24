@@ -90,6 +90,9 @@ pub struct DocMapping {
     pub max_num_partitions: NonZeroU32,
     #[serde(default)]
     pub tokenizers: Vec<TokenizerEntry>,
+    /// Record document length
+    #[serde(default)]
+    pub document_length: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -223,7 +226,7 @@ pub struct SearchSettings {
 #[serde(deny_unknown_fields)]
 pub struct RetentionPolicy {
     /// Duration of time for which the splits should be retained, expressed in a human-friendly way
-    /// (`1 hour`, `3 days`, `a week`, ...).
+    /// (`1 hour`, `3 days`, `1 week`, ...).
     #[serde(rename = "period")]
     pub retention_period: String,
 
@@ -236,7 +239,7 @@ pub struct RetentionPolicy {
 }
 
 impl RetentionPolicy {
-    fn default_schedule() -> String {
+    pub fn default_schedule() -> String {
         "hourly".to_string()
     }
 
@@ -454,6 +457,7 @@ impl TestableForRegression for IndexConfig {
             max_num_partitions: NonZeroU32::new(100).unwrap(),
             timestamp_field: Some("timestamp".to_string()),
             tokenizers: vec![tokenizer],
+            document_length: false,
         };
         let retention_policy = Some(RetentionPolicy {
             retention_period: "90 days".to_string(),
@@ -531,6 +535,7 @@ pub fn build_doc_mapper(
         partition_key: doc_mapping.partition_key.clone(),
         max_num_partitions: doc_mapping.max_num_partitions,
         tokenizers: doc_mapping.tokenizers.clone(),
+        document_length: doc_mapping.document_length,
     };
     Ok(Arc::new(builder.try_build()?))
 }
@@ -556,7 +561,7 @@ pub(super) fn validate_index_config(
 
         ensure!(
             doc_mapping.timestamp_field.is_some(),
-            "retention policy requires a timestamp field, but indexing settings do not declare one"
+            "retention policy requires a timestamp field, but doc mapping does not declare one"
         );
     }
     Ok(())
@@ -730,7 +735,7 @@ mod tests {
     #[should_panic(expected = "empty URI")]
     fn test_config_validates_uris() {
         let config_yaml = r#"
-            version: 0.7
+            version: 0.8
             index_id: hdfs-logs
             index_uri: ''
             doc_mapping: {}
@@ -741,7 +746,7 @@ mod tests {
     #[test]
     fn test_minimal_index_config_default_dynamic() {
         let config_yaml = r#"
-            version: 0.7
+            version: 0.8
             index_id: hdfs-logs
             index_uri: "s3://my-index"
             doc_mapping: {}
@@ -761,7 +766,7 @@ mod tests {
     #[test]
     fn test_index_config_with_malformed_maturation_duration() {
         let config_yaml = r#"
-            version: 0.7
+            version: 0.8
             index_id: hdfs-logs
             index_uri: "s3://my-index"
             doc_mapping: {}

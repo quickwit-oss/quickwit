@@ -108,10 +108,7 @@ impl AzureBlobStorage {
             uri,
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
-            retry_params: RetryParams {
-                max_attempts: 3,
-                ..Default::default()
-            },
+            retry_params: RetryParams::aggressive(),
         }
     }
 
@@ -134,15 +131,14 @@ impl AzureBlobStorage {
         use std::str::FromStr;
 
         let container_client = ClientBuilder::emulator().container_client(container);
+        let uri = Uri::from_str(&format!("azure://tester/{container}")).unwrap();
+
         Self {
             container_client,
-            uri: Uri::from_str(&format!("azure://tester/{container}")).unwrap(),
+            uri,
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
-            retry_params: RetryParams {
-                max_attempts: 3,
-                ..Default::default()
-            },
+            retry_params: RetryParams::no_retries(),
         }
     }
 
@@ -173,7 +169,7 @@ impl AzureBlobStorage {
             StorageResolverError::InvalidConfig(message)
         })?;
         let (container_name, prefix) = parse_azure_uri(uri).ok_or_else(|| {
-            let message = format!("failed to extract container name from Azure URI: {uri}");
+            let message = format!("failed to extract container name from Azure URI `{uri}`");
             StorageResolverError::InvalidUri(message)
         })?;
         let azure_blob_storage =

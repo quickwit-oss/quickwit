@@ -40,7 +40,8 @@ use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
 use quickwit_ingest::{
-    DropQueueRequest, IngestApiService, IngesterPool, ListQueuesRequest, QUEUES_DIR_NAME,
+    DropQueueRequest, GetPartitionId, IngestApiService, IngesterPool, ListQueuesRequest,
+    QUEUES_DIR_NAME,
 };
 use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
 use quickwit_proto::indexing::{
@@ -723,6 +724,7 @@ impl IndexingService {
             .collect();
         debug!(index_ids=?index_ids, "list indexes");
 
+        let partition_id = ingest_api_service.ask(GetPartitionId).await?;
         let queue_ids_to_delete = queues.difference(&index_ids);
 
         for queue_id in queue_ids_to_delete {
@@ -732,10 +734,19 @@ impl IndexingService {
                 })
                 .await;
             if let Err(delete_queue_error) = delete_queue_res {
-                error!(error=?delete_queue_error, queue_id=%queue_id, "queue-delete-failure");
+                error!(
+                    index_id = %queue_id,
+                    partition_id,
+                    error = %delete_queue_error,
+                    "failed to delete queue"
+                );
                 self.counters.num_delete_queue_failures += 1;
             } else {
-                info!(queue_id=%queue_id, "queue-delete-success");
+                info!(
+                    index_id = %queue_id,
+                    partition_id,
+                    "deleted queue successfully"
+                );
                 self.counters.num_deleted_queues += 1;
             }
         }
@@ -886,7 +897,7 @@ mod tests {
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::metastore::{
         AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, IndexMetadataResponse,
-        ListIndexesMetadataResponse,
+        ListIndexesMetadataResponse, MockMetastoreService,
     };
 
     use super::*;
@@ -1464,19 +1475,19 @@ mod tests {
         index_metadata
             .sources
             .insert(source_config.source_id.clone(), source_config.clone());
-        let mut metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_metadata_clone = index_metadata.clone();
-        metastore
+        mock_metastore
             .expect_list_indexes_metadata()
             .return_once(move |_request| {
                 Ok(ListIndexesMetadataResponse::for_test(vec![
                     index_metadata_clone,
                 ]))
             });
-        metastore.expect_index_metadata().returning(move |_| {
+        mock_metastore.expect_index_metadata().returning(move |_| {
             Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
         });
-        metastore
+        mock_metastore
             .expect_list_splits()
             .returning(|_| Ok(ServiceStream::empty()));
         let universe = Universe::new();
@@ -1484,7 +1495,7 @@ mod tests {
         let (indexing_service, indexing_service_handle) = spawn_indexing_service_for_test(
             temp_dir.path(),
             &universe,
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             cluster,
         )
         .await;

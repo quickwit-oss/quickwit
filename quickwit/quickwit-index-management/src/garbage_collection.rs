@@ -358,7 +358,9 @@ mod tests {
         metastore_for_test, CreateIndexRequestExt, ListSplitsQuery,
         MetastoreServiceStreamSplitsExt, SplitMetadata, SplitState, StageSplitsRequestExt,
     };
-    use quickwit_proto::metastore::{CreateIndexRequest, EntityKind, StageSplitsRequest};
+    use quickwit_proto::metastore::{
+        CreateIndexRequest, EntityKind, MockMetastoreService, StageSplitsRequest,
+    };
     use quickwit_proto::types::IndexUid;
     use quickwit_storage::{
         storage_for_test, BulkDeleteError, DeleteFailure, MockStorage, PutPayload,
@@ -576,15 +578,15 @@ mod tests {
     async fn test_run_gc_deletes_splits_with_no_split() {
         // Test that we make only 2 calls to the metastore.
         let storage = storage_for_test();
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
             .expect_list_splits()
             .times(2)
             .returning(|_| Ok(ServiceStream::empty()));
         run_garbage_collect(
             IndexUid::new_with_random_ulid("index-test-gc-deletes"),
             storage.clone(),
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             Duration::from_secs(30),
             Duration::from_secs(30),
             false,
@@ -795,7 +797,7 @@ mod tests {
         let index_id = "test-delete-splits-storage-error--index";
         let index_uid = IndexUid::new_with_random_ulid(index_id);
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore.expect_delete_splits().return_once(|_| {
             Err(MetastoreError::NotFound(EntityKind::Index {
                 index_id: index_id.to_string(),
@@ -817,7 +819,7 @@ mod tests {
         let error = delete_splits_from_storage_and_metastore(
             index_uid.clone(),
             storage.clone(),
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             vec![split_metadata_0, split_metadata_1],
             None,
         )

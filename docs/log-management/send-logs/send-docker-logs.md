@@ -58,7 +58,6 @@ processors:
 exporters:
   otlp/qw:
     endpoint: quickwit:7281
-    compression: none
     tls:
       insecure: true
 
@@ -86,7 +85,7 @@ x-default-logging: &logging
 
 services:
   quickwit:
-    image: quickwit/quickwit:${QW_VERSION:-0.8.0}
+    image: quickwit/quickwit:${QW_VERSION:-0.8.1}
     volumes:
       - ./qwdata:/quickwit/qwdata
     ports:

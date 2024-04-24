@@ -340,7 +340,7 @@ pub(crate) mod tests {
     async fn test_ingest_api_returns_200_when_ingest_json_and_fetch() {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::mock().into();
+        let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers =
             ingest_api_handlers(ingest_router, ingest_service, IngestApiConfig::default());
         let resp = warp::test::request()
@@ -376,7 +376,7 @@ pub(crate) mod tests {
     async fn test_ingest_api_returns_200_when_ingest_ndjson_and_fetch() {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::mock().into();
+        let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers =
             ingest_api_handlers(ingest_router, ingest_service, IngestApiConfig::default());
         let payload = r#"
@@ -404,7 +404,7 @@ pub(crate) mod tests {
         };
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &config).await;
-        let ingest_router = IngestRouterServiceClient::mock().into();
+        let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers =
             ingest_api_handlers(ingest_router, ingest_service, IngestApiConfig::default());
         let resp = warp::test::request()
@@ -426,7 +426,7 @@ pub(crate) mod tests {
         };
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::mock().into();
+        let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers =
             ingest_api_handlers(ingest_router, ingest_service, config.clone());
         let resp = warp::test::request()
@@ -444,7 +444,7 @@ pub(crate) mod tests {
     async fn test_ingest_api_blocks_when_wait_is_specified() {
         let (universe, _temp_dir, ingest_service_client, ingest_service_mailbox) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::mock().into();
+        let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers = ingest_api_handlers(
             ingest_router,
             ingest_service_client,
@@ -493,7 +493,7 @@ pub(crate) mod tests {
     async fn test_ingest_api_blocks_when_force_is_specified() {
         let (universe, _temp_dir, ingest_service_client, ingest_service_mailbox) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::mock().into();
+        let ingest_router = IngestRouterServiceClient::mocked();
         let ingest_api_handlers = ingest_api_handlers(
             ingest_router,
             ingest_service_client,

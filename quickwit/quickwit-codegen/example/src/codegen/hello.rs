@@ -101,7 +101,7 @@ impl HelloClient {
         #[cfg(any(test, feature = "testsuite"))]
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: < MockHello > (),
-            "`MockHello` must be wrapped in a `MockHelloWrapper`. Use `MockHello::from(mock)` to instantiate the client."
+            "`MockHello` must be wrapped in a `MockHelloWrapper`: use `HelloClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }
@@ -150,8 +150,15 @@ impl HelloClient {
         HelloTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockHello {
-        MockHello::new()
+    pub fn from_mock(mock: MockHello) -> Self {
+        let mock_wrapper = mock_hello::MockHelloWrapper {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockHello::new())
     }
 }
 #[async_trait::async_trait]
@@ -182,11 +189,11 @@ impl Hello for HelloClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod hello_mock {
+pub mod mock_hello {
     use super::*;
     #[derive(Debug, Clone)]
-    struct MockHelloWrapper {
-        inner: std::sync::Arc<tokio::sync::Mutex<MockHello>>,
+    pub struct MockHelloWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockHello>>,
     }
     #[async_trait::async_trait]
     impl Hello for MockHelloWrapper {
@@ -213,14 +220,6 @@ pub mod hello_mock {
         }
         fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
             futures::executor::block_on(self.inner.lock()).endpoints()
-        }
-    }
-    impl From<MockHello> for HelloClient {
-        fn from(mock: MockHello) -> Self {
-            let mock_wrapper = MockHelloWrapper {
-                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
-            };
-            HelloClient::new(mock_wrapper)
         }
     }
 }
@@ -548,6 +547,10 @@ impl HelloTowerLayerStack {
         HelloMailbox<A>: Hello,
     {
         self.build_from_boxed(Box::new(HelloMailbox::new(mailbox)))
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockHello) -> HelloClient {
+        self.build_from_boxed(Box::new(HelloClient::from_mock(mock)))
     }
     fn build_from_boxed(self, boxed_instance: Box<dyn Hello>) -> HelloClient {
         let hello_svc = self

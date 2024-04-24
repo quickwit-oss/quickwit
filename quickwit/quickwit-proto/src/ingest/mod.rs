@@ -19,6 +19,7 @@
 
 use bytes::Bytes;
 use bytesize::ByteSize;
+use quickwit_common::tower::MakeLoadShedError;
 
 use self::ingester::{PersistFailureReason, ReplicateFailureReason};
 use self::router::IngestFailureReason;
@@ -49,6 +50,12 @@ pub enum IngestV2Error {
     Unavailable(String),
 }
 
+impl From<quickwit_common::tower::TaskCancelled> for IngestV2Error {
+    fn from(task_cancelled: quickwit_common::tower::TaskCancelled) -> IngestV2Error {
+        IngestV2Error::Internal(task_cancelled.to_string())
+    }
+}
+
 impl ServiceError for IngestV2Error {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
@@ -70,8 +77,18 @@ impl GrpcServiceError for IngestV2Error {
         Self::Timeout(message)
     }
 
+    fn new_too_many_requests() -> Self {
+        Self::TooManyRequests
+    }
+
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
+    }
+}
+
+impl MakeLoadShedError for IngestV2Error {
+    fn make_load_shed_error() -> Self {
+        IngestV2Error::TooManyRequests
     }
 }
 
@@ -82,6 +99,12 @@ impl Shard {
             .into_iter()
             .flatten()
             .map(|node_id| NodeId::new(node_id.clone()))
+    }
+}
+
+impl ShardPKey {
+    pub fn queue_id(&self) -> QueueId {
+        queue_id(self.index_uid(), &self.source_id, self.shard_id())
     }
 }
 
@@ -237,6 +260,14 @@ impl ShardIds {
         self.shard_ids
             .iter()
             .map(|shard_id| queue_id(self.index_uid(), &self.source_id, shard_id))
+    }
+
+    pub fn pkeys(&self) -> impl Iterator<Item = ShardPKey> + '_ {
+        self.shard_ids.iter().map(move |shard_id| ShardPKey {
+            index_uid: self.index_uid.clone(),
+            source_id: self.source_id.clone(),
+            shard_id: Some(shard_id.clone()),
+        })
     }
 }
 

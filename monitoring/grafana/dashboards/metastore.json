@@ -384,7 +384,7 @@
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "utc",
+  "timezone": "",
   "title": "Quickwit Metastore",
   "uid": "quickwit-metastore",
   "version": 1,

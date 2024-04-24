@@ -39,7 +39,7 @@ use quickwit_proto::metastore::{
     MetastoreError, MetastoreService, MetastoreServiceClient, SourceType,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
-pub(super) use shard_table::{ScalingMode, ShardEntry, ShardStats, ShardTable};
+pub(super) use shard_table::{ScalingMode, ShardEntry, ShardLocations, ShardStats, ShardTable};
 use tracing::{info, instrument, warn};
 
 /// The control plane maintains a model in sync with the metastore.
@@ -70,6 +70,10 @@ impl ControlPlaneModel {
 
     pub fn num_sources(&self) -> usize {
         self.shard_table.num_sources()
+    }
+
+    pub fn shard_locations(&self) -> ShardLocations {
+        self.shard_table.shard_locations()
     }
 
     #[cfg(test)]
@@ -344,6 +348,7 @@ impl ControlPlaneModel {
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
     pub fn delete_shards(&mut self, source_uid: &SourceUid, shard_ids: &[ShardId]) {
+        info!(source_uid=%source_uid, shard_ids=?shard_ids, "removing shards from model");
         self.shard_table.delete_shards(source_uid, shard_ids);
     }
 
@@ -355,6 +360,11 @@ impl ControlPlaneModel {
     ) -> Option<bool> {
         self.shard_table
             .acquire_scaling_permits(source_uid, scaling_mode, num_permits)
+    }
+
+    pub fn drain_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
+        self.shard_table
+            .drain_scaling_permits(source_uid, scaling_mode)
     }
 
     pub fn release_scaling_permits(
@@ -375,7 +385,7 @@ mod tests {
     use quickwit_config::{SourceConfig, SourceParams, INGEST_V2_SOURCE_ID};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::{Shard, ShardState};
-    use quickwit_proto::metastore::ListIndexesMetadataResponse;
+    use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
 
     use super::*;
 
@@ -383,7 +393,7 @@ mod tests {
     async fn test_control_plane_model_load_shard_table() {
         let progress = Progress::default();
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_uid = IndexUid::from_str("test-index-0:00000000000000000000000000").unwrap();
         let index_uid2 = IndexUid::from_str("test-index-1:00000000000000000000000000").unwrap();
         let index_uid3 = IndexUid::from_str("test-index-2:00000000000000000000000000").unwrap();
@@ -445,7 +455,7 @@ mod tests {
                 Ok(response)
             });
         let mut model = ControlPlaneModel::default();
-        let mut metastore = MetastoreServiceClient::from(mock_metastore);
+        let mut metastore = MetastoreServiceClient::from_mock(mock_metastore);
         model
             .load_from_metastore(&mut metastore, &progress)
             .await

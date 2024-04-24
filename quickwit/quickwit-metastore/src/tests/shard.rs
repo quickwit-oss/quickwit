@@ -23,8 +23,8 @@ use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AddSourceRequest, CreateIndexRequest, DeleteShardsRequest, EntityKind,
-    ListShardsRequest, ListShardsSubrequest, MetastoreError, MetastoreService, OpenShardsRequest,
-    OpenShardsSubrequest, PublishSplitsRequest,
+    ListShardsRequest, ListShardsSubrequest, MetastoreError, MetastoreService, OpenShardSubrequest,
+    OpenShardsRequest, PublishSplitsRequest,
 };
 use quickwit_proto::types::{IndexUid, Position, ShardId, SourceId};
 
@@ -97,7 +97,7 @@ pub async fn test_metastore_open_shards<
 
     // Test index not found.
     // let open_shards_request = OpenShardsRequest {
-    //     subrequests: vec![OpenShardsSubrequest {
+    //     subrequests: vec![OpenShardSubrequest {
     //         index_uid: "index-does-not-exist:0".to_string(),
     //         source_id: test_index.source_id.clone(),
     //         leader_id: "test-ingester-foo".to_string(),
@@ -114,7 +114,7 @@ pub async fn test_metastore_open_shards<
 
     // // Test source not found.
     // let open_shards_request = OpenShardsRequest {
-    //     subrequests: vec![OpenShardsSubrequest {
+    //     subrequests: vec![OpenShardSubrequest {
     //         index_uid: test_index.index_uid.clone().into(),
     //         source_id: "source-does-not-exist".to_string(),
     //         leader_id: "test-ingester-foo".to_string(),
@@ -131,7 +131,7 @@ pub async fn test_metastore_open_shards<
 
     // Test open shard #1.
     let open_shards_request = OpenShardsRequest {
-        subrequests: vec![OpenShardsSubrequest {
+        subrequests: vec![OpenShardSubrequest {
             subrequest_id: 0,
             index_uid: test_index.index_uid.clone().into(),
             source_id: test_index.source_id.clone(),
@@ -144,11 +144,9 @@ pub async fn test_metastore_open_shards<
     assert_eq!(open_shards_response.subresponses.len(), 1);
 
     let subresponse = &open_shards_response.subresponses[0];
-    assert_eq!(subresponse.index_uid(), &test_index.index_uid);
-    assert_eq!(subresponse.source_id, test_index.source_id);
-    assert_eq!(subresponse.opened_shards.len(), 1);
+    assert_eq!(subresponse.subrequest_id, 0);
 
-    let shard = &subresponse.opened_shards[0];
+    let shard = subresponse.open_shard();
     assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(1));
@@ -160,7 +158,7 @@ pub async fn test_metastore_open_shards<
 
     // Test open shard #1 is idempotent.
     let open_shards_request = OpenShardsRequest {
-        subrequests: vec![OpenShardsSubrequest {
+        subrequests: vec![OpenShardSubrequest {
             subrequest_id: 0,
             index_uid: test_index.index_uid.clone().into(),
             source_id: test_index.source_id.clone(),
@@ -173,11 +171,9 @@ pub async fn test_metastore_open_shards<
     assert_eq!(open_shards_response.subresponses.len(), 1);
 
     let subresponse = &open_shards_response.subresponses[0];
-    assert_eq!(subresponse.index_uid(), &test_index.index_uid);
-    assert_eq!(subresponse.source_id, test_index.source_id);
-    assert_eq!(subresponse.opened_shards.len(), 1);
+    assert_eq!(subresponse.subrequest_id, 0);
 
-    let shard = &subresponse.opened_shards[0];
+    let shard = subresponse.open_shard();
     assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(1));

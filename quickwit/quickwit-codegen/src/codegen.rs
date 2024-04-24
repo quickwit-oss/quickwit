@@ -208,7 +208,7 @@ impl CodegenContext {
         generate_extra_service_methods: bool,
     ) -> Self {
         let service_name = quote::format_ident!("{}", service.name);
-        let mock_mod_name = quote::format_ident!("{}_mock", service.name.to_snake_case());
+        let mock_mod_name = quote::format_ident!("mock_{}", service.name.to_snake_case());
         let mock_name = quote::format_ident!("Mock{}", service.name);
 
         let result_type = syn::parse_str::<syn::Path>(result_type_path)
@@ -524,8 +524,8 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
     let mock_name = &context.mock_name;
     let mock_wrapper_name = quote::format_ident!("{}Wrapper", mock_name);
     let error_mesage = format!(
-        "`{}` must be wrapped in a `{}`. Use `{}::from(mock)` to instantiate the client.",
-        mock_name, mock_wrapper_name, mock_name
+        "`{}` must be wrapped in a `{}`: use `{}::from_mock(mock)` to instantiate the client",
+        mock_name, mock_wrapper_name, client_name
     );
     let extra_client_methods = if context.generate_extra_service_methods {
         generate_extra_methods_calling_inner()
@@ -604,8 +604,16 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             }
 
             #[cfg(any(test, feature = "testsuite"))]
-            pub fn mock() -> #mock_name {
-                #mock_name::new()
+            pub fn from_mock(mock: #mock_name) -> Self {
+                let mock_wrapper = #mock_mod_name::#mock_wrapper_name {
+                    inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock))
+                };
+                Self::new(mock_wrapper)
+            }
+
+            #[cfg(any(test, feature = "testsuite"))]
+            pub fn mocked() -> Self {
+                Self::from_mock(#mock_name::new())
             }
         }
 
@@ -620,23 +628,14 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             use super::*;
 
             #[derive(Debug, Clone)]
-            struct #mock_wrapper_name {
-                inner: std::sync::Arc<tokio::sync::Mutex<#mock_name>>
+            pub struct #mock_wrapper_name {
+                pub(super) inner: std::sync::Arc<tokio::sync::Mutex<#mock_name>>
             }
 
             #[async_trait::async_trait]
             impl #service_name for #mock_wrapper_name {
                 #mock_methods
                 #extra_mock_methods
-            }
-
-            impl From<#mock_name> for #client_name {
-                fn from(mock: #mock_name) -> Self {
-                    let mock_wrapper = #mock_wrapper_name {
-                        inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock))
-                    };
-                    #client_name::new(mock_wrapper)
-                }
             }
         }
     }
@@ -855,6 +854,7 @@ fn generate_layer_stack_impl(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let client_name = &context.client_name;
     let mailbox_name = &context.mailbox_name;
+    let mock_name = &context.mock_name;
     let tower_svc_stack_name = &context.tower_svc_stack_name;
     let tower_layer_stack_name = &context.tower_layer_stack_name;
     let error_type = &context.error_type;
@@ -946,6 +946,11 @@ fn generate_layer_stack_impl(context: &CodegenContext) -> TokenStream {
                 #mailbox_name<A>: #service_name,
             {
                 self.build_from_boxed(Box::new(#mailbox_name::new(mailbox)))
+            }
+
+            #[cfg(any(test, feature = "testsuite"))]
+            pub fn build_from_mock(self, mock: #mock_name) -> #client_name {
+                self.build_from_boxed(Box::new(#client_name::from_mock(mock)))
             }
 
             fn build_from_boxed(self, boxed_instance: Box<dyn #service_name>) -> #client_name

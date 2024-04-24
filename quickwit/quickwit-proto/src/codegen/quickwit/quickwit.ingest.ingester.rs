@@ -343,24 +343,64 @@ pub struct FetchEof {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InitShardsRequest {
-    #[prost(message, repeated, tag = "1")]
-    pub shards: ::prost::alloc::vec::Vec<super::Shard>,
+    #[prost(message, repeated, tag = "2")]
+    pub subrequests: ::prost::alloc::vec::Vec<InitShardSubrequest>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct InitShardsResponse {}
+pub struct InitShardSubrequest {
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
+    #[prost(message, optional, tag = "2")]
+    pub shard: ::core::option::Option<super::Shard>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InitShardsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub successes: ::prost::alloc::vec::Vec<InitShardSuccess>,
+    #[prost(message, repeated, tag = "2")]
+    pub failures: ::prost::alloc::vec::Vec<InitShardFailure>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InitShardSuccess {
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
+    #[prost(message, optional, tag = "2")]
+    pub shard: ::core::option::Option<super::Shard>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InitShardFailure {
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "3")]
+    pub source_id: ::prost::alloc::string::String,
+    /// InitShardFailureReason reason = 5;
+    #[prost(message, optional, tag = "4")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CloseShardsRequest {
-    #[prost(message, repeated, tag = "1")]
-    pub shards: ::prost::alloc::vec::Vec<super::ShardIds>,
+    #[prost(message, repeated, tag = "2")]
+    pub shard_pkeys: ::prost::alloc::vec::Vec<super::ShardPKey>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CloseShardsResponse {}
+pub struct CloseShardsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub successes: ::prost::alloc::vec::Vec<super::ShardPKey>,
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -640,7 +680,7 @@ impl IngesterServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
             MockIngesterService > (),
-            "`MockIngesterService` must be wrapped in a `MockIngesterServiceWrapper`. Use `MockIngesterService::from(mock)` to instantiate the client."
+            "`MockIngesterService` must be wrapped in a `MockIngesterServiceWrapper`: use `IngesterServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }
@@ -701,8 +741,15 @@ impl IngesterServiceClient {
         IngesterServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockIngesterService {
-        MockIngesterService::new()
+    pub fn from_mock(mock: MockIngesterService) -> Self {
+        let mock_wrapper = mock_ingester_service::MockIngesterServiceWrapper {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockIngesterService::new())
     }
 }
 #[async_trait::async_trait]
@@ -763,11 +810,11 @@ impl IngesterService for IngesterServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod ingester_service_mock {
+pub mod mock_ingester_service {
     use super::*;
     #[derive(Debug, Clone)]
-    struct MockIngesterServiceWrapper {
-        inner: std::sync::Arc<tokio::sync::Mutex<MockIngesterService>>,
+    pub struct MockIngesterServiceWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockIngesterService>>,
     }
     #[async_trait::async_trait]
     impl IngesterService for MockIngesterServiceWrapper {
@@ -828,14 +875,6 @@ pub mod ingester_service_mock {
             request: super::DecommissionRequest,
         ) -> crate::ingest::IngestV2Result<super::DecommissionResponse> {
             self.inner.lock().await.decommission(request).await
-        }
-    }
-    impl From<MockIngesterService> for IngesterServiceClient {
-        fn from(mock: MockIngesterService) -> Self {
-            let mock_wrapper = MockIngesterServiceWrapper {
-                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
-            };
-            IngesterServiceClient::new(mock_wrapper)
         }
     }
 }
@@ -1685,6 +1724,10 @@ impl IngesterServiceTowerLayerStack {
         IngesterServiceMailbox<A>: IngesterService,
     {
         self.build_from_boxed(Box::new(IngesterServiceMailbox::new(mailbox)))
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockIngesterService) -> IngesterServiceClient {
+        self.build_from_boxed(Box::new(IngesterServiceClient::from_mock(mock)))
     }
     fn build_from_boxed(
         self,
