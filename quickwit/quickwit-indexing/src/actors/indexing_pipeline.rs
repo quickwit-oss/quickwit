@@ -33,11 +33,8 @@ use quickwit_common::KillSwitch;
 use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
-use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::metastore::{
-    IndexMetadataRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
-};
+use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_proto::types::ShardId;
 use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
@@ -53,7 +50,7 @@ use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
 use crate::models::IndexingStatistics;
 use crate::source::{
-    quickwit_supported_sources, AssignShards, Assignment, SourceActor, SourceRuntimeArgs,
+    quickwit_supported_sources, AssignShards, Assignment, SourceActor, SourceRuntime,
 };
 use crate::split_store::IndexingSplitStore;
 use crate::SplitsUpdateMailbox;
@@ -431,31 +428,17 @@ impl IndexingPipeline {
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(doc_processor);
-
-        // Fetch index_metadata to be sure to have the last updated checkpoint.
-        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
-        let index_metadata = ctx
-            .protect_future(self.params.metastore.index_metadata(index_metadata_request))
-            .await?
-            .deserialize_index_metadata()?;
-        let source_checkpoint = index_metadata
-            .checkpoint
-            .source_checkpoint(source_id)
-            .cloned()
-            .unwrap_or_default(); // TODO Have a stricter check.
+        let source_runtime = SourceRuntime {
+            pipeline_id: self.params.pipeline_id.clone(),
+            source_config: self.params.source_config.clone(),
+            metastore: self.params.metastore.clone(),
+            ingester_pool: self.params.ingester_pool.clone(),
+            queues_dir_path: self.params.queues_dir_path.clone(),
+            storage_resolver: self.params.source_storage_resolver.clone(),
+            event_broker: self.params.event_broker.clone(),
+        };
         let source = ctx
-            .protect_future(quickwit_supported_sources().load_source(
-                Arc::new(SourceRuntimeArgs {
-                    pipeline_id: self.params.pipeline_id.clone(),
-                    source_config: self.params.source_config.clone(),
-                    metastore: self.params.metastore.clone(),
-                    ingester_pool: self.params.ingester_pool.clone(),
-                    queues_dir_path: self.params.queues_dir_path.clone(),
-                    storage_resolver: self.params.source_storage_resolver.clone(),
-                    event_broker: self.params.event_broker.clone(),
-                }),
-                source_checkpoint,
-            ))
+            .protect_future(quickwit_supported_sources().load_source(source_runtime))
             .await?;
         let actor_source = SourceActor {
             source,
@@ -617,7 +600,7 @@ mod tests {
     use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-    use quickwit_metastore::{IndexMetadata, PublishSplitsRequestExt};
+    use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, PublishSplitsRequestExt};
     use quickwit_proto::metastore::{
         EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, MetastoreError,
         MockMetastoreService,
@@ -643,20 +626,40 @@ mod tests {
         mut num_fails: usize,
         test_file: &str,
     ) -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let node_id = "test-node".to_string();
+        let index_uid = IndexUid::for_test("test-index", 2);
+        let pipeline_id = IndexingPipelineId {
+            node_id,
+            index_uid,
+            source_id: "test-source".to_string(),
+            pipeline_uid: PipelineUid::for_test(0u128),
+        };
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: true,
+            source_params: SourceParams::file(PathBuf::from(test_file)),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+        let source_config_clone = source_config.clone();
+
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_index_metadata()
             .withf(|index_metadata_request| {
-                index_metadata_request.index_id.as_ref().unwrap() == "test-index"
+                index_metadata_request.index_uid.as_ref().unwrap() == &("test-index", 2)
             })
             .returning(move |_| {
                 if num_fails == 0 {
-                    let index_metadata =
+                    let mut index_metadata =
                         IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                    return Ok(
-                        IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap(),
-                    );
+                    index_metadata
+                        .add_source(source_config_clone.clone())
+                        .unwrap();
+                    let response =
+                        IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap();
+                    return Ok(response);
                 }
                 num_fails -= 1;
                 Err(MetastoreError::Timeout("timeout error".to_string()))
@@ -670,10 +673,7 @@ mod tests {
         mock_metastore
             .expect_stage_splits()
             .withf(|stage_splits_request| -> bool {
-                stage_splits_request.index_uid()
-                    == &"test-index:00000000000000000000000002"
-                        .parse::<IndexUid>()
-                        .unwrap()
+                stage_splits_request.index_uid() == &("test-index", 2)
             })
             .returning(|_| Ok(EmptyResponse {}));
         mock_metastore
@@ -683,10 +683,7 @@ mod tests {
                     .deserialize_index_checkpoint()
                     .unwrap()
                     .unwrap();
-                publish_splits_request.index_uid()
-                    == &"test-index:00000000000000000000000002"
-                        .parse::<IndexUid>()
-                        .unwrap()
+                publish_splits_request.index_uid() == &("test-index", 2)
                     && checkpoint_delta.source_id == "test-source"
                     && publish_splits_request.staged_split_ids.len() == 1
                     && publish_splits_request.replaced_split_ids.is_empty()
@@ -694,25 +691,11 @@ mod tests {
                         .ends_with(":(00000000000000000000..00000000000000001030])")
             })
             .returning(|_| Ok(EmptyResponse {}));
-        let node_id = "test-node";
-        let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::for_test("test-index", 2),
-            source_id: "test-source".to_string(),
-            node_id: node_id.to_string(),
-            pipeline_uid: PipelineUid::for_test(0u128),
-        };
-        let source_config = SourceConfig {
-            source_id: "test-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
-            enabled: true,
-            source_params: SourceParams::file(PathBuf::from(test_file)),
-            transform_config: None,
-            input_format: SourceInputFormat::Json,
-        };
+
+        let universe = Universe::new();
+        let (merge_planner_mailbox, _) = universe.create_test_mailbox();
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
-        let (merge_planner_mailbox, _) = universe.create_test_mailbox();
-        let event_broker = EventBroker::default();
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -730,7 +713,7 @@ mod tests {
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
             merge_planner_mailbox,
-            event_broker,
+            event_broker: EventBroker::default(),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handle) = universe.spawn_builder().spawn(pipeline);
@@ -762,16 +745,36 @@ mod tests {
     }
 
     async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {
+        let node_id = "test-node".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 1);
+        let pipeline_id = IndexingPipelineId {
+            node_id,
+            index_uid: index_uid.clone(),
+            source_id: "test-source".to_string(),
+            pipeline_uid: PipelineUid::for_test(0u128),
+        };
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: true,
+            source_params: SourceParams::file(PathBuf::from(test_file)),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+        let source_config_clone = source_config.clone();
+
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_index_metadata()
             .withf(|index_metadata_request| {
-                index_metadata_request.index_id.as_ref().unwrap() == "test-index"
+                index_metadata_request.index_uid.as_ref().unwrap() == &("test-index", 1)
             })
-            .returning(|_| {
-                let index_metadata =
+            .returning(move |_| {
+                let mut index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
+                index_metadata
+                    .add_source(source_config_clone.clone())
+                    .unwrap();
                 Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         let index_uid_clone = index_uid.clone();
@@ -800,22 +803,8 @@ mod tests {
                         .ends_with(":(00000000000000000000..00000000000000001030])")
             })
             .returning(|_| Ok(EmptyResponse {}));
+
         let universe = Universe::new();
-        let node_id = "test-node";
-        let pipeline_id = IndexingPipelineId {
-            index_uid: index_uid.clone(),
-            source_id: "test-source".to_string(),
-            node_id: node_id.to_string(),
-            pipeline_uid: PipelineUid::for_test(0u128),
-        };
-        let source_config = SourceConfig {
-            source_id: "test-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
-            enabled: true,
-            source_params: SourceParams::file(PathBuf::from(test_file)),
-            transform_config: None,
-            input_format: SourceInputFormat::Json,
-        };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let (merge_planner_mailbox, _) = universe.create_test_mailbox();
@@ -861,38 +850,44 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() {
-        let mut mock_metastore = MockMetastoreService::new();
-        mock_metastore
-            .expect_index_metadata()
-            .withf(|index_metadata_request| {
-                index_metadata_request.index_id.as_ref().unwrap() == "test-index"
-            })
-            .returning(|_| {
-                let index_metadata =
-                    IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
-            });
-        mock_metastore
-            .expect_list_splits()
-            .returning(|_| Ok(ServiceStream::empty()));
-        let universe = Universe::with_accelerated_time();
-        let node_id = "test-node";
-        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let node_id = "test-node".to_string();
         let pipeline_id = IndexingPipelineId {
+            node_id,
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: node_id.to_string(),
             pipeline_uid: PipelineUid::for_test(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::Void(VoidSourceParams),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
+        let source_config_clone = source_config.clone();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_index_metadata()
+            .withf(|index_metadata_request| {
+                index_metadata_request.index_uid.as_ref().unwrap() == &("test-index", 2)
+            })
+            .returning(move |_| {
+                let mut index_metadata =
+                    IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
+                index_metadata
+                    .add_source(source_config_clone.clone())
+                    .unwrap();
+                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
+            });
+        mock_metastore
+            .expect_list_splits()
+            .returning(|_| Ok(ServiceStream::empty()));
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
+
+        let universe = Universe::with_accelerated_time();
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let merge_pipeline_params = MergePipelineParams {
@@ -957,16 +952,37 @@ mod tests {
     }
 
     async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
+        let node_id = "test-node".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 2);
+        let pipeline_id = IndexingPipelineId {
+            node_id,
+            index_uid: index_uid.clone(),
+            source_id: "test-source".to_string(),
+            pipeline_uid: PipelineUid::for_test(0u128),
+        };
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: true,
+            source_params: SourceParams::file(PathBuf::from(test_file)),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+        let source_config_clone = source_config.clone();
+
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_index_metadata()
             .withf(|index_metadata_request| {
-                index_metadata_request.index_id.as_ref().unwrap() == "test-index"
+                index_metadata_request.index_uid.as_ref().unwrap() == &("test-index", 2)
             })
-            .returning(|_| {
-                let index_metadata =
+            .returning(move |_| {
+                let mut index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
+                index_metadata
+                    .add_source(source_config_clone.clone())
+                    .unwrap();
+
                 Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             });
         let index_uid_clone = index_uid.clone();
@@ -995,21 +1011,6 @@ mod tests {
             })
             .returning(|_| Ok(EmptyResponse {}));
         let universe = Universe::new();
-        let node_id = "test-node";
-        let pipeline_id = IndexingPipelineId {
-            index_uid: index_uid.clone(),
-            source_id: "test-source".to_string(),
-            node_id: node_id.to_string(),
-            pipeline_uid: PipelineUid::for_test(0u128),
-        };
-        let source_config = SourceConfig {
-            source_id: "test-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
-            enabled: true,
-            source_params: SourceParams::file(PathBuf::from(test_file)),
-            transform_config: None,
-            input_format: SourceInputFormat::Json,
-        };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let (merge_planner_mailbox, _) = universe.create_test_mailbox();

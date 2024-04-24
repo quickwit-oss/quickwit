@@ -17,17 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
 use quickwit_config::VoidSourceParams;
-use quickwit_metastore::checkpoint::SourceCheckpoint;
 use serde_json::Value as JsonValue;
 
 use crate::actors::DocProcessor;
-use crate::source::{Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 pub struct VoidSource;
 
@@ -60,9 +58,8 @@ impl TypedSourceFactory for VoidSourceFactory {
     type Params = VoidSourceParams;
 
     async fn typed_create_source(
-        _ctx: Arc<SourceRuntimeArgs>,
+        _source_runtime: SourceRuntime,
         _params: VoidSourceParams,
-        _checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<VoidSource> {
         Ok(VoidSource)
     }
@@ -72,20 +69,19 @@ impl TypedSourceFactory for VoidSourceFactory {
 mod tests {
 
     use std::num::NonZeroUsize;
-    use std::path::PathBuf;
 
     use quickwit_actors::{Health, Supervisable, Universe};
     use quickwit_config::{SourceInputFormat, SourceParams};
-    use quickwit_metastore::checkpoint::SourceCheckpoint;
-    use quickwit_metastore::metastore_for_test;
     use quickwit_proto::types::IndexUid;
     use serde_json::json;
 
     use super::*;
+    use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
 
     #[tokio::test]
     async fn test_void_source_loading() {
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_config = SourceConfig {
             source_id: "test-void-source".to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
@@ -94,15 +90,9 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        let metastore = metastore_for_test();
-        let ctx = SourceRuntimeArgs::for_test(
-            IndexUid::new_with_random_ulid("test-index"),
-            source_config,
-            metastore,
-            PathBuf::from("./queues"),
-        );
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
         let source = quickwit_supported_sources()
-            .load_source(ctx, SourceCheckpoint::default())
+            .load_source(source_runtime)
             .await
             .unwrap();
         assert_eq!(source.name(), "VoidSource");
@@ -111,6 +101,7 @@ mod tests {
     #[tokio::test]
     async fn test_void_source_running() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_config = SourceConfig {
             source_id: "test-void-source".to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
@@ -119,18 +110,9 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        let metastore = metastore_for_test();
-        let void_source = VoidSourceFactory::typed_create_source(
-            SourceRuntimeArgs::for_test(
-                IndexUid::new_with_random_ulid("test-index"),
-                source_config,
-                metastore,
-                PathBuf::from("./queues"),
-            ),
-            VoidSourceParams,
-            SourceCheckpoint::default(),
-        )
-        .await?;
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
+        let void_source =
+            VoidSourceFactory::typed_create_source(source_runtime, VoidSourceParams).await?;
         let (doc_processor_mailbox, _) = universe.create_test_mailbox();
         let void_source_actor = SourceActor {
             source: Box::new(void_source),
