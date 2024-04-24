@@ -30,7 +30,7 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, IngestApiConfig, MetastoreConfigs,
-    SourceConfig, SourceInputFormat, SourceParams, VecSourceParams,
+    SourceConfig, SourceInputFormat, SourceParams, VecSourceParams, INGEST_API_SOURCE_ID,
 };
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::{init_ingest_api, IngesterPool, QUEUES_DIR_NAME};
@@ -90,23 +90,27 @@ impl TestSandbox {
             .iter()
             .map(|search_field| search_field.to_string())
             .collect();
-        let doc_mapper =
-            build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
-        let temp_dir = tempfile::tempdir()?;
-        let indexer_config = IndexerConfig::for_test()?;
-        let num_blocking_threads = 1;
+        let source_config = SourceConfig::ingest_api_default();
         let storage_resolver = StorageResolver::for_test();
         let metastore_resolver =
             MetastoreResolver::configured(storage_resolver.clone(), &MetastoreConfigs::default());
         let mut metastore = metastore_resolver
             .resolve(&Uri::for_test(METASTORE_URI))
             .await?;
-        let create_index_request = CreateIndexRequest::try_from_index_config(&index_config)?;
+        let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
+            &index_config,
+            &[source_config.clone()],
+        )?;
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await?
             .index_uid()
             .clone();
+        let doc_mapper =
+            build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
+        let temp_dir = tempfile::tempdir()?;
+        let indexer_config = IndexerConfig::for_test()?;
+        let num_blocking_threads = 1;
         let storage = storage_resolver.resolve(&index_uri).await?;
         let universe = Universe::with_accelerated_time();
         let merge_scheduler_mailbox = universe.get_or_spawn_one();
@@ -157,7 +161,7 @@ impl TestSandbox {
             .collect();
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let source_config = SourceConfig {
-            source_id: self.index_uid.index_id.to_string(),
+            source_id: INGEST_API_SOURCE_ID.to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Vec(VecSourceParams {
