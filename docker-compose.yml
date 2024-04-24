@@ -77,7 +77,7 @@ services:
       - "${MAP_HOST_PULSAR:-127.0.0.1}:6650:6650"
       - "${MAP_HOST_PULSAR:-127.0.0.1}:8081:8080"
     environment:
-      PULSAR_MEM: "-Xms256M -Xmx256M"
+      PULSAR_MEM: "-Xms384M -Xmx384M"
     profiles:
       - all
       - pulsar

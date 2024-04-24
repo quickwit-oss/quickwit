@@ -96,8 +96,12 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
+use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::metastore::{MetastoreServiceClient, SourceType};
+use quickwit_proto::metastore::{
+    IndexMetadataRequest, MetastoreError, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, SourceType,
+};
 use quickwit_proto::types::{IndexUid, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
@@ -129,7 +133,8 @@ const BATCH_NUM_BYTES_LIMIT: u64 = ByteSize::mib(5).as_u64();
 const EMIT_BATCHES_TIMEOUT: Duration = Duration::from_millis(if cfg!(test) { 100 } else { 1_000 });
 
 /// Runtime configuration used during execution of a source actor.
-pub struct SourceRuntimeArgs {
+#[derive(Clone)]
+pub struct SourceRuntime {
     pub pipeline_id: IndexingPipelineId,
     pub source_config: SourceConfig,
     pub metastore: MetastoreServiceClient,
@@ -140,7 +145,7 @@ pub struct SourceRuntimeArgs {
     pub event_broker: EventBroker,
 }
 
-impl SourceRuntimeArgs {
+impl SourceRuntime {
     pub fn node_id(&self) -> &str {
         &self.pipeline_id.node_id
     }
@@ -161,28 +166,26 @@ impl SourceRuntimeArgs {
         self.pipeline_id.pipeline_uid
     }
 
-    #[cfg(test)]
-    fn for_test(
-        index_uid: IndexUid,
-        source_config: SourceConfig,
-        metastore: MetastoreServiceClient,
-        queues_dir_path: PathBuf,
-    ) -> std::sync::Arc<Self> {
-        use std::sync::Arc;
-        let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
-            index_uid,
-            source_id: source_config.source_id.clone(),
-            pipeline_uid: PipelineUid::for_test(0u128),
-        };
-        Arc::new(SourceRuntimeArgs {
-            pipeline_id,
-            metastore,
-            ingester_pool: IngesterPool::default(),
-            queues_dir_path,
-            source_config,
-            storage_resolver: StorageResolver::for_test(),
-            event_broker: EventBroker::default(),
+    pub async fn fetch_checkpoint(&self) -> MetastoreResult<SourceCheckpoint> {
+        let index_uid = self.index_uid().clone();
+        let request = IndexMetadataRequest::for_index_uid(index_uid);
+        let response = self.metastore.clone().index_metadata(request).await?;
+        let index_metadata = response.deserialize_index_metadata()?;
+
+        if let Some(checkpoint) = index_metadata
+            .checkpoint
+            .source_checkpoint(self.source_id())
+            .cloned()
+        {
+            return Ok(checkpoint);
+        }
+        Err(MetastoreError::Internal {
+            message: format!(
+                "could not find checkpoint for index `{}` and source `{}`",
+                self.index_uid(),
+                self.source_id()
+            ),
+            cause: "".to_string(),
         })
     }
 }
@@ -385,19 +388,19 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
     static SOURCE_LOADER: OnceCell<SourceLoader> = OnceCell::new();
     SOURCE_LOADER.get_or_init(|| {
         let mut source_factory = SourceLoader::default();
-        source_factory.add_source("file", FileSourceFactory);
+        source_factory.add_source(SourceType::File, FileSourceFactory);
         #[cfg(feature = "gcp-pubsub")]
-        source_factory.add_source("pubsub", GcpPubSubSourceFactory);
-        source_factory.add_source("ingest-api", IngestApiSourceFactory);
-        source_factory.add_source("ingest", IngestSourceFactory);
+        source_factory.add_source(SourceType::PubSub, GcpPubSubSourceFactory);
+        source_factory.add_source(SourceType::IngestV1, IngestApiSourceFactory);
+        source_factory.add_source(SourceType::IngestV2, IngestSourceFactory);
         #[cfg(feature = "kafka")]
-        source_factory.add_source("kafka", KafkaSourceFactory);
+        source_factory.add_source(SourceType::Kafka, KafkaSourceFactory);
         #[cfg(feature = "kinesis")]
-        source_factory.add_source("kinesis", KinesisSourceFactory);
+        source_factory.add_source(SourceType::Kinesis, KinesisSourceFactory);
         #[cfg(feature = "pulsar")]
-        source_factory.add_source("pulsar", PulsarSourceFactory);
-        source_factory.add_source("vec", VecSourceFactory);
-        source_factory.add_source("void", VoidSourceFactory);
+        source_factory.add_source(SourceType::Pulsar, PulsarSourceFactory);
+        source_factory.add_source(SourceType::Vec, VecSourceFactory);
+        source_factory.add_source(SourceType::Void, VoidSourceFactory);
         source_factory
     })
 }
@@ -541,8 +544,107 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use quickwit_config::{SourceInputFormat, VecSourceParams};
+    use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+    use quickwit_metastore::IndexMetadata;
+    use quickwit_proto::metastore::{IndexMetadataResponse, MockMetastoreService};
 
     use super::*;
+
+    pub struct SourceRuntimeBuilder {
+        index_uid: IndexUid,
+        source_config: SourceConfig,
+        metastore_opt: Option<MetastoreServiceClient>,
+        queues_dir_path_opt: Option<PathBuf>,
+    }
+
+    impl SourceRuntimeBuilder {
+        pub fn new(index_uid: IndexUid, source_config: SourceConfig) -> Self {
+            SourceRuntimeBuilder {
+                index_uid,
+                source_config,
+                metastore_opt: None,
+                queues_dir_path_opt: None,
+            }
+        }
+
+        pub fn build(mut self) -> SourceRuntime {
+            let metastore = self
+                .metastore_opt
+                .take()
+                .unwrap_or_else(|| self.setup_mock_metastore(None));
+
+            let queues_dir_path = self
+                .queues_dir_path_opt
+                .unwrap_or_else(|| PathBuf::from("./queues"));
+
+            SourceRuntime {
+                pipeline_id: IndexingPipelineId {
+                    node_id: "test-node".to_string(),
+                    index_uid: self.index_uid,
+                    source_id: self.source_config.source_id.clone(),
+                    pipeline_uid: PipelineUid::for_test(0u128),
+                },
+                metastore,
+                ingester_pool: IngesterPool::default(),
+                queues_dir_path,
+                source_config: self.source_config,
+                storage_resolver: StorageResolver::for_test(),
+                event_broker: EventBroker::default(),
+            }
+        }
+
+        #[cfg(feature = "kafka")]
+        pub fn with_metastore(mut self, metastore: MetastoreServiceClient) -> Self {
+            self.metastore_opt = Some(metastore);
+            self
+        }
+
+        pub fn with_mock_metastore(
+            mut self,
+            source_checkpoint_delta_opt: Option<SourceCheckpointDelta>,
+        ) -> Self {
+            self.metastore_opt = Some(self.setup_mock_metastore(source_checkpoint_delta_opt));
+            self
+        }
+
+        pub fn with_queues_dir(mut self, queues_dir_path: impl Into<PathBuf>) -> Self {
+            self.queues_dir_path_opt = Some(queues_dir_path.into());
+            self
+        }
+
+        fn setup_mock_metastore(
+            &self,
+            source_checkpoint_delta_opt: Option<SourceCheckpointDelta>,
+        ) -> MetastoreServiceClient {
+            let index_uid = self.index_uid.clone();
+            let source_config = self.source_config.clone();
+
+            let mut mock_metastore = MockMetastoreService::new();
+            mock_metastore
+                .expect_index_metadata()
+                .returning(move |_request| {
+                    let index_uri = format!("ram:///indexes/{}", index_uid.index_id);
+                    let mut index_metadata =
+                        IndexMetadata::for_test(&index_uid.index_id, &index_uri);
+                    index_metadata.index_uid = index_uid.clone();
+
+                    let source_id = source_config.source_id.clone();
+                    index_metadata.add_source(source_config.clone()).unwrap();
+
+                    if let Some(source_delta) = source_checkpoint_delta_opt.clone() {
+                        let delta = IndexCheckpointDelta {
+                            source_id,
+                            source_delta,
+                        };
+                        index_metadata.checkpoint.try_apply_delta(delta).unwrap();
+                    }
+                    let response =
+                        IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap();
+                    Ok(response)
+                });
+            MetastoreServiceClient::from_mock(mock_metastore)
+        }
+    }
 
     #[tokio::test]
     async fn test_check_source_connectivity() -> anyhow::Result<()> {

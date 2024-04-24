@@ -19,7 +19,6 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context};
@@ -30,8 +29,7 @@ use oneshot;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
-use quickwit_metastore::IndexMetadataResponseExt;
-use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, SourceType};
+use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::{IndexUid, Position};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
@@ -50,8 +48,8 @@ use tracing::{debug, info, warn};
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, PublishLock};
 use crate::source::{
-    BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
-    BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
+    BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory, BATCH_NUM_BYTES_LIMIT,
+    EMIT_BATCHES_TIMEOUT,
 };
 
 type GroupId = String;
@@ -65,11 +63,10 @@ impl TypedSourceFactory for KafkaSourceFactory {
     type Params = KafkaSourceParams;
 
     async fn typed_create_source(
-        ctx: Arc<SourceRuntimeArgs>,
+        source_runtime: SourceRuntime,
         params: KafkaSourceParams,
-        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        KafkaSource::try_new(ctx, params, checkpoint).await
+        KafkaSource::try_new(source_runtime, params).await
     }
 }
 
@@ -212,7 +209,7 @@ pub struct KafkaSourceState {
 
 /// A `KafkaSource` consumes a topic and forwards its messages to an `Indexer`.
 pub struct KafkaSource {
-    ctx: Arc<SourceRuntimeArgs>,
+    source_runtime: SourceRuntime,
     topic: String,
     group_id: GroupId,
     state: KafkaSourceState,
@@ -227,8 +224,8 @@ impl fmt::Debug for KafkaSource {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("KafkaSource")
-            .field("index_id", &self.ctx.index_id())
-            .field("source_id", &self.ctx.source_id())
+            .field("index_uid", self.source_runtime.index_uid())
+            .field("source_id", &self.source_runtime.source_id())
             .field("topic", &self.topic)
             .finish()
     }
@@ -237,17 +234,20 @@ impl fmt::Debug for KafkaSource {
 impl KafkaSource {
     /// Instantiates a new `KafkaSource`.
     pub async fn try_new(
-        ctx: Arc<SourceRuntimeArgs>,
-        params: KafkaSourceParams,
-        _ignored_checkpoint: SourceCheckpoint,
+        source_runtime: SourceRuntime,
+        source_params: KafkaSourceParams,
     ) -> anyhow::Result<Self> {
-        let topic = params.topic.clone();
-        let backfill_mode_enabled = params.enable_backfill_mode;
+        let topic = source_params.topic.clone();
+        let backfill_mode_enabled = source_params.enable_backfill_mode;
 
         let (events_tx, events_rx) = mpsc::channel(100);
         let (truncate_tx, truncate_rx) = watch::channel(SourceCheckpoint::default());
-        let (client_config, consumer, group_id) =
-            create_consumer(ctx.index_uid(), ctx.source_id(), params, events_tx.clone())?;
+        let (client_config, consumer, group_id) = create_consumer(
+            source_runtime.index_uid(),
+            source_runtime.source_id(),
+            source_params,
+            events_tx.clone(),
+        )?;
         let native_client_config = client_config.create_native_config()?;
         let session_timeout_ms = native_client_config
             .get("session.timeout.ms")?
@@ -261,13 +261,13 @@ impl KafkaSource {
         let publish_lock = PublishLock::default();
 
         info!(
-            index_id=%ctx.index_id(),
-            source_id=%ctx.source_id(),
-            topic=%topic,
-            group_id=%group_id,
-            max_poll_interval_ms=%max_poll_interval_ms,
-            session_timeout_ms=%session_timeout_ms,
-            "Starting Kafka source."
+            index_uid=%source_runtime.index_uid(),
+            source_id=%source_runtime.source_id(),
+            topic,
+            group_id,
+            max_poll_interval_ms,
+            session_timeout_ms,
+            "starting Kafka source"
         );
         if max_poll_interval_ms <= 60_000 {
             warn!(
@@ -277,7 +277,7 @@ impl KafkaSource {
             );
         }
         Ok(KafkaSource {
-            ctx,
+            source_runtime,
             topic,
             group_id,
             state: KafkaSourceState::default(),
@@ -342,22 +342,9 @@ impl KafkaSource {
         partitions: &[i32],
         assignment_tx: oneshot::Sender<Vec<(i32, Offset)>>,
     ) -> anyhow::Result<()> {
-        let index_metadata_request =
-            IndexMetadataRequest::for_index_uid(self.ctx.index_uid().clone());
-        let index_metadata = ctx
-            .protect_future(
-                self.ctx
-                    .metastore
-                    .clone()
-                    .index_metadata(index_metadata_request),
-            )
-            .await?
-            .deserialize_index_metadata()?;
-        let checkpoint = index_metadata
-            .checkpoint
-            .source_checkpoint(self.ctx.source_id())
-            .cloned()
-            .unwrap_or_default();
+        let checkpoint = ctx
+            .protect_future(self.source_runtime.fetch_checkpoint())
+            .await?;
 
         self.state.assigned_partitions.clear();
         self.state.current_positions.clear();
@@ -394,12 +381,12 @@ impl KafkaSource {
             next_offsets.push((partition, next_offset));
         }
         info!(
-            index_id=%self.ctx.index_id(),
-            source_id=%self.ctx.source_id(),
+            index_id=%self.source_runtime.index_id(),
+            source_id=%self.source_runtime.source_id(),
             topic=%self.topic,
             group_id=%self.group_id,
             partitions=?partitions,
-            "New partition assignment after rebalance.",
+            "new partition assignment after rebalance",
         );
         assignment_tx
             .send(next_offsets)
@@ -537,7 +524,7 @@ impl Source for KafkaSource {
     }
 
     fn name(&self) -> String {
-        format!("KafkaSource{{source_id={}}}", self.ctx.source_id())
+        format!("{:?}", self)
     }
 
     fn observable_state(&self) -> JsonValue {
@@ -546,8 +533,8 @@ impl Source for KafkaSource {
         let current_positions: Vec<(&i32, &Position)> =
             self.state.current_positions.iter().sorted().collect();
         json!({
-            "index_id": self.ctx.index_id(),
-            "source_id": self.ctx.source_id(),
+            "index_id": self.source_runtime.index_id(),
+            "source_id": self.source_runtime.source_id(),
             "topic": self.topic,
             "assigned_partitions": assigned_partitions,
             "current_positions": current_positions,
@@ -774,7 +761,6 @@ fn message_payload_to_doc(message: &BorrowedMessage) -> Option<Bytes> {
 #[cfg(all(test, feature = "kafka-broker-tests"))]
 mod kafka_broker_tests {
     use std::num::NonZeroUsize;
-    use std::path::PathBuf;
 
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::rand::append_random_suffix;
@@ -796,6 +782,7 @@ mod kafka_broker_tests {
 
     use super::*;
     use crate::new_split_id;
+    use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::{quickwit_supported_sources, RawDocBatch, SourceActor};
 
     fn create_base_consumer(group_id: &str) -> BaseConsumer {
@@ -929,13 +916,16 @@ mod kafka_broker_tests {
     async fn setup_index(
         mut metastore: MetastoreServiceClient,
         index_id: &str,
-        source_id: &str,
+        source_config: &SourceConfig,
         partition_deltas: &[(u64, i64, i64)],
     ) -> IndexUid {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(index_id, &index_uri);
-        let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+        let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
+            &index_config,
+            &[source_config.clone()],
+        )
+        .unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -970,7 +960,7 @@ mod kafka_broker_tests {
                 .unwrap();
         }
         let checkpoint_delta = IndexCheckpointDelta {
-            source_id: source_id.to_string(),
+            source_id: source_config.source_id.to_string(),
             source_delta,
         };
         let checkpoint_delta_json = serde_json::to_string(&checkpoint_delta).unwrap();
@@ -994,7 +984,6 @@ mod kafka_broker_tests {
         let topic = append_random_suffix("test-kafka-source--process-message--topic");
         create_topic(&admin_client, &topic, 2).await.unwrap();
 
-        let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-message--index");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let (_source_id, source_config) = get_source_config(&topic, "earliest");
@@ -1004,16 +993,8 @@ mod kafka_broker_tests {
                 source_config.source_params
             );
         };
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            PathBuf::from("./queues"),
-        );
-        let ignored_checkpoint = SourceCheckpoint::default();
-        let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
-            .await
-            .unwrap();
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
+        let mut kafka_source = KafkaSource::try_new(source_runtime, params).await.unwrap();
 
         let partition_id_1 = PartitionId::from(1u64);
         let partition_id_2 = PartitionId::from(2u64);
@@ -1125,9 +1106,10 @@ mod kafka_broker_tests {
 
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-assign-partitions--index");
-        let (source_id, source_config) = get_source_config(&topic, "earliest");
+        let (_source_id, source_config) = get_source_config(&topic, "earliest");
 
-        let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[(2, -1, 42)]).await;
+        let index_uid =
+            setup_index(metastore.clone(), &index_id, &source_config, &[(2, -1, 42)]).await;
 
         let SourceParams::Kafka(params) = source_config.clone().source_params else {
             panic!(
@@ -1135,16 +1117,10 @@ mod kafka_broker_tests {
                 source_config.source_params
             );
         };
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            PathBuf::from("./queues"),
-        );
-        let ignored_checkpoint = SourceCheckpoint::default();
-        let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
-            .await
-            .unwrap();
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+            .with_metastore(metastore)
+            .build();
+        let mut kafka_source = KafkaSource::try_new(source_runtime, params).await.unwrap();
         kafka_source.state.num_inactive_partitions = 1;
 
         let universe = Universe::with_accelerated_time();
@@ -1183,7 +1159,6 @@ mod kafka_broker_tests {
         let topic = append_random_suffix("test-kafka-source--process-revoke-partitions--topic");
         create_topic(&admin_client, &topic, 1).await.unwrap();
 
-        let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-revoke--partitions--index");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let (_source_id, source_config) = get_source_config(&topic, "earliest");
@@ -1193,16 +1168,8 @@ mod kafka_broker_tests {
                 source_config.source_params
             );
         };
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            PathBuf::from("./queues"),
-        );
-        let ignored_checkpoint = SourceCheckpoint::default();
-        let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
-            .await
-            .unwrap();
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
+        let mut kafka_source = KafkaSource::try_new(source_runtime, params).await.unwrap();
 
         let universe = Universe::with_accelerated_time();
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
@@ -1241,7 +1208,6 @@ mod kafka_broker_tests {
         let topic = append_random_suffix("test-kafka-source--process-partition-eof--topic");
         create_topic(&admin_client, &topic, 1).await.unwrap();
 
-        let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-partition-eof--index");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let (_source_id, source_config) = get_source_config(&topic, "earliest");
@@ -1251,16 +1217,8 @@ mod kafka_broker_tests {
                 source_config.source_params
             );
         };
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            PathBuf::from("./queues"),
-        );
-        let ignored_checkpoint = SourceCheckpoint::default();
-        let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
-            .await
-            .unwrap();
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
+        let mut kafka_source = KafkaSource::try_new(source_runtime, params).await.unwrap();
         let partition_id_1 = PartitionId::from(1u64);
         kafka_source.state.assigned_partitions = HashMap::from_iter([(1, partition_id_1)]);
 
@@ -1282,9 +1240,9 @@ mod kafka_broker_tests {
 
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--suggest-truncate--index");
-        let (source_id, source_config) = get_source_config(&topic, "earliest");
-
-        let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[(2, -1, 42)]).await;
+        let (_source_id, source_config) = get_source_config(&topic, "earliest");
+        let index_uid =
+            setup_index(metastore.clone(), &index_id, &source_config, &[(2, -1, 42)]).await;
 
         let SourceParams::Kafka(params) = source_config.clone().source_params else {
             panic!(
@@ -1292,16 +1250,10 @@ mod kafka_broker_tests {
                 source_config.source_params
             );
         };
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            PathBuf::from("./queues"),
-        );
-        let ignored_checkpoint = SourceCheckpoint::default();
-        let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
-            .await
-            .unwrap();
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+            .with_metastore(metastore)
+            .build();
+        let mut kafka_source = KafkaSource::try_new(source_runtime, params).await.unwrap();
 
         let universe = Universe::with_accelerated_time();
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
@@ -1369,18 +1321,11 @@ mod kafka_broker_tests {
             let metastore = metastore_for_test();
             let index_id = append_random_suffix("test-kafka-source--index");
             let (source_id, source_config) = get_source_config(&topic, "earliest");
-            let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
-            let source = source_loader
-                .load_source(
-                    SourceRuntimeArgs::for_test(
-                        index_uid,
-                        source_config,
-                        metastore,
-                        PathBuf::from("./queues"),
-                    ),
-                    SourceCheckpoint::default(),
-                )
-                .await?;
+            let index_uid = setup_index(metastore.clone(), &index_id, &source_config, &[]).await;
+            let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+                .with_metastore(metastore)
+                .build();
+            let source = source_loader.load_source(source_runtime).await?;
             let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
             let source_actor = SourceActor {
                 source,
@@ -1428,19 +1373,12 @@ mod kafka_broker_tests {
             let metastore = metastore_for_test();
             let index_id = append_random_suffix("test-kafka-source--index");
             let (source_id, source_config) = get_source_config(&topic, "earliest");
-            let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
-            let source = source_loader
-                .load_source(
-                    SourceRuntimeArgs::for_test(
-                        index_uid,
-                        source_config,
-                        metastore,
-                        PathBuf::from("./queues"),
-                    ),
-                    SourceCheckpoint::default(),
-                )
-                .await?;
+            let index_uid = setup_index(metastore.clone(), &index_id, &source_config, &[]).await;
+            let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+                .with_metastore(metastore)
+                .build();
             let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+            let source = source_loader.load_source(source_runtime).await?;
             let source_actor = SourceActor {
                 source,
                 doc_processor_mailbox: doc_processor_mailbox.clone(),
@@ -1495,22 +1433,14 @@ mod kafka_broker_tests {
             let index_uid = setup_index(
                 metastore.clone(),
                 &index_id,
-                &source_id,
+                &source_config,
                 &[(0, -1, 0), (1, -1, 2)],
             )
             .await;
-            let source = source_loader
-                .load_source(
-                    SourceRuntimeArgs::for_test(
-                        index_uid,
-                        source_config,
-                        metastore,
-                        PathBuf::from("./queues"),
-                    ),
-                    SourceCheckpoint::default(),
-                )
-                .await?;
-
+            let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+                .with_metastore(metastore)
+                .build();
+            let source = source_loader.load_source(source_runtime).await?;
             let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
             let source_actor = SourceActor {
                 source,
@@ -1559,18 +1489,11 @@ mod kafka_broker_tests {
             let metastore = metastore_for_test();
             let index_id = append_random_suffix("test-kafka-source--index");
             let (source_id, source_config) = get_source_config(&topic, "latest");
-            let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
-            let source = source_loader
-                .load_source(
-                    SourceRuntimeArgs::for_test(
-                        index_uid,
-                        source_config,
-                        metastore,
-                        PathBuf::from("./queues"),
-                    ),
-                    SourceCheckpoint::default(),
-                )
-                .await?;
+            let index_uid = setup_index(metastore.clone(), &index_id, &source_config, &[]).await;
+            let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+                .with_metastore(metastore)
+                .build();
+            let source = source_loader.load_source(source_runtime).await?;
             let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
             let source_actor = SourceActor {
                 source,

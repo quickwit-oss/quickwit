@@ -241,6 +241,26 @@ impl SourceType {
     }
 }
 
+impl fmt::Display for SourceType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let source_type_str = match self {
+            SourceType::Cli => "CLI ingest",
+            SourceType::File => "file",
+            SourceType::IngestV1 => "ingest API v1",
+            SourceType::IngestV2 => "ingest API v2",
+            SourceType::Kafka => "Apache Kafka",
+            SourceType::Kinesis => "Amazon Kinesis",
+            SourceType::Nats => "NATS",
+            SourceType::PubSub => "Google Cloud Pub/Sub",
+            SourceType::Pulsar => "Apache Pulsar",
+            SourceType::Unspecified => "unspecified",
+            SourceType::Vec => "vec",
+            SourceType::Void => "void",
+        };
+        write!(f, "{}", source_type_str)
+    }
+}
+
 impl IndexMetadataRequest {
     pub fn for_index_id(index_id: IndexId) -> Self {
         Self {
