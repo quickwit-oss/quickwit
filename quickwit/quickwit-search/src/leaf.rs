@@ -360,7 +360,6 @@ async fn leaf_search_single_split(
 
     let quickwit_collector = make_collector_for_split(
         split_id.clone(),
-        doc_mapper.as_ref(),
         &search_request,
         searcher_context.get_aggregation_limits(),
     )?;

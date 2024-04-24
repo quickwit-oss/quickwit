@@ -33,11 +33,13 @@ pub struct TimestampFilter {
 }
 
 impl TimestampFilter {
+    /*
     #[inline]
     pub fn fetch_timestamps<'a>(&self, docs: &'a [DocId], dates: &'a mut [Option<DateTime>]) {
         self.timestamp_column
             .first_vals(docs, &mut dates[..docs.len()]);
     }
+    */
     #[inline]
     pub fn contains_timestamp(&self, ts: &DateTime) -> bool {
         self.time_range.contains(ts)
