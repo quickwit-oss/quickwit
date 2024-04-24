@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use std::num::NonZeroU32;
 
 use fnv::{FnvHashMap, FnvHashSet};
+use quickwit_common::rate_limited_debug;
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
 use quickwit_proto::types::{PipelineUid, ShardId, SourceUid};
 use scheduling_logic_model::{IndexerOrd, SourceOrd};
@@ -683,7 +684,11 @@ fn convert_to_simplified_problem<'a>(
                 for shard_id in shard_ids {
                     for &indexer in shard_locations.get_shard_locations(shard_id) {
                         let Some(indexer_ord) = id_to_ord_map.indexer_ord(indexer.as_str()) else {
-                            warn!("failed to find indexer ord for indexer {indexer}");
+                            // This happens if the ingester is unavailable.
+                            rate_limited_debug!(
+                                limit_per_min = 10,
+                                "failed to find indexer ord for indexer {indexer}"
+                            );
                             continue;
                         };
                         problem.inc_affinity(source_ord, indexer_ord);
