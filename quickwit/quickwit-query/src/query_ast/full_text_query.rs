@@ -82,7 +82,7 @@ impl FullTextParams {
             let mut term =
                 Term::from_field_json_path(field, json_path, json_options.is_expand_dots_enabled());
             term.append_type_and_str(&token.text);
-            tokens.push((token.position, term.clone()));
+            tokens.push((token.position, term));
         });
         Ok(tokens)
     }

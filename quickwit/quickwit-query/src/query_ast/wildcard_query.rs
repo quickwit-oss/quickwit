@@ -170,7 +170,7 @@ impl WildcardQuery {
                         json_options.is_expand_dots_enabled(),
                     );
                     term.append_type_and_str(&token.text);
-                    tokens.push(term.clone());
+                    tokens.push(term);
                 });
                 let term = extract_unique_token(tokens)?;
                 Ok((field, term))
