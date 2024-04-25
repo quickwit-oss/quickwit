@@ -248,7 +248,12 @@ pub async fn test_metastore_acquire_shards<
     let acquire_shards_request = AcquireShardsRequest {
         index_uid: test_index.index_uid.clone().into(),
         source_id: test_index.source_id.clone(),
-        shard_ids: vec![ShardId::from(1), ShardId::from(2), ShardId::from(3)],
+        shard_ids: vec![
+            ShardId::from(1),
+            ShardId::from(2),
+            ShardId::from(3),
+            ShardId::from(666),
+        ], // shard 666 does not exist
         publish_token: "test-publish-token-foo".to_string(),
     };
     let acquire_shards_response = metastore

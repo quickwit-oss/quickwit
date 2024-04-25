@@ -161,6 +161,12 @@ service MetastoreService {
   // Acquires a set of shards for indexing. This RPC locks the shards for publishing thanks to a publish token and only
   // the last indexer that has acquired the shards is allowed to publish. The response returns for each subrequest the
   // list of acquired shards along with the positions to index from.
+  //
+  // If a requested shard is missing, this method does not return an error. It should simply return the list of
+  // shards that were actually acquired.
+  //
+  // For this reason, AcquireShards.acquire_shards may return less subresponse than there was in the request.
+  // Also they may be returned in any order.
   rpc AcquireShards(AcquireShardsRequest) returns (AcquireShardsResponse);
 
   // Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
@@ -387,6 +393,7 @@ message AcquireShardsRequest {
 }
 
 message AcquireShardsResponse {
+  // List of acquired shards, in no specific order.
   repeated quickwit.ingest.Shard acquired_shards = 3;
 }
 
