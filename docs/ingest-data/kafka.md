@@ -209,12 +209,12 @@ num_pipelines: 2
 params:
   topic: gh-archive
   client_params:
-    bootstrap.servers: "your-kafka-broker.com"
-    ssl.ca.location: "/path/to/ca.pem"
-    security.protocol: "SASL_SSL"
-    sasl.mechanisms: "SCRAM-SHA-256"
-    sasl.username: "your_sasl_username"
-    sasl.password: "your_sasl_password"
+    bootstrap.servers: your-kafka-broker.com
+    ssl.ca.location: /path/to/ca.pem
+    security.protocol: SASL_SSL
+    sasl.mechanisms: SCRAM-SHA-256
+    sasl.username: your_sasl_username
+    sasl.password: your_sasl_password
 ```
 
 :::note
