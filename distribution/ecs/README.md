@@ -69,7 +69,7 @@ We provide an example of self contained deployment with an ad-hoc VPC.
 
 ### Deploy the Quickwit module and connect through a bastion
 
-To make it easy to access your the Quickwit cluster, the example stack includes
+To make it easy to access your Quickwit cluster, the example stack includes
 a bastion instance. Access is secured using an SSH key pair that you need to
 provide (e.g generated with `ssh-keygen -t ed25519`).
 
