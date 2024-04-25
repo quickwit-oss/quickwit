@@ -180,7 +180,7 @@ curl -XPOST -H 'Content-Type: application/json' 'http://localhost:7280/api/v1/gh
 ## Secured Kafka connection (optional)
 
 The Quickwit Kafka source supports SSL and SASL authentication. This is
-particularly useful when consuming an external Kafka service.
+particularly useful when consuming data from an external Kafka service.
 
 ### SSL configuration
 
