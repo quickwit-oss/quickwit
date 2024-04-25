@@ -192,11 +192,11 @@ num_pipelines: 2
 params:
   topic: gh-archive
   client_params:
-    bootstrap.servers: "your-kafka-broker.com"
-    security.protocol: "SSL"
-    ssl.ca.location: "/path/to/ca.pem"
-    ssl.certificate.location: "/path/to/service.cert"
-    ssl.key.location: "/path/to/service.key"
+    bootstrap.servers: your-kafka-broker.com
+    security.protocol: SSL
+    ssl.ca.location: /path/to/ca.pem
+    ssl.certificate.location: /path/to/service.cert
+    ssl.key.location: /path/to/service.key
 ```
 
 ### SASL configuration
