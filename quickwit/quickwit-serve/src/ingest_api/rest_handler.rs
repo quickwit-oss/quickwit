@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use bytes::{Buf, Bytes};
-use quickwit_config::{IngestApiConfig, INGEST_V2_SOURCE_ID};
+use quickwit_config::{disable_ingest_v1, IngestApiConfig, INGEST_V2_SOURCE_ID};
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, DocBatchV2Builder, FetchResponse, IngestRequest, IngestResponse,
     IngestService, IngestServiceClient, IngestServiceError, TailRequest,
@@ -213,6 +213,10 @@ async fn ingest(
     ingest_options: IngestOptions,
     mut ingest_service: IngestServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
+    if disable_ingest_v1() {
+        let message = "ingest v1 is disabled: environment variable `QW_DISABLE_INGEST_V1` is set";
+        return Err(IngestServiceError::Internal(message.to_string()));
+    }
     // The size of the body should be an upper bound of the size of the batch. The removal of the
     // end of line character for each doc compensates the addition of the `DocCommand` header.
     let mut doc_batch_builder = DocBatchBuilder::with_capacity(index_id, body.content.remaining());
