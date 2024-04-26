@@ -34,7 +34,7 @@ pub use serialize::load_source_config_from_user_config;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
 
-use crate::{enable_ingest_v2, TestableForRegression};
+use crate::{disable_ingest_v1, enable_ingest_v2, TestableForRegression};
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
 pub const CLI_SOURCE_ID: &str = "_ingest-cli-source";
@@ -107,7 +107,7 @@ impl SourceConfig {
     pub fn cli() -> Self {
         Self {
             source_id: CLI_SOURCE_ID.to_string(),
-            num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::IngestCli,
             transform_config: None,
@@ -119,7 +119,7 @@ impl SourceConfig {
     pub fn ingest_v2() -> Self {
         Self {
             source_id: INGEST_V2_SOURCE_ID.to_string(),
-            num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: enable_ingest_v2(),
             source_params: SourceParams::Ingest,
             transform_config: None,
@@ -131,8 +131,8 @@ impl SourceConfig {
     pub fn ingest_api_default() -> Self {
         Self {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
-            enabled: true,
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: !disable_ingest_v1(),
             source_params: SourceParams::IngestApi,
             transform_config: None,
             input_format: SourceInputFormat::Json,
@@ -143,7 +143,7 @@ impl SourceConfig {
     pub fn for_test(source_id: &str, source_params: SourceParams) -> Self {
         Self {
             source_id: source_id.to_string(),
-            num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params,
             transform_config: None,
@@ -652,7 +652,7 @@ mod tests {
             load_source_config_from_user_config(config_format, file_content.as_bytes()).unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kinesis-source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::Kinesis(KinesisSourceParams {
                 stream_name: "emr-cluster-logs".to_string(),
@@ -1078,7 +1078,7 @@ mod tests {
         let source_config: SourceConfig = ConfigFormat::Json.parse(&file_content).unwrap();
         let expected_source_config = SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: Some(TransformConfig {
