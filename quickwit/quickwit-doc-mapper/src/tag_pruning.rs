@@ -145,11 +145,7 @@ enum UnsimplifiedTagFilterAst {
 enum TermFilterAst {
     And(Vec<TermFilterAst>),
     Or(Vec<TermFilterAst>),
-    Term {
-        is_present: bool,
-        field: String,
-        value: String,
-    },
+    Term { field: String, value: String },
 }
 
 /// Records terms into a set of tags.
@@ -266,12 +262,18 @@ fn simplify_ast(ast: UnsimplifiedTagFilterAst) -> Option<TermFilterAst> {
             is_present,
             field,
             value,
-        } => TermFilterAst::Term {
-            is_present,
-            field,
-            value,
+        } => {
+            if is_present {
+                Some(TermFilterAst::Term { field, value })
+            } else {
+                // we can't do tag pruning on negative filters. If `field` can be one of 1 or 2,
+                // and we search for not(1), we don't want to remove a split where
+                // tags=[1,2] (which is_present: false does). It's even more problematic if some
+                // documents have `field` unset, because we don't record that at all, so can't
+                // even reject a split based on it having tags=[1].
+                None
+            }
         }
-        .into(),
         UnsimplifiedTagFilterAst::Uninformative => None,
     }
 }
@@ -294,17 +296,13 @@ fn expand_to_tag_ast(terms_filter_ast: TermFilterAst) -> TagFilterAst {
         TermFilterAst::Or(children) => {
             TagFilterAst::Or(children.into_iter().map(expand_to_tag_ast).collect())
         }
-        TermFilterAst::Term {
-            is_present,
-            field,
-            value,
-        } => {
+        TermFilterAst::Term { field, value } => {
             let field_is_tag = TagFilterAst::Tag {
                 is_present: false,
                 tag: field_tag(&field),
             };
             let term_tag = TagFilterAst::Tag {
-                is_present,
+                is_present: true,
                 tag: term_tag(&field, &value),
             };
             TagFilterAst::Or(vec![field_is_tag, term_tag])
@@ -470,21 +468,18 @@ mod test {
 
     #[test]
     fn test_disjunction_of_tag_disjunction_with_not_clause() {
-        assert_eq!(
-            extract_tags_from_query_helper("(user:bart -lang:fr)")
-                .unwrap()
-                .to_string(),
-            "((¬user! ∨ user:bart) ∨ (¬lang! ∨ ¬lang:fr))"
-        );
+        // ORed negative tags make the result inconclusive. See simplify_ast() for details
+        assert!(extract_tags_from_query_helper("(user:bart -lang:fr)").is_none());
     }
 
     #[test]
     fn test_disjunction_of_tag_conjunction_with_not_clause() {
+        // negative tags are removed from AND clauses. See simplify_ast() for details
         assert_eq!(
             &extract_tags_from_query_helper("user:bart AND NOT lang:fr")
                 .unwrap()
                 .to_string(),
-            "(¬user! ∨ user:bart) ∧ (¬lang! ∨ ¬lang:fr)"
+            "(¬user! ∨ user:bart)"
         );
     }
 

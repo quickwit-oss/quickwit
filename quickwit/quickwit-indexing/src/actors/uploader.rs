@@ -492,7 +492,7 @@ mod tests {
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::metastore::EmptyResponse;
+    use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
     use quickwit_proto::types::PipelineUid;
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
@@ -515,7 +515,7 @@ mod tests {
         };
         let (sequencer_mailbox, sequencer_inbox) =
             universe.create_test_mailbox::<Sequencer<Publisher>>();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_stage_splits()
             .withf(move |stage_splits_request| -> bool {
@@ -534,7 +534,7 @@ mod tests {
         let merge_policy = Arc::new(NopMergePolicy);
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             merge_policy,
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
@@ -628,7 +628,7 @@ mod tests {
         let universe = Universe::new();
         let (sequencer_mailbox, sequencer_inbox) =
             universe.create_test_mailbox::<Sequencer<Publisher>>();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_stage_splits()
             .withf(move |stage_splits_request| -> bool {
@@ -648,7 +648,7 @@ mod tests {
         let merge_policy = Arc::new(NopMergePolicy);
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             merge_policy,
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
@@ -779,7 +779,7 @@ mod tests {
         };
         let universe = Universe::new();
         let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_stage_splits()
             .withf(move |stage_splits_request| -> bool {
@@ -793,7 +793,7 @@ mod tests {
         let merge_policy = Arc::new(NopMergePolicy);
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             merge_policy,
             split_store,
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
@@ -856,14 +856,14 @@ mod tests {
         let universe = Universe::new();
         let (sequencer_mailbox, sequencer_inbox) =
             universe.create_test_mailbox::<Sequencer<Publisher>>();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore.expect_stage_splits().never();
         let ram_storage = RamStorage::default();
         let split_store =
             IndexingSplitStore::create_without_local_store_for_test(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             default_merge_policy(),
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
@@ -957,7 +957,7 @@ mod tests {
             node_id: "test-node".to_string(),
             pipeline_uid: PipelineUid::default(),
         };
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_stage_splits()
             .times(1)
@@ -969,7 +969,7 @@ mod tests {
         let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox();
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             merge_policy,
             split_store,
             SplitsUpdateMailbox::Publisher(publisher_mailbox),

@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use bytesize::ByteSize;
+
 use crate::types::{queue_id, Position, QueueId, ShardId};
 
 include!("../codegen/quickwit/quickwit.ingest.ingester.rs");
@@ -74,6 +76,14 @@ impl FetchPayload {
         }
     }
 
+    pub fn estimate_size(&self) -> ByteSize {
+        if let Some(mrecord_batch) = &self.mrecord_batch {
+            mrecord_batch.estimate_size()
+        } else {
+            ByteSize(0)
+        }
+    }
+
     pub fn from_position_exclusive(&self) -> &Position {
         self.from_position_exclusive
             .as_ref()
@@ -92,6 +102,19 @@ impl FetchEof {
         self.eof_position
             .as_ref()
             .expect("`eof_position` should be a required field")
+    }
+}
+
+impl IngesterStatus {
+    pub fn as_json_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "unspecified",
+            Self::Initializing => "initializing",
+            Self::Ready => "ready",
+            Self::Decommissioning => "decommissioning",
+            Self::Decommissioned => "decommissioned",
+            Self::Failed => "failed",
+        }
     }
 }
 
@@ -208,6 +231,16 @@ impl AckReplicationMessage {
                 replicate_response,
             )),
         }
+    }
+}
+
+impl ReplicateRequest {
+    pub fn num_bytes(&self) -> usize {
+        self.subrequests
+            .iter()
+            .flat_map(|subrequest| &subrequest.doc_batch)
+            .map(|doc_batch| doc_batch.num_bytes())
+            .sum()
     }
 }
 

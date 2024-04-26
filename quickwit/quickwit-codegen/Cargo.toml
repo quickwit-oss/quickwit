@@ -15,7 +15,6 @@ anyhow = { workspace = true }
 heck = { workspace = true }
 prettyplease = { workspace = true }
 proc-macro2 = { workspace = true }
-prost = { workspace = true }
 prost-build = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }

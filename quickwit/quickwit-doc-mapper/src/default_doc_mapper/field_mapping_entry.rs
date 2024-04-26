@@ -353,6 +353,15 @@ impl TextIndexingOptions {
         }
     }
 
+    fn from_parts_concatenate(
+        tokenizer: Option<QuickwitTextTokenizer>,
+        record: Option<IndexRecordOption>,
+    ) -> anyhow::Result<Self> {
+        let text_index_options_opt = Self::from_parts_text(true, tokenizer, record, false)?;
+        let text_index_options = text_index_options_opt.expect("concatenate field must be indexed");
+        Ok(text_index_options)
+    }
+
     fn to_parts_text(
         this: Option<Self>,
     ) -> (
@@ -381,6 +390,14 @@ impl TextIndexingOptions {
     ) {
         let (indexed, tokenizer, record, _fieldorm) = TextIndexingOptions::to_parts_text(this);
         (indexed, tokenizer, record)
+    }
+
+    fn to_parts_concatenate(
+        this: Self,
+    ) -> (Option<QuickwitTextTokenizer>, Option<IndexRecordOption>) {
+        let (_indexed, tokenizer, record, _fieldorm) =
+            TextIndexingOptions::to_parts_text(Some(this));
+        (tokenizer, record)
     }
 
     fn default_json() -> Self {
@@ -635,6 +652,69 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
     }
 }
 
+/// Options associated to a concatenate field.
+#[quickwit_macros::serde_multikey]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct QuickwitConcatenateOptions {
+    /// Optional description of JSON object.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Fields to concatenate
+    #[serde(default)]
+    pub concatenate_fields: Vec<String>,
+    #[serde(default)]
+    pub include_dynamic_fields: bool,
+    #[serde_multikey(
+        deserializer = TextIndexingOptions::from_parts_concatenate,
+        serializer = TextIndexingOptions::to_parts_concatenate,
+        fields = (
+            /// Sets the tokenize that should be used with the text fields in the
+            /// concatenate field.
+            #[serde(default)]
+            #[serde(skip_serializing_if = "Option::is_none")]
+            pub tokenizer: Option<QuickwitTextTokenizer>,
+            /// Sets how much information should be added in the index
+            /// with each token.
+            #[schema(value_type = IndexRecordOptionSchema)]
+            #[serde(default)]
+            #[serde(skip_serializing_if = "Option::is_none")]
+            pub record: Option<IndexRecordOption>,
+        ),
+    )]
+    /// Options for indexing text in a concatenate field.
+    pub indexing_options: TextIndexingOptions,
+}
+
+impl Default for QuickwitConcatenateOptions {
+    fn default() -> Self {
+        QuickwitConcatenateOptions {
+            description: None,
+            concatenate_fields: Vec::new(),
+            include_dynamic_fields: false,
+            indexing_options: TextIndexingOptions {
+                tokenizer: QuickwitTextTokenizer::default(),
+                record: IndexRecordOption::Basic,
+                fieldnorms: false,
+            },
+        }
+    }
+}
+
+impl From<QuickwitConcatenateOptions> for TextOptions {
+    fn from(quickwit_text_options: QuickwitConcatenateOptions) -> Self {
+        let mut text_options = TextOptions::default();
+        let text_field_indexing = TextFieldIndexing::default()
+            .set_index_option(quickwit_text_options.indexing_options.record)
+            .set_fieldnorms(quickwit_text_options.indexing_options.fieldnorms)
+            .set_tokenizer(quickwit_text_options.indexing_options.tokenizer.name());
+
+        text_options = text_options.set_indexing_options(text_field_indexing);
+        text_options
+    }
+}
+
 fn deserialize_mapping_type(
     quickwit_field_type: QuickwitFieldType,
     json: JsonValue,
@@ -648,6 +728,15 @@ fn deserialize_mapping_type(
                 anyhow::bail!("object type must have at least one field mapping");
             }
             return Ok(FieldMappingType::Object(object_options));
+        }
+        QuickwitFieldType::Concatenate => {
+            let concatenate_options: QuickwitConcatenateOptions = serde_json::from_value(json)?;
+            if concatenate_options.concatenate_fields.is_empty()
+                && !concatenate_options.include_dynamic_fields
+            {
+                anyhow::bail!("concatenate type must have at least one sub-field");
+            }
+            return Ok(FieldMappingType::Concatenate(concatenate_options));
         }
     };
     match typ {
@@ -742,6 +831,9 @@ fn typed_mapping_to_json_params(
         FieldMappingType::DateTime(date_time_options, _) => serialize_to_map(&date_time_options),
         FieldMappingType::Json(json_options, _) => serialize_to_map(&json_options),
         FieldMappingType::Object(object_options) => serialize_to_map(&object_options),
+        FieldMappingType::Concatenate(concatenate_options) => {
+            serialize_to_map(&concatenate_options)
+        }
     }
     .unwrap()
 }

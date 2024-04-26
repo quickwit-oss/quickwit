@@ -17,7 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::OnceLock;
 
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
@@ -57,6 +58,16 @@ impl<const N: usize> IntGaugeVec<N> {
     pub fn with_label_values(&self, label_values: [&str; N]) -> IntGauge {
         self.underlying.with_label_values(&label_values)
     }
+}
+
+pub fn register_info(name: &'static str, help: &'static str, kvs: BTreeMap<&'static str, String>) {
+    let mut counter_opts = Opts::new(name, help).namespace("quickwit");
+    for (k, v) in kvs {
+        counter_opts = counter_opts.const_label(k, v);
+    }
+    let counter = IntCounter::with_opts(counter_opts).expect("failed to create counter");
+    counter.inc();
+    prometheus::register(Box::new(counter)).expect("failed to register counter");
 }
 
 pub fn new_counter(name: &str, help: &str, subsystem: &str) -> IntCounter {
@@ -218,7 +229,7 @@ pub struct MemoryMetrics {
     pub active_bytes: IntGauge,
     pub allocated_bytes: IntGauge,
     pub resident_bytes: IntGauge,
-    pub in_flight_data: InFlightDataGauges,
+    pub in_flight: InFlightDataGauges,
 }
 
 impl Default for MemoryMetrics {
@@ -245,7 +256,7 @@ impl Default for MemoryMetrics {
                 "memory",
                 &[],
             ),
-            in_flight_data: InFlightDataGauges::default(),
+            in_flight: InFlightDataGauges::default(),
         }
     }
 }
@@ -254,11 +265,15 @@ impl Default for MemoryMetrics {
 pub struct InFlightDataGauges {
     pub rest_server: IntGauge,
     pub ingest_router: IntGauge,
+    pub ingester_persist: IntGauge,
+    pub ingester_replicate: IntGauge,
     pub wal: IntGauge,
-    pub sources: InFlightDataSourceGauges,
+    pub fetch_stream: IntGauge,
+    pub multi_fetch_stream: IntGauge,
     pub doc_processor_mailbox: IntGauge,
     pub indexer_mailbox: IntGauge,
     pub index_writer: IntGauge,
+    in_flight_gauge_vec: IntGaugeVec<1>,
 }
 
 impl Default for InFlightDataGauges {
@@ -273,38 +288,75 @@ impl Default for InFlightDataGauges {
         Self {
             rest_server: in_flight_gauge_vec.with_label_values(["rest_server"]),
             ingest_router: in_flight_gauge_vec.with_label_values(["ingest_router"]),
+            ingester_persist: in_flight_gauge_vec.with_label_values(["ingester_persist"]),
+            ingester_replicate: in_flight_gauge_vec.with_label_values(["ingester_replicate"]),
             wal: in_flight_gauge_vec.with_label_values(["wal"]),
-            sources: InFlightDataSourceGauges::new(&in_flight_gauge_vec),
+            fetch_stream: in_flight_gauge_vec.with_label_values(["fetch_stream"]),
+            multi_fetch_stream: in_flight_gauge_vec.with_label_values(["multi_fetch_stream"]),
             doc_processor_mailbox: in_flight_gauge_vec.with_label_values(["doc_processor_mailbox"]),
             indexer_mailbox: in_flight_gauge_vec.with_label_values(["indexer_mailbox"]),
             index_writer: in_flight_gauge_vec.with_label_values(["index_writer"]),
+            in_flight_gauge_vec: in_flight_gauge_vec.clone(),
         }
     }
 }
 
-/// TODO make those lazy.
-#[derive(Clone)]
-pub struct InFlightDataSourceGauges {
-    pub file: IntGauge,
-    pub ingest: IntGauge,
-    pub kafka: IntGauge,
-    pub kinesis: IntGauge,
-    pub pubsub: IntGauge,
-    pub pulsar: IntGauge,
-    pub other: IntGauge,
-}
+impl InFlightDataGauges {
+    #[inline]
+    pub fn file(&self) -> &IntGauge {
+        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
+        GAUGE.get_or_init(|| self.in_flight_gauge_vec.with_label_values(["file_source"]))
+    }
 
-impl InFlightDataSourceGauges {
-    pub fn new(in_flight_gauge_vec: &IntGaugeVec<1>) -> Self {
-        Self {
-            file: in_flight_gauge_vec.with_label_values(["file_source"]),
-            ingest: in_flight_gauge_vec.with_label_values(["ingest_source"]),
-            kafka: in_flight_gauge_vec.with_label_values(["kafka_source"]),
-            kinesis: in_flight_gauge_vec.with_label_values(["kinesis_source"]),
-            pubsub: in_flight_gauge_vec.with_label_values(["pubsub_source"]),
-            pulsar: in_flight_gauge_vec.with_label_values(["pulsar_source"]),
-            other: in_flight_gauge_vec.with_label_values(["other"]),
-        }
+    #[inline]
+    pub fn ingest(&self) -> &IntGauge {
+        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
+        GAUGE.get_or_init(|| {
+            self.in_flight_gauge_vec
+                .with_label_values(["ingest_source"])
+        })
+    }
+
+    #[inline]
+    pub fn kafka(&self) -> &IntGauge {
+        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
+        GAUGE.get_or_init(|| self.in_flight_gauge_vec.with_label_values(["kafka_source"]))
+    }
+
+    #[inline]
+    pub fn kinesis(&self) -> &IntGauge {
+        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
+        GAUGE.get_or_init(|| {
+            self.in_flight_gauge_vec
+                .with_label_values(["kinesis_source"])
+        })
+    }
+
+    #[inline]
+    pub fn pubsub(&self) -> &IntGauge {
+        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
+        GAUGE.get_or_init(|| {
+            self.in_flight_gauge_vec
+                .with_label_values(["pubsub_source"])
+        })
+    }
+
+    #[inline]
+    pub fn pulsar(&self) -> &IntGauge {
+        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
+        GAUGE.get_or_init(|| {
+            self.in_flight_gauge_vec
+                .with_label_values(["pulsar_source"])
+        })
+    }
+
+    #[inline]
+    pub fn other(&self) -> &IntGauge {
+        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
+        GAUGE.get_or_init(|| {
+            self.in_flight_gauge_vec
+                .with_label_values(["pulsar_source"])
+        })
     }
 }
 

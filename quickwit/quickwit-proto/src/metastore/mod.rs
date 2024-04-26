@@ -20,9 +20,10 @@
 use std::fmt;
 
 use quickwit_common::retry::Retryable;
+use quickwit_common::tower::MakeLoadShedError;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{IndexId, IndexUid, QueueId, ShardId, SourceId, SplitId};
+use crate::types::{IndexId, IndexUid, QueueId, SourceId, SplitId};
 use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 pub mod events;
@@ -148,6 +149,9 @@ pub enum MetastoreError {
     #[error("request timed out: {0}")]
     Timeout(String),
 
+    #[error("too many requests")]
+    TooManyRequests,
+
     #[error("service unavailable: {0}")]
     Unavailable(String),
 }
@@ -176,6 +180,7 @@ impl ServiceError for MetastoreError {
             Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
             Self::NotFound(_) => ServiceErrorCode::NotFound,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
+            Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
@@ -193,6 +198,10 @@ impl GrpcServiceError for MetastoreError {
         Self::Timeout(message)
     }
 
+    fn new_too_many_requests() -> Self {
+        Self::TooManyRequests
+    }
+
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
     }
@@ -204,6 +213,12 @@ impl Retryable for MetastoreError {
             self,
             Self::Connection { .. } | Self::Db { .. } | Self::Io { .. } | Self::Internal { .. }
         )
+    }
+}
+
+impl MakeLoadShedError for MetastoreError {
+    fn make_load_shed_error() -> Self {
+        MetastoreError::TooManyRequests
     }
 }
 
@@ -297,6 +312,19 @@ pub mod serde_utils {
         })
     }
 
+    pub fn from_json_zstd<T: DeserializeOwned>(value_bytes: &[u8]) -> MetastoreResult<T> {
+        let value_json = zstd::decode_all(value_bytes).map_err(|error| {
+            MetastoreError::JsonDeserializeError {
+                struct_name: std::any::type_name::<T>().to_string(),
+                message: error.to_string(),
+            }
+        })?;
+        serde_json::from_slice(&value_json).map_err(|error| MetastoreError::JsonDeserializeError {
+            struct_name: std::any::type_name::<T>().to_string(),
+            message: error.to_string(),
+        })
+    }
+
     pub fn from_json_str<'de, T: Deserialize<'de>>(value_str: &'de str) -> MetastoreResult<T> {
         serde_json::from_str(value_str).map_err(|error| MetastoreError::JsonDeserializeError {
             struct_name: std::any::type_name::<T>().to_string(),
@@ -325,6 +353,23 @@ pub mod serde_utils {
         })
     }
 
+    pub fn to_json_zstd<T: Serialize>(
+        value: &T,
+        compression_level: i32,
+    ) -> Result<Vec<u8>, MetastoreError> {
+        let value_json =
+            serde_json::to_vec(value).map_err(|error| MetastoreError::JsonSerializeError {
+                struct_name: std::any::type_name::<T>().to_string(),
+                message: error.to_string(),
+            })?;
+        zstd::encode_all(value_json.as_slice(), compression_level).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: std::any::type_name::<T>().to_string(),
+                message: error.to_string(),
+            }
+        })
+    }
+
     pub fn to_json_bytes_pretty<T: Serialize>(value: &T) -> Result<Vec<u8>, MetastoreError> {
         serde_json::to_vec_pretty(value).map_err(|error| MetastoreError::JsonSerializeError {
             struct_name: std::any::type_name::<T>().to_string(),
@@ -338,13 +383,5 @@ impl ListIndexesMetadataRequest {
         ListIndexesMetadataRequest {
             index_id_patterns: vec!["*".to_string()],
         }
-    }
-}
-
-impl OpenShardsSubrequest {
-    pub fn shard_id(&self) -> &ShardId {
-        self.shard_id
-            .as_ref()
-            .expect("`shard_id` should be a required field")
     }
 }

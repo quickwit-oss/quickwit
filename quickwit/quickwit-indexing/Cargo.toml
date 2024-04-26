@@ -11,15 +11,12 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-aws-config = { workspace = true, optional = true }
 aws-sdk-kinesis = { workspace = true, optional = true }
-aws-smithy-client = { workspace = true, optional = true }
 
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-compression = { workspace = true }
 async-trait = { workspace = true }
-backoff = { workspace = true, optional = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 fail = { workspace = true }
@@ -27,7 +24,6 @@ flume = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
 google-cloud-auth = { workspace = true, optional = true }
-google-cloud-default = { workspace = true, optional = true }
 google-cloud-gax = { workspace = true, optional = true }
 google-cloud-googleapis = { workspace = true, optional = true }
 google-cloud-pubsub = { workspace = true, optional = true }
@@ -46,12 +42,10 @@ tempfile = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
 tracing = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
 vrl = { workspace = true, optional = true }
-zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }
@@ -69,17 +63,14 @@ quickwit-storage = { workspace = true }
 [features]
 gcp-pubsub = [
   "dep:google-cloud-auth",
-  "dep:google-cloud-default",
   "dep:google-cloud-gax",
   "dep:google-cloud-googleapis",
   "dep:google-cloud-pubsub",
 ]
 gcp-pubsub-emulator-tests = []
-kafka = ["rdkafka", "backoff"]
+kafka = ["rdkafka"]
 kafka-broker-tests = []
 kinesis = [
-  "aws-config",
-  "aws-smithy-client",
   "aws-sdk-kinesis",
   "quickwit-aws/kinesis",
 ]
@@ -97,6 +88,9 @@ testsuite = [
   "quickwit-actors/testsuite",
   "quickwit-cluster/testsuite",
   "quickwit-common/testsuite",
+  "quickwit-config/testsuite",
+  "quickwit-proto/testsuite",
+  "quickwit-storage/testsuite"
 ]
 vrl = ["dep:vrl", "quickwit-config/vrl"]
 
@@ -129,3 +123,7 @@ required-features = ["fail/failpoints"]
 [[bench]]
 name = "doc_process_vrl_bench"
 harness = false
+
+[package.metadata.cargo-machete]
+# used to vendor/static build native dependancies
+ignored = ["libz-sys", "openssl"]

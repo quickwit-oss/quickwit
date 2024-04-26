@@ -23,7 +23,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::{stream, StreamExt};
-use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
 use quickwit_index_management::run_garbage_collect;
@@ -33,7 +32,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
 
@@ -84,23 +83,28 @@ impl GarbageCollector {
     /// Gc Loop handler logic.
     /// Should not return an error to prevent the actor from crashing.
     async fn handle_inner(&mut self, ctx: &ActorContext<Self>) {
-        info!("garbage-collect-operation");
+        debug!("loading indexes from the metastore");
         self.counters.num_passes += 1;
 
-        let indexes = match self
+        let response = match self
             .metastore
             .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
-            .and_then(|list_indexes_metadata_response| {
-                list_indexes_metadata_response.deserialize_indexes_metadata()
-            }) {
-            Ok(metadatas) => metadatas,
+        {
+            Ok(response) => response,
             Err(error) => {
-                error!(error=?error, "failed to list indexes from the metastore");
+                error!(%error, "failed to list indexes from the metastore");
                 return;
             }
         };
-        info!(index_ids=%indexes.iter().map(|im| im.index_id()).join(", "), "garbage collecting indexes");
+        let indexes = match response.deserialize_indexes_metadata().await {
+            Ok(indexes) => indexes,
+            Err(error) => {
+                error!(%error, "failed to deserialize indexes metadata");
+                return;
+            }
+        };
+        info!("loaded {} indexes from the metastore", indexes.len());
 
         let mut gc_futures = stream::iter(indexes).map(|index| {
             let metastore = self.metastore.clone();
@@ -220,6 +224,7 @@ mod tests {
     };
     use quickwit_proto::metastore::{
         EmptyResponse, ListIndexesMetadataResponse, ListSplitsResponse, MetastoreError,
+        MockMetastoreService,
     };
     use quickwit_proto::types::IndexUid;
     use quickwit_storage::MockStorage;
@@ -263,7 +268,7 @@ mod tests {
                 Ok(())
             });
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_list_splits()
@@ -329,7 +334,7 @@ mod tests {
         let result = run_garbage_collect(
             index_uid,
             Arc::new(mock_storage),
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             STAGED_GRACE_PERIOD,
             DELETION_GRACE_PERIOD,
             false,
@@ -342,7 +347,7 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_calls_dependencies_appropriately() {
         let storage_resolver = StorageResolver::unconfigured();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .times(1)
@@ -351,10 +356,7 @@ mod tests {
                     "test-index",
                     "ram://indexes/test-index",
                 )];
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
             });
         mock_metastore
             .expect_list_splits()
@@ -401,7 +403,7 @@ mod tests {
             });
 
         let garbage_collect_actor = GarbageCollector::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             storage_resolver,
         );
         let universe = Universe::with_accelerated_time();
@@ -418,7 +420,7 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_get_calls_repeatedly() {
         let storage_resolver = StorageResolver::unconfigured();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .times(3)
@@ -427,10 +429,7 @@ mod tests {
                     "test-index",
                     "ram://indexes/test-index",
                 )];
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
             });
         mock_metastore
             .expect_list_splits()
@@ -477,7 +476,7 @@ mod tests {
             });
 
         let garbage_collect_actor = GarbageCollector::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             storage_resolver,
         );
         let universe = Universe::with_accelerated_time();
@@ -519,7 +518,7 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_get_called_repeatedly_on_failure() {
         let storage_resolver = StorageResolver::unconfigured();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .times(4)
@@ -530,7 +529,7 @@ mod tests {
             });
 
         let garbage_collect_actor = GarbageCollector::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             storage_resolver,
         );
         let universe = Universe::with_accelerated_time();
@@ -552,7 +551,7 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_fails_to_resolve_storage() {
         let storage_resolver = StorageResolver::unconfigured();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .times(1)
@@ -561,14 +560,11 @@ mod tests {
                     "test-index",
                     "postgresql://indexes/test-index",
                 )];
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
             });
 
         let garbage_collect_actor = GarbageCollector::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             storage_resolver,
         );
         let universe = Universe::with_accelerated_time();
@@ -588,7 +584,7 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_fails_to_run_gc_on_one_index() {
         let storage_resolver = StorageResolver::unconfigured();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .times(1)
@@ -597,10 +593,7 @@ mod tests {
                     IndexMetadata::for_test("test-index-1", "ram:///indexes/test-index-1"),
                     IndexMetadata::for_test("test-index-2", "ram:///indexes/test-index-2"),
                 ];
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
             });
         mock_metastore
             .expect_list_splits()
@@ -651,7 +644,7 @@ mod tests {
             });
 
         let garbage_collect_actor = GarbageCollector::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             storage_resolver,
         );
         let universe = Universe::with_accelerated_time();
@@ -671,7 +664,7 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_fails_to_run_delete_on_one_index() {
         let storage_resolver = StorageResolver::unconfigured();
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .times(1)
@@ -680,10 +673,7 @@ mod tests {
                     IndexMetadata::for_test("test-index-1", "ram://indexes/test-index-1"),
                     IndexMetadata::for_test("test-index-2", "ram://indexes/test-index-2"),
                 ];
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(indexes_metadata))
             });
         mock_metastore
             .expect_list_splits()
@@ -739,7 +729,7 @@ mod tests {
             });
 
         let garbage_collect_actor = GarbageCollector::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             storage_resolver,
         );
         let universe = Universe::with_accelerated_time();

@@ -1,3 +1,6 @@
 # Delete index
 method: DELETE
 endpoint: indexes/simple
+---
+method: DELETE
+endpoint: indexes/tagged

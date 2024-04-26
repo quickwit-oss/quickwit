@@ -25,6 +25,7 @@ use bytesize::ByteSize;
 use quickwit_cluster::cluster_grpc_server;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
+use quickwit_proto::developer::DeveloperServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
@@ -34,6 +35,7 @@ use quickwit_proto::tonic::codegen::CompressionEncoding;
 use quickwit_proto::tonic::transport::Server;
 use tracing::*;
 
+use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
 use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
 
@@ -97,18 +99,14 @@ pub(crate) async fn start_grpc_server(
     } else {
         None
     };
-    let ingester_grpc_service = if services
-        .node_config
-        .is_service_enabled(QuickwitService::Indexer)
-    {
+
+    let ingester_grpc_service = if let Some(ingester_service) = services.ingester_service() {
         enabled_grpc_services.insert("ingester");
-        services
-            .ingester_service_opt
-            .as_ref()
-            .map(|ingester_service| ingester_service.as_grpc_service(max_message_size))
+        Some(ingester_service.as_grpc_service(max_message_size))
     } else {
         None
     };
+
     // Mount gRPC control plane service if `QuickwitService::ControlPlane` is enabled on node.
     let control_plane_grpc_service = if services
         .node_config
@@ -117,7 +115,7 @@ pub(crate) async fn start_grpc_server(
         enabled_grpc_services.insert("control-plane");
         Some(
             services
-                .control_plane_service
+                .control_plane_client
                 .as_grpc_service(max_message_size),
         )
     } else {
@@ -166,8 +164,17 @@ pub(crate) async fn start_grpc_server(
     } else {
         None
     };
+    let developer_grpc_service = {
+        enabled_grpc_services.insert("developer");
+
+        let developer_service = DeveloperApiServer::from_services(&services);
+
+        DeveloperServiceClient::new(developer_service)
+            .as_grpc_service(DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE)
+    };
     let server_router = server
         .add_service(cluster_grpc_service)
+        .add_service(developer_grpc_service)
         .add_optional_service(control_plane_grpc_service)
         .add_optional_service(indexing_grpc_service)
         .add_optional_service(ingest_api_grpc_service)

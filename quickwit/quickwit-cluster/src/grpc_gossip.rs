@@ -299,7 +299,7 @@ mod tests {
                         };
                         Ok(response)
                     });
-                ClusterServiceClient::from(mock_cluster_service)
+                ClusterServiceClient::from_mock(mock_cluster_service)
             })
         };
         let live_nodes = BTreeMap::from_iter([

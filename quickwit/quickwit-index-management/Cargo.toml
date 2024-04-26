@@ -12,34 +12,22 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-async-trait = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 itertools = { workspace = true }
-rand = { workspace = true }
-serde = { workspace = true }
-serde_json =  { workspace = true }
-tantivy = { workspace = true }
-tempfile = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
-tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
-quickwit-directories = { workspace = true }
-quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
 
 [dev-dependencies]
-mockall = { workspace = true }
-serde_yaml = { workspace = true }
 
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }

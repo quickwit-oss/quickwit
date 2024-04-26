@@ -34,9 +34,16 @@ pub struct TimestampFilter {
 
 impl TimestampFilter {
     #[inline]
-    pub fn is_within_range(&self, doc_id: DocId) -> bool {
+    pub fn contains_timestamp(&self, ts: &DateTime) -> bool {
+        self.time_range.contains(ts)
+    }
+
+    #[inline]
+    /// Fetches the timestamp of a given doc from the column storage and checks if it is within the
+    /// time range.
+    pub fn contains_doc_timestamp(&self, doc_id: DocId) -> bool {
         if let Some(ts) = self.timestamp_column.first(doc_id) {
-            self.time_range.contains(&ts)
+            self.contains_timestamp(&ts)
         } else {
             false
         }

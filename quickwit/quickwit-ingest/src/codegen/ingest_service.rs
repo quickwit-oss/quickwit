@@ -22,6 +22,15 @@ pub struct CreateQueueIfNotExistsRequest {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateQueueIfNotExistsResponse {
+    #[prost(string, tag = "1")]
+    pub queue_id: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub created: bool,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DropQueueRequest {
     #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
@@ -220,7 +229,7 @@ impl IngestServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: < MockIngestService
             > (),
-            "`MockIngestService` must be wrapped in a `MockIngestServiceWrapper`. Use `MockIngestService::from(mock)` to instantiate the client."
+            "`MockIngestService` must be wrapped in a `MockIngestServiceWrapper`: use `IngestServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }
@@ -279,8 +288,15 @@ impl IngestServiceClient {
         IngestServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockIngestService {
-        MockIngestService::new()
+    pub fn from_mock(mock: MockIngestService) -> Self {
+        let mock_wrapper = mock_ingest_service::MockIngestServiceWrapper {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockIngestService::new())
     }
 }
 #[async_trait::async_trait]
@@ -296,11 +312,11 @@ impl IngestService for IngestServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod ingest_service_mock {
+pub mod mock_ingest_service {
     use super::*;
     #[derive(Debug, Clone)]
-    struct MockIngestServiceWrapper {
-        inner: std::sync::Arc<tokio::sync::Mutex<MockIngestService>>,
+    pub struct MockIngestServiceWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockIngestService>>,
     }
     #[async_trait::async_trait]
     impl IngestService for MockIngestServiceWrapper {
@@ -321,14 +337,6 @@ pub mod ingest_service_mock {
             request: super::TailRequest,
         ) -> crate::Result<super::FetchResponse> {
             self.inner.lock().await.tail(request).await
-        }
-    }
-    impl From<MockIngestService> for IngestServiceClient {
-        fn from(mock: MockIngestService) -> Self {
-            let mock_wrapper = MockIngestServiceWrapper {
-                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
-            };
-            IngestServiceClient::new(mock_wrapper)
         }
     }
 }
@@ -641,6 +649,10 @@ impl IngestServiceTowerLayerStack {
         IngestServiceMailbox<A>: IngestService,
     {
         self.build_from_boxed(Box::new(IngestServiceMailbox::new(mailbox)))
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockIngestService) -> IngestServiceClient {
+        self.build_from_boxed(Box::new(IngestServiceClient::from_mock(mock)))
     }
     fn build_from_boxed(
         self,

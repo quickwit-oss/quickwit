@@ -69,6 +69,40 @@ json:
   query:
       match_all: {}
   sort:
+    _doc:
+      order: desc
+expected:
+  hits:
+    total:
+      value: 100
+      relation: eq
+    hits:
+      - _source:
+          actor:
+            id: 9018
+---
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
+    _doc:
+      order: asc
+expected:
+  hits:
+    total:
+      value: 100
+      relation: eq
+    hits:
+      - _source:
+          actor:
+            id: 1762355
+---
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
     _doc: {}
 expected:
   hits:
@@ -79,3 +113,4 @@ expected:
       - _source:
           actor:
             id: 1762355
+

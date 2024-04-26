@@ -94,7 +94,7 @@ pub(crate) struct Body {
 
 impl From<Bytes> for Body {
     fn from(content: Bytes) -> Self {
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight_data.rest_server);
+        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.rest_server);
         gauge_guard.add(content.len() as i64);
         Body {
             content,

@@ -21,6 +21,7 @@ mod shard_table;
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std::mem;
 use std::ops::Deref;
 use std::time::Instant;
 
@@ -38,7 +39,7 @@ use quickwit_proto::metastore::{
     MetastoreError, MetastoreService, MetastoreServiceClient, SourceType,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
-pub(super) use shard_table::{ScalingMode, ShardEntry, ShardStats, ShardTable};
+pub(super) use shard_table::{ScalingMode, ShardEntry, ShardLocations, ShardStats, ShardTable};
 use tracing::{info, instrument, warn};
 
 /// The control plane maintains a model in sync with the metastore.
@@ -71,6 +72,10 @@ impl ControlPlaneModel {
         self.shard_table.num_sources()
     }
 
+    pub fn shard_locations(&self) -> ShardLocations {
+        self.shard_table.shard_locations()
+    }
+
     #[cfg(test)]
     pub fn num_shards(&self) -> usize {
         self.shard_table.num_shards()
@@ -82,59 +87,61 @@ impl ControlPlaneModel {
         metastore: &mut MetastoreServiceClient,
         progress: &Progress,
     ) -> ControlPlaneResult<()> {
+        const BATCH_SIZE: usize = 500;
+
         let now = Instant::now();
         self.clear();
 
-        let index_metadatas = progress
+        let indexes_metadata = progress
             .protect_future(metastore.list_indexes_metadata(ListIndexesMetadataRequest::all()))
             .await?
-            .deserialize_indexes_metadata()?;
+            .deserialize_indexes_metadata()
+            .await?;
 
-        let num_indexes = index_metadatas.len();
+        let num_indexes = indexes_metadata.len();
         self.index_table.reserve(num_indexes);
 
+        for index_metadata in indexes_metadata {
+            self.add_index(index_metadata);
+        }
         let mut num_sources = 0;
         let mut num_shards = 0;
 
-        let mut subrequests = Vec::with_capacity(index_metadatas.len());
+        let mut next_list_shards_request = metastore::ListShardsRequest::default();
 
-        for index_metadata in index_metadatas {
-            self.add_index(index_metadata);
-        }
-
-        for index_metadata in self.index_table.values() {
+        for (idx, index_metadata) in self.index_table.values().enumerate() {
             for source_config in index_metadata.sources.values() {
                 num_sources += 1;
 
-                if source_config.source_type() != SourceType::IngestV2 {
-                    continue;
+                if source_config.source_type() == SourceType::IngestV2 {
+                    let request = ListShardsSubrequest {
+                        index_uid: index_metadata.index_uid.clone().into(),
+                        source_id: source_config.source_id.clone(),
+                        shard_state: None,
+                    };
+                    next_list_shards_request.subrequests.push(request);
                 }
-                let request = ListShardsSubrequest {
-                    index_uid: index_metadata.index_uid.clone().into(),
-                    source_id: source_config.source_id.clone(),
-                    shard_state: None,
-                };
-                subrequests.push(request);
             }
-        }
-        if !subrequests.is_empty() {
-            // TODO: Limit the number of subrequests and perform multiple requests if needed.
-            let list_shards_request = metastore::ListShardsRequest { subrequests };
-            let list_shard_response = progress
-                .protect_future(metastore.list_shards(list_shards_request))
-                .await?;
+            let num_subrequests = next_list_shards_request.subrequests.len();
 
-            for list_shards_subresponse in list_shard_response.subresponses {
-                num_shards += list_shards_subresponse.shards.len();
+            if num_subrequests > 0 && (num_subrequests >= BATCH_SIZE || idx == num_indexes - 1) {
+                let list_shards_request = mem::take(&mut next_list_shards_request);
+                let list_shards_response = progress
+                    .protect_future(metastore.list_shards(list_shards_request))
+                    .await?;
 
-                let ListShardsSubresponse {
-                    index_uid,
-                    source_id,
-                    shards,
-                } = list_shards_subresponse;
-                let index_uid = index_uid.expect("`index_uid` should be a required field");
-                self.shard_table
-                    .insert_shards(&index_uid, &source_id, shards);
+                for list_shards_subresponse in list_shards_response.subresponses {
+                    num_shards += list_shards_subresponse.shards.len();
+
+                    let ListShardsSubresponse {
+                        index_uid,
+                        source_id,
+                        shards,
+                    } = list_shards_subresponse;
+                    let index_uid = index_uid.expect("`index_uid` should be a required field");
+                    self.shard_table
+                        .insert_shards(&index_uid, &source_id, shards);
+                }
             }
         }
         info!(
@@ -341,6 +348,7 @@ impl ControlPlaneModel {
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
     pub fn delete_shards(&mut self, source_uid: &SourceUid, shard_ids: &[ShardId]) {
+        info!(source_uid=%source_uid, shard_ids=?shard_ids, "removing shards from model");
         self.shard_table.delete_shards(source_uid, shard_ids);
     }
 
@@ -352,6 +360,11 @@ impl ControlPlaneModel {
     ) -> Option<bool> {
         self.shard_table
             .acquire_scaling_permits(source_uid, scaling_mode, num_permits)
+    }
+
+    pub fn drain_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
+        self.shard_table
+            .drain_scaling_permits(source_uid, scaling_mode)
     }
 
     pub fn release_scaling_permits(
@@ -372,7 +385,7 @@ mod tests {
     use quickwit_config::{SourceConfig, SourceParams, INGEST_V2_SOURCE_ID};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::{Shard, ShardState};
-    use quickwit_proto::metastore::ListIndexesMetadataResponse;
+    use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
 
     use super::*;
 
@@ -380,7 +393,7 @@ mod tests {
     async fn test_control_plane_model_load_shard_table() {
         let progress = Progress::default();
 
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_uid = IndexUid::from_str("test-index-0:00000000000000000000000000").unwrap();
         let index_uid2 = IndexUid::from_str("test-index-1:00000000000000000000000000").unwrap();
         let index_uid3 = IndexUid::from_str("test-index-2:00000000000000000000000000").unwrap();
@@ -402,7 +415,7 @@ mod tests {
                 index_2.add_source(SourceConfig::cli()).unwrap();
 
                 let indexes = vec![index_0, index_1, index_2];
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(indexes).unwrap())
+                Ok(ListIndexesMetadataResponse::for_test(indexes))
             });
         let index_uid_clone = index_uid.clone();
         let index_uid2_clone = index_uid2.clone();
@@ -442,7 +455,7 @@ mod tests {
                 Ok(response)
             });
         let mut model = ControlPlaneModel::default();
-        let mut metastore = MetastoreServiceClient::from(mock_metastore);
+        let mut metastore = MetastoreServiceClient::from_mock(mock_metastore);
         model
             .load_from_metastore(&mut metastore, &progress)
             .await

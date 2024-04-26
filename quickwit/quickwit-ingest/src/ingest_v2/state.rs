@@ -17,13 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use fnv::FnvHashMap;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -56,12 +56,12 @@ pub(super) struct IngesterState {
 }
 
 pub(super) struct InnerIngesterState {
-    pub shards: FnvHashMap<QueueId, IngesterShard>,
-    pub rate_trackers: FnvHashMap<QueueId, (RateLimiter, RateMeter)>,
+    pub shards: HashMap<QueueId, IngesterShard>,
+    pub rate_trackers: HashMap<QueueId, (RateLimiter, RateMeter)>,
     // Replication stream opened with followers.
-    pub replication_streams: FnvHashMap<FollowerId, ReplicationStreamTaskHandle>,
+    pub replication_streams: HashMap<FollowerId, ReplicationStreamTaskHandle>,
     // Replication tasks running for each replication stream opened with leaders.
-    pub replication_tasks: FnvHashMap<LeaderId, ReplicationTaskHandle>,
+    pub replication_tasks: HashMap<LeaderId, ReplicationTaskHandle>,
     status: IngesterStatus,
     status_tx: watch::Sender<IngesterStatus>,
 }
@@ -138,7 +138,11 @@ impl IngesterState {
         info!("opening WAL located at `{}`", wal_dir_path.display());
         let open_result = MultiRecordLogAsync::open_with_prefs(
             wal_dir_path,
-            mrecordlog::SyncPolicy::OnDelay(Duration::from_secs(5)),
+            mrecordlog::PersistPolicy::OnDelay {
+                interval: Duration::from_secs(5),
+                // TODO maybe we want to fsync too?
+                action: mrecordlog::PersistAction::Flush,
+            },
         )
         .await;
 
@@ -388,6 +392,7 @@ impl FullyLockedIngesterState<'_> {
     /// Deletes and truncates the shards as directed by the `advise_reset_shards_response` returned
     /// by the control plane.
     pub async fn reset_shards(&mut self, advise_reset_shards_response: &AdviseResetShardsResponse) {
+        info!("reset shards");
         for shard_ids in &advise_reset_shards_response.shards_to_delete {
             for queue_id in shard_ids.queue_ids() {
                 self.delete_shard(&queue_id).await;

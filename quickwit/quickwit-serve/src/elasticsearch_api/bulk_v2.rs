@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use hyper::StatusCode;
@@ -30,6 +31,7 @@ use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+use super::model::ErrorCauseException;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::ingest_api::lines;
 use crate::Body;
@@ -39,6 +41,35 @@ pub(crate) struct ElasticBulkResponse {
     #[serde(rename = "took")]
     pub took_millis: u64,
     pub errors: bool,
+    pub items: Vec<ElasticBulkItemAction>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) enum ElasticBulkItemAction {
+    #[serde(rename = "create")]
+    Create(ElasticBulkItem),
+    #[serde(rename = "index")]
+    Index(ElasticBulkItem),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct ElasticBulkItem {
+    #[serde(rename = "_index")]
+    pub index_id: IndexId,
+    #[serde(rename = "_id")]
+    pub es_doc_id: Option<String>,
+    #[serde(with = "http_serde::status_code")]
+    pub status: StatusCode,
+    pub error: Option<ElasticBulkError>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct ElasticBulkError {
+    #[serde(rename = "index")]
+    pub index_id: Option<IndexId>,
+    #[serde(rename = "type")]
+    pub exception: ErrorCauseException,
+    pub reason: String,
 }
 
 pub(crate) async fn elastic_bulk_ingest_v2(
@@ -50,34 +81,44 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     let now = Instant::now();
     let mut ingest_request_builder = IngestRequestV2Builder::default();
     let mut lines = lines(&body.content).enumerate();
+    let mut per_subrequest_id_es_doc_ids: HashMap<u32, Vec<Option<String>>> = HashMap::new();
 
     while let Some((line_no, line)) = lines.next() {
         let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {
             ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
-                format!("unsupported or malformed action on line #{line_no}: `{error}`"),
+                format!("Malformed action/metadata line [{}]: {error}", line_no + 1),
+                Some(ErrorCauseException::IllegalArgument),
             )
         })?;
         let (_, source) = lines.next().ok_or_else(|| {
             ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
-                format!("associated source data with action on line #{line_no} is missing"),
+                "Validation Failed: 1: no requests added;".to_string(),
+                Some(ErrorCauseException::ActionRequestValidation),
             )
         })?;
+        let meta = action.into_meta();
         // When ingesting into `/my-index/_bulk`, if `_index` is set to something other than
         // `my-index`, ES honors it and creates the doc for the requested index. That is,
         // `my-index` is a default value in case `_index`` is missing, but not a constraint on
         // each sub-action.
-        let index_id = action
-            .into_index_id()
+        let index_id = meta
+            .index_id
             .or_else(|| default_index_id.clone())
             .ok_or_else(|| {
                 ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
-                    format!("`_index` field of action on line #{line_no} is missing"),
+                    "Validation Failed: 1: index is missing;".to_string(),
+                    Some(ErrorCauseException::ActionRequestValidation),
                 )
             })?;
-        ingest_request_builder.add_doc(index_id, source);
+        let subrequest_id = ingest_request_builder.add_doc(index_id, source);
+
+        per_subrequest_id_es_doc_ids
+            .entry(subrequest_id)
+            .or_default()
+            .push(meta.es_doc_id);
     }
     let commit_type: CommitTypeV2 = bulk_options.refresh.into();
 
@@ -86,33 +127,63 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     }
     let ingest_request_opt = ingest_request_builder.build(INGEST_V2_SOURCE_ID, commit_type);
 
-    if let Some(ingest_request) = ingest_request_opt {
-        let ingest_response_v2 = ingest_router.ingest(ingest_request).await?;
-        let took_millis = now.elapsed().as_millis() as u64;
-        let errors = !ingest_response_v2.failures.is_empty();
+    let Some(ingest_request) = ingest_request_opt else {
+        return Ok(ElasticBulkResponse::default());
+    };
+    let ingest_response_v2 = ingest_router.ingest(ingest_request).await?;
+    let errors = !ingest_response_v2.failures.is_empty();
+    let mut items = Vec::new();
 
-        for failure in ingest_response_v2.failures {
-            // This custom logic for Airmail is temporary.
-            if failure.reason() == IngestFailureReason::IndexNotFound {
-                let reason = format!("index `{}` not found", failure.index_id);
-                let elasticsearch_error = ElasticsearchError::new(StatusCode::NOT_FOUND, reason);
-                return Err(elasticsearch_error);
+    for failure in ingest_response_v2.failures {
+        let es_doc_ids = per_subrequest_id_es_doc_ids
+            .remove(&failure.subrequest_id)
+            .ok_or_else(|| {
+                ElasticsearchError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!(
+                        "could not find subrequest `{}` in bulk request",
+                        failure.subrequest_id
+                    ),
+                    None,
+                )
+            })?;
+        match failure.reason() {
+            IngestFailureReason::IndexNotFound => {
+                for es_doc_id in es_doc_ids {
+                    let error = ElasticBulkError {
+                        index_id: Some(failure.index_id.clone()),
+                        exception: ErrorCauseException::IndexNotFound,
+                        reason: format!("no such index [{}]", failure.index_id),
+                    };
+                    let item = ElasticBulkItem {
+                        index_id: failure.index_id.clone(),
+                        es_doc_id,
+                        status: StatusCode::NOT_FOUND,
+                        error: Some(error),
+                    };
+                    items.push(ElasticBulkItemAction::Index(item));
+                }
+            }
+            _ => {
+                // TODO
             }
         }
-        let bulk_response = ElasticBulkResponse {
-            took_millis,
-            errors,
-        };
-        Ok(bulk_response)
-    } else {
-        Ok(ElasticBulkResponse::default())
     }
+    let took_millis = now.elapsed().as_millis() as u64;
+
+    let bulk_response = ElasticBulkResponse {
+        took_millis,
+        errors,
+        items,
+    };
+    Ok(bulk_response)
 }
 
 #[cfg(test)]
 mod tests {
     use quickwit_proto::ingest::router::{
         IngestFailure, IngestFailureReason, IngestResponseV2, IngestSuccess,
+        MockIngestRouterService,
     };
     use quickwit_proto::types::{IndexUid, Position, ShardId};
     use warp::{Filter, Rejection, Reply};
@@ -139,8 +210,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_api_happy_path() {
-        let mut ingest_router_mock = IngestRouterServiceClient::mock();
-        ingest_router_mock
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
             .expect_ingest()
             .once()
             .returning(|ingest_request| {
@@ -148,20 +219,19 @@ mod tests {
                 assert_eq!(ingest_request.commit_type(), CommitTypeV2::Auto);
 
                 let mut subrequests = ingest_request.subrequests;
-                assert_eq!(subrequests[0].subrequest_id, 0);
-                assert_eq!(subrequests[1].subrequest_id, 1);
-
                 subrequests.sort_by(|left, right| left.index_id.cmp(&right.index_id));
 
+                assert_eq!(subrequests[0].subrequest_id, 0);
                 assert_eq!(subrequests[0].index_id, "my-index-1");
                 assert_eq!(subrequests[0].source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(subrequests[0].doc_batch.as_ref().unwrap().num_docs(), 2);
-                assert_eq!(subrequests[0].doc_batch.as_ref().unwrap().num_bytes(), 96);
+                assert_eq!(subrequests[0].doc_batch.as_ref().unwrap().num_bytes(), 104);
 
+                assert_eq!(subrequests[1].subrequest_id, 1);
                 assert_eq!(subrequests[1].index_id, "my-index-2");
                 assert_eq!(subrequests[1].source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(subrequests[1].doc_batch.as_ref().unwrap().num_docs(), 1);
-                assert_eq!(subrequests[1].doc_batch.as_ref().unwrap().num_bytes(), 48);
+                assert_eq!(subrequests[1].doc_batch.as_ref().unwrap().num_bytes(), 52);
 
                 Ok(IngestResponseV2 {
                     successes: vec![
@@ -183,7 +253,7 @@ mod tests {
                     failures: Vec::new(),
                 })
             });
-        let ingest_router = IngestRouterServiceClient::from(ingest_router_mock);
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
         let handler = es_compat_bulk_handler_v2(ingest_router);
 
         let payload = r#"
@@ -208,7 +278,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_api_accepts_empty_requests() {
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let handler = es_compat_bulk_handler_v2(ingest_router);
 
         let response = warp::test::request()
@@ -225,8 +295,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_api_ignores_blank_lines() {
-        let mut ingest_router_mock = IngestRouterServiceClient::mock();
-        ingest_router_mock
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
             .expect_ingest()
             .once()
             .returning(|ingest_request| {
@@ -238,7 +308,7 @@ mod tests {
                 assert_eq!(subrequest_0.index_id, "my-index-1");
                 assert_eq!(subrequest_0.source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(subrequest_0.doc_batch.as_ref().unwrap().num_docs(), 1);
-                assert_eq!(subrequest_0.doc_batch.as_ref().unwrap().num_bytes(), 48);
+                assert_eq!(subrequest_0.doc_batch.as_ref().unwrap().num_bytes(), 52);
 
                 Ok(IngestResponseV2 {
                     successes: vec![IngestSuccess {
@@ -251,7 +321,7 @@ mod tests {
                     failures: Vec::new(),
                 })
             });
-        let ingest_router = IngestRouterServiceClient::from(ingest_router_mock);
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
         let handler = es_compat_bulk_handler_v2(ingest_router);
 
         let payload = r#"
@@ -274,7 +344,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_api_handles_malformed_requests() {
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let handler = es_compat_bulk_handler_v2(ingest_router);
 
         let payload = r#"
@@ -295,7 +365,7 @@ mod tests {
         let reason = es_error.error.reason.unwrap();
         assert_eq!(
             reason,
-            "unsupported or malformed action on line #0: `expected value at line 1 column 60`"
+            "Malformed action/metadata line [1]: expected value at line 1 column 60"
         );
 
         let payload = r#"
@@ -313,10 +383,7 @@ mod tests {
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
         let reason = es_error.error.reason.unwrap();
-        assert_eq!(
-            reason,
-            "associated source data with action on line #0 is missing"
-        );
+        assert_eq!(reason, "Validation Failed: 1: no requests added;");
 
         let payload = r#"
             {"create": {"_id" : "1"}}
@@ -334,30 +401,60 @@ mod tests {
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
         let reason = es_error.error.reason.unwrap();
-        assert_eq!(reason, "`_index` field of action on line #0 is missing");
+        assert_eq!(reason, "Validation Failed: 1: index is missing;");
     }
 
-    // Airmail-specific test. It should go away when we straighten out the API response.
     #[tokio::test]
-    async fn test_bulk_api_returns_404_on_index_not_found() {
-        let mut ingest_router_mock = IngestRouterServiceClient::mock();
-        ingest_router_mock.expect_ingest().once().returning(|_| {
-            Ok(IngestResponseV2 {
-                successes: Vec::new(),
-                failures: vec![IngestFailure {
-                    subrequest_id: 2,
-                    index_id: "my-index".to_string(),
-                    source_id: INGEST_V2_SOURCE_ID.to_string(),
-                    reason: IngestFailureReason::IndexNotFound as i32,
-                }],
-            })
-        });
-        let ingest_router = IngestRouterServiceClient::from(ingest_router_mock);
+    async fn test_bulk_api_index_not_found() {
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
+            .expect_ingest()
+            .once()
+            .returning(|ingest_request| {
+                assert_eq!(ingest_request.subrequests.len(), 2);
+                assert_eq!(ingest_request.commit_type(), CommitTypeV2::Auto);
+
+                let mut subrequests = ingest_request.subrequests;
+                subrequests.sort_by(|left, right| left.index_id.cmp(&right.index_id));
+
+                assert_eq!(subrequests[0].subrequest_id, 0);
+                assert_eq!(subrequests[0].index_id, "my-index-1");
+                assert_eq!(subrequests[0].source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(subrequests[0].doc_batch.as_ref().unwrap().num_docs(), 2);
+
+                assert_eq!(subrequests[1].subrequest_id, 1);
+                assert_eq!(subrequests[1].index_id, "my-index-2");
+                assert_eq!(subrequests[1].source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(subrequests[1].doc_batch.as_ref().unwrap().num_docs(), 1);
+
+                Ok(IngestResponseV2 {
+                    successes: Vec::new(),
+                    failures: vec![
+                        IngestFailure {
+                            subrequest_id: 0,
+                            index_id: "my-index-1".to_string(),
+                            source_id: INGEST_V2_SOURCE_ID.to_string(),
+                            reason: IngestFailureReason::IndexNotFound as i32,
+                        },
+                        IngestFailure {
+                            subrequest_id: 1,
+                            index_id: "my-index-2".to_string(),
+                            source_id: INGEST_V2_SOURCE_ID.to_string(),
+                            reason: IngestFailureReason::IndexNotFound as i32,
+                        },
+                    ],
+                })
+            });
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
         let handler = es_compat_bulk_handler_v2(ingest_router);
 
         let payload = r#"
-            {"create": {"_index": "my-index", "_id" : "1"}}
-            {"ts": 1, "message": "my-message"}
+            {"index": {"_index": "my-index-1", "_id" : "1"}}
+            {"ts": 1, "message": "my-message-1"}
+            {"index": {"_index": "my-index-1"}}
+            {"ts": 2, "message": "my-message-1"}
+            {"index": {"_index": "my-index-2", "_id" : "1"}}
+            {"ts": 3, "message": "my-message-2"}
         "#;
         let response = warp::test::request()
             .path("/_elastic/_bulk")
@@ -365,12 +462,10 @@ mod tests {
             .body(payload)
             .reply(&handler)
             .await;
-        assert_eq!(response.status(), 404);
+        assert_eq!(response.status(), 200);
 
-        let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
-        assert_eq!(es_error.status, StatusCode::NOT_FOUND);
-
-        let reason = es_error.error.reason.unwrap();
-        assert_eq!(reason, "index `my-index` not found");
+        let bulk_response: ElasticBulkResponse = serde_json::from_slice(response.body()).unwrap();
+        assert!(bulk_response.errors);
+        assert_eq!(bulk_response.items.len(), 3);
     }
 }

@@ -40,9 +40,9 @@ use quickwit_proto::metastore::{
     ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
     ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardsRequest,
-    OpenShardsResponse, OpenShardsSubrequest, OpenShardsSubresponse, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
+    OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
     UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, SourceId};
@@ -60,12 +60,13 @@ use super::utils::{append_query_filters, establish_connection};
 use crate::checkpoint::{
     IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
 };
+use crate::file_backed::MutationOccurred;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE};
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
     ListIndexesMetadataResponseExt, ListSplitsRequestExt, ListSplitsResponseExt,
-    MetastoreServiceExt, Split, SplitState, StageSplitsRequestExt,
+    MetastoreServiceExt, Split, SplitState, StageSplitsRequestExt, UpdateIndexRequestExt,
 };
 
 /// PostgreSQL metastore implementation.
@@ -134,10 +135,7 @@ where E: sqlx::Executor<'a, Database = Postgres> {
     )
     .bind(index_id)
     .fetch_optional(executor)
-    .await
-    .map_err(|error| MetastoreError::Db {
-        message: error.to_string(),
-    })?;
+    .await?;
     Ok(index_opt)
 }
 
@@ -159,10 +157,7 @@ where
     )
     .bind(index_uid.to_string())
     .fetch_optional(executor)
-    .await
-    .map_err(|error| MetastoreError::Db {
-        message: error.to_string(),
-    })?;
+    .await?;
     Ok(index_opt)
 }
 
@@ -294,13 +289,14 @@ macro_rules! run_with_tx {
     }};
 }
 
-async fn mutate_index_metadata<E, M: FnOnce(&mut IndexMetadata) -> Result<bool, E>>(
+async fn mutate_index_metadata<E, M>(
     tx: &mut Transaction<'_, Postgres>,
     index_uid: IndexUid,
     mutate_fn: M,
-) -> MetastoreResult<bool>
+) -> MetastoreResult<IndexMetadata>
 where
     MetastoreError: From<E>,
+    M: FnOnce(&mut IndexMetadata) -> Result<MutationOccurred<()>, E>,
 {
     let index_id = &index_uid.index_id;
     let mut index_metadata = index_metadata(tx, index_id).await?;
@@ -309,10 +305,11 @@ where
             index_id: index_id.to_string(),
         }));
     }
-    let mutation_occurred = mutate_fn(&mut index_metadata)?;
-    if !mutation_occurred {
-        return Ok(mutation_occurred);
+
+    if let MutationOccurred::No(()) = mutate_fn(&mut index_metadata)? {
+        return Ok(index_metadata);
     }
+
     let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
         MetastoreError::JsonSerializeError {
             struct_name: "IndexMetadata".to_string(),
@@ -335,7 +332,7 @@ where
             index_id: index_id.to_string(),
         }));
     }
-    Ok(mutation_occurred)
+    Ok(index_metadata)
 }
 
 #[async_trait]
@@ -357,7 +354,7 @@ impl MetastoreService for PostgresqlMetastore {
         let sql =
             build_index_id_patterns_sql_query(&request.index_id_patterns).map_err(|error| {
                 MetastoreError::Internal {
-                    message: "failed to build `list_indexes_metadatas` SQL query".to_string(),
+                    message: "failed to build `list_indexes_metadata` SQL query".to_string(),
                     cause: error.to_string(),
                 }
             })?;
@@ -368,7 +365,8 @@ impl MetastoreService for PostgresqlMetastore {
             .into_iter()
             .map(|pg_index| pg_index.index_metadata())
             .collect::<MetastoreResult<Vec<IndexMetadata>>>()?;
-        let response = ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)?;
+        let response =
+            ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata).await?;
         Ok(response)
     }
 
@@ -402,6 +400,30 @@ impl MetastoreService for PostgresqlMetastore {
             index_metadata_json,
         };
         Ok(response)
+    }
+
+    async fn update_index(
+        &mut self,
+        request: UpdateIndexRequest,
+    ) -> MetastoreResult<IndexMetadataResponse> {
+        let retention_policy_opt = request.deserialize_retention_policy()?;
+        let search_settings = request.deserialize_search_settings()?;
+        let index_uid: IndexUid = request.index_uid().clone();
+        let updated_metadata = run_with_tx!(self.connection_pool, tx, {
+            mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
+                if index_metadata.index_config.search_settings != search_settings
+                    || index_metadata.index_config.retention_policy_opt != retention_policy_opt
+                {
+                    index_metadata.index_config.search_settings = search_settings;
+                    index_metadata.index_config.retention_policy_opt = retention_policy_opt;
+                    Ok(MutationOccurred::Yes(()))
+                } else {
+                    Ok(MutationOccurred::No(()))
+                }
+            })
+            .await
+        })?;
+        IndexMetadataResponse::try_from_index_metadata(&updated_metadata)
     }
 
     #[instrument(skip_all, fields(index_id=%request.index_uid()))]
@@ -942,14 +964,10 @@ impl MetastoreService for PostgresqlMetastore {
         let source_config = request.deserialize_source_config()?;
         let index_uid: IndexUid = request.index_uid().clone();
         run_with_tx!(self.connection_pool, tx, {
-            mutate_index_metadata::<MetastoreError, _>(
-                tx,
-                index_uid,
-                |index_metadata: &mut IndexMetadata| {
-                    index_metadata.add_source(source_config)?;
-                    Ok(true)
-                },
-            )
+            mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
+                index_metadata.add_source(source_config)?;
+                Ok(MutationOccurred::Yes(()))
+            })
             .await?;
             Ok(())
         })?;
@@ -964,7 +982,11 @@ impl MetastoreService for PostgresqlMetastore {
         let index_uid: IndexUid = request.index_uid().clone();
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_uid, |index_metadata| {
-                index_metadata.toggle_source(&request.source_id, request.enable)
+                if index_metadata.toggle_source(&request.source_id, request.enable)? {
+                    Ok::<_, MetastoreError>(MutationOccurred::Yes(()))
+                } else {
+                    Ok::<_, MetastoreError>(MutationOccurred::No(()))
+                }
             })
             .await?;
             Ok(())
@@ -981,7 +1003,8 @@ impl MetastoreService for PostgresqlMetastore {
         let source_id = request.source_id.clone();
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_uid.clone(), |index_metadata| {
-                index_metadata.delete_source(&source_id)
+                index_metadata.delete_source(&source_id)?;
+                Ok::<_, MetastoreError>(MutationOccurred::Yes(()))
             })
             .await?;
             sqlx::query(
@@ -1009,7 +1032,11 @@ impl MetastoreService for PostgresqlMetastore {
         let index_uid: IndexUid = request.index_uid().clone();
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_uid, |index_metadata| {
-                Ok::<_, MetastoreError>(index_metadata.checkpoint.reset_source(&request.source_id))
+                if index_metadata.checkpoint.reset_source(&request.source_id) {
+                    Ok::<_, MetastoreError>(MutationOccurred::Yes(()))
+                } else {
+                    Ok::<_, MetastoreError>(MutationOccurred::No(()))
+                }
             })
             .await?;
             Ok(())
@@ -1187,14 +1214,12 @@ impl MetastoreService for PostgresqlMetastore {
         let mut subresponses = Vec::with_capacity(request.subrequests.len());
 
         for subrequest in request.subrequests {
-            let shard: Shard = open_or_fetch_shard(&self.connection_pool, &subrequest).await?;
-
-            subresponses.push(OpenShardsSubresponse {
+            let open_shard: Shard = open_or_fetch_shard(&self.connection_pool, &subrequest).await?;
+            let subresponse = OpenShardSubresponse {
                 subrequest_id: subrequest.subrequest_id,
-                index_uid: subrequest.index_uid,
-                source_id: subrequest.source_id,
-                opened_shards: vec![shard],
-            });
+                open_shard: Some(open_shard),
+            };
+            subresponses.push(subresponse);
         }
         Ok(OpenShardsResponse { subresponses })
     }
@@ -1442,7 +1467,7 @@ impl MetastoreService for PostgresqlMetastore {
 
 async fn open_or_fetch_shard<'e>(
     executor: impl Executor<'e, Database = Postgres> + Clone,
-    subrequest: &OpenShardsSubrequest,
+    subrequest: &OpenShardSubrequest,
 ) -> MetastoreResult<Shard> {
     const OPEN_SHARDS_QUERY: &str = include_str!("queries/shards/open.sql");
 

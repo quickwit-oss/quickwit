@@ -26,7 +26,9 @@ use quickwit_indexing::actors::IndexingServiceCounters;
 pub use quickwit_ingest::CommitType;
 use quickwit_metastore::{IndexMetadata, Split, SplitInfo};
 use quickwit_search::SearchResponseRest;
-use quickwit_serve::{ListSplitsQueryParams, ListSplitsResponse, SearchRequestQueryString};
+use quickwit_serve::{
+    IndexUpdates, ListSplitsQueryParams, ListSplitsResponse, SearchRequestQueryString,
+};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, ClientBuilder, Method, StatusCode, Url};
 use serde::Serialize;
@@ -347,6 +349,21 @@ impl<'a> IndexClient<'a> {
                 Some(body),
                 self.timeout,
             )
+            .await?;
+        let index_metadata = response.deserialize().await?;
+        Ok(index_metadata)
+    }
+
+    pub async fn update(
+        &self,
+        index_id: &str,
+        index_updates: IndexUpdates,
+    ) -> Result<IndexMetadata, Error> {
+        let body = Bytes::from(serde_json::to_string(&index_updates)?);
+        let path = format!("indexes/{index_id}");
+        let response = self
+            .transport
+            .send::<()>(Method::PUT, &path, None, None, Some(body), self.timeout)
             .await?;
         let index_metadata = response.deserialize().await?;
         Ok(index_metadata)

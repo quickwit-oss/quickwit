@@ -102,6 +102,7 @@ enum PersistFailureReason {
   PERSIST_FAILURE_REASON_SHARD_CLOSED = 2;
   PERSIST_FAILURE_REASON_RATE_LIMITED = 3;
   PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED = 4;
+  PERSIST_FAILURE_REASON_TIMEOUT = 5;
 }
 
 message PersistFailure {
@@ -248,17 +249,40 @@ message FetchEof {
 }
 
 message InitShardsRequest {
-  repeated quickwit.ingest.Shard shards = 1;
+  reserved 1;
+  repeated InitShardSubrequest subrequests = 2;
+}
+
+message InitShardSubrequest {
+  uint32 subrequest_id = 1;
+  quickwit.ingest.Shard shard = 2;
 }
 
 message InitShardsResponse {
+  repeated InitShardSuccess successes = 1;
+  repeated InitShardFailure failures = 2;
+}
+
+message InitShardSuccess {
+  uint32 subrequest_id = 1;
+  quickwit.ingest.Shard shard = 2;
+}
+
+message InitShardFailure {
+  uint32 subrequest_id = 1;
+  quickwit.common.IndexUid index_uid = 2;
+  string source_id = 3;
+  quickwit.ingest.ShardId shard_id = 4;
+  // InitShardFailureReason reason = 5;
 }
 
 message CloseShardsRequest {
-  repeated quickwit.ingest.ShardIds shards = 1;
+  reserved 1;
+  repeated quickwit.ingest.ShardPKey shard_pkeys = 2;
 }
 
 message CloseShardsResponse {
+  repeated quickwit.ingest.ShardPKey successes = 1;
 }
 
 message DecommissionRequest {

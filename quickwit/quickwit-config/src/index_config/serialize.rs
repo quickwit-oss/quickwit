@@ -220,7 +220,7 @@ mod test {
     #[test]
     fn test_minimal_index_config_missing_root_uri_no_default_uri() {
         let config_yaml = r#"
-            version: 0.7
+            version: 0.8
             index_id: hdfs-logs
             doc_mapping: {}
         "#;
@@ -232,7 +232,7 @@ mod test {
     #[test]
     fn test_minimal_index_config_missing_root_uri_with_default_index_root_uri() {
         let config_yaml = r#"
-            version: 0.7
+            version: 0.8
             index_id: hdfs-logs
             doc_mapping: {}
         "#;

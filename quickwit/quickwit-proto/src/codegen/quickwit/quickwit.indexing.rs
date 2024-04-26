@@ -59,7 +59,7 @@ impl IndexingServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
             MockIndexingService > (),
-            "`MockIndexingService` must be wrapped in a `MockIndexingServiceWrapper`. Use `MockIndexingService::from(mock)` to instantiate the client."
+            "`MockIndexingService` must be wrapped in a `MockIndexingServiceWrapper`: use `IndexingServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }
@@ -120,8 +120,15 @@ impl IndexingServiceClient {
         IndexingServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockIndexingService {
-        MockIndexingService::new()
+    pub fn from_mock(mock: MockIndexingService) -> Self {
+        let mock_wrapper = mock_indexing_service::MockIndexingServiceWrapper {
+            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+        };
+        Self::new(mock_wrapper)
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked() -> Self {
+        Self::from_mock(MockIndexingService::new())
     }
 }
 #[async_trait::async_trait]
@@ -134,11 +141,11 @@ impl IndexingService for IndexingServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod indexing_service_mock {
+pub mod mock_indexing_service {
     use super::*;
     #[derive(Debug, Clone)]
-    struct MockIndexingServiceWrapper {
-        inner: std::sync::Arc<tokio::sync::Mutex<MockIndexingService>>,
+    pub struct MockIndexingServiceWrapper {
+        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockIndexingService>>,
     }
     #[async_trait::async_trait]
     impl IndexingService for MockIndexingServiceWrapper {
@@ -147,14 +154,6 @@ pub mod indexing_service_mock {
             request: super::ApplyIndexingPlanRequest,
         ) -> crate::indexing::IndexingResult<super::ApplyIndexingPlanResponse> {
             self.inner.lock().await.apply_indexing_plan(request).await
-        }
-    }
-    impl From<MockIndexingService> for IndexingServiceClient {
-        fn from(mock: MockIndexingService) -> Self {
-            let mock_wrapper = MockIndexingServiceWrapper {
-                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
-            };
-            IndexingServiceClient::new(mock_wrapper)
         }
     }
 }
@@ -312,6 +311,10 @@ impl IndexingServiceTowerLayerStack {
         IndexingServiceMailbox<A>: IndexingService,
     {
         self.build_from_boxed(Box::new(IndexingServiceMailbox::new(mailbox)))
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockIndexingService) -> IndexingServiceClient {
+        self.build_from_boxed(Box::new(IndexingServiceClient::from_mock(mock)))
     }
     fn build_from_boxed(
         self,

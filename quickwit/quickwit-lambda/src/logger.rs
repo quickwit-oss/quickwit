@@ -32,39 +32,76 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::{EnvFilter, Layer};
 
+use crate::environment::{
+    ENABLE_VERBOSE_JSON_LOGS, OPENTELEMETRY_AUTHORIZATION, OPENTELEMETRY_URL,
+};
+
 static TRACER_PROVIDER: OnceCell<Option<TracerProvider>> = OnceCell::new();
 pub(crate) const RUNTIME_CONTEXT_SPAN: &str = "runtime_context";
 
-fn fmt_layer<S>(level: Level, ansi: bool) -> impl Layer<S>
+fn fmt_env_filter(level: Level) -> EnvFilter {
+    let default_filter = format!("quickwit={level}")
+        .parse()
+        .expect("Invalid default filter");
+    EnvFilter::builder()
+        .with_default_directive(default_filter)
+        .from_env_lossy()
+}
+
+fn fmt_time_format() -> UtcTime<std::vec::Vec<time::format_description::FormatItem<'static>>> {
+    // We do not rely on the Rfc3339 implementation, because it has a nanosecond precision.
+    // See discussion here: https://github.com/time-rs/time/discussions/418
+    UtcTime::new(
+        time::format_description::parse(
+            "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
+        )
+        .expect("Time format invalid."),
+    )
+}
+
+fn compact_fmt_layer<S>(level: Level) -> impl Layer<S>
 where
     S: for<'a> LookupSpan<'a>,
     S: tracing::Subscriber,
 {
-    let default_filter = format!("quickwit={level}")
-        .parse()
-        .expect("Invalid default filter");
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(default_filter)
-        .from_env_lossy();
     let event_format = tracing_subscriber::fmt::format()
         .with_target(true)
-        .with_timer(
-            // We do not rely on the Rfc3339 implementation, because it has a nanosecond precision.
-            // See discussion here: https://github.com/time-rs/time/discussions/418
-            UtcTime::new(
-                time::format_description::parse(
-                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
-                )
-                .expect("Time format invalid."),
-            ),
-        )
+        .with_timer(fmt_time_format())
+        .compact();
+
+    tracing_subscriber::fmt::layer::<S>()
+        .event_format(event_format)
+        .with_ansi(false)
+        .with_filter(fmt_env_filter(level))
+}
+
+fn json_fmt_layer<S>(level: Level) -> impl Layer<S>
+where
+    S: for<'a> LookupSpan<'a>,
+    S: tracing::Subscriber,
+{
+    let event_format = tracing_subscriber::fmt::format()
+        .with_target(true)
+        .with_timer(fmt_time_format())
         .json();
     tracing_subscriber::fmt::layer::<S>()
         .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
         .event_format(event_format)
         .fmt_fields(JsonFields::default())
-        .with_ansi(ansi)
-        .with_filter(env_filter)
+        .with_ansi(false)
+        .with_filter(fmt_env_filter(level))
+}
+
+fn fmt_layer<S>(level: Level) -> Box<dyn Layer<S> + Send + Sync + 'static>
+where
+    S: for<'a> LookupSpan<'a>,
+    S: tracing::Subscriber,
+{
+    if *ENABLE_VERBOSE_JSON_LOGS {
+        json_fmt_layer(level).boxed()
+    } else {
+        compact_fmt_layer(level).boxed()
+    }
 }
 
 fn otlp_layer<S>(
@@ -111,34 +148,26 @@ where
         .with_filter(env_filter)
 }
 
-fn setup_logging_and_tracing(
-    level: Level,
-    ansi: bool,
-    build_info: &BuildInfo,
-) -> anyhow::Result<()> {
+pub fn setup_lambda_tracer(level: Level) -> anyhow::Result<()> {
     global::set_text_map_propagator(TraceContextPropagator::new());
     let registry = tracing_subscriber::registry();
-    let otlp_config = (
-        std::env::var("QW_LAMBDA_OPENTELEMETRY_URL"),
-        std::env::var("QW_LAMBDA_OPENTELEMETRY_AUTHORIZATION"),
-    );
-    if let (Ok(ot_url), Ok(ot_auth)) = otlp_config {
+    let build_info = BuildInfo::get();
+    if let (Some(ot_url), Some(ot_auth)) = (
+        OPENTELEMETRY_URL.clone(),
+        OPENTELEMETRY_AUTHORIZATION.clone(),
+    ) {
         registry
-            .with(fmt_layer(level, ansi))
+            .with(fmt_layer(level))
             .with(otlp_layer(ot_url, ot_auth, level, build_info))
             .try_init()
             .context("Failed to set up tracing.")?;
     } else {
         registry
-            .with(fmt_layer(level, ansi))
+            .with(fmt_layer(level))
             .try_init()
             .context("Failed to set up tracing.")?;
     }
     Ok(())
-}
-
-pub fn setup_lambda_tracer() -> anyhow::Result<()> {
-    setup_logging_and_tracing(Level::INFO, false, BuildInfo::get())
 }
 
 pub fn flush_tracer() {

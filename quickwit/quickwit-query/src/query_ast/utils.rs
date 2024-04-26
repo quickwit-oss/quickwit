@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use tantivy::json_utils::{convert_to_fast_value_and_get_term, JsonTermWriter};
+use tantivy::json_utils::convert_to_fast_value_and_append_to_json_term;
 use tantivy::query::TermQuery as TantivyTermQuery;
 use tantivy::schema::{
     Field, FieldEntry, FieldType, IndexRecordOption, JsonObjectOptions, Schema as TantivySchema,
@@ -186,14 +186,8 @@ fn compute_tantivy_ast_query_for_json(
     tokenizer_manager: &TokenizerManager,
 ) -> Result<TantivyQueryAst, InvalidQuery> {
     let mut bool_query = TantivyBoolQuery::default();
-    let mut term = Term::with_capacity(100);
-    let mut json_term_writer = JsonTermWriter::from_field_and_json_path(
-        field,
-        json_path,
-        json_options.is_expand_dots_enabled(),
-        &mut term,
-    );
-    if let Some(term) = convert_to_fast_value_and_get_term(&mut json_term_writer, text) {
+    let term = Term::from_field_json_path(field, json_path, json_options.is_expand_dots_enabled());
+    if let Some(term) = convert_to_fast_value_and_append_to_json_term(term, text) {
         bool_query
             .should
             .push(TantivyTermQuery::new(term, IndexRecordOption::Basic).into());

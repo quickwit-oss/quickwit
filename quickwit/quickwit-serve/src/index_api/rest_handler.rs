@@ -23,18 +23,21 @@ use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     load_source_config_from_user_config, validate_index_id_pattern, ConfigFormat, NodeConfig,
-    SourceConfig, SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
+    RetentionPolicy, SearchSettings, SourceConfig, SourceParams, CLI_SOURCE_ID,
+    INGEST_API_SOURCE_ID,
 };
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
     ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitInfo, SplitState,
+    UpdateIndexRequestExt,
 };
 use quickwit_proto::metastore::{
     DeleteSourceRequest, EntityKind, IndexMetadataRequest, ListIndexesMetadataRequest,
     ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
     MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest, ToggleSourceRequest,
+    UpdateIndexRequest,
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_query::query_ast::{query_ast_from_user_text, QueryAst};
@@ -52,6 +55,7 @@ use crate::with_arg;
 #[openapi(
     paths(
         create_index,
+        update_index,
         clear_index,
         delete_index,
         list_indexes_metadata,
@@ -63,7 +67,7 @@ use crate::with_arg;
         toggle_source,
         delete_source,
     ),
-    components(schemas(ToggleSource, SplitsForDeletion, IndexStats))
+    components(schemas(ToggleSource, SplitsForDeletion, IndexStats, IndexUpdates))
 )]
 pub struct IndexApi;
 
@@ -86,6 +90,7 @@ pub fn index_management_handlers(
     get_index_metadata_handler(index_service.metastore())
         .or(list_indexes_metadata_handler(index_service.metastore()))
         .or(create_index_handler(index_service.clone(), node_config))
+        .or(update_index_handler(index_service.metastore()))
         .or(clear_index_handler(index_service.clone()))
         .or(delete_index_handler(index_service.clone()))
         // Splits handlers
@@ -458,8 +463,9 @@ async fn list_indexes_metadata(
         };
     metastore
         .list_indexes_metadata(list_indexes_metata_request)
+        .await?
+        .deserialize_indexes_metadata()
         .await
-        .and_then(|response| response.deserialize_indexes_metadata())
 }
 
 #[derive(Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
@@ -518,6 +524,68 @@ async fn create_index(
     index_service
         .create_index(index_config, create_index_query_params.overwrite)
         .await
+}
+
+/// The body of the index update request. All fields will be replaced in the
+/// existing configuration.
+#[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Default, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)] // Remove when adding new fields to allow to ensure forward compatibility
+pub struct IndexUpdates {
+    pub search_settings: SearchSettings,
+    #[serde(rename = "retention_policy")]
+    pub retention_policy_opt: Option<RetentionPolicy>,
+}
+
+fn update_index_handler(
+    metastore: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("indexes" / String)
+        .and(warp::put())
+        .and(json_body())
+        .and(with_arg(metastore))
+        .then(update_index)
+        .map(log_failure("failed to update index"))
+        .and(extract_format_from_qs())
+        .map(into_rest_api_response)
+}
+
+#[utoipa::path(
+    put,
+    tag = "Indexes",
+    path = "/indexes/{index_id}",
+    request_body = IndexUpdates,
+    responses(
+        (status = 200, description = "Successfully updated the index configuration.")
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to update."),
+    )
+)]
+/// Updates an existing index.
+///
+/// This endpoint has PUT semantics, which means that all the updatable fields of the index
+/// configuration are replaced by the values specified in the request. In particular, omitting an
+/// optional field like `retention_policy` will delete the associated configuration.
+async fn update_index(
+    index_id: String,
+    request: IndexUpdates,
+    mut metastore: MetastoreServiceClient,
+) -> Result<IndexMetadata, IndexServiceError> {
+    info!(index_id = %index_id, "update-index");
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+    let index_uid: IndexUid = metastore
+        .index_metadata(index_metadata_request)
+        .await?
+        .deserialize_index_metadata()?
+        .index_uid;
+
+    let update_request = UpdateIndexRequest::try_from_updates(
+        index_uid,
+        &request.search_settings,
+        &request.retention_policy_opt,
+    )?;
+    let update_resp = metastore.update_index(update_request).await?;
+    Ok(update_resp.deserialize_index_metadata()?)
 }
 
 fn clear_index_handler(
@@ -938,7 +1006,7 @@ mod tests {
     use quickwit_metastore::{metastore_for_test, IndexMetadata, ListSplitsResponseExt};
     use quickwit_proto::metastore::{
         EmptyResponse, IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsResponse,
-        MetastoreServiceClient, SourceType,
+        MetastoreServiceClient, MockMetastoreService, SourceType,
     };
     use quickwit_storage::StorageResolver;
     use serde_json::Value as JsonValue;
@@ -948,7 +1016,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_index() -> anyhow::Result<()> {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore.expect_index_metadata().return_once(|_| {
             Ok(
                 IndexMetadataResponse::try_from_index_metadata(&IndexMetadata::for_test(
@@ -959,7 +1027,7 @@ mod tests {
             )
         });
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -998,17 +1066,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_splits() {
-        let mut metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_metadata =
             IndexMetadata::for_test("quickwit-demo-index", "ram:///indexes/quickwit-demo-index");
         let index_uid = index_metadata.index_uid.clone();
-        metastore
+        mock_metastore
             .expect_index_metadata()
             .returning(move |_| {
                 Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
             })
             .times(2);
-        metastore
+        mock_metastore
             .expect_list_splits()
             .returning(move |list_splits_request: ListSplitsRequest| {
                 let list_split_query = list_splits_request.deserialize_list_splits_query().unwrap();
@@ -1032,7 +1100,7 @@ mod tests {
             })
             .times(2);
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -1075,7 +1143,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_describe_index() -> anyhow::Result<()> {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_metadata =
             IndexMetadata::for_test("quickwit-demo-index", "ram:///indexes/quickwit-demo-index");
         let index_uid = index_metadata.index_uid.clone();
@@ -1108,7 +1176,7 @@ mod tests {
             });
 
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -1139,7 +1207,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_all_splits() {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         let index_metadata =
             IndexMetadata::for_test("quickwit-demo-index", "ram:///indexes/quickwit-demo-index");
         let index_uid = index_metadata.index_uid.clone();
@@ -1165,7 +1233,7 @@ mod tests {
             },
         );
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -1180,7 +1248,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mark_splits_for_deletion() -> anyhow::Result<()> {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_index_metadata()
             .returning(|_| {
@@ -1212,7 +1280,7 @@ mod tests {
             )
             .times(2);
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -1239,7 +1307,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_list_indexes() -> anyhow::Result<()> {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .return_once(|list_indexes_request| {
@@ -1249,13 +1317,10 @@ mod tests {
                 );
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                Ok(
-                    ListIndexesMetadataResponse::try_from_indexes_metadata(vec![index_metadata])
-                        .unwrap(),
-                )
+                Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata]))
             });
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -1283,7 +1348,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_clear_index() -> anyhow::Result<()> {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore.expect_index_metadata().return_once(|_| {
             Ok(
                 IndexMetadataResponse::try_from_index_metadata(&IndexMetadata::for_test(
@@ -1307,7 +1372,7 @@ mod tests {
             .expect_reset_source_checkpoint()
             .return_once(|_| Ok(EmptyResponse {}));
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -1324,7 +1389,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_index() {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_index_metadata()
             .returning(|_| {
@@ -1355,7 +1420,7 @@ mod tests {
             .expect_delete_index()
             .return_once(|_| Ok(EmptyResponse {}));
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -1565,6 +1630,7 @@ mod tests {
             .await
             .unwrap()
             .deserialize_indexes_metadata()
+            .await
             .unwrap();
         assert!(indexes.is_empty());
     }
@@ -1606,7 +1672,7 @@ mod tests {
             .header("content-type", "application/yaml")
             .body(
                 r#"
-            version: 0.7
+            version: 0.8
             index_id: hdfs-logs
             doc_mapping:
               field_mappings:
@@ -1688,9 +1754,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_index_with_bad_config() -> anyhow::Result<()> {
-        let metastore = MetastoreServiceClient::mock();
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::mocked(),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -1711,6 +1776,68 @@ mod tests {
         let body = std::str::from_utf8(resp.body()).unwrap();
         assert!(body.contains("field `timestamp` has an unknown type"));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_update_index() {
+        let mut metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
+        let index_management_handler =
+            super::index_management_handlers(index_service, Arc::new(node_config));
+        {
+            let resp = warp::test::request()
+                .path("/indexes")
+                .method("POST")
+                .json(&true)
+                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["body"]}}"#)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
+            let expected_response_json = serde_json::json!({
+                "index_config": {
+                    "search_settings": {
+                        "default_search_fields": ["body"]
+                    }
+                }
+            });
+            assert_json_include!(actual: resp_json, expected: expected_response_json);
+        }
+        {
+            let resp = warp::test::request()
+                .path("/indexes/hdfs-logs")
+                .method("PUT")
+                .json(&true)
+                .body(r#"{"search_settings":{"default_search_fields":["severity_text","body"]}}"#)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
+            let expected_response_json = serde_json::json!({
+                "index_config": {
+                    "search_settings": {
+                        "default_search_fields": ["severity_text", "body"]
+                    }
+                }
+            });
+            assert_json_include!(actual: resp_json, expected: expected_response_json);
+        }
+        // check that the metastore was updated
+        let index_metadata = metastore
+            .index_metadata(IndexMetadataRequest::for_index_id("hdfs-logs".to_string()))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert_eq!(
+            index_metadata
+                .index_config
+                .search_settings
+                .default_search_fields,
+            ["severity_text", "body"]
+        );
     }
 
     #[tokio::test]
@@ -1757,7 +1884,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_non_existing_source() {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore.expect_index_metadata().return_once(|_| {
             Ok(
                 IndexMetadataResponse::try_from_index_metadata(&IndexMetadata::for_test(
@@ -1783,7 +1910,7 @@ mod tests {
             },
         );
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -1799,7 +1926,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_source_reset_checkpoint() -> anyhow::Result<()> {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_index_metadata()
             .returning(|_| {
@@ -1830,7 +1957,7 @@ mod tests {
             )
             .times(2);
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -1853,7 +1980,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_source_toggle() -> anyhow::Result<()> {
-        let mut mock_metastore = MetastoreServiceClient::mock();
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_index_metadata()
             .returning(|_| {
@@ -1884,7 +2011,7 @@ mod tests {
             },
         );
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(mock_metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -1934,8 +2061,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_analyze_request() {
-        let mut metastore = MetastoreServiceClient::mock();
-        metastore.expect_index_metadata().return_once(|_| {
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_index_metadata().return_once(|_| {
             Ok(
                 IndexMetadataResponse::try_from_index_metadata(&IndexMetadata::for_test(
                     "test-index",
@@ -1945,7 +2072,7 @@ mod tests {
             )
         });
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =
@@ -1980,9 +2107,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_query_request() {
-        let metastore = MetastoreServiceClient::mock();
         let index_service = IndexService::new(
-            MetastoreServiceClient::from(metastore),
+            MetastoreServiceClient::mocked(),
             StorageResolver::unconfigured(),
         );
         let index_management_handler =

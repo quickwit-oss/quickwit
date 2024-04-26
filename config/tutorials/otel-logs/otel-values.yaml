@@ -8,8 +8,6 @@ config:
   exporters:
     otlp:
       endpoint: quickwit-indexer.qw-tutorial.svc.cluster.local:7281
-      # Quickwit gRPC does not support compression yet.
-      compression: none
       tls:
         insecure: true
   service:

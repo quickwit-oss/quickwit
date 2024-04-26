@@ -82,7 +82,7 @@ async fn elastic_ingest_bulk(
     mut ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
 ) -> Result<ElasticBulkResponse, ElasticsearchError> {
-    if enable_ingest_v2() {
+    if enable_ingest_v2() || bulk_options.enable_ingest_v2 {
         return elastic_bulk_ingest_v2(default_index_id, body, bulk_options, ingest_router).await;
     }
     let now = Instant::now();
@@ -94,12 +94,14 @@ async fn elastic_ingest_bulk(
             ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 format!("Malformed action/metadata line [#{line_number}]. Details: `{error}`"),
+                None,
             )
         })?;
         let (_, source) = lines.next().ok_or_else(|| {
             ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 "expected source for the action".to_string(),
+                None,
             )
         })?;
         // when ingesting on /my-index/_bulk, if _index: is set to something else than my-index,
@@ -112,6 +114,7 @@ async fn elastic_ingest_bulk(
                 ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
                     format!("missing required field: `_index` in the line [#{line_number}]."),
+                    None,
                 )
             })?;
         let doc_batch_builder = doc_batch_builders
@@ -136,6 +139,7 @@ async fn elastic_ingest_bulk(
     let bulk_response = ElasticBulkResponse {
         took_millis,
         errors,
+        items: Vec::new(),
     };
     Ok(bulk_response)
 }
@@ -164,10 +168,9 @@ mod tests {
     async fn test_bulk_api_returns_404_if_index_id_does_not_exist() {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
-        let metastore_service = MetastoreServiceClient::mock();
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
@@ -175,7 +178,7 @@ mod tests {
             search_service,
             ingest_service,
             ingest_router,
-            metastore_service.into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let payload = r#"
@@ -197,10 +200,9 @@ mod tests {
     async fn test_bulk_api_returns_200() {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
-        let metastore_service = MetastoreServiceClient::mock();
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
@@ -208,7 +210,7 @@ mod tests {
             search_service,
             ingest_service,
             ingest_router,
-            metastore_service.into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let payload = r#"
@@ -234,10 +236,9 @@ mod tests {
     async fn test_bulk_api_returns_200_if_payload_has_blank_lines() {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
-        let metastore_service = MetastoreServiceClient::mock();
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index-1"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
@@ -245,7 +246,7 @@ mod tests {
             search_service,
             ingest_service,
             ingest_router,
-            metastore_service.into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let payload = "
@@ -268,10 +269,9 @@ mod tests {
     async fn test_bulk_index_api_returns_200() {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
-        let metastore_service = MetastoreServiceClient::mock();
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
@@ -279,7 +279,7 @@ mod tests {
             search_service,
             ingest_service,
             ingest_router,
-            metastore_service.into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let payload = r#"
@@ -305,10 +305,9 @@ mod tests {
     async fn test_bulk_api_blocks_when_refresh_wait_for_is_specified() {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
-        let metastore_service = MetastoreServiceClient::mock();
         let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
@@ -316,7 +315,7 @@ mod tests {
             search_service,
             ingest_service,
             ingest_router,
-            metastore_service.into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let payload = r#"
@@ -393,10 +392,9 @@ mod tests {
     async fn test_bulk_api_blocks_when_refresh_true_is_specified() {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
-        let metastore_service = MetastoreServiceClient::mock();
         let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
@@ -404,7 +402,7 @@ mod tests {
             search_service,
             ingest_service,
             ingest_router,
-            metastore_service.into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let payload = r#"
@@ -480,9 +478,8 @@ mod tests {
     async fn test_bulk_ingest_request_returns_400_if_action_is_malformed() {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
-        let metastore_service = MetastoreServiceClient::mock();
-        let ingest_service = IngestServiceClient::from(IngestServiceClient::mock());
-        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let ingest_service = IngestServiceClient::mocked();
+        let ingest_router = IngestRouterServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_for_test(), StorageResolver::unconfigured());
         let elastic_api_handlers = elastic_api_handlers(
@@ -490,7 +487,7 @@ mod tests {
             search_service,
             ingest_service,
             ingest_router,
-            metastore_service.into(),
+            MetastoreServiceClient::mocked(),
             index_service,
         );
         let payload = r#"

@@ -157,6 +157,7 @@ impl Hello for HelloImpl {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt;
     use std::net::SocketAddr;
     use std::str::FromStr;
     use std::sync::atomic::Ordering;
@@ -539,6 +540,108 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_hello_codegen_tower_stack_layer_ordering() {
+        trait AppendSuffix {
+            fn append_suffix(&mut self, suffix: &'static str);
+        }
+
+        impl AppendSuffix for HelloRequest {
+            fn append_suffix(&mut self, suffix: &'static str) {
+                self.name.push_str(suffix);
+            }
+        }
+
+        impl AppendSuffix for GoodbyeRequest {
+            fn append_suffix(&mut self, suffix: &'static str) {
+                self.name.push_str(suffix);
+            }
+        }
+
+        impl AppendSuffix for PingRequest {
+            fn append_suffix(&mut self, suffix: &'static str) {
+                self.name.push_str(suffix);
+            }
+        }
+
+        impl AppendSuffix for ServiceStream<PingRequest> {
+            fn append_suffix(&mut self, _suffix: &'static str) {}
+        }
+
+        #[derive(Debug, Clone)]
+        struct AppendSuffixService<S> {
+            inner: S,
+            suffix: &'static str,
+        }
+
+        impl<S, R> Service<R> for AppendSuffixService<S>
+        where
+            S: Service<R, Error = HelloError>,
+            S::Response: fmt::Debug,
+            S::Future: Send + 'static,
+            R: AppendSuffix,
+        {
+            type Response = S::Response;
+            type Error = HelloError;
+            type Future = BoxFuture<S::Response, S::Error>;
+
+            fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+                self.inner.poll_ready(cx)
+            }
+
+            fn call(&mut self, mut req: R) -> Self::Future {
+                req.append_suffix(self.suffix);
+                let inner = self.inner.call(req);
+                Box::pin(inner)
+            }
+        }
+
+        #[derive(Debug, Clone)]
+        struct AppendSuffixLayer {
+            suffix: &'static str,
+        }
+
+        impl AppendSuffixLayer {
+            fn new(suffix: &'static str) -> Self {
+                Self { suffix }
+            }
+        }
+
+        impl<S> Layer<S> for AppendSuffixLayer {
+            type Service = AppendSuffixService<S>;
+
+            fn layer(&self, inner: S) -> Self::Service {
+                AppendSuffixService {
+                    inner,
+                    suffix: self.suffix,
+                }
+            }
+        }
+        let mut hello_tower = HelloClient::tower()
+            .stack_layer(AppendSuffixLayer::new("->foo"))
+            .stack_hello_layer(AppendSuffixLayer::new("->bar"))
+            .stack_layer(AppendSuffixLayer::new("->qux"))
+            .stack_hello_layer(AppendSuffixLayer::new("->tox"))
+            .stack_goodbye_layer(AppendSuffixLayer::new("->moo"))
+            .build(HelloImpl::default());
+
+        let response = hello_tower
+            .hello(HelloRequest {
+                name: "".to_string(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.message, "Hello, ->foo->bar->qux->tox!");
+
+        let response = hello_tower
+            .goodbye(GoodbyeRequest {
+                name: "".to_string(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.message, "Goodbye, ->foo->qux->moo!");
+    }
+
+    #[tokio::test]
     async fn test_from_channel() {
         let balance_channed = BalanceChannel::from_channel(
             "127.0.0.1:7777".parse().unwrap(),
@@ -552,7 +655,7 @@ mod tests {
         let hello = HelloImpl::default();
         let grpc_server_adapter = HelloGrpcServerAdapter::new(hello);
         let grpc_server = HelloGrpcServer::new(grpc_server_adapter);
-        let addr: SocketAddr = "127.0.0.1:8888".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:11111".parse().unwrap();
 
         tokio::spawn({
             async move {
@@ -564,7 +667,7 @@ mod tests {
             }
         });
         let (balance_channel, balance_channel_tx) = BalanceChannel::new();
-        let channel = Endpoint::from_static("http://127.0.0.1:8888").connect_lazy();
+        let channel = Endpoint::from_static("http://127.0.0.1:11111").connect_lazy();
         balance_channel_tx
             .send(Change::Insert("foo", channel))
             .unwrap();
@@ -588,14 +691,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_hello_codegen_mock() {
-        let mut hello_mock = HelloClient::mock();
-        hello_mock.expect_hello().returning(|_| {
+        let mut mock_hello = MockHello::new();
+        mock_hello.expect_hello().returning(|_| {
             Ok(HelloResponse {
                 message: "Hello, mock!".to_string(),
             })
         });
-        hello_mock.expect_check_connectivity().returning(|| Ok(()));
-        let mut hello: HelloClient = hello_mock.into();
+        mock_hello.expect_check_connectivity().returning(|| Ok(()));
+        let mut hello = HelloClient::from_mock(mock_hello);
+
         assert_eq!(
             hello
                 .hello(HelloRequest {

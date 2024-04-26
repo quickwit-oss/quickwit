@@ -1,10 +1,12 @@
-## Long-term roadmap (2023-2024)
+## Long-term roadmap (2024-2025)
 
 ### Major features
 
 - Alerting
+- Distributed and replicated ingestion
 - Schema updates
-- Transforms
+- Live tail
+- Metrics
 - Geospatial search
 - Native Go, Java, and Python clients
 - Pipe-based query language

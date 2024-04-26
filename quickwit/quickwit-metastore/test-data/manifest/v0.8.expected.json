@@ -8,6 +8,7 @@
     {
       "description": "Test description.",
       "doc_mapping": {
+        "document_length": false,
         "dynamic_mapping": {
           "expand_dots": true,
           "fast": {

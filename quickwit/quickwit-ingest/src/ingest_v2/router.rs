@@ -27,6 +27,7 @@ use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
+use quickwit_common::{rate_limited_error, rate_limited_warn};
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsSubrequest,
@@ -39,7 +40,7 @@ use quickwit_proto::ingest::router::{IngestRequestV2, IngestResponseV2, IngestRo
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
 use tokio::sync::{Mutex, Semaphore};
-use tracing::{error, info, warn};
+use tracing::info;
 
 use super::broadcast::LocalShardsUpdate;
 use super::debouncing::{
@@ -221,9 +222,15 @@ impl IngestRouter {
             Ok(response) => response,
             Err(control_plane_error) => {
                 if workbench.is_last_attempt() {
-                    error!("failed to get open shards from control plane: {control_plane_error}");
+                    rate_limited_error!(
+                        limit_per_min = 10,
+                        "failed to get open shards from control plane: {control_plane_error}"
+                    );
                 } else {
-                    warn!("failed to get open shards from control plane: {control_plane_error}");
+                    rate_limited_warn!(
+                        limit_per_min = 10,
+                        "failed to get open shards from control plane: {control_plane_error}"
+                    );
                 };
                 return;
             }
@@ -282,12 +289,14 @@ impl IngestRouter {
                 }
                 Err(persist_error) => {
                     if workbench.is_last_attempt() {
-                        error!(
+                        rate_limited_error!(
+                            limit_per_min = 10,
                             "failed to persist records on ingester `{}`: {persist_error}",
                             persist_summary.leader_id
                         );
                     } else {
-                        warn!(
+                        rate_limited_warn!(
+                            limit_per_min = 10,
                             "failed to persist records on ingester `{}`: {persist_error}",
                             persist_summary.leader_id
                         );
@@ -404,14 +413,14 @@ impl IngestRouter {
         &mut self,
         ingest_request: IngestRequestV2,
         max_num_attempts: usize,
-    ) -> IngestResponseV2 {
+    ) -> IngestV2Result<IngestResponseV2> {
         let commit_type = ingest_request.commit_type();
         let mut workbench = IngestWorkbench::new(ingest_request.subrequests, max_num_attempts);
         while !workbench.is_complete() {
             workbench.new_attempt();
             self.batch_persist(&mut workbench, commit_type).await;
         }
-        workbench.into_ingest_response()
+        workbench.into_ingest_result()
     }
 
     async fn ingest_timeout(
@@ -430,7 +439,7 @@ impl IngestRouter {
                 INGEST_REQUEST_TIMEOUT.as_secs()
             );
             IngestV2Error::Timeout(message)
-        })
+        })?
     }
 }
 
@@ -442,8 +451,9 @@ impl IngestRouterService for IngestRouter {
     ) -> IngestV2Result<IngestResponseV2> {
         let request_size_bytes = ingest_request.num_bytes();
 
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight_data.ingest_router);
+        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingest_router);
         gauge_guard.add(request_size_bytes as i64);
+
         let _permit = self
             .ingest_semaphore
             .clone()
@@ -531,10 +541,10 @@ mod tests {
 
     use quickwit_proto::control_plane::{
         GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason,
-        GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess,
+        GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess, MockControlPlaneService,
     };
     use quickwit_proto::ingest::ingester::{
-        IngesterServiceClient, PersistFailure, PersistResponse, PersistSuccess,
+        IngesterServiceClient, MockIngesterService, PersistFailure, PersistResponse, PersistSuccess,
     };
     use quickwit_proto::ingest::router::IngestSubrequest;
     use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2, Shard, ShardIds, ShardState};
@@ -550,7 +560,8 @@ mod tests {
     #[tokio::test]
     async fn test_router_make_get_or_create_open_shard_request() {
         let self_node_id = "test-router".into();
-        let control_plane: ControlPlaneServiceClient = ControlPlaneServiceClient::mock().into();
+        let control_plane: ControlPlaneServiceClient =
+            ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let router = IngestRouter::new(
@@ -662,10 +673,7 @@ mod tests {
         drop(rendezvous_1);
         drop(rendezvous_2);
 
-        ingester_pool.insert(
-            "test-ingester-0".into(),
-            IngesterServiceClient::mock().into(),
-        );
+        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
         {
             // Ingester-0 has been marked as unavailable due to the previous requests.
             let (get_or_create_open_shard_request_opt, _rendezvous) = router
@@ -713,8 +721,8 @@ mod tests {
 
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         let index_uid2: IndexUid = IndexUid::for_test("test-index-1", 0);
-        let mut control_plane_mock = ControlPlaneServiceClient::mock();
-        control_plane_mock
+        let mut mock_control_plane = MockControlPlaneService::new();
+        mock_control_plane
             .expect_get_or_create_open_shards()
             .once()
             .returning(move |request| {
@@ -789,7 +797,7 @@ mod tests {
                 };
                 Ok(response)
             });
-        let control_plane: ControlPlaneServiceClient = control_plane_mock.into();
+        let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
@@ -889,8 +897,8 @@ mod tests {
     #[tokio::test]
     async fn test_router_batch_persist_records_no_shards_available_empty_routing_table() {
         let self_node_id = "test-router".into();
-        let mut control_plane_mock = ControlPlaneServiceClient::mock();
-        control_plane_mock
+        let mut mock_control_plane = MockControlPlaneService::new();
+        mock_control_plane
             .expect_get_or_create_open_shards()
             .once()
             .returning(move |request| {
@@ -903,7 +911,7 @@ mod tests {
                 let response = GetOrCreateOpenShardsResponse::default();
                 Ok(response)
             });
-        let control_plane: ControlPlaneServiceClient = control_plane_mock.into();
+        let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
@@ -932,8 +940,8 @@ mod tests {
     #[tokio::test]
     async fn test_router_batch_persist_records_no_shards_available_unavailable_ingester() {
         let self_node_id = "test-router".into();
-        let mut control_plane_mock = ControlPlaneServiceClient::mock();
-        control_plane_mock
+        let mut mock_control_plane = MockControlPlaneService::new();
+        mock_control_plane
             .expect_get_or_create_open_shards()
             .once()
             .returning(move |request| {
@@ -961,7 +969,7 @@ mod tests {
                 };
                 Ok(response)
             });
-        let control_plane: ControlPlaneServiceClient = control_plane_mock.into();
+        let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
@@ -990,7 +998,7 @@ mod tests {
     #[tokio::test]
     async fn test_router_process_persist_results_record_persist_successes() {
         let self_node_id = "test-router".into();
-        let control_plane = ControlPlaneServiceClient::mock().into();
+        let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
@@ -1041,7 +1049,7 @@ mod tests {
     #[tokio::test]
     async fn test_router_process_persist_results_record_persist_failures() {
         let self_node_id = "test-router".into();
-        let control_plane = ControlPlaneServiceClient::mock().into();
+        let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
@@ -1092,7 +1100,7 @@ mod tests {
     #[tokio::test]
     async fn test_router_process_persist_results_closes_and_deletes_shards() {
         let self_node_id = "test-router".into();
-        let control_plane = ControlPlaneServiceClient::mock().into();
+        let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
@@ -1174,17 +1182,11 @@ mod tests {
     #[tokio::test]
     async fn test_router_process_persist_results_does_not_remove_unavailable_leaders() {
         let self_node_id = "test-router".into();
-        let control_plane = ControlPlaneServiceClient::mock().into();
+        let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
 
         let ingester_pool = IngesterPool::default();
-        ingester_pool.insert(
-            "test-ingester-0".into(),
-            IngesterServiceClient::mock().into(),
-        );
-        ingester_pool.insert(
-            "test-ingester-1".into(),
-            IngesterServiceClient::mock().into(),
-        );
+        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
+        ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
 
         let replication_factor = 1;
         let mut router = IngestRouter::new(
@@ -1216,7 +1218,7 @@ mod tests {
                 subrequest_ids: vec![0],
             };
             let persist_result =
-                Err::<_, IngestV2Error>(IngestV2Error::Timeout("timeout error".to_string()));
+                Err::<_, IngestV2Error>(IngestV2Error::Internal("internal error".to_string()));
             (persist_summary, persist_result)
         });
         router
@@ -1226,7 +1228,7 @@ mod tests {
         let subworkbench = workbench.subworkbenches.get(&0).unwrap();
         assert!(matches!(
             &subworkbench.last_failure_opt,
-            &Some(SubworkbenchFailure::Internal(ref msg)) if msg.contains("timed out")
+            Some(SubworkbenchFailure::Internal)
         ));
 
         assert!(!workbench
@@ -1263,7 +1265,7 @@ mod tests {
     #[tokio::test]
     async fn test_router_ingest() {
         let self_node_id = "test-router".into();
-        let control_plane = ControlPlaneServiceClient::mock().into();
+        let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
@@ -1313,10 +1315,10 @@ mod tests {
         );
         drop(state_guard);
 
-        let mut ingester_mock_0 = IngesterServiceClient::mock();
+        let mut mock_ingester_0 = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
         let index_uid2_clone = index_uid2.clone();
-        ingester_mock_0
+        mock_ingester_0
             .expect_persist()
             .once()
             .returning(move |request| {
@@ -1366,7 +1368,7 @@ mod tests {
                 };
                 Ok(response)
             });
-        ingester_mock_0
+        mock_ingester_0
             .expect_persist()
             .once()
             .returning(move |request| {
@@ -1397,11 +1399,11 @@ mod tests {
                 };
                 Ok(response)
             });
-        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
-        let mut ingester_mock_1 = IngesterServiceClient::mock();
-        ingester_mock_1
+        let mut mock_ingester_1 = MockIngesterService::new();
+        mock_ingester_1
             .expect_persist()
             .once()
             .returning(move |request| {
@@ -1432,7 +1434,7 @@ mod tests {
                 };
                 Ok(response)
             });
-        let ingester_1: IngesterServiceClient = ingester_mock_1.into();
+        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
         let ingest_request = IngestRequestV2 {
@@ -1477,7 +1479,7 @@ mod tests {
     #[tokio::test]
     async fn test_router_ingest_retry() {
         let self_node_id = "test-router".into();
-        let control_plane = ControlPlaneServiceClient::mock().into();
+        let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
@@ -1502,9 +1504,9 @@ mod tests {
         );
         drop(state_guard);
 
-        let mut ingester_mock_0 = IngesterServiceClient::mock();
+        let mut mock_ingester_0 = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
-        ingester_mock_0
+        mock_ingester_0
             .expect_persist()
             .once()
             .returning(move |request| {
@@ -1535,7 +1537,7 @@ mod tests {
                 };
                 Ok(response)
             });
-        ingester_mock_0
+        mock_ingester_0
             .expect_persist()
             .once()
             .returning(move |request| {
@@ -1566,7 +1568,7 @@ mod tests {
                 };
                 Ok(response)
             });
-        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let ingest_request = IngestRequestV2 {
@@ -1584,7 +1586,7 @@ mod tests {
     #[tokio::test]
     async fn test_router_updates_routing_table_on_chitchat_events() {
         let self_node_id = "test-router".into();
-        let control_plane = ControlPlaneServiceClient::mock().into();
+        let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let router = IngestRouter::new(

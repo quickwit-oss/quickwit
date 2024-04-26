@@ -17,13 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use lambda_http::{run, service_fn};
 use quickwit_lambda::logger;
-use quickwit_lambda::searcher::handler;
+use quickwit_lambda::searcher::{setup_searcher_api, warp_lambda};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    logger::setup_lambda_tracer()?;
-    let func = service_fn(handler);
-    run(func).await.map_err(|e| anyhow::anyhow!(e))
+    logger::setup_lambda_tracer(tracing::Level::INFO)?;
+    let routes = setup_searcher_api().await?;
+    let warp_service = warp::service(routes);
+    warp_lambda::run(warp_service)
+        .await
+        .map_err(|e| anyhow::anyhow!(e))
 }

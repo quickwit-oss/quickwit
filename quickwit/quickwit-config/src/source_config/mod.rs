@@ -182,9 +182,17 @@ impl TestableForRegression for SourceConfig {
 pub enum SourceInputFormat {
     #[default]
     Json,
-    OtlpTraceJson,
-    #[serde(alias = "otlp_trace_proto")]
-    OtlpTraceProtobuf,
+    OtlpLogsJson,
+    #[serde(alias = "otlp_logs_proto")]
+    OtlpLogsProtobuf,
+    #[serde(alias = "otlp_trace_json")]
+    OtlpTracesJson,
+    #[serde(
+        alias = "otlp_trace_proto",
+        alias = "otlp_trace_protobuf",
+        alias = "otlp_traces_proto"
+    )]
+    OtlpTracesProtobuf,
     #[serde(alias = "plain")]
     PlainText,
 }

@@ -548,14 +548,8 @@ mod tests {
         assert!(closed_shard_ids.is_empty());
         assert!(unavailable_leaders.is_empty());
 
-        ingester_pool.insert(
-            "test-ingester-0".into(),
-            IngesterServiceClient::mock().into(),
-        );
-        ingester_pool.insert(
-            "test-ingester-1".into(),
-            IngesterServiceClient::mock().into(),
-        );
+        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
+        ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
 
         let table_entry = RoutingTableEntry {
             index_uid: index_uid.clone(),
@@ -642,14 +636,8 @@ mod tests {
         let shard_opt = table_entry.next_open_shard_round_robin(&ingester_pool);
         assert!(shard_opt.is_none());
 
-        ingester_pool.insert(
-            "test-ingester-0".into(),
-            IngesterServiceClient::mock().into(),
-        );
-        ingester_pool.insert(
-            "test-ingester-1".into(),
-            IngesterServiceClient::mock().into(),
-        );
+        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
+        ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
 
         let table_entry = RoutingTableEntry {
             index_uid: index_uid.clone(),

@@ -1,0 +1,8 @@
+version: 0.8
+source_id: kafka-source
+source_type: kafka
+input_format: otlp_logs_proto
+params:
+  topic: otlp_logs
+  client_params:
+    bootstrap.servers: localhost:9092

@@ -23,7 +23,7 @@ use std::path::Path;
 
 use bytes::Buf;
 use mrecordlog::error::*;
-use mrecordlog::{MultiRecordLog, Record, ResourceUsage, SyncPolicy};
+use mrecordlog::{MultiRecordLog, PersistAction, PersistPolicy, Record, ResourceUsage};
 use tokio::task::JoinError;
 use tracing::error;
 
@@ -35,7 +35,7 @@ pub struct MultiRecordLogAsync {
 impl MultiRecordLogAsync {
     fn take(&mut self) -> MultiRecordLog {
         let Some(mrecordlog) = self.mrecordlog_opt.take() else {
-            error!("wal is poisoned, aborting process");
+            error!("wal is poisoned (on write), aborting process");
             std::process::abort();
         };
         mrecordlog
@@ -43,23 +43,23 @@ impl MultiRecordLogAsync {
 
     fn mrecordlog_ref(&self) -> &MultiRecordLog {
         let Some(mrecordlog) = &self.mrecordlog_opt else {
-            error!("the mrecordlog is corrupted, aborting process");
+            error!("wal is poisoned (on read), aborting process");
             std::process::abort();
         };
         mrecordlog
     }
 
     pub async fn open(directory_path: &Path) -> Result<Self, ReadRecordError> {
-        Self::open_with_prefs(directory_path, SyncPolicy::OnAppend).await
+        Self::open_with_prefs(directory_path, PersistPolicy::Always(PersistAction::Flush)).await
     }
 
     pub async fn open_with_prefs(
         directory_path: &Path,
-        sync_policy: SyncPolicy,
+        persist_policy: PersistPolicy,
     ) -> Result<Self, ReadRecordError> {
         let directory_path = directory_path.to_path_buf();
         let mrecordlog = tokio::task::spawn(async move {
-            MultiRecordLog::open_with_prefs(&directory_path, sync_policy)
+            MultiRecordLog::open_with_prefs(&directory_path, persist_policy)
         })
         .await
         .map_err(|join_err| {
@@ -187,5 +187,9 @@ impl MultiRecordLogAsync {
 
     pub fn resource_usage(&self) -> ResourceUsage {
         self.mrecordlog_ref().resource_usage()
+    }
+
+    pub fn summary(&self) -> mrecordlog::QueuesSummary {
+        self.mrecordlog_ref().summary()
     }
 }
