@@ -163,10 +163,7 @@ impl S3CompatibleObjectStorage {
         bucket: String,
     ) -> Result<Self, StorageResolverError> {
         let s3_client = create_s3_client(s3_storage_config).await;
-        let retry_params = RetryParams {
-            max_attempts: 3,
-            ..Default::default()
-        };
+        let retry_params = RetryParams::aggressive();
         let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
         let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
         Ok(Self {
@@ -930,7 +927,7 @@ mod tests {
             bucket,
             prefix,
             multipart_policy: MultiPartPolicy::default(),
-            retry_params: RetryParams::default(),
+            retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
         };
@@ -985,7 +982,7 @@ mod tests {
             bucket,
             prefix,
             multipart_policy: MultiPartPolicy::default(),
-            retry_params: RetryParams::default(),
+            retry_params: RetryParams::for_test(),
             disable_multi_object_delete: true,
             disable_multipart_upload: false,
         };
@@ -1026,7 +1023,7 @@ mod tests {
             bucket,
             prefix,
             multipart_policy: MultiPartPolicy::default(),
-            retry_params: RetryParams::default(),
+            retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
         };
@@ -1108,7 +1105,7 @@ mod tests {
             bucket,
             prefix,
             multipart_policy: MultiPartPolicy::default(),
-            retry_params: RetryParams::default(),
+            retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
         };

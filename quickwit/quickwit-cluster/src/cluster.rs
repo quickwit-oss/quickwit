@@ -32,7 +32,7 @@ use chitchat::{
 };
 use itertools::Itertools;
 use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
-use quickwit_proto::types::{NodeId, PipelineUid, ShardId};
+use quickwit_proto::types::{NodeId, NodeIdRef, PipelineUid, ShardId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use tokio::time::timeout;
@@ -95,8 +95,8 @@ impl Cluster {
         &self.self_chitchat_id
     }
 
-    pub fn self_node_id(&self) -> &str {
-        &self.self_chitchat_id.node_id
+    pub fn self_node_id(&self) -> &NodeIdRef {
+        NodeIdRef::from_str(&self.self_chitchat_id.node_id)
     }
 
     pub fn gossip_listen_addr(&self) -> SocketAddr {
@@ -213,8 +213,19 @@ impl Cluster {
     }
 
     /// Deprecated: this is going away soon.
-    pub async fn ready_members_watcher(&self) -> WatchStream<Vec<ClusterMember>> {
+    async fn ready_members_watcher(&self) -> WatchStream<Vec<ClusterMember>> {
         WatchStream::new(self.inner.read().await.ready_members_rx.clone())
+    }
+
+    pub async fn ready_nodes(&self) -> Vec<ClusterNode> {
+        self.inner
+            .write()
+            .await
+            .live_nodes
+            .values()
+            .filter(|node| node.is_ready())
+            .cloned()
+            .collect()
     }
 
     /// Returns a stream of changes affecting the set of ready nodes in the cluster.

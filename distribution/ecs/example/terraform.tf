@@ -37,9 +37,11 @@ module "quickwit" {
   # quickwit_cpu_architecture = "ARM64"
 
   # quickwit_indexer = {
-  #   desired_count = 1
-  #   memory        = 2048
-  #   cpu           = 1024
+  #   desired_count         = 3
+  #   memory                = 8192
+  #   cpu                   = 4096
+  #   ephemeral_storage_gib = 50
+  #   extra_task_policy_arns = ["arn:aws:iam::aws:policy/AmazonKinesisFullAccess"]
   # }
 
   # quickwit_metastore = {
@@ -49,9 +51,9 @@ module "quickwit" {
   # }
 
   # quickwit_searcher = {
-  #   desired_count = 1
-  #   memory        = 2048
-  #   cpu           = 1024
+  #   desired_count         = 1
+  #   memory                = 2048
+  #   cpu                   = 1024
   # }
 
   # quickwit_control_plane = {
@@ -68,6 +70,8 @@ module "quickwit" {
   #   instance_class = "db.t4g.micro"
   #   multi_az       = false
   # }
+
+  # external_postgres_uri_ssm_parameter_arn = aws_ssm_parameter.postgres_uri.arn
 
   ## Example logging configuration 
   # sidecar_container_definitions  = {

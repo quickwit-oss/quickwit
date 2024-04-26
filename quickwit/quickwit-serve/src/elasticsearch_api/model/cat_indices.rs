@@ -67,18 +67,21 @@ impl CatIndexQueryParams {
                         "Format {:?} is not supported. Only format=json is supported.",
                         format
                     ),
+                    None,
                 ));
             }
         } else {
             return Err(ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 "Only format=json is supported.".to_string(),
+                None,
             ));
         }
         let unsupported_parameter_error = |field: &str| {
             ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 format!("Parameter {:?} is not supported.", field),
+                None,
             )
         };
         if self.bytes.is_some() {
@@ -90,7 +93,6 @@ impl CatIndexQueryParams {
         if self.s.is_some() {
             return Err(unsupported_parameter_error("s"));
         }
-
         Ok(())
     }
 }

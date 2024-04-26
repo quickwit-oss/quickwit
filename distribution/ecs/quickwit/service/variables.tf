@@ -38,9 +38,11 @@ variable "quickwit_image" {}
 
 variable "service_config" {
   type = object({
-    desired_count = optional(number, 1)
-    memory        = number
-    cpu           = number
+    desired_count          = optional(number, 1)
+    memory                 = number
+    cpu                    = number
+    ephemeral_storage_gib  = optional(number, 21)
+    extra_task_policy_arns = optional(list(string), [])
   })
 }
 
@@ -51,6 +53,8 @@ variable "quickwit_peer_list" {
 }
 
 variable "s3_access_policy_arn" {}
+
+variable "task_execution_policy_arn" {}
 
 variable "quickwit_cpu_architecture" {}
 

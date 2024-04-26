@@ -604,10 +604,7 @@ fn is_metadata_count_request(request: &SearchRequest) -> bool {
     if request.start_timestamp.is_some() || request.end_timestamp.is_some() {
         return false;
     }
-    if request.aggregation_request.is_some()
-        || !request.snippet_fields.is_empty()
-        || request.search_after.is_some()
-    {
+    if request.aggregation_request.is_some() || !request.snippet_fields.is_empty() {
         return false;
     }
     true
@@ -1402,13 +1399,14 @@ fn compute_split_cost(_split_metadata: &SplitMetadata) -> usize {
 pub fn jobs_to_leaf_requests(
     request: &SearchRequest,
     search_indexes_metadatas: &IndexesMetasForLeafSearch,
-    jobs: Vec<SearchJob>,
+    mut jobs: Vec<SearchJob>,
 ) -> crate::Result<Vec<LeafSearchRequest>> {
     let mut search_request_for_leaf = request.clone();
     search_request_for_leaf.start_offset = 0;
     search_request_for_leaf.max_hits += request.start_offset;
     let mut leaf_search_requests = Vec::new();
     // Group jobs by index uid.
+    jobs.sort_by(|job1, job2| job1.index_uid.cmp(&job2.index_uid));
     for (index_uid, job_group) in &jobs.into_iter().group_by(|job| job.index_uid.clone()) {
         let search_index_meta = search_indexes_metadatas.get(&index_uid).ok_or_else(|| {
             SearchError::Internal(format!(

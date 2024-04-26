@@ -56,7 +56,7 @@ impl<P> RetryLayer<P> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct RetryPolicy {
     num_attempts: usize,
     retry_params: RetryParams,
@@ -180,7 +180,7 @@ mod tests {
             let result = request
                 .results
                 .lock()
-                .expect("The lock should not be poisoned.")
+                .expect("lock should not be poisoned")
                 .pop()
                 .unwrap_or(Err(Retry::Permanent(())));
             ready(result)
@@ -234,7 +234,7 @@ mod tests {
             .call(hello_request.clone())
             .await
             .unwrap_err();
-        assert_eq!(hello_request.num_attempts.load(Ordering::Relaxed), 4);
+        assert_eq!(hello_request.num_attempts.load(Ordering::Relaxed), 3);
 
         let hello_request = HelloRequest::default();
         retry_hello_service

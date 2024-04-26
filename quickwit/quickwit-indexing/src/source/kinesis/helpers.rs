@@ -71,7 +71,7 @@ pub(crate) mod tests {
     };
     use crate::source::kinesis::helpers::get_kinesis_client;
 
-    pub static DEFAULT_RETRY_PARAMS: Lazy<RetryParams> = Lazy::new(RetryParams::default);
+    pub static DEFAULT_RETRY_PARAMS: Lazy<RetryParams> = Lazy::new(RetryParams::standard);
 
     pub async fn get_localstack_client() -> anyhow::Result<KinesisClient> {
         let endpoint = RegionOrEndpoint::Endpoint("http://localhost:4566".to_string());

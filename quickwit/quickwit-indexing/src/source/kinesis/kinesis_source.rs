@@ -127,7 +127,7 @@ impl KinesisSource {
         let kinesis_client = get_kinesis_client(region).await?;
         let (shard_consumers_tx, shard_consumers_rx) = mpsc::channel(1_000);
         let state = KinesisSourceState::default();
-        let retry_params = RetryParams::default();
+        let retry_params = RetryParams::aggressive();
         Ok(KinesisSource {
             source_id,
             stream_name,

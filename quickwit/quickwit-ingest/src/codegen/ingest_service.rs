@@ -22,6 +22,15 @@ pub struct CreateQueueIfNotExistsRequest {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateQueueIfNotExistsResponse {
+    #[prost(string, tag = "1")]
+    pub queue_id: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub created: bool,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DropQueueRequest {
     #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
@@ -220,7 +229,7 @@ impl IngestServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: < MockIngestService
             > (),
-            "`MockIngestService` must be wrapped in a `MockIngestServiceWrapper`. Use `MockIngestService::from(mock)` to instantiate the client."
+            "`MockIngestService` must be wrapped in a `MockIngestServiceWrapper`: use `IngestServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }

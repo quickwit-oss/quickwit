@@ -833,7 +833,7 @@ impl MetastoreServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
             MockMetastoreService > (),
-            "`MockMetastoreService` must be wrapped in a `MockMetastoreServiceWrapper`. Use `MockMetastoreService::from(mock)` to instantiate the client."
+            "`MockMetastoreService` must be wrapped in a `MockMetastoreServiceWrapper`: use `MetastoreServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }

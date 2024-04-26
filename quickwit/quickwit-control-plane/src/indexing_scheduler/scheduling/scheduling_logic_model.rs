@@ -26,11 +26,57 @@ use quickwit_proto::indexing::CpuCapacity;
 pub type SourceOrd = u32;
 pub type IndexerOrd = usize;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Source {
     pub source_ord: SourceOrd,
     pub load_per_shard: NonZeroU32,
+    /// Affinities of the source for each indexer.
+    /// In the begginning, affinities are initialized to be the count of shards of the source
+    /// that are located on the indexer.
+    ///
+    /// As we compute unassigned sources, we decrease the affinity by the given number of shards,
+    /// saturating at 0.
+    ///
+    /// As a result we only have the invariant
+    /// and `affinity(source, indexer) <= num shard of source on indexer`
+    pub affinities: BTreeMap<IndexerOrd, u32>,
     pub num_shards: u32,
+}
+
+impl Source {
+    // Remove a given number of shards, located on the given indexer.
+    // Returns `false` if and only if all of the shards have been removed.
+    //
+    // This function also decrease the affinity of the source for the given indexer
+    // by num_shards_to_remove in a saturating way.
+    //
+    // # Panics
+    //
+    // If the source does have that many total number of shards to begin with.
+    pub fn remove_shards(&mut self, indexer_ord: usize, num_shards_to_remove: u32) -> bool {
+        if num_shards_to_remove == 0u32 {
+            return self.num_shards > 0u32;
+        }
+        let entry = self.affinities.entry(indexer_ord);
+        self.num_shards = self
+            .num_shards
+            .checked_sub(num_shards_to_remove)
+            .expect("removing more shards than available.");
+        if self.num_shards == 0u32 {
+            self.affinities.clear();
+            return false;
+        }
+        if let Entry::Occupied(mut affinity_with_indexer_entry) = entry {
+            let affinity_with_indexer: &mut u32 = affinity_with_indexer_entry.get_mut();
+            let affinity_after_removal = affinity_with_indexer.saturating_sub(num_shards_to_remove);
+            if affinity_after_removal == 0u32 {
+                affinity_with_indexer_entry.remove();
+            } else {
+                *affinity_with_indexer = affinity_after_removal;
+            }
+        }
+        true
+    }
 }
 
 #[derive(Debug)]
@@ -51,6 +97,7 @@ impl SchedulingProblem {
         assert!(indexer_cpu_capacities
             .iter()
             .all(|cpu_capacity| cpu_capacity.cpu_millis() > 0));
+        // TODO assert for affinity.
         SchedulingProblem {
             sources: Vec::new(),
             indexer_cpu_capacities,
@@ -90,7 +137,7 @@ impl SchedulingProblem {
     }
 
     pub fn sources(&self) -> impl Iterator<Item = Source> + '_ {
-        self.sources.iter().copied()
+        self.sources.iter().cloned()
     }
 
     pub fn add_source(&mut self, num_shards: u32, load_per_shard: NonZeroU32) -> SourceOrd {
@@ -99,8 +146,19 @@ impl SchedulingProblem {
             source_ord,
             num_shards,
             load_per_shard,
+            affinities: Default::default(),
         });
         source_ord
+    }
+
+    /// Increases the affinity source <-> indexer by 1.
+    /// This is done to record that the indexer is hosting one shard of the source.
+    pub fn inc_affinity(&mut self, source_ord: SourceOrd, indexer_ord: IndexerOrd) {
+        let affinity: &mut u32 = self.sources[source_ord as usize]
+            .affinities
+            .entry(indexer_ord)
+            .or_default();
+        *affinity += 1;
     }
 
     pub fn source_load_per_shard(&self, source_ord: SourceOrd) -> NonZeroU32 {
@@ -187,5 +245,64 @@ impl SchedulingSolution {
     }
     pub fn num_indexers(&self) -> usize {
         self.indexer_assignments.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_source() -> Source {
+        let mut affinities: BTreeMap<usize, u32> = Default::default();
+        affinities.insert(7, 3u32);
+        affinities.insert(11, 2u32);
+        Source {
+            source_ord: 0u32,
+            load_per_shard: NonZeroU32::new(1000u32).unwrap(),
+            affinities,
+            num_shards: 2 + 3,
+        }
+    }
+
+    #[test]
+    fn test_source_remove_simple() {
+        let mut source = test_source();
+        assert!(source.remove_shards(7, 2));
+        assert_eq!(source.num_shards, 5 - 2);
+        assert_eq!(source.affinities.get(&7).copied(), Some(1));
+        assert_eq!(source.affinities.get(&11).copied(), Some(2));
+    }
+
+    #[test]
+    fn test_source_remove_all_affinity() {
+        let mut source = test_source();
+        assert!(source.remove_shards(7, 3));
+        assert_eq!(source.num_shards, 5 - 3);
+        assert!(!source.affinities.contains_key(&7));
+        assert_eq!(source.affinities.get(&11).copied(), Some(2));
+    }
+
+    #[test]
+    fn test_source_remove_more_than_affinity() {
+        let mut source = test_source();
+        assert!(source.remove_shards(7, 4));
+        assert_eq!(source.num_shards, 5 - 4);
+        assert!(!source.affinities.contains_key(&7));
+        assert_eq!(source.affinities.get(&11).copied(), Some(2));
+    }
+
+    #[test]
+    fn test_source_remove_all_shards() {
+        let mut source = test_source();
+        assert!(!source.remove_shards(7, 5));
+        assert_eq!(source.num_shards, 0);
+        assert!(source.affinities.is_empty());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_source_remove_more_than_all_shards() {
+        let mut source = test_source();
+        assert!(source.remove_shards(7, 6));
     }
 }

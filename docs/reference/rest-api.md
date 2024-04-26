@@ -547,7 +547,7 @@ Create source by posting a source config JSON payload.
 |-------------------|----------|------------------------------------------------------------------------------------------------------|---------------|
 | `version**       | `String` | Config format version, put your current Quickwit version. (mandatory)                                |               |
 | `source_id`     | `String` | Source ID. See ID [validation rules](../configuration/source-config.md)(mandatory)                   |               |
-| `source_type`   | `String` | Source type: `kafka`, `kinesis`, `file`. (mandatory)                                                 |               |
+| `source_type`   | `String` | Source type: `kafka`, `kinesis` or `pulsar` (mandatory)                                              |               |
 | `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                                       | 1             |
 | `params`        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). (mandatory) |               |
 
@@ -676,15 +676,15 @@ The response is the created delete task represented in JSON, `DeleteTask`, the c
 | `delete_query`     | The posted delete query                                | `DeleteQuery` |
 
 
-### GET a delete query
+### List delete queries
 
 ```
-GET api/v1/<index id>/delete-tasks/<opstamp>
+GET api/v1/<index id>/delete-tasks
 ```
 
-Get the delete task of operation stamp `opstamp` for a given `index_id`.
+Get the list of delete tasks for a given `index_id`.
 
 
 #### Response
 
-The response is a `DeleteTask`.
+The response is an array of `DeleteTask`.

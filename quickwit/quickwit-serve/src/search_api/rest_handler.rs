@@ -1253,15 +1253,7 @@ mod tests {
                 .path("/abc!/search?query=*")
                 .reply(&rest_search_api_handler)
                 .await;
-            println!("{:?}", response.body());
-            assert_eq!(
-                warp::test::request()
-                    .path("/abc!/search?query=*")
-                    .reply(&rest_search_api_handler)
-                    .await
-                    .status(),
-                400
-            );
+            assert_eq!(response.status(), 400);
         }
     }
 }

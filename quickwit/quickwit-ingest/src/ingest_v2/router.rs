@@ -27,6 +27,7 @@ use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
+use quickwit_common::{rate_limited_error, rate_limited_warn};
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsSubrequest,
@@ -39,7 +40,7 @@ use quickwit_proto::ingest::router::{IngestRequestV2, IngestResponseV2, IngestRo
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
 use tokio::sync::{Mutex, Semaphore};
-use tracing::{error, info, warn};
+use tracing::info;
 
 use super::broadcast::LocalShardsUpdate;
 use super::debouncing::{
@@ -221,9 +222,15 @@ impl IngestRouter {
             Ok(response) => response,
             Err(control_plane_error) => {
                 if workbench.is_last_attempt() {
-                    error!("failed to get open shards from control plane: {control_plane_error}");
+                    rate_limited_error!(
+                        limit_per_min = 10,
+                        "failed to get open shards from control plane: {control_plane_error}"
+                    );
                 } else {
-                    warn!("failed to get open shards from control plane: {control_plane_error}");
+                    rate_limited_warn!(
+                        limit_per_min = 10,
+                        "failed to get open shards from control plane: {control_plane_error}"
+                    );
                 };
                 return;
             }
@@ -282,12 +289,14 @@ impl IngestRouter {
                 }
                 Err(persist_error) => {
                     if workbench.is_last_attempt() {
-                        error!(
+                        rate_limited_error!(
+                            limit_per_min = 10,
                             "failed to persist records on ingester `{}`: {persist_error}",
                             persist_summary.leader_id
                         );
                     } else {
-                        warn!(
+                        rate_limited_warn!(
+                            limit_per_min = 10,
                             "failed to persist records on ingester `{}`: {persist_error}",
                             persist_summary.leader_id
                         );

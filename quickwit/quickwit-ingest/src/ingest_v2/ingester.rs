@@ -58,6 +58,7 @@ use quickwit_proto::ingest::{
 use quickwit_proto::types::{
     queue_id, split_queue_id, IndexUid, NodeId, Position, QueueId, ShardId, SourceId,
 };
+use serde_json::{json, Value as JsonValue};
 use tokio::sync::Semaphore;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
@@ -1000,17 +1001,22 @@ impl Ingester {
         Ok(DecommissionResponse {})
     }
 
-    pub async fn mrecordlog_summary(&mut self) -> IngestV2Result<mrecordlog::QueuesSummary> {
-        let rw_mrecordlog = self.state.mrecordlog();
-        // this is a debug api endpoint, with_lock_metrics! doesn't seem necessary
-        let maybe_mrecordlog = rw_mrecordlog.read().await;
-
-        let summary = maybe_mrecordlog
-            .as_ref()
-            .ok_or_else(|| IngestV2Error::Internal("mrecordlog isn't initialized".to_string()))?
-            .summary();
-
-        Ok(summary)
+    pub async fn debug_info(&self) -> JsonValue {
+        let state_guard = match self.state.lock_fully().await {
+            Ok(state_guard) => state_guard,
+            Err(_) => {
+                return json!({
+                    "status": "initializing",
+                    "shards": [],
+                    "mrecordlog": {},
+                })
+            }
+        };
+        json!({
+            "status": state_guard.status().as_json_str_name(),
+            "shards": state_guard.shards.keys().collect::<Vec<_>>(), // TODO: add more info
+            "mrecordlog":  state_guard.mrecordlog.summary(),
+        })
     }
 }
 

@@ -26,6 +26,10 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
 /// Shard ID.
+/// Shard ID are required to be globally unique.
+///
+/// In other words, there cannot be two shards belonging to two different sources
+/// with the same shard ID.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ShardId(ByteString);
 

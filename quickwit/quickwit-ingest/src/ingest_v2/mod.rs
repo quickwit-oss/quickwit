@@ -33,6 +33,7 @@ mod routing_table;
 mod state;
 mod workbench;
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::ops::{Add, AddAssign};
 use std::time::Duration;
@@ -138,17 +139,28 @@ impl DocBatchV2Builder {
 /// Helper struct to build an [`IngestRequestV2`].
 #[derive(Debug, Default)]
 pub struct IngestRequestV2Builder {
-    per_index_id_doc_batch_builders: HashMap<IndexId, DocBatchV2Builder>,
+    per_index_id_doc_batch_builders: HashMap<IndexId, (u32, DocBatchV2Builder)>,
+    subrequest_id_sequence: u32,
 }
 
 impl IngestRequestV2Builder {
     /// Adds a document to the request.
-    pub fn add_doc(&mut self, index_id: IndexId, doc: &[u8]) {
-        let doc_batch_builder = self
-            .per_index_id_doc_batch_builders
-            .entry(index_id)
-            .or_default();
-        doc_batch_builder.add_doc(doc);
+    pub fn add_doc(&mut self, index_id: IndexId, doc: &[u8]) -> u32 {
+        match self.per_index_id_doc_batch_builders.entry(index_id) {
+            Entry::Occupied(mut entry) => {
+                let (subrequest_id, doc_batch_builder) = entry.get_mut();
+                doc_batch_builder.add_doc(doc);
+                *subrequest_id
+            }
+            Entry::Vacant(entry) => {
+                let subrequest_id = self.subrequest_id_sequence;
+                self.subrequest_id_sequence += 1;
+                let mut doc_batch_builder = DocBatchV2Builder::default();
+                doc_batch_builder.add_doc(doc);
+                entry.insert((subrequest_id, doc_batch_builder));
+                subrequest_id
+            }
+        }
     }
 
     /// Builds the [`IngestRequestV2`], returning `None` if the request is empty.
@@ -156,11 +168,10 @@ impl IngestRequestV2Builder {
         let subrequests: Vec<IngestSubrequest> = self
             .per_index_id_doc_batch_builders
             .into_iter()
-            .enumerate()
-            .flat_map(|(subrequest_id, (index_id, doc_batch_builder))| {
+            .flat_map(|(index_id, (subrequest_id, doc_batch_builder))| {
                 let doc_batch = doc_batch_builder.build()?;
                 let ingest_subrequest = IngestSubrequest {
-                    subrequest_id: subrequest_id as u32,
+                    subrequest_id,
                     index_id,
                     source_id: source_id.to_string(),
                     doc_batch: Some(doc_batch),

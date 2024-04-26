@@ -35,6 +35,9 @@ docker-compose-logs:
 docker-compose-monitoring:
 	COMPOSE_PROFILES=monitoring docker compose -f docker-compose.yml up -d --remove-orphans
 
+doc:
+	@$(MAKE) -C $(QUICKWIT_SRC) doc
+
 fmt:
 	@$(MAKE) -C $(QUICKWIT_SRC) fmt
 

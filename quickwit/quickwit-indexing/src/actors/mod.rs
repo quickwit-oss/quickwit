@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod cooperative_indexing;
 mod doc_processor;
 mod index_serializer;
 mod indexer;

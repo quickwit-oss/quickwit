@@ -59,7 +59,7 @@ impl IndexingServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
             MockIndexingService > (),
-            "`MockIndexingService` must be wrapped in a `MockIndexingServiceWrapper`. Use `MockIndexingService::from(mock)` to instantiate the client."
+            "`MockIndexingService` must be wrapped in a `MockIndexingServiceWrapper`: use `IndexingServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }

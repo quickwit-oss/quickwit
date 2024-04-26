@@ -110,7 +110,7 @@ mod tests {
     use std::time::Instant;
 
     use tokio::time::Duration;
-    use tower::ServiceBuilder;
+    use tower::{ServiceBuilder, ServiceExt};
 
     use super::*;
 
@@ -122,7 +122,7 @@ mod tests {
             .service_fn(|_| async { Ok::<_, ()>(()) });
 
         let start = Instant::now();
-        service.call(()).await.unwrap();
+        service.ready().await.unwrap().call(()).await.unwrap();
 
         let elapsed = start.elapsed();
         assert!(elapsed >= delay);
