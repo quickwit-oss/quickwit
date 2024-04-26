@@ -34,6 +34,13 @@ impl BulkAction {
             BulkAction::Create(meta) => meta.index_id,
         }
     }
+
+    pub fn into_meta(self) -> BulkActionMeta {
+        match self {
+            BulkAction::Create(meta) => meta,
+            BulkAction::Index(meta) => meta,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -43,7 +50,7 @@ pub struct BulkActionMeta {
     pub index_id: Option<IndexId>,
     #[serde(alias = "_id")]
     #[serde(default)]
-    pub doc_id: Option<String>,
+    pub es_doc_id: Option<String>,
 }
 
 #[cfg(test)]
@@ -65,7 +72,7 @@ mod tests {
                 bulk_action,
                 BulkAction::Create(BulkActionMeta {
                     index_id: Some("test".to_string()),
-                    doc_id: Some("2".to_string()),
+                    es_doc_id: Some("2".to_string()),
                 })
             );
         }
@@ -80,7 +87,7 @@ mod tests {
                 bulk_action,
                 BulkAction::Create(BulkActionMeta {
                     index_id: Some("test".to_string()),
-                    doc_id: None,
+                    es_doc_id: None,
                 })
             );
         }
@@ -95,7 +102,7 @@ mod tests {
                 bulk_action,
                 BulkAction::Create(BulkActionMeta {
                     index_id: None,
-                    doc_id: Some("3".to_string()),
+                    es_doc_id: Some("3".to_string()),
                 })
             );
         }

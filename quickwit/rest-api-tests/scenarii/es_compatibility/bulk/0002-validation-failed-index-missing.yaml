@@ -1,0 +1,9 @@
+ndjson:
+  - index: { "_id": "1" }
+  - message: Hello, World!
+status_code: 400
+expected:
+  status: 400
+  error:
+    type: action_request_validation_exception
+    reason: "Validation Failed: 1: index is missing;"

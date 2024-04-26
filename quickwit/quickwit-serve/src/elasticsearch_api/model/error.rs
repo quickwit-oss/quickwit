@@ -34,16 +34,20 @@ pub struct ElasticsearchError {
 }
 
 impl ElasticsearchError {
-    pub fn new(status: StatusCode, reason_string: String) -> Self {
+    pub fn new(
+        status: StatusCode,
+        reason: String,
+        exception_opt: Option<ErrorCauseException>,
+    ) -> Self {
         ElasticsearchError {
             status,
             error: ErrorCause {
-                reason: Some(reason_string),
+                reason: Some(reason),
                 caused_by: None,
                 root_cause: Vec::new(),
                 stack_trace: None,
                 suppressed: Vec::new(),
-                ty: None,
+                ty: exception_opt.map(|exception| exception.as_str().to_string()),
                 additional_details: Default::default(),
             },
         }
@@ -126,6 +130,26 @@ impl From<IndexServiceError> for ElasticsearchError {
         ElasticsearchError {
             status,
             error: reason,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum ErrorCauseException {
+    #[serde(rename = "action_request_validation_exception")]
+    ActionRequestValidation,
+    #[serde(rename = "illegal_argument_exception")]
+    IllegalArgument,
+    #[serde(rename = "index_not_found_exception")]
+    IndexNotFound,
+}
+
+impl ErrorCauseException {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ActionRequestValidation => "action_request_validation_exception",
+            Self::IllegalArgument => "illegal_argument_exception",
+            Self::IndexNotFound => "index_not_found_exception",
         }
     }
 }
