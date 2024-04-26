@@ -102,11 +102,8 @@ pub(crate) mod tests {
                 .await?
                 .into_iter()
                 .flat_map(|shard| {
-                    let starting_hash_key = shard.hash_key_range?.starting_hash_key?;
-                    shard
-                        .shard_id
-                        .and_then(parse_shard_id)
-                        .map(|shard_id| (shard_id, starting_hash_key))
+                    let starting_hash_key = shard.hash_key_range?.starting_hash_key;
+                    parse_shard_id(shard.shard_id).map(|shard_id| (shard_id, starting_hash_key))
                 })
                 .collect();
 
@@ -119,7 +116,7 @@ pub(crate) mod tests {
                     .data(Blob::new(record.as_bytes()))
                     .build()
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let response = kinesis_client
             .put_records()
@@ -129,7 +126,7 @@ pub(crate) mod tests {
             .await?;
 
         let mut sequence_numbers = HashMap::new();
-        for record in response.records.unwrap_or_default() {
+        for record in response.records {
             if let Some(sequence_number) = record.sequence_number {
                 sequence_numbers
                     .entry(record.shard_id.and_then(parse_shard_id).unwrap())
