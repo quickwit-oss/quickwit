@@ -6381,6 +6381,7 @@ dependencies = [
  "aws-config",
  "aws-credential-types",
  "aws-sdk-s3",
+ "aws-smithy-runtime",
  "aws-smithy-types",
  "azure_core",
  "azure_storage",

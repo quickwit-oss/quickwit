@@ -193,11 +193,7 @@ impl Source for KinesisSource {
             ))
             .await?;
         for shard in shards {
-            if let Some(shard_id) = shard.shard_id {
-                self.spawn_shard_consumer(ctx, shard_id);
-            } else {
-                warn!(shard = ?shard, "Unable to get shard ID from returned list of shards");
-            }
+            self.spawn_shard_consumer(ctx, shard.shard_id);
         }
         info!(
             stream_name = %self.stream_name,
@@ -230,18 +226,13 @@ impl Source for KinesisSource {
                             let num_records = records.len();
 
                             for (i, record) in records.into_iter().enumerate() {
-                                let record_data = record.data.map(|blob| blob.into_inner()).unwrap_or_default();
-
-                                // This should in theory never be `None` but is an `Option<T>` nontheless
-                                // so it is probably best to error rather than skip here in case this changes.
-                                let record_sequence_number = record.sequence_number
-                                    .context("received Kinesis record without sequence number")?;
+                                let record_data = record.data.into_inner();
 
                                 if record_data.is_empty() {
                                     warn!(
                                         stream_name=%self.stream_name,
                                         shard_id=%shard_id,
-                                        sequence_number=%record_sequence_number,
+                                        sequence_number=%record.sequence_number,
                                         "record is empty"
                                     );
                                     self.state.num_invalid_records += 1;
@@ -262,7 +253,7 @@ impl Source for KinesisSource {
                                     shard_consumer_state.lag_millis = lag_millis;
 
                                     let partition_id = shard_consumer_state.partition_id.clone();
-                                    let current_position = Position::from(record_sequence_number);
+                                    let current_position = Position::from(record.sequence_number);
                                     let previous_position = std::mem::replace(&mut shard_consumer_state.position, current_position.clone());
 
                                     batch_builder.checkpoint_delta.record_partition_delta(

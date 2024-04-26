@@ -27,7 +27,7 @@ use std::{env, fmt, io};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use aws_credential_types::provider::SharedCredentialsProvider;
-use aws_sdk_s3::config::{Credentials, Region};
+use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::primitives::ByteStream;
@@ -134,7 +134,9 @@ async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     let credentials_provider =
         get_credentials_provider(s3_storage_config).or(aws_config.credentials_provider());
     let region = get_region(s3_storage_config).or(aws_config.region().cloned());
-    let mut s3_config = aws_sdk_s3::Config::builder().region(region);
+    let mut s3_config = aws_sdk_s3::Config::builder()
+        .behavior_version(BehaviorVersion::v2023_11_09())
+        .region(region);
 
     if let Some(identity_cache) = aws_config.identity_cache() {
         s3_config.set_identity_cache(identity_cache);
@@ -847,9 +849,9 @@ mod tests {
 
     use std::path::PathBuf;
 
-    use aws_sdk_s3::config::{Credentials, Region};
+    use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
     use aws_sdk_s3::primitives::SdkBody;
-    use aws_smithy_client::test_connection::TestConnection;
+    use aws_smithy_runtime::client::http::test_util::{ReplayEvent, StaticReplayClient};
     use bytes::Bytes;
     use hyper::{http, Body};
     use quickwit_common::chunk_range;
@@ -914,7 +916,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_s3_compatible_storage_relative_path() {
-        let sdk_config = aws_config::load_from_env().await;
+        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::v2023_11_09())
+            .load()
+            .await;
         let s3_client = S3Client::new(&sdk_config);
         let uri = Uri::for_test("s3://bucket/indexes");
         let bucket = "bucket".to_string();
@@ -945,28 +949,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_s3_compatible_storage_bulk_delete_single() {
-        let client = TestConnection::new(vec![
-            (
+        let client = StaticReplayClient::new(vec![
+            ReplayEvent::new(
                 http::Request::builder()
-                    .body(SdkBody::from(Body::empty()))
+                    .body(SdkBody::from_body_0_4(Body::empty()))
                     .unwrap(),
                 http::Response::builder()
-                    .body(SdkBody::from(Body::empty()))
+                    .body(SdkBody::from_body_0_4(Body::empty()))
                     .unwrap(),
             ),
-            (
+            ReplayEvent::new(
                 http::Request::builder()
-                    .body(SdkBody::from(Body::empty()))
+                    .body(SdkBody::from_body_0_4(Body::empty()))
                     .unwrap(),
                 http::Response::builder()
-                    .body(SdkBody::from(Body::empty()))
+                    .body(SdkBody::from_body_0_4(Body::empty()))
                     .unwrap(),
             ),
         ]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
+            .behavior_version(BehaviorVersion::v2023_11_09())
             .region(Some(Region::new("Foo")))
-            .http_connector(client.clone())
+            .http_client(client.clone())
             .credentials_provider(credentials)
             .build();
         let s3_client = S3Client::from_conf(config);
@@ -988,29 +993,26 @@ mod tests {
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
             .await;
 
-        let requests = client.requests();
+        let requests = client.actual_requests().collect::<Vec<_>>();
         assert_eq!(requests.len(), 2);
-        assert!(requests[0]
-            .actual
-            .uri()
-            .to_string()
-            .ends_with("DeleteObject"));
+        assert!(requests[0].uri().to_string().ends_with("DeleteObject"));
     }
 
     #[tokio::test]
     async fn test_s3_compatible_storage_bulk_delete_multi() {
-        let client = TestConnection::new(vec![(
+        let client = StaticReplayClient::new(vec![ReplayEvent::new(
             http::Request::builder()
-                .body(SdkBody::from(Body::empty()))
+                .body(SdkBody::from_body_0_4(Body::empty()))
                 .unwrap(),
             http::Response::builder()
-                .body(SdkBody::from(Body::empty()))
+                .body(SdkBody::from_body_0_4(Body::empty()))
                 .unwrap(),
         )]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
+            .behavior_version(BehaviorVersion::v2023_11_09())
             .region(Some(Region::new("Foo")))
-            .http_connector(client.clone())
+            .http_client(client.clone())
             .credentials_provider(credentials)
             .build();
         let s3_client = S3Client::from_conf(config);
@@ -1032,27 +1034,23 @@ mod tests {
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
             .await;
 
-        let requests = client.requests();
+        let requests = client.actual_requests().collect::<Vec<_>>();
         assert_eq!(requests.len(), 1);
-        assert!(requests[0]
-            .actual
-            .uri()
-            .to_string()
-            .ends_with("DeleteObjects"));
+        assert!(requests[0].uri().to_string().ends_with("DeleteObjects"));
     }
 
     #[tokio::test]
     async fn test_s3_compatible_storage_bulk_delete_multi_errors() {
-        let client = TestConnection::new(vec![
-            (
+        let client = StaticReplayClient::new(vec![
+            ReplayEvent::new(
                 // This is quite fragile, currently this is *not* validated by the SDK
                 // but may in future, that being said, there is no way to know what the
                 // request should look like until it raises an error in reality as this
                 // is up to how the validation is implemented.
-                http::Request::builder().body(SdkBody::from(Body::empty())).unwrap(),
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
                 http::Response::builder()
                     .status(200)
-                    .body(SdkBody::from(Body::from(Bytes::from(
+                    .body(SdkBody::from_body_0_4(Body::from(Bytes::from(
                         r#"<?xml version="1.0" encoding="UTF-8"?>
                         <DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
                             <Deleted>
@@ -1072,15 +1070,15 @@ mod tests {
                     ))))
                     .unwrap()
             ),
-            (
+            ReplayEvent::new(
                 // This is quite fragile, currently this is *not* validated by the SDK
                 // but may in future, that being said, there is no way to know what the
                 // request should look like until it raises an error in reality as this
                 // is up to how the validation is implemented.
-                http::Request::builder().body(SdkBody::from(Body::empty())).unwrap(),
+                http::Request::builder().body(SdkBody::from_body_0_4(Body::empty())).unwrap(),
                 http::Response::builder()
                     .status(400)
-                    .body(SdkBody::from(Body::from(Bytes::from(
+                    .body(SdkBody::from_body_0_4(Body::from(Bytes::from(
                         r#"<?xml version="1.0" encoding="UTF-8"?>
                         <Error>
                             <Code>MalformedXML</Code>
@@ -1094,8 +1092,9 @@ mod tests {
         ]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
+            .behavior_version(BehaviorVersion::v2023_11_09())
             .region(Some(Region::new("Foo")))
-            .http_connector(client)
+            .http_client(client)
             .credentials_provider(credentials)
             .build();
         let s3_client = S3Client::from_conf(config);

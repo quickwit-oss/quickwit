@@ -62,6 +62,7 @@ tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 aws-sdk-s3 = { workspace = true, features = ["test-util"] }
+aws-smithy-runtime = { workspace = true, features = ["test-util"] }
 
 quickwit-common = { workspace = true, features = ["testsuite"] }
 
