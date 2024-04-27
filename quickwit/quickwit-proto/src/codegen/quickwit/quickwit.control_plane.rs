@@ -137,6 +137,13 @@ pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sy
         &mut self,
         request: super::metastore::CreateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::CreateIndexResponse>;
+    /// Updates an index.
+    async fn update_index(
+        &mut self,
+        request: super::metastore::UpdateIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<
+        super::metastore::IndexMetadataResponse,
+    >;
     /// Deletes an index.
     async fn delete_index(
         &mut self,
@@ -271,6 +278,14 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     > {
         self.inner.create_index(request).await
     }
+    async fn update_index(
+        &mut self,
+        request: super::metastore::UpdateIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<
+        super::metastore::IndexMetadataResponse,
+    > {
+        self.inner.update_index(request).await
+    }
     async fn delete_index(
         &mut self,
         request: super::metastore::DeleteIndexRequest,
@@ -324,6 +339,14 @@ pub mod mock_control_plane_service {
             super::super::metastore::CreateIndexResponse,
         > {
             self.inner.lock().await.create_index(request).await
+        }
+        async fn update_index(
+            &mut self,
+            request: super::super::metastore::UpdateIndexRequest,
+        ) -> crate::control_plane::ControlPlaneResult<
+            super::super::metastore::IndexMetadataResponse,
+        > {
+            self.inner.lock().await.update_index(request).await
         }
         async fn delete_index(
             &mut self,
@@ -390,6 +413,23 @@ for Box<dyn ControlPlaneService> {
     fn call(&mut self, request: super::metastore::CreateIndexRequest) -> Self::Future {
         let mut svc = self.clone();
         let fut = async move { svc.create_index(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<super::metastore::UpdateIndexRequest>
+for Box<dyn ControlPlaneService> {
+    type Response = super::metastore::IndexMetadataResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: super::metastore::UpdateIndexRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.update_index(request).await };
         Box::pin(fut)
     }
 }
@@ -502,6 +542,11 @@ struct ControlPlaneServiceTowerServiceStack {
         super::metastore::CreateIndexResponse,
         crate::control_plane::ControlPlaneError,
     >,
+    update_index_svc: quickwit_common::tower::BoxService<
+        super::metastore::UpdateIndexRequest,
+        super::metastore::IndexMetadataResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
     delete_index_svc: quickwit_common::tower::BoxService<
         super::metastore::DeleteIndexRequest,
         super::metastore::EmptyResponse,
@@ -538,6 +583,7 @@ impl Clone for ControlPlaneServiceTowerServiceStack {
         Self {
             inner: self.inner.clone(),
             create_index_svc: self.create_index_svc.clone(),
+            update_index_svc: self.update_index_svc.clone(),
             delete_index_svc: self.delete_index_svc.clone(),
             add_source_svc: self.add_source_svc.clone(),
             toggle_source_svc: self.toggle_source_svc.clone(),
@@ -556,6 +602,14 @@ impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
         super::metastore::CreateIndexResponse,
     > {
         self.create_index_svc.ready().await?.call(request).await
+    }
+    async fn update_index(
+        &mut self,
+        request: super::metastore::UpdateIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<
+        super::metastore::IndexMetadataResponse,
+    > {
+        self.update_index_svc.ready().await?.call(request).await
     }
     async fn delete_index(
         &mut self,
@@ -602,6 +656,16 @@ type CreateIndexLayer = quickwit_common::tower::BoxLayer<
     >,
     super::metastore::CreateIndexRequest,
     super::metastore::CreateIndexResponse,
+    crate::control_plane::ControlPlaneError,
+>;
+type UpdateIndexLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        super::metastore::UpdateIndexRequest,
+        super::metastore::IndexMetadataResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    super::metastore::UpdateIndexRequest,
+    super::metastore::IndexMetadataResponse,
     crate::control_plane::ControlPlaneError,
 >;
 type DeleteIndexLayer = quickwit_common::tower::BoxLayer<
@@ -667,6 +731,7 @@ type AdviseResetShardsLayer = quickwit_common::tower::BoxLayer<
 #[derive(Debug, Default)]
 pub struct ControlPlaneServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
+    update_index_layers: Vec<UpdateIndexLayer>,
     delete_index_layers: Vec<DeleteIndexLayer>,
     add_source_layers: Vec<AddSourceLayer>,
     toggle_source_layers: Vec<ToggleSourceLayer>,
@@ -703,6 +768,33 @@ impl ControlPlaneServiceTowerLayerStack {
             >,
         >>::Service as tower::Service<
             super::metastore::CreateIndexRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::UpdateIndexRequest,
+                    super::metastore::IndexMetadataResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::UpdateIndexRequest,
+                super::metastore::IndexMetadataResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                super::metastore::UpdateIndexRequest,
+                Response = super::metastore::IndexMetadataResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::metastore::UpdateIndexRequest,
+                super::metastore::IndexMetadataResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<
+            super::metastore::UpdateIndexRequest,
         >>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
@@ -867,6 +959,8 @@ impl ControlPlaneServiceTowerLayerStack {
     {
         self.create_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.update_index_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.delete_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.add_source_layers
@@ -900,6 +994,27 @@ impl ControlPlaneServiceTowerLayerStack {
         >>::Future: Send + 'static,
     {
         self.create_index_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_update_index_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::metastore::UpdateIndexRequest,
+                    super::metastore::IndexMetadataResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                super::metastore::UpdateIndexRequest,
+                Response = super::metastore::IndexMetadataResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::metastore::UpdateIndexRequest,
+        >>::Future: Send + 'static,
+    {
+        self.update_index_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_delete_index_layer<L>(mut self, layer: L) -> Self
@@ -1089,6 +1204,14 @@ impl ControlPlaneServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(boxed_instance.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let update_index_svc = self
+            .update_index_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let delete_index_svc = self
             .delete_index_layers
             .into_iter()
@@ -1140,6 +1263,7 @@ impl ControlPlaneServiceTowerLayerStack {
         let tower_svc_stack = ControlPlaneServiceTowerServiceStack {
             inner: boxed_instance.clone(),
             create_index_svc,
+            update_index_svc,
             delete_index_svc,
             add_source_svc,
             toggle_source_svc,
@@ -1232,6 +1356,15 @@ where
             >,
         >
         + tower::Service<
+            super::metastore::UpdateIndexRequest,
+            Response = super::metastore::IndexMetadataResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                super::metastore::IndexMetadataResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >
+        + tower::Service<
             super::metastore::DeleteIndexRequest,
             Response = super::metastore::EmptyResponse,
             Error = crate::control_plane::ControlPlaneError,
@@ -1291,6 +1424,14 @@ where
         request: super::metastore::CreateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::CreateIndexResponse,
+    > {
+        self.call(request).await
+    }
+    async fn update_index(
+        &mut self,
+        request: super::metastore::UpdateIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<
+        super::metastore::IndexMetadataResponse,
     > {
         self.call(request).await
     }
@@ -1378,6 +1519,21 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 super::metastore::CreateIndexRequest::rpc_name(),
+            ))
+    }
+    async fn update_index(
+        &mut self,
+        request: super::metastore::UpdateIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<
+        super::metastore::IndexMetadataResponse,
+    > {
+        self.inner
+            .update_index(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::metastore::UpdateIndexRequest::rpc_name(),
             ))
     }
     async fn delete_index(
@@ -1481,6 +1637,20 @@ for ControlPlaneServiceGrpcServerAdapter {
         self.inner
             .clone()
             .create_index(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn update_index(
+        &self,
+        request: tonic::Request<super::metastore::UpdateIndexRequest>,
+    ) -> Result<
+        tonic::Response<super::metastore::IndexMetadataResponse>,
+        tonic::Status,
+    > {
+        self.inner
+            .clone()
+            .update_index(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1666,6 +1836,37 @@ pub mod control_plane_service_grpc_client {
                     GrpcMethod::new(
                         "quickwit.control_plane.ControlPlaneService",
                         "CreateIndex",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Updates an index.
+        pub async fn update_index(
+            &mut self,
+            request: impl tonic::IntoRequest<super::super::metastore::UpdateIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::IndexMetadataResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/UpdateIndex",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "UpdateIndex",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -1878,6 +2079,14 @@ pub mod control_plane_service_grpc_server {
             tonic::Response<super::super::metastore::CreateIndexResponse>,
             tonic::Status,
         >;
+        /// Updates an index.
+        async fn update_index(
+            &self,
+            request: tonic::Request<super::super::metastore::UpdateIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::IndexMetadataResponse>,
+            tonic::Status,
+        >;
         /// Deletes an index.
         async fn delete_index(
             &self,
@@ -2042,6 +2251,55 @@ pub mod control_plane_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = CreateIndexSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/UpdateIndex" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateIndexSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<
+                        super::super::metastore::UpdateIndexRequest,
+                    > for UpdateIndexSvc<T> {
+                        type Response = super::super::metastore::IndexMetadataResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::metastore::UpdateIndexRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).update_index(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateIndexSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

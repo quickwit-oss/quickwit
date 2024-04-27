@@ -418,15 +418,11 @@ impl Cluster {
     /// - value: Number of indexing tasks in the group.
     /// Keys present in chitchat state but not in the given `indexing_tasks` are marked for
     /// deletion.
-    pub async fn update_self_node_indexing_tasks(
-        &self,
-        indexing_tasks: &[IndexingTask],
-    ) -> anyhow::Result<()> {
+    pub async fn update_self_node_indexing_tasks(&self, indexing_tasks: &[IndexingTask]) {
         let chitchat = self.chitchat().await;
         let mut chitchat_guard = chitchat.lock().await;
         let node_state = chitchat_guard.self_node_state();
         set_indexing_tasks_in_node_state(indexing_tasks, node_state);
-        Ok(())
     }
 
     pub async fn chitchat(&self) -> Arc<Mutex<Chitchat>> {
@@ -961,8 +957,7 @@ mod tests {
             .await;
         cluster2
             .update_self_node_indexing_tasks(&[indexing_task1.clone(), indexing_task2.clone()])
-            .await
-            .unwrap();
+            .await;
         cluster1
             .wait_for_ready_members(|members| members.len() == 2, Duration::from_secs(30))
             .await
@@ -1042,8 +1037,7 @@ mod tests {
             .collect_vec();
         cluster1
             .update_self_node_indexing_tasks(&indexing_tasks)
-            .await
-            .unwrap();
+            .await;
         for cluster in [&cluster2, &cluster3] {
             let cluster_clone = cluster.clone();
             let indexing_tasks_clone = indexing_tasks.clone();
@@ -1063,7 +1057,7 @@ mod tests {
         }
 
         // Mark tasks for deletion.
-        cluster1.update_self_node_indexing_tasks(&[]).await.unwrap();
+        cluster1.update_self_node_indexing_tasks(&[]).await;
         for cluster in [&cluster2, &cluster3] {
             let cluster_clone = cluster.clone();
             wait_until_predicate(
@@ -1084,8 +1078,7 @@ mod tests {
         // Re-add tasks.
         cluster1
             .update_self_node_indexing_tasks(&indexing_tasks)
-            .await
-            .unwrap();
+            .await;
         for cluster in [&cluster2, &cluster3] {
             let cluster_clone = cluster.clone();
             let indexing_tasks_clone = indexing_tasks.clone();
