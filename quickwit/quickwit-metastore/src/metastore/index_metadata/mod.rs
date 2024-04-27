@@ -23,7 +23,9 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 
 use quickwit_common::uri::Uri;
-use quickwit_config::{IndexConfig, SourceConfig, TestableForRegression};
+use quickwit_config::{
+    IndexConfig, RetentionPolicy, SearchSettings, SourceConfig, TestableForRegression,
+};
 use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
 use quickwit_proto::types::{IndexUid, Position, SourceId};
 use serde::{Deserialize, Serialize};
@@ -97,6 +99,24 @@ impl IndexMetadata {
     /// Accessor to the index config's index uri for convenience.
     pub fn index_uri(&self) -> &Uri {
         &self.index_config().index_uri
+    }
+
+    /// Replaces or removes the current retention policy, returning whether a mutation occurred.
+    pub fn set_retention_policy(&mut self, retention_policy_opt: Option<RetentionPolicy>) -> bool {
+        if self.index_config.retention_policy_opt != retention_policy_opt {
+            self.index_config.retention_policy_opt = retention_policy_opt;
+            return true;
+        }
+        false
+    }
+
+    /// Replaces or removes the current search settings, returning whether a mutation occurred.
+    pub fn set_search_settings(&mut self, search_settings: SearchSettings) -> bool {
+        if self.index_config.search_settings != search_settings {
+            self.index_config.search_settings = search_settings;
+            return true;
+        }
+        false
     }
 
     /// Adds a source to the index. Returns an error if the source already exists.

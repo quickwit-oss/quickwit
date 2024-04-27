@@ -168,6 +168,10 @@ impl Position {
         matches!(self, Self::Eof(_))
     }
 
+    pub fn is_eof_str(position_str: &str) -> bool {
+        position_str.starts_with(EOF_PREFIX)
+    }
+
     fn as_bytes(&self) -> Bytes {
         match self {
             Self::Beginning => Bytes::from_static(BEGINNING.as_bytes()),

@@ -25,7 +25,6 @@ use std::sync::Arc;
 use anyhow::Context;
 use async_trait::async_trait;
 use fnv::FnvHashSet;
-use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz, Mailbox,
@@ -43,13 +42,17 @@ use quickwit_ingest::{
     DropQueueRequest, GetPartitionId, IngestApiService, IngesterPool, ListQueuesRequest,
     QUEUES_DIR_NAME,
 };
-use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
+use quickwit_metastore::{
+    IndexMetadata, IndexMetadataResponseExt, IndexesMetadataResponseExt,
+    ListIndexesMetadataResponseExt,
+};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingError, IndexingPipelineId,
     IndexingTask, PipelineMetrics,
 };
 use quickwit_proto::metastore::{
-    IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
+    IndexMetadataRequest, IndexMetadataSubrequest, IndexesMetadataRequest,
+    ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexId, IndexUid, PipelineUid};
 use quickwit_storage::StorageResolver;
@@ -366,18 +369,46 @@ impl IndexingService {
     }
 
     async fn index_metadata(
-        &self,
+        &mut self,
         ctx: &ActorContext<Self>,
         index_id: &str,
     ) -> Result<IndexMetadata, IndexingError> {
-        let _protect_guard = ctx.protect_zone();
+        let _protected_zone_guard = ctx.protect_zone();
         let index_metadata_response = self
             .metastore
-            .clone()
             .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await?;
         let index_metadata = index_metadata_response.deserialize_index_metadata()?;
         Ok(index_metadata)
+    }
+
+    async fn indexes_metadata(
+        &mut self,
+        ctx: &ActorContext<Self>,
+        indexing_pipeline_ids: &[IndexingPipelineId],
+    ) -> Result<Vec<IndexMetadata>, IndexingError> {
+        let index_metadata_subrequests: Vec<IndexMetadataSubrequest> = indexing_pipeline_ids
+            .iter()
+            // Remove duplicate subrequests
+            .unique_by(|pipeline_id| &pipeline_id.index_uid)
+            .map(|pipeline_id| IndexMetadataSubrequest {
+                index_id: None,
+                index_uid: Some(pipeline_id.index_uid.clone()),
+            })
+            .collect();
+        let indexes_metadata_request = IndexesMetadataRequest {
+            subrequests: index_metadata_subrequests,
+        };
+        let _protected_zone_guard = ctx.protect_zone();
+
+        let indexes_metadata_response = self
+            .metastore
+            .indexes_metadata(indexes_metadata_request)
+            .await?;
+        let indexes_metadata = indexes_metadata_response
+            .deserialize_indexes_metadata()
+            .await?;
+        Ok(indexes_metadata)
     }
 
     async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
@@ -399,7 +430,7 @@ impl IndexingService {
                         // and are themselves in charge of supervising the pipeline actors.
                         error!(
                             pipeline_uid=%pipeline_uid,
-                            "Indexing pipeline exited with failure. This should never happen."
+                            "indexing pipeline exited with failure: this should never happen, please report"
                         );
                         self.counters.num_failed_pipelines += 1;
                         self.counters.num_running_pipelines -= 1;
@@ -489,9 +520,9 @@ impl IndexingService {
         let pipeline_uids_to_remove: Vec<PipelineUid> = self
             .indexing_pipelines
             .keys()
-            .cloned()
             .filter(|pipeline_uid| !pipeline_uids_in_plan.contains(pipeline_uid))
-            .collect::<Vec<_>>();
+            .cloned()
+            .collect();
 
         // Shut down currently running pipelines that are missing in the new plan.
         self.shutdown_pipelines(&pipeline_uids_to_remove).await;
@@ -508,15 +539,15 @@ impl IndexingService {
                 let pipeline_uid = indexing_task.pipeline_uid();
                 !self.indexing_pipelines.contains_key(&pipeline_uid)
             })
-            .flat_map(|indexing_task| {
+            .map(|indexing_task| {
                 let pipeline_uid = indexing_task.pipeline_uid();
                 let index_uid = indexing_task.index_uid().clone();
-                Some(IndexingPipelineId {
+                IndexingPipelineId {
                     node_id: self.node_id.clone(),
                     index_uid,
                     source_id: indexing_task.source_id.clone(),
                     pipeline_uid,
-                })
+                }
             })
             .collect();
         self.spawn_pipelines(&pipeline_ids_to_add, ctx).await
@@ -580,13 +611,9 @@ impl IndexingService {
         ctx: &ActorContext<Self>,
     ) -> Result<Vec<IndexingPipelineId>, IndexingError> {
         // We fetch the new indexes metadata.
-        let indexes_metadata_futures = added_pipeline_ids
-            .iter()
-            // No need to emit two request for the same `index_uid`
-            .unique_by(|pipeline_id| pipeline_id.index_uid.clone())
-            .map(|pipeline_id| self.index_metadata(ctx, &pipeline_id.index_uid.index_id));
-        let indexes_metadata = try_join_all(indexes_metadata_futures).await?;
-        let indexes_metadata_by_index_id: HashMap<IndexUid, IndexMetadata> = indexes_metadata
+        let indexes_metadata = self.indexes_metadata(ctx, added_pipeline_ids).await?;
+
+        let per_index_uid_indexes_metadata: HashMap<IndexUid, IndexMetadata> = indexes_metadata
             .into_iter()
             .map(|index_metadata| (index_metadata.index_uid.clone(), index_metadata))
             .collect();
@@ -596,7 +623,7 @@ impl IndexingService {
         // Add new pipelines.
         for new_pipeline_id in added_pipeline_ids {
             if let Some(index_metadata) =
-                indexes_metadata_by_index_id.get(&new_pipeline_id.index_uid)
+                per_index_uid_indexes_metadata.get(&new_pipeline_id.index_uid)
             {
                 if let Some(source_config) = index_metadata.sources.get(&new_pipeline_id.source_id)
                 {
@@ -618,13 +645,12 @@ impl IndexingService {
                 }
             } else {
                 error!(
-                    "Failed to spawn pipeline: index {} no longer exists.",
-                    &new_pipeline_id.index_uid.to_string()
+                    "failed to spawn pipeline: index `{}` no longer exists",
+                    new_pipeline_id.index_uid
                 );
                 failed_spawning_pipeline_ids.push(new_pipeline_id.clone());
             }
         }
-
         Ok(failed_spawning_pipeline_ids)
     }
 
@@ -640,7 +666,7 @@ impl IndexingService {
         for &pipeline_uid_to_remove in pipeline_uids {
             match self.detach_pipeline(pipeline_uid_to_remove).await {
                 Ok(pipeline_handle) => {
-                    // Killing the pipeline ensure that all pipeline actors will stop.
+                    // Killing the pipeline ensures that all the pipeline actors will stop.
                     pipeline_handle.kill().await;
                 }
                 Err(error) => {
