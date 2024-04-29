@@ -54,7 +54,7 @@ use crate::cluster_client::ClusterClient;
 use crate::collector::{make_merge_collector, QuickwitAggregations};
 use crate::find_trace_ids_collector::Span;
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
-use crate::search_job_placer::Job;
+use crate::search_job_placer::{group_by, group_jobs_by_index_id, Job};
 use crate::service::SearcherContext;
 use crate::{
     extract_split_and_footer_offsets, list_relevant_splits, SearchError, SearchJobPlacer,
@@ -1399,20 +1399,21 @@ fn compute_split_cost(_split_metadata: &SplitMetadata) -> usize {
 pub fn jobs_to_leaf_requests(
     request: &SearchRequest,
     search_indexes_metadatas: &IndexesMetasForLeafSearch,
-    mut jobs: Vec<SearchJob>,
+    jobs: Vec<SearchJob>,
 ) -> crate::Result<Vec<LeafSearchRequest>> {
     let mut search_request_for_leaf = request.clone();
     search_request_for_leaf.start_offset = 0;
     search_request_for_leaf.max_hits += request.start_offset;
     let mut leaf_search_requests = Vec::new();
     // Group jobs by index uid.
-    jobs.sort_by(|job1, job2| job1.index_uid.cmp(&job2.index_uid));
-    for (index_uid, job_group) in &jobs.into_iter().group_by(|job| job.index_uid.clone()) {
-        let search_index_meta = search_indexes_metadatas.get(&index_uid).ok_or_else(|| {
+    group_jobs_by_index_id(jobs, |job_group| {
+        let index_uid = &job_group[0].index_uid;
+        let search_index_meta = search_indexes_metadatas.get(index_uid).ok_or_else(|| {
             SearchError::Internal(format!(
-                "received search job for an unknown index {index_uid}. it should never happen"
+                "received job for an unknown index {index_uid}. it should never happen"
             ))
         })?;
+
         let leaf_search_request = LeafSearchRequest {
             search_request: Some(search_request_for_leaf.clone()),
             split_offsets: job_group.into_iter().map(|job| job.offsets).collect(),
@@ -1420,7 +1421,8 @@ pub fn jobs_to_leaf_requests(
             index_uri: search_index_meta.index_uri.to_string(),
         };
         leaf_search_requests.push(leaf_search_request);
-    }
+        Ok(())
+    })?;
     Ok(leaf_search_requests)
 }
 
@@ -1432,32 +1434,39 @@ pub fn jobs_to_fetch_docs_requests(
 ) -> crate::Result<Vec<FetchDocsRequest>> {
     let mut fetch_docs_requests = Vec::new();
     // Group jobs by index uid.
-    for (index_uid, job_group) in &jobs.into_iter().group_by(|job| job.index_uid.clone()) {
-        let index_meta = indexes_metas_for_leaf_search
-            .get(&index_uid)
-            .ok_or_else(|| {
-                SearchError::Internal(format!(
-                    "received search job for an unknown index {index_uid}"
-                ))
-            })?;
-        let fetch_docs_jobs: Vec<FetchDocsJob> = job_group.collect();
-        let partial_hits: Vec<PartialHit> = fetch_docs_jobs
-            .iter()
-            .flat_map(|fetch_doc_job| fetch_doc_job.partial_hits.iter().cloned())
-            .collect();
-        let split_offsets: Vec<SplitIdAndFooterOffsets> = fetch_docs_jobs
-            .into_iter()
-            .map(|fetch_doc_job| fetch_doc_job.into())
-            .collect();
-        let fetch_docs_req = FetchDocsRequest {
-            partial_hits,
-            split_offsets,
-            index_uri: index_meta.index_uri.to_string(),
-            snippet_request: snippet_request_opt.clone(),
-            doc_mapper: index_meta.doc_mapper_str.clone(),
-        };
-        fetch_docs_requests.push(fetch_docs_req);
-    }
+    group_by(
+        jobs,
+        |job| &job.index_uid,
+        |fetch_docs_jobs| {
+            let index_uid = &fetch_docs_jobs[0].index_uid;
+
+            let index_meta = indexes_metas_for_leaf_search
+                .get(index_uid)
+                .ok_or_else(|| {
+                    SearchError::Internal(format!(
+                        "received search job for an unknown index {index_uid}"
+                    ))
+                })?;
+            let partial_hits: Vec<PartialHit> = fetch_docs_jobs
+                .iter()
+                .flat_map(|fetch_doc_job| fetch_doc_job.partial_hits.iter().cloned())
+                .collect();
+            let split_offsets: Vec<SplitIdAndFooterOffsets> = fetch_docs_jobs
+                .into_iter()
+                .map(|fetch_doc_job| fetch_doc_job.into())
+                .collect();
+            let fetch_docs_req = FetchDocsRequest {
+                partial_hits,
+                split_offsets,
+                index_uri: index_meta.index_uri.to_string(),
+                snippet_request: snippet_request_opt.clone(),
+                doc_mapper: index_meta.doc_mapper_str.clone(),
+            };
+            fetch_docs_requests.push(fetch_docs_req);
+
+            Ok(())
+        },
+    )?;
     Ok(fetch_docs_requests)
 }
 
