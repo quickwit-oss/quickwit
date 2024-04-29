@@ -35,6 +35,7 @@ use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectI
 use aws_sdk_s3::Client as S3Client;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use futures::{stream, StreamExt};
+use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
 use quickwit_aws::get_aws_config;
 use quickwit_aws::retry::{aws_retry, AwsRetryable};
@@ -599,18 +600,22 @@ impl S3CompatibleObjectStorage {
                 unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
                 continue;
             }
-            let Ok(objects): Result<Vec<ObjectIdentifier>, _> = chunk
+            let (objects, errors): (Vec<_>, Vec<_>) = chunk
                 .iter()
-                .map(|path| ObjectIdentifier::builder().key(self.key(path)).build())
-                .collect()
-            else {
+                .map(|path| {
+                    ObjectIdentifier::builder()
+                        .key(self.key(path))
+                        .build()
+                        .map_err(|_| path.to_path_buf())
+                })
+                .partition_result();
+            if !errors.is_empty() {
                 error = Some(
                     StorageErrorKind::Internal
                         .with_error(anyhow!("failed to build object identifier")),
                 );
-                unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
-                continue;
-            };
+                unattempted.extend(errors);
+            }
             let Ok(delete) = Delete::builder().set_objects(Some(objects)).build() else {
                 error = Some(
                     StorageErrorKind::Internal

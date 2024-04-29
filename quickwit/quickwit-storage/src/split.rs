@@ -67,7 +67,7 @@ async fn range_byte_stream_from_payloads(
 }
 
 // With sdk 1.0, ByteStream no longer implement Stream, despite having analogous functions
-// this adaptor is just meant to make it implmeent Stream for places where we really need it
+// this adaptor is just meant to make it implement Stream for places where we really need it
 #[pin_project]
 struct StreamAdaptor(#[pin] ByteStream);
 
@@ -82,10 +82,11 @@ impl Stream for StreamAdaptor {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let (min_u64, max_u64) = self.0.size_hint();
-        let min = min_u64.try_into().unwrap_or(usize::MAX);
-        let max = max_u64.and_then(|max_u64| max_u64.try_into().ok());
-        (min, max)
+        let (lower_bound_u64, upper_bound_u64) = self.0.size_hint();
+        let lower_bound = lower_bound_u64.try_into().unwrap_or(usize::MAX);
+        let upper_bound =
+            upper_bound_u64.and_then(|upper_bound_u64| upper_bound_u64.try_into().ok());
+        (lower_bound, upper_bound)
     }
 }
 

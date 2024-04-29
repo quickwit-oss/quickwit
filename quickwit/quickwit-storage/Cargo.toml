@@ -19,6 +19,7 @@ bytesize = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
 hyper = { workspace = true }
+itertools = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }
 mockall = { workspace = true, optional = true }
