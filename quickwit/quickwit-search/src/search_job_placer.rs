@@ -29,7 +29,7 @@ use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 
-use crate::{SearchServiceClient, SearcherPool};
+use crate::{SearchJob, SearchServiceClient, SearcherPool};
 
 /// Job.
 /// The unit in which distributed search is performed.
@@ -234,10 +234,99 @@ impl PartialEq for CandidateNodes {
 
 impl Eq for CandidateNodes {}
 
+/// Groups jobs by index id and returns a list of `SearchJob` per index
+pub fn group_jobs_by_index_id(
+    jobs: Vec<SearchJob>,
+    cb: impl FnMut(Vec<SearchJob>) -> crate::Result<()>,
+) -> crate::Result<()> {
+    // Group jobs by index uid.
+    group_by(jobs, |job| &job.index_uid, cb)?;
+    Ok(())
+}
+
+/// Note: The data will be sorted.
+///
+/// Returns slices of the input data grouped by passed closure.
+pub fn group_by<T, K: Ord, F>(
+    mut data: Vec<T>,
+    compare_by: impl Fn(&T) -> &K,
+    mut callback: F,
+) -> crate::Result<()>
+where
+    F: FnMut(Vec<T>) -> crate::Result<()>,
+{
+    data.sort_by(|job1, job2| compare_by(job2).cmp(compare_by(job1)));
+    while !data.is_empty() {
+        let last_element = data.last().unwrap();
+        let count = data
+            .iter()
+            .rev()
+            .take_while(|&x| compare_by(x) == compare_by(last_element))
+            .count();
+
+        let group = data.split_off(data.len() - count);
+        callback(group)?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{searcher_pool_for_test, MockSearchService, SearchJob};
+
+    #[test]
+    fn test_group_by_1() {
+        let data = vec![1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5];
+        let mut outputs: Vec<Vec<i32>> = Vec::new();
+        group_by(
+            data,
+            |el| el,
+            |group| {
+                outputs.push(group);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(outputs.len(), 5);
+        assert_eq!(outputs[0], vec![1, 1]);
+        assert_eq!(outputs[1], vec![2, 2, 2]);
+        assert_eq!(outputs[2], vec![3]);
+        assert_eq!(outputs[3], vec![4, 4]);
+        assert_eq!(outputs[4], vec![5, 5, 5]);
+    }
+    #[test]
+    fn test_group_by_all_same() {
+        let data = vec![1, 1];
+        let mut outputs: Vec<Vec<i32>> = Vec::new();
+        group_by(
+            data,
+            |el| el,
+            |group| {
+                outputs.push(group);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0], vec![1, 1]);
+    }
+    #[test]
+    fn test_group_by_empty() {
+        let data = vec![];
+        let mut outputs: Vec<Vec<i32>> = Vec::new();
+        group_by(
+            data,
+            |el| el,
+            |group| {
+                outputs.push(group);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(outputs.len(), 0);
+    }
 
     #[tokio::test]
     async fn test_search_job_placer() {

@@ -39,6 +39,7 @@ use tantivy::{ReloadPolicy, Term};
 use tracing::{debug, error, info, instrument};
 
 use crate::leaf::open_index_with_caches;
+use crate::search_job_placer::group_jobs_by_index_id;
 use crate::{resolve_index_patterns, ClusterClient, SearchError, SearchJob, SearcherContext};
 
 /// Performs a distributed list terms.
@@ -184,20 +185,22 @@ pub fn jobs_to_leaf_requests(
 ) -> crate::Result<Vec<LeafListTermsRequest>> {
     let search_request_for_leaf = request.clone();
     let mut leaf_search_requests = Vec::new();
-    // Group jobs by index uid.
-    for (index_uid, job_group) in &jobs.into_iter().group_by(|job| job.index_uid.clone()) {
-        let index_uri = index_uid_to_uri.get(&index_uid).ok_or_else(|| {
+    group_jobs_by_index_id(jobs, |job_group| {
+        let index_uid = &job_group[0].index_uid;
+        let index_uri = index_uid_to_uri.get(index_uid).ok_or_else(|| {
             SearchError::Internal(format!(
                 "received list fields job for an unknown index {index_uid}. it should never happen"
             ))
         })?;
+
         let leaf_search_request = LeafListTermsRequest {
             list_terms_request: Some(search_request_for_leaf.clone()),
             index_uri: index_uri.to_string(),
             split_offsets: job_group.into_iter().map(|job| job.offsets).collect(),
         };
         leaf_search_requests.push(leaf_search_request);
-    }
+        Ok(())
+    })?;
     Ok(leaf_search_requests)
 }
 
