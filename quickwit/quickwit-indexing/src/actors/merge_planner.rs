@@ -37,11 +37,26 @@ use crate::merge_policy::MergeOperation;
 use crate::models::NewSplits;
 use crate::MergePolicy;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct MergePartition {
+    partition_id: u64,
+    doc_mapper_version: u64,
+}
+
+impl MergePartition {
+    fn from_split_meta(split_meta: &SplitMetadata) -> MergePartition {
+        MergePartition {
+            partition_id: split_meta.partition_id,
+            doc_mapper_version: split_meta.doc_mapper_version,
+        }
+    }
+}
+
 /// The merge planner decides when to start a merge task.
 pub struct MergePlanner {
     /// A young split is a split that has not reached maturity
     /// yet and can be candidate to merge operations.
-    partitioned_young_splits: HashMap<u64, Vec<SplitMetadata>>,
+    partitioned_young_splits: HashMap<MergePartition, Vec<SplitMetadata>>,
 
     /// This set contains all of the split ids that we "acknowledged".
     /// The point of this set is to rapidly dismiss redundant `NewSplit` message.
@@ -228,7 +243,7 @@ impl MergePlanner {
     fn record_split(&mut self, new_split: SplitMetadata) {
         let splits_for_partition: &mut Vec<SplitMetadata> = self
             .partitioned_young_splits
-            .entry(new_split.partition_id)
+            .entry(MergePartition::from_split_meta(&new_split))
             .or_default();
         splits_for_partition.push(new_split);
     }
@@ -339,6 +354,7 @@ mod tests {
         index_uid: &IndexUid,
         split_id: &str,
         partition_id: u64,
+        doc_mapper_version: u64,
         num_docs: usize,
         num_merge_ops: usize,
     ) -> SplitMetadata {
@@ -354,6 +370,7 @@ mod tests {
             maturity: SplitMaturity::Immature {
                 maturation_period: Duration::from_secs(3600),
             },
+            doc_mapper_version,
             ..Default::default()
         }
     }
@@ -393,8 +410,9 @@ mod tests {
             // send one split
             let message = NewSplits {
                 new_splits: vec![
-                    split_metadata_for_test(&index_uid, "1_1", 1, 2500, 0),
-                    split_metadata_for_test(&index_uid, "1_2", 2, 3000, 0),
+                    split_metadata_for_test(&index_uid, "1_1", 1, 0, 2500, 0),
+                    split_metadata_for_test(&index_uid, "1v2_1", 1, 2, 2500, 0),
+                    split_metadata_for_test(&index_uid, "1_2", 2, 0, 3000, 0),
                 ],
             };
             merge_planner_mailbox.send_message(message).await?;
@@ -405,8 +423,9 @@ mod tests {
             // send two splits with a duplicate
             let message = NewSplits {
                 new_splits: vec![
-                    split_metadata_for_test(&index_uid, "2_1", 1, 2000, 0),
-                    split_metadata_for_test(&index_uid, "1_2", 2, 3000, 0),
+                    split_metadata_for_test(&index_uid, "2_1", 1, 0, 2000, 0),
+                    split_metadata_for_test(&index_uid, "2v2_1", 1, 2, 2500, 0),
+                    split_metadata_for_test(&index_uid, "1_2", 2, 0, 3000, 0),
                 ],
             };
             merge_planner_mailbox.send_message(message).await?;
@@ -417,27 +436,41 @@ mod tests {
             // send four more splits to generate merge
             let message = NewSplits {
                 new_splits: vec![
-                    split_metadata_for_test(&index_uid, "3_1", 1, 1500, 0),
-                    split_metadata_for_test(&index_uid, "4_1", 1, 1000, 0),
-                    split_metadata_for_test(&index_uid, "2_2", 2, 2000, 0),
-                    split_metadata_for_test(&index_uid, "3_2", 2, 4000, 0),
+                    split_metadata_for_test(&index_uid, "3_1", 1, 0, 1500, 0),
+                    split_metadata_for_test(&index_uid, "4_1", 1, 0, 1000, 0),
+                    split_metadata_for_test(&index_uid, "3v2_1", 1, 2, 1500, 0),
+                    split_metadata_for_test(&index_uid, "2_2", 2, 0, 2000, 0),
+                    split_metadata_for_test(&index_uid, "3_2", 2, 0, 4000, 0),
                 ],
             };
             merge_planner_mailbox.send_message(message).await?;
             merge_planner_handle.process_pending_and_observe().await;
             let operations = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
-            assert_eq!(operations.len(), 2);
-            let mut merge_operations = operations.into_iter().sorted_by(|left_op, right_op| {
-                left_op.splits[0]
-                    .partition_id
-                    .cmp(&right_op.splits[0].partition_id)
-            });
+            assert_eq!(operations.len(), 3);
+            let mut merge_operations = operations
+                .into_iter()
+                .sorted_by_key(|op| (op.splits[0].partition_id, op.splits[0].doc_mapper_version));
 
             let first_merge_operation = merge_operations.next().unwrap();
             assert_eq!(first_merge_operation.splits.len(), 4);
+            assert!(first_merge_operation
+                .splits
+                .iter()
+                .all(|split| split.partition_id == 1 && split.doc_mapper_version == 0));
 
             let second_merge_operation = merge_operations.next().unwrap();
             assert_eq!(second_merge_operation.splits.len(), 3);
+            assert!(second_merge_operation
+                .splits
+                .iter()
+                .all(|split| split.partition_id == 1 && split.doc_mapper_version == 2));
+
+            let third_merge_operation = merge_operations.next().unwrap();
+            assert_eq!(third_merge_operation.splits.len(), 3);
+            assert!(third_merge_operation
+                .splits
+                .iter()
+                .all(|split| split.partition_id == 2 && split.doc_mapper_version == 0));
         }
         universe.assert_quit().await;
 
@@ -471,10 +504,12 @@ mod tests {
         let pre_existing_splits = vec![
             split_metadata_for_test(
                 &index_uid, "a_small", 0, // partition_id
+                0, // doc_mapper version
                 1_000_000, 2,
             ),
             split_metadata_for_test(
                 &index_uid, "b_small", 0, // partition_id
+                0, // doc_mapper version
                 1_000_000, 2,
             ),
         ];
@@ -554,6 +589,7 @@ mod tests {
                 &other_index_uid,
                 "a_small",
                 0, // partition_id
+                0, // doc_mapper version
                 1_000_000,
                 2,
             ),
@@ -561,6 +597,7 @@ mod tests {
                 &other_index_uid,
                 "b_small",
                 0, // partition_id
+                0, // doc_mapper version
                 1_000_000,
                 2,
             ),
@@ -613,10 +650,12 @@ mod tests {
         let pre_existing_splits = vec![
             split_metadata_for_test(
                 &index_uid, "a_small", 0, // partition_id
+                0, // doc_mapper version
                 1_000_000, 2,
             ),
             split_metadata_for_test(
                 &index_uid, "b_small", 0, // partition_id
+                0, // doc_mapper version
                 1_000_000, 2,
             ),
         ];
