@@ -1,0 +1,83 @@
+name: CBENCH
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "quickwit/**"
+      - "!quickwit/quickwit-ui/**"
+  # For security reasons (to make sure the list of allowed users is
+  # trusted), make sure we run the workflow definition the base of the
+  # pull request.
+  pull_request_target:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+
+jobs:
+  tests:
+    name: Benchmark
+    # The self-hosted runner must have the system deps installed for QW and
+    # the benchmark, because we don't have root access.
+    runs-on: self-hosted
+    timeout-minutes: 40
+    steps:
+      - name: Set authorized users
+        id: authorized-users
+        # List of users allowed to trigger this workflow.
+        # Because it executes code on a self-hosted runner, it must be restricted to trusted users.
+        run: |
+          echo 'users=["ddelemeny", "fmassot", "fulmicoton", "guilload", "PSeitz", "rdettai", "trinity-1686a"]' >> $GITHUB_OUTPUT
+      - uses: actions/checkout@v4
+        if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name == 'pull_request_target'
+        name: Checkout quickwit (pull request commit)
+        with:
+          repository: quickwit-oss/quickwit
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: ./quickwit
+      - uses: actions/checkout@v4
+        if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name != 'pull_request_target'
+        name: Checkout quickwit
+        with:
+          repository: quickwit-oss/quickwit
+          ref: ${{ github.sha }}
+          path: ./quickwit
+      - name: Checkout benchmarking code
+        uses: actions/checkout@v4
+        if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
+        with:
+          repository: quickwit-oss/benchmarks
+          ref: main
+          path: ./benchmarks
+      # We don't use rust-cache as it requires root access on the self-hosted runner, which we don't have.
+      - name: cargo build
+        if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
+        run: cargo build --release --bin quickwit
+        working-directory: ./quickwit/quickwit
+      - name: Compile qbench
+        if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
+        run: cargo build --release
+        working-directory: ./benchmarks/qbench
+      - name: Run Benchmark on SSD
+        if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
+        id: bench-run-ssd
+        run: python3 ./run.py --search-only --storage pd-ssd --engine quickwit --track generated-logs --tags "${{ github.event_name }}_${{ github.ref_name }}" --manage-engine --source github_workflow --binary-path ../quickwit/quickwit/target/release/quickwit  --instance "{autodetect_gcp}" --export-to-endpoint=https://qw-benchmarks.104.155.161.122.nip.io --engine-data-dir "{qwdata_local}" --write-exported-run-url-to-file $GITHUB_OUTPUT
+        working-directory: ./benchmarks
+      - name: Run Benchmark on cloud storage
+        if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
+        id: bench-run-cloud-storage
+        run: python3 ./run.py --search-only --storage gcs --engine quickwit --track generated-logs --tags "${{ github.event_name }}_${{ github.ref_name }}" --manage-engine --source github_workflow --binary-path ../quickwit/quickwit/target/release/quickwit  --instance "{autodetect_gcp}" --export-to-endpoint=https://qw-benchmarks.104.155.161.122.nip.io --engine-data-dir "{qwdata_gcs}" --write-exported-run-url-to-file $GITHUB_OUTPUT
+        working-directory: ./benchmarks
+      - name: Show results links
+        if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
+        run: |
+          echo "::notice title=Benchmark Results on SSD::${{ steps.bench-run-ssd.outputs.url }}"
+          echo "::notice title=Benchmark Results on Cloud Storage::${{ steps.bench-run-cloud-storage.outputs.url }}"
+      - name: In case of auth error
+        if: ${{ ! contains(fromJSON(steps.authorized-users.outputs.users), github.actor) }}
+        run: |
+          echo "::error title=User not allowed to run the benchmark::User must be in list ${{ steps.authorized-users.outputs.users }}"
