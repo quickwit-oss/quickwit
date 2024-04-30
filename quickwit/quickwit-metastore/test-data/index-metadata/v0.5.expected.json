@@ -72,7 +72,8 @@
         "tenant_id"
       ],
       "timestamp_field": "timestamp",
-      "tokenizers": []
+      "tokenizers": [],
+      "version": 0
     },
     "index_id": "my-index",
     "index_uri": "s3://quickwit-indexes/my-index",

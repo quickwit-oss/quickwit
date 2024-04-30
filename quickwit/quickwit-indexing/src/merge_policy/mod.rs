@@ -379,7 +379,7 @@ pub mod tests {
             node_id: "test_node".to_string(),
             pipeline_uid: PipelineUid::for_test(0u128),
         };
-        let split_attrs = merge_split_attrs(merged_split_id, &pipeline_id, splits);
+        let split_attrs = merge_split_attrs(merged_split_id, &pipeline_id, splits).unwrap();
         create_split_metadata(merge_policy, &split_attrs, tags, 0..0)
     }
 

@@ -99,6 +99,11 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// over time. The schema returned here represents the most up-to-date schema of the index.
     fn schema(&self) -> Schema;
 
+    /// Returns the version of the doc mapper
+    ///
+    /// Splits with the same doc mapper version should use the same schema
+    fn version(&self) -> u64;
+
     /// Returns the query.
     ///
     /// Considering schema evolution, splits within an index can have different schema

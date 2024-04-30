@@ -50,7 +50,8 @@
         "store_source": false,
         "tag_fields": [],
         "timestamp_field": "ts",
-        "tokenizers": []
+        "tokenizers": [],
+        "version": 0
       },
       "index_id_patterns": [
         "test-index-foo*",

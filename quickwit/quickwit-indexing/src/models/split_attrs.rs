@@ -63,6 +63,8 @@ pub struct SplitAttrs {
 
     // Number of merge operation the split has been through so far.
     pub num_merge_ops: usize,
+
+    pub doc_mapper_version: u64,
 }
 
 impl fmt::Debug for SplitAttrs {
@@ -109,5 +111,6 @@ pub fn create_split_metadata(
         footer_offsets,
         delete_opstamp: split_attrs.delete_opstamp,
         num_merge_ops: split_attrs.num_merge_ops,
+        doc_mapper_version: split_attrs.doc_mapper_version,
     }
 }

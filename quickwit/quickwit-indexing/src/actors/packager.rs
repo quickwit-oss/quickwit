@@ -528,6 +528,7 @@ mod tests {
                 replaced_split_ids: Vec::new(),
                 delete_opstamp: 0,
                 num_merge_ops: 0,
+                doc_mapper_version: 0,
             },
             index,
             split_scratch_directory,

@@ -235,7 +235,7 @@ pub fn merge_split_attrs(
     merge_split_id: String,
     pipeline_id: &IndexingPipelineId,
     splits: &[SplitMetadata],
-) -> SplitAttrs {
+) -> anyhow::Result<SplitAttrs> {
     let partition_id = combine_partition_ids_aux(splits.iter().map(|split| split.partition_id));
     let time_range: Option<RangeInclusive<DateTime>> = merge_time_range(splits);
     let uncompressed_docs_size_in_bytes = sum_doc_sizes_in_bytes(splits);
@@ -249,7 +249,17 @@ pub fn merge_split_attrs(
         .map(|split| split.delete_opstamp)
         .min()
         .unwrap_or(0);
-    SplitAttrs {
+    let doc_mapper_version = splits
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("attempted to merge zero splits"))?
+        .doc_mapper_version;
+    if splits
+        .iter()
+        .any(|split| split.doc_mapper_version != doc_mapper_version)
+    {
+        anyhow::bail!("attempted to merge splits with different doc mapper version");
+    }
+    Ok(SplitAttrs {
         split_id: merge_split_id,
         partition_id,
         pipeline_id: pipeline_id.clone(),
@@ -259,7 +269,8 @@ pub fn merge_split_attrs(
         uncompressed_docs_size_in_bytes,
         delete_opstamp,
         num_merge_ops: max_merge_ops(splits) + 1,
-    }
+        doc_mapper_version,
+    })
 }
 
 fn max_merge_ops(splits: &[SplitMetadata]) -> usize {
@@ -321,7 +332,7 @@ impl MergeExecutor {
         )?;
         ctx.record_progress();
 
-        let split_attrs = merge_split_attrs(merge_split_id, &self.pipeline_id, &splits);
+        let split_attrs = merge_split_attrs(merge_split_id, &self.pipeline_id, &splits)?;
         Ok(IndexedSplit {
             split_attrs,
             index: merged_index,
@@ -446,6 +457,7 @@ impl MergeExecutor {
                 uncompressed_docs_size_in_bytes,
                 delete_opstamp: last_delete_opstamp,
                 num_merge_ops: split.num_merge_ops,
+                doc_mapper_version: split.doc_mapper_version,
             },
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,

@@ -98,6 +98,7 @@ struct IndexerState {
     publish_lock: PublishLock,
     publish_token_opt: Option<PublishToken>,
     schema: Schema,
+    doc_mapper_version: u64,
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
@@ -130,6 +131,7 @@ impl IndexerState {
             self.pipeline_id.clone(),
             partition_id,
             last_delete_opstamp,
+            self.doc_mapper_version,
             self.indexing_directory.clone(),
             index_builder,
             io_controls,
@@ -537,6 +539,7 @@ impl Indexer {
         index_serializer_mailbox: Mailbox<IndexSerializer>,
     ) -> Self {
         let schema = doc_mapper.schema();
+        let doc_mapper_version = doc_mapper.version();
         let tokenizer_manager = doc_mapper.tokenizer_manager().clone();
         let docstore_compression = Compressor::Zstd(ZstdCompressor {
             compression_level: Some(indexing_settings.docstore_compression_level),
@@ -564,6 +567,7 @@ impl Indexer {
                 publish_lock: PublishLock::default(),
                 publish_token_opt: None,
                 schema,
+                doc_mapper_version,
                 tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),

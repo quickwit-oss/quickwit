@@ -1427,6 +1427,9 @@ mod tests {
         fn schema(&self) -> tantivy::schema::Schema {
             unimplemented!()
         }
+        fn version(&self) -> u64 {
+            unimplemented!()
+        }
         fn query(
             &self,
             _split_schema: tantivy::schema::Schema,

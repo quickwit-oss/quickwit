@@ -1,6 +1,7 @@
 {
   "create_timestamp": 3,
   "delete_opstamp": 10,
+  "doc_mapper_version": 0,
   "footer_offsets": {
     "end": 2000,
     "start": 1000

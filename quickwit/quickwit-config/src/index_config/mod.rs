@@ -93,6 +93,9 @@ pub struct DocMapping {
     /// Record document length
     #[serde(default)]
     pub document_length: bool,
+    /// Version of the doc mapper
+    #[serde(default)]
+    pub version: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -458,6 +461,7 @@ impl TestableForRegression for IndexConfig {
             timestamp_field: Some("timestamp".to_string()),
             tokenizers: vec![tokenizer],
             document_length: false,
+            version: 0,
         };
         let retention_policy = Some(RetentionPolicy {
             retention_period: "90 days".to_string(),
@@ -536,6 +540,7 @@ pub fn build_doc_mapper(
         max_num_partitions: doc_mapping.max_num_partitions,
         tokenizers: doc_mapping.tokenizers.clone(),
         document_length: doc_mapping.document_length,
+        version: doc_mapping.version,
     };
     Ok(Arc::new(builder.try_build()?))
 }
