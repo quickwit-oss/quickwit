@@ -6367,7 +6367,6 @@ dependencies = [
  "fnv",
  "futures",
  "hyper 0.14.28",
- "itertools 0.12.1",
  "lru",
  "md5",
  "mockall",

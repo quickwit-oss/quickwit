@@ -35,7 +35,6 @@ use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectI
 use aws_sdk_s3::Client as S3Client;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use futures::{stream, StreamExt};
-use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
 use quickwit_aws::get_aws_config;
 use quickwit_aws::retry::{aws_retry, AwsRetryable};
@@ -595,33 +594,42 @@ impl S3CompatibleObjectStorage {
         #[cfg(not(test))]
         const MAX_NUM_KEYS: usize = 1_000;
 
-        for chunk in paths.chunks(MAX_NUM_KEYS) {
+        let Ok(path_and_oid) = paths
+            .iter()
+            .map(|path| {
+                ObjectIdentifier::builder()
+                    .key(self.key(path))
+                    .build()
+                    .map(|oid| (path, oid))
+            })
+            .collect::<Result<Vec<_>, _>>()
+        else {
+            error = Some(
+                StorageErrorKind::Internal.with_error(anyhow!("failed to build object identifier")),
+            );
+            unattempted.extend(paths.iter().map(|path| path.to_path_buf()));
+            return Err(BulkDeleteError {
+                error,
+                successes,
+                failures,
+                unattempted,
+            });
+        };
+
+        for chunk in path_and_oid.chunks(MAX_NUM_KEYS) {
             if error.is_some() {
-                unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
+                unattempted.extend(chunk.iter().map(|(path, _oid)| path.to_path_buf()));
                 continue;
             }
-            let (objects, errors): (Vec<_>, Vec<_>) = chunk
-                .iter()
-                .map(|path| {
-                    ObjectIdentifier::builder()
-                        .key(self.key(path))
-                        .build()
-                        .map_err(|_| path.to_path_buf())
-                })
-                .partition_result();
-            if !errors.is_empty() {
-                error = Some(
-                    StorageErrorKind::Internal
-                        .with_error(anyhow!("failed to build object identifier")),
-                );
-                unattempted.extend(errors);
-            }
-            let Ok(delete) = Delete::builder().set_objects(Some(objects)).build() else {
+            let Ok(delete) = Delete::builder()
+                .set_objects(Some(chunk.iter().map(|(_path, oid)| oid.clone()).collect()))
+                .build()
+            else {
                 error = Some(
                     StorageErrorKind::Internal
                         .with_error(anyhow!("failed to build delete request")),
                 );
-                unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
+                unattempted.extend(chunk.iter().map(|(path, _oid)| path.to_path_buf()));
                 continue;
             };
             let delete_objects_res = aws_retry(&self.retry_params, || async {
@@ -667,7 +675,7 @@ impl S3CompatibleObjectStorage {
                 }
                 Err(delete_objects_error) => {
                     error = Some(delete_objects_error.into());
-                    unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
+                    unattempted.extend(chunk.iter().map(|(path, _oid)| path.to_path_buf()));
                 }
             }
         }
