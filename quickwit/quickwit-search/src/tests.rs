@@ -18,7 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
 
+use anyhow::Context;
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
@@ -36,7 +38,10 @@ use serde_json::{json, Value as JsonValue};
 use tantivy::schema::OwnedValue as TantivyValue;
 use tantivy::time::OffsetDateTime;
 use tantivy::Term;
+use tracing::{info_span, Instrument};
 
+use self::collector::{make_merge_collector, IncrementalCollector};
+use self::leaf::leaf_search;
 use super::*;
 use crate::find_trace_ids_collector::Span;
 use crate::list_terms::leaf_list_terms;
@@ -1054,15 +1059,36 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
     });
     let searcher_context: Arc<SearcherContext> =
         Arc::new(SearcherContext::new(SearcherConfig::default(), None));
-    let search_response = leaf_search(
+
+    let merge_collector =
+        make_merge_collector(&request, &searcher_context.get_aggregation_limits()).unwrap();
+    let incremental_merge_collector = IncrementalCollector::new(merge_collector);
+    let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
+
+    leaf_search(
         searcher_context,
         request,
         test_sandbox.storage(),
         splits_offsets,
         test_sandbox.doc_mapper(),
+        incremental_merge_collector.clone(),
     )
     .await
     .unwrap();
+
+    // we can't use unwrap_or_clone because mutexes aren't Clone
+    let incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector) {
+        Ok(filter_merger) => filter_merger.into_inner().unwrap(),
+        Err(filter_merger) => filter_merger.lock().unwrap().clone(),
+    };
+
+    let search_response =
+        crate::run_cpu_intensive(|| incremental_merge_collector.finalize().unwrap())
+            .instrument(info_span!("incremental_merge_finalize"))
+            .await
+            .context("failed to merge split search responses")
+            .unwrap();
+
     search_response
         .partial_hits
         .into_iter()

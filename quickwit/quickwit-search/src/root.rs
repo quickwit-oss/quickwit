@@ -34,9 +34,9 @@ use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::search::{
-    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafSearchRequest, LeafSearchResponse,
-    PartialHit, SearchRequest, SearchResponse, SnippetRequest, SortDatetimeFormat, SortField,
-    SortValue, SplitIdAndFooterOffsets,
+    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafRequestRef, LeafSearchRequest,
+    LeafSearchResponse, PartialHit, SearchRequest, SearchResponse, SnippetRequest,
+    SortDatetimeFormat, SortField, SortValue, SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
@@ -643,15 +643,12 @@ pub(crate) async fn search_partial_hits_phase(
                 .await?;
             let mut leaf_request_tasks = Vec::new();
             for (client, client_jobs) in assigned_leaf_search_jobs {
-                let leaf_requests = jobs_to_leaf_requests(
+                let leaf_request = jobs_to_leaf_request(
                     search_request,
                     indexes_metas_for_leaf_search,
                     client_jobs,
                 )?;
-                for leaf_request in leaf_requests {
-                    leaf_request_tasks
-                        .push(cluster_client.leaf_search(leaf_request, client.clone()));
-                }
+                leaf_request_tasks.push(cluster_client.leaf_search(leaf_request, client.clone()));
             }
             try_join_all(leaf_request_tasks).await?
         };
@@ -1396,17 +1393,25 @@ fn compute_split_cost(_split_metadata: &SplitMetadata) -> usize {
     1
 }
 
-/// Builds a list of [`LeafSearchRequest`], one per index, from a list of [`SearchJob`].
-pub fn jobs_to_leaf_requests(
+/// Builds a LeafSearchRequest to one node, from a list of [`SearchJob`].
+pub fn jobs_to_leaf_request(
     request: &SearchRequest,
     search_indexes_metadatas: &IndexesMetasForLeafSearch,
     jobs: Vec<SearchJob>,
-) -> crate::Result<Vec<LeafSearchRequest>> {
+) -> crate::Result<LeafSearchRequest> {
     let mut search_request_for_leaf = request.clone();
     search_request_for_leaf.start_offset = 0;
     search_request_for_leaf.max_hits += request.start_offset;
-    let mut leaf_search_requests = Vec::new();
-    // Group jobs by index uid.
+
+    let mut multi_leaf_request = LeafSearchRequest {
+        search_request: Some(search_request_for_leaf),
+        leaf_requests: Vec::new(),
+        doc_mappers: Vec::new(),
+        index_uris: Vec::new(),
+    };
+
+    let mut added_doc_mappers: HashMap<&str, u32> = HashMap::new();
+    // Group jobs by index uid, as the split offsets are relative to the index.
     group_jobs_by_index_id(jobs, |job_group| {
         let index_uid = &job_group[0].index_uid;
         let search_index_meta = search_indexes_metadatas.get(index_uid).ok_or_else(|| {
@@ -1414,17 +1419,29 @@ pub fn jobs_to_leaf_requests(
                 "received job for an unknown index {index_uid}. it should never happen"
             ))
         })?;
+        let doc_mapper_ord = *added_doc_mappers
+            .entry(&search_index_meta.doc_mapper_str)
+            .or_insert_with(|| {
+                let ord = multi_leaf_request.doc_mappers.len();
+                multi_leaf_request
+                    .doc_mappers
+                    .push(search_index_meta.doc_mapper_str.to_string());
+                ord as u32
+            });
+        let index_uri_ord = multi_leaf_request.index_uris.len() as u32;
+        multi_leaf_request
+            .index_uris
+            .push(search_index_meta.index_uri.to_string());
 
-        let leaf_search_request = LeafSearchRequest {
-            search_request: Some(search_request_for_leaf.clone()),
+        let leaf_search_request = LeafRequestRef {
             split_offsets: job_group.into_iter().map(|job| job.offsets).collect(),
-            doc_mapper: search_index_meta.doc_mapper_str.clone(),
-            index_uri: search_index_meta.index_uri.to_string(),
+            doc_mapper_ord,
+            index_uri_ord,
         };
-        leaf_search_requests.push(leaf_search_request);
+        multi_leaf_request.leaf_requests.push(leaf_search_request);
         Ok(())
     })?;
-    Ok(leaf_search_requests)
+    Ok(multi_leaf_request)
 }
 
 /// Builds a list of [`FetchDocsRequest`], one per index, from a list of [`FetchDocsJob`].
@@ -2906,7 +2923,7 @@ mod tests {
             .times(2)
             .returning(
                 |leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
-                    let split_ids: Vec<&str> = leaf_search_req
+                    let split_ids: Vec<&str> = leaf_search_req.leaf_requests[0]
                         .split_offsets
                         .iter()
                         .map(|metadata| metadata.split_id.as_str())
@@ -3024,7 +3041,9 @@ mod tests {
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1
             .expect_leaf_search()
-            .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split2")
+            .withf(|leaf_search_req| {
+                leaf_search_req.leaf_requests[0].split_offsets[0].split_id == "split2"
+            })
             .return_once(|_| {
                 // requests from split 2 arrive here - simulate failure.
                 // a retry will be made on the second service.
@@ -3042,7 +3061,9 @@ mod tests {
             });
         mock_search_service_1
             .expect_leaf_search()
-            .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split1")
+            .withf(|leaf_search_req| {
+                leaf_search_req.leaf_requests[0].split_offsets[0].split_id == "split1"
+            })
             .return_once(|_| {
                 // RETRY REQUEST from split1
                 Ok(quickwit_proto::search::LeafSearchResponse {
@@ -3066,7 +3087,9 @@ mod tests {
         let mut mock_search_service_2 = MockSearchService::new();
         mock_search_service_2
             .expect_leaf_search()
-            .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split2")
+            .withf(|leaf_search_req| {
+                leaf_search_req.leaf_requests[0].split_offsets[0].split_id == "split2"
+            })
             .return_once(|_| {
                 // retry for split 2 arrive here, simulate success.
                 Ok(quickwit_proto::search::LeafSearchResponse {
@@ -3079,7 +3102,9 @@ mod tests {
             });
         mock_search_service_2
             .expect_leaf_search()
-            .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split1")
+            .withf(|leaf_search_req| {
+                leaf_search_req.leaf_requests[0].split_offsets[0].split_id == "split1"
+            })
             .return_once(|_| {
                 // requests from split 1 arrive here - simulate failure, then success.
                 Ok(quickwit_proto::search::LeafSearchResponse {
@@ -3815,7 +3840,7 @@ mod tests {
                 assert_eq!(search_req.max_hits as usize, SCROLL_BATCH_LEN);
                 assert!(search_req.search_after.is_none());
                 Ok(create_search_resp(
-                    &req.index_uri,
+                    &req.index_uris[0],
                     search_req.start_offset as usize
                         ..(search_req.start_offset + search_req.max_hits) as usize,
                     search_req.search_after,
@@ -3831,7 +3856,7 @@ mod tests {
                 assert_eq!(search_req.max_hits as usize, SCROLL_BATCH_LEN);
                 assert!(search_req.search_after.is_some());
                 Ok(create_search_resp(
-                    &req.index_uri,
+                    &req.index_uris[0],
                     search_req.start_offset as usize
                         ..(search_req.start_offset + search_req.max_hits) as usize,
                     search_req.search_after,
@@ -3847,7 +3872,7 @@ mod tests {
                 assert_eq!(search_req.max_hits as usize, SCROLL_BATCH_LEN);
                 assert!(search_req.search_after.is_some());
                 Ok(create_search_resp(
-                    &req.index_uri,
+                    &req.index_uris[0],
                     search_req.start_offset as usize
                         ..(search_req.start_offset + search_req.max_hits) as usize,
                     search_req.search_after,
@@ -3998,7 +4023,7 @@ mod tests {
                 assert_eq!(search_req.max_hits as usize, MAX_HITS_PER_PAGE_LARGE);
                 assert!(search_req.search_after.is_none());
                 Ok(create_search_resp(
-                    &req.index_uri,
+                    &req.index_uris[0],
                     search_req.start_offset as usize
                         ..(search_req.start_offset + search_req.max_hits) as usize,
                     search_req.search_after,
@@ -4014,7 +4039,7 @@ mod tests {
                 assert_eq!(search_req.max_hits as usize, MAX_HITS_PER_PAGE_LARGE);
                 assert!(search_req.search_after.is_some());
                 Ok(create_search_resp(
-                    &req.index_uri,
+                    &req.index_uris[0],
                     search_req.start_offset as usize
                         ..(search_req.start_offset + search_req.max_hits) as usize,
                     search_req.search_after,
@@ -4030,7 +4055,7 @@ mod tests {
                 assert_eq!(search_req.max_hits as usize, MAX_HITS_PER_PAGE_LARGE);
                 assert!(search_req.search_after.is_some());
                 Ok(create_search_resp(
-                    &req.index_uri,
+                    &req.index_uris[0],
                     search_req.start_offset as usize
                         ..(search_req.start_offset + search_req.max_hits) as usize,
                     search_req.search_after,
@@ -4204,20 +4229,21 @@ mod tests {
             .expect_leaf_search()
             .times(2)
             .withf(|leaf_search_req| {
-                (leaf_search_req.index_uri == "ram:///test-index-1"
-                    && leaf_search_req.split_offsets.len() == 2)
-                    || (leaf_search_req.index_uri == "ram:///test-index-2"
-                        && leaf_search_req.split_offsets[0].split_id == "index-2-split-1")
+                (&leaf_search_req.index_uris[0] == "ram:///test-index-1"
+                    && leaf_search_req.leaf_requests[0].split_offsets.len() == 2)
+                    || (leaf_search_req.index_uris[0] == "ram:///test-index-2"
+                        && leaf_search_req.leaf_requests[0].split_offsets[0].split_id
+                            == "index-2-split-1")
             })
             .returning(
                 |leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
-                    let partial_hits = leaf_search_req
+                    let partial_hits = leaf_search_req.leaf_requests[0]
                         .split_offsets
                         .iter()
                         .map(|split_offset| mock_partial_hit(&split_offset.split_id, 3, 1))
                         .collect_vec();
                     Ok(quickwit_proto::search::LeafSearchResponse {
-                        num_hits: leaf_search_req.split_offsets.len() as u64,
+                        num_hits: leaf_search_req.leaf_requests[0].split_offsets.len() as u64,
                         partial_hits,
                         failed_splits: Vec::new(),
                         num_attempted_splits: 1,

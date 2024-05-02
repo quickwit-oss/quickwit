@@ -309,22 +309,36 @@ message SplitSearchError {
   bool retryable_error = 3;
 }
 
+/// A LeafSearchRequest can span multiple indices.
+///
 message LeafSearchRequest {
   // Search request. This is a perfect copy of the original search request,
   // that was sent to root apart from the start_offset & max_hits params.
   SearchRequest search_request = 1;
 
-  // Index split ids to apply the query on.
-  // This ids are resolved from the index_uri defined in the search_request.
-  repeated SplitIdAndFooterOffsets split_offsets = 4;
+  // List of leaf requests, one per index.
+  repeated LeafRequestRef leaf_requests = 2;
 
-  // `DocMapper` as json serialized trait.
-  string doc_mapper = 5;
+  // List of unique doc_mappers serialized as json.
+  repeated string doc_mappers = 3;
 
+  // List of index uris
   // Index URI. The index URI defines the location of the storage that contains the
   // split files.
-  string index_uri = 6;
+  repeated string index_uris = 4;
+}
 
+/// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
+message LeafRequestRef {
+  // The ordinal of the doc_mapper in `LeafSearchRequest.doc_mappers`
+  uint32 doc_mapper_ord = 1;
+  
+  // The ordinal of the index uri in LeafSearchRequest.index_uris
+  uint32 index_uri_ord = 2;
+
+  // Index split ids to apply the query on.
+  // This ids are resolved from the index_uri defined in the search_request.
+  repeated SplitIdAndFooterOffsets split_offsets = 3;
 }
 
 message SplitIdAndFooterOffsets {

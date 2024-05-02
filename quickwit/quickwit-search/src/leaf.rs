@@ -20,6 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Bound;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
@@ -28,13 +29,14 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
-    CountHits, LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue,
-    SplitIdAndFooterOffsets, SplitSearchError,
+    CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest, SortOrder,
+    SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery, TermQuery};
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
+    StorageResolver,
 };
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
@@ -43,7 +45,7 @@ use tantivy::{DateTime, Index, ReloadPolicy, Searcher, Term};
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
-use crate::service::SearcherContext;
+use crate::service::{deserialize_doc_mapper, SearcherContext};
 use crate::SearchError;
 
 #[instrument(skip_all)]
@@ -836,6 +838,106 @@ impl CanSplitDoBetter {
 /// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
 /// charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
+#[instrument(skip_all, fields(index = ?leaf_search_request.search_request.as_ref().unwrap().index_id_patterns))]
+pub async fn multi_leaf_search(
+    searcher_context: Arc<SearcherContext>,
+    leaf_search_request: LeafSearchRequest,
+    storage_resolver: &StorageResolver,
+) -> Result<LeafSearchResponse, SearchError> {
+    let search_request: Arc<SearchRequest> = leaf_search_request
+        .search_request
+        .ok_or_else(|| SearchError::Internal("no search request".to_string()))?
+        .into();
+
+    let doc_mappers: Vec<Arc<dyn DocMapper>> = leaf_search_request
+        .doc_mappers
+        .iter()
+        .map(|doc_mapper| deserialize_doc_mapper(doc_mapper))
+        .collect::<crate::Result<_>>()?;
+    // Creates a collector which merges responses into one
+    let merge_collector =
+        make_merge_collector(&search_request, &searcher_context.get_aggregation_limits())?;
+    let incremental_merge_collector = IncrementalCollector::new(merge_collector);
+    let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
+    // TODO: to avoid lockstep, we should pull up the future creation over the list of split ids
+    // and have the semaphore on this level.
+    // This will lower resource consumption due to less in-flight futures and avoid contention.
+    let mut leaf_request_tasks = Vec::new();
+
+    for leaf_search_request_ref in leaf_search_request.leaf_requests.into_iter() {
+        let index_uri = quickwit_common::uri::Uri::from_str(
+            &leaf_search_request.index_uris[leaf_search_request_ref.index_uri_ord as usize],
+        )?;
+        let doc_mapper = doc_mappers[leaf_search_request_ref.doc_mapper_ord as usize].clone();
+
+        let leaf_request_future = resolve_storage_and_leaf_search(
+            searcher_context.clone(),
+            search_request.clone(),
+            index_uri,
+            storage_resolver,
+            leaf_search_request_ref.split_offsets,
+            doc_mapper,
+            incremental_merge_collector.clone(),
+        );
+        leaf_request_tasks.push(leaf_request_future);
+    }
+
+    try_join_all(leaf_request_tasks).await?;
+
+    // we can't use unwrap_or_clone because mutexes aren't Clone
+    let incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector) {
+        Ok(filter_merger) => filter_merger.into_inner().unwrap(),
+        Err(filter_merger) => filter_merger.lock().unwrap().clone(),
+    };
+
+    crate::run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
+        .instrument(info_span!("incremental_merge_finalize"))
+        .await
+        .context("failed to merge split search responses")?
+}
+
+/// `leaf` step of search.
+///
+/// The leaf search collects all kind of information, and returns a set of
+/// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
+/// charge to consolidate, identify the actual final top hits to display, and
+/// fetch the actual documents to convert the partial hits into actual Hits.
+#[instrument(skip_all, fields(index = ?search_request.index_id_patterns))]
+pub async fn resolve_storage_and_leaf_search(
+    searcher_context: Arc<SearcherContext>,
+    search_request: Arc<SearchRequest>,
+    index_uri: quickwit_common::uri::Uri,
+    storage_resolver: &StorageResolver,
+    splits: Vec<SplitIdAndFooterOffsets>,
+    doc_mapper: Arc<dyn DocMapper>,
+    incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
+) -> Result<(), SearchError> {
+    //let index_uri = quickwit_common::uri::Uri::from_str(
+    //&index_storage_uri
+    //&leaf_search_request.index_uris[leaf_search_request_ref.index_uri_ord as usize],
+    //)?;
+    let storage = storage_resolver.resolve(&index_uri).await?;
+    //let doc_mapper = doc_mappers[leaf_search_request_ref.doc_mapper_ord as usize].clone();
+
+    leaf_search(
+        searcher_context.clone(),
+        search_request.clone(),
+        storage.clone(),
+        splits,
+        doc_mapper,
+        incremental_merge_collector.clone(),
+    )
+    .await?;
+
+    Ok(())
+}
+
+/// `leaf` step of search.
+///
+/// The leaf search collects all kind of information, and returns a set of
+/// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
+/// charge to consolidate, identify the actual final top hits to display, and
+/// fetch the actual documents to convert the partial hits into actual Hits.
 #[instrument(skip_all, fields(index = ?request.index_id_patterns))]
 pub async fn leaf_search(
     searcher_context: Arc<SearcherContext>,
@@ -843,7 +945,8 @@ pub async fn leaf_search(
     index_storage: Arc<dyn Storage>,
     mut splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
-) -> Result<LeafSearchResponse, SearchError> {
+    incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
+) -> Result<(), SearchError> {
     info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(&splits, 5));
 
     let split_filter = CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
@@ -855,13 +958,7 @@ pub async fn leaf_search(
         || (request.aggregation_request.is_some()
             && !matches!(split_filter, CanSplitDoBetter::FindTraceIdsAggregation(_)));
 
-    // Creates a collector which merges responses into one
-    let merge_collector =
-        make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
-    let incremental_merge_collector = IncrementalCollector::new(merge_collector);
-
     let split_filter = Arc::new(Mutex::new(split_filter));
-    let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
 
     let mut leaf_search_single_split_futures: Vec<_> = Vec::with_capacity(splits.len());
 
@@ -926,7 +1023,9 @@ pub async fn leaf_search(
         .run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
         .instrument(info_span!("incremental_merge_finalize"))
         .await
-        .context("failed to merge split search responses")?
+        .context("failed to merge split search responses")??;
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
