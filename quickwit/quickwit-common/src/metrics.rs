@@ -199,6 +199,12 @@ impl GaugeGuard {
         self.delta
     }
 
+    pub fn set_delta(&mut self, new_delta: i64) {
+        let diff_delta = new_delta - self.delta;
+        self.delta = diff_delta;
+        self.gauge.add(diff_delta);
+    }
+
     pub fn add(&mut self, delta: i64) {
         self.gauge.add(delta);
         self.delta += delta;
