@@ -55,6 +55,10 @@ export function QueryEditor(props: SearchComponentProps) {
         runSearchRef.current(searchRequestRef.current);
       },
     })
+    const resize = () => {
+      editor.layout({width: Math.max(window.innerWidth - (260+180+2*24), 200), height: 84});
+    }
+    window.addEventListener('resize', resize);
   }
 
   useEffect(() => {
