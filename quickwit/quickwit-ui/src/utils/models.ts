@@ -86,6 +86,28 @@ export type SearchRequest = {
   endTimestamp: number | null;
   maxHits: number;
   sortByField: SortByField | null;
+  aggregation: boolean;
+  aggregationConfig: Aggregation;
+}
+
+export type Aggregation = {
+  metric: Metric | null;
+  term: TermAgg | null;
+  histogram: HistogramAgg | null;
+}
+
+export type Metric = {
+  type: string;
+  field: string;
+}
+
+export type TermAgg = {
+  field: string;
+  size: number;
+}
+
+export type HistogramAgg = {
+  interval: string;
 }
 
 export const EMPTY_SEARCH_REQUEST: SearchRequest = {
@@ -95,6 +117,12 @@ export const EMPTY_SEARCH_REQUEST: SearchRequest = {
   endTimestamp: null,
   maxHits: 100,
   sortByField: null,
+  aggregation: false,
+  aggregationConfig: {
+    metric: null,
+    term: null,
+    histogram: null,
+  },
 }
 
 export type ResponseError = {

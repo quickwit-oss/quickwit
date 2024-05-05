@@ -113,7 +113,7 @@ export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
   const id = open ? "time-range-select-popover" : undefined;
 
   return (
-    <div>
+    <Box sx={{padding: '10px'}}>
       <Button
         variant="contained"
         disableElevation
@@ -179,7 +179,7 @@ export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
           </Box>
         </Box>
       </Popover>
-    </div>
+    </Box>
   );
 }
 
