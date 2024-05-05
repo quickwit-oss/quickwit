@@ -24,6 +24,7 @@ import { IndexSideBar } from '../components/IndexSideBar';
 import { ViewUnderAppBarBox, FullBoxContainer } from '../components/LayoutUtils';
 import { QueryEditorActionBar } from '../components/QueryActionBar';
 import { QueryEditor } from '../components/QueryEditor/QueryEditor';
+import { AggregationEditor } from '../components/QueryEditor/AggregationEditor';
 import SearchResult from '../components/SearchResult/SearchResult';
 import { useLocalStorage } from '../providers/LocalStorageProvider';
 import { Client } from '../services/client';
@@ -135,6 +136,12 @@ function SearchView() {
               index={index}
               queryRunning={queryRunning} />
             <QueryEditor
+              searchRequest={searchRequest}
+              onSearchRequestUpdate={onSearchRequestUpdate}
+              runSearch={runSearch}
+              index={index}
+              queryRunning={queryRunning} />
+            <AggregationEditor
               searchRequest={searchRequest}
               onSearchRequestUpdate={onSearchRequestUpdate}
               runSearch={runSearch}

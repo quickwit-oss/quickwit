@@ -12,6 +12,7 @@
     "@mui/lab": "^5.0.0-alpha.114",
     "@mui/material": "^5.11.2",
     "@mui/system": "^5.11.2",
+    "@mui/x-charts": "^7.3.2",
     "@mui/x-date-pickers": "^5.0.12",
     "@types/jest": "^29.5.6",
     "@types/node": "^20.8.7",
