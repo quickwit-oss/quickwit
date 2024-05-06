@@ -560,15 +560,30 @@ fn remove_redundant_timestamp_range(
                 bound.into_timestamp_nanos().into()
             }),
         };
-        if let QueryAst::Bool(bool_query) = &mut new_ast {
-            bool_query.filter.push(range.into());
+        new_ast = if let QueryAst::Bool(mut bool_query) = new_ast {
+            if bool_query.must.is_empty()
+                && bool_query.filter.is_empty()
+                && !bool_query.should.is_empty()
+            {
+                // we can't simply add a filter if we have some should but no must/filter. We must
+                // add a new layer of bool query
+                BoolQuery {
+                    must: vec![bool_query.into()],
+                    filter: vec![range.into()],
+                    ..Default::default()
+                }
+                .into()
+            } else {
+                bool_query.filter.push(range.into());
+                QueryAst::Bool(bool_query)
+            }
         } else {
-            new_ast = BoolQuery {
+            BoolQuery {
                 must: vec![new_ast],
                 filter: vec![range.into()],
                 ..Default::default()
             }
-            .into();
+            .into()
         }
     }
 
