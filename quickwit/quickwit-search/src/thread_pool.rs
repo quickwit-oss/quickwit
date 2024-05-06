@@ -18,22 +18,39 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::sync::Arc;
 
 use once_cell::sync::OnceCell;
 use quickwit_common::metrics::GaugeGuard;
+use tantivy::Executor;
 use tracing::error;
 
+static SEARCH_THREAD_POOL: OnceCell<Arc<Executor>> = OnceCell::new();
+
+fn build_executor() -> Arc<Executor> {
+    let rayon_pool = rayon::ThreadPoolBuilder::new()
+        .thread_name(|thread_id| format!("quickwit-search-{thread_id}"))
+        .panic_handler(|_my_panic| {
+            error!("task running in the quickwit search pool panicked");
+        })
+        .build()
+        .expect("Failed to spawn the spawning pool");
+    Arc::new(Executor::ThreadPool(rayon_pool))
+}
+
 fn search_thread_pool() -> &'static rayon::ThreadPool {
-    static SEARCH_THREAD_POOL: OnceCell<rayon::ThreadPool> = OnceCell::new();
-    SEARCH_THREAD_POOL.get_or_init(|| {
-        rayon::ThreadPoolBuilder::new()
-            .thread_name(|thread_id| format!("quickwit-search-{thread_id}"))
-            .panic_handler(|_my_panic| {
-                error!("task running in the quickwit search pool panicked");
-            })
-            .build()
-            .expect("Failed to spawn the spawning pool")
-    })
+    let executor_ptr = Arc::as_ptr(SEARCH_THREAD_POOL.get_or_init(build_executor));
+    // ptr is valid for as long as the Arc has strong count, and there is one reference in a
+    // global: ptr is valid for 'static.
+    let executor: &'static Executor = unsafe { &*executor_ptr };
+    match executor {
+        Executor::ThreadPool(pool) => pool,
+        Executor::SingleThread => unreachable!(),
+    }
+}
+
+pub(crate) fn search_executor() -> Arc<Executor> {
+    SEARCH_THREAD_POOL.get_or_init(build_executor).clone()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
