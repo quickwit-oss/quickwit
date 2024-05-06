@@ -83,26 +83,39 @@ pub fn split_file(split_id: impl Display) -> String {
 pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {
     if let Ok(value_str) = std::env::var(key) {
         if let Ok(value) = T::from_str(&value_str) {
-            info!(value=?value, "setting `{}` from environment", key);
+            info!(value=?value, "using environment variable `{key}` value");
             return value;
         } else {
-            error!(value_str=%value_str, "failed to parse `{}` from environment", key);
+            error!(value=%value_str, "failed to parse environment variable `{key}` value");
         }
     }
-    info!(value=?default_value, "setting `{}` from default", key);
+    info!(value=?default_value, "using environment variable `{key}` default value");
+    default_value
+}
+
+pub fn get_bool_from_env(key: &str, default_value: bool) -> bool {
+    if let Ok(value_str) = std::env::var(key) {
+        if let Some(value) = parse_bool_lenient(&value_str) {
+            info!(value=%value, "using environment variable `{key}` value");
+            return value;
+        } else {
+            error!(value=%value_str, "failed to parse environment variable `{key}` value");
+        }
+    }
+    info!(value=?default_value, "using environment variable `{key}` default value");
     default_value
 }
 
 pub fn get_from_env_opt<T: FromStr + Debug>(key: &str) -> Option<T> {
     let Some(value_str) = std::env::var(key).ok() else {
-        info!("{key} is not set");
+        info!("environment variable `{key}` is not set");
         return None;
     };
     if let Ok(value) = T::from_str(&value_str) {
-        info!(value=?value, "setting `{}` from environment", key);
+        info!(value=?value, "using environment variable `{key}` value");
         Some(value)
     } else {
-        error!(value_str=%value_str, "failed to parse `{}` from environment", key);
+        error!(value=%value_str, "failed to parse environment variable `{key}` value");
         None
     }
 }
@@ -269,6 +282,22 @@ where
         .unwrap()
 }
 
+pub fn parse_bool_lenient(bool_str: &str) -> Option<bool> {
+    let trimmed_bool_str = bool_str.trim();
+
+    for truthy_value in ["true", "yes", "1"] {
+        if trimmed_bool_str.eq_ignore_ascii_case(truthy_value) {
+            return Some(true);
+        }
+    }
+    for falsy_value in ["false", "no", "0"] {
+        if trimmed_bool_str.eq_ignore_ascii_case(falsy_value) {
+            return Some(false);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::ErrorKind;
@@ -342,5 +371,22 @@ mod tests {
         assert_eq!(div_ceil_u32(2, 3), 1);
         assert_eq!(div_ceil_u32(1, 3), 1);
         assert_eq!(div_ceil_u32(0, 3), 0);
+    }
+
+    #[test]
+    fn test_parse_bool_lenient() {
+        assert_eq!(parse_bool_lenient("true"), Some(true));
+        assert_eq!(parse_bool_lenient("TRUE"), Some(true));
+        assert_eq!(parse_bool_lenient("True"), Some(true));
+        assert_eq!(parse_bool_lenient("yes"), Some(true));
+        assert_eq!(parse_bool_lenient(" 1"), Some(true));
+
+        assert_eq!(parse_bool_lenient("false"), Some(false));
+        assert_eq!(parse_bool_lenient("FALSE"), Some(false));
+        assert_eq!(parse_bool_lenient("False"), Some(false));
+        assert_eq!(parse_bool_lenient("no"), Some(false));
+        assert_eq!(parse_bool_lenient("0 "), Some(false));
+
+        assert_eq!(parse_bool_lenient("foo"), None);
     }
 }

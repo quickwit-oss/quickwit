@@ -6521,6 +6521,7 @@ dependencies = [
  "hostname",
  "md5",
  "once_cell",
+ "quickwit-common",
  "reqwest",
  "serde",
  "serde_json",
