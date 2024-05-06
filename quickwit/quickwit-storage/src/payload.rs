@@ -21,7 +21,7 @@ use std::io;
 use std::ops::Range;
 
 use async_trait::async_trait;
-use aws_smithy_http::byte_stream::ByteStream;
+use aws_sdk_s3::primitives::ByteStream;
 use tantivy::directory::OwnedBytes;
 
 #[async_trait]

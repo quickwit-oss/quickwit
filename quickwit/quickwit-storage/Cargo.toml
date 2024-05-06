@@ -23,6 +23,7 @@ lru = { workspace = true }
 md5 = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
+pin-project = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
@@ -39,7 +40,7 @@ ulid = { workspace = true }
 aws-config = { workspace = true }
 aws-credential-types = { workspace = true }
 aws-sdk-s3 = { workspace = true }
-aws-smithy-http = { workspace = true }
+aws-smithy-types = { workspace = true }
 
 azure_core = { workspace = true, optional = true }
 azure_storage = { workspace = true, optional = true }
@@ -60,8 +61,8 @@ proptest = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 
-aws-sdk-s3 = { workspace = true, features = ["test-util"] }
-aws-smithy-client = { workspace = true, features = ["test-util"] }
+aws-sdk-s3 = { workspace = true }
+aws-smithy-runtime = { workspace = true, features = ["test-util"] }
 
 quickwit-common = { workspace = true, features = ["testsuite"] }
 
