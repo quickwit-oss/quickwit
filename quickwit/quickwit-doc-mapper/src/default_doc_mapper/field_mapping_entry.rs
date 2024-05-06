@@ -702,9 +702,9 @@ impl Default for QuickwitConcatenateOptions {
     }
 }
 
-impl From<QuickwitConcatenateOptions> for TextOptions {
+impl From<QuickwitConcatenateOptions> for JsonObjectOptions {
     fn from(quickwit_text_options: QuickwitConcatenateOptions) -> Self {
-        let mut text_options = TextOptions::default();
+        let mut text_options = JsonObjectOptions::default();
         let text_field_indexing = TextFieldIndexing::default()
             .set_index_option(quickwit_text_options.indexing_options.record)
             .set_fieldnorms(quickwit_text_options.indexing_options.fieldnorms)
