@@ -46,8 +46,8 @@ pub use cluster_config::ClusterConfig;
 // See #2048
 use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
 pub use index_config::{
-    build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig, IndexUpdate,
-    IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
+    build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig,
+    IndexConfigUpdate, IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -211,7 +211,7 @@ impl ConfigFormat {
                     serde_json::from_reader(StripComments::new(payload))?;
                 if let Some(version_value) = json_value.get_mut("version") {
                     if let Some(version_number) = version_value.as_u64() {
-                        warn!(version_value=?version_value, "`version` is supposed to be a string");
+                        warn!(version_value=?version_value, "`version` should be a string, not an integer");
                         *version_value = JsonValue::String(version_number.to_string());
                     }
                 }
@@ -224,7 +224,7 @@ impl ConfigFormat {
                     toml::from_str(payload_str).context("failed to parse TOML file")?;
                 if let Some(version_value) = toml_value.get_mut("version") {
                     if let Some(version_number) = version_value.as_integer() {
-                        warn!(version_value=?version_value, "`version` is supposed to be a string");
+                        warn!(version_value=?version_value, "`version` should be a string, not an integer");
                         *version_value = toml::Value::String(version_number.to_string());
                     }
                 }

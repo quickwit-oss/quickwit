@@ -41,7 +41,7 @@ use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_common::ServiceStream;
-use quickwit_config::{IndexTemplate, IndexUpdate};
+use quickwit_config::{IndexConfigUpdate, IndexTemplate};
 use quickwit_proto::metastore::{
     serde_utils, AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
@@ -461,15 +461,15 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: UpdateIndexRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
-        let update = request.deserialize_update()?;
+        let update = request.deserialize_index_config_update()?;
         let index_uid = request.index_uid();
 
         let metadata = self
             .mutate(index_uid, |index| {
                 let mutation_occured = match update {
-                    IndexUpdate::SearchSettings(s) => index.set_search_settings(s),
-                    IndexUpdate::RetentionPolicy(s) => index.set_retention_policy(s),
-                    IndexUpdate::IndexingSettings(s) => index.set_indexing_settings(s),
+                    IndexConfigUpdate::SearchSettings(s) => index.set_search_settings(s),
+                    IndexConfigUpdate::RetentionPolicy(s) => index.set_retention_policy(s),
+                    IndexConfigUpdate::IndexingSettings(s) => index.set_indexing_settings(s),
                 };
                 if mutation_occured {
                     Ok(MutationOccurred::Yes(index.metadata().clone()))

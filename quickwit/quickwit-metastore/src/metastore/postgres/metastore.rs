@@ -25,7 +25,7 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
 use quickwit_common::ServiceStream;
 use quickwit_config::{
-    validate_index_id_pattern, IndexTemplate, IndexTemplateId, IndexUpdate,
+    validate_index_id_pattern, IndexConfigUpdate, IndexTemplate, IndexTemplateId,
     PostgresMetastoreConfig, INGEST_V2_SOURCE_ID,
 };
 use quickwit_proto::ingest::{Shard, ShardState};
@@ -406,24 +406,24 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: UpdateIndexRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
-        let update = request.deserialize_update()?;
+        let update = request.deserialize_index_config_update()?;
         let index_uid: IndexUid = request.index_uid().clone();
         let updated_metadata = run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| match update
             {
-                IndexUpdate::SearchSettings(s)
+                IndexConfigUpdate::SearchSettings(s)
                     if index_metadata.index_config.search_settings != s =>
                 {
                     index_metadata.index_config.search_settings = s;
                     Ok(MutationOccurred::Yes(()))
                 }
-                IndexUpdate::IndexingSettings(s)
+                IndexConfigUpdate::IndexingSettings(s)
                     if index_metadata.index_config.indexing_settings != s =>
                 {
                     index_metadata.index_config.indexing_settings = s;
                     Ok(MutationOccurred::Yes(()))
                 }
-                IndexUpdate::RetentionPolicy(s)
+                IndexConfigUpdate::RetentionPolicy(s)
                     if index_metadata.index_config.retention_policy_opt != s =>
                 {
                     index_metadata.index_config.retention_policy_opt = s;

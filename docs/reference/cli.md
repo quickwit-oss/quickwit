@@ -212,7 +212,7 @@ quickwit index update search-settings
 
 | Option | Description |
 |-----------------|-------------|
-| `--config-file` | Location of a json or yaml file containing the new search settings. See https://quickwit.io/docs/configuration/index-config#search-settings. |
+| `--config-file` | Location of a JSON or YAML file containing the new search settings. See https://quickwit.io/docs/configuration/index-config#search-settings. |
 #### index update retention-policy
 
 Updates or disables the retention policy.  
@@ -230,8 +230,8 @@ quickwit index update retention-policy
 
 | Option | Description |
 |-----------------|-------------|
-| `--config-file` | Location of a json or yaml file containing the new retention policy. See https://quickwit.io/docs/configuration/index-config#retention-policy. |
-| `--disable` | Disables the retention policy. Old indexed data will not be cleaned up anymore. |
+| `--config-file` | Location of a JSON or YAML file containing the new retention policy. See https://quickwit.io/docs/configuration/index-config#retention-policy. |
+| `--disable` | Disables the retention policy and keeps indexed data forever. |
 #### index update indexing-settings
 
 Updates indexing settings.  
@@ -248,7 +248,7 @@ quickwit index update indexing-settings
 
 | Option | Description |
 |-----------------|-------------|
-| `--config-file` | Location of a json or yaml file containing the new indexing settings. See https://quickwit.io/docs/configuration/index-config#indexing-settings. |
+| `--config-file` | Location of a JSON or YAML file containing the new indexing settings. See https://quickwit.io/docs/configuration/index-config#indexing-settings. |
 ### index clear
 
 Clears an index: deletes all splits and resets checkpoint.  

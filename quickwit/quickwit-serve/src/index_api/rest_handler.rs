@@ -22,8 +22,8 @@ use std::sync::Arc;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    load_source_config_from_user_config, validate_index_id_pattern, ConfigFormat, IndexUpdate,
-    NodeConfig, SourceConfig, SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
+    load_source_config_from_user_config, validate_index_id_pattern, ConfigFormat,
+    IndexConfigUpdate, NodeConfig, SourceConfig, SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
@@ -549,7 +549,7 @@ pub fn pre_update_filter(
 
 async fn update_index(
     index_id: String,
-    request: IndexUpdate,
+    request: IndexConfigUpdate,
     mut metastore: MetastoreServiceClient,
 ) -> Result<IndexMetadata, IndexServiceError> {
     info!(index_id = %index_id, "update-index");
@@ -559,7 +559,7 @@ async fn update_index(
         .await?
         .deserialize_index_metadata()?
         .index_uid;
-    let update_request = UpdateIndexRequest::try_from_update(index_uid, &request)?;
+    let update_request = UpdateIndexRequest::try_from_index_config_update(index_uid, &request)?;
     let update_resp = metastore.update_index(update_request).await?;
     Ok(update_resp.deserialize_index_metadata()?)
 }
@@ -597,7 +597,12 @@ pub async fn update_index_indexing_settings(
     let update = config_format
         .parse(&config_bytes)
         .map_err(IndexServiceError::InvalidConfig)?;
-    update_index(index_id, IndexUpdate::IndexingSettings(update), metastore).await
+    update_index(
+        index_id,
+        IndexConfigUpdate::IndexingSettings(update),
+        metastore,
+    )
+    .await
 }
 
 pub fn update_search_settings_handler(
@@ -632,7 +637,12 @@ pub async fn update_index_search_settings(
     let update = config_format
         .parse(&config_bytes)
         .map_err(IndexServiceError::InvalidConfig)?;
-    update_index(index_id, IndexUpdate::SearchSettings(update), metastore).await
+    update_index(
+        index_id,
+        IndexConfigUpdate::SearchSettings(update),
+        metastore,
+    )
+    .await
 }
 
 pub fn update_retention_policy_handler(
@@ -669,7 +679,7 @@ pub async fn update_index_retention_policy(
         .map_err(IndexServiceError::InvalidConfig)?;
     update_index(
         index_id,
-        IndexUpdate::RetentionPolicy(Some(update)),
+        IndexConfigUpdate::RetentionPolicy(Some(update)),
         metastore,
     )
     .await
@@ -703,7 +713,12 @@ pub async fn delete_index_retention_policy(
     index_id: String,
     metastore: MetastoreServiceClient,
 ) -> Result<IndexMetadata, IndexServiceError> {
-    update_index(index_id, IndexUpdate::RetentionPolicy(None), metastore).await
+    update_index(
+        index_id,
+        IndexConfigUpdate::RetentionPolicy(None),
+        metastore,
+    )
+    .await
 }
 
 fn clear_index_handler(

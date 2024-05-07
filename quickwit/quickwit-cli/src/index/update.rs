@@ -44,7 +44,7 @@ pub fn build_index_update_command() -> Command {
                 .about("Updates search settings.")
                 .long_about("Updates search settings. The update is automatically picked up when the next query is executed.")
                 .args(&[
-                    arg!(--"config-file" <PATH> "Location of a json or yaml file containing the new search settings. See https://quickwit.io/docs/configuration/index-config#search-settings.")
+                    arg!(--"config-file" <PATH> "Location of a JSON or YAML file containing the new search settings. See https://quickwit.io/docs/configuration/index-config#search-settings.")
                         .required(true),
                 ]))
         .subcommand(
@@ -52,9 +52,9 @@ pub fn build_index_update_command() -> Command {
                 .about("Updates or disables the retention policy.")
                 .long_about("Updates or disables the retention policy. The update is automatically picked up by the janitor service on its next state refresh.")
                 .args(&[
-                    arg!(--"config-file" <PATH> "Location of a json or yaml file containing the new retention policy. See https://quickwit.io/docs/configuration/index-config#retention-policy.")
+                    arg!(--"config-file" <PATH> "Location of a JSON or YAML file containing the new retention policy. See https://quickwit.io/docs/configuration/index-config#retention-policy.")
                         .required(false),
-                    arg!(--disable "Disables the retention policy. Old indexed data will not be cleaned up anymore.")
+                    arg!(--disable "Disables the retention policy and keeps indexed data forever.")
                         .required(false),
                 ])
         )
@@ -63,7 +63,7 @@ pub fn build_index_update_command() -> Command {
                 .about("Updates indexing settings.")
                 .long_about("Updates indexing settings. The update is not automatically picked up by the indexer nodes, they need to be manually restarted.")
                 .args(&[
-                    arg!(--"config-file" <PATH> "Location of a json or yaml file containing the new indexing settings. See https://quickwit.io/docs/configuration/index-config#indexing-settings.")
+                    arg!(--"config-file" <PATH> "Location of a JSON or YAML file containing the new indexing settings. See https://quickwit.io/docs/configuration/index-config#indexing-settings.")
                         .required(true),
                 ])
 
@@ -173,14 +173,14 @@ async fn update_from_file(
     field: UpdateConfigField,
 ) -> anyhow::Result<()> {
     let storage_resolver = StorageResolver::unconfigured();
-    let content = load_file(&storage_resolver, config_file).await?;
+    let config_content = load_file(&storage_resolver, config_file).await?;
     client_args
         .client()
         .indexes()
         .update(
             index_id,
             field,
-            Bytes::from(content.as_slice().to_owned()),
+            Bytes::from(config_content.as_slice().to_owned()),
             ConfigFormat::sniff_from_uri(config_file)?,
         )
         .await?;

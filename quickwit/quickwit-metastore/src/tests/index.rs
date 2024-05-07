@@ -28,8 +28,8 @@
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::merge_policy_config::{MergePolicyConfig, StableLogMergePolicyConfig};
 use quickwit_config::{
-    IndexConfig, IndexUpdate, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
-    CLI_SOURCE_ID, INGEST_V2_SOURCE_ID,
+    IndexConfig, IndexConfigUpdate, IndexingSettings, RetentionPolicy, SearchSettings,
+    SourceConfig, CLI_SOURCE_ID, INGEST_V2_SOURCE_ID,
 };
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataRequest,
@@ -119,9 +119,9 @@ pub async fn test_metastore_update_retention_policy<
         new_retention_policy_opt.clone(),
         None,
     ] {
-        let index_update = UpdateIndexRequest::try_from_update(
+        let index_update = UpdateIndexRequest::try_from_index_config_update(
             index_uid.clone(),
-            &IndexUpdate::RetentionPolicy(loop_retention_policy_opt.clone()),
+            &IndexConfigUpdate::RetentionPolicy(loop_retention_policy_opt.clone()),
         )
         .unwrap();
         let response_metadata = metastore
@@ -160,9 +160,9 @@ pub async fn test_metastore_update_search_settings<
         vec!["body".to_owned(), "owner".to_owned()],
         vec![],
     ] {
-        let index_update = UpdateIndexRequest::try_from_update(
+        let index_update = UpdateIndexRequest::try_from_index_config_update(
             index_uid.clone(),
-            &IndexUpdate::SearchSettings(SearchSettings {
+            &IndexConfigUpdate::SearchSettings(SearchSettings {
                 default_search_fields: loop_search_settings.clone(),
             }),
         )
@@ -212,9 +212,9 @@ pub async fn test_metastore_update_indexing_settings<
             ..Default::default()
         }),
     ] {
-        let index_update = UpdateIndexRequest::try_from_update(
+        let index_update = UpdateIndexRequest::try_from_index_config_update(
             index_uid.clone(),
-            &IndexUpdate::IndexingSettings(IndexingSettings {
+            &IndexConfigUpdate::IndexingSettings(IndexingSettings {
                 merge_policy: loop_indexing_settings.clone(),
                 ..Default::default()
             }),

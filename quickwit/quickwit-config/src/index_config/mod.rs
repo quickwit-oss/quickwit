@@ -519,9 +519,9 @@ impl TestableForRegression for IndexConfig {
     }
 }
 
-/// Represents an update to one of the updatable index configuration field.
+/// Represents an update to one of the updatable index configuration attribute.
 #[derive(Clone, Debug)]
-pub enum IndexUpdate {
+pub enum IndexConfigUpdate {
     SearchSettings(SearchSettings),
     IndexingSettings(IndexingSettings),
     RetentionPolicy(Option<RetentionPolicy>),

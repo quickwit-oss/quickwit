@@ -318,8 +318,8 @@ PUT api/v1/indexes/<index id>/retention-policy
 ```
 
 These endpoints follows PUT semantics (not PATCH), which means that all the fields of the updated configuration are replaced by the values specified in the request. Values that are not specified will be reset to their defaults. The API accepts JSON with `content-type: application/json` and YAML `content-type: application/yaml`.
-- The search settings update is automatically picked up by the janitor service on its next state refresh.
-- The retention policy update is automatically picked up when the next query is executed.
+- The retention policy update is automatically picked up by the janitor service on its next state refresh.
+- The search settings update is automatically picked up by searcher nodes when the next query is executed.
 - The indexing settings update is not automatically picked up by the indexer nodes, they need to be manually restarted.
 
 #### PUT payloads
