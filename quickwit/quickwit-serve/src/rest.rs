@@ -132,6 +132,9 @@ pub(crate) async fn start_rest_server(
     let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
     let service = ServiceBuilder::new()
+        .concurrency_limit(20)
+        .load_shed()
+        .concurrency_limit(150)
         .layer(
             CompressionLayer::new()
                 .gzip(true)

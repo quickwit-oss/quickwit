@@ -23,7 +23,6 @@ use bytes::Bytes;
 use flate2::read::GzDecoder;
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use thiserror::Error;
-use tokio::task;
 use warp::reject::Reject;
 use warp::Filter;
 
@@ -37,7 +36,7 @@ use warp::Filter;
 async fn decompress_body(encoding: Option<String>, body: Bytes) -> Result<Bytes, warp::Rejection> {
     match encoding.as_deref() {
         Some("gzip" | "x-gzip") => {
-            let decompressed = task::spawn_blocking(move || {
+            let decompressed = quickwit_search::run_cpu_intensive(move || {
                 let mut decompressed = Vec::new();
                 let mut decoder = GzDecoder::new(body.as_ref());
                 decoder
@@ -50,7 +49,7 @@ async fn decompress_body(encoding: Option<String>, body: Bytes) -> Result<Bytes,
             Ok(decompressed)
         }
         Some("zstd") => {
-            let decompressed = task::spawn_blocking(move || {
+            let decompressed = quickwit_search::run_cpu_intensive(move || {
                 zstd::decode_all(body.as_ref())
                     .map(Bytes::from)
                     .map_err(|_| warp::reject::custom(CorruptedData))

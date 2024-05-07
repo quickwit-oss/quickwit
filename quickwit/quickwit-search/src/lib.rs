@@ -92,7 +92,7 @@ pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
-use crate::thread_pool::run_cpu_intensive;
+pub use crate::thread_pool::run_cpu_intensive;
 
 /// A pool of searcher clients identified by their gRPC socket address.
 pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;

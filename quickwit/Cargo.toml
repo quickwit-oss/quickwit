@@ -243,6 +243,7 @@ tower = { version = "0.4.13", features = [
   "load",
   "retry",
   "util",
+  "load-shed",
 ] }
 tower-http = { version = "0.4.0", features = ["compression-gzip", "cors"] }
 tracing = "0.1.37"
