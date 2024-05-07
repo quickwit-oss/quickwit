@@ -26,10 +26,9 @@ pub struct CreateIndexResponse {
 pub struct UpdateIndexRequest {
     #[prost(message, optional, tag = "1")]
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
-    #[prost(enumeration = "UpdatedIndexConfig", tag = "2")]
-    pub target_config: i32,
-    #[prost(string, optional, tag = "3")]
-    pub config_json: ::core::option::Option<::prost::alloc::string::String>,
+    /// JSON representation of the updated config field.
+    #[prost(string, tag = "2")]
+    pub updated_config_json: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

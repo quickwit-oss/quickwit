@@ -38,7 +38,6 @@ use quickwit_proto::metastore::{
     IndexMetadataRequest, IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsRequest,
     ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
     MetastoreServiceStream, PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
-    UpdatedIndexConfig,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use time::OffsetDateTime;
@@ -182,14 +181,14 @@ impl CreateIndexResponseExt for CreateIndexResponse {
 
 /// Helper trait to build a [`UpdateIndexRequest`] and deserialize its payload.
 pub trait UpdateIndexRequestExt {
-    /// Creates a new [`UpdateIndexRequest`] from an [`IndexUpdate`].
+    /// Creates a new [`UpdateIndexRequest`] from an [`IndexConfigUpdate`].
     fn try_from_index_config_update(
         index_uid: impl Into<IndexUid>,
         update: &IndexConfigUpdate,
     ) -> MetastoreResult<UpdateIndexRequest>;
 
     /// Deserializes the `config_json` field of an [`UpdateIndexRequest`] into
-    /// the appropriate variant of `IndexUpdate`.
+    /// the appropriate variant of `IndexConfigUpdate`.
     fn deserialize_index_config_update(&self) -> MetastoreResult<IndexConfigUpdate>;
 }
 
@@ -199,61 +198,14 @@ impl UpdateIndexRequestExt for UpdateIndexRequest {
         update: &IndexConfigUpdate,
     ) -> MetastoreResult<UpdateIndexRequest> {
         let index_uid = Some(index_uid.into());
-        let update_request = match update {
-            IndexConfigUpdate::IndexingSettings(s) => UpdateIndexRequest {
-                index_uid,
-                target_config: UpdatedIndexConfig::IndexingSettings.into(),
-                config_json: Some(serde_utils::to_json_str(s)?),
-            },
-            IndexConfigUpdate::SearchSettings(s) => UpdateIndexRequest {
-                index_uid,
-                target_config: UpdatedIndexConfig::SearchSettings.into(),
-                config_json: Some(serde_utils::to_json_str(s)?),
-            },
-            IndexConfigUpdate::RetentionPolicy(s) => UpdateIndexRequest {
-                index_uid,
-                target_config: UpdatedIndexConfig::RetentionPolicy.into(),
-                config_json: s.as_ref().map(serde_utils::to_json_str).transpose()?,
-            },
-        };
-
-        Ok(update_request)
+        Ok(UpdateIndexRequest {
+            index_uid,
+            updated_config_json: serde_utils::to_json_str(update)?,
+        })
     }
 
     fn deserialize_index_config_update(&self) -> MetastoreResult<IndexConfigUpdate> {
-        let config_ref_opt = self.config_json.as_ref();
-        match self.target_config {
-            x if x == UpdatedIndexConfig::IndexingSettings as i32 => {
-                let indexing_settings = config_ref_opt
-                    .map(|json| serde_utils::from_json_str(json))
-                    .transpose()?
-                    .ok_or(MetastoreError::JsonDeserializeError {
-                        struct_name: "IndexingSettings".to_owned(),
-                        message: "Should not be empty".to_owned(),
-                    })?;
-                Ok(IndexConfigUpdate::IndexingSettings(indexing_settings))
-            }
-            x if x == UpdatedIndexConfig::SearchSettings as i32 => {
-                let search_settings = config_ref_opt
-                    .map(|json| serde_utils::from_json_str(json))
-                    .transpose()?
-                    .ok_or(MetastoreError::JsonDeserializeError {
-                        struct_name: "IndexingSettings".to_owned(),
-                        message: "Should not be empty".to_owned(),
-                    })?;
-                Ok(IndexConfigUpdate::SearchSettings(search_settings))
-            }
-            x if x == UpdatedIndexConfig::RetentionPolicy as i32 => {
-                let retention_policy = config_ref_opt
-                    .map(|json| serde_utils::from_json_str(json))
-                    .transpose()?;
-                Ok(IndexConfigUpdate::RetentionPolicy(retention_policy))
-            }
-            _ => Err(MetastoreError::JsonDeserializeError {
-                struct_name: "IndexUpdate".to_owned(),
-                message: "Unexpected target config".to_owned(),
-            }),
-        }
+        serde_utils::from_json_str(&self.updated_config_json)
     }
 }
 

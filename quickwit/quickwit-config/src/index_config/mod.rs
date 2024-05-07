@@ -520,7 +520,8 @@ impl TestableForRegression for IndexConfig {
 }
 
 /// Represents an update to one of the updatable index configuration attribute.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "field", content = "config")]
 pub enum IndexConfigUpdate {
     SearchSettings(SearchSettings),
     IndexingSettings(IndexingSettings),

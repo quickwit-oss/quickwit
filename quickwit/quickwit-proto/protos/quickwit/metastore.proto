@@ -210,8 +210,8 @@ enum UpdatedIndexConfig {
 
 message UpdateIndexRequest {
   quickwit.common.IndexUid index_uid = 1;
-  UpdatedIndexConfig target_config = 2; 
-  optional string config_json = 3;
+  // JSON representation of the updated config field.
+  string updated_config_json = 2;
 }
 
 message ListIndexesMetadataRequest {
