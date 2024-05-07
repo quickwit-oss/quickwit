@@ -19,6 +19,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use hyper::http::HeaderValue;
 use hyper::{http, Method, StatusCode};
@@ -132,9 +133,10 @@ pub(crate) async fn start_rest_server(
     let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
     let service = ServiceBuilder::new()
-        .concurrency_limit(20)
+        .timeout(Duration::from_millis(500)) // TO NOT MERGE THIS, THIS IS JUST FOR A TEST.
+        .concurrency_limit(quickwit_common::get_from_env("QW_REST_CONCURRENCY_LIMIT", 5))
         .load_shed()
-        .concurrency_limit(150)
+        .concurrency_limit(quickwit_common::get_from_env("QW_REST_LOAD_SHED_LIMIT", 30))
         .layer(
             CompressionLayer::new()
                 .gzip(true)
