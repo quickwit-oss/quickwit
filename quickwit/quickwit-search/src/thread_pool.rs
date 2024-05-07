@@ -38,17 +38,6 @@ fn build_executor() -> Arc<Executor> {
     Arc::new(Executor::ThreadPool(rayon_pool))
 }
 
-fn search_thread_pool() -> &'static rayon::ThreadPool {
-    let executor_ptr = Arc::as_ptr(SEARCH_THREAD_POOL.get_or_init(build_executor));
-    // ptr is valid for as long as the Arc has strong count, and there is one reference in a
-    // global: ptr is valid for 'static.
-    let executor: &'static Executor = unsafe { &*executor_ptr };
-    match executor {
-        Executor::ThreadPool(pool) => pool,
-        Executor::SingleThread => unreachable!(),
-    }
-}
-
 pub(crate) fn search_executor() -> Arc<Executor> {
     SEARCH_THREAD_POOL.get_or_init(build_executor).clone()
 }
@@ -85,20 +74,17 @@ where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
 {
-    let (tx, rx) = tokio::sync::oneshot::channel();
     let span = tracing::Span::current();
-    search_thread_pool().spawn(move || {
-        let _guard = span.enter();
-        let mut active_thread_guard =
-            GaugeGuard::from_gauge(&crate::SEARCH_METRICS.active_search_threads_count);
-        active_thread_guard.add(1i64);
-        if tx.is_closed() {
-            return;
-        }
-        let task_result = cpu_heavy_task();
-        let _ = tx.send(task_result);
-    });
-    rx.await.map_err(|_| Panicked)
+    search_executor()
+        .spawn_blocking(move || {
+            let _guard = span.enter();
+            let mut active_thread_guard =
+                GaugeGuard::from_gauge(&crate::SEARCH_METRICS.active_search_threads_count);
+            active_thread_guard.add(1i64);
+            cpu_heavy_task()
+        })
+        .await
+        .map_err(|_| Panicked)
 }
 
 #[cfg(test)]
