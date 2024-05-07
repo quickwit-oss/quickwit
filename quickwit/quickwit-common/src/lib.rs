@@ -173,6 +173,10 @@ pub const fn div_ceil(lhs: i64, rhs: i64) -> i64 {
     }
 }
 
+pub fn num_cpus() -> usize {
+    std::thread::available_parallelism().unwrap().get()
+}
+
 // The following are helpers to build named tasks.
 //
 // Named tasks require the tokio feature `tracing` to be enabled.

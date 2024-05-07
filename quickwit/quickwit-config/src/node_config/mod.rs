@@ -138,11 +138,12 @@ impl IndexerConfig {
     }
 
     pub fn default_merge_concurrency() -> NonZeroUsize {
-        NonZeroUsize::new(num_cpus::get() * 2 / 3).unwrap_or(NonZeroUsize::new(1).unwrap())
+        NonZeroUsize::new(quickwit_common::num_cpus() * 2 / 3)
+            .unwrap_or(NonZeroUsize::new(1).unwrap())
     }
 
     fn default_cpu_capacity() -> CpuCapacity {
-        CpuCapacity::one_cpu_thread() * (num_cpus::get() as u32)
+        CpuCapacity::one_cpu_thread() * (quickwit_common::num_cpus() as u32)
     }
 
     #[cfg(any(test, feature = "testsuite"))]
