@@ -6327,6 +6327,7 @@ dependencies = [
  "quickwit-search",
  "quickwit-storage",
  "quickwit-telemetry",
+ "rayon",
  "regex",
  "rust-embed",
  "serde",
