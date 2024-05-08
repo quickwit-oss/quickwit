@@ -265,7 +265,7 @@ pub(super) struct PgShard {
 impl From<PgShard> for Shard {
     fn from(pg_shard: PgShard) -> Self {
         Shard {
-            index_uid: pg_shard.index_uid.into(),
+            index_uid: Some(pg_shard.index_uid),
             source_id: pg_shard.source_id,
             shard_id: Some(pg_shard.shard_id),
             shard_state: ShardState::from(pg_shard.shard_state) as i32,
