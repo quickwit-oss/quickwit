@@ -142,6 +142,8 @@ pub enum ErrorCauseException {
     IllegalArgument,
     #[serde(rename = "index_not_found_exception")]
     IndexNotFound,
+    #[serde(rename = "timeout_exception")]
+    Timeout,
 }
 
 impl ErrorCauseException {
@@ -150,6 +152,7 @@ impl ErrorCauseException {
             Self::ActionRequestValidation => "action_request_validation_exception",
             Self::IllegalArgument => "illegal_argument_exception",
             Self::IndexNotFound => "index_not_found_exception",
+            Self::Timeout => "timeout_exception",
         }
     }
 }
