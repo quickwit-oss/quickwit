@@ -173,8 +173,16 @@ pub const fn div_ceil(lhs: i64, rhs: i64) -> i64 {
     }
 }
 
+/// Return the number of vCPU/hyperthreads available.
+/// This number is usually not equal to the number of cpu cores
 pub fn num_cpus() -> usize {
-    std::thread::available_parallelism().unwrap().get()
+    match std::thread::available_parallelism() {
+        Ok(num_cpus) => num_cpus.get(),
+        Err(io_err) => {
+            error!(err=?io_err, "fail to detect the amount of threads available. arbitrarily returning 2");
+            2
+        }
+    }
 }
 
 // The following are helpers to build named tasks.
