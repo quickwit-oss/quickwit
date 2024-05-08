@@ -452,14 +452,6 @@ message LeafSearchResponse {
 
   // postcard serialized intermediate aggregation_result.
   optional bytes intermediate_aggregation_result = 6;
-  // The type of the aggregation in intermediate_aggregation_result
-  AggregationType aggregation_type = 7;
-}
-
-enum AggregationType {
-  NONE = 0;
-  TANTIVY_AGGREGATION = 1;
-  FIND_TRACE_IDS = 2;
 }
 
 message SnippetRequest {

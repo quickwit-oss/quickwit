@@ -29,8 +29,8 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
-    AggregationType, CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest,
-    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
+    CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest, SortOrder,
+    SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery, TermQuery};
 use quickwit_query::tokenizers::TokenizerManager;
@@ -38,7 +38,6 @@ use quickwit_storage::{
     wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
     StorageResolver,
 };
-use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::AggregationLimits;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
@@ -47,144 +46,8 @@ use tantivy::{DateTime, Index, ReloadPolicy, Searcher, Term};
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
-use crate::find_trace_ids_collector::Span;
 use crate::service::{deserialize_doc_mapper, SearcherContext};
 use crate::SearchError;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct IntermediateLeafResult {
-    /// Total number of documents matched by the query.
-    pub num_hits: u64,
-    /// List of the best top-K candidates for the given leaf query.
-    pub partial_hits: Vec<PartialHit>,
-    /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so
-    /// there may be multiple.
-    pub failed_splits: Vec<SplitSearchError>,
-    /// Total number of splits the leaf(s) were in charge of.
-    /// num_attempted_splits = num_successful_splits + num_failed_splits.
-    pub num_attempted_splits: u64,
-    /// postcard serialized intermediate aggregation_result.
-    pub intermediate_aggregation_result: Option<IntermediateLeafAggregationResult>,
-}
-impl IntermediateLeafResult {
-    fn get_aggregation_type(&self) -> AggregationType {
-        match &self.intermediate_aggregation_result {
-            Some(agg) => agg.get_aggregation_type(),
-            None => AggregationType::None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum IntermediateLeafAggregationResult {
-    TantivyAggregation(IntermediateAggregationResults),
-    FindTraceIds(Vec<Span>),
-}
-
-impl IntermediateLeafAggregationResult {
-    fn get_aggregation_type(&self) -> AggregationType {
-        match &self {
-            IntermediateLeafAggregationResult::TantivyAggregation(_) => {
-                AggregationType::TantivyAggregation
-            }
-            IntermediateLeafAggregationResult::FindTraceIds(_) => AggregationType::FindTraceIds,
-        }
-    }
-}
-
-impl IntermediateLeafAggregationResult {
-    fn from_leaf_response(agg_type: AggregationType, data: &[u8]) -> Option<Self> {
-        match agg_type {
-            AggregationType::TantivyAggregation => {
-                let deserialized: IntermediateAggregationResults = postcard::from_bytes(data)
-                    .expect("Failed to deserialize IntermediateAggregationResults");
-                Some(IntermediateLeafAggregationResult::TantivyAggregation(
-                    deserialized,
-                ))
-            }
-            AggregationType::FindTraceIds => {
-                let deserialized: Vec<Span> =
-                    postcard::from_bytes(data).expect("Failed to deserialize Vec<Span>");
-                Some(IntermediateLeafAggregationResult::FindTraceIds(
-                    deserialized,
-                ))
-            }
-            _ => None,
-        }
-    }
-    pub fn into_tantivy_aggregation(self) -> Option<IntermediateAggregationResults> {
-        match self {
-            IntermediateLeafAggregationResult::TantivyAggregation(agg) => Some(agg),
-            _ => None,
-        }
-    }
-
-    pub fn into_find_trace_ids(self) -> Option<Vec<Span>> {
-        match self {
-            IntermediateLeafAggregationResult::FindTraceIds(agg) => Some(agg),
-            _ => None,
-        }
-    }
-}
-
-impl From<IntermediateLeafAggregationResult> for Vec<u8> {
-    fn from(value: IntermediateLeafAggregationResult) -> Self {
-        match value {
-            IntermediateLeafAggregationResult::TantivyAggregation(agg) => {
-                postcard::to_allocvec(&agg).expect("Collector fruit should be serializable.")
-            }
-            IntermediateLeafAggregationResult::FindTraceIds(agg) => {
-                postcard::to_allocvec(&agg).expect("Collector fruit should be serializable.")
-            }
-        }
-    }
-}
-
-impl From<IntermediateLeafResult> for LeafSearchResponse {
-    fn from(intermediate_leaf_result: IntermediateLeafResult) -> Self {
-        let aggregation_type = intermediate_leaf_result.get_aggregation_type() as i32;
-        let IntermediateLeafResult {
-            num_hits,
-            partial_hits,
-            failed_splits,
-            num_attempted_splits,
-            intermediate_aggregation_result,
-        } = intermediate_leaf_result;
-        Self {
-            num_hits,
-            partial_hits,
-            failed_splits,
-            num_attempted_splits,
-            intermediate_aggregation_result: intermediate_aggregation_result.map(Into::into),
-            aggregation_type,
-        }
-    }
-}
-
-impl From<LeafSearchResponse> for IntermediateLeafResult {
-    fn from(leaf_search_response: LeafSearchResponse) -> Self {
-        let LeafSearchResponse {
-            num_hits,
-            partial_hits,
-            failed_splits,
-            num_attempted_splits,
-            intermediate_aggregation_result,
-            aggregation_type,
-        } = leaf_search_response;
-        Self {
-            num_hits,
-            partial_hits,
-            failed_splits,
-            num_attempted_splits,
-            intermediate_aggregation_result: intermediate_aggregation_result.and_then(|res| {
-                IntermediateLeafAggregationResult::from_leaf_response(
-                    AggregationType::from_i32(aggregation_type).unwrap(),
-                    &res,
-                )
-            }),
-        }
-    }
-}
 
 #[instrument(skip_all)]
 async fn get_split_footer_from_cache_or_fetch(
@@ -474,7 +337,7 @@ async fn leaf_search_single_split(
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
     aggregations_limits: AggregationLimits,
-) -> crate::Result<IntermediateLeafResult> {
+) -> crate::Result<LeafSearchResponse> {
     rewrite_request(
         &mut search_request,
         &split,
@@ -484,7 +347,7 @@ async fn leaf_search_single_split(
         .leaf_search_cache
         .get(split.clone(), search_request.clone())
     {
-        return Ok(cached_answer.into());
+        return Ok(cached_answer);
     }
 
     let split_id = split.split_id.to_string();
@@ -528,11 +391,9 @@ async fn leaf_search_single_split(
             crate::SearchError::Internal(format!("leaf search panicked. split={split_id}"))
         })??;
 
-    searcher_context.leaf_search_cache.put(
-        split,
-        search_request,
-        leaf_search_response.clone().into(),
-    );
+    searcher_context
+        .leaf_search_cache
+        .put(split, search_request, leaf_search_response.clone());
     Ok(leaf_search_response)
 }
 
@@ -983,7 +844,7 @@ pub async fn multi_leaf_search(
     searcher_context: Arc<SearcherContext>,
     leaf_search_request: LeafSearchRequest,
     storage_resolver: &StorageResolver,
-) -> Result<IntermediateLeafResult, SearchError> {
+) -> Result<LeafSearchResponse, SearchError> {
     let search_request: Arc<SearchRequest> = leaf_search_request
         .search_request
         .ok_or_else(|| SearchError::Internal("no search request".to_string()))?
@@ -1055,7 +916,12 @@ pub async fn resolve_storage_and_leaf_search(
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
     aggregations_limits: AggregationLimits,
 ) -> Result<(), SearchError> {
+    //let index_uri = quickwit_common::uri::Uri::from_str(
+    //&index_storage_uri
+    //&leaf_search_request.index_uris[leaf_search_request_ref.index_uri_ord as usize],
+    //)?;
     let storage = storage_resolver.resolve(&index_uri).await?;
+    //let doc_mapper = doc_mappers[leaf_search_request_ref.doc_mapper_ord as usize].clone();
 
     leaf_search(
         searcher_context.clone(),

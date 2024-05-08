@@ -205,7 +205,7 @@ impl SearchService for SearchServiceImpl {
         )
         .await?;
 
-        Ok(leaf_search_response.into())
+        Ok(leaf_search_response)
     }
 
     async fn fetch_docs(

@@ -25,7 +25,8 @@ use itertools::Itertools;
 use quickwit_common::binary_heap::{SortKeyMapper, TopK};
 use quickwit_doc_mapper::WarmupInfo;
 use quickwit_proto::search::{
-    PartialHit, SearchRequest, SortByValue, SortOrder, SortValue, SplitSearchError,
+    LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortOrder, SortValue,
+    SplitSearchError,
 };
 use quickwit_proto::types::SplitId;
 use serde::Deserialize;
@@ -38,7 +39,6 @@ use tantivy::fastfield::Column;
 use tantivy::{DateTime, DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector, Span};
-use crate::leaf::{IntermediateLeafAggregationResult, IntermediateLeafResult};
 use crate::top_k_collector::{specialized_top_k_segment_collector, QuickwitSegmentTopKCollector};
 use crate::GlobalDocAddress;
 
@@ -526,7 +526,7 @@ impl SegmentPartialHit {
 }
 
 impl SegmentCollector for QuickwitSegmentCollector {
-    type Fruit = tantivy::Result<IntermediateLeafResult>;
+    type Fruit = tantivy::Result<LeafSearchResponse>;
 
     #[inline]
     fn collect_block(&mut self, filtered_docs: &[DocId]) {
@@ -575,15 +575,18 @@ impl SegmentCollector for QuickwitSegmentCollector {
         let intermediate_aggregation_result = match self.aggregation {
             Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
                 let fruit: Vec<Span> = collector.harvest();
-                Some(IntermediateLeafAggregationResult::FindTraceIds(fruit))
+                let serialized =
+                    postcard::to_allocvec(&fruit).expect("Collector fruit should be serializable.");
+                Some(serialized)
             }
             Some(AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector)) => {
-                let fruit: IntermediateAggregationResults = collector.harvest()?;
-                Some(IntermediateLeafAggregationResult::TantivyAggregation(fruit))
+                let serialized = postcard::to_allocvec(&collector.harvest()?)
+                    .expect("Collector fruit should be serializable.");
+                Some(serialized)
             }
             None => None,
         };
-        Ok(IntermediateLeafResult {
+        Ok(LeafSearchResponse {
             intermediate_aggregation_result,
             num_hits: self.num_hits,
             partial_hits,
@@ -631,31 +634,26 @@ impl QuickwitAggregations {
 #[derive(Clone)]
 enum QuickwitIncrementalAggregations {
     FindTraceIdsAggregation(FindTraceIdsCollector, Vec<Vec<Span>>),
-    TantivyAggregations(Aggregations, Vec<IntermediateAggregationResults>),
+    TantivyAggregations(Aggregations, Vec<Vec<u8>>),
     NoAggregation,
 }
 
 impl QuickwitIncrementalAggregations {
-    fn add(
-        &mut self,
-        intermediate_result: IntermediateLeafAggregationResult,
-    ) -> tantivy::Result<()> {
+    fn add(&mut self, intermediate_result: Vec<u8>) -> tantivy::Result<()> {
         match self {
-            QuickwitIncrementalAggregations::FindTraceIdsAggregation(_, aggs) => {
-                aggs.push(
-                    intermediate_result
-                        .into_find_trace_ids()
-                        .expect("unexpected agg type, expected trace id agg"),
-                );
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, ref mut state) => {
+                let fruits: Vec<Span> =
+                    postcard::from_bytes(&intermediate_result).map_err(map_error)?;
+                state.push(fruits);
+                if state.iter().map(Vec::len).sum::<usize>() >= collector.num_traces {
+                    let new_state = collector.merge_fruits(std::mem::take(state))?;
+                    state.push(new_state);
+                }
             }
-            QuickwitIncrementalAggregations::TantivyAggregations(_, spans) => {
-                spans.push(
-                    intermediate_result
-                        .into_tantivy_aggregation()
-                        .expect("unexpected agg type, expected tantivy agg"),
-                );
+            QuickwitIncrementalAggregations::TantivyAggregations(_, state) => {
+                state.push(intermediate_result);
             }
-            QuickwitIncrementalAggregations::NoAggregation => {}
+            QuickwitIncrementalAggregations::NoAggregation => (),
         }
         Ok(())
     }
@@ -686,22 +684,21 @@ impl QuickwitIncrementalAggregations {
         }
     }
 
-    fn finalize(self) -> tantivy::Result<Option<IntermediateLeafAggregationResult>> {
+    fn finalize(self) -> tantivy::Result<Option<Vec<u8>>> {
         match self {
-            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, state) => {
-                merge_intermediate_aggregation_result(
-                    &Some(QuickwitAggregations::FindTraceIdsAggregation(collector)),
-                    state
-                        .into_iter()
-                        .map(IntermediateLeafAggregationResult::FindTraceIds),
-                )
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, mut state) => {
+                let merged_fruit = if state.len() > 1 {
+                    collector.merge_fruits(state)?
+                } else {
+                    state.pop().unwrap_or_default()
+                };
+                let serialized = postcard::to_allocvec(&merged_fruit).map_err(map_error)?;
+                Ok(Some(serialized))
             }
             QuickwitIncrementalAggregations::TantivyAggregations(aggregation, state) => {
                 merge_intermediate_aggregation_result(
                     &Some(QuickwitAggregations::TantivyAggregations(aggregation)),
-                    state
-                        .into_iter()
-                        .map(IntermediateLeafAggregationResult::TantivyAggregation),
+                    state.iter().map(|vec| vec.as_slice()),
                 )
             }
             QuickwitIncrementalAggregations::NoAggregation => Ok(None),
@@ -748,7 +745,7 @@ impl QuickwitCollector {
 
 impl Collector for QuickwitCollector {
     type Child = QuickwitSegmentCollector;
-    type Fruit = IntermediateLeafResult;
+    type Fruit = LeafSearchResponse;
 
     fn for_segment(
         &self,
@@ -817,9 +814,9 @@ impl Collector for QuickwitCollector {
 
     fn merge_fruits(
         &self,
-        segment_fruits: Vec<tantivy::Result<IntermediateLeafResult>>,
+        segment_fruits: Vec<tantivy::Result<LeafSearchResponse>>,
     ) -> tantivy::Result<Self::Fruit> {
-        let segment_fruits: tantivy::Result<Vec<IntermediateLeafResult>> =
+        let segment_fruits: tantivy::Result<Vec<LeafSearchResponse>> =
             segment_fruits.into_iter().collect();
         // We want the hits in [start_offset..start_offset + max_hits).
         // All leaves will return their top [0..start_offset + max_hits) documents.
@@ -848,44 +845,44 @@ impl Collector for QuickwitCollector {
     }
 }
 
+fn map_error(err: postcard::Error) -> TantivyError {
+    TantivyError::InternalError(format!("merge result Postcard error: {err}"))
+}
+
 /// Merges a set of Leaf Results.
-fn merge_intermediate_aggregation_result(
+fn merge_intermediate_aggregation_result<'a>(
     aggregations_opt: &Option<QuickwitAggregations>,
-    mut intermediate_aggregation_results: impl Iterator<Item = IntermediateLeafAggregationResult>,
-) -> tantivy::Result<Option<IntermediateLeafAggregationResult>> {
+    intermediate_aggregation_results: impl Iterator<Item = &'a [u8]>,
+) -> tantivy::Result<Option<Vec<u8>>> {
     let merged_intermediate_aggregation_result = match aggregations_opt {
         Some(QuickwitAggregations::FindTraceIdsAggregation(collector)) => {
             let fruits: Vec<
                 <<FindTraceIdsCollector as Collector>::Child as SegmentCollector>::Fruit,
             > = intermediate_aggregation_results
-                .flat_map(|res| match res {
-                    IntermediateLeafAggregationResult::FindTraceIds(fruits) => Some(fruits.clone()),
-                    IntermediateLeafAggregationResult::TantivyAggregation(_fruits) => panic!(
-                        "Internal error: Expected FindTraceIdsAggregation, got TantivyAggregation."
-                    ),
+                .map(|intermediate_aggregation_result| {
+                    postcard::from_bytes(intermediate_aggregation_result).map_err(map_error)
                 })
-                .collect();
+                .collect::<Result<_, _>>()?;
             let merged_fruit: Vec<Span> = collector.merge_fruits(fruits)?;
-            Some(IntermediateLeafAggregationResult::FindTraceIds(
-                merged_fruit,
-            ))
+            let serialized = postcard::to_allocvec(&merged_fruit).map_err(map_error)?;
+            Some(serialized)
         }
         Some(QuickwitAggregations::TantivyAggregations(_)) => {
-            if let Some(first_fruit) = intermediate_aggregation_results.next() {
-                let mut merged_fruit = first_fruit.into_tantivy_aggregation().expect(
-                    "Internal error: Expected TantivyAggregation, got \
-                             FindTraceIdsAggregation.",
-                );
-                for fruit in intermediate_aggregation_results {
-                    merged_fruit.merge_fruits(fruit.into_tantivy_aggregation().expect(
-                        "Internal error: Expected TantivyAggregation, got \
-                             FindTraceIdsAggregation.",
-                    ))?;
-                }
+            let fruits: Vec<IntermediateAggregationResults> = intermediate_aggregation_results
+                .map(|intermediate_aggregation_result| {
+                    postcard::from_bytes(intermediate_aggregation_result).map_err(map_error)
+                })
+                .collect::<Result<_, _>>()?;
 
-                Some(IntermediateLeafAggregationResult::TantivyAggregation(
-                    merged_fruit,
-                ))
+            let mut fruit_iter = fruits.into_iter();
+            if let Some(first_fruit) = fruit_iter.next() {
+                let mut merged_fruit = first_fruit;
+                for fruit in fruit_iter {
+                    merged_fruit.merge_fruits(fruit)?;
+                }
+                let serialized = postcard::to_allocvec(&merged_fruit).map_err(map_error)?;
+
+                Some(serialized)
             } else {
                 None
             }
@@ -899,22 +896,22 @@ fn merge_intermediate_aggregation_result(
 /// Merges a set of Leaf Results.
 fn merge_leaf_responses(
     aggregations_opt: &Option<QuickwitAggregations>,
-    mut leaf_responses: Vec<IntermediateLeafResult>,
+    mut leaf_responses: Vec<LeafSearchResponse>,
     sort_order1: SortOrder,
     sort_order2: SortOrder,
     max_hits: usize,
-) -> tantivy::Result<IntermediateLeafResult> {
+) -> tantivy::Result<LeafSearchResponse> {
     // Optimization: No merging needed if there is only one result.
     if leaf_responses.len() == 1 {
         return Ok(leaf_responses.pop().unwrap());
     }
 
-    let merged_intermediate_aggregation_result: Option<IntermediateLeafAggregationResult> =
+    let merged_intermediate_aggregation_result: Option<Vec<u8>> =
         merge_intermediate_aggregation_result(
             aggregations_opt,
-            leaf_responses
-                .iter()
-                .filter_map(|leaf_response| leaf_response.intermediate_aggregation_result.clone()),
+            leaf_responses.iter().filter_map(|leaf_response| {
+                leaf_response.intermediate_aggregation_result.as_deref()
+            }),
         )?;
     let num_attempted_splits = leaf_responses
         .iter()
@@ -939,7 +936,7 @@ fn merge_leaf_responses(
         sort_order2,
         max_hits,
     );
-    Ok(IntermediateLeafResult {
+    Ok(LeafSearchResponse {
         intermediate_aggregation_result: merged_intermediate_aggregation_result,
         num_hits,
         partial_hits: top_k_partial_hits,
@@ -1190,11 +1187,8 @@ impl IncrementalCollector {
     }
 
     /// Merge one search result with the current state
-    pub(crate) fn add_result(
-        &mut self,
-        leaf_response: IntermediateLeafResult,
-    ) -> tantivy::Result<()> {
-        let IntermediateLeafResult {
+    pub(crate) fn add_split(&mut self, leaf_response: LeafSearchResponse) -> tantivy::Result<()> {
+        let LeafSearchResponse {
             num_hits,
             partial_hits,
             failed_splits,
@@ -1237,13 +1231,13 @@ impl IncrementalCollector {
     }
 
     /// Finalize the merge, creating a LeafSearchResponse.
-    pub(crate) fn finalize(self) -> tantivy::Result<IntermediateLeafResult> {
+    pub(crate) fn finalize(self) -> tantivy::Result<LeafSearchResponse> {
         let intermediate_aggregation_result = self.incremental_aggregation.finalize()?;
         let mut partial_hits = self.top_k_hits.finalize();
         if self.start_offset != 0 {
             partial_hits.drain(0..self.start_offset.min(partial_hits.len()));
         }
-        Ok(IntermediateLeafResult {
+        Ok(LeafSearchResponse {
             num_hits: self.num_hits,
             partial_hits,
             failed_splits: self.failed_splits,
@@ -1258,14 +1252,14 @@ mod tests {
     use std::cmp::Ordering;
 
     use quickwit_proto::search::{
-        PartialHit, SearchRequest, SortByValue, SortField, SortOrder, SortValue, SplitSearchError,
+        LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortField, SortOrder,
+        SortValue, SplitSearchError,
     };
     use tantivy::collector::Collector;
     use tantivy::TantivyDocument;
 
     use super::{make_merge_collector, IncrementalCollector};
     use crate::collector::top_k_partial_hits;
-    use crate::leaf::IntermediateLeafResult;
 
     #[test]
     fn test_merge_partial_hits_no_tie() {
@@ -1762,8 +1756,8 @@ mod tests {
 
     fn merge_collector_equal_results(
         request: &SearchRequest,
-        results: Vec<IntermediateLeafResult>,
-    ) -> IntermediateLeafResult {
+        results: Vec<LeafSearchResponse>,
+    ) -> LeafSearchResponse {
         let collector = make_merge_collector(request, &Default::default()).unwrap();
         let mut incremental_collector = IncrementalCollector::new(collector.clone());
 
@@ -1772,7 +1766,7 @@ mod tests {
             .unwrap();
 
         for split_result in results {
-            incremental_collector.add_result(split_result).unwrap();
+            incremental_collector.add_split(split_result).unwrap();
         }
 
         let incremental_result = incremental_collector.finalize().unwrap();
@@ -1794,7 +1788,7 @@ mod tests {
                 aggregation_request: None,
                 ..Default::default()
             },
-            vec![IntermediateLeafResult {
+            vec![LeafSearchResponse {
                 num_hits: 1234,
                 partial_hits: vec![PartialHit {
                     split_id: "1".to_string(),
@@ -1811,7 +1805,7 @@ mod tests {
 
         assert_eq!(
             result,
-            IntermediateLeafResult {
+            LeafSearchResponse {
                 num_hits: 1234,
                 partial_hits: vec![PartialHit {
                     split_id: "1".to_string(),
@@ -1839,7 +1833,7 @@ mod tests {
                 ..Default::default()
             },
             vec![
-                IntermediateLeafResult {
+                LeafSearchResponse {
                     num_hits: 1234,
                     partial_hits: vec![
                         PartialHit {
@@ -1861,7 +1855,7 @@ mod tests {
                     num_attempted_splits: 3,
                     intermediate_aggregation_result: None,
                 },
-                IntermediateLeafResult {
+                LeafSearchResponse {
                     num_hits: 10,
                     partial_hits: vec![PartialHit {
                         split_id: "2".to_string(),
@@ -1883,7 +1877,7 @@ mod tests {
 
         assert_eq!(
             result,
-            IntermediateLeafResult {
+            LeafSearchResponse {
                 num_hits: 1244,
                 partial_hits: vec![
                     PartialHit {
@@ -1925,7 +1919,7 @@ mod tests {
                 ..Default::default()
             },
             vec![
-                IntermediateLeafResult {
+                LeafSearchResponse {
                     num_hits: 1234,
                     partial_hits: vec![
                         PartialHit {
@@ -1947,7 +1941,7 @@ mod tests {
                     num_attempted_splits: 3,
                     intermediate_aggregation_result: None,
                 },
-                IntermediateLeafResult {
+                LeafSearchResponse {
                     num_hits: 10,
                     partial_hits: vec![PartialHit {
                         split_id: "2".to_string(),
@@ -1969,7 +1963,7 @@ mod tests {
 
         assert_eq!(
             result,
-            IntermediateLeafResult {
+            LeafSearchResponse {
                 num_hits: 1244,
                 partial_hits: vec![
                     PartialHit {
