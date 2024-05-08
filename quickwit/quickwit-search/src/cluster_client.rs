@@ -301,6 +301,7 @@ fn merge_leaf_search_response(
             + right_response.num_attempted_splits,
         failed_splits: right_response.failed_splits,
         partial_hits: left_response.partial_hits,
+        aggregation_type: left_response.aggregation_type,
     })
 }
 

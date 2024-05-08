@@ -34,9 +34,9 @@ use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::search::{
-    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafRequestRef, LeafSearchRequest,
-    LeafSearchResponse, PartialHit, SearchRequest, SearchResponse, SnippetRequest,
-    SortDatetimeFormat, SortField, SortValue, SplitIdAndFooterOffsets,
+    AggregationType, FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafRequestRef,
+    LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest, SearchResponse,
+    SnippetRequest, SortDatetimeFormat, SortField, SortValue, SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
@@ -53,6 +53,7 @@ use tracing::{debug, error, info, info_span, instrument};
 use crate::cluster_client::ClusterClient;
 use crate::collector::{make_merge_collector, QuickwitAggregations};
 use crate::find_trace_ids_collector::Span;
+use crate::leaf::IntermediateLeafResult;
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{group_by, group_jobs_by_index_id, Job};
 use crate::service::SearcherContext;
@@ -620,6 +621,7 @@ fn get_count_from_metadata(split_metadatas: &[SplitMetadata]) -> Vec<LeafSearchR
             failed_splits: Vec::new(),
             num_attempted_splits: 1,
             intermediate_aggregation_result: None,
+            aggregation_type: AggregationType::None as i32,
         })
         .collect()
 }
@@ -661,8 +663,11 @@ pub(crate) async fn search_partial_hits_phase(
     // It should be executed by Tokio's blocking threads.
 
     // Wrap into result for merge_fruits
-    let leaf_search_responses: Vec<tantivy::Result<LeafSearchResponse>> =
-        leaf_search_responses.into_iter().map(Ok).collect_vec();
+    let leaf_search_responses: Vec<tantivy::Result<IntermediateLeafResult>> = leaf_search_responses
+        .into_iter()
+        .map(Into::into)
+        .map(Ok)
+        .collect_vec();
     let span = info_span!("merge_fruits");
     let leaf_search_response = crate::search_thread_pool()
         .run_cpu_intensive(move || {
@@ -684,7 +689,7 @@ pub(crate) async fn search_partial_hits_phase(
         let errors: String = leaf_search_response.failed_splits.iter().join(", ");
         return Err(SearchError::Internal(errors));
     }
-    Ok(leaf_search_response)
+    Ok(leaf_search_response.into())
 }
 
 pub(crate) fn get_snippet_request(search_request: &SearchRequest) -> Option<SnippetRequest> {
