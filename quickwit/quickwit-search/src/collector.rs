@@ -1187,7 +1187,7 @@ impl IncrementalCollector {
     }
 
     /// Merge one search result with the current state
-    pub(crate) fn add_split(&mut self, leaf_response: LeafSearchResponse) -> tantivy::Result<()> {
+    pub(crate) fn add_result(&mut self, leaf_response: LeafSearchResponse) -> tantivy::Result<()> {
         let LeafSearchResponse {
             num_hits,
             partial_hits,
@@ -1766,7 +1766,7 @@ mod tests {
             .unwrap();
 
         for split_result in results {
-            incremental_collector.add_split(split_result).unwrap();
+            incremental_collector.add_result(split_result).unwrap();
         }
 
         let incremental_result = incremental_collector.finalize().unwrap();

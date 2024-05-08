@@ -361,11 +361,8 @@ async fn leaf_search_single_split(
     .await?;
     let split_schema = index.schema();
 
-    let quickwit_collector = make_collector_for_split(
-        split_id.clone(),
-        &search_request,
-        aggregations_limits,
-    )?;
+    let quickwit_collector =
+        make_collector_for_split(split_id.clone(), &search_request, aggregations_limits)?;
     let query_ast: QueryAst = serde_json::from_str(search_request.query_ast.as_str())
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
     let (query, mut warmup_info) = doc_mapper.query(split_schema, &query_ast, false)?;
@@ -857,8 +854,7 @@ pub async fn multi_leaf_search(
         .collect::<crate::Result<_>>()?;
     // Creates a collector which merges responses into one
     let aggregation_limits = searcher_context.create_new_aggregation_limits();
-    let merge_collector =
-        make_merge_collector(&search_request, &aggregation_limits)?;
+    let merge_collector = make_merge_collector(&search_request, &aggregation_limits)?;
     let incremental_merge_collector = IncrementalCollector::new(merge_collector);
     let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
     // TODO: to avoid lockstep, we should pull up the future creation over the list of split ids
@@ -880,7 +876,7 @@ pub async fn multi_leaf_search(
             leaf_search_request_ref.split_offsets,
             doc_mapper,
             incremental_merge_collector.clone(),
-            aggregation_limits.clone()
+            aggregation_limits.clone(),
         );
         leaf_request_tasks.push(leaf_request_future);
     }
@@ -916,12 +912,7 @@ pub async fn resolve_storage_and_leaf_search(
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
     aggregations_limits: AggregationLimits,
 ) -> Result<(), SearchError> {
-    //let index_uri = quickwit_common::uri::Uri::from_str(
-    //&index_storage_uri
-    //&leaf_search_request.index_uris[leaf_search_request_ref.index_uri_ord as usize],
-    //)?;
     let storage = storage_resolver.resolve(&index_uri).await?;
-    //let doc_mapper = doc_mappers[leaf_search_request_ref.doc_mapper_ord as usize].clone();
 
     leaf_search(
         searcher_context.clone(),
@@ -968,8 +959,7 @@ pub async fn leaf_search(
     let mut leaf_search_single_split_futures: Vec<_> = Vec::with_capacity(splits.len());
 
     let result = {
-        let merge_collector =
-            make_merge_collector(&request, &aggregations_limits)?;
+        let merge_collector = make_merge_collector(&request, &aggregations_limits)?;
         let incremental_merge_collector = IncrementalCollector::new(merge_collector);
         let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
 
@@ -1001,7 +991,7 @@ pub async fn leaf_search(
                     split_filter.clone(),
                     incremental_merge_collector.clone(),
                     leaf_split_search_permit,
-                    aggregations_limits.clone()
+                    aggregations_limits.clone(),
                 )
                 .in_current_span(),
             ));
@@ -1068,7 +1058,7 @@ async fn leaf_search_single_split_wrapper(
         index_storage,
         split.clone(),
         doc_mapper,
-        aggregations_limits
+        aggregations_limits,
     )
     .await;
 
@@ -1097,7 +1087,8 @@ async fn leaf_search_single_split_wrapper(
         }),
     }
     if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {
-        // TODO: we could use a RWLock instead and read the value instead of updateing it unconditionally.
+        // TODO: we could use a RWLock instead and read the value instead of updateing it
+        // unconditionally.
         split_filter
             .lock()
             .unwrap()
