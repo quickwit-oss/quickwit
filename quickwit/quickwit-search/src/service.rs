@@ -500,7 +500,7 @@ impl SearcherContext {
     }
 
     /// Returns a new instance to track the aggregation memory usage.
-    pub fn get_aggregation_limits(&self) -> AggregationLimits {
+    pub fn create_new_aggregation_limits(&self) -> AggregationLimits {
         AggregationLimits::new(
             Some(self.searcher_config.aggregation_memory_limit.as_u64()),
             Some(self.searcher_config.aggregation_bucket_limit),

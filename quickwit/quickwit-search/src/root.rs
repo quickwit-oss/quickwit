@@ -657,7 +657,7 @@ pub(crate) async fn search_partial_hits_phase(
 
     // Creates a collector which merges responses into one
     let merge_collector =
-        make_merge_collector(search_request, &searcher_context.get_aggregation_limits())?;
+        make_merge_collector(search_request, &searcher_context.create_new_aggregation_limits())?;
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
@@ -937,7 +937,7 @@ fn finalize_aggregation(
                     Default::default()
                 };
             let final_aggregation_results: AggregationResults = intermediate_aggregation_results
-                .into_final_result(aggregations, &searcher_context.get_aggregation_limits())?;
+                .into_final_result(aggregations, &searcher_context.create_new_aggregation_limits())?;
             serde_json::to_string(&final_aggregation_results)?
         }
     };

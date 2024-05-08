@@ -1061,7 +1061,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         Arc::new(SearcherContext::new(SearcherConfig::default(), None));
 
     let merge_collector =
-        make_merge_collector(&request, &searcher_context.get_aggregation_limits()).unwrap();
+        make_merge_collector(&request, &searcher_context.create_new_aggregation_limits()).unwrap();
     let incremental_merge_collector = IncrementalCollector::new(merge_collector);
     let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
 
