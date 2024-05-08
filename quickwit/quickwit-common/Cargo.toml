@@ -25,7 +25,6 @@ hostname = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
-num_cpus = { workspace = true }
 once_cell = { workspace = true }
 pin-project = { workspace = true }
 pnet = { workspace = true }
