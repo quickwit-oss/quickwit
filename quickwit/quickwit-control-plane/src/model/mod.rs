@@ -39,7 +39,7 @@ use quickwit_proto::metastore::{
     MetastoreError, MetastoreService, MetastoreServiceClient, SourceType,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
-pub(super) use shard_table::{ScalingMode, ShardEntry, ShardStats, ShardTable};
+pub(super) use shard_table::{ScalingMode, ShardEntry, ShardLocations, ShardStats, ShardTable};
 use tracing::{info, instrument, warn};
 
 /// The control plane maintains a model in sync with the metastore.
@@ -70,6 +70,10 @@ impl ControlPlaneModel {
 
     pub fn num_sources(&self) -> usize {
         self.shard_table.num_sources()
+    }
+
+    pub fn shard_locations(&self) -> ShardLocations {
+        self.shard_table.shard_locations()
     }
 
     #[cfg(test)]
@@ -356,6 +360,11 @@ impl ControlPlaneModel {
     ) -> Option<bool> {
         self.shard_table
             .acquire_scaling_permits(source_uid, scaling_mode, num_permits)
+    }
+
+    pub fn drain_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
+        self.shard_table
+            .drain_scaling_permits(source_uid, scaling_mode)
     }
 
     pub fn release_scaling_permits(

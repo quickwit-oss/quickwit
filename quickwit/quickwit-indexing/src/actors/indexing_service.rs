@@ -40,7 +40,8 @@ use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
 use quickwit_ingest::{
-    DropQueueRequest, IngestApiService, IngesterPool, ListQueuesRequest, QUEUES_DIR_NAME,
+    DropQueueRequest, GetPartitionId, IngestApiService, IngesterPool, ListQueuesRequest,
+    QUEUES_DIR_NAME,
 };
 use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
 use quickwit_proto::indexing::{
@@ -723,6 +724,7 @@ impl IndexingService {
             .collect();
         debug!(index_ids=?index_ids, "list indexes");
 
+        let partition_id = ingest_api_service.ask(GetPartitionId).await?;
         let queue_ids_to_delete = queues.difference(&index_ids);
 
         for queue_id in queue_ids_to_delete {
@@ -732,10 +734,19 @@ impl IndexingService {
                 })
                 .await;
             if let Err(delete_queue_error) = delete_queue_res {
-                error!(error=?delete_queue_error, queue_id=%queue_id, "queue-delete-failure");
+                error!(
+                    index_id = %queue_id,
+                    partition_id,
+                    error = %delete_queue_error,
+                    "failed to delete queue"
+                );
                 self.counters.num_delete_queue_failures += 1;
             } else {
-                info!(queue_id=%queue_id, "queue-delete-success");
+                info!(
+                    index_id = %queue_id,
+                    partition_id,
+                    "deleted queue successfully"
+                );
                 self.counters.num_deleted_queues += 1;
             }
         }
@@ -964,7 +975,7 @@ mod tests {
         // Test `spawn_pipeline`.
         let source_config_0 = SourceConfig {
             source_id: "test-indexing-service--source-0".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1039,19 +1050,9 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
-        metastore.create_index(create_index_request).await.unwrap();
-
-        let universe = Universe::new();
-        let temp_dir = tempfile::tempdir().unwrap();
-        let (indexing_service, indexing_server_handle) =
-            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster).await;
-
-        // Test `supervise_pipelines`
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::Vec(VecSourceParams {
                 docs: Vec::new(),
@@ -1061,6 +1062,18 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
+        let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
+            &index_config,
+            &[source_config.clone()],
+        )
+        .unwrap();
+        metastore.create_index(create_index_request).await.unwrap();
+
+        let universe = Universe::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let (indexing_service, indexing_server_handle) =
+            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster).await;
+
         indexing_service
             .ask_for_res(SpawnPipeline {
                 index_id: index_id.clone(),
@@ -1121,7 +1134,7 @@ mod tests {
         // Test `apply plan`.
         let source_config_1 = SourceConfig {
             source_id: "test-indexing-service--source-1".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1326,7 +1339,7 @@ mod tests {
 
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1455,7 +1468,7 @@ mod tests {
         let mut index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,

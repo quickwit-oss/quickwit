@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use hyper::StatusCode;
-use quickwit_config::enable_ingest_v2;
+use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
 };
@@ -82,8 +82,15 @@ async fn elastic_ingest_bulk(
     mut ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
 ) -> Result<ElasticBulkResponse, ElasticsearchError> {
-    if enable_ingest_v2() {
+    if enable_ingest_v2() || bulk_options.enable_ingest_v2 {
         return elastic_bulk_ingest_v2(default_index_id, body, bulk_options, ingest_router).await;
+    }
+    if disable_ingest_v1() {
+        return Err(ElasticsearchError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "ingest v1 is disabled: environment variable `QW_DISABLE_INGEST_V1` is set".to_string(),
+            None,
+        ));
     }
     let now = Instant::now();
     let mut doc_batch_builders = HashMap::new();
@@ -94,12 +101,14 @@ async fn elastic_ingest_bulk(
             ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 format!("Malformed action/metadata line [#{line_number}]. Details: `{error}`"),
+                None,
             )
         })?;
         let (_, source) = lines.next().ok_or_else(|| {
             ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 "expected source for the action".to_string(),
+                None,
             )
         })?;
         // when ingesting on /my-index/_bulk, if _index: is set to something else than my-index,
@@ -112,6 +121,7 @@ async fn elastic_ingest_bulk(
                 ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
                     format!("missing required field: `_index` in the line [#{line_number}]."),
+                    None,
                 )
             })?;
         let doc_batch_builder = doc_batch_builders
@@ -136,6 +146,7 @@ async fn elastic_ingest_bulk(
     let bulk_response = ElasticBulkResponse {
         took_millis,
         errors,
+        items: Vec::new(),
     };
     Ok(bulk_response)
 }

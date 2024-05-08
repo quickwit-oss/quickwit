@@ -153,7 +153,7 @@ impl IngestRouterServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
             MockIngestRouterService > (),
-            "`MockIngestRouterService` must be wrapped in a `MockIngestRouterServiceWrapper`. Use `MockIngestRouterService::from(mock)` to instantiate the client."
+            "`MockIngestRouterService` must be wrapped in a `MockIngestRouterServiceWrapper`: use `IngestRouterServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }
@@ -403,6 +403,13 @@ impl IngestRouterServiceTowerLayerStack {
         IngestRouterServiceMailbox<A>: IngestRouterService,
     {
         self.build_from_boxed(Box::new(IngestRouterServiceMailbox::new(mailbox)))
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(
+        self,
+        mock: MockIngestRouterService,
+    ) -> IngestRouterServiceClient {
+        self.build_from_boxed(Box::new(IngestRouterServiceClient::from_mock(mock)))
     }
     fn build_from_boxed(
         self,

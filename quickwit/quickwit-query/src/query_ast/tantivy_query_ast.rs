@@ -202,6 +202,13 @@ impl TantivyBoolQuery {
             has_no_positive_ast_so_far,
         );
         has_no_positive_ast_so_far &= self.should.is_empty();
+        // we do that a second time in case must happens to have a MatchAll and nothing else,
+        // but filter and/or should had something
+        remove_with_guard(
+            &mut self.must,
+            MatchAllOrNone::MatchAll,
+            has_no_positive_ast_so_far,
+        );
         remove_with_guard(
             &mut self.must_not,
             MatchAllOrNone::MatchNone,
@@ -447,6 +454,40 @@ mod tests {
         }
         .simplify();
         assert!(bool_query.as_leaf().is_some());
+    }
+
+    #[test]
+    fn test_simplify_bool_query_with_match_must_and_other_positive_clauses() {
+        let bool_query = TantivyBoolQuery {
+            must: vec![TantivyQueryAst::match_all()],
+            should: vec![EmptyQuery.into()],
+            ..Default::default()
+        }
+        .simplify();
+        assert_eq!(bool_query, EmptyQuery.into());
+
+        let bool_query = TantivyBoolQuery {
+            must: vec![TantivyQueryAst::match_all()],
+            should: vec![EmptyQuery.into()],
+            ..Default::default()
+        }
+        .simplify();
+        assert_eq!(bool_query, EmptyQuery.into());
+
+        let bool_query = TantivyBoolQuery {
+            must: vec![TantivyQueryAst::match_all()],
+            filter: vec![EmptyQuery.into()],
+            ..Default::default()
+        }
+        .simplify();
+        assert_eq!(
+            bool_query,
+            TantivyBoolQuery {
+                filter: vec![EmptyQuery.into()],
+                ..Default::default()
+            }
+            .into()
+        );
     }
 
     #[test]

@@ -1,0 +1,64 @@
+# Delete possibly remaining index
+method: DELETE
+endpoint: indexes/concat
+status_code: null
+---
+# Create index
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: concat
+  doc_mapping:
+    mode: dynamic
+    field_mappings:
+      - name: text1
+        type: text
+        tokenizer: default
+      - name: text2
+        type: text
+        tokenizer: raw
+      - name: boolean
+        type: bool
+      - name: int
+        type: u64
+      - name: json
+        type: json
+      - name: concat_raw
+        type: concatenate
+        concatenate_fields:
+          - text1
+          - text2
+          - boolean
+          - int
+          - json
+        tokenizer: raw
+        include_dynamic_fields: true
+      - name: concat_default
+        type: concatenate
+        concatenate_fields:
+          - text1
+          - text2
+          - boolean
+          - int
+          - json
+        tokenizer: default
+    dynamic_mapping:
+      tokenizer: default
+      expand_dots: true
+sleep_after: 3
+---
+# Ingest documents
+method: POST
+endpoint: concat/ingest
+num_retries: 10
+params:
+  commit: force
+ndjson:
+  - {"text1": "AB-CD", "text2": "EF-GH"}
+  - {"text1": "true"}
+  - {"boolean": true}
+  - {"text2": "i like 42"}
+  - { "int": 42}
+  - {"other-field": "otherfieldvalue", "other-field-number": 9, "other-field-bool": false}
+  - {"json": {"some_bool": false, "some_int": 10, "nested": {"some_string": "nestedstring"}}}

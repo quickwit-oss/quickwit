@@ -62,37 +62,6 @@ pub struct GetOrCreateOpenShardsFailure {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetDebugStateRequest {}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetDebugStateResponse {
-    #[prost(message, repeated, tag = "1")]
-    pub shard_table: ::prost::alloc::vec::Vec<ShardTableEntry>,
-    #[prost(message, repeated, tag = "2")]
-    pub physical_index_plan: ::prost::alloc::vec::Vec<PhysicalIndexingPlanEntry>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ShardTableEntry {
-    #[prost(string, tag = "1")]
-    pub source_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PhysicalIndexingPlanEntry {
-    #[prost(string, tag = "1")]
-    pub node_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub tasks: ::prost::alloc::vec::Vec<super::indexing::IndexingTask>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AdviseResetShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub shard_ids: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
@@ -199,11 +168,6 @@ pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sy
         &mut self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse>;
-    /// Return some innerstate of the control plane meant to assist debugging.
-    async fn get_debug_state(
-        &mut self,
-        request: GetDebugStateRequest,
-    ) -> crate::control_plane::ControlPlaneResult<GetDebugStateResponse>;
 }
 dyn_clone::clone_trait_object!(ControlPlaneService);
 #[cfg(any(test, feature = "testsuite"))]
@@ -225,7 +189,7 @@ impl ControlPlaneServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
             MockControlPlaneService > (),
-            "`MockControlPlaneService` must be wrapped in a `MockControlPlaneServiceWrapper`. Use `MockControlPlaneService::from(mock)` to instantiate the client."
+            "`MockControlPlaneService` must be wrapped in a `MockControlPlaneServiceWrapper`: use `ControlPlaneServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }
@@ -343,12 +307,6 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
         self.inner.advise_reset_shards(request).await
     }
-    async fn get_debug_state(
-        &mut self,
-        request: GetDebugStateRequest,
-    ) -> crate::control_plane::ControlPlaneResult<GetDebugStateResponse> {
-        self.inner.get_debug_state(request).await
-    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_control_plane_service {
@@ -412,12 +370,6 @@ pub mod mock_control_plane_service {
             request: super::AdviseResetShardsRequest,
         ) -> crate::control_plane::ControlPlaneResult<super::AdviseResetShardsResponse> {
             self.inner.lock().await.advise_reset_shards(request).await
-        }
-        async fn get_debug_state(
-            &mut self,
-            request: super::GetDebugStateRequest,
-        ) -> crate::control_plane::ControlPlaneResult<super::GetDebugStateResponse> {
-            self.inner.lock().await.get_debug_state(request).await
         }
     }
 }
@@ -541,22 +493,6 @@ impl tower::Service<AdviseResetShardsRequest> for Box<dyn ControlPlaneService> {
         Box::pin(fut)
     }
 }
-impl tower::Service<GetDebugStateRequest> for Box<dyn ControlPlaneService> {
-    type Response = GetDebugStateResponse;
-    type Error = crate::control_plane::ControlPlaneError;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(&mut self, request: GetDebugStateRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.get_debug_state(request).await };
-        Box::pin(fut)
-    }
-}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct ControlPlaneServiceTowerServiceStack {
@@ -596,11 +532,6 @@ struct ControlPlaneServiceTowerServiceStack {
         AdviseResetShardsResponse,
         crate::control_plane::ControlPlaneError,
     >,
-    get_debug_state_svc: quickwit_common::tower::BoxService<
-        GetDebugStateRequest,
-        GetDebugStateResponse,
-        crate::control_plane::ControlPlaneError,
-    >,
 }
 impl Clone for ControlPlaneServiceTowerServiceStack {
     fn clone(&self) -> Self {
@@ -613,7 +544,6 @@ impl Clone for ControlPlaneServiceTowerServiceStack {
             delete_source_svc: self.delete_source_svc.clone(),
             get_or_create_open_shards_svc: self.get_or_create_open_shards_svc.clone(),
             advise_reset_shards_svc: self.advise_reset_shards_svc.clone(),
-            get_debug_state_svc: self.get_debug_state_svc.clone(),
         }
     }
 }
@@ -662,12 +592,6 @@ impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
         self.advise_reset_shards_svc.ready().await?.call(request).await
-    }
-    async fn get_debug_state(
-        &mut self,
-        request: GetDebugStateRequest,
-    ) -> crate::control_plane::ControlPlaneResult<GetDebugStateResponse> {
-        self.get_debug_state_svc.ready().await?.call(request).await
     }
 }
 type CreateIndexLayer = quickwit_common::tower::BoxLayer<
@@ -740,16 +664,6 @@ type AdviseResetShardsLayer = quickwit_common::tower::BoxLayer<
     AdviseResetShardsResponse,
     crate::control_plane::ControlPlaneError,
 >;
-type GetDebugStateLayer = quickwit_common::tower::BoxLayer<
-    quickwit_common::tower::BoxService<
-        GetDebugStateRequest,
-        GetDebugStateResponse,
-        crate::control_plane::ControlPlaneError,
-    >,
-    GetDebugStateRequest,
-    GetDebugStateResponse,
-    crate::control_plane::ControlPlaneError,
->;
 #[derive(Debug, Default)]
 pub struct ControlPlaneServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
@@ -759,7 +673,6 @@ pub struct ControlPlaneServiceTowerLayerStack {
     delete_source_layers: Vec<DeleteSourceLayer>,
     get_or_create_open_shards_layers: Vec<GetOrCreateOpenShardsLayer>,
     advise_reset_shards_layers: Vec<AdviseResetShardsLayer>,
-    get_debug_state_layers: Vec<GetDebugStateLayer>,
 }
 impl ControlPlaneServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -951,31 +864,6 @@ impl ControlPlaneServiceTowerLayerStack {
                 crate::control_plane::ControlPlaneError,
             >,
         >>::Service as tower::Service<AdviseResetShardsRequest>>::Future: Send + 'static,
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    GetDebugStateRequest,
-                    GetDebugStateResponse,
-                    crate::control_plane::ControlPlaneError,
-                >,
-            > + Clone + Send + Sync + 'static,
-        <L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                GetDebugStateRequest,
-                GetDebugStateResponse,
-                crate::control_plane::ControlPlaneError,
-            >,
-        >>::Service: tower::Service<
-                GetDebugStateRequest,
-                Response = GetDebugStateResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <<L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                GetDebugStateRequest,
-                GetDebugStateResponse,
-                crate::control_plane::ControlPlaneError,
-            >,
-        >>::Service as tower::Service<GetDebugStateRequest>>::Future: Send + 'static,
     {
         self.create_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -990,8 +878,6 @@ impl ControlPlaneServiceTowerLayerStack {
         self.get_or_create_open_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.advise_reset_shards_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.get_debug_state_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -1142,25 +1028,6 @@ impl ControlPlaneServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn stack_get_debug_state_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    GetDebugStateRequest,
-                    GetDebugStateResponse,
-                    crate::control_plane::ControlPlaneError,
-                >,
-            > + Send + Sync + 'static,
-        L::Service: tower::Service<
-                GetDebugStateRequest,
-                Response = GetDebugStateResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<GetDebugStateRequest>>::Future: Send + 'static,
-    {
-        self.get_debug_state_layers.push(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
     pub fn build<T>(self, instance: T) -> ControlPlaneServiceClient
     where
         T: ControlPlaneService,
@@ -1202,6 +1069,13 @@ impl ControlPlaneServiceTowerLayerStack {
         ControlPlaneServiceMailbox<A>: ControlPlaneService,
     {
         self.build_from_boxed(Box::new(ControlPlaneServiceMailbox::new(mailbox)))
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(
+        self,
+        mock: MockControlPlaneService,
+    ) -> ControlPlaneServiceClient {
+        self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_mock(mock)))
     }
     fn build_from_boxed(
         self,
@@ -1263,14 +1137,6 @@ impl ControlPlaneServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(boxed_instance.clone()),
                 |svc, layer| layer.layer(svc),
             );
-        let get_debug_state_svc = self
-            .get_debug_state_layers
-            .into_iter()
-            .rev()
-            .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
-                |svc, layer| layer.layer(svc),
-            );
         let tower_svc_stack = ControlPlaneServiceTowerServiceStack {
             inner: boxed_instance.clone(),
             create_index_svc,
@@ -1280,7 +1146,6 @@ impl ControlPlaneServiceTowerLayerStack {
             delete_source_svc,
             get_or_create_open_shards_svc,
             advise_reset_shards_svc,
-            get_debug_state_svc,
         };
         ControlPlaneServiceClient::new(tower_svc_stack)
     }
@@ -1419,15 +1284,6 @@ where
                 AdviseResetShardsResponse,
                 crate::control_plane::ControlPlaneError,
             >,
-        >
-        + tower::Service<
-            GetDebugStateRequest,
-            Response = GetDebugStateResponse,
-            Error = crate::control_plane::ControlPlaneError,
-            Future = BoxFuture<
-                GetDebugStateResponse,
-                crate::control_plane::ControlPlaneError,
-            >,
         >,
 {
     async fn create_index(
@@ -1472,12 +1328,6 @@ where
         &mut self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
-        self.call(request).await
-    }
-    async fn get_debug_state(
-        &mut self,
-        request: GetDebugStateRequest,
-    ) -> crate::control_plane::ControlPlaneResult<GetDebugStateResponse> {
         self.call(request).await
     }
 }
@@ -1608,19 +1458,6 @@ where
                 AdviseResetShardsRequest::rpc_name(),
             ))
     }
-    async fn get_debug_state(
-        &mut self,
-        request: GetDebugStateRequest,
-    ) -> crate::control_plane::ControlPlaneResult<GetDebugStateResponse> {
-        self.inner
-            .get_debug_state(request)
-            .await
-            .map(|response| response.into_inner())
-            .map_err(|status| crate::error::grpc_status_to_service_error(
-                status,
-                GetDebugStateRequest::rpc_name(),
-            ))
-    }
 }
 #[derive(Debug)]
 pub struct ControlPlaneServiceGrpcServerAdapter {
@@ -1710,17 +1547,6 @@ for ControlPlaneServiceGrpcServerAdapter {
         self.inner
             .clone()
             .advise_reset_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
-    }
-    async fn get_debug_state(
-        &self,
-        request: tonic::Request<GetDebugStateRequest>,
-    ) -> Result<tonic::Response<GetDebugStateResponse>, tonic::Status> {
-        self.inner
-            .clone()
-            .get_debug_state(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2035,37 +1861,6 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Return some innerstate of the control plane meant to assist debugging.
-        pub async fn get_debug_state(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetDebugStateRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetDebugStateResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.control_plane.ControlPlaneService/GetDebugState",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "quickwit.control_plane.ControlPlaneService",
-                        "GetDebugState",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
     }
 }
 /// Generated server implementations.
@@ -2130,14 +1925,6 @@ pub mod control_plane_service_grpc_server {
             request: tonic::Request<super::AdviseResetShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::AdviseResetShardsResponse>,
-            tonic::Status,
-        >;
-        /// Return some innerstate of the control plane meant to assist debugging.
-        async fn get_debug_state(
-            &self,
-            request: tonic::Request<super::GetDebugStateRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetDebugStateResponse>,
             tonic::Status,
         >;
     }
@@ -2543,52 +2330,6 @@ pub mod control_plane_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = AdviseResetShardsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.control_plane.ControlPlaneService/GetDebugState" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetDebugStateSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
-                    impl<
-                        T: ControlPlaneServiceGrpc,
-                    > tonic::server::UnaryService<super::GetDebugStateRequest>
-                    for GetDebugStateSvc<T> {
-                        type Response = super::GetDebugStateResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetDebugStateRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).get_debug_state(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = GetDebugStateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -19,7 +19,6 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
@@ -44,8 +43,8 @@ use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMes
 use crate::actors::DocProcessor;
 use crate::source::kinesis::helpers::get_kinesis_client;
 use crate::source::{
-    BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
-    BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
+    BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory, BATCH_NUM_BYTES_LIMIT,
+    EMIT_BATCHES_TIMEOUT,
 };
 
 type ShardId = String;
@@ -59,17 +58,16 @@ impl TypedSourceFactory for KinesisSourceFactory {
     type Params = KinesisSourceParams;
 
     async fn typed_create_source(
-        ctx: Arc<SourceRuntimeArgs>,
-        params: KinesisSourceParams,
-        checkpoint: SourceCheckpoint,
+        source_runtime: SourceRuntime,
+        source_params: KinesisSourceParams,
     ) -> anyhow::Result<Self::Source> {
-        KinesisSource::try_new(ctx.source_id().to_string(), params, checkpoint).await
+        KinesisSource::try_new(source_runtime, source_params).await
     }
 }
 
 struct ShardConsumerState {
     partition_id: PartitionId,
-    position: Position,
+    current_position: Position,
     lag_millis: Option<i64>,
     _shard_consumer_handle: ShardConsumerHandle,
 }
@@ -87,12 +85,10 @@ pub struct KinesisSourceState {
 }
 
 pub struct KinesisSource {
-    // Source ID
-    source_id: String,
+    // Runtime arguments.
+    source_runtime: SourceRuntime,
     // Target stream to consume.
     stream_name: String,
-    // Initialization checkpoint.
-    checkpoint: SourceCheckpoint,
     kinesis_client: KinesisClient,
     // Retry parameters (max attempts, max delay, ...).
     retry_params: RetryParams,
@@ -106,51 +102,54 @@ pub struct KinesisSource {
 
 impl fmt::Debug for KinesisSource {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "KinesisSource {{ source_id: {}, stream_name: {} }}",
-            self.source_id, self.stream_name
-        )
+        f.debug_struct("KinesisSource")
+            .field("index_uid", self.source_runtime.index_uid())
+            .field("source_id", &self.source_runtime.source_id())
+            .field("stream_Name", &self.stream_name)
+            .finish()
     }
 }
 
 impl KinesisSource {
     /// Instantiates a new `KinesisSource`.
     pub async fn try_new(
-        source_id: String,
-        params: KinesisSourceParams,
-        checkpoint: SourceCheckpoint,
+        source_runtime: SourceRuntime,
+        source_params: KinesisSourceParams,
     ) -> anyhow::Result<Self> {
-        let stream_name = params.stream_name;
-        let backfill_mode_enabled = params.enable_backfill_mode;
-        let region = get_region(params.region_or_endpoint).await?;
+        let stream_name = source_params.stream_name;
+        let backfill_mode_enabled = source_params.enable_backfill_mode;
+        let region = get_region(source_params.region_or_endpoint).await?;
         let kinesis_client = get_kinesis_client(region).await?;
         let (shard_consumers_tx, shard_consumers_rx) = mpsc::channel(1_000);
         let state = KinesisSourceState::default();
-        let retry_params = RetryParams::default();
-        Ok(KinesisSource {
-            source_id,
+        let retry_params = RetryParams::aggressive();
+        let kinesis_source = KinesisSource {
+            source_runtime,
             stream_name,
-            checkpoint,
             kinesis_client,
             shard_consumers_tx,
             shard_consumers_rx,
             state,
             backfill_mode_enabled,
             retry_params,
-        })
+        };
+        Ok(kinesis_source)
     }
 
-    fn spawn_shard_consumer(&mut self, ctx: &SourceContext, shard_id: ShardId) {
+    fn spawn_shard_consumer(
+        &mut self,
+        ctx: &SourceContext,
+        shard_id: ShardId,
+        checkpoint: &SourceCheckpoint,
+    ) {
         assert!(!self.state.shard_consumers.contains_key(&shard_id));
 
         let partition_id = PartitionId::from(shard_id.as_str());
-        let position = self
-            .checkpoint
+        let from_position = checkpoint
             .position_for_partition(&partition_id)
             .cloned()
             .unwrap_or(Position::Beginning);
-        let from_sequence_number_exclusive = match &position {
+        let from_sequence_number_exclusive = match &from_position {
             Position::Beginning => None,
             Position::Offset(offset) => Some(offset.to_string()),
             Position::Eof(_) => panic!("position of a Kinesis shard should never be EOF"),
@@ -167,7 +166,7 @@ impl KinesisSource {
         let _shard_consumer_handle = shard_consumer.spawn(ctx);
         let shard_consumer_state = ShardConsumerState {
             partition_id,
-            position,
+            current_position: from_position,
             lag_millis: None,
             _shard_consumer_handle,
         };
@@ -192,12 +191,14 @@ impl Source for KinesisSource {
                 None,
             ))
             .await?;
+        let checkpoint = self
+            .source_runtime
+            .fetch_checkpoint()
+            .await
+            .context("failed to fetch checkpoint")?;
+
         for shard in shards {
-            if let Some(shard_id) = shard.shard_id {
-                self.spawn_shard_consumer(ctx, shard_id);
-            } else {
-                warn!(shard = ?shard, "Unable to get shard ID from returned list of shards");
-            }
+            self.spawn_shard_consumer(ctx, shard.shard_id, &checkpoint);
         }
         info!(
             stream_name = %self.stream_name,
@@ -222,26 +223,23 @@ impl Source for KinesisSource {
                     // The source always carries a sender for this channel.
                     match message_opt.expect("Channel unexpectedly closed.") {
                         ShardConsumerMessage::ChildShards(shard_ids) => {
+                            let checkpoint = self.source_runtime.fetch_checkpoint().await.context("failed to fetch checkpoint")?;
+
                             for shard_id in shard_ids {
-                                self.spawn_shard_consumer(ctx, shard_id);
+                                self.spawn_shard_consumer(ctx, shard_id, &checkpoint);
                             }
                         }
                         ShardConsumerMessage::Records { shard_id, records, lag_millis } => {
                             let num_records = records.len();
 
                             for (i, record) in records.into_iter().enumerate() {
-                                let record_data = record.data.map(|blob| blob.into_inner()).unwrap_or_default();
-
-                                // This should in theory never be `None` but is an `Option<T>` nontheless
-                                // so it is probably best to error rather than skip here in case this changes.
-                                let record_sequence_number = record.sequence_number
-                                    .context("received Kinesis record without sequence number")?;
+                                let record_data = record.data.into_inner();
 
                                 if record_data.is_empty() {
                                     warn!(
                                         stream_name=%self.stream_name,
                                         shard_id=%shard_id,
-                                        sequence_number=%record_sequence_number,
+                                        sequence_number=%record.sequence_number,
                                         "record is empty"
                                     );
                                     self.state.num_invalid_records += 1;
@@ -262,8 +260,8 @@ impl Source for KinesisSource {
                                     shard_consumer_state.lag_millis = lag_millis;
 
                                     let partition_id = shard_consumer_state.partition_id.clone();
-                                    let current_position = Position::from(record_sequence_number);
-                                    let previous_position = std::mem::replace(&mut shard_consumer_state.position, current_position.clone());
+                                    let current_position = Position::from(record.sequence_number);
+                                    let previous_position = std::mem::replace(&mut shard_consumer_state.current_position, current_position.clone());
 
                                     batch_builder.checkpoint_delta.record_partition_delta(
                                         partition_id,
@@ -319,7 +317,7 @@ impl Source for KinesisSource {
     }
 
     fn name(&self) -> String {
-        format!("KinesisSource{{source_id={}}}", self.source_id)
+        format!("{:?}", self)
     }
 
     fn observable_state(&self) -> JsonValue {
@@ -327,7 +325,9 @@ impl Source for KinesisSource {
             .state
             .shard_consumers
             .iter()
-            .map(|(shard_id, shard_consumer_state)| (shard_id, &shard_consumer_state.position))
+            .map(|(shard_id, shard_consumer_state)| {
+                (shard_id, &shard_consumer_state.current_position)
+            })
             .sorted()
             .collect();
         json!({
@@ -360,14 +360,18 @@ pub(super) async fn get_region(
 
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]
 mod tests {
+
     use quickwit_actors::Universe;
+    use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+    use quickwit_proto::types::IndexUid;
 
     use super::*;
     use crate::models::RawDocBatch;
     use crate::source::kinesis::helpers::tests::{
         make_shard_id, put_records_into_shards, setup, teardown,
     };
+    use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::SourceActor;
 
     // Sequence number
@@ -391,17 +395,21 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let (kinesis_client, stream_name) = setup("test-kinesis-source", 3).await.unwrap();
-        let params = KinesisSourceParams {
+        let index_id = "test-kinesis-index";
+        let index_uid = IndexUid::new_with_random_ulid(index_id);
+        let kinesis_params = KinesisSourceParams {
             stream_name: stream_name.clone(),
             region_or_endpoint: Some(RegionOrEndpoint::Endpoint(
                 "http://localhost:4566".to_string(),
             )),
             enable_backfill_mode: true,
         };
+        let source_params = SourceParams::Kinesis(kinesis_params.clone());
+        let source_config = SourceConfig::for_test("test-kinesis-source", source_params);
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
         {
-            let checkpoint = SourceCheckpoint::default();
             let kinesis_source =
-                KinesisSource::try_new("my-kinesis-source".to_string(), params.clone(), checkpoint)
+                KinesisSource::try_new(source_runtime.clone(), kinesis_params.clone())
                     .await
                     .unwrap();
             let actor = SourceActor {
@@ -453,9 +461,8 @@ mod tests {
             .map(|(shard_id, seqno)| (*shard_id, Position::from(seqno.clone())))
             .collect();
         {
-            let checkpoint = SourceCheckpoint::default();
             let kinesis_source =
-                KinesisSource::try_new("my-kinesis-source".to_string(), params.clone(), checkpoint)
+                KinesisSource::try_new(source_runtime.clone(), kinesis_params.clone())
                     .await
                     .unwrap();
             let actor = SourceActor {
@@ -512,7 +519,7 @@ mod tests {
                 sequence_numbers.get(&1).unwrap().first().unwrap().clone();
             let from_sequence_number_exclusive_shard_2 =
                 sequence_numbers.get(&2).unwrap().last().unwrap().clone();
-            let checkpoint: SourceCheckpoint = vec![
+            let _checkpoint: SourceCheckpoint = vec![
                 (
                     make_shard_id(1),
                     from_sequence_number_exclusive_shard_1.clone(),
@@ -525,10 +532,9 @@ mod tests {
             .into_iter()
             .map(|(partition_id, offset)| (PartitionId::from(partition_id), Position::from(offset)))
             .collect();
-            let kinesis_source =
-                KinesisSource::try_new("my-kinesis-source".to_string(), params.clone(), checkpoint)
-                    .await
-                    .unwrap();
+            let kinesis_source = KinesisSource::try_new(source_runtime, kinesis_params)
+                .await
+                .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
                 doc_processor_mailbox: doc_processor_mailbox.clone(),

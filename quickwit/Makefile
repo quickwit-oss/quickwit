@@ -1,6 +1,10 @@
 help:
 	@grep '^[^\.#[:space:]].*:' Makefile
 
+doc:
+	@echo "Running cargo doc"
+	@RUSTDOCFLAGS='-Dwarnings -Arustdoc::private_intra_doc_links' cargo doc --all-features
+
 fmt:
 	@echo "Formatting Rust files"
 	@(rustup toolchain list | ( ! grep -q nightly && echo "Toolchain 'nightly' is not installed. Please install using 'rustup toolchain install nightly'.") ) || cargo +nightly fmt

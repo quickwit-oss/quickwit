@@ -35,7 +35,7 @@ pub struct MultiRecordLogAsync {
 impl MultiRecordLogAsync {
     fn take(&mut self) -> MultiRecordLog {
         let Some(mrecordlog) = self.mrecordlog_opt.take() else {
-            error!("wal is poisoned, aborting process");
+            error!("wal is poisoned (on write), aborting process");
             std::process::abort();
         };
         mrecordlog
@@ -43,7 +43,7 @@ impl MultiRecordLogAsync {
 
     fn mrecordlog_ref(&self) -> &MultiRecordLog {
         let Some(mrecordlog) = &self.mrecordlog_opt else {
-            error!("the mrecordlog is corrupted, aborting process");
+            error!("wal is poisoned (on read), aborting process");
             std::process::abort();
         };
         mrecordlog

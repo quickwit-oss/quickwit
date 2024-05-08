@@ -25,6 +25,8 @@ use serde::Deserialize;
 pub struct ElasticBulkOptions {
     #[serde(default)]
     pub refresh: ElasticRefresh,
+    #[serde(default)]
+    pub enable_ingest_v2: bool,
 }
 
 /// ?refresh parameter for elasticsearch bulk request

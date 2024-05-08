@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::hash_map::Entry;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
@@ -111,6 +111,31 @@ impl ShardTableEntry {
     }
 }
 
+#[derive(Default)]
+pub struct ShardLocations<'a> {
+    shard_locations: HashMap<&'a ShardId, smallvec::SmallVec<[&'a NodeId; 2]>>,
+}
+
+impl<'a> ShardLocations<'a> {
+    pub(crate) fn add_location(&mut self, shard_id: &'a ShardId, ingester_id: &'a NodeId) {
+        let locations = self.shard_locations.entry(shard_id).or_default();
+        if locations.contains(&ingester_id) {
+            warn!("shard {shard_id:?} was registered twice the same ingester {ingester_id:?}");
+        } else {
+            locations.push(ingester_id);
+        }
+    }
+
+    /// Returns the list of indexer holding the given shard.
+    /// No guarantee is made on the order of the returned list.
+    pub fn get_shard_locations(&self, shard_id: &ShardId) -> &[&'a NodeId] {
+        let Some(node_ids) = self.shard_locations.get(shard_id) else {
+            return &[];
+        };
+        node_ids.as_slice()
+    }
+}
+
 // A table that keeps track of the existing shards for each index and source,
 // and for each ingester, the list of shards it is supposed to host.
 //
@@ -146,6 +171,20 @@ fn remove_shard_from_ingesters_internal(
 }
 
 impl ShardTable {
+    /// Returns a ShardLocations object that maps each shard to the list of ingesters hosting it.
+    /// All shards are considered regardless of their state (including unavailable).
+    pub fn shard_locations(&self) -> ShardLocations {
+        let mut shard_locations = ShardLocations::default();
+        for (ingester_id, source_shards) in &self.ingester_shards {
+            for shard_ids in source_shards.values() {
+                for shard_id in shard_ids {
+                    shard_locations.add_location(shard_id, ingester_id);
+                }
+            }
+        }
+        shard_locations
+    }
+
     /// Removes all the entries that match the target index ID.
     pub fn delete_index(&mut self, index_id: &str) {
         let shards_removed = self
@@ -521,6 +560,16 @@ impl ShardTable {
             ScalingMode::Down => &mut table_entry.scaling_down_rate_limiter,
         };
         Some(scaling_rate_limiter.acquire(num_permits))
+    }
+
+    pub fn drain_scaling_permits(&mut self, source_uid: &SourceUid, scaling_mode: ScalingMode) {
+        if let Some(table_entry) = self.table_entries.get_mut(source_uid) {
+            let scaling_rate_limiter = match scaling_mode {
+                ScalingMode::Up => &mut table_entry.scaling_up_rate_limiter,
+                ScalingMode::Down => &mut table_entry.scaling_down_rate_limiter,
+            };
+            scaling_rate_limiter.drain();
+        }
     }
 
     pub fn release_scaling_permits(
@@ -1143,5 +1192,132 @@ mod tests {
             .available_permits();
 
         assert_eq!(new_available_permits, previous_available_permits);
+    }
+
+    #[test]
+    fn test_shard_locations() {
+        let shard1 = ShardId::from("shard1");
+        let shard2 = ShardId::from("shard1");
+        let unlisted_shard = ShardId::from("unlisted");
+        let node1 = NodeId::new("node1".to_string());
+        let node2 = NodeId::new("node2".to_string());
+        let mut shard_locations = ShardLocations::default();
+        shard_locations.add_location(&shard1, &node1);
+        shard_locations.add_location(&shard1, &node2);
+        // add location called several times should counted once.
+        shard_locations.add_location(&shard2, &node2);
+        assert_eq!(
+            shard_locations.get_shard_locations(&shard1),
+            &[&node1, &node2]
+        );
+        assert_eq!(
+            shard_locations.get_shard_locations(&shard2),
+            &[&node1, &node2]
+        );
+        // If the shard is not listed, we do not panic but just return an empty list.
+        assert!(shard_locations
+            .get_shard_locations(&unlisted_shard)
+            .is_empty());
+    }
+
+    #[test]
+    fn test_shard_table_shard_locations() {
+        let mut shard_table = ShardTable::default();
+
+        let index_uid0: IndexUid = IndexUid::for_test("test-index0", 0);
+        let source_id = "test-source0".to_string();
+        shard_table.add_source(&index_uid0, &source_id);
+
+        let index_uid1: IndexUid = IndexUid::for_test("test-index1", 0);
+        let source_id = "test-source1".to_string();
+        shard_table.add_source(&index_uid1, &source_id);
+
+        let source_uid0 = SourceUid {
+            index_uid: index_uid0.clone(),
+            source_id: source_id.clone(),
+        };
+
+        let source_uid1 = SourceUid {
+            index_uid: index_uid1.clone(),
+            source_id: source_id.clone(),
+        };
+
+        let make_shard = |source_uid: &SourceUid,
+                          leader_id: &str,
+                          shard_id: u64,
+                          follower_id: Option<&str>,
+                          shard_state: ShardState| {
+            Shard {
+                index_uid: source_uid.index_uid.clone().into(),
+                source_id: source_uid.source_id.clone(),
+                shard_id: Some(ShardId::from(shard_id)),
+                leader_id: leader_id.to_string(),
+                follower_id: follower_id.map(|s| s.to_string()),
+                shard_state: shard_state as i32,
+                ..Default::default()
+            }
+        };
+
+        shard_table.insert_shards(
+            &source_uid0.index_uid,
+            &source_uid0.source_id,
+            vec![
+                make_shard(
+                    &source_uid0,
+                    "indexer1",
+                    0,
+                    Some("indexer2"),
+                    ShardState::Open,
+                ),
+                make_shard(&source_uid0, "indexer1", 1, None, ShardState::Closed),
+                make_shard(&source_uid0, "indexer2", 2, None, ShardState::Open),
+            ],
+        );
+
+        shard_table.insert_shards(
+            &source_uid1.index_uid,
+            &source_uid1.source_id,
+            vec![
+                make_shard(
+                    &source_uid1,
+                    "indexer2",
+                    3,
+                    Some("indexer1"),
+                    ShardState::Unavailable,
+                ),
+                make_shard(
+                    &source_uid1,
+                    "indexer2",
+                    3,
+                    Some("indexer1"),
+                    ShardState::Open,
+                ),
+            ],
+        );
+
+        let shard_locations = shard_table.shard_locations();
+        let get_sorted_locations_for_shard = |shard_id: u64| {
+            let mut locations = shard_locations
+                .get_shard_locations(&ShardId::from(shard_id))
+                .to_vec();
+            locations.sort();
+            locations
+        };
+        assert_eq!(
+            &get_sorted_locations_for_shard(0u64),
+            &[&NodeId::from("indexer1"), &NodeId::from("indexer2")]
+        );
+        assert_eq!(
+            &get_sorted_locations_for_shard(1u64),
+            &[&NodeId::from("indexer1")]
+        );
+        assert_eq!(
+            &get_sorted_locations_for_shard(2u64),
+            &[&NodeId::from("indexer2")]
+        );
+        assert_eq!(
+            &get_sorted_locations_for_shard(3u64),
+            &[&NodeId::from("indexer1"), &NodeId::from("indexer2")]
+        );
     }
 }

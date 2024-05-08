@@ -120,7 +120,7 @@ impl ClusterServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
             MockClusterService > (),
-            "`MockClusterService` must be wrapped in a `MockClusterServiceWrapper`. Use `MockClusterService::from(mock)` to instantiate the client."
+            "`MockClusterService` must be wrapped in a `MockClusterServiceWrapper`: use `ClusterServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }
@@ -368,6 +368,10 @@ impl ClusterServiceTowerLayerStack {
         ClusterServiceMailbox<A>: ClusterService,
     {
         self.build_from_boxed(Box::new(ClusterServiceMailbox::new(mailbox)))
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockClusterService) -> ClusterServiceClient {
+        self.build_from_boxed(Box::new(ClusterServiceClient::from_mock(mock)))
     }
     fn build_from_boxed(
         self,

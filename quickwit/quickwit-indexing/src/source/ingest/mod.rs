@@ -19,7 +19,6 @@
 
 use std::collections::BTreeSet;
 use std::fmt;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -51,8 +50,8 @@ use tracing::{debug, error, info, warn};
 use ulid::Ulid;
 
 use super::{
-    BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
-    BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
+    BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory, BATCH_NUM_BYTES_LIMIT,
+    EMIT_BATCHES_TIMEOUT,
 };
 use crate::actors::DocProcessor;
 use crate::models::{LocalShardPositionsUpdate, NewPublishLock, NewPublishToken, PublishLock};
@@ -65,18 +64,17 @@ impl TypedSourceFactory for IngestSourceFactory {
     type Params = ();
 
     async fn typed_create_source(
-        runtime_args: Arc<SourceRuntimeArgs>,
+        source_runtime: SourceRuntime,
         _params: Self::Params,
-        _checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
         // Retry parameters for the fetch stream: retry indefinitely until the shard is complete or
         // unassigned.
         let retry_params = RetryParams {
             max_attempts: usize::MAX,
-            base_delay: Duration::from_secs(1),
+            base_delay: Duration::from_secs(5),
             max_delay: Duration::from_secs(10 * 60), // 10 minutes
         };
-        IngestSource::try_new(runtime_args, retry_params).await
+        IngestSource::try_new(source_runtime, retry_params).await
     }
 }
 
@@ -161,20 +159,20 @@ impl fmt::Debug for IngestSource {
 
 impl IngestSource {
     pub async fn try_new(
-        runtime_args: Arc<SourceRuntimeArgs>,
+        source_runtime: SourceRuntime,
         retry_params: RetryParams,
     ) -> anyhow::Result<IngestSource> {
-        let self_node_id: NodeId = runtime_args.node_id().into();
+        let self_node_id: NodeId = source_runtime.node_id().into();
         let client_id = ClientId::new(
             self_node_id.clone(),
             SourceUid {
-                index_uid: runtime_args.index_uid().clone(),
-                source_id: runtime_args.source_id().to_string(),
+                index_uid: source_runtime.index_uid().clone(),
+                source_id: source_runtime.source_id().to_string(),
             },
-            runtime_args.pipeline_uid(),
+            source_runtime.pipeline_uid(),
         );
-        let metastore = runtime_args.metastore.clone();
-        let ingester_pool = runtime_args.ingester_pool.clone();
+        let metastore = source_runtime.metastore.clone();
+        let ingester_pool = source_runtime.ingester_pool.clone();
         let assigned_shards = FnvHashMap::default();
         let fetch_stream = MultiFetchStream::new(
             self_node_id,
@@ -195,7 +193,7 @@ impl IngestSource {
             fetch_stream,
             publish_lock,
             publish_token,
-            event_broker: runtime_args.event_broker.clone(),
+            event_broker: source_runtime.event_broker.clone(),
         })
     }
 
@@ -913,7 +911,7 @@ mod tests {
 
         let event_broker = EventBroker::default();
 
-        let runtime_args: Arc<SourceRuntimeArgs> = Arc::new(SourceRuntimeArgs {
+        let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
@@ -921,12 +919,9 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
             event_broker,
-        });
-        let retry_params = RetryParams {
-            max_attempts: 1,
-            ..Default::default()
         };
-        let mut source = IngestSource::try_new(runtime_args, retry_params)
+        let retry_params = RetryParams::no_retries();
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
             .await
             .unwrap();
 
@@ -1115,7 +1110,7 @@ mod tests {
             })
             .forever();
 
-        let runtime_args = Arc::new(SourceRuntimeArgs {
+        let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
@@ -1123,9 +1118,9 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
             event_broker,
-        });
+        };
         let retry_params = RetryParams::for_test();
-        let mut source = IngestSource::try_new(runtime_args, retry_params)
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
             .await
             .unwrap();
 
@@ -1275,7 +1270,7 @@ mod tests {
             })
             .forever();
 
-        let runtime_args = Arc::new(SourceRuntimeArgs {
+        let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
@@ -1283,9 +1278,9 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
             event_broker,
-        });
+        };
         let retry_params = RetryParams::for_test();
-        let mut source = IngestSource::try_new(runtime_args, retry_params)
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
             .await
             .unwrap();
 
@@ -1340,7 +1335,7 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let event_broker = EventBroker::default();
 
-        let runtime_args = Arc::new(SourceRuntimeArgs {
+        let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
@@ -1348,9 +1343,9 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
             event_broker,
-        });
+        };
         let retry_params = RetryParams::for_test();
-        let mut source = IngestSource::try_new(runtime_args, retry_params)
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
             .await
             .unwrap();
 
@@ -1571,7 +1566,7 @@ mod tests {
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
-        let runtime_args = Arc::new(SourceRuntimeArgs {
+        let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
@@ -1579,9 +1574,9 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
             event_broker,
-        });
+        };
         let retry_params = RetryParams::for_test();
-        let mut source = IngestSource::try_new(runtime_args, retry_params)
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
             .await
             .unwrap();
 
@@ -1725,7 +1720,7 @@ mod tests {
             })
             .forever();
 
-        let runtime_args = Arc::new(SourceRuntimeArgs {
+        let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
@@ -1733,9 +1728,9 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
             event_broker,
-        });
+        };
         let retry_params = RetryParams::for_test();
-        let mut source = IngestSource::try_new(runtime_args, retry_params)
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
             .await
             .unwrap();
 

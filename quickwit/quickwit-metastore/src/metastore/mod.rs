@@ -31,13 +31,13 @@ use bytes::Bytes;
 use futures::TryStreamExt;
 pub use index_metadata::IndexMetadata;
 use itertools::Itertools;
-use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_config::{IndexConfig, RetentionPolicy, SearchSettings, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask,
     IndexMetadataRequest, IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsRequest,
     ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
-    MetastoreServiceStream, PublishSplitsRequest, StageSplitsRequest,
+    MetastoreServiceStream, PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use time::OffsetDateTime;
@@ -112,6 +112,12 @@ pub trait CreateIndexRequestExt {
     /// Creates a new [`CreateIndexRequest`] from an [`IndexConfig`].
     fn try_from_index_config(index_config: &IndexConfig) -> MetastoreResult<CreateIndexRequest>;
 
+    /// Creates a new [`CreateIndexRequest`] from an [`IndexConfig`] and a list of [`SourceConfig`].
+    fn try_from_index_and_source_configs(
+        index_config: &IndexConfig,
+        source_configs: &[SourceConfig],
+    ) -> MetastoreResult<CreateIndexRequest>;
+
     /// Deserializes the `index_config_json` field of a [`CreateIndexRequest`] into an
     /// [`IndexConfig`].
     fn deserialize_index_config(&self) -> MetastoreResult<IndexConfig>;
@@ -125,6 +131,22 @@ impl CreateIndexRequestExt for CreateIndexRequest {
     fn try_from_index_config(index_config: &IndexConfig) -> MetastoreResult<CreateIndexRequest> {
         let index_config_json = serde_utils::to_json_str(index_config)?;
         let source_configs_json = Vec::new();
+        let request = Self {
+            index_config_json,
+            source_configs_json,
+        };
+        Ok(request)
+    }
+
+    fn try_from_index_and_source_configs(
+        index_config: &IndexConfig,
+        source_configs: &[SourceConfig],
+    ) -> MetastoreResult<CreateIndexRequest> {
+        let index_config_json = serde_utils::to_json_str(index_config)?;
+        let source_configs_json: Vec<String> = source_configs
+            .iter()
+            .map(serde_utils::to_json_str)
+            .collect::<MetastoreResult<_>>()?;
         let request = Self {
             index_config_json,
             source_configs_json,
@@ -154,6 +176,56 @@ pub trait CreateIndexResponseExt {
 impl CreateIndexResponseExt for CreateIndexResponse {
     fn deserialize_index_metadata(&self) -> MetastoreResult<IndexMetadata> {
         serde_utils::from_json_str(&self.index_metadata_json)
+    }
+}
+
+/// Helper trait to build a [`UpdateIndexRequest`] and deserialize its payload.
+pub trait UpdateIndexRequestExt {
+    /// Creates a new [`UpdateIndexRequest`] from the different updated fields.
+    fn try_from_updates(
+        index_uid: impl Into<IndexUid>,
+        search_settings: &SearchSettings,
+        retention_policy_opt: &Option<RetentionPolicy>,
+    ) -> MetastoreResult<UpdateIndexRequest>;
+
+    /// Deserializes the `search_settings_json` field of an [`UpdateIndexRequest`] into a
+    /// [`SearchSettings`] object.
+    fn deserialize_search_settings(&self) -> MetastoreResult<SearchSettings>;
+
+    /// Deserializes the `retention_policy_json` field of an [`UpdateIndexRequest`] into a
+    /// [`RetentionPolicy`] object.
+    fn deserialize_retention_policy(&self) -> MetastoreResult<Option<RetentionPolicy>>;
+}
+
+impl UpdateIndexRequestExt for UpdateIndexRequest {
+    fn try_from_updates(
+        index_uid: impl Into<IndexUid>,
+        search_settings: &SearchSettings,
+        retention_policy_opt: &Option<RetentionPolicy>,
+    ) -> MetastoreResult<UpdateIndexRequest> {
+        let search_settings_json = serde_utils::to_json_str(&search_settings)?;
+        let retention_policy_json = retention_policy_opt
+            .as_ref()
+            .map(serde_utils::to_json_str)
+            .transpose()?;
+
+        let update_request = UpdateIndexRequest {
+            index_uid: Some(index_uid.into()),
+            search_settings_json,
+            retention_policy_json,
+        };
+        Ok(update_request)
+    }
+
+    fn deserialize_search_settings(&self) -> MetastoreResult<SearchSettings> {
+        serde_utils::from_json_str(&self.search_settings_json)
+    }
+
+    fn deserialize_retention_policy(&self) -> MetastoreResult<Option<RetentionPolicy>> {
+        self.retention_policy_json
+            .as_ref()
+            .map(|policy| serde_utils::from_json_str(policy))
+            .transpose()
     }
 }
 

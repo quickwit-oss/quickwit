@@ -574,8 +574,8 @@ mod tests {
                 json!({"foo": {"bar": JsonValue::Bool(true)}, "baz": JsonValue::Bool(false)})
             ),
             vec![
-                ("foo.bar".to_string(), JsonValue::Bool(true)),
                 ("baz".to_string(), JsonValue::Bool(false)),
+                ("foo.bar".to_string(), JsonValue::Bool(true)),
             ]
         );
     }

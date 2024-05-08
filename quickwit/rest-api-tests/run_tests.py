@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 
-import subprocess
-import requests
 import glob
-import yaml
-import sys
-from os import path as osp
-from os import mkdir
 import gzip
 import http
 import json
-import tempfile
+import os
+import requests
 import shutil
+import subprocess
+import sys
+import tempfile
 import time
+import yaml
+
+from os import mkdir
+from os import path as osp
 
 def debug_http():
     old_send = http.client.HTTPConnection.send
@@ -26,8 +28,6 @@ def debug_http():
         print(f'{"-"*10} END REQUEST {"-"*10}')
         return old_send(self, data)
     http.client.HTTPConnection.send = new_send
-
-# debug_http()
 
 def open_scenario(scenario_filepath):
     data = open(scenario_filepath).read()
@@ -85,7 +85,7 @@ def run_request_step(method, step, previous_result):
         step["headers"] = {'user-agent': 'my-app/0.0.1'}
     method_req = getattr(requests, method.lower())
     endpoint = step.get("endpoint", "")
-    url = step["api_root"] + endpoint
+    url = "{}/{}".format(step["api_root"].rstrip('/'), endpoint.lstrip('/'))
     kvargs = {
         k: v
         for k, v in step.items()
@@ -107,14 +107,14 @@ def run_request_step(method, step, previous_result):
     run_req = lambda : method_req(url, **kvargs)
     r = run_request_with_retry(run_req, expected_status_code, num_retries)
     expected_resp = step.get("expected", None)
-    json_res = r.json()
+    json_resp = r.json()
     if expected_resp is not None:
         try:
-            check_result(json_res, expected_resp, context_path="")
+            check_result(json_resp, expected_resp, context_path="")
         except Exception as e:
-            print(json.dumps(json_res, indent=2))
+            print(json.dumps(json_resp, indent=2))
             raise e
-    return json_res
+    return json_resp
 
 def check_result(result, expected, context_path = ""):
     if type(expected) == dict and "$expect" in expected:
@@ -153,11 +153,12 @@ def check_result_list(result, expected, context_path=""):
         check_result(left, right, context_path + "[%s]" % i)
 
 def check_result_dict(result, expected, context_path=""):
-    for (k, v) in expected.items():
-        child = result.get(k, None)
-        if child is None:
-            raise Exception("Missing key %s at context %s" % (k, context_path))
-        check_result(child, v, context_path + "." + k)
+    for key, value in expected.items():
+        try:
+            child = result[key]
+        except KeyError:
+            raise Exception("Missing key `%s` at context %s" % (key, context_path))
+        check_result(child, value, context_path + "." + key)
 
 class PathTree:
     def __init__(self):

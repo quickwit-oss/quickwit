@@ -115,6 +115,8 @@ pub trait GrpcServiceError: ServiceError + Serialize + DeserializeOwned + Send +
 
     fn new_timeout(message: String) -> Self;
 
+    fn new_too_many_requests() -> Self;
+
     fn new_unavailable(message: String) -> Self;
 }
 
@@ -209,6 +211,10 @@ mod tests {
             Internal(String),
             #[error("request timed out: {0}")]
             Timeout(String),
+
+            #[error("too many requests")]
+            TooManyRequests,
+
             #[error("service unavailable: {0}")]
             Unavailable(String),
         }
@@ -216,24 +222,29 @@ mod tests {
         impl ServiceError for MyError {
             fn error_code(&self) -> ServiceErrorCode {
                 match self {
-                    MyError::Internal(_) => ServiceErrorCode::Internal,
-                    MyError::Timeout(_) => ServiceErrorCode::Timeout,
-                    MyError::Unavailable(_) => ServiceErrorCode::Unavailable,
+                    Self::Internal(_) => ServiceErrorCode::Internal,
+                    Self::Timeout(_) => ServiceErrorCode::Timeout,
+                    Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
+                    Self::Unavailable(_) => ServiceErrorCode::Unavailable,
                 }
             }
         }
 
         impl GrpcServiceError for MyError {
             fn new_internal(message: String) -> Self {
-                MyError::Internal(message)
+                Self::Internal(message)
             }
 
             fn new_timeout(message: String) -> Self {
-                MyError::Timeout(message)
+                Self::Timeout(message)
+            }
+
+            fn new_too_many_requests() -> Self {
+                Self::TooManyRequests
             }
 
             fn new_unavailable(message: String) -> Self {
-                MyError::Unavailable(message)
+                Self::Unavailable(message)
             }
         }
 

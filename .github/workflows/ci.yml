@@ -74,7 +74,7 @@ jobs:
           workspaces: "./quickwit -> target"
       - name: Install nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/cache-cargo-install-action@v1
+        uses: taiki-e/cache-cargo-install-action@v2
         with:
           tool: cargo-nextest
       - name: cargo nextest
@@ -127,7 +127,7 @@ jobs:
           workspaces: "./quickwit -> target"
       - name: Install cargo deny
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/cache-cargo-install-action@v1
+        uses: taiki-e/cache-cargo-install-action@v2
         with:
           tool: cargo-deny
       - name: cargo clippy

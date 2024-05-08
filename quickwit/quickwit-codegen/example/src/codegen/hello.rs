@@ -101,7 +101,7 @@ impl HelloClient {
         #[cfg(any(test, feature = "testsuite"))]
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: < MockHello > (),
-            "`MockHello` must be wrapped in a `MockHelloWrapper`. Use `MockHello::from(mock)` to instantiate the client."
+            "`MockHello` must be wrapped in a `MockHelloWrapper`: use `HelloClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }
@@ -547,6 +547,10 @@ impl HelloTowerLayerStack {
         HelloMailbox<A>: Hello,
     {
         self.build_from_boxed(Box::new(HelloMailbox::new(mailbox)))
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockHello) -> HelloClient {
+        self.build_from_boxed(Box::new(HelloClient::from_mock(mock)))
     }
     fn build_from_boxed(self, boxed_instance: Box<dyn Hello>) -> HelloClient {
         let hello_svc = self

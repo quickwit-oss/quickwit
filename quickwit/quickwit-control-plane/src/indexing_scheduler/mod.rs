@@ -40,7 +40,8 @@ use tracing::{debug, info, warn};
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
-use crate::model::ControlPlaneModel;
+use crate::metrics::ShardLocalityMetrics;
+use crate::model::{ControlPlaneModel, ShardLocations};
 use crate::{IndexerNodeInfo, IndexerPool};
 
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
@@ -231,11 +232,16 @@ impl IndexingScheduler {
             return;
         };
 
+        let shard_locations = model.shard_locations();
         let new_physical_plan = build_physical_indexing_plan(
             &sources,
             &indexer_id_to_cpu_capacities,
             self.state.last_applied_physical_plan.as_ref(),
+            &shard_locations,
         );
+        let shard_locality_metrics =
+            get_shard_locality_metrics(&new_physical_plan, &shard_locations);
+        crate::metrics::CONTROL_PLANE_METRICS.set_shard_locality_metrics(shard_locality_metrics);
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
                 last_applied_plan.indexing_tasks_per_indexer(),
@@ -256,7 +262,7 @@ impl IndexingScheduler {
     /// - If indexing tasks differ, apply again the last plan.
     pub(crate) fn control_running_plan(&mut self, model: &ControlPlaneModel) {
         let last_applied_plan =
-            if let Some(last_applied_plan) = self.state.last_applied_physical_plan.as_ref() {
+            if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
                 last_applied_plan
             } else {
                 // If there is no plan, the node is probably starting and the scheduler did not find
@@ -265,7 +271,6 @@ impl IndexingScheduler {
                 self.rebuild_plan(model);
                 return;
             };
-
         if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp {
             if Instant::now().duration_since(last_applied_plan_timestamp)
                 < MIN_DURATION_BETWEEN_SCHEDULING
@@ -273,7 +278,6 @@ impl IndexingScheduler {
                 return;
             }
         }
-
         let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
         let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
             .iter()
@@ -369,6 +373,33 @@ impl<'a> IndexingPlansDiff<'a> {
 
     pub fn is_empty(&self) -> bool {
         self.has_same_nodes() && self.has_same_tasks()
+    }
+}
+
+fn get_shard_locality_metrics(
+    physical_plan: &PhysicalIndexingPlan,
+    shard_locations: &ShardLocations,
+) -> ShardLocalityMetrics {
+    let mut num_local_shards = 0;
+    let mut num_remote_shards = 0;
+    for (indexer, tasks) in physical_plan.indexing_tasks_per_indexer() {
+        for task in tasks {
+            for shard_id in &task.shard_ids {
+                if shard_locations
+                    .get_shard_locations(shard_id)
+                    .iter()
+                    .any(|node| node.as_str() == indexer)
+                {
+                    num_local_shards += 1;
+                } else {
+                    num_remote_shards += 1;
+                }
+            }
+        }
+    }
+    ShardLocalityMetrics {
+        num_remote_shards,
+        num_local_shards,
     }
 }
 
@@ -512,6 +543,7 @@ mod tests {
     use quickwit_proto::types::{IndexUid, PipelineUid, SourceUid};
 
     use super::*;
+    use crate::model::ShardLocations;
     #[test]
     fn test_indexing_plans_diff() {
         let index_uid = IndexUid::from_str("index-1:11111111111111111111111111").unwrap();
@@ -800,7 +832,9 @@ mod tests {
         let mut indexer_max_loads = FnvHashMap::default();
         indexer_max_loads.insert("indexer1".to_string(), mcpu(3_000));
         indexer_max_loads.insert("indexer2".to_string(), mcpu(3_000));
-        let physical_plan = build_physical_indexing_plan(&sources[..], &indexer_max_loads, None);
+        let shard_locations = ShardLocations::default();
+        let physical_plan =
+            build_physical_indexing_plan(&sources[..], &indexer_max_loads, None, &shard_locations);
         assert_eq!(physical_plan.indexing_tasks_per_indexer().len(), 2);
         let indexing_tasks_1 = physical_plan.indexer("indexer1").unwrap();
         assert_eq!(indexing_tasks_1.len(), 2);
@@ -830,7 +864,8 @@ mod tests {
                 let indexer_id = format!("indexer-{i}");
                 indexer_max_loads.insert(indexer_id, mcpu(4_000));
             }
-            let _physical_indexing_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None);
+            let shard_locations = ShardLocations::default();
+            let _physical_indexing_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None, &shard_locations);
         }
     }
 

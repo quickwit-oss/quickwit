@@ -19,6 +19,7 @@
 
 #![deny(clippy::disallowed_methods)]
 
+use std::env;
 use std::str::FromStr;
 
 use anyhow::{bail, ensure, Context};
@@ -69,14 +70,26 @@ pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
 };
 pub use crate::node_config::{
-    enable_ingest_v2, IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig, SearcherConfig,
-    SplitCacheLimits, DEFAULT_QW_CONFIG_PATH,
+    IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig, SearcherConfig, SplitCacheLimits,
+    DEFAULT_QW_CONFIG_PATH,
 };
 use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
 pub use crate::storage_config::{
     AzureStorageConfig, FileStorageConfig, GoogleCloudStorageConfig, RamStorageConfig,
     S3StorageConfig, StorageBackend, StorageBackendFlavor, StorageConfig, StorageConfigs,
 };
+
+/// Returns true if the ingest API v2 is enabled.
+pub fn enable_ingest_v2() -> bool {
+    static ENABLE_INGEST_V2: Lazy<bool> = Lazy::new(|| env::var("QW_ENABLE_INGEST_V2").is_ok());
+    *ENABLE_INGEST_V2
+}
+
+/// Returns true if the ingest API v1 is disabled.
+pub fn disable_ingest_v1() -> bool {
+    static ENABLE_INGEST_V2: Lazy<bool> = Lazy::new(|| env::var("QW_DISABLE_INGEST_V1").is_ok());
+    *ENABLE_INGEST_V2
+}
 
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(

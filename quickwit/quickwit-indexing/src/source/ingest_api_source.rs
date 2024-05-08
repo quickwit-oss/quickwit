@@ -18,9 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
-use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::bail;
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_ingest::{
@@ -32,10 +32,11 @@ use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use tracing::{error, info};
 
 use super::{BatchBuilder, Source, SourceActor, SourceContext, TypedSourceFactory};
 use crate::actors::DocProcessor;
-use crate::source::SourceRuntimeArgs;
+use crate::source::SourceRuntime;
 
 /// Wait time for SourceActor before pooling for new documents.
 /// TODO: Think of better way, maybe increment this (i.e wait longer) as time
@@ -56,7 +57,7 @@ pub struct IngestApiSourceCounters {
 }
 
 pub struct IngestApiSource {
-    runtime_args: Arc<SourceRuntimeArgs>,
+    source_runtime: SourceRuntime,
     source_id: String,
     partition_id: PartitionId,
     ingest_api_service: Mailbox<IngestApiService>,
@@ -70,27 +71,42 @@ impl fmt::Debug for IngestApiSource {
 }
 
 impl IngestApiSource {
-    pub async fn try_new(
-        runtime_args: Arc<SourceRuntimeArgs>,
-        checkpoint: SourceCheckpoint,
-    ) -> anyhow::Result<Self> {
-        let source_id = runtime_args.source_id().to_string();
-        let queues_dir_path = runtime_args.queues_dir_path.as_path();
+    pub async fn try_new(source_runtime: SourceRuntime) -> anyhow::Result<Self> {
+        let source_id = source_runtime.source_id().to_string();
+        let queues_dir_path = source_runtime.queues_dir_path.as_path();
         let ingest_api_service = get_ingest_api_service(queues_dir_path).await?;
         let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
 
         // Ensure a queue for this index exists.
         let create_queue_req = CreateQueueIfNotExistsRequest {
-            queue_id: runtime_args.index_id().to_string(),
+            queue_id: source_runtime.index_id().to_string(),
         };
-        ingest_api_service.ask_for_res(create_queue_req).await?;
-
+        match ingest_api_service.ask_for_res(create_queue_req).await {
+            Ok(response) if response.created => {
+                info!(
+                    index_id = source_runtime.index_id(),
+                    %partition_id,
+                    "created queue successfully"
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                error!(
+                    index_id = source_runtime.index_id(),
+                    %partition_id,
+                    %error,
+                    "failed to create queue"
+                );
+                bail!(error);
+            }
+        }
+        let checkpoint = source_runtime.fetch_checkpoint().await?;
         let previous_offset: Option<u64> = checkpoint
             .position_for_partition(&partition_id)
             .map(|position| position.as_u64().expect("offset should be stored as u64"));
         let current_offset = previous_offset;
         let ingest_api_source = IngestApiSource {
-            runtime_args,
+            source_runtime,
             source_id,
             partition_id,
             ingest_api_service,
@@ -109,7 +125,7 @@ impl IngestApiSource {
         ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
         let suggest_truncate_req = SuggestTruncateRequest {
-            index_id: self.runtime_args.index_id().to_string(),
+            index_id: self.source_runtime.index_id().to_string(),
             up_to_position_included,
         };
         ctx.ask_for_res(&self.ingest_api_service, suggest_truncate_req)
@@ -144,7 +160,7 @@ impl Source for IngestApiSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let fetch_req = FetchRequest {
-            index_id: self.runtime_args.index_id().to_string(),
+            index_id: self.source_runtime.index_id().to_string(),
             start_after: self.counters.current_offset,
             num_bytes_limit: None,
         };
@@ -227,11 +243,10 @@ impl TypedSourceFactory for IngestApiSourceFactory {
     type Params = ();
 
     async fn typed_create_source(
-        ctx: Arc<SourceRuntimeArgs>,
+        source_runtime: SourceRuntime,
         _: (),
-        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        IngestApiSource::try_new(ctx, checkpoint).await
+        IngestApiSource::try_new(source_runtime).await
     }
 }
 
@@ -247,12 +262,12 @@ mod tests {
         IngestApiConfig, SourceConfig, SourceInputFormat, SourceParams, INGEST_API_SOURCE_ID,
     };
     use quickwit_ingest::{init_ingest_api, CommitType, DocBatchBuilder, IngestRequest};
-    use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
-    use quickwit_metastore::metastore_for_test;
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::types::IndexUid;
 
     use super::*;
     use crate::models::RawDocBatch;
+    use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::SourceActor;
 
     fn make_ingest_request(
@@ -294,7 +309,6 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_api_source() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
@@ -304,13 +318,10 @@ mod tests {
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            queues_dir_path.to_path_buf(),
-        );
-        let ingest_api_source = IngestApiSource::try_new(ctx, SourceCheckpoint::default()).await?;
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+            .with_queues_dir(queues_dir_path)
+            .build();
+        let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
             doc_processor_mailbox,
@@ -383,7 +394,6 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_api_source_resume_from_checkpoint() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
@@ -406,24 +416,21 @@ mod tests {
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-        let mut checkpoint = SourceCheckpoint::default();
         let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
         let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             partition_id.clone(),
-            Position::offset(0u64),
+            Position::Beginning,
             Position::offset(1200u64),
         )
         .unwrap();
-        checkpoint.try_apply_delta(checkpoint_delta).unwrap();
 
         let source_config = make_source_config();
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            queues_dir_path.to_path_buf(),
-        );
-        let ingest_api_source = IngestApiSource::try_new(ctx, checkpoint).await?;
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+            .with_mock_metastore(Some(checkpoint_delta))
+            .with_queues_dir(queues_dir_path)
+            .build();
+
+        let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
             doc_processor_mailbox,
@@ -462,7 +469,6 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_api_source_with_one_doc() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
@@ -472,13 +478,11 @@ mod tests {
 
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            queues_dir_path.to_path_buf(),
-        );
-        let ingest_api_source = IngestApiSource::try_new(ctx, SourceCheckpoint::default()).await?;
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+            .with_queues_dir(queues_dir_path)
+            .build();
+
+        let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
             doc_processor_mailbox,
@@ -516,7 +520,6 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_api_source_with_force_commit() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
@@ -526,13 +529,11 @@ mod tests {
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            queues_dir_path.to_path_buf(),
-        );
-        let ingest_api_source = IngestApiSource::try_new(ctx, SourceCheckpoint::default()).await?;
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+            .with_queues_dir(queues_dir_path)
+            .build();
+
+        let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
             doc_processor_mailbox,
@@ -583,7 +584,6 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_api_source_with_wait() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
@@ -593,13 +593,11 @@ mod tests {
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            queues_dir_path.to_path_buf(),
-        );
-        let ingest_api_source = IngestApiSource::try_new(ctx, SourceCheckpoint::default()).await?;
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+            .with_queues_dir(queues_dir_path)
+            .build();
+
+        let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
             doc_processor_mailbox,
@@ -646,7 +644,6 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_api_source_truncate_on_initialize() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
@@ -656,12 +653,9 @@ mod tests {
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
         let (doc_processor_mailbox, _doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            queues_dir_path.to_path_buf(),
-        );
+        let _source_runtime = SourceRuntimeBuilder::new(index_uid.clone(), source_config.clone())
+            .with_queues_dir(queues_dir_path)
+            .build();
 
         let create_queue_req = CreateQueueIfNotExistsRequest {
             queue_id: index_id.clone(),
@@ -686,10 +680,20 @@ mod tests {
             .unwrap();
         assert_eq!(first_position, Some(0));
 
-        let partition_id = ingest_api_service.ask(GetPartitionId).await?.into();
-        let mut source_checkpoint = SourceCheckpoint::default();
-        source_checkpoint.add_partition(partition_id, Position::offset(10u64));
-        let ingest_api_source = IngestApiSource::try_new(ctx, source_checkpoint).await?;
+        let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
+        let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
+            partition_id.clone(),
+            Position::Beginning,
+            Position::offset(10u64),
+        )
+        .unwrap();
+
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+            .with_mock_metastore(Some(checkpoint_delta))
+            .with_queues_dir(queues_dir_path)
+            .build();
+
+        let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
             doc_processor_mailbox,

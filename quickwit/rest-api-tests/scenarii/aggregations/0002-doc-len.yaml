@@ -1,0 +1,32 @@
+# Test summing doc len
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    doc_len:
+      sum:
+        field: "_doc_length"
+expected:
+  aggregations:
+    doc_len:
+      value: 913.0
+---
+# Test doc len isn't shown when querying documents
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query:
+    term:
+      id:
+        value: 1
+expected:
+  hits:
+    hits:
+      - _source:
+          $expect: "not '_doc_length' in val"
+---

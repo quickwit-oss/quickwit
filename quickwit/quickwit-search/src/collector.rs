@@ -23,7 +23,7 @@ use std::collections::HashSet;
 
 use itertools::Itertools;
 use quickwit_common::binary_heap::{SortKeyMapper, TopK};
-use quickwit_doc_mapper::{DocMapper, WarmupInfo};
+use quickwit_doc_mapper::WarmupInfo;
 use quickwit_proto::search::{
     LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortOrder, SortValue,
     SplitSearchError,
@@ -37,7 +37,6 @@ use tantivy::columnar::{ColumnType, MonotonicallyMappableToU64};
 use tantivy::fastfield::Column;
 use tantivy::{DateTime, DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
-use crate::filters::{create_timestamp_filter_builder, TimestampFilter, TimestampFilterBuilder};
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector, Span};
 use crate::top_k_collector::{specialized_top_k_segment_collector, QuickwitSegmentTopKCollector};
 use crate::GlobalDocAddress;
@@ -520,23 +519,9 @@ enum AggregationSegmentCollectors {
 
 /// Quickwit collector working at the scale of the segment.
 pub struct QuickwitSegmentCollector {
-    timestamp_filter_opt: Option<TimestampFilter>,
     segment_top_k_collector: Option<Box<dyn QuickwitSegmentTopKCollector>>,
     aggregation: Option<AggregationSegmentCollectors>,
     num_hits: u64,
-    // Caches for block fetching
-    filtered_docs: Box<[DocId; 64]>,
-    timestamps_buffer: Box<[Option<DateTime>; 64]>,
-}
-
-impl QuickwitSegmentCollector {
-    #[inline]
-    fn accept_document(&self, doc_id: DocId) -> bool {
-        if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
-            return timestamp_filter.contains_doc_timestamp(doc_id);
-        }
-        true
-    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -581,47 +566,11 @@ impl SegmentPartialHit {
     }
 }
 
-pub use tantivy::COLLECT_BLOCK_BUFFER_LEN;
-/// Store the filtered docs in `filtered_docs_buffer` if `timestamp_filter_opt` is present.
-///
-/// Returns the number of docs.
-///
-/// Ideally we would return just final docs slice, but we can't do that because of the borrow
-/// checker.
-fn compute_filtered_block<'a>(
-    timestamp_filter_opt: &Option<TimestampFilter>,
-    docs: &'a [DocId],
-    filtered_docs_buffer: &'a mut [DocId; COLLECT_BLOCK_BUFFER_LEN],
-    timestamps_buffer: &'a mut [Option<DateTime>; COLLECT_BLOCK_BUFFER_LEN],
-) -> &'a [DocId] {
-    let Some(timestamp_filter) = &timestamp_filter_opt else {
-        return docs;
-    };
-    timestamp_filter.fetch_timestamps(docs, timestamps_buffer);
-    let mut len = 0;
-    for (doc, date) in docs.iter().zip(timestamps_buffer.iter()) {
-        filtered_docs_buffer[len] = *doc;
-        len += if let Some(ts) = date {
-            timestamp_filter.contains_timestamp(ts) as usize
-        } else {
-            0
-        }
-    }
-    &filtered_docs_buffer[..len]
-}
-
 impl SegmentCollector for QuickwitSegmentCollector {
     type Fruit = tantivy::Result<LeafSearchResponse>;
 
     #[inline]
-    fn collect_block(&mut self, unfiltered_docs: &[DocId]) {
-        let filtered_docs: &[DocId] = compute_filtered_block(
-            &self.timestamp_filter_opt,
-            unfiltered_docs,
-            &mut self.filtered_docs,
-            &mut self.timestamps_buffer,
-        );
-
+    fn collect_block(&mut self, filtered_docs: &[DocId]) {
         // Update results
         self.num_hits += filtered_docs.len() as u64;
 
@@ -642,10 +591,6 @@ impl SegmentCollector for QuickwitSegmentCollector {
 
     #[inline]
     fn collect(&mut self, doc_id: DocId, score: Score) {
-        if !self.accept_document(doc_id) {
-            return;
-        }
-
         self.num_hits += 1;
         if let Some(segment_top_k_collector) = self.segment_top_k_collector.as_mut() {
             segment_top_k_collector.collect_top_k(doc_id, score);
@@ -812,7 +757,6 @@ pub(crate) struct QuickwitCollector {
     pub start_offset: usize,
     pub max_hits: usize,
     pub sort_by: SortByPair,
-    timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     pub aggregation: Option<QuickwitAggregations>,
     pub aggregation_limits: AggregationLimits,
     search_after: Option<PartialHit>,
@@ -827,9 +771,6 @@ impl QuickwitCollector {
         }
         if let Some(aggregations) = &self.aggregation {
             fast_field_names.extend(aggregations.fast_field_names());
-        }
-        if let Some(timestamp_filter_builder) = &self.timestamp_filter_builder_opt {
-            fast_field_names.insert(timestamp_filter_builder.timestamp_field_name.clone());
         }
         fast_field_names
     }
@@ -856,10 +797,6 @@ impl Collector for QuickwitCollector {
         // starting from 0 for every leaves.
         let leaf_max_hits = self.max_hits + self.start_offset;
 
-        let timestamp_filter_opt = match &self.timestamp_filter_builder_opt {
-            Some(timestamp_filter_builder) => timestamp_filter_builder.build(segment_reader)?,
-            None => None,
-        };
         let aggregation = match &self.aggregation {
             Some(QuickwitAggregations::FindTraceIdsAggregation(collector)) => {
                 Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(
@@ -898,11 +835,8 @@ impl Collector for QuickwitCollector {
 
         Ok(QuickwitSegmentCollector {
             num_hits: 0,
-            timestamp_filter_opt,
             segment_top_k_collector,
             aggregation,
-            filtered_docs: Box::new([0; 64]),
-            timestamps_buffer: Box::new([None; 64]),
         })
     }
 
@@ -1111,7 +1045,6 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
 pub(crate) fn make_collector_for_split(
     split_id: String,
-    doc_mapper: &dyn DocMapper,
     search_request: &SearchRequest,
     aggregation_limits: AggregationLimits,
 ) -> crate::Result<QuickwitCollector> {
@@ -1119,18 +1052,12 @@ pub(crate) fn make_collector_for_split(
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
         None => None,
     };
-    let timestamp_filter_builder_opt = create_timestamp_filter_builder(
-        doc_mapper.timestamp_field_name(),
-        search_request.start_timestamp,
-        search_request.end_timestamp,
-    );
     let sort_by = sort_by_from_request(search_request);
     Ok(QuickwitCollector {
         split_id,
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by,
-        timestamp_filter_builder_opt,
         aggregation,
         aggregation_limits,
         search_after: search_request.search_after.clone(),
@@ -1152,7 +1079,6 @@ pub(crate) fn make_merge_collector(
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by,
-        timestamp_filter_builder_opt: None,
         aggregation,
         aggregation_limits: aggregation_limits.clone(),
         search_after: search_request.search_after.clone(),
@@ -1273,27 +1199,27 @@ impl SortKeyMapper<SegmentPartialHit> for HitSortingMapper {
 /// Incrementally merge segment results.
 #[derive(Clone)]
 pub(crate) struct IncrementalCollector {
-    inner: QuickwitCollector,
     top_k_hits: TopK<PartialHit, PartialHitSortingKey, HitSortingMapper>,
     incremental_aggregation: QuickwitIncrementalAggregations,
     num_hits: u64,
     failed_splits: Vec<SplitSearchError>,
     num_attempted_splits: u64,
+    start_offset: usize,
 }
 
 impl IncrementalCollector {
     /// Create a new incremental collector
-    pub(crate) fn new(inner: QuickwitCollector) -> Self {
-        let incremental_aggregation = inner
+    pub(crate) fn new(collector: QuickwitCollector) -> Self {
+        let incremental_aggregation = collector
             .aggregation
             .as_ref()
             .map(QuickwitAggregations::maybe_incremental_aggregator)
             .unwrap_or(QuickwitIncrementalAggregations::NoAggregation);
-        let (order1, order2) = inner.sort_by.sort_orders();
+        let (order1, order2) = collector.sort_by.sort_orders();
         let sort_key_mapper = HitSortingMapper { order1, order2 };
         IncrementalCollector {
-            top_k_hits: TopK::new(inner.max_hits + inner.start_offset, sort_key_mapper),
-            inner,
+            top_k_hits: TopK::new(collector.max_hits + collector.start_offset, sort_key_mapper),
+            start_offset: collector.start_offset,
             incremental_aggregation,
             num_hits: 0,
             failed_splits: Vec::new(),
@@ -1349,8 +1275,8 @@ impl IncrementalCollector {
     pub(crate) fn finalize(self) -> tantivy::Result<LeafSearchResponse> {
         let intermediate_aggregation_result = self.incremental_aggregation.finalize()?;
         let mut partial_hits = self.top_k_hits.finalize();
-        if self.inner.start_offset != 0 {
-            partial_hits.drain(0..self.inner.start_offset.min(partial_hits.len()));
+        if self.start_offset != 0 {
+            partial_hits.drain(0..self.start_offset.min(partial_hits.len()));
         }
         Ok(LeafSearchResponse {
             num_hits: self.num_hits,
@@ -1488,6 +1414,7 @@ mod tests {
         fn doc_from_json_obj(
             &self,
             _json_obj: quickwit_doc_mapper::JsonObject,
+            _doc_len: u64,
         ) -> Result<(u64, TantivyDocument), quickwit_doc_mapper::DocParsingError> {
             unimplemented!()
         }
@@ -1736,7 +1663,6 @@ mod tests {
             for slice_len in 0..dataset.len() {
                 let collector = super::make_collector_for_split(
                     "fake_split_id".to_string(),
-                    &MockDocMapper,
                     &make_request(slice_len as u64, sort_str),
                     Default::default(),
                 )
@@ -1833,7 +1759,6 @@ mod tests {
             };
             let collector = super::make_collector_for_split(
                 "fake_split_id".to_string(),
-                &MockDocMapper,
                 &request,
                 Default::default(),
             )
@@ -1872,7 +1797,6 @@ mod tests {
 
             let collector = super::make_collector_for_split(
                 "fake_split_id1".to_string(),
-                &MockDocMapper,
                 &request,
                 Default::default(),
             )
@@ -1887,7 +1811,6 @@ mod tests {
 
             let collector = super::make_collector_for_split(
                 "fake_split_id2".to_string(),
-                &MockDocMapper,
                 &request,
                 Default::default(),
             )
@@ -1901,7 +1824,6 @@ mod tests {
 
             let collector = super::make_collector_for_split(
                 "fake_split_id3".to_string(),
-                &MockDocMapper,
                 &request,
                 Default::default(),
             )

@@ -46,6 +46,8 @@ pub enum SearchError {
     StorageResolver(#[from] StorageResolverError),
     #[error("request timed out: {0}")]
     Timeout(String),
+    #[error("too many requests")]
+    TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
 }
@@ -60,6 +62,7 @@ impl ServiceError for SearchError {
             Self::InvalidQuery(_) => ServiceErrorCode::BadRequest,
             Self::StorageResolver(_) => ServiceErrorCode::Internal,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
+            Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
@@ -72,6 +75,10 @@ impl GrpcServiceError for SearchError {
 
     fn new_timeout(message: String) -> Self {
         Self::Timeout(message)
+    }
+
+    fn new_too_many_requests() -> Self {
+        Self::TooManyRequests
     }
 
     fn new_unavailable(message: String) -> Self {

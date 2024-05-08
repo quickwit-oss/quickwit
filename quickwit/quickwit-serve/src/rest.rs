@@ -32,16 +32,15 @@ use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
-use crate::debugging_api::debugging_routes;
 use crate::decompression::{CorruptedData, UnsupportedEncoding};
 use crate::delete_task_api::delete_task_api_handlers;
+use crate::developer_api::developer_api_routes;
 use crate::elasticsearch_api::elastic_api_handlers;
 use crate::health_check_api::health_check_handlers;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
-use crate::log_level_handler::log_level_handler;
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
@@ -72,8 +71,11 @@ pub(crate) async fn start_rest_server(
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
-    let request_counter = warp::log::custom(|_| {
-        crate::SERVE_METRICS.http_requests_total.inc();
+    let request_counter = warp::log::custom(|info| {
+        crate::SERVE_METRICS
+            .http_requests_total
+            .with_label_values([info.method().as_str(), info.status().as_str()])
+            .inc();
     });
     // Docs routes
     let api_doc = warp::path("openapi.json")
@@ -90,8 +92,11 @@ pub(crate) async fn start_rest_server(
     // `/metrics` route.
     let metrics_routes = warp::path("metrics").and(warp::get()).map(metrics_handler);
 
-    // `/api/debugging/*` route.
-    let debugging_routes = debugging_routes(quickwit_services.clone());
+    // `/api/developer/*` route.
+    let developer_routes = developer_api_routes(
+        quickwit_services.cluster.clone(),
+        quickwit_services.env_filter_reload_fn.clone(),
+    );
 
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
@@ -115,7 +120,7 @@ pub(crate) async fn start_rest_server(
         .or(ui_handler())
         .or(health_check_routes)
         .or(metrics_routes)
-        .or(debugging_routes)
+        .or(developer_routes)
         .with(request_counter)
         .recover(recover_fn)
         .with(extra_headers)
@@ -168,9 +173,6 @@ fn api_v1_routes(
                 BuildInfo::get(),
                 RuntimeInfo::get(),
                 quickwit_services.node_config.clone(),
-            ))
-            .or(log_level_handler(
-                quickwit_services.env_filter_reload_fn.clone(),
             ))
             .or(indexing_get_handler(
                 quickwit_services.indexing_service_opt.clone(),
@@ -604,7 +606,7 @@ mod tests {
         let metastore_client = MetastoreServiceClient::mocked();
         let index_service =
             IndexService::new(metastore_client.clone(), StorageResolver::unconfigured());
-        let control_plane_service = ControlPlaneServiceClient::mocked();
+        let control_plane_client = ControlPlaneServiceClient::mocked();
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
@@ -613,7 +615,8 @@ mod tests {
             _report_splits_subscription_handle_opt: None,
             _local_shards_update_listener_handle_opt: None,
             cluster,
-            control_plane_service,
+            control_plane_server_opt: None,
+            control_plane_client,
             indexing_service_opt: None,
             index_manager: index_service,
             ingest_service: ingest_service_client(),

@@ -20,9 +20,10 @@
 use std::fmt;
 
 use quickwit_common::retry::Retryable;
+use quickwit_common::tower::MakeLoadShedError;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{IndexId, IndexUid, QueueId, ShardId, SourceId, SplitId};
+use crate::types::{IndexId, IndexUid, QueueId, SourceId, SplitId};
 use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 pub mod events;
@@ -148,6 +149,9 @@ pub enum MetastoreError {
     #[error("request timed out: {0}")]
     Timeout(String),
 
+    #[error("too many requests")]
+    TooManyRequests,
+
     #[error("service unavailable: {0}")]
     Unavailable(String),
 }
@@ -176,6 +180,7 @@ impl ServiceError for MetastoreError {
             Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
             Self::NotFound(_) => ServiceErrorCode::NotFound,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
+            Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
@@ -193,6 +198,10 @@ impl GrpcServiceError for MetastoreError {
         Self::Timeout(message)
     }
 
+    fn new_too_many_requests() -> Self {
+        Self::TooManyRequests
+    }
+
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
     }
@@ -204,6 +213,12 @@ impl Retryable for MetastoreError {
             self,
             Self::Connection { .. } | Self::Db { .. } | Self::Io { .. } | Self::Internal { .. }
         )
+    }
+}
+
+impl MakeLoadShedError for MetastoreError {
+    fn make_load_shed_error() -> Self {
+        MetastoreError::TooManyRequests
     }
 }
 
@@ -223,6 +238,26 @@ impl SourceType {
             SourceType::Vec => "vec",
             SourceType::Void => "void",
         }
+    }
+}
+
+impl fmt::Display for SourceType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let source_type_str = match self {
+            SourceType::Cli => "CLI ingest",
+            SourceType::File => "file",
+            SourceType::IngestV1 => "ingest API v1",
+            SourceType::IngestV2 => "ingest API v2",
+            SourceType::Kafka => "Apache Kafka",
+            SourceType::Kinesis => "Amazon Kinesis",
+            SourceType::Nats => "NATS",
+            SourceType::PubSub => "Google Cloud Pub/Sub",
+            SourceType::Pulsar => "Apache Pulsar",
+            SourceType::Unspecified => "unspecified",
+            SourceType::Vec => "vec",
+            SourceType::Void => "void",
+        };
+        write!(f, "{}", source_type_str)
     }
 }
 
@@ -368,13 +403,5 @@ impl ListIndexesMetadataRequest {
         ListIndexesMetadataRequest {
             index_id_patterns: vec!["*".to_string()],
         }
-    }
-}
-
-impl OpenShardsSubrequest {
-    pub fn shard_id(&self) -> &ShardId {
-        self.shard_id
-            .as_ref()
-            .expect("`shard_id` should be a required field")
     }
 }

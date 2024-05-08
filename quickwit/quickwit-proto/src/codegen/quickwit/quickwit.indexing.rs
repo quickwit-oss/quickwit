@@ -59,7 +59,7 @@ impl IndexingServiceClient {
         assert!(
             std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
             MockIndexingService > (),
-            "`MockIndexingService` must be wrapped in a `MockIndexingServiceWrapper`. Use `MockIndexingService::from(mock)` to instantiate the client."
+            "`MockIndexingService` must be wrapped in a `MockIndexingServiceWrapper`: use `IndexingServiceClient::from_mock(mock)` to instantiate the client"
         );
         Self { inner: Box::new(instance) }
     }
@@ -311,6 +311,10 @@ impl IndexingServiceTowerLayerStack {
         IndexingServiceMailbox<A>: IndexingService,
     {
         self.build_from_boxed(Box::new(IndexingServiceMailbox::new(mailbox)))
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn build_from_mock(self, mock: MockIndexingService) -> IndexingServiceClient {
+        self.build_from_boxed(Box::new(IndexingServiceClient::from_mock(mock)))
     }
     fn build_from_boxed(
         self,

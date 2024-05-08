@@ -45,7 +45,7 @@ use tantivy_query_ast::TantivyQueryAst;
 pub use term_query::TermQuery;
 pub use term_set_query::TermSetQuery;
 pub use user_input_query::UserInputQuery;
-pub use visitor::QueryAstVisitor;
+pub use visitor::{QueryAstTransformer, QueryAstVisitor};
 pub use wildcard_query::WildcardQuery;
 
 use crate::{BooleanOperand, InvalidQuery, NotNaNf32};
