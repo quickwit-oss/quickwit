@@ -4232,7 +4232,7 @@ mod tests {
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1
             .expect_leaf_search()
-            .times(2)
+            .times(1)
             .withf(|leaf_search_req| {
                 (&leaf_search_req.index_uris[0] == "ram:///test-index-1"
                     && leaf_search_req.leaf_requests[0].split_offsets.len() == 2)
@@ -4242,13 +4242,20 @@ mod tests {
             })
             .returning(
                 |leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
-                    let partial_hits = leaf_search_req.leaf_requests[0]
+                    let mut partial_hits = leaf_search_req.leaf_requests[0]
                         .split_offsets
                         .iter()
                         .map(|split_offset| mock_partial_hit(&split_offset.split_id, 3, 1))
                         .collect_vec();
+                    let partial_hits2 = leaf_search_req.leaf_requests[1]
+                        .split_offsets
+                        .iter()
+                        .map(|split_offset| mock_partial_hit(&split_offset.split_id, 3, 1))
+                        .collect_vec();
+                    partial_hits.extend_from_slice(&partial_hits2);
                     Ok(quickwit_proto::search::LeafSearchResponse {
-                        num_hits: leaf_search_req.leaf_requests[0].split_offsets.len() as u64,
+                        num_hits: leaf_search_req.leaf_requests[0].split_offsets.len() as u64
+                            + leaf_search_req.leaf_requests[1].split_offsets.len() as u64,
                         partial_hits,
                         failed_splits: Vec::new(),
                         num_attempted_splits: 1,
@@ -4289,7 +4296,7 @@ mod tests {
                 .iter()
                 .map(|hit| &hit.index_id)
                 .collect_vec(),
-            vec!["test-index-2", "test-index-1", "test-index-1"]
+            vec!["test-index-1", "test-index-1", "test-index-2"]
         );
         Ok(())
     }
