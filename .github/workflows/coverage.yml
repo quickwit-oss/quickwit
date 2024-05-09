@@ -165,7 +165,7 @@ jobs:
   on-failure:
     if: ${{ github.repository_owner == 'quickwit-oss' && failure() }}
     name: On Failure
-    needs: [tests]
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
       - name: Send Message

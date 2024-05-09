@@ -19,6 +19,8 @@
 
 #![deny(clippy::disallowed_methods)]
 
+BREAKING THE BUILD ON PURPOSE BECAUSE I AM SO PUNK!
+
 mod coolid;
 
 pub mod binary_heap;
