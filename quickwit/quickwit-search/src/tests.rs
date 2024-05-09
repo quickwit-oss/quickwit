@@ -1060,34 +1060,18 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
     let searcher_context: Arc<SearcherContext> =
         Arc::new(SearcherContext::new(SearcherConfig::default(), None));
 
-    let merge_collector =
-        make_merge_collector(&request, &searcher_context.create_new_aggregation_limits()).unwrap();
-    let incremental_merge_collector = IncrementalCollector::new(merge_collector);
-    let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
+    let agg_limits = searcher_context.create_new_aggregation_limits();
 
-    leaf_search(
+    let search_response = leaf_search(
         searcher_context,
         request,
         test_sandbox.storage(),
         splits_offsets,
         test_sandbox.doc_mapper(),
-        incremental_merge_collector.clone(),
+        agg_limits,
     )
     .await
     .unwrap();
-
-    // we can't use unwrap_or_clone because mutexes aren't Clone
-    let incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector) {
-        Ok(filter_merger) => filter_merger.into_inner().unwrap(),
-        Err(filter_merger) => filter_merger.lock().unwrap().clone(),
-    };
-
-    let search_response =
-        crate::run_cpu_intensive(|| incremental_merge_collector.finalize().unwrap())
-            .instrument(info_span!("incremental_merge_finalize"))
-            .await
-            .context("failed to merge split search responses")
-            .unwrap();
 
     search_response
         .partial_hits

@@ -830,12 +830,7 @@ impl CanSplitDoBetter {
     }
 }
 
-/// `leaf` step of search.
-///
-/// The leaf search collects all kind of information, and returns a set of
-/// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
-/// charge to consolidate, identify the actual final top hits to display, and
-/// fetch the actual documents to convert the partial hits into actual Hits.
+/// `multi_leaf_search` searches multiple indices and multiple splits.
 #[instrument(skip_all, fields(index = ?leaf_search_request.search_request.as_ref().unwrap().index_id_patterns))]
 pub async fn multi_leaf_search(
     searcher_context: Arc<SearcherContext>,
@@ -854,12 +849,13 @@ pub async fn multi_leaf_search(
         .collect::<crate::Result<_>>()?;
     // Creates a collector which merges responses into one
     let aggregation_limits = searcher_context.create_new_aggregation_limits();
-    let merge_collector = make_merge_collector(&search_request, &aggregation_limits)?;
-    let incremental_merge_collector = IncrementalCollector::new(merge_collector);
-    let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
     // TODO: to avoid lockstep, we should pull up the future creation over the list of split ids
     // and have the semaphore on this level.
     // This will lower resource consumption due to less in-flight futures and avoid contention.
+    // It also allows passing early exit conditions between indices.
+    //
+    // It is a little bit tricky how to handle which is now the incremental_merge_collector, one
+    // per index, e.g. when to merge results and how to avoid lock contention.
     let mut leaf_request_tasks = Vec::new();
 
     for leaf_search_request_ref in leaf_search_request.leaf_requests.into_iter() {
@@ -868,26 +864,38 @@ pub async fn multi_leaf_search(
         )?;
         let doc_mapper = doc_mappers[leaf_search_request_ref.doc_mapper_ord as usize].clone();
 
-        let leaf_request_future = resolve_storage_and_leaf_search(
-            searcher_context.clone(),
-            search_request.clone(),
-            index_uri,
-            storage_resolver,
-            leaf_search_request_ref.split_offsets,
-            doc_mapper,
-            incremental_merge_collector.clone(),
-            aggregation_limits.clone(),
+        let leaf_request_future = tokio::spawn(
+            resolve_storage_and_leaf_search(
+                searcher_context.clone(),
+                search_request.clone(),
+                index_uri,
+                storage_resolver.clone(),
+                leaf_search_request_ref.split_offsets,
+                doc_mapper,
+                aggregation_limits.clone(),
+            )
+            .in_current_span(),
         );
         leaf_request_tasks.push(leaf_request_future);
     }
 
-    try_join_all(leaf_request_tasks).await?;
-
-    // we can't use unwrap_or_clone because mutexes aren't Clone
-    let incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector) {
-        Ok(filter_merger) => filter_merger.into_inner().unwrap(),
-        Err(filter_merger) => filter_merger.lock().unwrap().clone(),
-    };
+    let leaf_responses = try_join_all(leaf_request_tasks).await?;
+    let merge_collector = make_merge_collector(&search_request, &aggregation_limits)?;
+    let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
+    for result in leaf_responses {
+        match result {
+            Ok(result) => {
+                incremental_merge_collector.add_result(result)?;
+            }
+            Err(err) => {
+                incremental_merge_collector.add_failed_split(SplitSearchError {
+                    split_id: "unknown".to_string(),
+                    error: format!("{}", err),
+                    retryable_error: true,
+                });
+            }
+        }
+    }
 
     crate::run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
         .instrument(info_span!("incremental_merge_finalize"))
@@ -895,37 +903,29 @@ pub async fn multi_leaf_search(
         .context("failed to merge split search responses")?
 }
 
-/// `leaf` step of search.
-///
-/// The leaf search collects all kind of information, and returns a set of
-/// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
-/// charge to consolidate, identify the actual final top hits to display, and
-/// fetch the actual documents to convert the partial hits into actual Hits.
-#[instrument(skip_all, fields(index = ?search_request.index_id_patterns))]
+/// Resolves storage and calls leaf_search
 pub async fn resolve_storage_and_leaf_search(
     searcher_context: Arc<SearcherContext>,
     search_request: Arc<SearchRequest>,
     index_uri: quickwit_common::uri::Uri,
-    storage_resolver: &StorageResolver,
+    storage_resolver: StorageResolver,
     splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
-    incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
     aggregations_limits: AggregationLimits,
-) -> Result<(), SearchError> {
+) -> Result<LeafSearchResponse, SearchError> {
     let storage = storage_resolver.resolve(&index_uri).await?;
 
-    leaf_search(
+    let resp = leaf_search(
         searcher_context.clone(),
         search_request.clone(),
         storage.clone(),
         splits,
         doc_mapper,
-        incremental_merge_collector.clone(),
         aggregations_limits,
     )
     .await?;
 
-    Ok(())
+    Ok(resp)
 }
 
 /// `leaf` step of search.
@@ -934,15 +934,15 @@ pub async fn resolve_storage_and_leaf_search(
 /// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
 /// charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
+#[instrument(skip_all, fields(index = ?request.index_id_patterns))]
 pub async fn leaf_search(
     searcher_context: Arc<SearcherContext>,
     request: Arc<SearchRequest>,
     index_storage: Arc<dyn Storage>,
     mut splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
-    incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
     aggregations_limits: AggregationLimits,
-) -> Result<(), SearchError> {
+) -> Result<LeafSearchResponse, SearchError> {
     info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(&splits, 5));
 
     let split_filter = CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
@@ -958,81 +958,75 @@ pub async fn leaf_search(
 
     let mut leaf_search_single_split_futures: Vec<_> = Vec::with_capacity(splits.len());
 
-    let result = {
-        let merge_collector = make_merge_collector(&request, &aggregations_limits)?;
-        let incremental_merge_collector = IncrementalCollector::new(merge_collector);
-        let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
+    let merge_collector = make_merge_collector(&request, &aggregations_limits)?;
+    let incremental_merge_collector = IncrementalCollector::new(merge_collector);
+    let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
 
-        for split in splits {
-            let leaf_split_search_permit = searcher_context.leaf_search_split_semaphore
+    for split in splits {
+        let leaf_split_search_permit = searcher_context.leaf_search_split_semaphore
             .clone()
             .acquire_owned()
+            .instrument(info_span!("waiting_for_leaf_search_split_semaphore"))
             .await
             .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
 
-            let mut request = (*request).clone();
+        let mut request = (*request).clone();
 
-            if !split_filter.lock().unwrap().can_be_better(&split) {
-                if !run_all_splits {
-                    continue;
-                }
-                request.max_hits = 0;
-                request.start_offset = 0;
-                request.sort_fields.clear();
+        if !split_filter.lock().unwrap().can_be_better(&split) {
+            if !run_all_splits {
+                continue;
             }
-
-            leaf_search_single_split_futures.push(tokio::spawn(
-                leaf_search_single_split_wrapper(
-                    request,
-                    searcher_context.clone(),
-                    index_storage.clone(),
-                    doc_mapper.clone(),
-                    split,
-                    split_filter.clone(),
-                    incremental_merge_collector.clone(),
-                    leaf_split_search_permit,
-                    aggregations_limits.clone(),
-                )
-                .in_current_span(),
-            ));
+            request.max_hits = 0;
+            request.start_offset = 0;
+            request.sort_fields.clear();
         }
 
-        // TODO we could cancel running splits when !run_all_splits and the running split can no
-        // longer give better results after some other split answered.
-        let split_search_results: Vec<Result<(), _>> =
-            futures::future::join_all(leaf_search_single_split_futures).await;
+        leaf_search_single_split_futures.push(tokio::spawn(
+            leaf_search_single_split_wrapper(
+                request,
+                searcher_context.clone(),
+                index_storage.clone(),
+                doc_mapper.clone(),
+                split,
+                split_filter.clone(),
+                incremental_merge_collector.clone(),
+                leaf_split_search_permit,
+                aggregations_limits.clone(),
+            )
+            .in_current_span(),
+        ));
+    }
 
-        // we can't use unwrap_or_clone because mutexes aren't Clone
-        let mut incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector) {
-            Ok(filter_merger) => filter_merger.into_inner().unwrap(),
-            Err(filter_merger) => filter_merger.lock().unwrap().clone(),
-        };
+    // TODO we could cancel running splits when !run_all_splits and the running split can no
+    // longer give better results after some other split answered.
+    let split_search_results: Vec<Result<(), _>> =
+        futures::future::join_all(leaf_search_single_split_futures).await;
 
-        for result in split_search_results {
-            // splits that did not panic were already added to the collector
-            if let Err(e) = result {
-                incremental_merge_collector.add_failed_split(SplitSearchError {
-                    // we could reasonably add a wrapper to the JoinHandle to give us the
-                    // split_id anyway
-                    split_id: "unknown".to_string(),
-                    error: format!("{}", SearchError::from(e)),
-                    retryable_error: true,
-                })
-            }
-        }
-
-        crate::run_cpu_intensive(|| incremental_merge_collector.finalize())
-            .instrument(info_span!("incremental_merge_finalize"))
-            .await
-            .context("failed to merge split search responses")??
+    // we can't use unwrap_or_clone because mutexes aren't Clone
+    let mut incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector) {
+        Ok(filter_merger) => filter_merger.into_inner().unwrap(),
+        Err(filter_merger) => filter_merger.lock().unwrap().clone(),
     };
 
-    incremental_merge_collector
-        .lock()
-        .unwrap()
-        .add_result(result)?;
+    for result in split_search_results {
+        // splits that did not panic were already added to the collector
+        if let Err(e) = result {
+            incremental_merge_collector.add_failed_split(SplitSearchError {
+                // we could reasonably add a wrapper to the JoinHandle to give us the
+                // split_id anyway
+                split_id: "unknown".to_string(),
+                error: format!("{}", SearchError::from(e)),
+                retryable_error: true,
+            })
+        }
+    }
 
-    Ok(())
+    let result = crate::run_cpu_intensive(|| incremental_merge_collector.finalize())
+        .instrument(info_span!("incremental_merge_intermediate"))
+        .await
+        .context("failed to merge split search responses")??;
+
+    Ok(result)
 }
 
 #[allow(clippy::too_many_arguments)]
