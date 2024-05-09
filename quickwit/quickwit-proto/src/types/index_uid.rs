@@ -231,3 +231,10 @@ impl PartialEq<(&'static str, u128)> for IndexUid {
         self.index_id == *index_id && self.incarnation_id == Ulid::from(*incarnation_id)
     }
 }
+
+#[cfg(feature = "postgres")]
+impl From<&IndexUid> for sea_query::Value {
+    fn from(val: &IndexUid) -> Self {
+        val.to_string().into()
+    }
+}

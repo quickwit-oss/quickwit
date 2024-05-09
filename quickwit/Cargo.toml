@@ -202,8 +202,8 @@ reqwest = { version = "0.11", default-features = false, features = [
   "rustls-tls",
 ] }
 rust-embed = "6.8.1"
-sea-query = { version = "0" }
-sea-query-binder = { version = "0", features = [
+sea-query = { version = "0.30" }
+sea-query-binder = { version = "0.5", features = [
   "runtime-tokio-rustls",
   "sqlx-postgres",
 ] }

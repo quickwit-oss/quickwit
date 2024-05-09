@@ -115,7 +115,7 @@ pub async fn test_metastore_open_shards<
     // // Test source not found.
     // let open_shards_request = OpenShardsRequest {
     //     subrequests: vec![OpenShardSubrequest {
-    //         index_uid: test_index.index_uid.clone().into(),
+    //         index_uid: Some(test_index.index_uid.clone()),
     //         source_id: "source-does-not-exist".to_string(),
     //         leader_id: "test-ingester-foo".to_string(),
     //         ..Default::default()
@@ -133,7 +133,7 @@ pub async fn test_metastore_open_shards<
     let open_shards_request = OpenShardsRequest {
         subrequests: vec![OpenShardSubrequest {
             subrequest_id: 0,
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             leader_id: "test-ingester-foo".to_string(),
@@ -160,7 +160,7 @@ pub async fn test_metastore_open_shards<
     let open_shards_request = OpenShardsRequest {
         subrequests: vec![OpenShardSubrequest {
             subrequest_id: 0,
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             leader_id: "test-ingester-foo".to_string(),
@@ -200,7 +200,7 @@ pub async fn test_metastore_acquire_shards<
 
     let shards = vec![
         Shard {
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Closed as i32,
@@ -210,7 +210,7 @@ pub async fn test_metastore_acquire_shards<
             publish_token: Some("test-publish-token-foo".to_string()),
         },
         Shard {
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(2)),
             shard_state: ShardState::Open as i32,
@@ -220,7 +220,7 @@ pub async fn test_metastore_acquire_shards<
             publish_token: Some("test-publish-token-bar".to_string()),
         },
         Shard {
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(3)),
             shard_state: ShardState::Open as i32,
@@ -230,7 +230,7 @@ pub async fn test_metastore_acquire_shards<
             publish_token: None,
         },
         Shard {
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(4)),
             shard_state: ShardState::Open as i32,
@@ -246,15 +246,19 @@ pub async fn test_metastore_acquire_shards<
 
     // Test acquire shards.
     let acquire_shards_request = AcquireShardsRequest {
-        index_uid: test_index.index_uid.clone().into(),
+        index_uid: Some(test_index.index_uid.clone()),
         source_id: test_index.source_id.clone(),
         shard_ids: vec![ShardId::from(1), ShardId::from(2), ShardId::from(3)],
         publish_token: "test-publish-token-foo".to_string(),
     };
-    let acquire_shards_response = metastore
+    let mut acquire_shards_response = metastore
         .acquire_shards(acquire_shards_request)
         .await
         .unwrap();
+
+    acquire_shards_response
+        .acquired_shards
+        .sort_unstable_by(|left, right| left.shard_id().cmp(right.shard_id()));
 
     let shard = &acquire_shards_response.acquired_shards[0];
     assert_eq!(shard.index_uid(), &test_index.index_uid);
@@ -294,106 +298,147 @@ pub async fn test_metastore_list_shards<
 >() {
     let mut metastore = MetastoreUnderTest::default_for_test().await;
 
-    let test_index = TestIndex::create_index_with_source(
+    let test_index_0 = TestIndex::create_index_with_source(
         &mut metastore,
-        "test-list-shards",
+        "test-list-shards-0",
         SourceConfig::ingest_v2(),
     )
     .await;
 
-    let shards = vec![
-        Shard {
-            index_uid: test_index.index_uid.clone().into(),
-            source_id: test_index.source_id.clone(),
-            shard_id: Some(ShardId::from(1)),
-            shard_state: ShardState::Open as i32,
-            leader_id: "test-ingester-foo".to_string(),
-            follower_id: Some("test-ingester-bar".to_string()),
-            publish_position_inclusive: Some(Position::Beginning),
-            publish_token: Some("test-publish-token-foo".to_string()),
-        },
-        Shard {
-            index_uid: test_index.index_uid.clone().into(),
-            source_id: test_index.source_id.clone(),
-            shard_id: Some(ShardId::from(2)),
-            shard_state: ShardState::Closed as i32,
-            leader_id: "test-ingester-bar".to_string(),
-            follower_id: Some("test-ingester-qux".to_string()),
-            publish_position_inclusive: Some(Position::Beginning),
-            publish_token: Some("test-publish-token-bar".to_string()),
-        },
-    ];
-    metastore
-        .insert_shards(&test_index.index_uid, &test_index.source_id, shards)
-        .await;
+    let test_index_1 = TestIndex::create_index_with_source(
+        &mut metastore,
+        "test-list-shards-1",
+        SourceConfig::ingest_v2(),
+    )
+    .await;
+
+    for test_index in [&test_index_0, &test_index_1] {
+        let shards = vec![
+            Shard {
+                index_uid: Some(test_index.index_uid.clone()),
+                source_id: test_index.source_id.clone(),
+                shard_id: Some(ShardId::from(1)),
+                shard_state: ShardState::Open as i32,
+                leader_id: "test-ingester-foo".to_string(),
+                follower_id: Some("test-ingester-bar".to_string()),
+                publish_position_inclusive: Some(Position::Beginning),
+                publish_token: Some("test-publish-token-foo".to_string()),
+            },
+            Shard {
+                index_uid: Some(test_index.index_uid.clone()),
+                source_id: test_index.source_id.clone(),
+                shard_id: Some(ShardId::from(2)),
+                shard_state: ShardState::Closed as i32,
+                leader_id: "test-ingester-bar".to_string(),
+                follower_id: Some("test-ingester-qux".to_string()),
+                publish_position_inclusive: Some(Position::Beginning),
+                publish_token: Some("test-publish-token-bar".to_string()),
+            },
+        ];
+        metastore
+            .insert_shards(&test_index.index_uid, &test_index.source_id, shards)
+            .await;
+    }
 
     // Test list shards.
     let list_shards_request = ListShardsRequest {
-        subrequests: vec![ListShardsSubrequest {
-            index_uid: test_index.index_uid.clone().into(),
-            source_id: test_index.source_id.clone(),
-            shard_state: None,
-        }],
+        subrequests: vec![
+            ListShardsSubrequest {
+                index_uid: Some(test_index_0.index_uid.clone()),
+                source_id: test_index_0.source_id.clone(),
+                shard_state: None,
+            },
+            ListShardsSubrequest {
+                index_uid: Some(test_index_1.index_uid.clone()),
+                source_id: test_index_1.source_id.clone(),
+                shard_state: None,
+            },
+        ],
     };
-    let list_shards_response = metastore.list_shards(list_shards_request).await.unwrap();
-    assert_eq!(list_shards_response.subresponses.len(), 1);
+    let mut list_shards_response = metastore.list_shards(list_shards_request).await.unwrap();
+    assert_eq!(list_shards_response.subresponses.len(), 2);
 
-    let mut subresponses = list_shards_response.subresponses;
-    assert_eq!(subresponses[0].index_uid(), &test_index.index_uid);
-    assert_eq!(subresponses[0].source_id, test_index.source_id);
-    assert_eq!(subresponses[0].shards.len(), 2);
+    list_shards_response
+        .subresponses
+        .sort_unstable_by(|left, right| left.index_uid().cmp(right.index_uid()));
 
-    subresponses[0]
-        .shards
-        .sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
+    for (idx, test_index) in [&test_index_0, &test_index_1].into_iter().enumerate() {
+        let subresponse = &mut list_shards_response.subresponses[idx];
+        assert_eq!(subresponse.index_uid(), &test_index.index_uid);
+        assert_eq!(subresponse.source_id, test_index.source_id);
+        assert_eq!(subresponse.shards.len(), 2);
 
-    let shard = &subresponses[0].shards[0];
-    assert_eq!(shard.index_uid(), &test_index.index_uid);
-    assert_eq!(shard.source_id, test_index.source_id);
-    assert_eq!(shard.shard_id(), ShardId::from(1));
-    assert_eq!(shard.shard_state(), ShardState::Open);
-    assert_eq!(shard.leader_id, "test-ingester-foo");
-    assert_eq!(shard.follower_id(), "test-ingester-bar");
-    assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
-    assert_eq!(shard.publish_token(), "test-publish-token-foo");
+        subresponse
+            .shards
+            .sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
 
-    let shard = &subresponses[0].shards[1];
-    assert_eq!(shard.index_uid(), &test_index.index_uid);
-    assert_eq!(shard.source_id, test_index.source_id);
-    assert_eq!(shard.shard_id(), ShardId::from(2));
-    assert_eq!(shard.shard_state(), ShardState::Closed);
-    assert_eq!(shard.leader_id, "test-ingester-bar");
-    assert_eq!(shard.follower_id(), "test-ingester-qux");
-    assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
-    assert_eq!(shard.publish_token(), "test-publish-token-bar");
+        let shard = &subresponse.shards[0];
+        assert_eq!(shard.index_uid(), &test_index.index_uid);
+        assert_eq!(shard.source_id, test_index.source_id);
+        assert_eq!(shard.shard_id(), ShardId::from(1));
+        assert_eq!(shard.shard_state(), ShardState::Open);
+        assert_eq!(shard.leader_id, "test-ingester-foo");
+        assert_eq!(shard.follower_id(), "test-ingester-bar");
+        assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
+        assert_eq!(shard.publish_token(), "test-publish-token-foo");
+
+        let shard = &subresponse.shards[1];
+        assert_eq!(shard.index_uid(), &test_index.index_uid);
+        assert_eq!(shard.source_id, test_index.source_id);
+        assert_eq!(shard.shard_id(), ShardId::from(2));
+        assert_eq!(shard.shard_state(), ShardState::Closed);
+        assert_eq!(shard.leader_id, "test-ingester-bar");
+        assert_eq!(shard.follower_id(), "test-ingester-qux");
+        assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
+        assert_eq!(shard.publish_token(), "test-publish-token-bar");
+    }
 
     // Test list shards with shard state filter.
     let list_shards_request = ListShardsRequest {
-        subrequests: vec![ListShardsSubrequest {
-            index_uid: test_index.index_uid.clone().into(),
-            source_id: test_index.source_id.clone(),
-            shard_state: Some(ShardState::Open as i32),
-        }],
+        subrequests: vec![
+            ListShardsSubrequest {
+                index_uid: Some(test_index_0.index_uid.clone()),
+                source_id: test_index_0.source_id.clone(),
+                shard_state: Some(ShardState::Open as i32),
+            },
+            ListShardsSubrequest {
+                index_uid: Some(test_index_1.index_uid.clone()),
+                source_id: test_index_1.source_id.clone(),
+                shard_state: Some(ShardState::Closed as i32),
+            },
+        ],
     };
-    let list_shards_response = metastore.list_shards(list_shards_request).await.unwrap();
-    assert_eq!(list_shards_response.subresponses.len(), 1);
+    let mut list_shards_response = metastore.list_shards(list_shards_request).await.unwrap();
+    assert_eq!(list_shards_response.subresponses.len(), 2);
+
+    list_shards_response
+        .subresponses
+        .sort_unstable_by(|left, right| left.index_uid().cmp(right.index_uid()));
+
     assert_eq!(list_shards_response.subresponses[0].shards.len(), 1);
 
     let shard = &list_shards_response.subresponses[0].shards[0];
     assert_eq!(shard.shard_id(), ShardId::from(1));
     assert_eq!(shard.shard_state(), ShardState::Open);
 
+    assert_eq!(list_shards_response.subresponses[1].shards.len(), 1);
+
+    let shard = &list_shards_response.subresponses[1].shards[0];
+    assert_eq!(shard.shard_id(), ShardId::from(2));
+    assert_eq!(shard.shard_state(), ShardState::Closed);
+
     let list_shards_request = ListShardsRequest {
         subrequests: vec![ListShardsSubrequest {
-            index_uid: test_index.index_uid.clone().into(),
-            source_id: test_index.source_id.clone(),
+            index_uid: Some(test_index_0.index_uid.clone()),
+            source_id: test_index_0.source_id.clone(),
             shard_state: Some(ShardState::Unavailable as i32),
         }],
     };
     let list_shards_response = metastore.list_shards(list_shards_request).await.unwrap();
     assert_eq!(list_shards_response.subresponses.len(), 1);
+    assert!(list_shards_response.subresponses[0].shards.is_empty());
 
-    cleanup_index(&mut metastore, test_index.index_uid).await;
+    cleanup_index(&mut metastore, test_index_0.index_uid).await;
 }
 
 pub async fn test_metastore_delete_shards<
@@ -410,7 +455,7 @@ pub async fn test_metastore_delete_shards<
 
     let shards = vec![
         Shard {
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
@@ -418,7 +463,7 @@ pub async fn test_metastore_delete_shards<
             ..Default::default()
         },
         Shard {
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(2)),
             shard_state: ShardState::Closed as i32,
@@ -426,7 +471,7 @@ pub async fn test_metastore_delete_shards<
             ..Default::default()
         },
         Shard {
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(3)),
             shard_state: ShardState::Closed as i32,
@@ -440,7 +485,7 @@ pub async fn test_metastore_delete_shards<
 
     // Attempt to delete shards #1, #2, #3, and #4.
     let delete_index_request = DeleteShardsRequest {
-        index_uid: test_index.index_uid.clone().into(),
+        index_uid: Some(test_index.index_uid.clone()),
         source_id: test_index.source_id.clone(),
         shard_ids: vec![
             ShardId::from(1),
@@ -477,7 +522,7 @@ pub async fn test_metastore_delete_shards<
 
     // Attempt to delete shards #1, #2, #3, and #4.
     let delete_index_request = DeleteShardsRequest {
-        index_uid: test_index.index_uid.clone().into(),
+        index_uid: Some(test_index.index_uid.clone()),
         source_id: test_index.source_id.clone(),
         shard_ids: vec![
             ShardId::from(1),
@@ -536,7 +581,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
     };
     let index_checkpoint_delta_json = serde_json::to_string(&index_checkpoint_delta).unwrap();
     let publish_splits_request = PublishSplitsRequest {
-        index_uid: test_index.index_uid.clone().into(),
+        index_uid: Some(test_index.index_uid.clone()),
         staged_split_ids: Vec::new(),
         replaced_split_ids: Vec::new(),
         index_checkpoint_delta_json_opt: Some(index_checkpoint_delta_json),
@@ -552,7 +597,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
     ));
 
     let shards = vec![Shard {
-        index_uid: test_index.index_uid.clone().into(),
+        index_uid: Some(test_index.index_uid.clone()),
         source_id: test_index.source_id.clone(),
         shard_id: Some(ShardId::from(0)),
         shard_state: ShardState::Open as i32,
@@ -566,7 +611,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
 
     let index_checkpoint_delta_json = serde_json::to_string(&index_checkpoint_delta).unwrap();
     let publish_splits_request = PublishSplitsRequest {
-        index_uid: test_index.index_uid.clone().into(),
+        index_uid: Some(test_index.index_uid.clone()),
         staged_split_ids: Vec::new(),
         replaced_split_ids: Vec::new(),
         index_checkpoint_delta_json_opt: Some(index_checkpoint_delta_json),
@@ -582,7 +627,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
 
     let index_checkpoint_delta_json = serde_json::to_string(&index_checkpoint_delta).unwrap();
     let publish_splits_request = PublishSplitsRequest {
-        index_uid: test_index.index_uid.clone().into(),
+        index_uid: Some(test_index.index_uid.clone()),
         staged_split_ids: Vec::new(),
         replaced_split_ids: Vec::new(),
         index_checkpoint_delta_json_opt: Some(index_checkpoint_delta_json),
@@ -605,7 +650,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
 
     let index_checkpoint_delta_json = serde_json::to_string(&index_checkpoint_delta).unwrap();
     let publish_splits_request = PublishSplitsRequest {
-        index_uid: test_index.index_uid.clone().into(),
+        index_uid: Some(test_index.index_uid.clone()),
         staged_split_ids: Vec::new(),
         replaced_split_ids: Vec::new(),
         index_checkpoint_delta_json_opt: Some(index_checkpoint_delta_json),
@@ -633,7 +678,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
     };
     let index_checkpoint_delta_json = serde_json::to_string(&index_checkpoint_delta).unwrap();
     let publish_splits_request = PublishSplitsRequest {
-        index_uid: test_index.index_uid.clone().into(),
+        index_uid: Some(test_index.index_uid.clone()),
         staged_split_ids: Vec::new(),
         replaced_split_ids: Vec::new(),
         index_checkpoint_delta_json_opt: Some(index_checkpoint_delta_json),
@@ -667,7 +712,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
 
     let shards = vec![
         Shard {
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(0)),
             shard_state: ShardState::Open as i32,
@@ -676,7 +721,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
             ..Default::default()
         },
         Shard {
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
@@ -685,7 +730,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
             ..Default::default()
         },
         Shard {
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(2)),
             shard_state: ShardState::Open as i32,
@@ -694,7 +739,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
             ..Default::default()
         },
         Shard {
-            index_uid: test_index.index_uid.clone().into(),
+            index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(3)),
             shard_state: ShardState::Open as i32,
@@ -735,7 +780,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
     };
     let index_checkpoint_delta_json = serde_json::to_string(&index_checkpoint_delta).unwrap();
     let publish_splits_request = PublishSplitsRequest {
-        index_uid: test_index.index_uid.clone().into(),
+        index_uid: Some(test_index.index_uid.clone()),
         staged_split_ids: Vec::new(),
         replaced_split_ids: Vec::new(),
         index_checkpoint_delta_json_opt: Some(index_checkpoint_delta_json),

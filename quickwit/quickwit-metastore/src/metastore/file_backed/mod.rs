@@ -870,12 +870,12 @@ impl MetastoreService for FileBackedMetastore {
         };
         // We must group the subrequests by `index_uid` to mutate each index only once, since each
         // mutation triggers an IO.
-        let grouped_subrequests: HashMap<IndexUid, Vec<OpenShardSubrequest>> = request
+        let per_index_uid_subrequests: HashMap<IndexUid, Vec<OpenShardSubrequest>> = request
             .subrequests
             .into_iter()
             .into_group_map_by(|subrequest| subrequest.index_uid().clone());
 
-        for (index_uid, subrequests) in grouped_subrequests {
+        for (index_uid, subrequests) in per_index_uid_subrequests {
             let subresponses = self
                 .mutate(&index_uid, |index| index.open_shards(subrequests))
                 .await?;

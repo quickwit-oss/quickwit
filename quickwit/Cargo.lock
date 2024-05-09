@@ -6174,6 +6174,7 @@ dependencies = [
  "quickwit-actors",
  "quickwit-codegen",
  "quickwit-common",
+ "sea-query",
  "serde",
  "serde_json",
  "sqlx",
