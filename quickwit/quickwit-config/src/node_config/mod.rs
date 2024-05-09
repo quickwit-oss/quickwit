@@ -29,7 +29,6 @@ use std::time::Duration;
 use anyhow::{bail, ensure};
 use bytesize::ByteSize;
 use http::HeaderMap;
-use once_cell::sync::Lazy;
 use quickwit_common::net::HostAddr;
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
@@ -139,11 +138,12 @@ impl IndexerConfig {
     }
 
     pub fn default_merge_concurrency() -> NonZeroUsize {
-        NonZeroUsize::new(num_cpus::get() * 2 / 3).unwrap_or(NonZeroUsize::new(1).unwrap())
+        NonZeroUsize::new(quickwit_common::num_cpus() * 2 / 3)
+            .unwrap_or(NonZeroUsize::new(1).unwrap())
     }
 
     fn default_cpu_capacity() -> CpuCapacity {
-        CpuCapacity::one_cpu_thread() * (num_cpus::get() as u32)
+        CpuCapacity::one_cpu_thread() * (quickwit_common::num_cpus() as u32)
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -282,12 +282,6 @@ impl Default for IngestApiConfig {
             content_length_limit: ByteSize::mib(10),
         }
     }
-}
-
-/// Returns true if the ingest API v2 is enabled.
-pub fn enable_ingest_v2() -> bool {
-    static ENABLE_INGEST_V2: Lazy<bool> = Lazy::new(|| env::var("QW_ENABLE_INGEST_V2").is_ok());
-    *ENABLE_INGEST_V2
 }
 
 impl IngestApiConfig {

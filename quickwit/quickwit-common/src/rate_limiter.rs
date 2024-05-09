@@ -101,6 +101,23 @@ impl RateLimiter {
         }
     }
 
+    /// Acquires some permits from the rate limiter.
+    /// If the permits are not available, returns the duration to wait before trying again.
+    ///
+    /// This method is currently only used in simian.
+    pub fn acquire_with_duration(&mut self, num_permits: u64) -> Result<(), Duration> {
+        if self.acquire_inner(num_permits) {
+            return Ok(());
+        }
+        self.refill(Instant::now());
+        if self.acquire_inner(num_permits) {
+            return Ok(());
+        }
+        let missing = num_permits - self.available_permits;
+        let wait = Duration::from_micros(missing * self.refill_period_micros / self.refill_amount);
+        Err(wait)
+    }
+
     /// Acquires some permits expressed in bytes from the rate limiter. Returns whether the permits
     /// were acquired.
     pub fn acquire_bytes(&mut self, bytes: ByteSize) -> bool {

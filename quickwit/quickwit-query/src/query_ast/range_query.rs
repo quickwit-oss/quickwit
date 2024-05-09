@@ -354,8 +354,7 @@ fn map_bound<TFrom, TTo>(bound: &Bound<TFrom>, transform: impl Fn(&TFrom) -> TTo
 mod tests {
     use std::ops::Bound;
 
-    use tantivy::schema::{Schema, FAST, STORED, TEXT};
-    use tantivy::DateOptions;
+    use tantivy::schema::{DateOptions, DateTimePrecision, Schema, FAST, STORED, TEXT};
 
     use super::RangeQuery;
     use crate::query_ast::tantivy_query_ast::TantivyBoolQuery;
@@ -372,7 +371,7 @@ mod tests {
         schema_builder.add_text_field("my_str_field", FAST);
         let date_options = DateOptions::default()
             .set_fast()
-            .set_precision(tantivy::DateTimePrecision::Milliseconds);
+            .set_precision(DateTimePrecision::Milliseconds);
         schema_builder.add_date_field("my_date_field", date_options);
         schema_builder.add_u64_field("my_u64_not_fastfield", STORED);
         if dynamic_mode {

@@ -82,13 +82,13 @@ pub fn split_file(split_id: impl Display) -> String {
 pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {
     if let Ok(value_str) = std::env::var(key) {
         if let Ok(value) = T::from_str(&value_str) {
-            info!(value=?value, "Setting `{}` from environment", key);
+            info!(value=?value, "setting `{}` from environment", key);
             return value;
         } else {
-            error!(value_str=%value_str, "Failed to parse `{}` from environment", key);
+            error!(value_str=%value_str, "failed to parse `{}` from environment", key);
         }
     }
-    info!(value=?default_value, "Setting `{}` from default", key);
+    info!(value=?default_value, "setting `{}` from default", key);
     default_value
 }
 
@@ -170,6 +170,18 @@ pub const fn div_ceil(lhs: i64, rhs: i64) -> i64 {
         d + 1
     } else {
         d
+    }
+}
+
+/// Return the number of vCPU/hyperthreads available.
+/// This number is usually not equal to the number of cpu cores
+pub fn num_cpus() -> usize {
+    match std::thread::available_parallelism() {
+        Ok(num_cpus) => num_cpus.get(),
+        Err(io_error) => {
+            error!(errror=?io_error, "failed to detect the number of threads available: arbitrarily returning 2");
+            2
+        }
     }
 }
 

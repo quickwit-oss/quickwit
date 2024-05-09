@@ -96,8 +96,9 @@ impl BuildInfo {
 
 #[derive(Debug, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub struct RuntimeInfo {
-    pub num_cpus_logical: usize,
-    pub num_cpus_physical: usize,
+    // This is a number of logical cpus: vCPU or hyperthread depending on where you are running.
+    // This is usually NOT necessarily the number of cores.
+    pub num_cpus: usize,
     pub num_threads_blocking: usize,
     pub num_threads_non_blocking: usize,
 }
@@ -108,12 +109,10 @@ impl RuntimeInfo {
         static INSTANCE: OnceCell<RuntimeInfo> = OnceCell::new();
 
         INSTANCE.get_or_init(|| {
-            let num_cpus_logical = num_cpus::get();
-            let runtimes_config = RuntimesConfig::with_num_cpus(num_cpus_logical);
-
+            let num_cpus = quickwit_common::num_cpus();
+            let runtimes_config = RuntimesConfig::with_num_cpus(num_cpus);
             Self {
-                num_cpus_logical,
-                num_cpus_physical: num_cpus::get_physical(),
+                num_cpus,
                 num_threads_blocking: runtimes_config.num_threads_blocking,
                 num_threads_non_blocking: runtimes_config.num_threads_non_blocking,
             }

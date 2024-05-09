@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{fmt, mem};
 
@@ -40,7 +39,7 @@ use tracing::{debug, info, warn};
 
 use super::{SourceActor, BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT};
 use crate::actors::DocProcessor;
-use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
+use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 const DEFAULT_MAX_MESSAGES_PER_PULL: i32 = 1_000;
 
@@ -52,11 +51,10 @@ impl TypedSourceFactory for GcpPubSubSourceFactory {
     type Params = PubSubSourceParams;
 
     async fn typed_create_source(
-        ctx: Arc<SourceRuntimeArgs>,
-        params: PubSubSourceParams,
-        _checkpoint: SourceCheckpoint, // TODO: Use checkpoint!
+        source_runtime: SourceRuntime,
+        source_params: PubSubSourceParams,
     ) -> anyhow::Result<Self::Source> {
-        GcpPubSubSource::try_new(ctx, params).await
+        GcpPubSubSource::try_new(source_runtime, source_params).await
     }
 }
 
@@ -75,7 +73,7 @@ pub struct GcpPubSubSourceState {
 }
 
 pub struct GcpPubSubSource {
-    ctx: Arc<SourceRuntimeArgs>,
+    source_runtime: SourceRuntime,
     subscription_name: String,
     subscription: Subscription,
     state: GcpPubSubSourceState,
@@ -88,8 +86,8 @@ impl fmt::Debug for GcpPubSubSource {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("GcpPubSubSource")
-            .field("index_id", &self.ctx.index_id())
-            .field("source_id", &self.ctx.source_id())
+            .field("index_id", &self.source_runtime.index_id())
+            .field("source_id", &self.source_runtime.source_id())
             .field("subscription", &self.subscription)
             .finish()
     }
@@ -97,16 +95,16 @@ impl fmt::Debug for GcpPubSubSource {
 
 impl GcpPubSubSource {
     pub async fn try_new(
-        ctx: Arc<SourceRuntimeArgs>,
-        params: PubSubSourceParams,
+        source_runtime: SourceRuntime,
+        source_params: PubSubSourceParams,
     ) -> anyhow::Result<Self> {
-        let subscription_name = params.subscription;
-        let backfill_mode_enabled = params.enable_backfill_mode;
-        let max_messages_per_pull = params
+        let subscription_name = source_params.subscription;
+        let backfill_mode_enabled = source_params.enable_backfill_mode;
+        let max_messages_per_pull = source_params
             .max_messages_per_pull
             .unwrap_or(DEFAULT_MAX_MESSAGES_PER_PULL);
 
-        let mut client_config: ClientConfig = match params.credentials_file {
+        let mut client_config: ClientConfig = match source_params.credentials_file {
             Some(credentials_file) => {
                 let credentials = CredentialsFile::new_from_file(credentials_file.clone())
                     .await
@@ -121,8 +119,8 @@ impl GcpPubSubSource {
         }
         .context("failed to create GCP PubSub client config")?;
 
-        if params.project_id.is_some() {
-            client_config.project_id = params.project_id
+        if source_params.project_id.is_some() {
+            client_config.project_id = source_params.project_id
         }
 
         let client = Client::new(client_config)
@@ -134,17 +132,17 @@ impl GcpPubSubSource {
         let partition_id = PartitionId::from(partition_id);
 
         info!(
-            index_id=%ctx.index_id(),
-            source_id=%ctx.source_id(),
+            index_id=%source_runtime.index_id(),
+            source_id=%source_runtime.source_id(),
             subscription=%subscription_name,
             max_messages_per_pull=%max_messages_per_pull,
-            "Starting GCP PubSub source."
+            "starting GCP PubSub source"
         );
         if !subscription.exists(Some(RetrySetting::default())).await? {
             anyhow::bail!("GCP PubSub subscription `{subscription_name}` does not exist");
         }
         Ok(Self {
-            ctx,
+            source_runtime,
             subscription_name,
             subscription,
             state: GcpPubSubSourceState::default(),
@@ -223,13 +221,13 @@ impl Source for GcpPubSubSource {
     }
 
     fn name(&self) -> String {
-        format!("GcpPubSubSource{{source_id={}}}", self.ctx.source_id())
+        format!("{:?}", self)
     }
 
     fn observable_state(&self) -> JsonValue {
         json!({
-            "index_id": self.ctx.index_id(),
-            "source_id": self.ctx.source_id(),
+            "index_id": self.source_runtime.index_id(),
+            "source_id": self.source_runtime.source_id(),
             "subscription": self.subscription_name,
             "num_bytes_processed": self.state.num_bytes_processed,
             "num_messages_processed": self.state.num_messages_processed,
@@ -289,20 +287,19 @@ impl GcpPubSubSource {
 mod gcp_pubsub_emulator_tests {
     use std::env::var;
     use std::num::NonZeroUsize;
-    use std::path::PathBuf;
 
     use google_cloud_googleapis::pubsub::v1::PubsubMessage;
     use google_cloud_pubsub::publisher::Publisher;
     use google_cloud_pubsub::subscription::SubscriptionConfig;
     use quickwit_actors::Universe;
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
-    use quickwit_metastore::metastore_for_test;
     use quickwit_proto::types::IndexUid;
     use serde_json::json;
 
     use super::*;
     use crate::models::RawDocBatch;
     use crate::source::quickwit_supported_sources;
+    use crate::source::tests::SourceRuntimeBuilder;
 
     static GCP_TEST_PROJECT: &str = "quickwit-emulator";
 
@@ -354,20 +351,16 @@ mod gcp_pubsub_emulator_tests {
 
         let index_id = append_random_suffix("test-gcp-pubsub-source--invalid-subscription--index");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
-        let metastore = metastore_for_test();
         let SourceParams::PubSub(params) = source_config.clone().source_params else {
             panic!(
                 "Expected `SourceParams::GcpPubSub` source params, got {:?}",
                 source_config.source_params
             );
         };
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            PathBuf::from("./queues"),
-        );
-        GcpPubSubSource::try_new(ctx, params).await.unwrap_err();
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
+        GcpPubSubSource::try_new(source_runtime, params)
+            .await
+            .unwrap_err();
     }
 
     #[ignore]
@@ -383,7 +376,6 @@ mod gcp_pubsub_emulator_tests {
         let source_id = source_config.source_id.clone();
 
         let source_loader = quickwit_supported_sources();
-        let metastore = metastore_for_test();
         let index_id: String = append_random_suffix("test-gcp-pubsub-source--index");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
 
@@ -399,18 +391,8 @@ mod gcp_pubsub_emulator_tests {
         for awaiter in awaiters {
             awaiter.get().await.unwrap();
         }
-        let source = source_loader
-            .load_source(
-                SourceRuntimeArgs::for_test(
-                    index_uid,
-                    source_config,
-                    metastore,
-                    PathBuf::from("./queues"),
-                ),
-                SourceCheckpoint::default(),
-            )
-            .await
-            .unwrap();
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
+        let source = source_loader.load_source(source_runtime).await.unwrap();
 
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_actor = SourceActor {
