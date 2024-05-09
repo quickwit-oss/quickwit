@@ -256,15 +256,15 @@ pub struct LeafSearchRequest {
     #[prost(message, optional, tag = "1")]
     pub search_request: ::core::option::Option<SearchRequest>,
     /// List of leaf requests, one per index.
-    #[prost(message, repeated, tag = "2")]
+    #[prost(message, repeated, tag = "7")]
     pub leaf_requests: ::prost::alloc::vec::Vec<LeafRequestRef>,
     /// List of unique doc_mappers serialized as json.
-    #[prost(string, repeated, tag = "3")]
+    #[prost(string, repeated, tag = "8")]
     pub doc_mappers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// List of index uris
     /// Index URI. The index URI defines the location of the storage that contains the
     /// split files.
-    #[prost(string, repeated, tag = "4")]
+    #[prost(string, repeated, tag = "9")]
     pub index_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// / LeafRequestRef references data in LeafSearchRequest to deduplicate data.

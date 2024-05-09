@@ -317,15 +317,15 @@ message LeafSearchRequest {
   SearchRequest search_request = 1;
 
   // List of leaf requests, one per index.
-  repeated LeafRequestRef leaf_requests = 2;
+  repeated LeafRequestRef leaf_requests = 7;
 
   // List of unique doc_mappers serialized as json.
-  repeated string doc_mappers = 3;
+  repeated string doc_mappers = 8;
 
   // List of index uris
   // Index URI. The index URI defines the location of the storage that contains the
   // split files.
-  repeated string index_uris = 4;
+  repeated string index_uris = 9;
 }
 
 /// LeafRequestRef references data in LeafSearchRequest to deduplicate data.

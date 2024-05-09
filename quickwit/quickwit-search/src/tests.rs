@@ -18,9 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Mutex;
 
-use anyhow::Context;
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
@@ -38,9 +36,7 @@ use serde_json::{json, Value as JsonValue};
 use tantivy::schema::OwnedValue as TantivyValue;
 use tantivy::time::OffsetDateTime;
 use tantivy::Term;
-use tracing::{info_span, Instrument};
 
-use self::collector::{make_merge_collector, IncrementalCollector};
 use self::leaf::leaf_search;
 use super::*;
 use crate::find_trace_ids_collector::Span;
