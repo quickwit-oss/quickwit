@@ -30,7 +30,8 @@ use quickwit_proto::search::{
 use quickwit_storage::Storage;
 use tantivy::query::Query;
 use tantivy::schema::{Document as DocumentTrait, Field, OwnedValue, TantivyDocument, Value};
-use tantivy::{ReloadPolicy, Score, Searcher, SnippetGenerator, Term};
+use tantivy::snippet::SnippetGenerator;
+use tantivy::{ReloadPolicy, Score, Searcher, Term};
 use tracing::{error, Instrument};
 
 use crate::leaf::open_index_with_caches;

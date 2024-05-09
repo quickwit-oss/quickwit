@@ -274,8 +274,8 @@ mod test {
     use quickwit_query::create_default_quickwit_tokenizer_manager;
     use quickwit_query::query_ast::query_ast_from_user_text;
     use tantivy::columnar::MonotonicallyMappableToU64;
-    use tantivy::schema::{Schema, FAST, INDEXED, STORED, TEXT};
-    use tantivy::{DateOptions, DateTime, DateTimePrecision};
+    use tantivy::schema::{DateOptions, DateTimePrecision, Schema, FAST, INDEXED, STORED, TEXT};
+    use tantivy::DateTime;
 
     use super::build_query;
     use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
@@ -298,7 +298,7 @@ mod test {
         schema_builder.add_ip_addr_field("ip_notff", STORED);
         let date_options = DateOptions::default()
             .set_fast()
-            .set_precision(tantivy::DateTimePrecision::Milliseconds);
+            .set_precision(DateTimePrecision::Milliseconds);
         schema_builder.add_date_field("dt", date_options);
         schema_builder.add_u64_field("u64_fast", FAST | STORED);
         schema_builder.add_i64_field("i64_fast", FAST | STORED);
