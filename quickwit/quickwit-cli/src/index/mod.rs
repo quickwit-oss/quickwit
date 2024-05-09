@@ -44,6 +44,7 @@ use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::IndexingPipeline;
 use quickwit_metastore::{IndexMetadata, Split, SplitState};
 use quickwit_proto::search::{CountHits, SortField, SortOrder};
+use quickwit_proto::types::IndexId;
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
 use quickwit_search::SearchResponseRest;
@@ -200,7 +201,7 @@ pub fn build_index_command() -> Command {
 #[derive(Debug, Eq, PartialEq)]
 pub struct ClearIndexArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub assume_yes: bool,
 }
 
@@ -215,13 +216,13 @@ pub struct CreateIndexArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IngestDocsArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub input_path_opt: Option<PathBuf>,
     pub batch_size_limit_opt: Option<ByteSize>,
     pub commit_type: CommitType,
@@ -230,7 +231,7 @@ pub struct IngestDocsArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct SearchIndexArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub query: String,
     pub aggregation: Option<String>,
     pub max_hits: usize,
@@ -245,7 +246,7 @@ pub struct SearchIndexArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct DeleteIndexArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub dry_run: bool,
     pub assume_yes: bool,
 }
@@ -528,7 +529,7 @@ where I: IntoIterator<Item = IndexConfig> {
 #[derive(Tabled)]
 struct IndexRow {
     #[tabled(rename = "Index ID")]
-    index_id: String,
+    index_id: IndexId,
     #[tabled(rename = "Index URI")]
     index_uri: Uri,
 }
@@ -548,7 +549,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
 }
 
 pub struct IndexStats {
-    pub index_id: String,
+    pub index_id: IndexId,
     pub index_uri: Uri,
     pub num_published_splits: usize,
     pub size_published_splits: ByteSize,

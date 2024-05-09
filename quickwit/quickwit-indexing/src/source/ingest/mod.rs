@@ -702,7 +702,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_assign_shards() {
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1044,7 +1044,7 @@ mod tests {
         // - emission of a suggest truncate
         // - no stream request is emitted
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1184,7 +1184,7 @@ mod tests {
         // - emission of a suggest truncate
         // - the stream request emitted does not include the EOF shards
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1347,7 +1347,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_emit_batches() {
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1535,7 +1535,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_emit_batches_shard_not_found() {
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1642,7 +1642,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_suggest_truncate() {
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1849,7 +1849,7 @@ mod tests {
         // away. In that case, the ingester should just ignore the assigned shard, as
         // opposed to fail as the metastore does not let it `acquire` the shard.
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),

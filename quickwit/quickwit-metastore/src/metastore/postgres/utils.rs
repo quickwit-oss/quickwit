@@ -96,9 +96,11 @@ pub(super) fn append_range_filters<V: Display>(
 pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplitsQuery) {
     // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
 
-    sql.cond_where(
-        Expr::col(Splits::IndexUid).is_in(query.index_uids.iter().map(|val| val.to_string())),
-    );
+    sql.cond_where(Expr::col(Splits::IndexUid).is_in(&query.index_uids));
+
+    if let Some(node_id) = &query.node_id {
+        sql.cond_where(Expr::col(Splits::NodeId).eq(node_id));
+    };
 
     if !query.split_states.is_empty() {
         sql.cond_where(

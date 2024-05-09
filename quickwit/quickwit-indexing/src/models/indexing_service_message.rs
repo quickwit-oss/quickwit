@@ -18,14 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_config::SourceConfig;
-use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::types::PipelineUid;
-
-use crate::actors::MergePipelineId;
+use quickwit_proto::indexing::{IndexingPipelineId, MergePipelineId};
+use quickwit_proto::types::{IndexId, PipelineUid};
 
 #[derive(Clone, Debug)]
 pub struct SpawnPipeline {
-    pub index_id: String,
+    pub index_id: IndexId,
     pub source_config: SourceConfig,
     pub pipeline_uid: PipelineUid,
 }

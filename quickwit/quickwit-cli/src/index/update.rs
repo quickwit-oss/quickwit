@@ -21,6 +21,7 @@ use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
 use quickwit_config::{RetentionPolicy, SearchSettings};
+use quickwit_proto::types::IndexId;
 use quickwit_serve::IndexUpdates;
 use tracing::debug;
 
@@ -65,7 +66,7 @@ pub fn build_index_update_command() -> Command {
 #[derive(Debug, Eq, PartialEq)]
 pub struct RetentionPolicyArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub disable: bool,
     pub period: Option<String>,
     pub schedule: Option<String>,
@@ -74,7 +75,7 @@ pub struct RetentionPolicyArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct SearchSettingsArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub default_search_fields: Vec<String>,
 }
 
