@@ -95,7 +95,7 @@ const MIN_RESET_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "testsui
 pub(super) const PERSIST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(10)
 } else {
-    Duration::from_secs(6)
+    Duration::from_secs(1)
 };
 
 const DEFAULT_BATCH_NUM_BYTES: usize = 1024 * 1024; // 1 MiB

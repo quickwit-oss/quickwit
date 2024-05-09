@@ -18,9 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use elasticsearch_dsl::ErrorCause;
 use hyper::StatusCode;
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::IngestRequestV2Builder;
@@ -131,8 +130,8 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     let Some(ingest_request) = ingest_request_opt else {
         return Ok(ElasticBulkResponse::default());
     };
-    let ingest_response_v2 = tokio::time::timeout(Duration::from_millis(500), ingest_router.ingest(ingest_request)).await
-        .map_err(|_| ElasticsearchError::new(StatusCode::REQUEST_TIMEOUT, "router timeout".to_string(), None))??;
+    let ingest_response_v2 = ingest_router.ingest(ingest_request).await?;
+
     let errors = !ingest_response_v2.failures.is_empty();
     let mut items = Vec::new();
 
