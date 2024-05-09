@@ -25,7 +25,7 @@ use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::VecSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpointDelta};
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::Position;
+use quickwit_proto::types::{Position, SourceId};
 use serde_json::Value as JsonValue;
 use tracing::info;
 
@@ -34,7 +34,7 @@ use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 pub struct VecSource {
-    source_id: String,
+    source_id: SourceId,
     source_params: VecSourceParams,
     next_item_idx: usize,
     partition: PartitionId,

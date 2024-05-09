@@ -29,6 +29,7 @@ use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_se
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
     ExportTraceServiceRequest, ExportTraceServiceResponse,
 };
+use quickwit_proto::types::IndexId;
 use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
 use serde::{self, Serialize};
 use tracing::error;
@@ -139,7 +140,7 @@ impl ServiceError for OtlpApiError {
 
 async fn otlp_ingest_logs(
     otlp_logs_service: OtlpGrpcLogsService,
-    _index_id: String, // <- TODO: use index ID when gRPC service supports it.
+    _index_id: IndexId, // <- TODO: use index ID when gRPC service supports it.
     body: Bytes,
 ) -> Result<ExportLogsServiceResponse, OtlpApiError> {
     // TODO: use index ID.
@@ -154,7 +155,7 @@ async fn otlp_ingest_logs(
 
 async fn otlp_ingest_traces(
     otlp_traces_service: OtlpGrpcTracesService,
-    _index_id: String, // <- TODO: use index ID when gRPC service supports it.
+    _index_id: IndexId, // <- TODO: use index ID when gRPC service supports it.
     body: Bytes,
 ) -> Result<ExportTraceServiceResponse, OtlpApiError> {
     let export_traces_request: ExportTraceServiceRequest = prost::Message::decode(&body[..])

@@ -605,7 +605,7 @@ mod tests {
         EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, MetastoreError,
         MockMetastoreService,
     };
-    use quickwit_proto::types::{IndexUid, PipelineUid};
+    use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
@@ -626,7 +626,7 @@ mod tests {
         mut num_fails: usize,
         test_file: &str,
     ) -> anyhow::Result<()> {
-        let node_id = "test-node".to_string();
+        let node_id = NodeId::from("test-node");
         let index_uid = IndexUid::for_test("test-index", 2);
         let pipeline_id = IndexingPipelineId {
             node_id,
@@ -745,7 +745,7 @@ mod tests {
     }
 
     async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {
-        let node_id = "test-node".to_string();
+        let node_id = NodeId::from("test-node");
         let index_uid: IndexUid = IndexUid::for_test("test-index", 1);
         let pipeline_id = IndexingPipelineId {
             node_id,
@@ -850,7 +850,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() {
-        let node_id = "test-node".to_string();
+        let node_id = NodeId::from("test-node");
         let pipeline_id = IndexingPipelineId {
             node_id,
             index_uid: IndexUid::new_with_random_ulid("test-index"),
@@ -891,7 +891,7 @@ mod tests {
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let merge_pipeline_params = MergePipelineParams {
-            pipeline_id: pipeline_id.clone(),
+            pipeline_id: pipeline_id.merge_pipeline_id(),
             doc_mapper: doc_mapper.clone(),
             indexing_directory: TempDirectory::for_test(),
             metastore: metastore.clone(),
@@ -902,7 +902,7 @@ mod tests {
             merge_scheduler_service: universe.get_or_spawn_one(),
             event_broker: Default::default(),
         };
-        let merge_pipeline = MergePipeline::new(merge_pipeline_params, universe.spawn_ctx());
+        let merge_pipeline = MergePipeline::new(merge_pipeline_params, None, universe.spawn_ctx());
         let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
         let (_merge_pipeline_mailbox, merge_pipeline_handler) =
             universe.spawn_builder().spawn(merge_pipeline);
@@ -952,7 +952,7 @@ mod tests {
     }
 
     async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
-        let node_id = "test-node".to_string();
+        let node_id = NodeId::from("test-node");
         let index_uid: IndexUid = IndexUid::for_test("test-index", 2);
         let pipeline_id = IndexingPipelineId {
             node_id,

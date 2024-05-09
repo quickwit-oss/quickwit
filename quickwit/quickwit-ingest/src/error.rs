@@ -24,6 +24,7 @@ use quickwit_actors::AskError;
 use quickwit_common::tower::BufferError;
 pub(crate) use quickwit_proto::error::{grpc_error_to_grpc_status, grpc_status_to_service_error};
 use quickwit_proto::ingest::IngestV2Error;
+use quickwit_proto::types::IndexId;
 use quickwit_proto::{tonic, GrpcServiceError, ServiceError, ServiceErrorCode};
 use serde::{Deserialize, Serialize};
 
@@ -32,9 +33,9 @@ pub enum IngestServiceError {
     #[error("data corruption: {0}")]
     Corruption(String),
     #[error("index `{index_id}` already exists")]
-    IndexAlreadyExists { index_id: String },
+    IndexAlreadyExists { index_id: IndexId },
     #[error("index `{index_id}` not found")]
-    IndexNotFound { index_id: String },
+    IndexNotFound { index_id: IndexId },
     #[error("an internal error occurred: {0}")]
     Internal(String),
     #[error("invalid position: {0}")]

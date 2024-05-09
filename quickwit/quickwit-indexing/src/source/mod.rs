@@ -102,7 +102,7 @@ use quickwit_proto::metastore::{
     IndexMetadataRequest, MetastoreError, MetastoreResult, MetastoreService,
     MetastoreServiceClient, SourceType,
 };
-use quickwit_proto::types::{IndexUid, PipelineUid, ShardId};
+use quickwit_proto::types::{IndexUid, NodeIdRef, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
@@ -146,7 +146,7 @@ pub struct SourceRuntime {
 }
 
 impl SourceRuntime {
-    pub fn node_id(&self) -> &str {
+    pub fn node_id(&self) -> &NodeIdRef {
         &self.pipeline_id.node_id
     }
 
@@ -547,6 +547,7 @@ mod tests {
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::metastore::{IndexMetadataResponse, MockMetastoreService};
+    use quickwit_proto::types::NodeId;
 
     use super::*;
 
@@ -579,7 +580,7 @@ mod tests {
 
             SourceRuntime {
                 pipeline_id: IndexingPipelineId {
-                    node_id: "test-node".to_string(),
+                    node_id: NodeId::from("test-node"),
                     index_uid: self.index_uid,
                     source_id: self.source_config.source_id.clone(),
                     pipeline_uid: PipelineUid::for_test(0u128),

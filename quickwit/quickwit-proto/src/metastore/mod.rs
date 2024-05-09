@@ -73,7 +73,7 @@ pub enum EntityKind {
     /// A set of splits.
     Splits {
         /// Split IDs.
-        split_ids: Vec<SplitId>,
+        split_ids: Vec<String>,
     },
     /// An index template.
     IndexTemplate {

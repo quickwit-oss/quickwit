@@ -19,6 +19,7 @@
 
 use std::collections::BTreeSet;
 use std::fmt;
+use std::path::PathBuf;
 
 use itertools::Itertools;
 use quickwit_common::temp_dir::TempDirectory;
@@ -34,13 +35,13 @@ pub struct PackagedSplit {
     pub split_attrs: SplitAttrs,
     pub split_scratch_directory: TempDirectory,
     pub tags: BTreeSet<String>,
-    pub split_files: Vec<std::path::PathBuf>,
+    pub split_files: Vec<PathBuf>,
     pub hotcache_bytes: Vec<u8>,
 }
 
 impl PackagedSplit {
     pub fn index_uid(&self) -> &IndexUid {
-        &self.split_attrs.pipeline_id.index_uid
+        &self.split_attrs.index_uid
     }
 
     pub fn split_id(&self) -> &str {
@@ -105,7 +106,7 @@ impl PackagedSplitBatch {
     }
 
     pub fn index_uid(&self) -> IndexUid {
-        self.splits[0].split_attrs.pipeline_id.index_uid.clone()
+        self.splits[0].split_attrs.index_uid.clone()
     }
 
     pub fn split_ids(&self) -> Vec<SplitId> {

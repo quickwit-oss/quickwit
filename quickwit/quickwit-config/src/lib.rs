@@ -27,6 +27,7 @@ use json_comments::StripComments;
 use once_cell::sync::Lazy;
 use quickwit_common::net::is_valid_hostname;
 use quickwit_common::uri::Uri;
+use quickwit_proto::types::NodeIdRef;
 use regex::Regex;
 
 mod cluster_config;
@@ -179,8 +180,8 @@ pub fn validate_index_id_pattern(pattern: &str, allow_negative: bool) -> anyhow:
     Ok(())
 }
 
-pub fn validate_node_id(node_id: &str) -> anyhow::Result<()> {
-    if !is_valid_hostname(node_id) {
+pub fn validate_node_id(node_id: &NodeIdRef) -> anyhow::Result<()> {
+    if !is_valid_hostname(node_id.as_str()) {
         bail!(
             "node identifier `{node_id}` is invalid. node identifiers must be valid short \
              hostnames (see RFC 1123)"

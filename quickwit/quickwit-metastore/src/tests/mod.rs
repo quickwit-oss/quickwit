@@ -313,6 +313,12 @@ macro_rules! metastore_test_suite {
             }
 
             #[tokio::test]
+            async fn test_metastore_list_splits_by_node() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::list_splits::test_metastore_list_splits_by_node_id::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
             async fn test_metastore_split_update_timestamp() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::split::test_metastore_split_update_timestamp::<$metastore_type>()
