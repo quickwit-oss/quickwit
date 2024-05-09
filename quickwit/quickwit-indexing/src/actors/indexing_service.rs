@@ -975,7 +975,7 @@ mod tests {
         // Test `spawn_pipeline`.
         let source_config_0 = SourceConfig {
             source_id: "test-indexing-service--source-0".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1050,19 +1050,9 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
-        metastore.create_index(create_index_request).await.unwrap();
-
-        let universe = Universe::new();
-        let temp_dir = tempfile::tempdir().unwrap();
-        let (indexing_service, indexing_server_handle) =
-            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster).await;
-
-        // Test `supervise_pipelines`
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::Vec(VecSourceParams {
                 docs: Vec::new(),
@@ -1072,6 +1062,18 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
+        let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
+            &index_config,
+            &[source_config.clone()],
+        )
+        .unwrap();
+        metastore.create_index(create_index_request).await.unwrap();
+
+        let universe = Universe::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let (indexing_service, indexing_server_handle) =
+            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster).await;
+
         indexing_service
             .ask_for_res(SpawnPipeline {
                 index_id: index_id.clone(),
@@ -1132,7 +1134,7 @@ mod tests {
         // Test `apply plan`.
         let source_config_1 = SourceConfig {
             source_id: "test-indexing-service--source-1".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1337,7 +1339,7 @@ mod tests {
 
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1466,7 +1468,7 @@ mod tests {
         let mut index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
-            num_pipelines: NonZeroUsize::new(1).unwrap(),
+            num_pipelines: NonZeroUsize::MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,

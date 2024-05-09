@@ -23,12 +23,14 @@ use rand::Rng;
 /// Appends a random suffix composed of a hyphen and five random alphanumeric characters.
 pub fn append_random_suffix(string: &str) -> String {
     let rng = rand::thread_rng();
-    let slug: String = rng
-        .sample_iter(&Alphanumeric)
-        .take(5)
-        .map(char::from)
-        .collect();
-    format!("{string}-{slug}")
+    let mut randomized_string = String::with_capacity(string.len() + 6);
+    randomized_string.push_str(string);
+    randomized_string.push('-');
+
+    for random_byte in rng.sample_iter(&Alphanumeric).take(5) {
+        randomized_string.push(char::from(random_byte));
+    }
+    randomized_string
 }
 
 #[cfg(test)]
