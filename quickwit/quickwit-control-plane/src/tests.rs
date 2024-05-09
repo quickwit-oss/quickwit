@@ -221,8 +221,7 @@ async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
     // `ApplyIndexingPlanRequest`.
     cluster
         .update_self_node_indexing_tasks(&indexing_tasks)
-        .await
-        .unwrap();
+        .await;
     let scheduler_state = control_plane_mailbox
         .ask(Observe)
         .await
@@ -237,8 +236,7 @@ async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
     // receive a new `ApplyIndexingPlanRequest`.
     cluster
         .update_self_node_indexing_tasks(&[indexing_tasks[0].clone()])
-        .await
-        .unwrap();
+        .await;
     tokio::time::sleep(MIN_DURATION_BETWEEN_SCHEDULING.mul_f32(1.2)).await;
     let scheduler_state = control_plane_mailbox
         .ask(Observe)
@@ -377,12 +375,10 @@ async fn test_scheduler_scheduling_multiple_indexers() {
     assert_eq!(indexing_service_inbox_messages_2.len(), 1);
     cluster_indexer_1
         .update_self_node_indexing_tasks(&indexing_service_inbox_messages_1[0].indexing_tasks)
-        .await
-        .unwrap();
+        .await;
     cluster_indexer_2
         .update_self_node_indexing_tasks(&indexing_service_inbox_messages_2[0].indexing_tasks)
-        .await
-        .unwrap();
+        .await;
 
     // Wait 2 CONTROL_PLAN_LOOP_INTERVAL again and check the scheduler will not apply the plan
     // several times.

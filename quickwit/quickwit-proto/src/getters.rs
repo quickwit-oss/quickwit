@@ -55,6 +55,7 @@ generate_getters! {
     DeleteIndexRequest,
     DeleteQuery,
     DeleteShardsRequest,
+    DeleteShardsResponse,
     DeleteSourceRequest,
     DeleteSplitsRequest,
     LastDeleteOpstampRequest,

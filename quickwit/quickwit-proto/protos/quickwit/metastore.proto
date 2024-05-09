@@ -102,6 +102,9 @@ service MetastoreService {
   // Returns the `IndexMetadata` of an index identified by its IndexID or its IndexUID.
   rpc IndexMetadata(IndexMetadataRequest) returns (IndexMetadataResponse);
 
+  // Fetches the metadata of a list of indexes identified by their Index IDs or UIDs.
+  rpc IndexesMetadata(IndexesMetadataRequest) returns (IndexesMetadataResponse);
+
   // Gets an indexes metadatas.
   rpc ListIndexesMetadata(ListIndexesMetadataRequest) returns (ListIndexesMetadataResponse);
 
@@ -163,9 +166,9 @@ service MetastoreService {
   // list of acquired shards along with the positions to index from.
   rpc AcquireShards(AcquireShardsRequest) returns (AcquireShardsResponse);
 
-  // Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
+  // Deletes a set of shards. This RPC deletes the shards from the metastore.
   // If the shard did not exist to begin with, the operation is successful and does not return any error.
-  rpc DeleteShards(DeleteShardsRequest) returns (EmptyResponse);
+  rpc DeleteShards(DeleteShardsRequest) returns (DeleteShardsResponse);
 
   rpc ListShards(ListShardsRequest) returns (ListShardsResponse);
 
@@ -220,6 +223,7 @@ message ListIndexesMetadataResponse {
   // Deprecated (v0.9.0), use `indexes_metadata_json_zstd` instead.
   optional string indexes_metadata_json_opt = 1;
   // A JSON serialized then ZSTD compressed list of `IndexMetadata`: `Vec<IndexMetadata> | JSON | ZSTD`.
+  // We don't use `repeated` here to increase the compression rate and ratio.
   bytes indexes_metadata_json_zstd = 2;
 }
 
@@ -238,6 +242,34 @@ message IndexMetadataRequest {
 
 message IndexMetadataResponse {
   string index_metadata_serialized_json = 1;
+}
+
+message IndexesMetadataRequest {
+  repeated IndexMetadataSubrequest subrequests = 1;
+}
+
+message IndexMetadataSubrequest {
+  optional string index_id = 1;
+  optional quickwit.common.IndexUid index_uid = 2;
+}
+
+message IndexesMetadataResponse {
+  // A JSON serialized then ZSTD compressed list of `IndexMetadata`: `Vec<IndexMetadata> | JSON | ZSTD`.
+  // We don't use `repeated` here to increase the compression rate and ratio.
+  bytes indexes_metadata_json_zstd = 1;
+  repeated IndexMetadataFailure failures = 2;
+}
+
+message IndexMetadataFailure {
+  optional string index_id = 1;
+  optional quickwit.common.IndexUid index_uid = 2;
+  IndexMetadataFailureReason reason = 3;
+}
+
+enum IndexMetadataFailureReason {
+  INDEX_METADATA_FAILURE_REASON_UNSPECIFIED = 0;
+  INDEX_METADATA_FAILURE_REASON_NOT_FOUND = 1;
+  INDEX_METADATA_FAILURE_REASON_INTERNAL = 2;
 }
 
 message ListSplitsRequest {
@@ -396,6 +428,16 @@ message DeleteShardsRequest {
   repeated quickwit.ingest.ShardId shard_ids = 3;
   // If false, only shards at EOF positions will be deleted.
   bool force = 4;
+}
+
+message DeleteShardsResponse {
+  quickwit.common.IndexUid index_uid = 1;
+  string source_id = 2;
+  // List of shard IDs that were successfully deleted.
+  repeated quickwit.ingest.ShardId successes = 3;
+  // List of shard IDs that could not be deleted because `force` was set to `false` in the request,
+  // and the shards are not at EOF, i.e., not fully indexed.
+  repeated quickwit.ingest.ShardId failures = 4;
 }
 
 message ListShardsRequest {

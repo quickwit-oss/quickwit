@@ -450,7 +450,20 @@ pub async fn test_metastore_delete_shards<
         ],
         force: false,
     };
-    metastore.delete_shards(delete_index_request).await.unwrap();
+    let mut response = metastore.delete_shards(delete_index_request).await.unwrap();
+
+    assert_eq!(response.index_uid(), &test_index.index_uid);
+    assert_eq!(response.source_id, test_index.source_id);
+    assert_eq!(response.successes.len(), 2);
+    assert_eq!(response.failures.len(), 2);
+
+    response.successes.sort_unstable();
+    assert_eq!(response.successes[0], ShardId::from(3));
+    assert_eq!(response.successes[1], ShardId::from(4));
+
+    response.failures.sort_unstable();
+    assert_eq!(response.failures[0], ShardId::from(1));
+    assert_eq!(response.failures[1], ShardId::from(2));
 
     let mut all_shards = metastore
         .list_all_shards(&test_index.index_uid, &test_index.source_id)
@@ -474,11 +487,24 @@ pub async fn test_metastore_delete_shards<
         ],
         force: true,
     };
-    metastore.delete_shards(delete_index_request).await.unwrap();
+    let mut response = metastore.delete_shards(delete_index_request).await.unwrap();
+
+    assert_eq!(response.index_uid(), &test_index.index_uid);
+    assert_eq!(response.source_id, test_index.source_id);
+
+    assert_eq!(response.successes.len(), 4);
+    assert_eq!(response.failures.len(), 0);
+
+    response.successes.sort_unstable();
+    assert_eq!(response.successes[0], ShardId::from(1));
+    assert_eq!(response.successes[1], ShardId::from(2));
+    assert_eq!(response.successes[2], ShardId::from(3));
+    assert_eq!(response.successes[3], ShardId::from(4));
 
     let all_shards = metastore
         .list_all_shards(&test_index.index_uid, &test_index.source_id)
         .await;
+
     assert_eq!(all_shards.len(), 0);
 
     cleanup_index(&mut metastore, test_index.index_uid).await;
