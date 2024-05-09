@@ -18,22 +18,28 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::sync::Arc;
 
 use once_cell::sync::OnceCell;
 use quickwit_common::metrics::GaugeGuard;
+use tantivy::Executor;
 use tracing::error;
 
-fn search_thread_pool() -> &'static rayon::ThreadPool {
-    static SEARCH_THREAD_POOL: OnceCell<rayon::ThreadPool> = OnceCell::new();
-    SEARCH_THREAD_POOL.get_or_init(|| {
-        rayon::ThreadPoolBuilder::new()
-            .thread_name(|thread_id| format!("quickwit-search-{thread_id}"))
-            .panic_handler(|_my_panic| {
-                error!("task running in the quickwit search pool panicked");
-            })
-            .build()
-            .expect("Failed to spawn the spawning pool")
-    })
+static SEARCH_THREAD_POOL: OnceCell<Arc<Executor>> = OnceCell::new();
+
+fn build_executor() -> Arc<Executor> {
+    let rayon_pool = rayon::ThreadPoolBuilder::new()
+        .thread_name(|thread_id| format!("quickwit-search-{thread_id}"))
+        .panic_handler(|_my_panic| {
+            error!("task running in the quickwit search pool panicked");
+        })
+        .build()
+        .expect("Failed to spawn the spawning pool");
+    Arc::new(Executor::ThreadPool(rayon_pool))
+}
+
+pub(crate) fn search_executor() -> Arc<Executor> {
+    SEARCH_THREAD_POOL.get_or_init(build_executor).clone()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,20 +74,17 @@ where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
 {
-    let (tx, rx) = tokio::sync::oneshot::channel();
     let span = tracing::Span::current();
-    search_thread_pool().spawn(move || {
-        let _guard = span.enter();
-        let mut active_thread_guard =
-            GaugeGuard::from_gauge(&crate::SEARCH_METRICS.active_search_threads_count);
-        active_thread_guard.add(1i64);
-        if tx.is_closed() {
-            return;
-        }
-        let task_result = cpu_heavy_task();
-        let _ = tx.send(task_result);
-    });
-    rx.await.map_err(|_| Panicked)
+    search_executor()
+        .spawn_blocking(move || {
+            let _guard = span.enter();
+            let mut active_thread_guard =
+                GaugeGuard::from_gauge(&crate::SEARCH_METRICS.active_search_threads_count);
+            active_thread_guard.add(1i64);
+            cpu_heavy_task()
+        })
+        .await
+        .map_err(|_| Panicked)
 }
 
 #[cfg(test)]
