@@ -30,19 +30,6 @@ pub struct SpawnPipeline {
     pub pipeline_uid: PipelineUid,
 }
 
-#[derive(Clone, Debug)]
-pub struct ShutdownPipelines {
-    pub index_id: String,
-    pub source_id: Option<String>,
-    // TODO
-    // pub pipeline_ord: Option<usize>,
-}
-
-#[derive(Clone, Debug)]
-pub struct ShutdownPipeline {
-    pub pipeline_id: IndexingPipelineId,
-}
-
 /// Detaches a pipeline from the indexing service. The pipeline is no longer managed by the
 /// server. This is mostly useful for ad-hoc indexing pipelines launched with `quickwit index
 /// ingest ..` and testing.

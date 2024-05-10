@@ -185,11 +185,12 @@ impl BroadcastLocalShardsTask {
         for (queue_id, shard_state) in queue_ids {
             let Some((_rate_limiter, rate_meter)) = state_guard.rate_trackers.get_mut(&queue_id)
             else {
-                warn!("rate limiter `{queue_id}` not found",);
+                warn!(
+                    "rate limiter `{queue_id}` not found: this should never happen, please report"
+                );
                 continue;
             };
             let Some((index_uid, source_id, shard_id)) = split_queue_id(&queue_id) else {
-                warn!("failed to parse queue ID `{queue_id}`");
                 continue;
             };
             let source_uid = SourceUid {
