@@ -667,7 +667,7 @@ pub(crate) async fn search_partial_hits_phase(
     let leaf_search_responses: Vec<tantivy::Result<LeafSearchResponse>> =
         leaf_search_responses.into_iter().map(Ok).collect_vec();
     let span = info_span!("merge_fruits");
-    let leaf_search_response = crate::run_cpu_intensive(move || {
+    let leaf_search_response = crate::search_executor().run_cpu_intensive(move || {
         let _span_guard = span.enter();
         merge_collector.merge_fruits(leaf_search_responses)
     })

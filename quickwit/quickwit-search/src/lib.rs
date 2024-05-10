@@ -41,17 +41,24 @@ mod search_job_placer;
 mod search_response_rest;
 mod search_stream;
 mod service;
-mod thread_pool;
 pub(crate) mod top_k_collector;
 
 mod metrics;
+
+
+fn search_executor() -> &'static Executor {
+    static SEARCH_EXECUTOR: OnceCell<quickwit_common::Executor> = OnceCell::new();
+    &*SEARCH_EXECUTOR.get_or_init(|| quickwit_common::Executor::new("quickwit-search", None))
+}
 
 #[cfg(test)]
 mod tests;
 
 pub use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
+use once_cell::sync::OnceCell;
 use quickwit_common::tower::Pool;
+use quickwit_common::Executor;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, ListSplitsRequest, MetastoreService, MetastoreServiceClient,
@@ -92,7 +99,6 @@ pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
-use crate::thread_pool::run_cpu_intensive;
 
 /// A pool of searcher clients identified by their gRPC socket address.
 pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;

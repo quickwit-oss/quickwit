@@ -36,7 +36,6 @@ use tracing::{error, Instrument};
 
 use crate::leaf::open_index_with_caches;
 use crate::service::SearcherContext;
-use crate::thread_pool::search_executor;
 use crate::{convert_document_to_json_string, GlobalDocAddress};
 
 const SNIPPET_MAX_NUM_CHARS: usize = 150;
@@ -185,9 +184,8 @@ async fn fetch_docs_in_split(
     .context("open-index-for-split")?;
     // we add an executor here, we could add it in open_index_with_caches, though we should verify
     // the side-effect before
-    index
-        .set_shared_multithread_executor(search_executor())
-        .context("failed to set search pool")?;
+    let executor_tantivy = crate::search_executor().get_underlying_rayon_thread_pool().into();
+    index.set_executor(executor_tantivy);
     let index_reader = index
         .reader_builder()
         // the docs are presorted so a cache size of NUM_CONCURRENT_REQUESTS is fine

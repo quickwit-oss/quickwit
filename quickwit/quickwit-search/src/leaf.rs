@@ -378,7 +378,7 @@ async fn leaf_search_single_split(
 
     warmup(&searcher, &warmup_info).await?;
     let span = info_span!("tantivy_search");
-    let leaf_search_response = crate::run_cpu_intensive(move || {
+    let leaf_search_response = crate::search_executor().run_cpu_intensive(move || {
         let _span_guard = span.enter();
         searcher.search(&query, &quickwit_collector)
     })
@@ -921,7 +921,7 @@ pub async fn leaf_search(
         }
     }
 
-    crate::run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
+    crate::search_executor().run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
         .instrument(info_span!("incremental_merge_finalize"))
         .await
         .context("failed to merge split search responses")?

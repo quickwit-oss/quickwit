@@ -233,7 +233,7 @@ where T: RpcName
     }
 }
 
-pub struct InFlightValue<T>(T, #[allow(dead_code)] GaugeGuard);
+pub struct InFlightValue<T>(T, #[allow(dead_code)] GaugeGuard<'static>);
 
 impl<T> fmt::Debug for InFlightValue<T>
 where T: fmt::Debug
