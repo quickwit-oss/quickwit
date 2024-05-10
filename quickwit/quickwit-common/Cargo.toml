@@ -30,7 +30,7 @@ pin-project = { workspace = true }
 pnet = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
-rayon = { worskpace = true }
+rayon = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 siphasher = { workspace = true }

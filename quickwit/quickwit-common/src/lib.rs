@@ -43,7 +43,7 @@ pub mod stream_utils;
 pub mod temp_dir;
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;
-mod executor;
+pub mod thread_pool;
 pub mod tower;
 pub mod type_map;
 pub mod uri;
@@ -55,7 +55,6 @@ use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
 pub use coolid::new_coolid;
-pub use executor::Executor;
 pub use kill_switch::KillSwitch;
 pub use path_hasher::PathHasher;
 pub use progress::{Progress, ProtectedZoneGuard};

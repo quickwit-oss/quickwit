@@ -361,13 +361,3 @@ impl InFlightDataGauges {
 }
 
 pub static MEMORY_METRICS: Lazy<MemoryMetrics> = Lazy::new(MemoryMetrics::default);
-
-pub static ACTIVE_THREAD_COUNT: Lazy<IntGaugeVec<1>> = Lazy::new(|| {
-    new_gauge_vec(
-        "active_thread_count",
-        "Number of active threads in a given thread pool.",
-        "threads",
-        &[],
-        ["pool"]
-    )
-});

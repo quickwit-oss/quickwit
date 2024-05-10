@@ -20,9 +20,7 @@
 // See https://prometheus.io/docs/practices/naming/
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{
-    new_counter, new_histogram, Histogram, IntCounter
-};
+use quickwit_common::metrics::{new_counter, new_histogram, Histogram, IntCounter};
 
 pub struct SearchMetrics {
     pub leaf_searches_splits_total: IntCounter,

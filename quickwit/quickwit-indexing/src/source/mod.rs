@@ -485,7 +485,7 @@ pub(super) struct BatchBuilder {
     num_bytes: u64,
     checkpoint_delta: SourceCheckpointDelta,
     force_commit: bool,
-    gauge_guard: GaugeGuard,
+    gauge_guard: GaugeGuard<'static>,
 }
 
 impl BatchBuilder {

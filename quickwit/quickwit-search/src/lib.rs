@@ -45,20 +45,13 @@ pub(crate) mod top_k_collector;
 
 mod metrics;
 
-
-fn search_executor() -> &'static Executor {
-    static SEARCH_EXECUTOR: OnceCell<quickwit_common::Executor> = OnceCell::new();
-    &*SEARCH_EXECUTOR.get_or_init(|| quickwit_common::Executor::new("quickwit-search", None))
-}
-
 #[cfg(test)]
 mod tests;
 
 pub use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
-use once_cell::sync::OnceCell;
+use quickwit_common::thread_pool::ThreadPool;
 use quickwit_common::tower::Pool;
-use quickwit_common::Executor;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, ListSplitsRequest, MetastoreService, MetastoreServiceClient,
@@ -69,7 +62,7 @@ use tantivy::schema::NamedFieldDocument;
 pub type Result<T> = std::result::Result<T, SearchError>;
 
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub use find_trace_ids_collector::FindTraceIdsCollector;
 use quickwit_config::SearcherConfig;
@@ -102,6 +95,11 @@ pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
 /// A pool of searcher clients identified by their gRPC socket address.
 pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
+
+fn search_thread_pool() -> &'static ThreadPool {
+    static SEARCH_EXECUTOR: OnceLock<ThreadPool> = OnceLock::new();
+    SEARCH_EXECUTOR.get_or_init(|| ThreadPool::new("search", None))
+}
 
 /// GlobalDocAddress serves as a hit address.
 #[derive(Clone, Eq, Debug, PartialEq, Hash, Ord, PartialOrd)]
