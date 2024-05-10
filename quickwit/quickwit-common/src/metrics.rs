@@ -216,6 +216,43 @@ impl<'a> Drop for GaugeGuard<'a> {
     }
 }
 
+pub struct OwnedGaugeGuard {
+    gauge: IntGauge,
+    delta: i64,
+}
+
+impl std::fmt::Debug for OwnedGaugeGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.delta.fmt(f)
+    }
+}
+
+impl OwnedGaugeGuard {
+    pub fn from_gauge(gauge: IntGauge) -> Self {
+        Self { gauge, delta: 0i64 }
+    }
+
+    pub fn get(&self) -> i64 {
+        self.delta
+    }
+
+    pub fn add(&mut self, delta: i64) {
+        self.gauge.add(delta);
+        self.delta += delta;
+    }
+
+    pub fn sub(&mut self, delta: i64) {
+        self.gauge.sub(delta);
+        self.delta -= delta;
+    }
+}
+
+impl Drop for OwnedGaugeGuard {
+    fn drop(&mut self) {
+        self.gauge.sub(self.delta)
+    }
+}
+
 pub fn metrics_text_payload() -> String {
     let metric_families = prometheus::gather();
     let mut buffer = Vec::new();

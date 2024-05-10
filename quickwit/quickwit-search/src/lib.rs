@@ -97,8 +97,8 @@ pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
 
 fn search_thread_pool() -> &'static ThreadPool {
-    static SEARCH_EXECUTOR: OnceLock<ThreadPool> = OnceLock::new();
-    SEARCH_EXECUTOR.get_or_init(|| ThreadPool::new("search", None))
+    static SEARCH_THREAD_POOL: OnceLock<ThreadPool> = OnceLock::new();
+    SEARCH_THREAD_POOL.get_or_init(|| ThreadPool::new("search", None))
 }
 
 /// GlobalDocAddress serves as a hit address.
