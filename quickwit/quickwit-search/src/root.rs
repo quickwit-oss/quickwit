@@ -3835,9 +3835,13 @@ mod tests {
                 let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
                 Ok(ServiceStream::from(vec![Ok(splits_response)]))
             });
-        let mut mock_search_service = MockSearchService::new();
-        mock_search_service.expect_leaf_search().times(2).returning(
-            |req: quickwit_proto::search::LeafSearchRequest| {
+        // We add two mock_search_service to simulate a multi node environment, where the requests
+        // are forwarded two node.
+        let mut mock_search_service1 = MockSearchService::new();
+        mock_search_service1
+            .expect_leaf_search()
+            .times(1)
+            .returning(|req: quickwit_proto::search::LeafSearchRequest| {
                 let search_req = req.search_request.unwrap();
                 // the leaf request does not need to know about the scroll_ttl.
                 assert_eq!(search_req.start_offset, 0u64);
@@ -3850,10 +3854,11 @@ mod tests {
                         ..(search_req.start_offset + search_req.max_hits) as usize,
                     search_req.search_after,
                 ))
-            },
-        );
-        mock_search_service.expect_leaf_search().times(2).returning(
-            |req: quickwit_proto::search::LeafSearchRequest| {
+            });
+        mock_search_service1
+            .expect_leaf_search()
+            .times(1)
+            .returning(|req: quickwit_proto::search::LeafSearchRequest| {
                 let search_req = req.search_request.unwrap();
                 // the leaf request does not need to know about the scroll_ttl.
                 assert_eq!(search_req.start_offset, 0u64);
@@ -3866,10 +3871,11 @@ mod tests {
                         ..(search_req.start_offset + search_req.max_hits) as usize,
                     search_req.search_after,
                 ))
-            },
-        );
-        mock_search_service.expect_leaf_search().times(2).returning(
-            |req: quickwit_proto::search::LeafSearchRequest| {
+            });
+        mock_search_service1
+            .expect_leaf_search()
+            .times(1)
+            .returning(|req: quickwit_proto::search::LeafSearchRequest| {
                 let search_req = req.search_request.unwrap();
                 // the leaf request does not need to know about the scroll_ttl.
                 assert_eq!(search_req.start_offset, 0u64);
@@ -3882,11 +3888,64 @@ mod tests {
                         ..(search_req.start_offset + search_req.max_hits) as usize,
                     search_req.search_after,
                 ))
-            },
-        );
+            });
+
+        let mut mock_search_service2 = MockSearchService::new();
+        mock_search_service2
+            .expect_leaf_search()
+            .times(1)
+            .returning(|req: quickwit_proto::search::LeafSearchRequest| {
+                let search_req = req.search_request.unwrap();
+                // the leaf request does not need to know about the scroll_ttl.
+                assert_eq!(search_req.start_offset, 0u64);
+                assert!(search_req.scroll_ttl_secs.is_none());
+                assert_eq!(search_req.max_hits as usize, SCROLL_BATCH_LEN);
+                assert!(search_req.search_after.is_none());
+                Ok(create_search_resp(
+                    &req.index_uris[0],
+                    search_req.start_offset as usize
+                        ..(search_req.start_offset + search_req.max_hits) as usize,
+                    search_req.search_after,
+                ))
+            });
+        mock_search_service2
+            .expect_leaf_search()
+            .times(1)
+            .returning(|req: quickwit_proto::search::LeafSearchRequest| {
+                let search_req = req.search_request.unwrap();
+                // the leaf request does not need to know about the scroll_ttl.
+                assert_eq!(search_req.start_offset, 0u64);
+                assert!(search_req.scroll_ttl_secs.is_none());
+                assert_eq!(search_req.max_hits as usize, SCROLL_BATCH_LEN);
+                assert!(search_req.search_after.is_some());
+                Ok(create_search_resp(
+                    &req.index_uris[0],
+                    search_req.start_offset as usize
+                        ..(search_req.start_offset + search_req.max_hits) as usize,
+                    search_req.search_after,
+                ))
+            });
+        mock_search_service2
+            .expect_leaf_search()
+            .times(1)
+            .returning(|req: quickwit_proto::search::LeafSearchRequest| {
+                let search_req = req.search_request.unwrap();
+                // the leaf request does not need to know about the scroll_ttl.
+                assert_eq!(search_req.start_offset, 0u64);
+                assert!(search_req.scroll_ttl_secs.is_none());
+                assert_eq!(search_req.max_hits as usize, SCROLL_BATCH_LEN);
+                assert!(search_req.search_after.is_some());
+                Ok(create_search_resp(
+                    &req.index_uris[0],
+                    search_req.start_offset as usize
+                        ..(search_req.start_offset + search_req.max_hits) as usize,
+                    search_req.search_after,
+                ))
+            });
+
         let kv: Arc<RwLock<HashMap<Vec<u8>, Vec<u8>>>> = Default::default();
         let kv_clone = kv.clone();
-        mock_search_service
+        mock_search_service1
             .expect_put_kv()
             .returning(move |put_kv_req| {
                 kv_clone
@@ -3894,10 +3953,25 @@ mod tests {
                     .unwrap()
                     .insert(put_kv_req.key, put_kv_req.payload);
             });
-        mock_search_service
+        mock_search_service1
             .expect_get_kv()
             .returning(move |get_kv_req| kv.read().unwrap().get(&get_kv_req.key).cloned());
-        mock_search_service.expect_fetch_docs().returning(
+
+        let kv: Arc<RwLock<HashMap<Vec<u8>, Vec<u8>>>> = Default::default();
+        let kv_clone = kv.clone();
+        mock_search_service2
+            .expect_put_kv()
+            .returning(move |put_kv_req| {
+                kv_clone
+                    .write()
+                    .unwrap()
+                    .insert(put_kv_req.key, put_kv_req.payload);
+            });
+        mock_search_service2
+            .expect_get_kv()
+            .returning(move |get_kv_req| kv.read().unwrap().get(&get_kv_req.key).cloned());
+
+        mock_search_service1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
                 assert!(fetch_docs_req.partial_hits.len() <= MAX_HITS_PER_PAGE);
                 Ok(quickwit_proto::search::FetchDocsResponse {
@@ -3905,7 +3979,20 @@ mod tests {
                 })
             },
         );
-        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+
+        mock_search_service2.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                assert!(fetch_docs_req.partial_hits.len() <= MAX_HITS_PER_PAGE);
+                Ok(quickwit_proto::search::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service1),
+            ("127.0.0.1:1002", mock_search_service2),
+        ]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let searcher_context = SearcherContext::for_test();
         let cluster_client = ClusterClient::new(search_job_placer.clone());
@@ -4018,9 +4105,13 @@ mod tests {
                 let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
                 Ok(ServiceStream::from(vec![Ok(splits_response)]))
             });
-        let mut mock_search_service = MockSearchService::new();
-        mock_search_service.expect_leaf_search().times(2).returning(
-            |req: quickwit_proto::search::LeafSearchRequest| {
+        // We add two mock_search_service to simulate a multi node environment, where the requests
+        // are forwarded two nodes.
+        let mut mock_search_service1 = MockSearchService::new();
+        mock_search_service1
+            .expect_leaf_search()
+            .times(1)
+            .returning(|req: quickwit_proto::search::LeafSearchRequest| {
                 let search_req = req.search_request.unwrap();
                 // the leaf request does not need to know about the scroll_ttl.
                 assert_eq!(search_req.start_offset, 0u64);
@@ -4033,10 +4124,11 @@ mod tests {
                         ..(search_req.start_offset + search_req.max_hits) as usize,
                     search_req.search_after,
                 ))
-            },
-        );
-        mock_search_service.expect_leaf_search().times(2).returning(
-            |req: quickwit_proto::search::LeafSearchRequest| {
+            });
+        mock_search_service1
+            .expect_leaf_search()
+            .times(1)
+            .returning(|req: quickwit_proto::search::LeafSearchRequest| {
                 let search_req = req.search_request.unwrap();
                 // the leaf request does not need to know about the scroll_ttl.
                 assert_eq!(search_req.start_offset, 0u64);
@@ -4049,10 +4141,11 @@ mod tests {
                         ..(search_req.start_offset + search_req.max_hits) as usize,
                     search_req.search_after,
                 ))
-            },
-        );
-        mock_search_service.expect_leaf_search().times(2).returning(
-            |req: quickwit_proto::search::LeafSearchRequest| {
+            });
+        mock_search_service1
+            .expect_leaf_search()
+            .times(1)
+            .returning(|req: quickwit_proto::search::LeafSearchRequest| {
                 let search_req = req.search_request.unwrap();
                 // the leaf request does not need to know about the scroll_ttl.
                 assert_eq!(search_req.start_offset, 0u64);
@@ -4065,11 +4158,10 @@ mod tests {
                         ..(search_req.start_offset + search_req.max_hits) as usize,
                     search_req.search_after,
                 ))
-            },
-        );
+            });
         let kv: Arc<RwLock<HashMap<Vec<u8>, Vec<u8>>>> = Default::default();
         let kv_clone = kv.clone();
-        mock_search_service
+        mock_search_service1
             .expect_put_kv()
             .returning(move |put_kv_req| {
                 kv_clone
@@ -4077,10 +4169,10 @@ mod tests {
                     .unwrap()
                     .insert(put_kv_req.key, put_kv_req.payload);
             });
-        mock_search_service
+        mock_search_service1
             .expect_get_kv()
             .returning(move |get_kv_req| kv.read().unwrap().get(&get_kv_req.key).cloned());
-        mock_search_service.expect_fetch_docs().returning(
+        mock_search_service1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
                 assert!(fetch_docs_req.partial_hits.len() <= MAX_HITS_PER_PAGE_LARGE);
                 Ok(quickwit_proto::search::FetchDocsResponse {
@@ -4088,7 +4180,85 @@ mod tests {
                 })
             },
         );
-        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+
+        let mut mock_search_service2 = MockSearchService::new();
+        mock_search_service2
+            .expect_leaf_search()
+            .times(1)
+            .returning(|req: quickwit_proto::search::LeafSearchRequest| {
+                let search_req = req.search_request.unwrap();
+                // the leaf request does not need to know about the scroll_ttl.
+                assert_eq!(search_req.start_offset, 0u64);
+                assert!(search_req.scroll_ttl_secs.is_none());
+                assert_eq!(search_req.max_hits as usize, MAX_HITS_PER_PAGE_LARGE);
+                assert!(search_req.search_after.is_none());
+                Ok(create_search_resp(
+                    &req.index_uris[0],
+                    search_req.start_offset as usize
+                        ..(search_req.start_offset + search_req.max_hits) as usize,
+                    search_req.search_after,
+                ))
+            });
+        mock_search_service2
+            .expect_leaf_search()
+            .times(1)
+            .returning(|req: quickwit_proto::search::LeafSearchRequest| {
+                let search_req = req.search_request.unwrap();
+                // the leaf request does not need to know about the scroll_ttl.
+                assert_eq!(search_req.start_offset, 0u64);
+                assert!(search_req.scroll_ttl_secs.is_none());
+                assert_eq!(search_req.max_hits as usize, MAX_HITS_PER_PAGE_LARGE);
+                assert!(search_req.search_after.is_some());
+                Ok(create_search_resp(
+                    &req.index_uris[0],
+                    search_req.start_offset as usize
+                        ..(search_req.start_offset + search_req.max_hits) as usize,
+                    search_req.search_after,
+                ))
+            });
+        mock_search_service2
+            .expect_leaf_search()
+            .times(1)
+            .returning(|req: quickwit_proto::search::LeafSearchRequest| {
+                let search_req = req.search_request.unwrap();
+                // the leaf request does not need to know about the scroll_ttl.
+                assert_eq!(search_req.start_offset, 0u64);
+                assert!(search_req.scroll_ttl_secs.is_none());
+                assert_eq!(search_req.max_hits as usize, MAX_HITS_PER_PAGE_LARGE);
+                assert!(search_req.search_after.is_some());
+                Ok(create_search_resp(
+                    &req.index_uris[0],
+                    search_req.start_offset as usize
+                        ..(search_req.start_offset + search_req.max_hits) as usize,
+                    search_req.search_after,
+                ))
+            });
+        let kv: Arc<RwLock<HashMap<Vec<u8>, Vec<u8>>>> = Default::default();
+        let kv_clone = kv.clone();
+        mock_search_service2
+            .expect_put_kv()
+            .returning(move |put_kv_req| {
+                kv_clone
+                    .write()
+                    .unwrap()
+                    .insert(put_kv_req.key, put_kv_req.payload);
+            });
+        mock_search_service2
+            .expect_get_kv()
+            .returning(move |get_kv_req| kv.read().unwrap().get(&get_kv_req.key).cloned());
+        mock_search_service2.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                assert!(fetch_docs_req.partial_hits.len() <= MAX_HITS_PER_PAGE_LARGE);
+                Ok(quickwit_proto::search::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service1),
+            ("127.0.0.1:1002", mock_search_service2),
+        ]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let searcher_context = SearcherContext::for_test();
         let cluster_client = ClusterClient::new(search_job_placer.clone());
