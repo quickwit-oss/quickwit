@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use quickwit_proto::ingest::{Shard, ShardIds, ShardState};
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId};
+use serde_json::{json, Value as JsonValue};
 use tracing::{info, warn};
 
 use crate::IngesterPool;
@@ -450,6 +451,30 @@ impl RoutingTable {
         if let Some(entry) = self.table.get_mut(&key) {
             entry.delete_shards(index_uid, shard_ids);
         }
+    }
+
+    pub fn debug_info(&self) -> HashMap<IndexId, Vec<JsonValue>> {
+        let mut per_index_shards_json: HashMap<IndexId, Vec<JsonValue>> = HashMap::new();
+
+        for ((index_id, source_id), entry) in &self.table {
+            for (shards, is_local) in &[(&entry.local_shards, true), (&entry.remote_shards, false)]
+            {
+                let shards_json = shards.iter().map(|shard| {
+                    json!({
+                        "index_uid": shard.index_uid,
+                        "source_id": source_id,
+                        "shard_id": shard.shard_id,
+                        "shard_state": shard.shard_state.as_json_str_name(),
+                        "is_local": is_local,
+                    })
+                });
+                per_index_shards_json
+                    .entry(index_id.clone())
+                    .or_default()
+                    .extend(shards_json);
+            }
+        }
+        per_index_shards_json
     }
 
     #[cfg(test)]

@@ -181,6 +181,7 @@ struct QuickwitServices {
     // Ingest v1
     pub ingest_service: IngestServiceClient,
     // Ingest v2
+    pub ingest_router_opt: Option<IngestRouter>,
     pub ingest_router_service: IngestRouterServiceClient,
     ingester_opt: Option<Ingester>,
 
@@ -531,7 +532,7 @@ pub async fn serve_quickwit(
     );
 
     // Setup ingest service v2.
-    let (ingest_router_service, ingester_opt) = setup_ingest_v2(
+    let (ingest_router, ingest_router_service, ingester_opt) = setup_ingest_v2(
         &node_config,
         &cluster,
         &event_broker,
@@ -693,6 +694,7 @@ pub async fn serve_quickwit(
         _report_splits_subscription_handle_opt: report_splits_subscription_handle_opt,
         index_manager,
         indexing_service_opt,
+        ingest_router_opt: Some(ingest_router),
         ingest_router_service,
         ingest_service,
         ingester_opt: ingester_opt.clone(),
@@ -815,7 +817,7 @@ async fn setup_ingest_v2(
     event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
-) -> anyhow::Result<(IngestRouterServiceClient, Option<Ingester>)> {
+) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
     let content_length_limit = node_config.ingest_api_config.content_length_limit;
@@ -824,6 +826,9 @@ async fn setup_ingest_v2(
         .replication_factor()
         .expect("replication factor should have been validated")
         .get();
+
+    // Any node can serve ingest requests, so we always instantiate an ingest router.
+    // TODO: I'm not sure that's such a good idea.
     let ingest_router = IngestRouter::new(
         self_node_id.clone(),
         control_plane.clone(),
@@ -832,11 +837,9 @@ async fn setup_ingest_v2(
     );
     ingest_router.subscribe(event_broker);
 
-    // Any node can serve ingest requests, so we always instantiate an ingest router.
-    // TODO: I'm not sure that's such a good idea.
     let ingest_router_service = IngestRouterServiceClient::tower()
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
-        .build(ingest_router);
+        .build(ingest_router.clone());
 
     // We compute the burst limit as something a bit larger than the content length limit, because
     // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
@@ -930,7 +933,7 @@ async fn setup_ingest_v2(
         })
     });
     ingester_pool.listen_for_changes(ingester_change_stream);
-    Ok((ingest_router_service, ingester_opt))
+    Ok((ingest_router, ingest_router_service, ingester_opt))
 }
 
 async fn setup_searcher(

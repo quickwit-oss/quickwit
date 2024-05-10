@@ -55,9 +55,6 @@ use crate::split_store::IndexingSplitStore;
 /// concurrently.
 static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 
-#[derive(Debug)]
-struct ObserveLoop;
-
 struct MergePipelineHandles {
     merge_planner: ActorHandle<MergePlanner>,
     merge_split_downloader: ActorHandle<MergeSplitDownloader>,
