@@ -79,6 +79,7 @@ use super::replication::{
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use super::IngesterPool;
 use crate::ingest_v2::metrics::report_wal_usage;
+use crate::ingest_v2::models::IngesterShardType;
 use crate::metrics::INGEST_METRICS;
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{estimate_size, with_lock_metrics, FollowerId};
@@ -287,7 +288,6 @@ impl Ingester {
 
         for queue_id in state_guard.mrecordlog.list_queues() {
             let Some((index_uid, source_id, shard_id)) = split_queue_id(queue_id) else {
-                warn!("failed to parse queue ID `{queue_id}`");
                 continue;
             };
             per_source_shard_ids
@@ -1012,9 +1012,44 @@ impl Ingester {
                 })
             }
         };
+        let mut per_index_shards_json: HashMap<IndexUid, Vec<JsonValue>> = HashMap::new();
+
+        for (queue_id, shard) in &state_guard.shards {
+            let Some((index_uid, source_id, shard_id)) = split_queue_id(queue_id) else {
+                continue;
+            };
+            let mut shard_json = json!({
+                "index_uid": index_uid,
+                "source_id": source_id,
+                "shard_id": shard_id,
+                "state": shard.shard_state.as_json_str_name(),
+                "replication_position_inclusive": shard.replication_position_inclusive,
+                "truncation_position_inclusive": shard.truncation_position_inclusive,
+            });
+            match &shard.shard_type {
+                IngesterShardType::Primary { follower_id } => {
+                    shard_json["type"] = json!("primary");
+                    shard_json["leader_id"] = json!(self.self_node_id.to_string());
+                    shard_json["follower_id"] = json!(follower_id.to_string());
+                }
+                IngesterShardType::Replica { leader_id } => {
+                    shard_json["type"] = json!("replica");
+                    shard_json["leader_id"] = json!(leader_id.to_string());
+                    shard_json["follower_id"] = json!(self.self_node_id.to_string());
+                }
+                IngesterShardType::Solo => {
+                    shard_json["type"] = json!("solo");
+                    shard_json["leader_id"] = json!(self.self_node_id.to_string());
+                }
+            };
+            per_index_shards_json
+                .entry(index_uid.clone())
+                .or_default()
+                .push(shard_json);
+        }
         json!({
             "status": state_guard.status().as_json_str_name(),
-            "shards": state_guard.shards.keys().collect::<Vec<_>>(), // TODO: add more info
+            "shards": per_index_shards_json,
             "mrecordlog":  state_guard.mrecordlog.summary(),
         })
     }
@@ -3187,5 +3222,87 @@ mod tests {
             .unwrap()
             .assert_is_open();
         drop(state_guard);
+    }
+
+    #[tokio::test]
+    async fn test_ingester_debug_info() {
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
+        let shard_01 = Shard {
+            index_uid: Some(index_uid_0.clone()),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(1)),
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        };
+        let shard_02 = Shard {
+            index_uid: Some(index_uid_0.clone()),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(2)),
+            shard_state: ShardState::Closed as i32,
+            ..Default::default()
+        };
+        let index_uid_1: IndexUid = IndexUid::for_test("test-index-1", 0);
+        let shard_03 = Shard {
+            index_uid: Some(index_uid_1.clone()),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(3)),
+            shard_state: ShardState::Closed as i32,
+            ..Default::default()
+        };
+
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
+        let now = Instant::now();
+
+        ingester
+            .init_primary_shard(
+                &mut state_guard.inner,
+                &mut state_guard.mrecordlog,
+                shard_01,
+                now,
+            )
+            .await
+            .unwrap();
+        ingester
+            .init_primary_shard(
+                &mut state_guard.inner,
+                &mut state_guard.mrecordlog,
+                shard_02,
+                now,
+            )
+            .await
+            .unwrap();
+        ingester
+            .init_primary_shard(
+                &mut state_guard.inner,
+                &mut state_guard.mrecordlog,
+                shard_03,
+                now,
+            )
+            .await
+            .unwrap();
+        drop(state_guard);
+
+        let debug_info = ingester.debug_info().await;
+        assert_eq!(debug_info["status"], "ready");
+
+        let shards = &debug_info["shards"];
+        assert_eq!(shards.as_object().unwrap().len(), 2);
+
+        assert_eq!(
+            shards["test-index-0:00000000000000000000000000"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            shards["test-index-1:00000000000000000000000000"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
     }
 }
