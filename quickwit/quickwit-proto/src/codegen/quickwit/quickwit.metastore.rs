@@ -367,6 +367,7 @@ pub struct AcquireShardsRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AcquireShardsResponse {
+    /// List of acquired shards, in no specific order.
     #[prost(message, repeated, tag = "3")]
     pub acquired_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
 }
@@ -873,6 +874,12 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
     /// Acquires a set of shards for indexing. This RPC locks the shards for publishing thanks to a publish token and only
     /// the last indexer that has acquired the shards is allowed to publish. The response returns for each subrequest the
     /// list of acquired shards along with the positions to index from.
+    ///
+    /// If a requested shard is missing, this method does not return an error. It should simply return the list of
+    /// shards that were actually acquired.
+    ///
+    /// For this reason, AcquireShards.acquire_shards may return less subresponse than there was in the request.
+    /// Also they may be returned in any order.
     async fn acquire_shards(
         &mut self,
         request: AcquireShardsRequest,
@@ -6219,6 +6226,12 @@ pub mod metastore_service_grpc_client {
         /// Acquires a set of shards for indexing. This RPC locks the shards for publishing thanks to a publish token and only
         /// the last indexer that has acquired the shards is allowed to publish. The response returns for each subrequest the
         /// list of acquired shards along with the positions to index from.
+        ///
+        /// If a requested shard is missing, this method does not return an error. It should simply return the list of
+        /// shards that were actually acquired.
+        ///
+        /// For this reason, AcquireShards.acquire_shards may return less subresponse than there was in the request.
+        /// Also they may be returned in any order.
         pub async fn acquire_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::AcquireShardsRequest>,
@@ -6618,6 +6631,12 @@ pub mod metastore_service_grpc_server {
         /// Acquires a set of shards for indexing. This RPC locks the shards for publishing thanks to a publish token and only
         /// the last indexer that has acquired the shards is allowed to publish. The response returns for each subrequest the
         /// list of acquired shards along with the positions to index from.
+        ///
+        /// If a requested shard is missing, this method does not return an error. It should simply return the list of
+        /// shards that were actually acquired.
+        ///
+        /// For this reason, AcquireShards.acquire_shards may return less subresponse than there was in the request.
+        /// Also they may be returned in any order.
         async fn acquire_shards(
             &self,
             request: tonic::Request<super::AcquireShardsRequest>,
