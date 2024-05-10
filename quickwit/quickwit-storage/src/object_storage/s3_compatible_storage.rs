@@ -380,29 +380,38 @@ impl S3CompatibleObjectStorage {
         Ok(parts)
     }
 
-    fn build_delete_batch_requests<'a>(&self, delete_paths: &'a [&'a Path]) -> anyhow::Result<Vec<(&'a [&'a Path], Delete)>> {
-       #[cfg(test)]
-       const MAX_NUM_KEYS: usize = 3;
+    fn build_delete_batch_requests<'a>(
+        &self,
+        delete_paths: &'a [&'a Path],
+    ) -> anyhow::Result<Vec<(&'a [&'a Path], Delete)>> {
+        #[cfg(test)]
+        const MAX_NUM_KEYS: usize = 3;
 
-       #[cfg(not(test))]
-       const MAX_NUM_KEYS: usize = 1_000;
+        #[cfg(not(test))]
+        const MAX_NUM_KEYS: usize = 1_000;
 
-       let path_chunks = delete_paths.chunks(MAX_NUM_KEYS);
-       let num_delete_requests = path_chunks.len();
-       let mut delete_requests: Vec<(&[&Path], Delete)> = Vec::with_capacity(num_delete_requests);
+        let path_chunks = delete_paths.chunks(MAX_NUM_KEYS);
+        let num_delete_requests = path_chunks.len();
+        let mut delete_requests: Vec<(&[&Path], Delete)> = Vec::with_capacity(num_delete_requests);
 
-       for path_chunk in path_chunks {
-           let object_ids: Vec<ObjectIdentifier> = path_chunk.iter()
-              .map(|path| {
-                  let key = self.key(path);
-                  ObjectIdentifierBuilder::default().key(key).build().context("failed to build object identifier")
-              })
-              .collect::<anyhow::Result<_>>()?;
-           let delete = Delete::builder().set_objects(Some(object_ids)).build()
-               .context("failed to build delete request")?;
-           delete_requests.push((path_chunk, delete));
-         }
-         Ok(delete_requests)
+        for path_chunk in path_chunks {
+            let object_ids: Vec<ObjectIdentifier> = path_chunk
+                .iter()
+                .map(|path| {
+                    let key = self.key(path);
+                    ObjectIdentifierBuilder::default()
+                        .key(key)
+                        .build()
+                        .context("failed to build object identifier")
+                })
+                .collect::<anyhow::Result<_>>()?;
+            let delete = Delete::builder()
+                .set_objects(Some(object_ids))
+                .build()
+                .context("failed to build delete request")?;
+            delete_requests.push((path_chunk, delete));
+        }
+        Ok(delete_requests)
     }
 
     async fn upload_part<'a>(
@@ -611,7 +620,8 @@ impl S3CompatibleObjectStorage {
     async fn bulk_delete_multi<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
 
-        let delete_requests: Vec<(&[&Path], Delete)> = self.build_delete_batch_requests(paths)
+        let delete_requests: Vec<(&[&Path], Delete)> = self
+            .build_delete_batch_requests(paths)
             .map_err(|error: anyhow::Error| {
                 let unattempted = paths.iter().copied().map(Path::to_path_buf).collect();
                 BulkDeleteError {
@@ -630,16 +640,17 @@ impl S3CompatibleObjectStorage {
         let mut delete_requests_it = delete_requests.iter();
 
         for (path_chunk, delete) in &mut delete_requests_it {
-            let delete_objects_res: StorageResult<DeleteObjectsOutput> = aws_retry(&self.retry_params, || async {
-                self.s3_client
-                    .delete_objects()
-                    .bucket(self.bucket.clone())
-                    .delete(delete.clone())
-                    .send()
-                    .await
-            })
-            .await
-            .map_err(Into::into);
+            let delete_objects_res: StorageResult<DeleteObjectsOutput> =
+                aws_retry(&self.retry_params, || async {
+                    self.s3_client
+                        .delete_objects()
+                        .bucket(self.bucket.clone())
+                        .delete(delete.clone())
+                        .send()
+                        .await
+                })
+                .await
+                .map_err(Into::into);
 
             match delete_objects_res {
                 Ok(delete_objects_output) => {
@@ -697,8 +708,6 @@ impl S3CompatibleObjectStorage {
         })
     }
 }
-
-
 
 async fn download_all(byte_stream: ByteStream, output: &mut Vec<u8>) -> io::Result<()> {
     output.clear();
