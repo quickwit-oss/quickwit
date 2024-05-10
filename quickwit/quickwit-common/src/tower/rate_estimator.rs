@@ -354,7 +354,7 @@ mod tests {
         // |0, 0, 0, 0, 0, 100*, 100, 100, 100, 100|
         //
         // Since the current bucket (idx = 5) is not taken into account, this leads
-        // to an average of 500 / 9 = 55 work units.
+        // to an average of 400 / 9 = 44 work units.
         assert_eq!(estimator.work_at(anchor + Duration::from_secs(15)), 44);
     }
 }
