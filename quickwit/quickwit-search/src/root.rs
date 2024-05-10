@@ -1408,7 +1408,7 @@ pub fn jobs_to_leaf_request(
     search_request_for_leaf.start_offset = 0;
     search_request_for_leaf.max_hits += request.start_offset;
 
-    let mut multi_leaf_request = LeafSearchRequest {
+    let mut leaf_search_request = LeafSearchRequest {
         search_request: Some(search_request_for_leaf),
         leaf_requests: Vec::new(),
         doc_mappers: Vec::new(),
@@ -1427,26 +1427,28 @@ pub fn jobs_to_leaf_request(
         let doc_mapper_ord = *added_doc_mappers
             .entry(&search_index_meta.doc_mapper_str)
             .or_insert_with(|| {
-                let ord = multi_leaf_request.doc_mappers.len();
-                multi_leaf_request
+                let ord = leaf_search_request.doc_mappers.len();
+                leaf_search_request
                     .doc_mappers
                     .push(search_index_meta.doc_mapper_str.to_string());
                 ord as u32
             });
-        let index_uri_ord = multi_leaf_request.index_uris.len() as u32;
-        multi_leaf_request
+        let index_uri_ord = leaf_search_request.index_uris.len() as u32;
+        leaf_search_request
             .index_uris
             .push(search_index_meta.index_uri.to_string());
 
-        let leaf_search_request = LeafRequestRef {
+        let leaf_search_request_ref = LeafRequestRef {
             split_offsets: job_group.into_iter().map(|job| job.offsets).collect(),
             doc_mapper_ord,
             index_uri_ord,
         };
-        multi_leaf_request.leaf_requests.push(leaf_search_request);
+        leaf_search_request
+            .leaf_requests
+            .push(leaf_search_request_ref);
         Ok(())
     })?;
-    Ok(multi_leaf_request)
+    Ok(leaf_search_request)
 }
 
 /// Builds a list of [`FetchDocsRequest`], one per index, from a list of [`FetchDocsJob`].
