@@ -35,13 +35,14 @@ export class Client {
     return this._host + "/api/v1/";
   }
 
-  async search(request: SearchRequest): Promise<SearchResponse> {
+  async search(request: SearchRequest, timestamp_field: string | null): Promise<SearchResponse> {
     // TODO: improve validation of request.
     if (request.indexId === null || request.indexId === undefined) {
       throw Error("Search request must have and index id.")
     }
-    const url = this.buildSearchUrl(request);
-    return this.fetch(url.toString(), this.defaultGetRequestParams());
+    const url = `${this.apiRoot()}/${request.indexId}/search`;
+    const body = this.buildSearchBody(request, timestamp_field);
+    return this.fetch(url, this.defaultGetRequestParams(), body);
   }
 
   async cluster(): Promise<Cluster> {
@@ -85,7 +86,12 @@ export class Client {
     return this.fetch(`${this.apiRoot()}indexes`, {});
   }
 
-  async fetch<T>(url: string, params: RequestInit): Promise<T> {
+  async fetch<T>(url: string, params: RequestInit, body: string|null = null): Promise<T> {
+    if (body !== null) {
+      params.method = "POST";
+      params.body = body;
+      params.headers = Object.assign({}, params.headers, {"content-type": "application/json"});
+    }
     const response = await fetch(url, params);
     if (response.ok) {
       return response.json() as Promise<T>;
@@ -101,34 +107,100 @@ export class Client {
     return {
       method: "GET",
       headers: { Accept: "application/json" },
-      mode: "no-cors",
+      mode: "cors",
       cache: "default",
     }
   }
 
-  buildSearchUrl(request: SearchRequest): URL {
-    const url: URL = new URL(`${request.indexId}/search`, this.apiRoot());
-    // TODO: the trim should be done in the backend.
-    url.searchParams.append("query", request.query.trim() || "*");
-    url.searchParams.append("max_hits", "20");
+  buildSearchBody(request: SearchRequest, timestamp_field: string | null): string {
+    /* eslint-disable  @typescript-eslint/no-explicit-any */
+    const body: any = {
+      // TODO: the trim should be done in the backend.
+      query: request.query.trim() || "*",
+    };
+
+    if (request.aggregation) {
+      const qw_aggregation = this.buildAggregation(request, timestamp_field);
+      body["aggs"] = qw_aggregation;
+      body["max_hits"] = 0;
+    } else {
+      body["max_hits"] = 20;
+    }
     if (request.startTimestamp) {
-      url.searchParams.append(
-        "start_timestamp",
-        request.startTimestamp.toString()
-      );
+      body["start_timestamp"] = request.startTimestamp;
     }
     if (request.endTimestamp) {
-      url.searchParams.append(
-        "end_timestamp",
-        request.endTimestamp.toString()
-      );
+      body["end_timestamp"] = request.endTimestamp;
     }
     if (request.sortByField) {
-      url.searchParams.append(
-        "sort_by_field",
-        serializeSortByField(request.sortByField)
-      );
+      body["sort_by_field"] = serializeSortByField(request.sortByField);
     }
-    return url;
+    return JSON.stringify(body);
+  }
+
+  /* eslint-disable  @typescript-eslint/no-explicit-any */
+  buildAggregation(request: SearchRequest, timestamp_field: string | null): any {
+    let aggregation = undefined;
+    if (request.aggregationConfig.metric) {
+      const metric = request.aggregationConfig.metric;
+      aggregation = {
+        metric: {
+          [metric.type]: {
+            field: metric.field
+          }
+        }
+      }
+    }
+    if (request.aggregationConfig.histogram && timestamp_field) {
+      const histogram = request.aggregationConfig.histogram;
+      let auto;
+      if (request.endTimestamp == null || request.startTimestamp == null) {
+        auto = "1d";
+      } else if ((request.endTimestamp - request.startTimestamp) > 7 * 24 * 60 * 60) {
+        auto = "1d";
+      } else if ((request.endTimestamp - request.startTimestamp) > 24 * 60 * 60) {
+        auto = "10m"
+      } else {
+        auto = "1m"
+      }
+      const interval = histogram.interval !== "auto" ? histogram.interval : auto;
+      let extended_bounds;
+      if (request.startTimestamp && request.endTimestamp) {
+        extended_bounds = {
+          min: request.startTimestamp,
+          max: request.endTimestamp,
+        };
+      } else {
+	extended_bounds = undefined;
+      }
+      aggregation = {
+        histo_agg: {
+          aggs: aggregation,
+          date_histogram: {
+            field: timestamp_field,
+            fixed_interval: interval,
+            min_doc_count: 0,
+            extended_bounds: extended_bounds,
+          }
+        }
+      }
+    }
+    if (request.aggregationConfig.term) {
+      const term = request.aggregationConfig.term;
+      aggregation = {
+        term_agg: {
+          aggs: aggregation,
+          terms: {
+            field: term.field,
+            size: term.size,
+            order: {
+              _count: "desc"
+            },
+            min_doc_count: 1,
+          }
+        }
+      }
+    }
+    return aggregation;
   }
 }
