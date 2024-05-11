@@ -143,7 +143,7 @@ export function extractAggregationResults(aggregation: any): ParsedAggregationRe
     if (term_buckets.lenght == 0) {
       return null;
     }
-    if (Object.prototype.hasOwnProperty.call(term_buckets[0], "histo_agg")) {
+    if (term_buckets.length > 0 && Object.prototype.hasOwnProperty.call(term_buckets[0], "histo_agg")) {
       // we have a term+histo aggregation
       const timestamps_set: Set<number> = new Set();
       term_buckets.forEach((bucket: any) => bucket.histo_agg.buckets.forEach(
