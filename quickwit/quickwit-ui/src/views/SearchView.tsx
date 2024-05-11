@@ -89,7 +89,6 @@ function SearchView() {
     });
   }
   const onSearchRequestUpdate = (searchRequest: SearchRequest) => {
-    console.log("on search request update:", searchRequest);
     setSearchRequest(searchRequest);
   }
   useEffect(() => {
