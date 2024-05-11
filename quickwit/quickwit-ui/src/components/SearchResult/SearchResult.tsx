@@ -22,6 +22,7 @@ import NumberFormat from "react-number-format";
 import { Index, ResponseError, SearchResponse } from "../../utils/models";
 import Loader from "../Loader";
 import { ResultTable } from "./ResultTable";
+import { AggregationResult } from "./AggregationResult";
 import ErrorResponseDisplay from "../ResponseErrorDisplay";
 
 function HitCount({searchResponse}: {searchResponse: SearchResponse}) {
@@ -63,6 +64,16 @@ export default function SearchResult(props: SearchResultProps) {
   if (props.searchResponse == null || props.index == null) {
     return <></>
   }
+  let result;
+  console.log(props.searchResponse);
+  if (props.searchResponse.aggregations === undefined) {
+    console.log("result table");
+    result = (<ResultTable searchResponse={props.searchResponse} index={props.index} />);
+  } else {
+    console.log("aggregation result");
+    result = (<AggregationResult searchResponse={props.searchResponse} />);
+  }
+  (<ResultTable searchResponse={props.searchResponse} index={props.index} />);
   return (
     <Box sx={{ pt: 1, flexGrow: '1', flexBasis: '0%', overflow: 'hidden'}} >
       <Box sx={{ height: '100%', flexDirection: 'column', flexGrow: 1, display: 'flex'}}>
@@ -70,7 +81,7 @@ export default function SearchResult(props: SearchResultProps) {
           <HitCount searchResponse={props.searchResponse} />
         </Box>
         <Box sx={{ pt: 2, flexGrow: 1, flexBasis: '0%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <ResultTable searchResponse={props.searchResponse} index={props.index} />
+          {result}
         </Box>
       </Box>
     </Box>

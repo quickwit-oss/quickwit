@@ -229,6 +229,14 @@ export function AggregationKind(props: SearchComponentProps) {
     return options;
   }
 
+  // do the initial filling of parameters
+  const aggregationConfig = props.searchRequest.aggregationConfig;
+  if (aggregationConfig.histogram === null && aggregationConfig.term === null) {
+    const initialAggregation = Object.assign({}, ...aggregations);
+    const initialSearchRequest = Object.assign({}, props.searchRequest, {aggregationConfig: initialAggregation});
+    props.onSearchRequestUpdate(initialSearchRequest);
+  }
+
   const drawAdditional = (pos: number, aggs: ({term: TermAgg} | {histogram: HistogramAgg})[]) => {
     const agg = aggs[pos]
     if (isHistogram(agg)) {
