@@ -32,12 +32,12 @@ describe('Client unit test', () => {
             field_name: 'timestamp',
             order: 'Desc',
           },
-	  aggregation: false,
-	  aggregationConfig: {
-	    metric: null,
-	    term: null,
-	    histogram: null,
-	  },
+          aggregation: false,
+          aggregationConfig: {
+            metric: null,
+            term: null,
+            histogram: null,
+          },
         };
         expect(new Client().buildSearchBody(searchRequest, null)).toBe('{"query":"severity_error:ERROR","max_hits":20,"start_timestamp":100,"end_timestamp":200,"sort_by_field":"+timestamp"}');
     });
