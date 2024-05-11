@@ -39,6 +39,6 @@ describe('Client unit test', () => {
 	    histogram: null,
 	  },
         };
-        expect(new Client().buildSearchUrl(searchRequest).toString()).toBe("http://localhost/api/v1/my-new-fresh-index-id/search?query=severity_error%3AERROR&max_hits=20&start_timestamp=100&end_timestamp=200&sort_by_field=%2Btimestamp");
+        expect(new Client().buildSearchBody(searchRequest, null)).toBe('{"query":"severity_error:ERROR","max_hits":20,"start_timestamp":100,"end_timestamp":200,"sort_by_field":"+timestamp"}');
     });
 });

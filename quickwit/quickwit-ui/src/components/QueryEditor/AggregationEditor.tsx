@@ -79,7 +79,7 @@ export function MetricKind(props: SearchComponentProps) {
           sx={{ "min-height": "44px" }}
         >
           <MenuItem value="count">Count</MenuItem>
-          <MenuItem value="average">Average</MenuItem>
+          <MenuItem value="avg">Average</MenuItem>
           <MenuItem value="sum">Sum</MenuItem>
           <MenuItem value="max">Max</MenuItem>
           <MenuItem value="min">Min</MenuItem>

@@ -71,7 +71,8 @@ function SearchView() {
     setQueryRunning(true);
     setSearchError(null);
     navigate('/search?' + toUrlSearchRequestParams(updatedSearchRequest).toString());
-    quickwitClient.search(updatedSearchRequest).then((response) => {
+    const timestamp_field = index?.metadata.index_config.doc_mapping.timestamp_field || null;
+    quickwitClient.search(updatedSearchRequest, timestamp_field).then((response) => {
       updateLastSearchRequest(updatedSearchRequest);
       setSearchResponse(response);
       setQueryRunning(false);

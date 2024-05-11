@@ -135,6 +135,7 @@ export type SearchResponse = {
   hits: Array<RawDoc>;
   elapsed_time_micros: number;
   errors: Array<any> | undefined;
+  aggregations: any | undefined;
 }
 
 export type IndexConfig = {
