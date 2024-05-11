@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+import { useMemo } from 'react';
 import { Box, Typography } from "@mui/material";
 import NumberFormat from "react-number-format";
 import { Index, ResponseError, SearchResponse } from "../../utils/models";
@@ -64,16 +65,23 @@ export default function SearchResult(props: SearchResultProps) {
   if (props.searchResponse == null || props.index == null) {
     return <></>
   }
-  let result;
-  console.log(props.searchResponse);
-  if (props.searchResponse.aggregations === undefined) {
-    console.log("result table");
-    result = (<ResultTable searchResponse={props.searchResponse} index={props.index} />);
-  } else {
-    console.log("aggregation result");
-    result = (<AggregationResult searchResponse={props.searchResponse} />);
-  }
-  (<ResultTable searchResponse={props.searchResponse} index={props.index} />);
+  // try to improve typing experience by caching the costly-to-render components
+  // in practice this doesn't seem to have much impact
+  const result = useMemo(
+    () => {
+      if (props.searchResponse == null || props.index == null) {
+	return null;
+      } else if (props.searchResponse.aggregations === undefined) {
+        console.log("result table");
+        return (<ResultTable searchResponse={props.searchResponse} index={props.index} />);
+      } else {
+        console.log("aggregation result");
+        return (<AggregationResult searchResponse={props.searchResponse} />);
+      }
+    },
+    [props.searchResponse, props.index]
+  );
+
   return (
     <Box sx={{ pt: 1, flexGrow: '1', flexBasis: '0%', overflow: 'hidden'}} >
       <Box sx={{ height: '100%', flexDirection: 'column', flexGrow: 1, display: 'flex'}}>
