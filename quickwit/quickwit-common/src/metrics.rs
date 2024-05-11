@@ -179,19 +179,19 @@ pub fn new_histogram_vec<const N: usize>(
     HistogramVec { underlying }
 }
 
-pub struct GaugeGuard {
-    gauge: &'static IntGauge,
+pub struct GaugeGuard<'a> {
+    gauge: &'a IntGauge,
     delta: i64,
 }
 
-impl std::fmt::Debug for GaugeGuard {
+impl<'a> std::fmt::Debug for GaugeGuard<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.delta.fmt(f)
     }
 }
 
-impl GaugeGuard {
-    pub fn from_gauge(gauge: &'static IntGauge) -> Self {
+impl<'a> GaugeGuard<'a> {
+    pub fn from_gauge(gauge: &'a IntGauge) -> Self {
         Self { gauge, delta: 0i64 }
     }
 
@@ -210,7 +210,44 @@ impl GaugeGuard {
     }
 }
 
-impl Drop for GaugeGuard {
+impl<'a> Drop for GaugeGuard<'a> {
+    fn drop(&mut self) {
+        self.gauge.sub(self.delta)
+    }
+}
+
+pub struct OwnedGaugeGuard {
+    gauge: IntGauge,
+    delta: i64,
+}
+
+impl std::fmt::Debug for OwnedGaugeGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.delta.fmt(f)
+    }
+}
+
+impl OwnedGaugeGuard {
+    pub fn from_gauge(gauge: IntGauge) -> Self {
+        Self { gauge, delta: 0i64 }
+    }
+
+    pub fn get(&self) -> i64 {
+        self.delta
+    }
+
+    pub fn add(&mut self, delta: i64) {
+        self.gauge.add(delta);
+        self.delta += delta;
+    }
+
+    pub fn sub(&mut self, delta: i64) {
+        self.gauge.sub(delta);
+        self.delta -= delta;
+    }
+}
+
+impl Drop for OwnedGaugeGuard {
     fn drop(&mut self) {
         self.gauge.sub(self.delta)
     }

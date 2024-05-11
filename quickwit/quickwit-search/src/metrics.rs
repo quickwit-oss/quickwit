@@ -20,14 +20,11 @@
 // See https://prometheus.io/docs/practices/naming/
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{
-    new_counter, new_gauge, new_histogram, Histogram, IntCounter, IntGauge,
-};
+use quickwit_common::metrics::{new_counter, new_histogram, Histogram, IntCounter};
 
 pub struct SearchMetrics {
     pub leaf_searches_splits_total: IntCounter,
     pub leaf_search_split_duration_secs: Histogram,
-    pub active_search_threads_count: IntGauge,
 }
 
 impl Default for SearchMetrics {
@@ -43,12 +40,6 @@ impl Default for SearchMetrics {
                 "Number of seconds required to run a leaf search over a single split. The timer \
                  starts after the semaphore is obtained.",
                 "search",
-            ),
-            active_search_threads_count: new_gauge(
-                "active_search_threads_count",
-                "Number of threads in use in the CPU thread pool",
-                "search",
-                &[],
             ),
         }
     }

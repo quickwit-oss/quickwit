@@ -43,6 +43,7 @@ pub mod stream_utils;
 pub mod temp_dir;
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;
+pub mod thread_pool;
 pub mod tower;
 pub mod type_map;
 pub mod uri;

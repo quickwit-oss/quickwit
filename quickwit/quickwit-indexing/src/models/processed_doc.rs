@@ -46,7 +46,7 @@ pub struct ProcessedDocBatch {
     pub docs: Vec<ProcessedDoc>,
     pub checkpoint_delta: SourceCheckpointDelta,
     pub force_commit: bool,
-    _gauge_guard: GaugeGuard,
+    _gauge_guard: GaugeGuard<'static>,
 }
 
 impl ProcessedDocBatch {

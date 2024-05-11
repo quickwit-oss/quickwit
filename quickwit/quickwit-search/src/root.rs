@@ -667,13 +667,14 @@ pub(crate) async fn search_partial_hits_phase(
     let leaf_search_responses: Vec<tantivy::Result<LeafSearchResponse>> =
         leaf_search_responses.into_iter().map(Ok).collect_vec();
     let span = info_span!("merge_fruits");
-    let leaf_search_response = crate::run_cpu_intensive(move || {
-        let _span_guard = span.enter();
-        merge_collector.merge_fruits(leaf_search_responses)
-    })
-    .await
-    .context("failed to merge leaf search responses")?
-    .map_err(|error: TantivyError| crate::SearchError::Internal(error.to_string()))?;
+    let leaf_search_response = crate::search_thread_pool()
+        .run_cpu_intensive(move || {
+            let _span_guard = span.enter();
+            merge_collector.merge_fruits(leaf_search_responses)
+        })
+        .await
+        .context("failed to merge leaf search responses")?
+        .map_err(|error: TantivyError| crate::SearchError::Internal(error.to_string()))?;
     debug!(
         num_hits = leaf_search_response.num_hits,
         failed_splits = ?leaf_search_response.failed_splits,
