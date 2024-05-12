@@ -144,6 +144,7 @@ fast:
 | `raw`         | Does not process nor tokenize text. Filters out tokens larger than 255 bytes.  |
 | `default`     | Chops the text on according to whitespace and punctuation, removes tokens that are too long, and converts to lowercase. Filters out tokens larger than 255 bytes. |
 | `en_stem`     |  Like `default`, but also applies stemming on the resulting tokens. Filters out tokens larger than 255 bytes.  |
+| `whitespace`     | Chops the text on according to whitespace only. Doesn't remove long tokens or converts to lowercase. |
 | `chinese_compatible` |  Chop between each CJK character in addition to what `default` does. Should be used with `record: position` to be able to properly search |
 | `lowercase` |  Applies a lowercase transformation on the text. It does not tokenize the text. |
 
