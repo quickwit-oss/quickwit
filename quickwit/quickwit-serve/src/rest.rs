@@ -134,7 +134,7 @@ pub(crate) async fn start_rest_server(
 
     let service = ServiceBuilder::new()
         .concurrency_limit(quickwit_common::get_from_env("QW_REST_CONCURRENCY_LIMIT", 5))
-        .timeout(Duration::from_secs(1))
+        // .timeout(Duration::from_secs(1))
         .layer(
             CompressionLayer::new()
                 .gzip(true)
