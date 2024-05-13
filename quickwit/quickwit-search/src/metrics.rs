@@ -42,7 +42,7 @@ impl Default for SearchMetrics {
                 "Number of seconds required to run a leaf search over a single split. The timer \
                  starts after the semaphore is obtained.",
                 "search",
-                exponential_buckets(0.002, 2.0, 8).unwrap(),
+                exponential_buckets(0.005, 2.0, 10).unwrap(),
             ),
         }
     }

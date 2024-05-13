@@ -77,7 +77,7 @@ pub(crate) async fn start_rest_server(
         let status = info.status();
         let label_values: [&str; 2] = [info.method().as_str(), status.as_str()];
         crate::SERVE_METRICS
-            .request_duration_seconds
+            .request_duration_secs
             .with_label_values(label_values)
             .observe(elapsed.as_secs_f64());
         crate::SERVE_METRICS

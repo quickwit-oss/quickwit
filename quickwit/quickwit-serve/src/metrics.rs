@@ -22,7 +22,7 @@ use quickwit_common::metrics::{new_counter_vec, new_histogram_vec, HistogramVec,
 
 pub struct RestMetrics {
     pub http_requests_total: IntCounterVec<2>,
-    pub request_duration_seconds: HistogramVec<2>,
+    pub request_duration_secs: HistogramVec<2>,
 }
 
 impl Default for RestMetrics {
@@ -35,9 +35,9 @@ impl Default for RestMetrics {
                 &[],
                 ["method", "status_code"],
             ),
-            request_duration_seconds: new_histogram_vec(
-                "request_duration_seconds",
-                "Response time in millisecs",
+            request_duration_secs: new_histogram_vec(
+                "request_duration_secs",
+                "Response time in seconds",
                 "",
                 &[],
                 ["method", "status_code"],
