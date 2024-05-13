@@ -20,9 +20,10 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use tantivy::schema::Schema as TantivySchema;
+use tantivy::schema::{FieldType, Schema as TantivySchema};
 
 use super::{BuildTantivyAst, QueryAst};
+use crate::query_ast::utils::DYNAMIC_FIELD_NAME;
 use crate::query_ast::{FullTextParams, TantivyQueryAst};
 use crate::tokenizers::TokenizerManager;
 use crate::{BooleanOperand, InvalidQuery};
@@ -42,6 +43,55 @@ impl From<TermQuery> for QueryAst {
 }
 
 impl TermQuery {
+    fn get_tokenizer<'a>(&self, schema: &'a TantivySchema) -> Option<&'a str> {
+        let field = schema
+            .find_field(&self.field)
+            .or_else(|| schema.find_field(DYNAMIC_FIELD_NAME))?
+            .0;
+        match schema.get_field_entry(field).field_type() {
+            FieldType::Str(text_options) => Some(text_options.get_indexing_options()?.tokenizer()),
+            FieldType::JsonObject(json_options) => {
+                Some(json_options.get_text_indexing_options()?.tokenizer())
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn ast_for_term_extraction(
+        &self,
+        schema: &TantivySchema,
+        tokenizer_manager: &TokenizerManager,
+    ) -> Result<TantivyQueryAst, InvalidQuery> {
+        self.build_ast(
+            schema,
+            tokenizer_manager,
+            self.get_tokenizer(schema)
+                .or(Some("raw"))
+                .map(ToString::to_string),
+        )
+    }
+
+    fn build_ast(
+        &self,
+        schema: &TantivySchema,
+        tokenizer_manager: &TokenizerManager,
+        tokenizer: Option<String>,
+    ) -> Result<TantivyQueryAst, InvalidQuery> {
+        let full_text_params = FullTextParams {
+            tokenizer,
+            // This parameter should be an Or to handle integers on json fields
+            mode: BooleanOperand::Or.into(),
+            zero_terms_query: Default::default(),
+        };
+        crate::query_ast::utils::full_text_query(
+            &self.field,
+            &self.value,
+            &full_text_params,
+            schema,
+            tokenizer_manager,
+        )
+    }
+
     #[cfg(test)]
     pub fn from_field_value(field: impl ToString, value: impl ToString) -> Self {
         Self {
@@ -59,19 +109,7 @@ impl BuildTantivyAst for TermQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let full_text_params = FullTextParams {
-            tokenizer: Some("raw".to_string()),
-            // The parameter below won't matter, since we will have only one term
-            mode: BooleanOperand::Or.into(),
-            zero_terms_query: Default::default(),
-        };
-        crate::query_ast::utils::full_text_query(
-            &self.field,
-            &self.value,
-            &full_text_params,
-            schema,
-            tokenizer_manager,
-        )
+        self.build_ast(schema, tokenizer_manager, Some("raw".to_string()))
     }
 }
 

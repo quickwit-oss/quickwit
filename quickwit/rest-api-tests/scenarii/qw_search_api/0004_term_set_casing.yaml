@@ -1,0 +1,12 @@
+# regression test for bizare handling of - vs NOT when no positive clause is present
+endpoint: dyn/search
+params:
+  query: "my_field:CaSe"
+expected:
+  num_hits: 3
+---
+endpoint: dyn/search
+params:
+  query: "my_field:IN [CaSe]"
+expected:
+  num_hits: 3

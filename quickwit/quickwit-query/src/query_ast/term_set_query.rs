@@ -56,8 +56,7 @@ impl TermSetQuery {
                     field: full_path.to_string(),
                     value: value.to_string(),
                 };
-                let ast =
-                    term_query.build_tantivy_ast_call(schema, tokenizer_manager, &[], false)?;
+                let ast = term_query.ast_for_term_extraction(schema, tokenizer_manager)?;
                 let tantivy_query: Box<dyn crate::TantivyQuery> = ast.simplify().into();
                 tantivy_query.query_terms(&mut |term, _| {
                     terms.insert(term.clone());
