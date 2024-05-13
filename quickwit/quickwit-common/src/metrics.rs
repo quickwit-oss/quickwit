@@ -21,11 +21,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::OnceLock;
 
 use once_cell::sync::Lazy;
-use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
 pub use prometheus::{
-    Histogram, HistogramTimer, HistogramVec as PrometheusHistogramVec, IntCounter,
-    IntCounterVec as PrometheusIntCounterVec, IntGauge, IntGaugeVec as PrometheusIntGaugeVec,
+    exponential_buckets, Histogram, HistogramTimer, HistogramVec as PrometheusHistogramVec,
+    IntCounter, IntCounterVec as PrometheusIntCounterVec, IntGauge,
+    IntGaugeVec as PrometheusIntGaugeVec,
 };
+use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
 
 #[derive(Clone)]
 pub struct HistogramVec<const N: usize> {
@@ -146,10 +147,11 @@ pub fn new_gauge_vec<const N: usize>(
     IntGaugeVec { underlying }
 }
 
-pub fn new_histogram(name: &str, help: &str, subsystem: &str) -> Histogram {
+pub fn new_histogram(name: &str, help: &str, subsystem: &str, buckets: Vec<f64>) -> Histogram {
     let histogram_opts = HistogramOpts::new(name, help)
         .namespace("quickwit")
-        .subsystem(subsystem);
+        .subsystem(subsystem)
+        .buckets(buckets);
     let histogram = Histogram::with_opts(histogram_opts).expect("failed to create histogram");
     prometheus::register(Box::new(histogram.clone())).expect("failed to register histogram");
     histogram
@@ -161,6 +163,7 @@ pub fn new_histogram_vec<const N: usize>(
     subsystem: &str,
     const_labels: &[(&str, &str)],
     label_names: [&str; N],
+    buckets: Vec<f64>,
 ) -> HistogramVec<N> {
     let owned_const_labels: HashMap<String, String> = const_labels
         .iter()
@@ -169,7 +172,8 @@ pub fn new_histogram_vec<const N: usize>(
     let histogram_opts = HistogramOpts::new(name, help)
         .namespace("quickwit")
         .subsystem(subsystem)
-        .const_labels(owned_const_labels);
+        .const_labels(owned_const_labels)
+        .buckets(buckets);
     let underlying = PrometheusHistogramVec::new(histogram_opts, &label_names)
         .expect("failed to create histogram vec");
 

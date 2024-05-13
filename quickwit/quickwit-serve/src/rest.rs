@@ -29,6 +29,7 @@ use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove}
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
+use warp::filters::log::Info;
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
@@ -71,10 +72,17 @@ pub(crate) async fn start_rest_server(
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
-    let request_counter = warp::log::custom(|info| {
+    let request_counter = warp::log::custom(|info: Info| {
+        let elapsed = info.elapsed();
+        let status = info.status();
+        let label_values: [&str; 2] = [info.method().as_str(), status.as_str()];
+        crate::SERVE_METRICS
+            .request_duration_seconds
+            .with_label_values(label_values)
+            .observe(elapsed.as_secs_f64());
         crate::SERVE_METRICS
             .http_requests_total
-            .with_label_values([info.method().as_str(), info.status().as_str()])
+            .with_label_values(label_values)
             .inc();
     });
     // Docs routes

@@ -20,8 +20,8 @@
 use mrecordlog::ResourceUsage;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter_vec, new_gauge, new_gauge_vec, new_histogram_vec, HistogramVec, IntCounterVec,
-    IntGauge, IntGaugeVec,
+    exponential_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram_vec,
+    HistogramVec, IntCounterVec, IntGauge, IntGaugeVec,
 };
 
 pub(super) struct IngestV2Metrics {
@@ -69,6 +69,7 @@ impl Default for IngestV2Metrics {
                 "ingest",
                 &[],
                 ["operation", "type"],
+                exponential_buckets(0.001, 2.0, 12).unwrap(),
             ),
             wal_disk_used_bytes: new_gauge(
                 "wal_disk_used_bytes",
