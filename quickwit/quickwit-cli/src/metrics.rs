@@ -33,6 +33,7 @@ impl Default for CliMetrics {
                 "cli",
                 &[],
                 [],
+                quickwit_common::metrics::exponential_buckets(5.0, 5.0, 5).unwrap(),
             ),
         }
     }
