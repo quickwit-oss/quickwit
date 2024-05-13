@@ -18,7 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter_vec, new_histogram_vec, HistogramVec, IntCounterVec};
+use quickwit_common::metrics::{
+    exponential_buckets, new_counter_vec, new_histogram_vec, HistogramVec, IntCounterVec,
+};
 
 pub struct JaegerServiceMetrics {
     pub requests_total: IntCounterVec<2>,
@@ -52,6 +54,7 @@ impl Default for JaegerServiceMetrics {
                 "jaeger",
                 &[],
                 ["operation", "index", "error"],
+                exponential_buckets(0.02, 2.0, 8).unwrap(),
             ),
             fetched_traces_total: new_counter_vec(
                 "fetched_traces_total",
