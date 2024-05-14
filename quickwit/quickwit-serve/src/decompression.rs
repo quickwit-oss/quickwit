@@ -27,6 +27,10 @@ use thiserror::Error;
 use warp::reject::Reject;
 use warp::Filter;
 
+use crate::load_shield::{LoadShield, LoadShieldPermit};
+
+static LOAD_SHIELD: LoadShield = LoadShield::new(10, 150);
+
 /// There are two ways to decompress the body:
 /// - Stream the body through an async decompressor
 /// - Fetch the body and then decompress the bytes
@@ -83,22 +87,25 @@ pub(crate) fn get_body_bytes() -> impl Filter<Extract = (Body,), Error = warp::R
     warp::header::optional("content-encoding")
         .and(warp::body::bytes())
         .and_then(|encoding: Option<String>, body: Bytes| async move {
-            decompress_body(encoding, body).await.map(Body::from)
+            let permit = LOAD_SHIELD.acquire_permit().await?;
+            decompress_body(encoding, body).await.map(|content| Body::new(content, permit))
         })
 }
 
 pub(crate) struct Body {
     pub content: Bytes,
     _gauge_guard: GaugeGuard<'static>,
+    _permit: LoadShieldPermit,
 }
 
-impl From<Bytes> for Body {
-    fn from(content: Bytes) -> Self {
+impl Body {
+    pub fn new(content: Bytes, load_shield_permit: LoadShieldPermit) -> Body {
         let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.rest_server);
         gauge_guard.add(content.len() as i64);
         Body {
             content,
-            _gauge_guard: gauge_guard,
+            _gauge_guard: GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.rest_server),
+            _permit: load_shield_permit,
         }
     }
 }

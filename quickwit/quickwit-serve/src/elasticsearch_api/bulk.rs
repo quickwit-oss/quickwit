@@ -45,7 +45,7 @@ pub fn es_compat_bulk_handler(
     elastic_bulk_filter()
         .and(with_arg(ingest_service))
         .and(with_arg(ingest_router))
-        .then(|body, bulk_options, ingest_service, ingest_router| {
+        .then(|body: Body, bulk_options, ingest_service, ingest_router| {
             elastic_ingest_bulk(None, body, bulk_options, ingest_service, ingest_router)
         })
         .and(extract_format_from_qs())
