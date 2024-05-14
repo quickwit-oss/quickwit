@@ -21,8 +21,7 @@ use indexmap::IndexSet;
 use quickwit_datetime::{DateTimeInputFormat, DateTimeOutputFormat};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
-use tantivy::schema::OwnedValue as TantivyValue;
-use tantivy::DateTimePrecision;
+use tantivy::schema::{DateTimePrecision, OwnedValue as TantivyValue};
 
 use super::default_as_true;
 

@@ -41,7 +41,6 @@ mod search_job_placer;
 mod search_response_rest;
 mod search_stream;
 mod service;
-mod thread_pool;
 pub(crate) mod top_k_collector;
 
 mod metrics;
@@ -51,6 +50,7 @@ mod tests;
 
 pub use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
+use quickwit_common::thread_pool::ThreadPool;
 use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::metastore::{
@@ -62,7 +62,7 @@ use tantivy::schema::NamedFieldDocument;
 pub type Result<T> = std::result::Result<T, SearchError>;
 
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub use find_trace_ids_collector::FindTraceIdsCollector;
 use quickwit_config::SearcherConfig;
@@ -92,10 +92,14 @@ pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
-use crate::thread_pool::run_cpu_intensive;
 
 /// A pool of searcher clients identified by their gRPC socket address.
 pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
+
+fn search_thread_pool() -> &'static ThreadPool {
+    static SEARCH_THREAD_POOL: OnceLock<ThreadPool> = OnceLock::new();
+    SEARCH_THREAD_POOL.get_or_init(|| ThreadPool::new("search", None))
+}
 
 /// GlobalDocAddress serves as a hit address.
 #[derive(Clone, Eq, Debug, PartialEq, Hash, Ord, PartialOrd)]

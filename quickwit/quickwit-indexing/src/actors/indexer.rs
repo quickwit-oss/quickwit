@@ -361,8 +361,8 @@ struct IndexingWorkbench {
     // We use this value to set the `delete_opstamp` of the workbench splits.
     last_delete_opstamp: u64,
     // Number of bytes declared as used by tantivy.
-    memory_usage: GaugeGuard,
-    split_builders_guard: GaugeGuard,
+    memory_usage: GaugeGuard<'static>,
+    split_builders_guard: GaugeGuard<'static>,
     cooperative_indexing_period: Option<CooperativeIndexingPeriod>,
 }
 

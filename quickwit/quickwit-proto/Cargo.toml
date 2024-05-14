@@ -22,6 +22,7 @@ mockall = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
+sea-query = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true, optional = true }
@@ -50,5 +51,5 @@ tonic-build = { workspace = true }
 quickwit-codegen = { workspace = true }
 
 [features]
-postgres = ["sqlx"]
+postgres = ["sea-query", "sqlx"]
 testsuite = ["mockall", "futures"]

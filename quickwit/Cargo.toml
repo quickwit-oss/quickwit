@@ -155,7 +155,6 @@ mockall = "0.11"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a7" }
 new_string_template = "1.5.1"
 nom = "7.1.3"
-num_cpus = "1"
 numfmt = "1.1.1"
 once_cell = "1"
 oneshot = "0.1.5"
@@ -188,7 +187,7 @@ pulsar = { git = "https://github.com/quickwit-oss/pulsar-rs.git", rev = "f9eff04
 quote = "1.0.23"
 rand = "0.8"
 rand_distr = "0.4"
-rayon = "1"
+rayon = "1.10"
 rdkafka = { version = "0.33", default-features = false, features = [
   "cmake-build",
   "libz",
@@ -203,8 +202,8 @@ reqwest = { version = "0.11", default-features = false, features = [
   "rustls-tls",
 ] }
 rust-embed = "6.8.1"
-sea-query = { version = "0" }
-sea-query-binder = { version = "0", features = [
+sea-query = { version = "0.30" }
+sea-query-binder = { version = "0.5", features = [
   "runtime-tokio-rustls",
   "sqlx-postgres",
 ] }
@@ -270,16 +269,12 @@ wiremock = "0.5"
 zstd = "0.13.0"
 
 aws-config = "1.2"
-aws-credential-types = { version = "1.2", features = [
-  "hardcoded-credentials",
-] }
+aws-credential-types = { version = "1.2", features = ["hardcoded-credentials"] }
 aws-sdk-kinesis = "1.21"
 aws-sdk-s3 = "1.24"
 aws-smithy-async = "1.2"
-aws-smithy-runtime = "1.3"
-aws-smithy-types = { version = "1.1", features = [
-  "byte-stream-poll-next"
-] }
+aws-smithy-runtime = "1.5"
+aws-smithy-types = { version = "1.1", features = ["byte-stream-poll-next"] }
 aws-types = "1.2"
 
 azure_core = { version = "0.13.0", features = ["enable_reqwest_rustls"] }
@@ -322,7 +317,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "92b5526", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "6181c1e", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

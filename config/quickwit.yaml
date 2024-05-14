@@ -83,6 +83,7 @@ version: 0.8
 # default_index_root_uri: s3://your-bucket/indexes
 #
 # -------------------------------- Storage settings --------------------------------
+# https://quickwit.io/docs/configuration/node-config#storage-configuration
 #
 # Hardcoding credentials into configuration files is not secure and strongly
 # discouraged. Prefer the alternative authentication methods that your storage
@@ -103,6 +104,7 @@ version: 0.8
 #     disable_multipart_upload: false
 #
 # -------------------------------- Metastore settings --------------------------------
+# https://quickwit.io/docs/configuration/node-config#metastore-configuration
 #
 # metastore:
 #   postgres:
@@ -113,6 +115,7 @@ version: 0.8
 #     max_connection_lifetime: 30min
 #
 # -------------------------------- Indexer settings --------------------------------
+# https://quickwit.io/docs/configuration/node-config#indexer-configuration
 
 indexer:
   enable_otlp_endpoint: ${QW_ENABLE_OTLP_ENDPOINT:-true}
@@ -122,20 +125,27 @@ indexer:
 #
 #
 # -------------------------------- Ingest API settings ------------------------------
+# https://quickwit.io/docs/configuration/node-config#ingest-api-configuration
 #
 # ingest_api:
 #   max_queue_memory_usage: 2GiB
 #   max_queue_disk_usage: 4GiB
 #
 # -------------------------------- Searcher settings --------------------------------
+# https://quickwit.io/docs/configuration/node-config#searcher-configuration
 #
 # searcher:
 #   fast_field_cache_capacity: 1G
 #   split_footer_cache_capacity: 500M
-#   max_num_concurrent_split_streams: 100
 #   partial_request_cache_capacity: 64M
+#   max_num_concurrent_split_streams: 100
 #   max_num_concurrent_split_searches: 100
-#
+#   aggregation_memory_limit: 500M
+#   aggregation_bucket_limit: 65000
+#   split_cache:
+#      max_num_bytes: 1G
+#      max_num_splits: 10000
+#      num_concurrent_downloads: 1
 # -------------------------------- Jaeger settings --------------------------------
 
 jaeger:

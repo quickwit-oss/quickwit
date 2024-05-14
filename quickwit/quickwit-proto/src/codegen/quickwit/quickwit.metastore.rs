@@ -51,6 +51,7 @@ pub struct ListIndexesMetadataResponse {
         ::prost::alloc::string::String,
     >,
     /// A JSON serialized then ZSTD compressed list of `IndexMetadata`: `Vec<IndexMetadata> | JSON | ZSTD`.
+    /// We don't use `repeated` here to increase the compression rate and ratio.
     #[prost(bytes = "bytes", tag = "2")]
     pub indexes_metadata_json_zstd: ::prost::bytes::Bytes,
 }
@@ -80,6 +81,44 @@ pub struct IndexMetadataRequest {
 pub struct IndexMetadataResponse {
     #[prost(string, tag = "1")]
     pub index_metadata_serialized_json: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexesMetadataRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub subrequests: ::prost::alloc::vec::Vec<IndexMetadataSubrequest>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexMetadataSubrequest {
+    #[prost(string, optional, tag = "1")]
+    pub index_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexesMetadataResponse {
+    /// A JSON serialized then ZSTD compressed list of `IndexMetadata`: `Vec<IndexMetadata> | JSON | ZSTD`.
+    /// We don't use `repeated` here to increase the compression rate and ratio.
+    #[prost(bytes = "bytes", tag = "1")]
+    pub indexes_metadata_json_zstd: ::prost::bytes::Bytes,
+    #[prost(message, repeated, tag = "2")]
+    pub failures: ::prost::alloc::vec::Vec<IndexMetadataFailure>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexMetadataFailure {
+    #[prost(string, optional, tag = "1")]
+    pub index_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(enumeration = "IndexMetadataFailureReason", tag = "3")]
+    pub reason: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -328,6 +367,7 @@ pub struct AcquireShardsRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AcquireShardsResponse {
+    /// List of acquired shards, in no specific order.
     #[prost(message, repeated, tag = "3")]
     pub acquired_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
 }
@@ -344,6 +384,22 @@ pub struct DeleteShardsRequest {
     /// If false, only shards at EOF positions will be deleted.
     #[prost(bool, tag = "4")]
     pub force: bool,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardsResponse {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    /// List of shard IDs that were successfully deleted.
+    #[prost(message, repeated, tag = "3")]
+    pub successes: ::prost::alloc::vec::Vec<crate::types::ShardId>,
+    /// List of shard IDs that could not be deleted because `force` was set to `false` in the request,
+    /// and the shards are not at EOF, i.e., not fully indexed.
+    #[prost(message, repeated, tag = "4")]
+    pub failures: ::prost::alloc::vec::Vec<crate::types::ShardId>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -509,6 +565,43 @@ impl SourceType {
         }
     }
 }
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexMetadataFailureReason {
+    Unspecified = 0,
+    NotFound = 1,
+    Internal = 2,
+}
+impl IndexMetadataFailureReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            IndexMetadataFailureReason::Unspecified => {
+                "INDEX_METADATA_FAILURE_REASON_UNSPECIFIED"
+            }
+            IndexMetadataFailureReason::NotFound => {
+                "INDEX_METADATA_FAILURE_REASON_NOT_FOUND"
+            }
+            IndexMetadataFailureReason::Internal => {
+                "INDEX_METADATA_FAILURE_REASON_INTERNAL"
+            }
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "INDEX_METADATA_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "INDEX_METADATA_FAILURE_REASON_NOT_FOUND" => Some(Self::NotFound),
+            "INDEX_METADATA_FAILURE_REASON_INTERNAL" => Some(Self::Internal),
+            _ => None,
+        }
+    }
+}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -527,6 +620,11 @@ impl RpcName for UpdateIndexRequest {
 impl RpcName for IndexMetadataRequest {
     fn rpc_name() -> &'static str {
         "index_metadata"
+    }
+}
+impl RpcName for IndexesMetadataRequest {
+    fn rpc_name() -> &'static str {
+        "indexes_metadata"
     }
 }
 impl RpcName for ListIndexesMetadataRequest {
@@ -678,6 +776,11 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
         &mut self,
         request: IndexMetadataRequest,
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse>;
+    /// Fetches the metadata of a list of indexes identified by their Index IDs or UIDs.
+    async fn indexes_metadata(
+        &mut self,
+        request: IndexesMetadataRequest,
+    ) -> crate::metastore::MetastoreResult<IndexesMetadataResponse>;
     /// Gets an indexes metadatas.
     async fn list_indexes_metadata(
         &mut self,
@@ -771,16 +874,22 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
     /// Acquires a set of shards for indexing. This RPC locks the shards for publishing thanks to a publish token and only
     /// the last indexer that has acquired the shards is allowed to publish. The response returns for each subrequest the
     /// list of acquired shards along with the positions to index from.
+    ///
+    /// If a requested shard is missing, this method does not return an error. It should simply return the list of
+    /// shards that were actually acquired.
+    ///
+    /// For this reason, AcquireShards.acquire_shards may return less subresponse than there was in the request.
+    /// Also they may be returned in any order.
     async fn acquire_shards(
         &mut self,
         request: AcquireShardsRequest,
     ) -> crate::metastore::MetastoreResult<AcquireShardsResponse>;
-    /// Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
+    /// Deletes a set of shards. This RPC deletes the shards from the metastore.
     /// If the shard did not exist to begin with, the operation is successful and does not return any error.
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> crate::metastore::MetastoreResult<EmptyResponse>;
+    ) -> crate::metastore::MetastoreResult<DeleteShardsResponse>;
     async fn list_shards(
         &mut self,
         request: ListShardsRequest,
@@ -925,6 +1034,12 @@ impl MetastoreService for MetastoreServiceClient {
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
         self.inner.index_metadata(request).await
     }
+    async fn indexes_metadata(
+        &mut self,
+        request: IndexesMetadataRequest,
+    ) -> crate::metastore::MetastoreResult<IndexesMetadataResponse> {
+        self.inner.indexes_metadata(request).await
+    }
     async fn list_indexes_metadata(
         &mut self,
         request: ListIndexesMetadataRequest,
@@ -1036,7 +1151,7 @@ impl MetastoreService for MetastoreServiceClient {
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+    ) -> crate::metastore::MetastoreResult<DeleteShardsResponse> {
         self.inner.delete_shards(request).await
     }
     async fn list_shards(
@@ -1108,6 +1223,12 @@ pub mod mock_metastore_service {
             request: super::IndexMetadataRequest,
         ) -> crate::metastore::MetastoreResult<super::IndexMetadataResponse> {
             self.inner.lock().await.index_metadata(request).await
+        }
+        async fn indexes_metadata(
+            &mut self,
+            request: super::IndexesMetadataRequest,
+        ) -> crate::metastore::MetastoreResult<super::IndexesMetadataResponse> {
+            self.inner.lock().await.indexes_metadata(request).await
         }
         async fn list_indexes_metadata(
             &mut self,
@@ -1224,7 +1345,7 @@ pub mod mock_metastore_service {
         async fn delete_shards(
             &mut self,
             request: super::DeleteShardsRequest,
-        ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
+        ) -> crate::metastore::MetastoreResult<super::DeleteShardsResponse> {
             self.inner.lock().await.delete_shards(request).await
         }
         async fn list_shards(
@@ -1319,6 +1440,22 @@ impl tower::Service<IndexMetadataRequest> for Box<dyn MetastoreService> {
     fn call(&mut self, request: IndexMetadataRequest) -> Self::Future {
         let mut svc = self.clone();
         let fut = async move { svc.index_metadata(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<IndexesMetadataRequest> for Box<dyn MetastoreService> {
+    type Response = IndexesMetadataResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: IndexesMetadataRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.indexes_metadata(request).await };
         Box::pin(fut)
     }
 }
@@ -1611,7 +1748,7 @@ impl tower::Service<AcquireShardsRequest> for Box<dyn MetastoreService> {
     }
 }
 impl tower::Service<DeleteShardsRequest> for Box<dyn MetastoreService> {
-    type Response = EmptyResponse;
+    type Response = DeleteShardsResponse;
     type Error = crate::metastore::MetastoreError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
@@ -1741,6 +1878,11 @@ struct MetastoreServiceTowerServiceStack {
         IndexMetadataResponse,
         crate::metastore::MetastoreError,
     >,
+    indexes_metadata_svc: quickwit_common::tower::BoxService<
+        IndexesMetadataRequest,
+        IndexesMetadataResponse,
+        crate::metastore::MetastoreError,
+    >,
     list_indexes_metadata_svc: quickwit_common::tower::BoxService<
         ListIndexesMetadataRequest,
         ListIndexesMetadataResponse,
@@ -1833,7 +1975,7 @@ struct MetastoreServiceTowerServiceStack {
     >,
     delete_shards_svc: quickwit_common::tower::BoxService<
         DeleteShardsRequest,
-        EmptyResponse,
+        DeleteShardsResponse,
         crate::metastore::MetastoreError,
     >,
     list_shards_svc: quickwit_common::tower::BoxService<
@@ -1874,6 +2016,7 @@ impl Clone for MetastoreServiceTowerServiceStack {
             create_index_svc: self.create_index_svc.clone(),
             update_index_svc: self.update_index_svc.clone(),
             index_metadata_svc: self.index_metadata_svc.clone(),
+            indexes_metadata_svc: self.indexes_metadata_svc.clone(),
             list_indexes_metadata_svc: self.list_indexes_metadata_svc.clone(),
             delete_index_svc: self.delete_index_svc.clone(),
             list_splits_svc: self.list_splits_svc.clone(),
@@ -1925,6 +2068,12 @@ impl MetastoreService for MetastoreServiceTowerServiceStack {
         request: IndexMetadataRequest,
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
         self.index_metadata_svc.ready().await?.call(request).await
+    }
+    async fn indexes_metadata(
+        &mut self,
+        request: IndexesMetadataRequest,
+    ) -> crate::metastore::MetastoreResult<IndexesMetadataResponse> {
+        self.indexes_metadata_svc.ready().await?.call(request).await
     }
     async fn list_indexes_metadata(
         &mut self,
@@ -2037,7 +2186,7 @@ impl MetastoreService for MetastoreServiceTowerServiceStack {
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+    ) -> crate::metastore::MetastoreResult<DeleteShardsResponse> {
         self.delete_shards_svc.ready().await?.call(request).await
     }
     async fn list_shards(
@@ -2111,6 +2260,16 @@ type IndexMetadataLayer = quickwit_common::tower::BoxLayer<
     >,
     IndexMetadataRequest,
     IndexMetadataResponse,
+    crate::metastore::MetastoreError,
+>;
+type IndexesMetadataLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        IndexesMetadataRequest,
+        IndexesMetadataResponse,
+        crate::metastore::MetastoreError,
+    >,
+    IndexesMetadataRequest,
+    IndexesMetadataResponse,
     crate::metastore::MetastoreError,
 >;
 type ListIndexesMetadataLayer = quickwit_common::tower::BoxLayer<
@@ -2296,11 +2455,11 @@ type AcquireShardsLayer = quickwit_common::tower::BoxLayer<
 type DeleteShardsLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         DeleteShardsRequest,
-        EmptyResponse,
+        DeleteShardsResponse,
         crate::metastore::MetastoreError,
     >,
     DeleteShardsRequest,
-    EmptyResponse,
+    DeleteShardsResponse,
     crate::metastore::MetastoreError,
 >;
 type ListShardsLayer = quickwit_common::tower::BoxLayer<
@@ -2368,6 +2527,7 @@ pub struct MetastoreServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
     update_index_layers: Vec<UpdateIndexLayer>,
     index_metadata_layers: Vec<IndexMetadataLayer>,
+    indexes_metadata_layers: Vec<IndexesMetadataLayer>,
     list_indexes_metadata_layers: Vec<ListIndexesMetadataLayer>,
     delete_index_layers: Vec<DeleteIndexLayer>,
     list_splits_layers: Vec<ListSplitsLayer>,
@@ -2472,6 +2632,31 @@ impl MetastoreServiceTowerLayerStack {
                 crate::metastore::MetastoreError,
             >,
         >>::Service as tower::Service<IndexMetadataRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    IndexesMetadataRequest,
+                    IndexesMetadataResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                IndexesMetadataRequest,
+                IndexesMetadataResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                IndexesMetadataRequest,
+                Response = IndexesMetadataResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                IndexesMetadataRequest,
+                IndexesMetadataResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<IndexesMetadataRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     ListIndexesMetadataRequest,
@@ -2933,25 +3118,25 @@ impl MetastoreServiceTowerLayerStack {
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     DeleteShardsRequest,
-                    EmptyResponse,
+                    DeleteShardsResponse,
                     crate::metastore::MetastoreError,
                 >,
             > + Clone + Send + Sync + 'static,
         <L as tower::Layer<
             quickwit_common::tower::BoxService<
                 DeleteShardsRequest,
-                EmptyResponse,
+                DeleteShardsResponse,
                 crate::metastore::MetastoreError,
             >,
         >>::Service: tower::Service<
                 DeleteShardsRequest,
-                Response = EmptyResponse,
+                Response = DeleteShardsResponse,
                 Error = crate::metastore::MetastoreError,
             > + Clone + Send + Sync + 'static,
         <<L as tower::Layer<
             quickwit_common::tower::BoxService<
                 DeleteShardsRequest,
-                EmptyResponse,
+                DeleteShardsResponse,
                 crate::metastore::MetastoreError,
             >,
         >>::Service as tower::Service<DeleteShardsRequest>>::Future: Send + 'static,
@@ -3120,6 +3305,8 @@ impl MetastoreServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.index_metadata_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.indexes_metadata_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.list_indexes_metadata_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.delete_index_layers
@@ -3227,6 +3414,25 @@ impl MetastoreServiceTowerLayerStack {
         <L::Service as tower::Service<IndexMetadataRequest>>::Future: Send + 'static,
     {
         self.index_metadata_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_indexes_metadata_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    IndexesMetadataRequest,
+                    IndexesMetadataResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                IndexesMetadataRequest,
+                Response = IndexesMetadataResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<IndexesMetadataRequest>>::Future: Send + 'static,
+    {
+        self.indexes_metadata_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_list_indexes_metadata_layer<L>(mut self, layer: L) -> Self
@@ -3590,13 +3796,13 @@ impl MetastoreServiceTowerLayerStack {
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     DeleteShardsRequest,
-                    EmptyResponse,
+                    DeleteShardsResponse,
                     crate::metastore::MetastoreError,
                 >,
             > + Send + Sync + 'static,
         L::Service: tower::Service<
                 DeleteShardsRequest,
-                Response = EmptyResponse,
+                Response = DeleteShardsResponse,
                 Error = crate::metastore::MetastoreError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<DeleteShardsRequest>>::Future: Send + 'static,
@@ -3799,6 +4005,14 @@ impl MetastoreServiceTowerLayerStack {
             );
         let index_metadata_svc = self
             .index_metadata_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let indexes_metadata_svc = self
+            .indexes_metadata_layers
             .into_iter()
             .rev()
             .fold(
@@ -4010,6 +4224,7 @@ impl MetastoreServiceTowerLayerStack {
             create_index_svc,
             update_index_svc,
             index_metadata_svc,
+            indexes_metadata_svc,
             list_indexes_metadata_svc,
             delete_index_svc,
             list_splits_svc,
@@ -4128,6 +4343,12 @@ where
             Response = IndexMetadataResponse,
             Error = crate::metastore::MetastoreError,
             Future = BoxFuture<IndexMetadataResponse, crate::metastore::MetastoreError>,
+        >
+        + tower::Service<
+            IndexesMetadataRequest,
+            Response = IndexesMetadataResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<IndexesMetadataResponse, crate::metastore::MetastoreError>,
         >
         + tower::Service<
             ListIndexesMetadataRequest,
@@ -4251,9 +4472,9 @@ where
         >
         + tower::Service<
             DeleteShardsRequest,
-            Response = EmptyResponse,
+            Response = DeleteShardsResponse,
             Error = crate::metastore::MetastoreError,
-            Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
+            Future = BoxFuture<DeleteShardsResponse, crate::metastore::MetastoreError>,
         >
         + tower::Service<
             ListShardsRequest,
@@ -4317,6 +4538,12 @@ where
         &mut self,
         request: IndexMetadataRequest,
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
+        self.call(request).await
+    }
+    async fn indexes_metadata(
+        &mut self,
+        request: IndexesMetadataRequest,
+    ) -> crate::metastore::MetastoreResult<IndexesMetadataResponse> {
         self.call(request).await
     }
     async fn list_indexes_metadata(
@@ -4430,7 +4657,7 @@ where
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+    ) -> crate::metastore::MetastoreResult<DeleteShardsResponse> {
         self.call(request).await
     }
     async fn list_shards(
@@ -4553,6 +4780,19 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 IndexMetadataRequest::rpc_name(),
+            ))
+    }
+    async fn indexes_metadata(
+        &mut self,
+        request: IndexesMetadataRequest,
+    ) -> crate::metastore::MetastoreResult<IndexesMetadataResponse> {
+        self.inner
+            .indexes_metadata(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                IndexesMetadataRequest::rpc_name(),
             ))
     }
     async fn list_indexes_metadata(
@@ -4800,7 +5040,7 @@ where
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+    ) -> crate::metastore::MetastoreResult<DeleteShardsResponse> {
         self.inner
             .delete_shards(request)
             .await
@@ -4948,6 +5188,17 @@ for MetastoreServiceGrpcServerAdapter {
         self.inner
             .clone()
             .index_metadata(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn indexes_metadata(
+        &self,
+        request: tonic::Request<IndexesMetadataRequest>,
+    ) -> Result<tonic::Response<IndexesMetadataResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .indexes_metadata(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -5158,7 +5409,7 @@ for MetastoreServiceGrpcServerAdapter {
     async fn delete_shards(
         &self,
         request: tonic::Request<DeleteShardsRequest>,
-    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<DeleteShardsResponse>, tonic::Status> {
         self.inner
             .clone()
             .delete_shards(request.into_inner())
@@ -5450,6 +5701,37 @@ pub mod metastore_service_grpc_client {
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
                         "IndexMetadata",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Fetches the metadata of a list of indexes identified by their Index IDs or UIDs.
+        pub async fn indexes_metadata(
+            &mut self,
+            request: impl tonic::IntoRequest<super::IndexesMetadataRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::IndexesMetadataResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/IndexesMetadata",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "IndexesMetadata",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -5944,6 +6226,12 @@ pub mod metastore_service_grpc_client {
         /// Acquires a set of shards for indexing. This RPC locks the shards for publishing thanks to a publish token and only
         /// the last indexer that has acquired the shards is allowed to publish. The response returns for each subrequest the
         /// list of acquired shards along with the positions to index from.
+        ///
+        /// If a requested shard is missing, this method does not return an error. It should simply return the list of
+        /// shards that were actually acquired.
+        ///
+        /// For this reason, AcquireShards.acquire_shards may return less subresponse than there was in the request.
+        /// Also they may be returned in any order.
         pub async fn acquire_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::AcquireShardsRequest>,
@@ -5974,12 +6262,15 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
+        /// Deletes a set of shards. This RPC deletes the shards from the metastore.
         /// If the shard did not exist to begin with, the operation is successful and does not return any error.
         pub async fn delete_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteShardsRequest>,
-        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteShardsResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -6215,6 +6506,14 @@ pub mod metastore_service_grpc_server {
             tonic::Response<super::IndexMetadataResponse>,
             tonic::Status,
         >;
+        /// Fetches the metadata of a list of indexes identified by their Index IDs or UIDs.
+        async fn indexes_metadata(
+            &self,
+            request: tonic::Request<super::IndexesMetadataRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::IndexesMetadataResponse>,
+            tonic::Status,
+        >;
         /// Gets an indexes metadatas.
         async fn list_indexes_metadata(
             &self,
@@ -6332,6 +6631,12 @@ pub mod metastore_service_grpc_server {
         /// Acquires a set of shards for indexing. This RPC locks the shards for publishing thanks to a publish token and only
         /// the last indexer that has acquired the shards is allowed to publish. The response returns for each subrequest the
         /// list of acquired shards along with the positions to index from.
+        ///
+        /// If a requested shard is missing, this method does not return an error. It should simply return the list of
+        /// shards that were actually acquired.
+        ///
+        /// For this reason, AcquireShards.acquire_shards may return less subresponse than there was in the request.
+        /// Also they may be returned in any order.
         async fn acquire_shards(
             &self,
             request: tonic::Request<super::AcquireShardsRequest>,
@@ -6339,12 +6644,15 @@ pub mod metastore_service_grpc_server {
             tonic::Response<super::AcquireShardsResponse>,
             tonic::Status,
         >;
-        /// Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
+        /// Deletes a set of shards. This RPC deletes the shards from the metastore.
         /// If the shard did not exist to begin with, the operation is successful and does not return any error.
         async fn delete_shards(
             &self,
             request: tonic::Request<super::DeleteShardsRequest>,
-        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteShardsResponse>,
+            tonic::Status,
+        >;
         async fn list_shards(
             &self,
             request: tonic::Request<super::ListShardsRequest>,
@@ -6636,6 +6944,52 @@ pub mod metastore_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = IndexMetadataSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/IndexesMetadata" => {
+                    #[allow(non_camel_case_types)]
+                    struct IndexesMetadataSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::IndexesMetadataRequest>
+                    for IndexesMetadataSvc<T> {
+                        type Response = super::IndexesMetadataResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::IndexesMetadataRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).indexes_metadata(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = IndexesMetadataSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -7486,7 +7840,7 @@ pub mod metastore_service_grpc_server {
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::DeleteShardsRequest>
                     for DeleteShardsSvc<T> {
-                        type Response = super::EmptyResponse;
+                        type Response = super::DeleteShardsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

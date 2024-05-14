@@ -77,7 +77,7 @@ impl RuntimesConfig {
 
 impl Default for RuntimesConfig {
     fn default() -> Self {
-        let num_cpus = num_cpus::get();
+        let num_cpus = crate::num_cpus();
         Self::with_num_cpus(num_cpus)
     }
 }

@@ -48,8 +48,8 @@ use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
     DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
-    IndexTemplateMatch, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
-    ToggleSourceRequest,
+    IndexMetadataResponse, IndexTemplateMatch, MetastoreError, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, ToggleSourceRequest, UpdateIndexRequest,
 };
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::Serialize;
@@ -570,8 +570,36 @@ impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
         } else {
             reply(Ok(response));
         }
-
         Ok(())
+    }
+}
+
+// This handler is a metastore call proxied through the control plane: we must first forward the
+// request to the metastore, and then act on the event.
+#[async_trait]
+impl Handler<UpdateIndexRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<IndexMetadataResponse>;
+
+    async fn handle(
+        &mut self,
+        request: UpdateIndexRequest,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let index_uid: IndexUid = request.index_uid().clone();
+        debug!(%index_uid, "updating index");
+
+        let response = match ctx
+            .protect_future(self.metastore.update_index(request))
+            .await
+        {
+            Ok(response) => response,
+            Err(metastore_error) => {
+                return convert_metastore_error(metastore_error);
+            }
+        };
+        // TODO: Handle doc mapping and/or indexing settings update here.
+        info!(%index_uid, "updated index");
+        Ok(Ok(response))
     }
 }
 
@@ -681,9 +709,9 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         };
         info!(%index_uid, source_id, enabled=enable, "toggled source");
 
-        let mutation_occured = self.model.toggle_source(&index_uid, &source_id, enable)?;
+        let mutation_occurred = self.model.toggle_source(&index_uid, &source_id, enable)?;
 
-        if mutation_occured {
+        if mutation_occurred {
             let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         }
         Ok(Ok(EmptyResponse {}))
@@ -1020,9 +1048,10 @@ mod tests {
     };
     use quickwit_proto::ingest::{Shard, ShardPKey, ShardState};
     use quickwit_proto::metastore::{
-        EntityKind, FindIndexTemplateMatchesResponse, ListIndexesMetadataRequest,
-        ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
-        MetastoreError, MockMetastoreService, OpenShardSubresponse, OpenShardsResponse, SourceType,
+        DeleteShardsResponse, EntityKind, FindIndexTemplateMatchesResponse,
+        ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest,
+        ListShardsResponse, ListShardsSubresponse, MetastoreError, MockMetastoreService,
+        OpenShardSubresponse, OpenShardsResponse, SourceType,
     };
     use quickwit_proto::types::Position;
     use tokio::sync::Mutex;
@@ -1556,7 +1585,14 @@ mod tests {
                 assert_eq!(delete_shards_request.source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(delete_shards_request.shard_ids, [ShardId::from(17)]);
                 assert!(!delete_shards_request.force);
-                Ok(EmptyResponse {})
+
+                let response = DeleteShardsResponse {
+                    index_uid: delete_shards_request.index_uid,
+                    source_id: delete_shards_request.source_id,
+                    successes: delete_shards_request.shard_ids,
+                    failures: Vec::new(),
+                };
+                Ok(response)
             },
         );
 
@@ -1776,7 +1812,14 @@ mod tests {
                 assert_eq!(delete_shards_request.source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(delete_shards_request.shard_ids, [ShardId::from(17)]);
                 assert!(!delete_shards_request.force);
-                Ok(EmptyResponse {})
+
+                let response = DeleteShardsResponse {
+                    index_uid: delete_shards_request.index_uid,
+                    source_id: delete_shards_request.source_id,
+                    successes: delete_shards_request.shard_ids,
+                    failures: Vec::new(),
+                };
+                Ok(response)
             },
         );
 

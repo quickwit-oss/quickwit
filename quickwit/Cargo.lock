@@ -652,9 +652,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cf64e73ef8d4dac6c933230d56d136b75b252edcf82ed36e37d603090cd7348"
+checksum = "c9ac79e9f3a4d576f3cd4a470a0275b138d9e7b11b1cd514a6858ae0a79dd5bb"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-http",
@@ -683,9 +683,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime-api"
-version = "1.5.0"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c19fdae6e3d5ac9cd01f2d6e6c359c5f5a3e028c2d148a8f5b90bf3399a18a7"
+checksum = "04ec42c2f5c0e7796a2848dde4d9f3bf8ce12ccbb3d5aa40c52fa0cdd61a1c47"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-types",
@@ -700,9 +700,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-types"
-version = "1.1.8"
+version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abe14dceea1e70101d38fbf2a99e6a34159477c0fb95e68e05c66bd7ae4c3729"
+checksum = "baf98d97bba6ddaba180f1b1147e202d8fe04940403a95a3f826c790f931bbd1"
 dependencies = [
  "base64-simd",
  "bytes",
@@ -4343,6 +4343,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oneshot"
+version = "0.1.6"
+source = "git+https://github.com/fulmicoton/oneshot.git?rev=c10a3ba#c10a3ba32adc189acf68acd579ba9755075ecb4d"
+dependencies = [
+ "loom",
+]
+
+[[package]]
 name = "onig"
 version = "6.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4667,7 +4675,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=92b5526#92b5526310ae8863bdc9b160d3042be0f14018cb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=6181c1e#6181c1eb5e2e0126ec16ba352b219825a9640a9d"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -5684,13 +5692,13 @@ dependencies = [
  "http 0.2.12",
  "hyper 0.14.28",
  "itertools 0.12.1",
- "num_cpus",
  "once_cell",
  "pin-project",
  "pnet",
  "prometheus",
  "proptest",
  "rand 0.8.5",
+ "rayon",
  "regex",
  "serde",
  "serde_json",
@@ -5720,7 +5728,6 @@ dependencies = [
  "itertools 0.12.1",
  "json_comments",
  "new_string_template",
- "num_cpus",
  "once_cell",
  "quickwit-common",
  "quickwit-doc-mapper",
@@ -5876,7 +5883,7 @@ dependencies = [
  "libz-sys",
  "mockall",
  "once_cell",
- "oneshot",
+ "oneshot 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "openssl",
  "proptest",
  "prost",
@@ -6176,6 +6183,7 @@ dependencies = [
  "quickwit-actors",
  "quickwit-codegen",
  "quickwit-common",
+ "sea-query",
  "serde",
  "serde_json",
  "sqlx",
@@ -6303,7 +6311,6 @@ dependencies = [
  "itertools 0.12.1",
  "mime_guess",
  "mockall",
- "num_cpus",
  "once_cell",
  "opentelemetry",
  "percent-encoding",
@@ -8000,8 +8007,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy"
-version = "0.22.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=92b5526#92b5526310ae8863bdc9b160d3042be0f14018cb"
+version = "0.23.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=6181c1e#6181c1eb5e2e0126ec16ba352b219825a9640a9d"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -8024,9 +8031,8 @@ dependencies = [
  "lz4_flex",
  "measure_time",
  "memmap2",
- "num_cpus",
  "once_cell",
- "oneshot",
+ "oneshot 0.1.6 (git+https://github.com/fulmicoton/oneshot.git?rev=c10a3ba)",
  "rayon",
  "regex",
  "rust-stemmers",
@@ -8054,7 +8060,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=92b5526#92b5526310ae8863bdc9b160d3042be0f14018cb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=6181c1e#6181c1eb5e2e0126ec16ba352b219825a9640a9d"
 dependencies = [
  "bitpacking",
 ]
@@ -8062,7 +8068,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=92b5526#92b5526310ae8863bdc9b160d3042be0f14018cb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=6181c1e#6181c1eb5e2e0126ec16ba352b219825a9640a9d"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -8077,7 +8083,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=92b5526#92b5526310ae8863bdc9b160d3042be0f14018cb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=6181c1e#6181c1eb5e2e0126ec16ba352b219825a9640a9d"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -8100,7 +8106,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.22.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=92b5526#92b5526310ae8863bdc9b160d3042be0f14018cb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=6181c1e#6181c1eb5e2e0126ec16ba352b219825a9640a9d"
 dependencies = [
  "nom",
 ]
@@ -8108,7 +8114,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=92b5526#92b5526310ae8863bdc9b160d3042be0f14018cb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=6181c1e#6181c1eb5e2e0126ec16ba352b219825a9640a9d"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -8119,7 +8125,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=92b5526#92b5526310ae8863bdc9b160d3042be0f14018cb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=6181c1e#6181c1eb5e2e0126ec16ba352b219825a9640a9d"
 dependencies = [
  "murmurhash32",
  "rand_distr",
@@ -8129,7 +8135,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=92b5526#92b5526310ae8863bdc9b160d3042be0f14018cb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=6181c1e#6181c1eb5e2e0126ec16ba352b219825a9640a9d"
 dependencies = [
  "serde",
 ]

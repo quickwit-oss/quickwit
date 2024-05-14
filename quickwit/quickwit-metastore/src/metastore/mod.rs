@@ -31,13 +31,15 @@ use bytes::Bytes;
 use futures::TryStreamExt;
 pub use index_metadata::IndexMetadata;
 use itertools::Itertools;
+use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_config::{IndexConfig, RetentionPolicy, SearchSettings, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask,
-    IndexMetadataRequest, IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsRequest,
-    ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
-    MetastoreServiceStream, PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
+    IndexMetadataFailure, IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
+    ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse, MetastoreError,
+    MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
+    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use time::OffsetDateTime;
@@ -255,6 +257,61 @@ impl IndexMetadataResponseExt for IndexMetadataResponse {
     }
 }
 
+/// Helper trait to build a [`IndexesMetadataResponse`] and deserialize its payload.
+#[async_trait]
+pub trait IndexesMetadataResponseExt {
+    /// Creates a new `IndexesMetadataResponse` from a `Vec` of [`IndexMetadata`].
+    async fn try_from_indexes_metadata(
+        indexes_metadata: Vec<IndexMetadata>,
+        failures: Vec<IndexMetadataFailure>,
+    ) -> MetastoreResult<IndexesMetadataResponse>;
+
+    /// Deserializes the payload of an `IndexesMetadataResponse` into a `Vec`` of [`IndexMetadata`].
+    async fn deserialize_indexes_metadata(self) -> MetastoreResult<Vec<IndexMetadata>>;
+
+    /// Creates a new `IndexesMetadataResponse` from a `Vec` of [`IndexMetadata`] synchronously.
+    #[cfg(any(test, feature = "testsuite"))]
+    fn for_test(
+        indexes_metadata: Vec<IndexMetadata>,
+        failures: Vec<IndexMetadataFailure>,
+    ) -> IndexesMetadataResponse {
+        use futures::executor;
+
+        executor::block_on(Self::try_from_indexes_metadata(indexes_metadata, failures)).unwrap()
+    }
+}
+
+#[async_trait]
+impl IndexesMetadataResponseExt for IndexesMetadataResponse {
+    async fn try_from_indexes_metadata(
+        indexes_metadata: Vec<IndexMetadata>,
+        failures: Vec<IndexMetadataFailure>,
+    ) -> MetastoreResult<Self> {
+        let indexes_metadata_json_zstd = run_cpu_intensive(move || {
+            serde_utils::to_json_zstd(&indexes_metadata, 0).map(Bytes::from)
+        })
+        .await
+        .map_err(|join_error| MetastoreError::Internal {
+            message: "failed to serialize indexes metadata".to_string(),
+            cause: join_error.to_string(),
+        })??;
+        let response = Self {
+            indexes_metadata_json_zstd,
+            failures,
+        };
+        Ok(response)
+    }
+
+    async fn deserialize_indexes_metadata(self) -> MetastoreResult<Vec<IndexMetadata>> {
+        run_cpu_intensive(move || serde_utils::from_json_zstd(&self.indexes_metadata_json_zstd))
+            .await
+            .map_err(|join_error| MetastoreError::Internal {
+                message: "failed to deserialize indexes metadata".to_string(),
+                cause: join_error.to_string(),
+            })?
+    }
+}
+
 /// Helper trait to build a `ListIndexesResponse` and deserialize its payload.
 #[async_trait]
 pub trait ListIndexesMetadataResponseExt {
@@ -280,7 +337,7 @@ impl ListIndexesMetadataResponseExt for ListIndexesMetadataResponse {
     async fn try_from_indexes_metadata(
         indexes_metadata: Vec<IndexMetadata>,
     ) -> MetastoreResult<Self> {
-        let indexes_metadata_json_zstd = tokio::task::spawn_blocking(move || {
+        let indexes_metadata_json_zstd = run_cpu_intensive(move || {
             serde_utils::to_json_zstd(&indexes_metadata, 0).map(Bytes::from)
         })
         .await
@@ -296,7 +353,7 @@ impl ListIndexesMetadataResponseExt for ListIndexesMetadataResponse {
     }
 
     async fn deserialize_indexes_metadata(self) -> MetastoreResult<Vec<IndexMetadata>> {
-        tokio::task::spawn_blocking(move || {
+        run_cpu_intensive(move || {
             if let Some(indexes_metadata_json) = &self.indexes_metadata_json_opt {
                 return serde_utils::from_json_str(indexes_metadata_json);
             };

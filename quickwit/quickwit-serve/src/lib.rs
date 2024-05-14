@@ -263,13 +263,11 @@ async fn start_ingest_client_if_needed(
         )
         .await?;
         let num_buckets = NonZeroUsize::new(60).expect("60 should be non-zero");
-        let initial_rate = ConstantRate::new(ByteSize::mib(50).as_u64(), Duration::from_secs(1));
         let rate_estimator = SmaRateEstimator::new(
             num_buckets,
             Duration::from_secs(10),
             Duration::from_millis(100),
-        )
-        .with_initial_rate(initial_rate);
+        );
         let memory_capacity = ingest_api_service.ask(GetMemoryCapacity).await?;
         let min_rate = ConstantRate::new(ByteSize::mib(1).as_u64(), Duration::from_millis(100));
         let rate_modulator = RateModulator::new(rate_estimator.clone(), memory_capacity, min_rate);

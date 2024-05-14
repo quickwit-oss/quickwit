@@ -32,6 +32,7 @@ service ControlPlaneService {
 
   // The following RPCs are forwarded and handled by the metastore:
   // - `create_index`
+  // - `update_index`
   // - `delete_index`
   // - `add_source`
   // - `toggle_source`
@@ -41,6 +42,9 @@ service ControlPlaneService {
 
   // Creates a new index.
   rpc CreateIndex(quickwit.metastore.CreateIndexRequest) returns (quickwit.metastore.CreateIndexResponse);
+
+  // Updates an index.
+  rpc UpdateIndex(quickwit.metastore.UpdateIndexRequest) returns (quickwit.metastore.IndexMetadataResponse);
 
   // Deletes an index.
   rpc DeleteIndex(quickwit.metastore.DeleteIndexRequest) returns (quickwit.metastore.EmptyResponse);

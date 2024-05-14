@@ -203,8 +203,38 @@ impl TryFrom<String> for IndexUid {
     }
 }
 
+#[cfg(feature = "postgres")]
+impl sqlx::Type<sqlx::Postgres> for IndexUid {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("VARCHAR")
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl sqlx::Encode<'_, sqlx::Postgres> for IndexUid {
+    fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
+        let _ = sqlx::Encode::<sqlx::Postgres>::encode(&self.index_id, buf);
+        let _ = sqlx::Encode::<sqlx::Postgres>::encode(":", buf);
+        sqlx::Encode::<sqlx::Postgres>::encode(&self.incarnation_id.to_string(), buf)
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl sqlx::postgres::PgHasArrayType for IndexUid {
+    fn array_type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("VARCHAR[]")
+    }
+}
+
 impl PartialEq<(&'static str, u128)> for IndexUid {
     fn eq(&self, (index_id, incarnation_id): &(&str, u128)) -> bool {
         self.index_id == *index_id && self.incarnation_id == Ulid::from(*incarnation_id)
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl From<&IndexUid> for sea_query::Value {
+    fn from(val: &IndexUid) -> Self {
+        val.to_string().into()
     }
 }
