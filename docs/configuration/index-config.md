@@ -146,6 +146,7 @@ fast:
 | `en_stem`     |  Like `default`, but also applies stemming on the resulting tokens. Filters out tokens larger than 255 bytes.  |
 | `chinese_compatible` |  Chop between each CJK character in addition to what `default` does. Should be used with `record: position` to be able to properly search |
 | `lowercase` |  Applies a lowercase transformation on the text. It does not tokenize the text. |
+| `whitespace` | Chops the text based on whitespace only. |
 
 ##### Description of available normalizers
 
