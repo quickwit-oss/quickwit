@@ -18,11 +18,15 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter_vec, new_histogram_vec, HistogramVec, IntCounterVec};
+use quickwit_common::metrics::{
+    new_counter_vec, new_gauge_vec, new_histogram_vec, HistogramVec, IntCounterVec, IntGaugeVec,
+};
 
 pub struct RestMetrics {
     pub http_requests_total: IntCounterVec<2>,
     pub request_duration_secs: HistogramVec<2>,
+    pub ongoing_requests: IntGaugeVec<1>,
+    pub pending_requests: IntGaugeVec<1>,
 }
 
 impl Default for RestMetrics {
@@ -42,6 +46,20 @@ impl Default for RestMetrics {
                 &[],
                 ["method", "status_code"],
                 quickwit_common::metrics::exponential_buckets(0.02, 2.0, 8).unwrap(),
+            ),
+            ongoing_requests: new_gauge_vec(
+                "ingest_ongoing_requests",
+                "Number of ongoing ingest requests.",
+                "",
+                &[],
+                ["endpoint_group"],
+            ),
+            pending_requests: new_gauge_vec(
+                "ingest_pending_requests",
+                "Number of pending ingest requests.",
+                "",
+                &[],
+                ["endpoint_group"],
             ),
         }
     }
