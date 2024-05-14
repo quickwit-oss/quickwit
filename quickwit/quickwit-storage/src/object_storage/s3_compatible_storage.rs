@@ -137,7 +137,7 @@ async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
         get_credentials_provider(s3_storage_config).or(aws_config.credentials_provider());
     let region = get_region(s3_storage_config).or(aws_config.region().cloned());
     let mut s3_config = aws_sdk_s3::Config::builder()
-        .behavior_version(BehaviorVersion::v2023_11_09())
+        .behavior_version(BehaviorVersion::v2024_03_28())
         .region(region);
 
     if let Some(identity_cache) = aws_config.identity_cache() {
@@ -943,7 +943,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_s3_compatible_storage_relative_path() {
-        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::v2023_11_09())
+        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::v2024_03_28())
             .load()
             .await;
         let s3_client = S3Client::new(&sdk_config);
@@ -996,7 +996,7 @@ mod tests {
         ]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
-            .behavior_version(BehaviorVersion::v2023_11_09())
+            .behavior_version(BehaviorVersion::v2024_03_28())
             .region(Some(Region::new("Foo")))
             .http_client(client.clone())
             .credentials_provider(credentials)
@@ -1037,7 +1037,7 @@ mod tests {
         )]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
-            .behavior_version(BehaviorVersion::v2023_11_09())
+            .behavior_version(BehaviorVersion::v2024_03_28())
             .region(Some(Region::new("Foo")))
             .http_client(client.clone())
             .credentials_provider(credentials)
@@ -1119,7 +1119,7 @@ mod tests {
         ]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
-            .behavior_version(BehaviorVersion::v2023_11_09())
+            .behavior_version(BehaviorVersion::v2024_03_28())
             .region(Some(Region::new("Foo")))
             .http_client(client)
             .credentials_provider(credentials)

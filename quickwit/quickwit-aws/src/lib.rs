@@ -62,7 +62,7 @@ pub async fn get_aws_config() -> &'static aws_config::SdkConfig {
                 .hyper_builder(hyper_client_builder)
                 .build(https_connector);
 
-            aws_config::defaults(BehaviorVersion::v2023_11_09())
+            aws_config::defaults(BehaviorVersion::v2024_03_28())
                 .http_client(hyper_client)
                 // Currently handle this ourselves so probably best for now to leave it as is.
                 .retry_config(RetryConfig::disabled())
