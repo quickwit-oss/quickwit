@@ -340,14 +340,6 @@ async fn mark_splits_for_deletion_cli(args: MarkForDeletionArgs) -> anyhow::Resu
     Ok(())
 }
 
-#[derive(Tabled)]
-struct FileRow {
-    #[tabled(rename = "File Name")]
-    file_name: String,
-    #[tabled(rename = "Size")]
-    size: String,
-}
-
 async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     debug!(args=?args, "describe-split");
     let qw_client = args.client_args.client();

@@ -26,7 +26,7 @@ pub use prometheus::{
     IntCounter, IntCounterVec as PrometheusIntCounterVec, IntGauge,
     IntGaugeVec as PrometheusIntGaugeVec,
 };
-use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
+use prometheus::{Encoder, Gauge, HistogramOpts, Opts, TextEncoder};
 
 #[derive(Clone)]
 pub struct HistogramVec<const N: usize> {
@@ -71,10 +71,20 @@ pub fn register_info(name: &'static str, help: &'static str, kvs: BTreeMap<&'sta
     prometheus::register(Box::new(counter)).expect("failed to register counter");
 }
 
-pub fn new_counter(name: &str, help: &str, subsystem: &str) -> IntCounter {
+pub fn new_counter(
+    name: &str,
+    help: &str,
+    subsystem: &str,
+    const_labels: &[(&str, &str)],
+) -> IntCounter {
+    let owned_const_labels: HashMap<String, String> = const_labels
+        .iter()
+        .map(|(label_name, label_value)| (label_name.to_string(), label_value.to_string()))
+        .collect();
     let counter_opts = Opts::new(name, help)
         .namespace("quickwit")
-        .subsystem(subsystem);
+        .subsystem(subsystem)
+        .const_labels(owned_const_labels);
     let counter = IntCounter::with_opts(counter_opts).expect("failed to create counter");
     prometheus::register(Box::new(counter.clone())).expect("failed to register counter");
     counter
@@ -102,6 +112,25 @@ pub fn new_counter_vec<const N: usize>(
     prometheus::register(collector).expect("failed to register counter vec");
 
     IntCounterVec { underlying }
+}
+
+pub fn new_float_gauge(
+    name: &str,
+    help: &str,
+    subsystem: &str,
+    const_labels: &[(&str, &str)],
+) -> Gauge {
+    let owned_const_labels: HashMap<String, String> = const_labels
+        .iter()
+        .map(|(label_name, label_value)| (label_name.to_string(), label_value.to_string()))
+        .collect();
+    let gauge_opts = Opts::new(name, help)
+        .namespace("quickwit")
+        .subsystem(subsystem)
+        .const_labels(owned_const_labels);
+    let gauge = Gauge::with_opts(gauge_opts).expect("failed to create float gauge");
+    prometheus::register(Box::new(gauge.clone())).expect("failed to register float gauge");
+    gauge
 }
 
 pub fn new_gauge(

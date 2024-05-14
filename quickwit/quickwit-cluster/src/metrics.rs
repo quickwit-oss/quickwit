@@ -93,26 +93,31 @@ impl Default for ClusterMetrics {
                 "gossip_recv_messages_total",
                 "Total number of gossip messages received.",
                 "cluster",
+                &[],
             ),
             gossip_recv_bytes_total: new_counter(
                 "gossip_recv_bytes_total",
                 "Total amount of gossip data received in bytes.",
                 "cluster",
+                &[],
             ),
             gossip_sent_messages_total: new_counter(
                 "gossip_sent_messages_total",
                 "Total number of gossip messages sent.",
                 "cluster",
+                &[],
             ),
             gossip_sent_bytes_total: new_counter(
                 "gossip_sent_bytes_total",
                 "Total amount of gossip data sent in bytes.",
                 "cluster",
+                &[],
             ),
             grpc_gossip_rounds_total: new_counter(
                 "grpc_gossip_rounds_total",
                 "Total number of gRPC gossip rounds performed with peer nodes.",
                 "cluster",
+                &[],
             ),
         }
     }

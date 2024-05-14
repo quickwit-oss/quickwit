@@ -36,6 +36,7 @@ impl Default for SearchMetrics {
                 "leaf_searches_splits_total",
                 "Number of leaf searches (count of splits) started.",
                 "search",
+                &[],
             ),
             leaf_search_split_duration_secs: new_histogram(
                 "leaf_search_split_duration_secs",

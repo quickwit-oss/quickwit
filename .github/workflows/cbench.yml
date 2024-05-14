@@ -13,10 +13,12 @@ on:
   # pull request.
   pull_request_target:
 
+env:
+  RUSTFLAGS: --cfg tokio_unstable
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-
 
 jobs:
   tests:
