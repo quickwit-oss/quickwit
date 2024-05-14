@@ -17,8 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::time::Duration;
-
+use quickwit_common::metrics::GaugeGuard;
 use tokio::sync::{Semaphore, SemaphorePermit};
 use warp::reject;
 
@@ -39,6 +38,7 @@ impl reject::Reject for Timeout {}
 pub struct LoadShieldPermit {
     _concurrency_permit: SemaphorePermit<'static>,
     _load_shed_permit: SemaphorePermit<'static>,
+    _ongoing_gauge_guard: GaugeGuard<'static>,
 }
 
 impl LoadShield {
@@ -56,10 +56,15 @@ impl LoadShield {
             // tokio::time::sleep(Duration::from_millis(100)).await;
             return Err(warp::reject::custom(TooManyRequests))
         };
+        let mut pending_gauge_guard = GaugeGuard::from_gauge(&crate::metrics::SERVE_METRICS.ingest_pending_requests);
+        pending_gauge_guard.add(1);
         let Ok(concurrency_permit) = self.concurrency_semaphore.acquire().await else {
             // todo internal error
-            return Err(warp::reject::custom(TooManyRequests))
+                        return Err(warp::reject::custom(TooManyRequests))
         };
-        Ok(LoadShieldPermit { _concurrency_permit: concurrency_permit, _load_shed_permit: load_shed_permit })
+        drop(pending_gauge_guard);
+        let mut ongoing_gauge_guard = GaugeGuard::from_gauge(&crate::metrics::SERVE_METRICS.ingest_ongoing_requests);
+        ongoing_gauge_guard.add(1);
+        Ok(LoadShieldPermit { _concurrency_permit: concurrency_permit, _load_shed_permit: load_shed_permit, _ongoing_gauge_guard: ongoing_gauge_guard })
     }
 }
