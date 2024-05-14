@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::io::Read;
+use std::sync::OnceLock;
 
 use bytes::Bytes;
 use flate2::read::GzDecoder;
@@ -29,7 +30,14 @@ use warp::Filter;
 
 use crate::load_shield::{LoadShield, LoadShieldPermit};
 
-static LOAD_SHIELD: LoadShield = LoadShield::new(10, 150);
+fn load_shield() -> &'static LoadShield {
+    static LOAD_SHIELD: OnceLock<LoadShield> = OnceLock::new();
+    LOAD_SHIELD.get_or_init(|| {
+        let ingest_max_concurrency = quickwit_common::get_from_env("QW_INGEST_MAX_CONCURRENCY", 10);
+        let ingest_max_pending = quickwit_common::get_from_env("QW_INGEST_MAX_PENDING", 150);
+        LoadShield::new(ingest_max_concurrency, ingest_max_pending)
+    })
+}
 
 /// There are two ways to decompress the body:
 /// - Stream the body through an async decompressor
@@ -87,8 +95,10 @@ pub(crate) fn get_body_bytes() -> impl Filter<Extract = (Body,), Error = warp::R
     warp::header::optional("content-encoding")
         .and(warp::body::bytes())
         .and_then(|encoding: Option<String>, body: Bytes| async move {
-            let permit = LOAD_SHIELD.acquire_permit().await?;
-            decompress_body(encoding, body).await.map(|content| Body::new(content, permit))
+            let permit = load_shield().acquire_permit().await?;
+            decompress_body(encoding, body)
+                .await
+                .map(|content| Body::new(content, permit))
         })
 }
 
