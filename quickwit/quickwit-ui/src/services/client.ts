@@ -90,7 +90,7 @@ export class Client {
     if (body !== null) {
       params.method = "POST";
       params.body = body;
-      params.headers = Object.assign({}, params.headers, {"content-type": "application/json"});
+      params.headers = {...params.headers, "content-type": "application/json"};
     }
     const response = await fetch(url, params);
     if (response.ok) {

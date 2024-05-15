@@ -27,7 +27,7 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
   const shouldDisplayTimeRangeSelect = timestamp_field_name ?? false;
 
   const handleChange = (_event: React.SyntheticEvent, newTab: number) => {
-    const updatedSearchRequest = Object.assign({}, props.searchRequest, {aggregation: newTab != 0});
+    const updatedSearchRequest = {...props.searchRequest, aggregation: newTab != 0};
     props.onSearchRequestUpdate(updatedSearchRequest);
   };
 
