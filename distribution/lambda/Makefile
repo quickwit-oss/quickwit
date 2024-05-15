@@ -27,6 +27,7 @@ package:
 	if [ "$${QW_LAMBDA_BUILD:-0}" = "1" ]
 	then
 	  pushd ../../quickwit/
+	  rustc --version
 	  cargo lambda build \
 	    -p quickwit-lambda \
 	    --release \

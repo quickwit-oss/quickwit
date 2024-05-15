@@ -31,36 +31,13 @@ console](https://console.aws.amazon.com/servicequotas/home/services/lambda/quota
 
 ### Python venv
 
-This project is set up like a standard Python project. The initialization
-process also creates a virtualenv within this project, stored under the `.venv`
-directory.  To create the virtualenv it assumes that there is a `python3`
-executable in your path with access to the `venv` package. If for any reason the
-automatic creation of the virtualenv fails, you can create the virtualenv
-manually.
+The Python environment is configured using pipenv:
 
-To manually create a virtualenv on MacOS and Linux:
-
-```bash
-python3 -m venv .venv
 ```
-
-After the init process completes and the virtualenv is created, you can use the following
-step to activate your virtualenv.
-
-```bash
-source .venv/bin/activate
-```
-
-Once the virtualenv is activated, you can install the required dependencies.
-
-```bash
-pip install .
-```
-
-If you prefer using Poetry, achieve the same by running:
-```bash
-poetry shell
-poetry install
+# Install pipenv if needed.
+pip install --user pipenv
+pipenv shell
+pipenv install
 ```
 
 ### Example stacks
