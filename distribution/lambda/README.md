@@ -99,6 +99,40 @@ make deploy-mock-data
 make invoke-mock-data-searcher
 ```
 
+### Configurations
+
+The following environment variables can be configured on the Lambda functions.
+Note that only a small subset of all Quickwit configurations are exposed to
+simplify the setup and avoid unstable deployments.
+
+| Variable | Description | Default |
+|---|---|---|
+| QW_LAMBDA_INDEX_ID | the index this Lambda interacts with (one and only one) | required |
+| QW_LAMBDA_METASTORE_BUCKET | bucket name for metastore files | required |
+| QW_LAMBDA_INDEX_BUCKET | bucket name for split files | required |
+| QW_LAMBDA_OPENTELEMETRY_URL | HTTP OTEL tracing collector endpoint | none, OTEL disabled |
+| QW_LAMBDA_OPENTELEMETRY_AUTHORIZATION | Authorization header value for HTTP OTEL calls | none, OTEL disabled |
+| QW_LAMBDA_ENABLE_VERBOSE_JSON_LOGS | true to enable JSON logging of spans and logs in Cloudwatch | false |
+| RUST_LOG | [Rust logging config][1] | info |
+
+[1]: https://rust-lang-nursery.github.io/rust-cookbook/development_tools/debugging/config_log.html
+
+
+Indexer only:
+| Variable | Description | Default |
+|---|---|---|
+| QW_LAMBDA_INDEX_CONFIG_URI | location of the index configuration file, e.g `s3://mybucket/index-config.yaml` | required |
+| QW_LAMBDA_DISABLE_MERGE | true to disable compaction merges | false |
+| QW_LAMBDA_DISABLE_JANITOR | true to disable retention enforcement and garbage collection | false |
+| QW_LAMBDA_MAX_CHECKPOINTS | maximum number of ingested file names to keep in source history | 100 |
+
+Searcher only:
+| Variable | Description | Default |
+|---|---|---|
+| QW_LAMBDA_SEARCHER_METASTORE_POLLING_INTERVAL| refresh interval of the metastore | 1m |
+| QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY | `searcher.partial_request_cache_capacity` node config | 64M |
+
+
 ### Set up a search API
 
 You can configure an HTTP API endpoint around the Quickwit Searcher Lambda. The
