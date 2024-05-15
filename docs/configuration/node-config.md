@@ -123,17 +123,7 @@ This section may contain one configuration subsection per available metastore im
 
 ### File-backed metastore configuration
 
-| Property | Description | Default value |
-| --- | --- | --- |
-| `polling_interval` | Time interval between successive polling attempts to detect metastore changes. | `30s` |
-
-Example of a metastore configuration for a file-backed implementation in YAML format:
-
-```yaml
-metastore:
-  file:
-    polling_interval: 1m
-```
+File-backed metastore doesn't have any node level configuration. You can configure the poll interval [at the index level](./metastore-config.md#polling-configuration).
 
 ### PostgreSQL metastore configuration
 
