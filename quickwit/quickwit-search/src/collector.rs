@@ -638,7 +638,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
 }
 
 /// Available aggregation types.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum QuickwitAggregations {
     /// Aggregation used by the Jaeger service to find trace IDs that match a

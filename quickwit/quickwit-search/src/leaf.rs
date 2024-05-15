@@ -1313,4 +1313,165 @@ mod tests {
             }),
         );
     }
+
+    #[test]
+    fn test_remove_extended_bounds_from_histogram() {
+        let histo_at_root = r#"
+{
+  "date_histo": {
+    "date_histogram": {
+      "extended_bounds": {
+        "max": 1425254400000,
+        "min": 1420070400000
+      },
+      "field": "date",
+      "fixed_interval": "30d",
+      "offset": "-4d"
+    }
+  }
+}
+"#;
+
+        let histo_at_root_no_bounds = r#"
+{
+  "date_histo": {
+    "date_histogram": {
+      "field": "date",
+      "fixed_interval": "30d",
+      "offset": "-4d"
+    }
+  }
+}
+"#;
+
+        let histo_at_root_with_sibling = r#"
+{
+  "metrics": {
+    "aggs": {
+      "response": {
+        "percentiles": {
+          "field": "response",
+          "keyed": false,
+          "percents": [
+            85
+          ]
+        }
+      }
+    },
+    "date_histogram": {
+      "extended_bounds": {
+        "max": 1425254400000,
+        "min": 1420070400000
+      },
+      "field": "date",
+      "fixed_interval": "30d",
+      "offset": "-4d"
+    }
+  }
+}
+"#;
+
+        let histo_at_root_with_sibling_no_bounds = r#"
+{
+  "metrics": {
+    "aggs": {
+      "response": {
+        "percentiles": {
+          "field": "response",
+          "keyed": false,
+          "percents": [
+            85
+          ]
+        }
+      }
+    },
+    "date_histogram": {
+      "field": "date",
+      "fixed_interval": "30d",
+      "offset": "-4d"
+    }
+  }
+}
+"#;
+        let histo_at_leaf = r#"
+{
+  "metrics": {
+    "aggs": {
+      "response": {
+        "date_histogram": {
+          "extended_bounds": {
+            "max": 1425254400000,
+            "min": 1420070400000
+          },
+          "field": "date",
+          "fixed_interval": "30d",
+          "offset": "-4d"
+        }
+      }
+    },
+    "percentiles": {
+      "field": "response",
+      "keyed": false,
+      "percents": [
+        85
+      ]
+    }
+  }
+}
+"#;
+
+        let histo_at_leaf_no_bounds = r#"
+{
+  "metrics": {
+    "aggs": {
+      "response": {
+        "date_histogram": {
+          "field": "date",
+          "fixed_interval": "30d",
+          "offset": "-4d"
+        }
+      }
+    },
+    "percentiles": {
+      "field": "response",
+      "keyed": false,
+      "percents": [
+        85
+      ]
+    }
+  }
+}
+"#;
+        for (bounds, no_bounds) in [
+            (histo_at_root, histo_at_root_no_bounds),
+            (
+                histo_at_root_with_sibling,
+                histo_at_root_with_sibling_no_bounds,
+            ),
+            (histo_at_leaf, histo_at_leaf_no_bounds),
+        ] {
+            // first assert we do nothing when there are no bounds
+            let request_no_bounds = SearchRequest {
+                aggregation_request: Some(no_bounds.to_string()),
+                ..SearchRequest::default()
+            };
+            let mut request_no_bounds_clone = request_no_bounds.clone();
+            rewrite_aggregation(&mut request_no_bounds_clone);
+            assert_eq!(request_no_bounds, request_no_bounds_clone);
+
+            let mut request_bounds = SearchRequest {
+                aggregation_request: Some(bounds.to_string()),
+                ..SearchRequest::default()
+            };
+            rewrite_aggregation(&mut request_bounds);
+            // we can't just compare bounds and no_bounds, they must be structuraly equal, but not
+            // necessarily identical (field order, null vs absent...). So we parse both and verify
+            // the results are equal instead
+            let no_bounds_agg: QuickwitAggregations =
+                serde_json::from_str(&request_no_bounds.aggregation_request.unwrap()).unwrap();
+            let rewrote_bounds_agg: QuickwitAggregations =
+                serde_json::from_str(&request_bounds.aggregation_request.unwrap()).unwrap();
+            assert_eq!(rewrote_bounds_agg, no_bounds_agg);
+        }
+    }
 }
