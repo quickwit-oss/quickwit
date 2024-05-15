@@ -28,6 +28,7 @@ use quickwit_proto::search::{
     LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortOrder, SortValue,
     SplitSearchError,
 };
+use quickwit_proto::types::SplitId;
 use serde::Deserialize;
 use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
@@ -536,7 +537,7 @@ pub(crate) struct SegmentPartialHit {
 impl SegmentPartialHit {
     pub fn into_partial_hit(
         self,
-        split_id: String,
+        split_id: SplitId,
         segment_ord: SegmentOrdinal,
         first: &SortingFieldExtractorComponent,
         second: &Option<SortingFieldExtractorComponent>,
@@ -711,7 +712,7 @@ impl QuickwitIncrementalAggregations {
                                     sort_value: Some(SortValue::I64(timestamp)),
                                 }),
                                 sort_value2: None,
-                                split_id: String::new(),
+                                split_id: SplitId::new(),
                                 segment_ord: 0,
                                 doc_id: 0,
                             });
@@ -753,7 +754,7 @@ impl QuickwitIncrementalAggregations {
 /// the query.
 #[derive(Clone)]
 pub(crate) struct QuickwitCollector {
-    pub split_id: String,
+    pub split_id: SplitId,
     pub start_offset: usize,
     pub max_hits: usize,
     pub sort_by: SortByPair,
@@ -1044,7 +1045,7 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair
 
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
 pub(crate) fn make_collector_for_split(
-    split_id: String,
+    split_id: SplitId,
     search_request: &SearchRequest,
     aggregation_limits: AggregationLimits,
 ) -> crate::Result<QuickwitCollector> {
@@ -1075,7 +1076,7 @@ pub(crate) fn make_merge_collector(
     };
     let sort_by = sort_by_from_request(search_request);
     Ok(QuickwitCollector {
-        split_id: String::default(),
+        split_id: SplitId::default(),
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by,

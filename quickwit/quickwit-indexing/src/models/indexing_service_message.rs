@@ -18,14 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_config::SourceConfig;
-use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::types::PipelineUid;
-
-use crate::actors::MergePipelineId;
+use quickwit_proto::indexing::{IndexingPipelineId, MergePipelineId};
+use quickwit_proto::types::{IndexId, PipelineUid};
 
 #[derive(Clone, Debug)]
 pub struct SpawnPipeline {
-    pub index_id: String,
+    pub index_id: IndexId,
     pub source_config: SourceConfig,
     pub pipeline_uid: PipelineUid,
 }
@@ -38,10 +36,10 @@ pub struct DetachIndexingPipeline {
     pub pipeline_id: IndexingPipelineId,
 }
 
-#[derive(Debug)]
 /// Detaches a merge pipeline from the indexing service. The pipeline is no longer managed by the
 /// server. This is mostly useful for preventing the server killing an existing merge pipeline
 /// if a indexing pipeline is detached.
+#[derive(Debug)]
 pub struct DetachMergePipeline {
     pub pipeline_id: MergePipelineId,
 }

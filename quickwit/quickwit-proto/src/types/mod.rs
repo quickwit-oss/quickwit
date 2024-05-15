@@ -274,6 +274,13 @@ impl ToOwned for NodeIdRef {
     }
 }
 
+#[cfg(feature = "postgres")]
+impl From<&NodeId> for sea_query::Value {
+    fn from(node_id: &NodeId) -> Self {
+        node_id.to_string().into()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

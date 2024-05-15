@@ -35,7 +35,7 @@ use tracing::{error, info};
 use super::DefaultForTest;
 use crate::checkpoint::{IndexCheckpointDelta, PartitionId, SourceCheckpointDelta};
 use crate::metastore::MetastoreServiceStreamSplitsExt;
-use crate::tests::{cleanup_index, collect_split_ids};
+use crate::tests::cleanup_index;
 use crate::{
     CreateIndexRequestExt, IndexMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
     ListSplitsResponseExt, MetastoreServiceExt, SplitMetadata, SplitState, StageSplitsRequestExt,
@@ -1536,6 +1536,7 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 20,
+        node_id: "node-1".to_string(),
         ..Default::default()
     };
     let split_id_2 = format!("{index_id}--split-2");
@@ -1544,6 +1545,7 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 10,
+        node_id: "node-2".to_string(),
         ..Default::default()
     };
 
@@ -1579,15 +1581,22 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
     metastore.stage_splits(stage_splits_request).await.unwrap();
 
     let query = ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
-    let splits = metastore
+    let mut splits = metastore
         .list_splits(ListSplitsRequest::try_from_list_splits_query(&query).unwrap())
         .await
         .unwrap()
         .collect_splits()
         .await
         .unwrap();
-    let split_ids = collect_split_ids(&splits);
-    assert_eq!(split_ids, &[&split_id_1, &split_id_2]);
+
+    assert_eq!(splits.len(), 2);
+    splits.sort_unstable_by(|left, right| left.split_id().cmp(right.split_id()));
+
+    assert_eq!(splits[0].split_id(), &split_id_1);
+    assert_eq!(splits[0].split_metadata.node_id, "node-1");
+
+    assert_eq!(splits[1].split_id(), &split_id_2);
+    assert_eq!(splits[1].split_metadata.node_id, "node-2");
 
     // Stage a existent-staged-split on an index
     let stage_splits_request =

@@ -38,9 +38,9 @@ use quickwit_indexing::actors::{
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_metastore::IndexMetadataResponseExt;
-use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::{IndexUid, PipelineUid};
+use quickwit_proto::types::{IndexUid, NodeId};
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::Storage;
 use serde::Serialize;
@@ -156,7 +156,7 @@ impl DeleteTaskPipeline {
 
     pub async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         info!(
-            index_id=%self.index_uid.index_id,
+            index_uid=%self.index_uid,
             root_dir=%self.delete_service_task_dir.to_str().unwrap(),
             "spawning delete tasks pipeline",
         );
@@ -193,10 +193,9 @@ impl DeleteTaskPipeline {
         let tag_fields = doc_mapper.tag_named_fields()?;
         let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_supervisor_handler) = ctx.spawn_actor().supervise(packager);
-        let index_pipeline_id = IndexingPipelineId {
+        let pipeline_id = MergePipelineId {
+            node_id: NodeId::from("unknown"),
             index_uid: self.index_uid.clone(),
-            node_id: "unknown".to_string(),
-            pipeline_uid: PipelineUid::new(),
             source_id: "unknown".to_string(),
         };
 
@@ -206,7 +205,7 @@ impl DeleteTaskPipeline {
             .clone()
             .set_component("split_downloader_delete");
         let delete_executor = MergeExecutor::new(
-            index_pipeline_id,
+            pipeline_id,
             self.metastore.clone(),
             doc_mapper.clone(),
             delete_executor_io_controls,

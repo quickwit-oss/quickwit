@@ -29,7 +29,7 @@ use quickwit_ingest::{
 };
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::Position;
+use quickwit_proto::types::{Position, SourceId};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tracing::{error, info};
@@ -58,7 +58,7 @@ pub struct IngestApiSourceCounters {
 
 pub struct IngestApiSource {
     source_runtime: SourceRuntime,
-    source_id: String,
+    source_id: SourceId,
     partition_id: PartitionId,
     ingest_api_service: Mailbox<IngestApiService>,
     counters: IngestApiSourceCounters,
@@ -263,7 +263,7 @@ mod tests {
     };
     use quickwit_ingest::{init_ingest_api, CommitType, DocBatchBuilder, IngestRequest};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexId, IndexUid};
 
     use super::*;
     use crate::models::RawDocBatch;
@@ -271,7 +271,7 @@ mod tests {
     use crate::source::SourceActor;
 
     fn make_ingest_request(
-        index_id: String,
+        index_id: IndexId,
         num_batch: u64,
         batch_size: usize,
         commit_type: CommitType,

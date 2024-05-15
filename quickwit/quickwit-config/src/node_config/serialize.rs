@@ -27,6 +27,7 @@ use http::HeaderMap;
 use quickwit_common::net::{find_private_ip, get_short_hostname, Host};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
+use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -222,6 +223,8 @@ impl NodeConfigBuilder {
         mut self,
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<NodeConfig> {
+        let node_id = self.node_id.resolve(env_vars).map(NodeId::new)?;
+
         let enabled_services = self
             .enabled_services
             .resolve(env_vars)?
@@ -307,7 +310,7 @@ impl NodeConfigBuilder {
 
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
-            node_id: self.node_id.resolve(env_vars)?,
+            node_id,
             enabled_services,
             gossip_listen_addr,
             grpc_listen_addr,
@@ -414,6 +417,7 @@ impl RestConfigBuilder {
 pub fn node_config_for_test() -> NodeConfig {
     use quickwit_common::net::find_available_tcp_port;
 
+    let node_id = NodeId::new(default_node_id().unwrap());
     let enabled_services = QuickwitService::supported_services();
     let listen_address = Host::default();
     let rest_listen_port = find_available_tcp_port().expect("OS should find an available port");
@@ -445,7 +449,7 @@ pub fn node_config_for_test() -> NodeConfig {
     };
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
-        node_id: default_node_id().unwrap(),
+        node_id,
         enabled_services,
         gossip_advertise_addr: gossip_listen_addr,
         grpc_advertise_addr: grpc_listen_addr,

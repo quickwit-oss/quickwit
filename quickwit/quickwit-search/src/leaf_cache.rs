@@ -23,6 +23,7 @@ use prost::Message;
 use quickwit_proto::search::{
     CountHits, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
+use quickwit_proto::types::SplitId;
 use quickwit_storage::{MemorySizedCache, OwnedBytes};
 
 /// A cache to memoize `leaf_search_single_split` results.
@@ -82,7 +83,7 @@ impl LeafSearchCache {
 #[derive(Debug, Hash, PartialEq, Eq)]
 struct CacheKey {
     /// The split this entry refers to
-    split_id: String,
+    split_id: SplitId,
     /// The request this matches. The timerange of the request was removed.
     request: SearchRequest,
     /// The effective time range of the request, that is, the intersection of the timerange
