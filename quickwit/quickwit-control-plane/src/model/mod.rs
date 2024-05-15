@@ -259,11 +259,6 @@ impl ControlPlaneModel {
         Ok(has_changed)
     }
 
-    pub(crate) fn set_shards_as_unavailable(&mut self, unavailable_leaders: &FnvHashSet<NodeId>) {
-        self.shard_table
-            .set_shards_as_unavailable(unavailable_leaders);
-    }
-
     pub(crate) fn all_shards(&self) -> impl Iterator<Item = &ShardEntry> + '_ {
         self.shard_table.all_shards()
     }

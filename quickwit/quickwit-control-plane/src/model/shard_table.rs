@@ -323,25 +323,6 @@ impl ShardTable {
             .map(|(source, shard_table)| (source, shard_table.shard_entries.values()))
     }
 
-    pub(crate) fn set_shards_as_unavailable(&mut self, unavailable_leaders: &FnvHashSet<NodeId>) {
-        for (source_uid, shard_table_entry) in &mut self.table_entries {
-            let mut modified = false;
-            for shard_entry in shard_table_entry.shard_entries.values_mut() {
-                if shard_entry.is_open() && unavailable_leaders.contains(&shard_entry.leader_id) {
-                    shard_entry.set_shard_state(ShardState::Unavailable);
-                    modified = true;
-                }
-            }
-            if modified {
-                let num_open_shards = shard_table_entry.num_open_shards();
-                crate::metrics::CONTROL_PLANE_METRICS
-                    .open_shards_total
-                    .with_label_values([source_uid.index_uid.index_id.as_str()])
-                    .set(num_open_shards as i64);
-            };
-        }
-    }
-
     /// Lists the shards of a given source. Returns `None` if the source does not exist.
     pub fn get_shards(&self, source_uid: &SourceUid) -> Option<&FnvHashMap<ShardId, ShardEntry>> {
         self.table_entries
