@@ -143,7 +143,8 @@ jobs:
       - name: Install Rust
         run: rustup update stable
 
-      - uses: taiki-e/install-action@v2
+      - name: Install cargo-llvm-cov, cargo-nextest, and protoc
+        uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,nextest,protoc
 

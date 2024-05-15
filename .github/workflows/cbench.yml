@@ -32,6 +32,7 @@ jobs:
         # Because it executes code on a self-hosted runner, it must be restricted to trusted users.
         run: |
           echo 'users=["ddelemeny", "fmassot", "fulmicoton", "guilload", "PSeitz", "rdettai", "trinity-1686a"]' >> $GITHUB_OUTPUT
+
       - uses: actions/checkout@v4
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name == 'pull_request_target'
         name: Checkout quickwit (pull request commit)
@@ -39,6 +40,7 @@ jobs:
           repository: quickwit-oss/quickwit
           ref: ${{ github.event.pull_request.head.sha }}
           path: ./quickwit
+
       - uses: actions/checkout@v4
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name != 'pull_request_target'
         name: Checkout quickwit
@@ -46,6 +48,7 @@ jobs:
           repository: quickwit-oss/quickwit
           ref: ${{ github.sha }}
           path: ./quickwit
+
       - name: Checkout benchmarking code
         uses: actions/checkout@v4
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
@@ -53,6 +56,15 @@ jobs:
           repository: quickwit-oss/benchmarks
           ref: main
           path: ./benchmarks
+
+      - name: Install Rust
+        run: rustup update stable
+
+      - name: Install protoc
+        uses: taiki-e/install-action@v2
+        with:
+          tool: protoc
+
       # We don't use rust-cache as it requires root access on the self-hosted runner, which we don't have.
       - name: cargo build
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
