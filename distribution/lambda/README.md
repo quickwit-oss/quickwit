@@ -129,7 +129,7 @@ Indexer only:
 Searcher only:
 | Variable | Description | Default |
 |---|---|---|
-| QW_LAMBDA_SEARCHER_METASTORE_POLLING_INTERVAL| refresh interval of the metastore | 1m |
+| QW_LAMBDA_SEARCHER_METASTORE_POLLING_INTERVAL_SECONDS | refresh interval of the metastore | 60 |
 | QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY | `searcher.partial_request_cache_capacity` node config | 64M |
 
 
