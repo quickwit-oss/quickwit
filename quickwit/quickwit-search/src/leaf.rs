@@ -36,6 +36,7 @@ use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
 };
+use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::Field;
@@ -44,7 +45,7 @@ use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
 use crate::service::SearcherContext;
-use crate::SearchError;
+use crate::{QuickwitAggregations, SearchError};
 
 #[instrument(skip_all)]
 async fn get_split_footer_from_cache_or_fetch(
@@ -410,6 +411,55 @@ fn rewrite_request(
     if let Some(timestamp_field) = timestamp_field {
         remove_redundant_timestamp_range(search_request, split, timestamp_field);
     }
+    rewrite_aggregation(search_request);
+}
+
+/// Rewrite aggregation to make them easier to cache
+///
+/// This is only valid for options which are handled while merging results, which is
+/// mostly `extended_bounds`.
+fn rewrite_aggregation(search_request: &mut SearchRequest) {
+    if let Some(aggregation) = &search_request.aggregation_request {
+        let Ok(QuickwitAggregations::TantivyAggregations(mut aggregations)) =
+            serde_json::from_str(aggregation)
+        else {
+            return;
+        };
+        let modified_something = visit_aggregation_mut(&mut aggregations, &|aggregation_variant| {
+            match aggregation_variant {
+                // we take() away the extended bounds, and record we did something
+                AggregationVariants::Histogram(histogram) => {
+                    histogram.extended_bounds.take().is_some()
+                }
+                AggregationVariants::DateHistogram(histogram) => {
+                    histogram.extended_bounds.take().is_some()
+                }
+                _ => false,
+            }
+        });
+        if modified_something {
+            if let Ok(serialized_aggregation) = serde_json::to_string(&aggregations) {
+                // it's fine to put a (Tantivy)Aggregations and not a QuickwitAggregations because
+                // the former is an serde-untagged variant of the later
+                search_request.aggregation_request = Some(serialized_aggregation);
+            } else {
+                warn!("we failed to reserialize aggregation, this shouldn't happen");
+            }
+        }
+    }
+}
+
+// this is a rather limited visitor, but enough to do the job
+fn visit_aggregation_mut(
+    aggregations: &mut Aggregations,
+    callback: &impl Fn(&mut AggregationVariants) -> bool,
+) -> bool {
+    let mut modified_something = false;
+    for aggregation in aggregations.values_mut() {
+        modified_something |= callback(&mut aggregation.agg);
+        modified_something |= visit_aggregation_mut(&mut aggregation.sub_aggregation, callback);
+    }
+    modified_something
 }
 
 // equivalent to Bound::map, which is unstable
