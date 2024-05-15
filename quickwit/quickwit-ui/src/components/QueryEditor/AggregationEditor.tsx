@@ -51,9 +51,9 @@ export function MetricKind(props: SearchComponentProps) {
 
   const handleTypeChange = (event: SelectChangeEvent) => {
     const value = event.target.value;
-    const updatedMetric = value != "count" ? Object.assign({}, metricRef.current, {type: value}) : null;
-    const updatedAggregation = Object.assign({}, props.searchRequest.aggregationConfig, {metric: updatedMetric});
-    const updatedSearchRequest = Object.assign({}, props.searchRequest, {aggregationConfig: updatedAggregation});
+    const updatedMetric = value != "count" ? {...metricRef.current!, type: value} : null;
+    const updatedAggregation = {...props.searchRequest.aggregationConfig, metric: updatedMetric};
+    const updatedSearchRequest = {...props.searchRequest, aggregationConfig: updatedAggregation};
     props.onSearchRequestUpdate(updatedSearchRequest);
     metricRef.current = updatedMetric;
   };
@@ -63,9 +63,9 @@ export function MetricKind(props: SearchComponentProps) {
     if (metricRef.current == null) {
       return;
     }
-    const updatedMetric = Object.assign({}, metricRef.current, {field: value});
-    const updatedAggregation = Object.assign({}, props.searchRequest.aggregationConfig, {metric: updatedMetric});
-    const updatedSearchRequest = Object.assign({}, props.searchRequest, {aggregationConfig: updatedAggregation});
+    const updatedMetric = {...metricRef.current!, field: value};
+    const updatedAggregation = {...props.searchRequest.aggregationConfig, metric: updatedMetric};
+    const updatedSearchRequest = {...props.searchRequest, aggregationConfig: updatedAggregation};
     props.onSearchRequestUpdate(updatedSearchRequest);
     metricRef.current = updatedMetric;
   };
@@ -108,7 +108,7 @@ export function AggregationKind(props: SearchComponentProps) {
   const updateAggregationProp = (newAggregations: ({term: TermAgg} | {histogram: HistogramAgg})[]) => {
     const metric = props.searchRequest.aggregationConfig.metric;
     const updatedAggregation = Object.assign({}, {metric: metric}, ...newAggregations);
-    const updatedSearchRequest = Object.assign({}, props.searchRequest, {aggregationConfig: updatedAggregation});
+    const updatedSearchRequest = {...props.searchRequest, aggregationConfig: updatedAggregation};
     props.onSearchRequestUpdate(updatedSearchRequest);
   };
 
@@ -233,7 +233,7 @@ export function AggregationKind(props: SearchComponentProps) {
   const aggregationConfig = props.searchRequest.aggregationConfig;
   if (aggregationConfig.histogram === null && aggregationConfig.term === null) {
     const initialAggregation = Object.assign({}, ...aggregations);
-    const initialSearchRequest = Object.assign({}, props.searchRequest, {aggregationConfig: initialAggregation});
+    const initialSearchRequest = {...props.searchRequest, aggregationConfig: initialAggregation};
     props.onSearchRequestUpdate(initialSearchRequest);
   }
 
@@ -247,7 +247,7 @@ export function AggregationKind(props: SearchComponentProps) {
           sx={{ "margin-left": "10px", "min-height": "44px" }}
         >
           <MenuItem value="auto">Auto</MenuItem>
-          <MenuItem value="10s">10 secods</MenuItem>
+          <MenuItem value="10s">10 seconds</MenuItem>
           <MenuItem value="1m">1 minute</MenuItem>
           <MenuItem value="5m">5 minutes</MenuItem>
           <MenuItem value="10m">10 minutes</MenuItem>
