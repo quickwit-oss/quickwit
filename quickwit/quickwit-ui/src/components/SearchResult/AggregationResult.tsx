@@ -48,6 +48,7 @@ export function AggregationResult({searchResponse}: {searchResponse: SearchRespo
        };
     });
     series;
+    // we don't customize colors because we would need a full palette.
     return (
     <LineChart
         xAxis={xAxis}
@@ -57,7 +58,7 @@ export function AggregationResult({searchResponse}: {searchResponse: SearchRespo
     )
   } else if (isTerm(result)) {
     return (<BarChart
-      series={[{ data: result.map(entry => entry.value)}]}
+      series={[{ data: result.map(entry => entry.value), color: "#004BD9A5"}]}
       xAxis={[{ data: result.map(entry => entry.term), scaleType: 'band' }]}
       margin={{ top: 10, bottom: 30, left: 40, right: 10 }}
     />)

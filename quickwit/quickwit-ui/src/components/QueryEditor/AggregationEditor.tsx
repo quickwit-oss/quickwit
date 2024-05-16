@@ -71,12 +71,12 @@ export function MetricKind(props: SearchComponentProps) {
   };
 
   return (
-    <Box>
-      <FormControl variant="standard" sx={{ m: 1, minWidth: 120, display: 'flex', flexDirection: 'row', }}>
+    <Box sx={{ m: 1, minWidth: 120, display: 'flex', flexDirection: 'row', }}>
+      <FormControl variant="standard">
         <Select
           value={metricRef.current ? metricRef.current.type : "count"}
           onChange={handleTypeChange}
-          sx={{ "min-height": "44px" }}
+          sx={{ "minHeight": "44px" }}
         >
           <MenuItem value="count">Count</MenuItem>
           <MenuItem value="avg">Average</MenuItem>
@@ -84,11 +84,13 @@ export function MetricKind(props: SearchComponentProps) {
           <MenuItem value="max">Max</MenuItem>
           <MenuItem value="min">Min</MenuItem>
         </Select>
-        <TextField 
+      </FormControl>
+      <FormControl variant="standard">
+        <TextField
           variant="standard"
           label="Field"
           onChange={handleNameChange}
-          sx={{ "margin-left": "10px", ... ( !metricRef.current && {display: "none"}) }}
+          sx={{ "marginLeft": "10px", ... ( !metricRef.current && {display: "none"}) }}
         />
       </FormControl>
     </Box>
@@ -104,7 +106,7 @@ export function AggregationKind(props: SearchComponentProps) {
   };
   const [aggregations, setAggregations] = useState<({term: TermAgg} | {histogram: HistogramAgg})[]>(
           [defaultAgg]);
-  
+
   const updateAggregationProp = (newAggregations: ({term: TermAgg} | {histogram: HistogramAgg})[]) => {
     const metric = props.searchRequest.aggregationConfig.metric;
     const updatedAggregation = Object.assign({}, {metric: metric}, ...newAggregations);
@@ -205,7 +207,7 @@ export function AggregationKind(props: SearchComponentProps) {
     const options = [];
     if (pos >= agg.length) {
       options.push((
-          <MenuItem value="new">Add aggregation</MenuItem>
+          <MenuItem value="new" key="new">Add aggregation</MenuItem>
       ))
     }
     let addHistogram = true;
@@ -216,14 +218,14 @@ export function AggregationKind(props: SearchComponentProps) {
       if (getAggregationKind(agg[i]) === "term") addTerm = false;
     }
     if (addHistogram) {
-      options.push((<MenuItem value="histogram">Histogram aggregation</MenuItem>))
+      options.push((<MenuItem value="histogram" key="histogram">Histogram aggregation</MenuItem>))
     }
     if (addTerm) {
-      options.push((<MenuItem value="term">Term aggregation</MenuItem>));
+      options.push((<MenuItem value="term" key="term">Term aggregation</MenuItem>));
     }
     if (agg.length > 1) {
       options.push((
-          <MenuItem value="rm">Remove aggregation</MenuItem>
+          <MenuItem value="rm" key="rm">Remove aggregation</MenuItem>
       ))
     }
     return options;
@@ -241,65 +243,74 @@ export function AggregationKind(props: SearchComponentProps) {
     const agg = aggs[pos]
     if (isHistogram(agg)) {
       return (
-        <Select
-          value={agg.histogram.interval}
-          onChange={(e) => handleHistogramChange(pos, e)}
-          sx={{ "margin-left": "10px", "min-height": "44px" }}
-        >
-          <MenuItem value="auto">Auto</MenuItem>
-          <MenuItem value="10s">10 seconds</MenuItem>
-          <MenuItem value="1m">1 minute</MenuItem>
-          <MenuItem value="5m">5 minutes</MenuItem>
-          <MenuItem value="10m">10 minutes</MenuItem>
-          <MenuItem value="1h">1 hour</MenuItem>
-          <MenuItem value="1d">1 day</MenuItem>
-        </Select>
+        <FormControl variant="standard">
+          <Select
+            value={agg.histogram.interval}
+            onChange={(e) => handleHistogramChange(pos, e)}
+            sx={{ "marginLeft": "10px", "minHeight": "44px" }}
+          >
+            <MenuItem value="auto">Auto</MenuItem>
+            <MenuItem value="10s">10 seconds</MenuItem>
+            <MenuItem value="1m">1 minute</MenuItem>
+            <MenuItem value="5m">5 minutes</MenuItem>
+            <MenuItem value="10m">10 minutes</MenuItem>
+            <MenuItem value="1h">1 hour</MenuItem>
+            <MenuItem value="1d">1 day</MenuItem>
+          </Select>
+        </FormControl>
       );
     }
     if (isTerm(agg)) {
-      return [(
-          <TextField 
-            variant="standard"
-            label="Field"
-            onChange={(e) => handleTermFieldChange(pos, e)}
-            sx={{ "margin-left": "10px" }}
-          />
-        ),(
-          <TextField 
-            variant="standard"
-            label="Return top"
-            type="number"
-            onChange={(e) => handleTermCountChange(pos, e)}
-            value={agg.term.size}
-            sx={{ "margin-left": "10px" }}
-          />
-        )]
+      return (<>
+          <FormControl variant="standard">
+            <TextField
+              variant="standard"
+              label="Field"
+              onChange={(e) => handleTermFieldChange(pos, e)}
+              sx={{ "margin-left": "10px" }}
+            />
+          </FormControl>
+          <FormControl variant="standard">
+            <TextField
+              variant="standard"
+              label="Return top"
+              type="number"
+              onChange={(e) => handleTermCountChange(pos, e)}
+              value={agg.term.size}
+              sx={{ "margin-left": "10px" }}
+            />
+          </FormControl>
+        </>)
     }
     return (null);
   }
 
   return (
-    <Box>
-      <FormControl variant="standard" sx={{ m: 1, minWidth: 120, display: 'flex', flexDirection: 'row', }}>
-        <Select
-          value={getAggregationKind(aggregations[0])}
-          onChange={(e) => handleAggregationChange(0, e)}
-          sx={{ "min-height": "44px", width: "190px" }}
-        >
-          { makeOptions(0, aggregations) }
-        </Select>
+    <>
+      <Box sx={{ m: 1, minWidth: 120, display: 'flex', flexDirection: 'row', }}>
+        <FormControl variant="standard">
+          <Select
+            value={getAggregationKind(aggregations[0])}
+            onChange={(e) => handleAggregationChange(0, e)}
+            sx={{ "minHeight": "44px", width: "190px" }}
+          >
+            { makeOptions(0, aggregations) }
+          </Select>
+        </FormControl>
         {drawAdditional(0, aggregations)}
-      </FormControl>
-      <FormControl variant="standard" sx={{ m: 1, minWidth: 120, display: 'flex', flexDirection: 'row', }}>
-        <Select
-          value={getAggregationKind(aggregations[1])}
-          onChange={(e) => handleAggregationChange(1, e)}
-          sx={{ "min-height": "44px", width: "190px" }}
-        >
-          { makeOptions(1, aggregations) }
-        </Select>
-        {drawAdditional(1, aggregations)}
-      </FormControl>
-    </Box>
+      </Box>
+      <Box sx={{ m: 1, minWidth: 120, display: 'flex', flexDirection: 'row', }}>
+        <FormControl variant="standard" sx={{ m: 1, minWidth: 120, display: 'flex', flexDirection: 'row', }}>
+          <Select
+            value={getAggregationKind(aggregations[1])}
+            onChange={(e) => handleAggregationChange(1, e)}
+            sx={{ "minHeight": "44px", width: "190px" }}
+          >
+            { makeOptions(1, aggregations) }
+          </Select>
+          {drawAdditional(1, aggregations)}
+        </FormControl>
+      </Box>
+    </>
   )
 }
