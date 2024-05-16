@@ -438,13 +438,10 @@ fn rewrite_aggregation(search_request: &mut SearchRequest) {
             }
         });
         if modified_something {
-            if let Ok(serialized_aggregation) = serde_json::to_string(&aggregations) {
-                // it's fine to put a (Tantivy)Aggregations and not a QuickwitAggregations because
-                // the former is an serde-untagged variant of the later
-                search_request.aggregation_request = Some(serialized_aggregation);
-            } else {
-                warn!("we failed to reserialize aggregation, this shouldn't happen");
-            }
+            // it's fine to put a (Tantivy)Aggregations and not a QuickwitAggregations because
+            // the former is an serde-untagged variant of the later
+            search_request.aggregation_request =
+                Some(serde_json::to_string(&aggregations).expect("serializing should never fail"));
         }
     }
 }
