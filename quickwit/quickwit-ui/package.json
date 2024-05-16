@@ -79,8 +79,8 @@
   },
   "jest": {
     "moduleNameMapper": {
-      "monaco-editor": "<rootDir>/monacoMock.js",
-      "swagger-ui-react": "<rootDir>/swaggerUIMock.js"
+      "monaco-editor": "<rootDir>/mocks/monacoMock.js",
+      "swagger-ui-react": "<rootDir>/mocks/swaggerUIMock.js"
     }
   }
 }
