@@ -19,6 +19,7 @@
 
 #![deny(clippy::disallowed_methods)]
 
+use std::env;
 use std::str::FromStr;
 
 use anyhow::{bail, ensure, Context};
@@ -26,6 +27,7 @@ use json_comments::StripComments;
 use once_cell::sync::Lazy;
 use quickwit_common::net::is_valid_hostname;
 use quickwit_common::uri::Uri;
+use quickwit_proto::types::NodeIdRef;
 use regex::Regex;
 
 mod cluster_config;
@@ -69,14 +71,26 @@ pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
 };
 pub use crate::node_config::{
-    enable_ingest_v2, IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig, SearcherConfig,
-    SplitCacheLimits, DEFAULT_QW_CONFIG_PATH,
+    IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig, SearcherConfig, SplitCacheLimits,
+    DEFAULT_QW_CONFIG_PATH,
 };
 use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
 pub use crate::storage_config::{
     AzureStorageConfig, FileStorageConfig, GoogleCloudStorageConfig, RamStorageConfig,
     S3StorageConfig, StorageBackend, StorageBackendFlavor, StorageConfig, StorageConfigs,
 };
+
+/// Returns true if the ingest API v2 is enabled.
+pub fn enable_ingest_v2() -> bool {
+    static ENABLE_INGEST_V2: Lazy<bool> = Lazy::new(|| env::var("QW_ENABLE_INGEST_V2").is_ok());
+    *ENABLE_INGEST_V2
+}
+
+/// Returns true if the ingest API v1 is disabled.
+pub fn disable_ingest_v1() -> bool {
+    static ENABLE_INGEST_V2: Lazy<bool> = Lazy::new(|| env::var("QW_DISABLE_INGEST_V1").is_ok());
+    *ENABLE_INGEST_V2
+}
 
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(
@@ -166,8 +180,8 @@ pub fn validate_index_id_pattern(pattern: &str, allow_negative: bool) -> anyhow:
     Ok(())
 }
 
-pub fn validate_node_id(node_id: &str) -> anyhow::Result<()> {
-    if !is_valid_hostname(node_id) {
+pub fn validate_node_id(node_id: &NodeIdRef) -> anyhow::Result<()> {
+    if !is_valid_hostname(node_id.as_str()) {
         bail!(
             "node identifier `{node_id}` is invalid. node identifiers must be valid short \
              hostnames (see RFC 1123)"

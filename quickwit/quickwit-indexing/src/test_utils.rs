@@ -30,7 +30,7 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, IngestApiConfig, MetastoreConfigs,
-    SourceConfig, SourceInputFormat, SourceParams, VecSourceParams,
+    SourceConfig, SourceInputFormat, SourceParams, VecSourceParams, INGEST_API_SOURCE_ID,
 };
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::{init_ingest_api, IngesterPool, QUEUES_DIR_NAME};
@@ -38,7 +38,7 @@ use quickwit_metastore::{
     CreateIndexRequestExt, MetastoreResolver, Split, SplitMetadata, SplitState,
 };
 use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::{IndexUid, PipelineUid};
+use quickwit_proto::types::{IndexUid, NodeId, PipelineUid, SourceId};
 use quickwit_storage::{Storage, StorageResolver};
 use serde_json::Value as JsonValue;
 
@@ -51,7 +51,9 @@ use crate::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
 /// The test index content is entirely in RAM and isolated,
 /// but the construction of the index involves temporary file directory.
 pub struct TestSandbox {
+    node_id: NodeId,
     index_uid: IndexUid,
+    source_id: SourceId,
     indexing_service: Mailbox<IndexingService>,
     doc_mapper: Arc<dyn DocMapper>,
     metastore: MetastoreServiceClient,
@@ -76,7 +78,7 @@ impl TestSandbox {
         indexing_settings_yaml: &str,
         search_fields: &[&str],
     ) -> anyhow::Result<TestSandbox> {
-        let node_id = append_random_suffix("test-node");
+        let node_id = NodeId::new(append_random_suffix("test-node"));
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
@@ -90,23 +92,27 @@ impl TestSandbox {
             .iter()
             .map(|search_field| search_field.to_string())
             .collect();
-        let doc_mapper =
-            build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
-        let temp_dir = tempfile::tempdir()?;
-        let indexer_config = IndexerConfig::for_test()?;
-        let num_blocking_threads = 1;
+        let source_config = SourceConfig::ingest_api_default();
         let storage_resolver = StorageResolver::for_test();
         let metastore_resolver =
             MetastoreResolver::configured(storage_resolver.clone(), &MetastoreConfigs::default());
         let mut metastore = metastore_resolver
             .resolve(&Uri::for_test(METASTORE_URI))
             .await?;
-        let create_index_request = CreateIndexRequest::try_from_index_config(&index_config)?;
+        let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
+            &index_config,
+            &[source_config.clone()],
+        )?;
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await?
             .index_uid()
             .clone();
+        let doc_mapper =
+            build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
+        let temp_dir = tempfile::tempdir()?;
+        let indexer_config = IndexerConfig::for_test()?;
+        let num_blocking_threads = 1;
         let storage = storage_resolver.resolve(&index_uri).await?;
         let universe = Universe::with_accelerated_time();
         let merge_scheduler_mailbox = universe.get_or_spawn_one();
@@ -114,7 +120,7 @@ impl TestSandbox {
         let ingest_api_service =
             init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default()).await?;
         let indexing_service_actor = IndexingService::new(
-            node_id.to_string(),
+            node_id.clone(),
             temp_dir.path().to_path_buf(),
             indexer_config,
             num_blocking_threads,
@@ -130,7 +136,9 @@ impl TestSandbox {
         let (indexing_service, _indexing_service_handle) =
             universe.spawn_builder().spawn(indexing_service_actor);
         Ok(TestSandbox {
+            node_id,
             index_uid,
+            source_id: INGEST_API_SOURCE_ID.to_string(),
             indexing_service,
             doc_mapper,
             metastore,
@@ -157,7 +165,7 @@ impl TestSandbox {
             .collect();
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let source_config = SourceConfig {
-            source_id: self.index_uid.index_id.to_string(),
+            source_id: INGEST_API_SOURCE_ID.to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Vec(VecSourceParams {
@@ -210,9 +218,19 @@ impl TestSandbox {
         self.doc_mapper.clone()
     }
 
+    /// Returns the node ID.
+    pub fn node_id(&self) -> NodeId {
+        self.node_id.clone()
+    }
+
     /// Returns the index UID.
     pub fn index_uid(&self) -> IndexUid {
         self.index_uid.clone()
+    }
+
+    /// Returns the source ID.
+    pub fn source_id(&self) -> SourceId {
+        self.source_id.clone()
     }
 
     /// Returns the underlying universe.

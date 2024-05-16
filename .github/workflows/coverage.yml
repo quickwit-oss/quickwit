@@ -21,6 +21,7 @@ env:
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
   QW_S3_FORCE_PATH_STYLE_ACCESS: 1
   QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
+  RUSTFLAGS: -Dwarnings --cfg tokio_unstable
 
 jobs:
   test:
@@ -143,7 +144,8 @@ jobs:
       - name: Install Rust
         run: rustup update stable
 
-      - uses: taiki-e/install-action@v2
+      - name: Install cargo-llvm-cov, cargo-nextest, and protoc
+        uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,nextest,protoc
 
@@ -152,7 +154,8 @@ jobs:
         run: |
           cargo llvm-cov clean --workspace
           cargo llvm-cov nextest --no-report --test failpoints --features fail/failpoints --retries 2
-          CARGO_BUILD_JOBS=4 cargo llvm-cov nextest --no-report --all-features --retries 2
+          # increase stack size for test_all_with_s3_localstack_cli, see quickwit#4963
+          RUST_MIN_STACK=67108864 CARGO_BUILD_JOBS=4 cargo llvm-cov nextest --no-report --all-features --retries 2
           cargo llvm-cov report --lcov --output-path lcov.info
         working-directory: ./quickwit
 
@@ -161,3 +164,32 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           files: ./quickwit/lcov.info
+
+  on-failure:
+    if: ${{ github.repository_owner == 'quickwit-oss' && failure() }}
+    name: On Failure
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Message
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          nodetail: true
+          color: "#FF0000"
+          title: ""
+          description: |
+            ### ❌ [${{ github.event.pull_request.title }}](${{ github.event.pull_request.html_url }})
+
+            @${{ github.actor }} quickwit coverage CI failed on your PR.
+
+            Coverage CI contains tests that are not running in the regular CI because they are too lengthy.
+            For this reason it is possible for it to break even if the tests were passing on your PR.
+            This is not a catastrophy, but you are responsible for fixing it!
+
+            You can run the full test suite locally with `make test-all`.
+
+            Please report in this channel that you are working on it/fixed it/or if it is a flaky test/
+            or if you need help.
+
+            **[View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})**

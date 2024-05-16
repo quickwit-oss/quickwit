@@ -19,6 +19,7 @@
 
 use bytes::buf::Writer;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use quickwit_proto::types::IndexId;
 use serde::Serialize;
 
 use crate::DocBatch;
@@ -96,14 +97,14 @@ where T: Buf + Default
 
 /// Builds DocBatch from individual commands
 pub struct DocBatchBuilder {
-    index_id: String,
+    index_id: IndexId,
     doc_buffer: BytesMut,
     doc_lengths: Vec<u32>,
 }
 
 impl DocBatchBuilder {
     /// Creates a new batch builder for the given index name.
-    pub fn new(index_id: String) -> Self {
+    pub fn new(index_id: IndexId) -> Self {
         Self {
             index_id,
             doc_buffer: BytesMut::new(),
@@ -113,7 +114,7 @@ impl DocBatchBuilder {
 
     /// Creates a new batch builder for the given index name with some pre-allocated capacity for
     /// the internal doc buffer.
-    pub fn with_capacity(index_id: String, capacity: usize) -> Self {
+    pub fn with_capacity(index_id: IndexId, capacity: usize) -> Self {
         Self {
             index_id,
             doc_buffer: BytesMut::with_capacity(capacity),
@@ -171,7 +172,7 @@ impl DocBatchBuilder {
 /// A wrapper around batch builder that can add a Serialize structs
 
 pub struct JsonDocBatchBuilder {
-    index_id: String,
+    index_id: IndexId,
     doc_buffer: Writer<BytesMut>,
     doc_lengths: Vec<u32>,
 }

@@ -26,6 +26,7 @@ use aws_sdk_kinesis::operation::{
     get_shard_iterator::GetShardIteratorError, list_shards::ListShardsError,
     list_streams::ListStreamsError, merge_shards::MergeShardsError, split_shard::SplitShardError,
 };
+use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
 use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError;
 use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadError;
@@ -35,7 +36,6 @@ use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
-use aws_smithy_client::SdkError;
 
 use crate::retry::AwsRetryable;
 

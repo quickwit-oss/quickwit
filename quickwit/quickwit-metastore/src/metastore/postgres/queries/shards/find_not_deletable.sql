@@ -5,5 +5,5 @@ FROM
 WHERE
     index_uid = $1
     AND source_id = $2
-    AND ($3 IS NULL
-        OR shard_state = CAST($3 AS SHARD_STATE))
+    AND shard_id = ANY ($3)
+    AND publish_position_inclusive NOT LIKE '~%'

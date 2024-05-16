@@ -42,6 +42,7 @@ use tantivy::aggregation::AggregationLimits;
 use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
+use crate::leaf::multi_leaf_search;
 use crate::leaf_cache::LeafSearchCache;
 use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
@@ -49,7 +50,7 @@ use crate::list_terms::{leaf_list_terms, root_list_terms};
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_stream::{leaf_search_stream, root_search_stream};
-use crate::{fetch_docs, leaf_search, root_search, ClusterClient, SearchError};
+use crate::{fetch_docs, root_search, ClusterClient, SearchError};
 
 #[derive(Clone)]
 /// The search service implementation.
@@ -168,7 +169,7 @@ impl SearchServiceImpl {
     }
 }
 
-fn deserialize_doc_mapper(doc_mapper_str: &str) -> crate::Result<Arc<dyn DocMapper>> {
+pub fn deserialize_doc_mapper(doc_mapper_str: &str) -> crate::Result<Arc<dyn DocMapper>> {
     let doc_mapper = serde_json::from_str::<Arc<dyn DocMapper>>(doc_mapper_str).map_err(|err| {
         SearchError::Internal(format!("failed to deserialize doc mapper: `{err}`"))
     })?;
@@ -192,20 +193,15 @@ impl SearchService for SearchServiceImpl {
         &self,
         leaf_search_request: LeafSearchRequest,
     ) -> crate::Result<LeafSearchResponse> {
-        let search_request: Arc<SearchRequest> = leaf_search_request
-            .search_request
-            .ok_or_else(|| SearchError::Internal("no search request".to_string()))?
-            .into();
-        let index_uri = Uri::from_str(&leaf_search_request.index_uri)?;
-        let storage = self.storage_resolver.resolve(&index_uri).await?;
-        let doc_mapper = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
+        // Check leaf_search_request existence before tracing with `instrument` call.
+        if leaf_search_request.search_request.is_none() {
+            return Err(SearchError::Internal("no search request".to_string()));
+        }
 
-        let leaf_search_response = leaf_search(
+        let leaf_search_response = multi_leaf_search(
             self.searcher_context.clone(),
-            search_request,
-            storage.clone(),
-            leaf_search_request.split_offsets,
-            doc_mapper,
+            leaf_search_request,
+            &self.storage_resolver,
         )
         .await?;
 
@@ -504,7 +500,7 @@ impl SearcherContext {
     }
 
     /// Returns a new instance to track the aggregation memory usage.
-    pub fn get_aggregation_limits(&self) -> AggregationLimits {
+    pub fn create_new_aggregation_limits(&self) -> AggregationLimits {
         AggregationLimits::new(
             Some(self.searcher_config.aggregation_memory_limit.as_u64()),
             Some(self.searcher_config.aggregation_bucket_limit),

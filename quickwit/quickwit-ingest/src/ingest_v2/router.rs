@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -39,6 +39,7 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestResponseV2, IngestRouterService};
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
+use serde_json::{json, Value as JsonValue};
 use tokio::sync::{Mutex, Semaphore};
 use tracing::info;
 
@@ -53,11 +54,21 @@ use super::IngesterPool;
 use crate::{get_ingest_router_buffer_size, LeaderId};
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
-pub(super) const INGEST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_millis(10)
-} else {
-    Duration::from_secs(35)
-};
+fn ingest_request_timeout() -> Duration {
+    const DEFAULT_INGEST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
+        Duration::from_millis(10)
+    } else {
+        Duration::from_secs(35)
+    };
+    static TIMEOUT: OnceLock<Duration> = OnceLock::new();
+    *TIMEOUT.get_or_init(|| {
+        let duration_ms = quickwit_common::get_from_env(
+            "QW_INGEST_REQUEST_TIMEOUT_MS",
+            DEFAULT_INGEST_REQUEST_TIMEOUT.as_millis() as u64,
+        );
+        Duration::from_millis(duration_ms)
+    })
+}
 
 const MAX_PERSIST_ATTEMPTS: usize = 5;
 
@@ -435,11 +446,20 @@ impl IngestRouter {
         .await
         .map_err(|_| {
             let message = format!(
-                "ingest request timed out after {} seconds",
-                INGEST_REQUEST_TIMEOUT.as_secs()
+                "ingest request timed out after {} millis",
+                timeout_duration.as_millis()
             );
             IngestV2Error::Timeout(message)
         })?
+    }
+
+    pub async fn debug_info(&self) -> JsonValue {
+        let state_guard = self.state.lock().await;
+        let routing_table_json = state_guard.routing_table.debug_info();
+
+        json!({
+            "routing_table": routing_table_json,
+        })
     }
 }
 
@@ -460,7 +480,7 @@ impl IngestRouterService for IngestRouter {
             .try_acquire_many_owned(request_size_bytes as u32)
             .map_err(|_| IngestV2Error::TooManyRequests)?;
 
-        self.ingest_timeout(ingest_request, INGEST_REQUEST_TIMEOUT)
+        self.ingest_timeout(ingest_request, ingest_request_timeout())
             .await
     }
 }
@@ -1671,5 +1691,53 @@ mod tests {
         assert_eq!(shards.len(), 1);
         assert_eq!(shards[0].shard_id, ShardId::from(2));
         drop(state_guard);
+    }
+
+    #[tokio::test]
+    async fn test_router_debug_info() {
+        let self_node_id = "test-router".into();
+        let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
+        let ingester_pool = IngesterPool::default();
+        let replication_factor = 1;
+        let router = IngestRouter::new(
+            self_node_id,
+            control_plane,
+            ingester_pool.clone(),
+            replication_factor,
+        );
+        let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
+        let index_uid_1: IndexUid = IndexUid::for_test("test-index-1", 0);
+
+        let mut state_guard = router.state.lock().await;
+        state_guard.routing_table.replace_shards(
+            index_uid_0.clone(),
+            "test-source",
+            vec![Shard {
+                index_uid: Some(index_uid_0.clone()),
+                shard_id: Some(ShardId::from(1)),
+                shard_state: ShardState::Open as i32,
+                leader_id: "test-ingester".to_string(),
+                ..Default::default()
+            }],
+        );
+        state_guard.routing_table.replace_shards(
+            index_uid_1.clone(),
+            "test-source",
+            vec![Shard {
+                index_uid: Some(index_uid_1.clone()),
+                shard_id: Some(ShardId::from(2)),
+                shard_state: ShardState::Open as i32,
+                leader_id: "test-ingester".to_string(),
+                ..Default::default()
+            }],
+        );
+        drop(state_guard);
+
+        let debug_info = router.debug_info().await;
+        let routing_table = &debug_info["routing_table"];
+        assert_eq!(routing_table.as_object().unwrap().len(), 2);
+
+        assert_eq!(routing_table["test-index-0"].as_array().unwrap().len(), 1);
+        assert_eq!(routing_table["test-index-1"].as_array().unwrap().len(), 1);
     }
 }

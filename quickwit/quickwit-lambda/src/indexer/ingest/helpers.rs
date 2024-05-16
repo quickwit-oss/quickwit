@@ -36,9 +36,7 @@ use quickwit_config::{
     SourceInputFormat, SourceParams, TransformConfig,
 };
 use quickwit_index_management::IndexService;
-use quickwit_indexing::actors::{
-    IndexingService, MergePipeline, MergePipelineId, MergeSchedulerService,
-};
+use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
 use quickwit_indexing::models::{DetachIndexingPipeline, DetachMergePipeline, SpawnPipeline};
 use quickwit_indexing::IndexingPipeline;
 use quickwit_ingest::IngesterPool;
@@ -51,7 +49,7 @@ use quickwit_proto::metastore::{
     CreateIndexRequest, IndexMetadataRequest, MetastoreError, MetastoreService,
     MetastoreServiceClient, ResetSourceCheckpointRequest,
 };
-use quickwit_proto::types::{NodeId, PipelineUid};
+use quickwit_proto::types::PipelineUid;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::StorageResolver;
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
@@ -72,7 +70,7 @@ pub(super) async fn create_empty_cluster(
     services: &[QuickwitService],
 ) -> anyhow::Result<Cluster> {
     let self_node = ClusterMember {
-        node_id: NodeId::new(config.node_id.clone()),
+        node_id: config.node_id.clone(),
         generation_id: quickwit_cluster::GenerationId::now(),
         is_ready: false,
         enabled_services: HashSet::from_iter(services.to_owned()),
@@ -274,7 +272,7 @@ pub(super) async fn spawn_pipelines(
         .await?;
     let merge_pipeline_handle = indexing_server_mailbox
         .ask_for_res(DetachMergePipeline {
-            pipeline_id: MergePipelineId::from(&pipeline_id),
+            pipeline_id: pipeline_id.merge_pipeline_id(),
         })
         .await?;
     let indexing_pipeline_handle = indexing_server_mailbox

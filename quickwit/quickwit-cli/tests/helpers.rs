@@ -33,6 +33,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, MetastoreResolver};
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
+use quickwit_proto::types::IndexId;
 use quickwit_storage::{Storage, StorageResolver};
 use reqwest::Url;
 use tempfile::{tempdir, TempDir};
@@ -120,7 +121,7 @@ pub struct TestEnv {
     pub cluster_endpoint: Url,
     pub index_config_uri: Uri,
     /// The index ID.
-    pub index_id: String,
+    pub index_id: IndexId,
     pub index_uri: Uri,
     pub rest_listen_port: u16,
     pub storage_resolver: StorageResolver,
@@ -177,7 +178,7 @@ pub enum TestStorageType {
 
 /// Creates all necessary artifacts in a test environment.
 pub async fn create_test_env(
-    index_id: String,
+    index_id: IndexId,
     storage_type: TestStorageType,
 ) -> anyhow::Result<TestEnv> {
     let temp_dir = tempdir()?;

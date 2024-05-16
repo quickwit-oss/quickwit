@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt::Formatter;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -29,6 +30,7 @@ use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove}
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
+use warp::filters::log::Info;
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
@@ -64,6 +66,28 @@ pub(crate) struct InvalidArgument(pub String);
 
 impl warp::reject::Reject for InvalidArgument {}
 
+#[derive(Debug)]
+pub struct TooManyRequests;
+
+impl warp::reject::Reject for TooManyRequests {}
+
+impl std::fmt::Display for TooManyRequests {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "too many requests")
+    }
+}
+
+#[derive(Debug)]
+pub struct InternalError(pub String);
+
+impl warp::reject::Reject for InternalError {}
+
+impl std::fmt::Display for InternalError {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "internal error: {}", self.0)
+    }
+}
+
 /// Starts REST services.
 pub(crate) async fn start_rest_server(
     rest_listen_addr: SocketAddr,
@@ -71,10 +95,17 @@ pub(crate) async fn start_rest_server(
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
-    let request_counter = warp::log::custom(|info| {
+    let request_counter = warp::log::custom(|info: Info| {
+        let elapsed = info.elapsed();
+        let status = info.status();
+        let label_values: [&str; 2] = [info.method().as_str(), status.as_str()];
+        crate::SERVE_METRICS
+            .request_duration_secs
+            .with_label_values(label_values)
+            .observe(elapsed.as_secs_f64());
         crate::SERVE_METRICS
             .http_requests_total
-            .with_label_values([info.method().as_str(), info.status().as_str()])
+            .with_label_values(label_values)
             .inc();
     });
     // Docs routes
@@ -316,6 +347,11 @@ fn get_status_with_error(rejection: Rejection) -> RestApiError {
         RestApiError {
             status_code: StatusCode::PAYLOAD_TOO_LARGE,
             message: error.to_string(),
+        }
+    } else if let Some(err) = rejection.find::<TooManyRequests>() {
+        RestApiError {
+            status_code: StatusCode::TOO_MANY_REQUESTS,
+            message: err.to_string(),
         }
     } else {
         error!("REST server error: {:?}", rejection);
@@ -620,8 +656,9 @@ mod tests {
             indexing_service_opt: None,
             index_manager: index_service,
             ingest_service: ingest_service_client(),
-            ingester_opt: None,
+            ingest_router_opt: None,
             ingest_router_service: IngestRouterServiceClient::mocked(),
+            ingester_opt: None,
             janitor_service_opt: None,
             otlp_logs_service_opt: None,
             otlp_traces_service_opt: None,

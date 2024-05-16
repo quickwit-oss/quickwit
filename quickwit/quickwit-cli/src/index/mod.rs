@@ -21,6 +21,7 @@ use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
+use std::num::NonZeroUsize;
 use std::ops::Div;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -36,12 +37,14 @@ use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use numfmt::{Formatter, Scales};
 use quickwit_actors::ActorHandle;
+use quickwit_common::tower::{Rate, RateEstimator, SmaRateEstimator};
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig};
 use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::IndexingPipeline;
 use quickwit_metastore::{IndexMetadata, Split, SplitState};
 use quickwit_proto::search::{CountHits, SortField, SortOrder};
+use quickwit_proto::types::IndexId;
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
 use quickwit_search::SearchResponseRest;
@@ -198,7 +201,7 @@ pub fn build_index_command() -> Command {
 #[derive(Debug, Eq, PartialEq)]
 pub struct ClearIndexArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub assume_yes: bool,
 }
 
@@ -213,13 +216,13 @@ pub struct CreateIndexArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IngestDocsArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub input_path_opt: Option<PathBuf>,
     pub batch_size_limit_opt: Option<ByteSize>,
     pub commit_type: CommitType,
@@ -228,7 +231,7 @@ pub struct IngestDocsArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct SearchIndexArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub query: String,
     pub aggregation: Option<String>,
     pub max_hits: usize,
@@ -243,7 +246,7 @@ pub struct SearchIndexArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct DeleteIndexArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub dry_run: bool,
     pub assume_yes: bool,
 }
@@ -526,7 +529,7 @@ where I: IntoIterator<Item = IndexConfig> {
 #[derive(Tabled)]
 struct IndexRow {
     #[tabled(rename = "Index ID")]
-    index_id: String,
+    index_id: IndexId,
     #[tabled(rename = "Index URI")]
     index_uri: Uri,
 }
@@ -546,7 +549,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
 }
 
 pub struct IndexStats {
-    pub index_id: String,
+    pub index_id: IndexId,
     pub index_uri: Uri,
     pub num_published_splits: usize,
     pub size_published_splits: ByteSize,
@@ -932,6 +935,11 @@ impl Tabled for Quantiles {
 
 pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     debug!(args=?args, "ingest-docs");
+    let mut rate_estimator = SmaRateEstimator::new(
+        NonZeroUsize::new(8).unwrap(),
+        Duration::from_millis(250),
+        Duration::from_secs(1),
+    );
     if let Some(input_path) = &args.input_path_opt {
         println!("❯ Ingesting documents from {}.", input_path.display());
     } else {
@@ -947,13 +955,17 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     progress_bar.enable_steady_tick(Duration::from_millis(100));
     progress_bar.set_style(progress_bar_style());
     progress_bar.set_message("0MiB/s");
-    let update_progress_bar = |ingest_event: IngestEvent| {
+    // It is not used by the rate estimator anyway.
+    let useless_start_time = Instant::now();
+    let mut update_progress_bar = |ingest_event: IngestEvent| {
         match ingest_event {
-            IngestEvent::IngestedDocBatch(num_bytes) => progress_bar.inc(num_bytes as u64),
+            IngestEvent::IngestedDocBatch(num_bytes) => {
+                rate_estimator.update(useless_start_time, Instant::now(), num_bytes as u64);
+                progress_bar.inc(num_bytes as u64)
+            }
             IngestEvent::Sleep => {} // To
         };
-        let throughput =
-            progress_bar.position() as f64 / progress_bar.elapsed().as_secs_f64() / 1024.0 / 1024.0;
+        let throughput = rate_estimator.work() as f64 / (1024 * 1024) as f64;
         progress_bar.set_message(format!("{throughput:.1} MiB/s"));
     };
 
@@ -970,7 +982,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
             &args.index_id,
             ingest_source,
             batch_size_limit_opt,
-            Some(&update_progress_bar),
+            Some(&mut update_progress_bar),
             args.commit_type,
         )
         .await?;

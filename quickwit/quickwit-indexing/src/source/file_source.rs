@@ -17,9 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Borrow;
 use std::ffi::OsStr;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, io};
 
@@ -30,16 +30,16 @@ use bytes::Bytes;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::uri::Uri;
 use quickwit_config::FileSourceParams;
-use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
+use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::Position;
+use quickwit_proto::types::{Position, SourceId};
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tracing::info;
 
 use super::BatchBuilder;
 use crate::actors::DocProcessor;
-use crate::source::{Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 /// Number of bytes after which a new batch is cut.
 pub(crate) const BATCH_NUM_BYTES_LIMIT: u64 = 500_000u64;
@@ -52,7 +52,7 @@ pub struct FileSourceCounters {
 }
 
 pub struct FileSource {
-    source_id: String,
+    source_id: SourceId,
     params: FileSourceParams,
     counters: FileSourceCounters,
     reader: FileSourceReader,
@@ -113,7 +113,7 @@ impl Source for FileSource {
                 .await?;
         }
         if reached_eof {
-            info!("EOF");
+            info!("reached end of file");
             ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
@@ -121,7 +121,7 @@ impl Source for FileSource {
     }
 
     fn name(&self) -> String {
-        format!("FileSource{{source_id={}}}", self.source_id)
+        format!("{:?}", self)
     }
 
     fn observable_state(&self) -> serde_json::Value {
@@ -136,15 +136,15 @@ impl TypedSourceFactory for FileSourceFactory {
     type Source = FileSource;
     type Params = FileSourceParams;
 
-    // TODO handle checkpoint for files.
     async fn typed_create_source(
-        ctx: Arc<SourceRuntimeArgs>,
+        source_runtime: SourceRuntime,
         params: FileSourceParams,
-        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<FileSource> {
+        let checkpoint = source_runtime.fetch_checkpoint().await?;
         let mut offset = 0;
+
         let reader: FileSourceReader = if let Some(filepath) = &params.filepath {
-            let partition_id = PartitionId::from(filepath.to_string_lossy().to_string());
+            let partition_id = PartitionId::from(filepath.to_string_lossy().borrow());
             offset = checkpoint
                 .position_for_partition(&partition_id)
                 .map(|position| {
@@ -154,7 +154,7 @@ impl TypedSourceFactory for FileSourceFactory {
                 })
                 .unwrap_or(0);
             let (dir_uri, file_name) = dir_and_filename(filepath)?;
-            let storage = ctx.storage_resolver.resolve(&dir_uri).await?;
+            let storage = source_runtime.storage_resolver.resolve(&dir_uri).await?;
             let file_size = storage.file_num_bytes(file_name).await?.try_into().unwrap();
             // If it's a gzip file, we can't seek to a specific offset, we need to start from the
             // beginning of the file, decompress and skip the first `offset` bytes.
@@ -172,7 +172,7 @@ impl TypedSourceFactory for FileSourceFactory {
             FileSourceReader::new(Box::new(tokio::io::stdin()), 0)
         };
         let file_source = FileSource {
-            source_id: ctx.source_id().to_string(),
+            source_id: source_runtime.source_id().to_string(),
             counters: FileSourceCounters {
                 previous_offset: offset as u64,
                 current_offset: offset as u64,
@@ -239,17 +239,16 @@ pub(crate) fn dir_and_filename(filepath: &Path) -> anyhow::Result<(Uri, &Path)> 
 mod tests {
     use std::io::{Cursor, Write};
     use std::num::NonZeroUsize;
-    use std::path::PathBuf;
 
     use async_compression::tokio::write::GzipEncoder;
     use quickwit_actors::{Command, Universe};
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
-    use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
-    use quickwit_metastore::metastore_for_test;
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::types::IndexUid;
 
     use super::*;
     use crate::models::RawDocBatch;
+    use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::SourceActor;
 
     #[tokio::test]
@@ -274,19 +273,11 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        let metastore = metastore_for_test();
-        let file_source = FileSourceFactory::typed_create_source(
-            SourceRuntimeArgs::for_test(
-                IndexUid::new_with_random_ulid("test-index"),
-                source_config,
-                metastore,
-                PathBuf::from("./queues"),
-            ),
-            params,
-            SourceCheckpoint::default(),
-        )
-        .await
-        .unwrap();
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
+        let file_source = FileSourceFactory::typed_create_source(source_runtime, params)
+            .await
+            .unwrap();
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
             doc_processor_mailbox,
@@ -356,21 +347,13 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        let metastore = metastore_for_test();
-        let source = FileSourceFactory::typed_create_source(
-            SourceRuntimeArgs::for_test(
-                IndexUid::new_with_random_ulid("test-index"),
-                source_config,
-                metastore,
-                PathBuf::from("./queues"),
-            ),
-            params,
-            SourceCheckpoint::default(),
-        )
-        .await
-        .unwrap();
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
+        let file_source = FileSourceFactory::typed_create_source(source_runtime, params)
+            .await
+            .unwrap();
         let file_source_actor = SourceActor {
-            source: Box::new(source),
+            source: Box::new(file_source),
             doc_processor_mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
@@ -446,16 +429,6 @@ mod tests {
         temp_file.flush().unwrap();
 
         let params = FileSourceParams::file(&temp_file_path);
-        let mut checkpoint = SourceCheckpoint::default();
-        let partition_id = PartitionId::from(temp_file_path.to_string_lossy().to_string());
-        let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
-            partition_id,
-            Position::offset(0u64),
-            Position::offset(4u64),
-        )
-        .unwrap();
-        checkpoint.try_apply_delta(checkpoint_delta).unwrap();
-
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
@@ -464,21 +437,25 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        let metastore = metastore_for_test();
-        let source = FileSourceFactory::typed_create_source(
-            SourceRuntimeArgs::for_test(
-                IndexUid::new_with_random_ulid("test-index"),
-                source_config,
-                metastore,
-                PathBuf::from("./queues"),
-            ),
-            params,
-            checkpoint,
+        let partition_id = PartitionId::from(temp_file_path.to_string_lossy().borrow());
+        let source_checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
+            partition_id,
+            Position::Beginning,
+            Position::offset(4u64),
         )
-        .await
         .unwrap();
+
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+            .with_mock_metastore(Some(source_checkpoint_delta))
+            .with_queues_dir(temp_file_path)
+            .build();
+
+        let file_source = FileSourceFactory::typed_create_source(source_runtime, params)
+            .await
+            .unwrap();
         let file_source_actor = SourceActor {
-            source: Box::new(source),
+            source: Box::new(file_source),
             doc_processor_mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =

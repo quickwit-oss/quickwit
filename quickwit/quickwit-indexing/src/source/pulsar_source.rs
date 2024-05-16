@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::fmt;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
@@ -42,7 +42,7 @@ use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
 use crate::source::{
-    BatchBuilder, Source, SourceActor, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
+    BatchBuilder, Source, SourceActor, SourceContext, SourceRuntime, TypedSourceFactory,
     BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
 };
 
@@ -56,11 +56,10 @@ impl TypedSourceFactory for PulsarSourceFactory {
     type Params = PulsarSourceParams;
 
     async fn typed_create_source(
-        ctx: Arc<SourceRuntimeArgs>,
-        params: PulsarSourceParams,
-        checkpoint: SourceCheckpoint,
+        source_runtime: SourceRuntime,
+        source_params: PulsarSourceParams,
     ) -> anyhow::Result<Self::Source> {
-        PulsarSource::try_new(ctx, params, checkpoint).await
+        PulsarSource::try_new(source_runtime, source_params).await
     }
 }
 
@@ -78,36 +77,47 @@ pub struct PulsarSourceState {
 }
 
 pub struct PulsarSource {
-    ctx: Arc<SourceRuntimeArgs>,
+    source_runtime: SourceRuntime,
+    source_params: PulsarSourceParams,
     pulsar_consumer: PulsarConsumer,
-    params: PulsarSourceParams,
     subscription_name: String,
     current_positions: BTreeMap<PartitionId, Position>,
     state: PulsarSourceState,
 }
 
+impl fmt::Debug for PulsarSource {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("PulsarSource")
+            .field("index_uid", self.source_runtime.index_uid())
+            .field("source_id", &self.source_runtime.source_id())
+            .field("subscription_name", &self.subscription_name)
+            .field("topics", &self.source_params.topics.join(", "))
+            .finish()
+    }
+}
+
 impl PulsarSource {
     pub async fn try_new(
-        ctx: Arc<SourceRuntimeArgs>,
-        params: PulsarSourceParams,
-        checkpoint: SourceCheckpoint,
+        source_runtime: SourceRuntime,
+        source_params: PulsarSourceParams,
     ) -> anyhow::Result<Self> {
-        let subscription_name = subscription_name(ctx.index_uid(), ctx.source_id());
+        let subscription_name =
+            subscription_name(source_runtime.index_uid(), source_runtime.source_id());
         info!(
-            index_id=%ctx.index_id(),
-            source_id=%ctx.source_id(),
-            topics=?params.topics,
+            index_id=%source_runtime.index_id(),
+            source_id=%source_runtime.source_id(),
+            topics=?source_params.topics,
             subscription_name=%subscription_name,
             "Create Pulsar source."
         );
-
-        let pulsar = connect_pulsar(&params).await?;
+        let pulsar = connect_pulsar(&source_params).await?;
+        let checkpoint = source_runtime.fetch_checkpoint().await?;
 
         // Current positions are built mapping the topic ID to the last-saved
         // message ID, pulsar ensures these topics (and topic partitions) are
         // unique so that we don't inadvertently clash.
         let mut current_positions = BTreeMap::new();
-        for topic in params.topics.iter() {
+        for topic in source_params.topics.iter() {
             let partitions = pulsar.lookup_partitioned_topic(topic).await?;
 
             for (partition, _) in partitions {
@@ -119,18 +129,17 @@ impl PulsarSource {
                 }
             }
         }
-
         let pulsar_consumer = create_pulsar_consumer(
             subscription_name.clone(),
-            params.clone(),
+            source_params.clone(),
             pulsar,
             current_positions.clone(),
         )
         .await?;
 
         Ok(Self {
-            ctx,
-            params,
+            source_runtime,
+            source_params,
             pulsar_consumer,
             subscription_name,
             current_positions,
@@ -262,16 +271,16 @@ impl Source for PulsarSource {
     }
 
     fn name(&self) -> String {
-        format!("PulsarSource{{source_id={}}}", self.ctx.source_id())
+        format!("{:?}", self)
     }
 
     fn observable_state(&self) -> JsonValue {
         json!({
-            "index_id": self.ctx.index_id(),
-            "source_id": self.ctx.source_id(),
-            "topics": self.params.topics,
+            "index_id": self.source_runtime.index_id(),
+            "source_id": self.source_runtime.source_id(),
+            "topics": self.source_params.topics,
             "subscription_name": self.subscription_name,
-            "consumer_name": self.params.consumer_name,
+            "consumer_name": self.source_params.consumer_name,
             "num_bytes_processed": self.state.num_bytes_processed,
             "num_messages_processed": self.state.num_messages_processed,
             "num_invalid_messages": self.state.num_invalid_messages,
@@ -432,7 +441,6 @@ mod pulsar_broker_tests {
     use std::collections::HashSet;
     use std::num::NonZeroUsize;
     use std::ops::Range;
-    use std::path::PathBuf;
 
     use futures::future::join_all;
     use quickwit_actors::{ActorHandle, Inbox, Universe, HEARTBEAT};
@@ -453,6 +461,7 @@ mod pulsar_broker_tests {
     use super::*;
     use crate::new_split_id;
     use crate::source::pulsar_source::{msg_id_from_position, msg_id_to_position};
+    use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::{quickwit_supported_sources, RawDocBatch, SuggestTruncate};
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
@@ -696,21 +705,14 @@ mod pulsar_broker_tests {
 
     async fn create_source(
         universe: &Universe,
-        metastore: MetastoreServiceClient,
+        _metastore: MetastoreServiceClient,
         index_uid: IndexUid,
         source_config: SourceConfig,
-        start_checkpoint: SourceCheckpoint,
+        _start_checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<(ActorHandle<SourceActor>, Inbox<DocProcessor>)> {
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            PathBuf::from("./queues"),
-        );
-
         let source_loader = quickwit_supported_sources();
-        let source = source_loader.load_source(ctx, start_checkpoint).await?;
-
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
+        let source = source_loader.load_source(source_runtime).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_actor = SourceActor {
             source,
@@ -812,7 +814,6 @@ mod pulsar_broker_tests {
 
     #[tokio::test]
     async fn test_doc_batching_logic() {
-        let metastore = metastore_for_test();
         let topic = append_random_suffix("test-pulsar-source-topic");
 
         let index_id = append_random_suffix("test-pulsar-source-index");
@@ -824,15 +825,8 @@ mod pulsar_broker_tests {
             unreachable!()
         };
 
-        let ctx = SourceRuntimeArgs::for_test(
-            index_uid,
-            source_config,
-            metastore,
-            PathBuf::from("./queues"),
-        );
-        let start_checkpoint = SourceCheckpoint::default();
-
-        let mut pulsar_source = PulsarSource::try_new(ctx, params, start_checkpoint)
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
+        let mut pulsar_source = PulsarSource::try_new(source_runtime, params)
             .await
             .expect("Setup pulsar source");
 

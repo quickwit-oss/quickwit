@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::fmt::Formatter;
 use std::time::Duration;
@@ -48,8 +48,8 @@ use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
     DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
-    IndexTemplateMatch, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
-    ToggleSourceRequest,
+    IndexMetadataResponse, IndexTemplateMatch, MetastoreError, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, ToggleSourceRequest, UpdateIndexRequest,
 };
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::Serialize;
@@ -344,33 +344,30 @@ impl ControlPlane {
             })
             .unwrap_or_default();
 
-        let shard_table: Vec<JsonValue> = self
-            .model
-            .all_shards_with_source()
-            .map(|(source, shards)| {
-                let shards: Vec<JsonValue> = shards
-                    .map(|shard| {
-                        json!({
-                            "shard_id": shard.shard_id.clone(),
-                            "shard_state": shard.shard_state().as_json_str_name(),
-                            "leader_id": shard.leader_id.clone(),
-                            "follower_id": shard.follower_id.clone(),
-                            "publish_position_inclusive": shard.publish_position_inclusive(),
-                        })
-                    })
-                    .collect();
+        let mut per_index_shards_json: HashMap<IndexUid, Vec<JsonValue>> = HashMap::new();
 
+        for (source_uid, shard_entries) in self.model.all_shards_with_source() {
+            let index_uid = source_uid.index_uid.clone();
+            let source_id = source_uid.source_id.clone();
+            let shards_json = shard_entries.map(|shard_entry| {
                 json!({
-                    "index_uid": source.index_uid.clone(),
-                    "source_id": source.source_id.clone(),
-                    "shards": shards,
+                    "index_uid": index_uid,
+                    "source_id": source_id,
+                    "shard_id": shard_entry.shard_id.clone(),
+                    "shard_state": shard_entry.shard_state().as_json_str_name(),
+                    "leader_id": shard_entry.leader_id.clone(),
+                    "follower_id": shard_entry.follower_id.clone(),
+                    "publish_position_inclusive": shard_entry.publish_position_inclusive(),
                 })
-            })
-            .collect();
-
+            });
+            per_index_shards_json
+                .entry(index_uid.clone())
+                .or_default()
+                .extend(shards_json);
+        }
         json!({
             "physical_indexing_plan": physical_indexing_plan,
-            "shard_table": shard_table,
+            "shard_table": per_index_shards_json,
         })
     }
 
@@ -570,8 +567,36 @@ impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
         } else {
             reply(Ok(response));
         }
-
         Ok(())
+    }
+}
+
+// This handler is a metastore call proxied through the control plane: we must first forward the
+// request to the metastore, and then act on the event.
+#[async_trait]
+impl Handler<UpdateIndexRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<IndexMetadataResponse>;
+
+    async fn handle(
+        &mut self,
+        request: UpdateIndexRequest,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let index_uid: IndexUid = request.index_uid().clone();
+        debug!(%index_uid, "updating index");
+
+        let response = match ctx
+            .protect_future(self.metastore.update_index(request))
+            .await
+        {
+            Ok(response) => response,
+            Err(metastore_error) => {
+                return convert_metastore_error(metastore_error);
+            }
+        };
+        // TODO: Handle doc mapping and/or indexing settings update here.
+        info!(%index_uid, "updated index");
+        Ok(Ok(response))
     }
 }
 
@@ -681,9 +706,9 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         };
         info!(%index_uid, source_id, enabled=enable, "toggled source");
 
-        let mutation_occured = self.model.toggle_source(&index_uid, &source_id, enable)?;
+        let mutation_occurred = self.model.toggle_source(&index_uid, &source_id, enable)?;
 
-        if mutation_occured {
+        if mutation_occurred {
             let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         }
         Ok(Ok(EmptyResponse {}))
@@ -1020,9 +1045,10 @@ mod tests {
     };
     use quickwit_proto::ingest::{Shard, ShardPKey, ShardState};
     use quickwit_proto::metastore::{
-        EntityKind, FindIndexTemplateMatchesResponse, ListIndexesMetadataRequest,
-        ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
-        MetastoreError, MockMetastoreService, OpenShardSubresponse, OpenShardsResponse, SourceType,
+        DeleteShardsResponse, EntityKind, FindIndexTemplateMatchesResponse,
+        ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest,
+        ListShardsResponse, ListShardsSubresponse, MetastoreError, MockMetastoreService,
+        OpenShardSubresponse, OpenShardsResponse, SourceType,
     };
     use quickwit_proto::types::Position;
     use tokio::sync::Mutex;
@@ -1556,7 +1582,14 @@ mod tests {
                 assert_eq!(delete_shards_request.source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(delete_shards_request.shard_ids, [ShardId::from(17)]);
                 assert!(!delete_shards_request.force);
-                Ok(EmptyResponse {})
+
+                let response = DeleteShardsResponse {
+                    index_uid: delete_shards_request.index_uid,
+                    source_id: delete_shards_request.source_id,
+                    successes: delete_shards_request.shard_ids,
+                    failures: Vec::new(),
+                };
+                Ok(response)
             },
         );
 
@@ -1623,7 +1656,8 @@ mod tests {
         assert_eq!(indexing_tasks[0].shard_ids, [ShardId::from(17)]);
 
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        let shard = &control_plane_debug_info["shard_table"][0]["shards"][0];
+        let shard =
+            &control_plane_debug_info["shard_table"]["test-index-0:00000000000000000000000000"][0];
         assert_eq!(shard["shard_id"], "00000000000000000017");
         assert_eq!(shard["publish_position_inclusive"], "00000000000000001000");
 
@@ -1678,23 +1712,23 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let mut mock_metastore = MockMetastoreService::new();
 
-        let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
-        let mut source = SourceConfig::ingest_v2();
-        source.enabled = true;
-        index_0.add_source(source.clone()).unwrap();
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let mut source_config = SourceConfig::ingest_v2();
+        source_config.enabled = true;
+        index_metadata.add_source(source_config.clone()).unwrap();
 
-        let index_0_clone = index_0.clone();
+        let index_metadata_clone = index_metadata.clone();
         mock_metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
                 Ok(ListIndexesMetadataResponse::for_test(vec![
-                    index_0_clone.clone()
+                    index_metadata_clone,
                 ]))
             },
         );
 
         let mut shard = Shard {
-            index_uid: Some(index_0.index_uid.clone()),
+            index_uid: Some(index_metadata.index_uid.clone()),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
             shard_id: Some(ShardId::from(17)),
             leader_id: "test_node".to_string(),
@@ -1703,7 +1737,7 @@ mod tests {
         };
         shard.set_shard_state(ShardState::Open);
 
-        let index_uid_clone = index_0.index_uid.clone();
+        let index_uid_clone = index_metadata.index_uid.clone();
         mock_metastore.expect_list_shards().return_once(
             move |_list_shards_request: ListShardsRequest| {
                 let list_shards_resp = ListShardsResponse {
@@ -1729,7 +1763,8 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
         );
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        let shard = &control_plane_debug_info["shard_table"][0]["shards"][0];
+        let shard =
+            &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"][0];
         assert_eq!(shard["shard_id"], "00000000000000000017");
         assert_eq!(shard["publish_position_inclusive"], "00000000000000001234");
 
@@ -1776,7 +1811,14 @@ mod tests {
                 assert_eq!(delete_shards_request.source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(delete_shards_request.shard_ids, [ShardId::from(17)]);
                 assert!(!delete_shards_request.force);
-                Ok(EmptyResponse {})
+
+                let response = DeleteShardsResponse {
+                    index_uid: delete_shards_request.index_uid,
+                    source_id: delete_shards_request.source_id,
+                    successes: delete_shards_request.shard_ids,
+                    failures: Vec::new(),
+                };
+                Ok(response)
             },
         );
 
@@ -2350,7 +2392,9 @@ mod tests {
         control_plane_mailbox.ask(callback).await.unwrap();
 
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        let shard = &control_plane_debug_info["shard_table"][0]["shards"][0];
+        println!("{:?}", control_plane_debug_info);
+        let shard =
+            &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"][0];
         assert_eq!(shard["shard_id"], "00000000000000000000");
         assert_eq!(shard["shard_state"], "closed");
 
@@ -2486,14 +2530,10 @@ mod tests {
             control_plane_debug_info["physical_indexing_plan"][0]["node_id"],
             "test-ingester"
         );
-        let shard_table_entry = &control_plane_debug_info["shard_table"][0];
-        assert_eq!(
-            shard_table_entry["index_uid"],
-            "test-index:00000000000000000000000000"
-        );
-        assert_eq!(shard_table_entry["source_id"], INGEST_V2_SOURCE_ID);
-
-        let shard = &shard_table_entry["shards"][0];
+        let shard =
+            &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"][0];
+        assert_eq!(shard["index_uid"], "test-index:00000000000000000000000000");
+        assert_eq!(shard["source_id"], INGEST_V2_SOURCE_ID);
         assert_eq!(shard["shard_id"], "00000000000000000000");
         assert_eq!(shard["shard_state"], "open");
         assert_eq!(shard["leader_id"], "test-ingester");

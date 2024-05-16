@@ -3,6 +3,10 @@ locals {
 
   quickwit_common_environment = [
     {
+      name  = "QW_ENABLED_SERVICES"
+      value = var.service_name
+    },
+    {
       name  = "QW_PEER_SEEDS"
       value = join(",", var.quickwit_peer_list)
     },

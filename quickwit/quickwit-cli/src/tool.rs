@@ -40,9 +40,7 @@ use quickwit_config::{
     VecSourceParams, CLI_SOURCE_ID,
 };
 use quickwit_index_management::{clear_cache_directory, IndexService};
-use quickwit_indexing::actors::{
-    IndexingService, MergePipeline, MergePipelineId, MergeSchedulerService,
-};
+use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
@@ -52,7 +50,7 @@ use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{CountHits, SearchResponse};
-use quickwit_proto::types::{NodeId, PipelineUid};
+use quickwit_proto::types::{IndexId, PipelineUid, SourceId, SplitId};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_serve::{
     search_request_from_api_request, BodyFormat, SearchRequestQueryString, SortBy,
@@ -174,7 +172,7 @@ pub fn build_tool_command() -> Command {
 #[derive(Debug, Eq, PartialEq)]
 pub struct LocalIngestDocsArgs {
     pub config_uri: Uri,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub input_path_opt: Option<PathBuf>,
     pub input_format: SourceInputFormat,
     pub overwrite: bool,
@@ -185,7 +183,7 @@ pub struct LocalIngestDocsArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct LocalSearchArgs {
     pub config_uri: Uri,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub query: String,
     pub aggregation: Option<String>,
     pub max_hits: usize,
@@ -200,7 +198,7 @@ pub struct LocalSearchArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct GarbageCollectIndexArgs {
     pub config_uri: Uri,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub grace_period: Duration,
     pub dry_run: bool,
 }
@@ -208,15 +206,15 @@ pub struct GarbageCollectIndexArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct MergeArgs {
     pub config_uri: Uri,
-    pub index_id: String,
-    pub source_id: String,
+    pub index_id: IndexId,
+    pub source_id: SourceId,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ExtractSplitArgs {
     pub config_uri: Uri,
-    pub index_id: String,
-    pub split_id: String,
+    pub index_id: IndexId,
+    pub split_id: SplitId,
     pub target_dir: PathBuf,
 }
 
@@ -479,7 +477,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .await?;
     let merge_pipeline_handle = indexing_server_mailbox
         .ask_for_res(DetachMergePipeline {
-            pipeline_id: MergePipelineId::from(&pipeline_id),
+            pipeline_id: pipeline_id.merge_pipeline_id(),
         })
         .await?;
     let indexing_pipeline_handle = indexing_server_mailbox
@@ -618,7 +616,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         .await?;
     let pipeline_handle: ActorHandle<MergePipeline> = indexing_service_mailbox
         .ask_for_res(DetachMergePipeline {
-            pipeline_id: MergePipelineId::from(&pipeline_id),
+            pipeline_id: pipeline_id.merge_pipeline_id(),
         })
         .await?;
 
@@ -931,9 +929,8 @@ impl ThroughputCalculator {
 }
 
 async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
-    let node_id: NodeId = config.node_id.clone().into();
     let self_node = ClusterMember {
-        node_id,
+        node_id: config.node_id.clone(),
         generation_id: quickwit_cluster::GenerationId::now(),
         is_ready: false,
         enabled_services: HashSet::new(),

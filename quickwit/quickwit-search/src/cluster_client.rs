@@ -95,11 +95,11 @@ impl ClusterClient {
         let mut response_res = client.leaf_search(request.clone()).await;
         let retry_policy = LeafSearchRetryPolicy {};
         if let Some(retry_request) = retry_policy.retry_request(request, &response_res) {
-            assert!(!retry_request.split_offsets.is_empty());
+            assert!(!retry_request.leaf_requests.is_empty());
             client = retry_client(
                 &self.search_job_placer,
                 client.grpc_addr(),
-                &retry_request.split_offsets[0].split_id,
+                &retry_request.leaf_requests[0].split_offsets[0].split_id,
             )
             .await?;
             debug!(
@@ -351,8 +351,8 @@ mod tests {
     use std::net::SocketAddr;
 
     use quickwit_proto::search::{
-        PartialHit, SearchRequest, SearchStreamRequest, SortValue, SplitIdAndFooterOffsets,
-        SplitSearchError,
+        LeafRequestRef, PartialHit, SearchRequest, SearchStreamRequest, SortValue,
+        SplitIdAndFooterOffsets, SplitSearchError,
     };
     use quickwit_query::query_ast::qast_json_helper;
 
@@ -394,24 +394,28 @@ mod tests {
         };
         LeafSearchRequest {
             search_request: Some(search_request),
-            doc_mapper: "doc_mapper".to_string(),
-            index_uri: "uri".to_string(),
-            split_offsets: vec![
-                SplitIdAndFooterOffsets {
-                    split_id: "split_1".to_string(),
-                    split_footer_start: 0,
-                    split_footer_end: 100,
-                    timestamp_start: None,
-                    timestamp_end: None,
-                },
-                SplitIdAndFooterOffsets {
-                    split_id: "split_2".to_string(),
-                    split_footer_start: 0,
-                    split_footer_end: 100,
-                    timestamp_start: None,
-                    timestamp_end: None,
-                },
-            ],
+            doc_mappers: vec!["doc_mapper".to_string()],
+            index_uris: vec!["uri".to_string()],
+            leaf_requests: vec![LeafRequestRef {
+                index_uri_ord: 0,
+                doc_mapper_ord: 0,
+                split_offsets: vec![
+                    SplitIdAndFooterOffsets {
+                        split_id: "split_1".to_string(),
+                        split_footer_start: 0,
+                        split_footer_end: 100,
+                        timestamp_start: None,
+                        timestamp_end: None,
+                    },
+                    SplitIdAndFooterOffsets {
+                        split_id: "split_2".to_string(),
+                        split_footer_start: 0,
+                        split_footer_end: 100,
+                        timestamp_start: None,
+                        timestamp_end: None,
+                    },
+                ],
+            }],
         }
     }
 
@@ -555,7 +559,7 @@ mod tests {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
             .expect_leaf_search()
-            .withf(|request| request.split_offsets[0].split_id == "split_1")
+            .withf(|request| request.leaf_requests[0].split_offsets[0].split_id == "split_1")
             .return_once(|_: LeafSearchRequest| {
                 Ok(LeafSearchResponse {
                     num_hits: 1,
@@ -570,7 +574,7 @@ mod tests {
             });
         mock_search_service
             .expect_leaf_search()
-            .withf(|request| request.split_offsets[0].split_id == "split_2")
+            .withf(|request| request.leaf_requests[0].split_offsets[0].split_id == "split_2")
             .return_once(|_: LeafSearchRequest| {
                 Ok(LeafSearchResponse {
                     num_hits: 1,

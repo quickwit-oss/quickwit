@@ -27,7 +27,6 @@ use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
-use hyper::http::StatusCode;
 
 use crate::{StorageError, StorageErrorKind};
 
@@ -47,10 +46,9 @@ where E: std::error::Error + ToStorageErrorKind + Send + Sync + 'static
                 }
             }
             SdkError::ResponseError(response_error) => {
-                let response = response_error.raw().http();
-                match response.status() {
-                    StatusCode::NOT_FOUND => StorageErrorKind::NotFound,
-                    StatusCode::UNAUTHORIZED => StorageErrorKind::Unauthorized,
+                match response_error.raw().status().as_u16() {
+                    404 /* NOT_FOUND */ => StorageErrorKind::NotFound,
+                    403 /* UNAUTHORIZED */ => StorageErrorKind::Unauthorized,
                     _ => StorageErrorKind::Internal,
                 }
             }
@@ -72,7 +70,6 @@ impl ToStorageErrorKind for GetObjectError {
         match self {
             GetObjectError::InvalidObjectState(_) => StorageErrorKind::Service,
             GetObjectError::NoSuchKey(_) => StorageErrorKind::NotFound,
-            GetObjectError::Unhandled(_) => StorageErrorKind::Service,
             _ => StorageErrorKind::Service,
         }
     }
@@ -106,7 +103,6 @@ impl ToStorageErrorKind for AbortMultipartUploadError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
         match self {
             AbortMultipartUploadError::NoSuchUpload(_) => StorageErrorKind::Internal,
-            AbortMultipartUploadError::Unhandled(_) => StorageErrorKind::Service,
             _ => StorageErrorKind::Service,
         }
     }
@@ -128,7 +124,6 @@ impl ToStorageErrorKind for HeadObjectError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
         match self {
             HeadObjectError::NotFound(_) => StorageErrorKind::NotFound,
-            HeadObjectError::Unhandled(_) => StorageErrorKind::Service,
             _ => StorageErrorKind::Service,
         }
     }

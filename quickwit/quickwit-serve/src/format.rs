@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
+
 use hyper::header::CONTENT_TYPE;
 use quickwit_config::ConfigFormat;
 use serde::{self, Deserialize, Serialize, Serializer};
@@ -55,11 +57,11 @@ impl BodyFormat {
     }
 }
 
-impl ToString for BodyFormat {
-    fn to_string(&self) -> String {
+impl fmt::Display for BodyFormat {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match &self {
-            Self::Json => "json".to_string(),
-            Self::PrettyJson => "pretty_json".to_string(),
+            Self::Json => write!(formatter, "json"),
+            Self::PrettyJson => write!(formatter, "pretty_json"),
         }
     }
 }
