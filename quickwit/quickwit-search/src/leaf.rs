@@ -860,7 +860,7 @@ pub async fn multi_leaf_search(
 
     for leaf_search_request_ref in leaf_search_request.leaf_requests.into_iter() {
         let index_uri = quickwit_common::uri::Uri::from_str(
-            &leaf_search_request
+            leaf_search_request
                 .index_uris
                 .get(leaf_search_request_ref.index_uri_ord as usize)
                 .ok_or_else(|| {
