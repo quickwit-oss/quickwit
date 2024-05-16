@@ -119,11 +119,11 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
     {
         let item_opt = self.lru_cache.get_mut(cache_key);
         if let Some(item) = item_opt {
-            self.cache_counters.hits_num_items.inc();
-            self.cache_counters.hits_num_bytes.inc_by(item.len() as u64);
+            self.cache_counters.hits_num_items.with_label_values([]).inc();
+            self.cache_counters.hits_num_bytes.with_label_values([]).inc_by(item.len() as u64);
             Some(item.payload())
         } else {
-            self.cache_counters.misses_num_items.inc();
+            self.cache_counters.misses_num_items.with_label_values([]).inc();
             None
         }
     }

@@ -86,7 +86,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         } else if let Some((k, v)) = self.merge_ranges(&key, byte_range.end) {
             (k, v)
         } else {
-            self.cache_counters.misses_num_items.inc();
+            self.cache_counters.misses_num_items.with_label_values([]).inc();
             return None;
         };
 
@@ -94,9 +94,10 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         let end = byte_range.end - k.range_start;
         let result = v.bytes.slice(start..end);
 
-        self.cache_counters.hits_num_items.inc();
+        self.cache_counters.hits_num_items.with_label_values([]).inc();
         self.cache_counters
             .hits_num_bytes
+            .with_label_values([])
             .inc_by((end - start) as u64);
 
         Some(result)
