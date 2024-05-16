@@ -156,9 +156,3 @@ impl From<std::convert::Infallible> for SearchError {
         match infallible {}
     }
 }
-
-#[derive(Debug)]
-pub struct NodeSearchError {
-    pub search_error: SearchError,
-    pub split_ids: Vec<String>,
-}
