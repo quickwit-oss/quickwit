@@ -40,6 +40,7 @@ export function QueryEditor(props: SearchComponentProps) {
   const runSearchRef = useRef(props.runSearch);
   const searchRequestRef = useRef(props.searchRequest);
   const defaultValue = props.searchRequest.query === null ? `// Select an index and type your query. Example: field_name:"phrase query"` : props.searchRequest.query;
+  let resize: () => void;
 
   /* eslint-disable  @typescript-eslint/no-explicit-any */
   function handleEditorDidMount(editor: any, monaco: any) {
@@ -55,10 +56,14 @@ export function QueryEditor(props: SearchComponentProps) {
         runSearchRef.current(searchRequestRef.current);
       },
     })
-    const resize = () => {
+    resize = () => {
       editor.layout({width: Math.max(window.innerWidth - (260+180+2*24), 200), height: 84});
     }
     window.addEventListener('resize', resize);
+  }
+
+  function handleEditorWillUnmount() {
+    window.removeEventListener('resize', resize);
   }
 
   useEffect(() => {
@@ -102,6 +107,7 @@ export function QueryEditor(props: SearchComponentProps) {
       <MonacoEditor
         editorWillMount={handleEditorWillMount}
         editorDidMount={handleEditorDidMount}
+        editorWillUnmount={handleEditorWillUnmount}
         onChange={handleEditorChange}
         language={languageId}
         value={defaultValue}
