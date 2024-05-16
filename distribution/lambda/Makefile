@@ -61,10 +61,10 @@ bootstrap:
 	cdk bootstrap aws://$$CDK_ACCOUNT/$$CDK_REGION
 
 deploy-hdfs: package check-env
-	cdk deploy -a cdk/app.py HdfsStack
+	cdk deploy --require-approval never -a cdk/app.py HdfsStack
 
 deploy-mock-data: package check-env
-	cdk deploy -a cdk/app.py MockDataStack
+	cdk deploy  --require-approval never -a cdk/app.py MockDataStack
 
 print-mock-data-metastore: check-env
 	python -c 'from cdk import cli; cli.print_mock_data_metastore()'
@@ -77,11 +77,11 @@ before-destroy:
 
 destroy-hdfs: before-destroy check-env
 	python -c 'from cdk import cli; cli.empty_hdfs_bucket()'
-	cdk destroy  --force -a cdk/app.py HdfsStack
+	cdk destroy --force -a cdk/app.py HdfsStack
 
 destroy-mock-data: before-destroy check-env
 	python -c 'from cdk import cli; cli.empty_mock_data_buckets()'
-	cdk destroy  --force -a cdk/app.py MockDataStack
+	cdk destroy --force -a cdk/app.py MockDataStack
 
 clean:
 	rm -rf cdk.out
