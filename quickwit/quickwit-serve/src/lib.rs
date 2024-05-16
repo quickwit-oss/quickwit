@@ -143,17 +143,10 @@ pub fn do_nothing_env_filter_reload_fn() -> EnvFilterReloadFn {
 }
 
 fn get_metastore_client_max_concurrency() -> usize {
-    std::env::var(METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY).ok()
-        .and_then(|metastore_client_max_concurrency_str| {
-            if let Ok(metastore_client_max_concurrency) = metastore_client_max_concurrency_str.parse::<usize>() {
-                info!("overriding max concurrent metastore requests to {metastore_client_max_concurrency}");
-                Some(metastore_client_max_concurrency)
-            } else {
-                error!("failed to parse environment variable `{METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY}={metastore_client_max_concurrency_str}`");
-                None
-            }
-        })
-        .unwrap_or(DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY)
+    quickwit_common::get_from_env(
+        METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY,
+        DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY,
+    )
 }
 
 static CP_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
