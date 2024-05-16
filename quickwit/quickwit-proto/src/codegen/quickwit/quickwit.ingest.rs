@@ -61,6 +61,10 @@ pub struct Shard {
     #[prost(string, optional, tag = "10")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish_token: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "11")]
+    pub doc_mapping_uid: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "12")]
+    pub doc_mapping_json: ::prost::alloc::vec::Vec<u8>,
 }
 /// A group of shards belonging to the same index and source.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

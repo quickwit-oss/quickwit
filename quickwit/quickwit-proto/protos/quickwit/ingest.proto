@@ -93,6 +93,9 @@ message Shard {
   // A publish token that ensures only one indexer works on a given shard at a time.
   // For instance, if an indexer goes rogue, eventually the control plane will detect it and assign the shard to another indexer, which will override the publish token.
   optional string publish_token = 10;
+
+  string doc_mapping_uid = 11;
+  bytes doc_mapping_json = 12;
 }
 
 // A group of shards belonging to the same index and source.

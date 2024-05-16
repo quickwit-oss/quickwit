@@ -92,6 +92,16 @@ impl IngestWorkbench {
             .all(|subworbench| !subworbench.is_pending())
     }
 
+    pub fn pending_subworbenches(&self) -> impl Iterator<Item = &IngestSubworkbench> {
+        self.subworkbenches.values().filter_map(|subworbench| {
+            if subworbench.is_pending() {
+                Some(subworbench)
+            } else {
+                None
+            }
+        })
+    }
+
     #[cfg(not(test))]
     pub fn pending_subrequests(&self) -> impl Iterator<Item = &IngestSubrequest> {
         self.subworkbenches.values().filter_map(|subworbench| {
@@ -301,6 +311,7 @@ impl SubworkbenchFailure {
 #[derive(Debug, Default)]
 pub(super) struct IngestSubworkbench {
     pub subrequest: IngestSubrequest,
+    pub doc_mapping_uid_opt: Option<String>,
     pub persist_success_opt: Option<PersistSuccess>,
     pub last_failure_opt: Option<SubworkbenchFailure>,
     /// The number of persist attempts for this subrequest.

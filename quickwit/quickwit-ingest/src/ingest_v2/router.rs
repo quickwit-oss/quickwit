@@ -28,6 +28,7 @@ use futures::{Future, StreamExt};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::{rate_limited_error, rate_limited_warn};
+use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsSubrequest,
@@ -35,13 +36,14 @@ use quickwit_proto::control_plane::{
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
     IngesterService, PersistFailureReason, PersistRequest, PersistResponse, PersistSubrequest,
+    PersistSuccess,
 };
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestResponseV2, IngestRouterService};
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::{Mutex, Semaphore};
-use tracing::info;
+use tracing::{info, warn};
 
 use super::broadcast::LocalShardsUpdate;
 use super::debouncing::{
@@ -88,6 +90,7 @@ pub struct IngestRouter {
 struct RouterState {
     // Debounces `GetOrCreateOpenShardsRequest` requests to the control plane.
     debouncer: GetOrCreateOpenShardsRequestDebouncer,
+    doc_mappers: HashMap<ShardId, Arc<dyn DocMapper>>,
     // Holds the routing table mapping index and source IDs to shards.
     routing_table: RoutingTable,
 }
@@ -110,6 +113,7 @@ impl IngestRouter {
     ) -> Self {
         let state = Arc::new(Mutex::new(RouterState {
             debouncer: GetOrCreateOpenShardsRequestDebouncer::default(),
+            doc_mappers: HashMap::default(),
             routing_table: RoutingTable {
                 self_node_id: self_node_id.clone(),
                 table: HashMap::default(),
@@ -352,7 +356,9 @@ impl IngestRouter {
         // lines, validate, transform and then pack the docs into compressed batches routed
         // to the right shards.
 
-        for subrequest in workbench.pending_subrequests() {
+        for subworkbench in workbench.pending_subworbenches() {
+            let subrequest = &subworkbench.subrequest;
+
             let Some(shard) = state_guard
                 .routing_table
                 .find_entry(&subrequest.index_id, &subrequest.source_id)
@@ -361,12 +367,40 @@ impl IngestRouter {
                 no_shards_available_subrequest_ids.push(subrequest.subrequest_id);
                 continue;
             };
+            let doc_batch = match &subrequest.doc_batch {
+                Some(doc_batch) if !doc_batch.is_empty() => doc_batch,
+                _ => {
+                    warn!("received empty ingest request");
+
+                    let persist_success = PersistSuccess {
+                        subrequest_id: subrequest.subrequest_id,
+                        ..Default::default()
+                    };
+                    workbench.record_persist_success(persist_success);
+                    continue;
+                }
+            };
+            match subworkbench.doc_mapping_uid_opt {
+                Some(doc_mapping_uid) if shard.doc_mapping_uid == doc_mapping_uid => {}
+                _ => {
+                    subworkbench.doc_mapping_uid_opt = Some(shard.doc_mapping_uid());
+
+                    let Some(doc_mapper) = state_guard.doc_mappers.get(&shard.shard_id) else {
+                        subworkbench.record_doc_mapping_not_found();
+                        continue;
+                    };
+                    if let Err(failure) = parse_doc_batch() {
+                        subworkbench.record_doc_mapping_failure(failure);
+                        continue;
+                    }
+                }
+            };
             let persist_subrequest = PersistSubrequest {
                 subrequest_id: subrequest.subrequest_id,
                 index_uid: shard.index_uid.clone().into(),
                 source_id: shard.source_id.clone(),
                 shard_id: Some(shard.shard_id.clone()),
-                doc_batch: subrequest.doc_batch.clone(),
+                doc_batch: Some(doc_batch),
             };
             per_leader_persist_subrequests
                 .entry(&shard.leader_id)

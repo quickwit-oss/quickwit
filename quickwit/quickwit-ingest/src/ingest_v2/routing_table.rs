@@ -22,8 +22,14 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use quickwit_proto::ingest::{Shard, ShardIds, ShardState};
+<<<<<<< Updated upstream
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId};
 use serde_json::{json, Value as JsonValue};
+||||||| Stash base
+use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId};
+=======
+use quickwit_proto::types::{DocMappingUid, IndexId, IndexUid, NodeId, ShardId, SourceId};
+>>>>>>> Stashed changes
 use tracing::{info, warn};
 
 use crate::IngesterPool;
@@ -35,18 +41,21 @@ pub(super) struct RoutingEntry {
     pub shard_id: ShardId,
     pub shard_state: ShardState,
     pub leader_id: NodeId,
+    pub doc_mapping_uid: DocMappingUid,
 }
 
 impl From<Shard> for RoutingEntry {
     fn from(shard: Shard) -> Self {
         let shard_id = shard.shard_id().clone();
         let shard_state = shard.shard_state();
+
         Self {
             index_uid: shard.index_uid().clone(),
             source_id: shard.source_id,
             shard_id,
             shard_state,
             leader_id: shard.leader_id.into(),
+            doc_mapping_uid: DocMappingUid::new(), // FIXME
         }
     }
 }
@@ -204,6 +213,7 @@ impl RoutingTableEntry {
                 shard_id: shard_id.clone(),
                 shard_state: ShardState::Open,
                 leader_id: leader_id.clone(),
+                doc_mapping_uid: DocMappingUid::new(), // FIXME
             }));
             num_inserted_shards = target_shards.len();
         } else {
@@ -225,6 +235,7 @@ impl RoutingTableEntry {
                         shard_id: shard_id.clone(),
                         shard_state: ShardState::Open,
                         leader_id: leader_id.clone(),
+                        doc_mapping_uid: DocMappingUid::new(), // FIXME
                     });
                     num_inserted_shards += 1;
                 }
@@ -586,6 +597,7 @@ mod tests {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-0".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -593,6 +605,7 @@ mod tests {
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
             ],
             local_round_robin_idx: AtomicUsize::default(),
@@ -622,6 +635,7 @@ mod tests {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-1".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -629,6 +643,7 @@ mod tests {
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-2".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -636,6 +651,7 @@ mod tests {
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
             ],
             remote_round_robin_idx: AtomicUsize::default(),
@@ -674,6 +690,7 @@ mod tests {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-0".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -681,6 +698,7 @@ mod tests {
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -688,6 +706,7 @@ mod tests {
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
             ],
             local_round_robin_idx: AtomicUsize::default(),
@@ -718,6 +737,7 @@ mod tests {
                 shard_id: ShardId::from(1),
                 shard_state: ShardState::Closed,
                 leader_id: "test-ingester-0".into(),
+                doc_mapping_uid: DocMappingUid::new(),
             }],
             local_round_robin_idx: AtomicUsize::default(),
             remote_shards: vec![
@@ -727,6 +747,7 @@ mod tests {
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -734,6 +755,7 @@ mod tests {
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-1".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -741,6 +763,7 @@ mod tests {
                     shard_id: ShardId::from(4),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-2".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -748,6 +771,7 @@ mod tests {
                     shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
             ],
             remote_round_robin_idx: AtomicUsize::default(),
@@ -898,6 +922,7 @@ mod tests {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -905,6 +930,7 @@ mod tests {
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -912,6 +938,7 @@ mod tests {
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
             ],
             local_round_robin_idx: AtomicUsize::default(),
@@ -922,6 +949,7 @@ mod tests {
                     shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -929,6 +957,7 @@ mod tests {
                     shard_id: ShardId::from(6),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -936,6 +965,7 @@ mod tests {
                     shard_id: ShardId::from(7),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
             ],
             remote_round_robin_idx: AtomicUsize::default(),
@@ -979,6 +1009,7 @@ mod tests {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -986,6 +1017,7 @@ mod tests {
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -993,6 +1025,7 @@ mod tests {
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
             ],
             local_round_robin_idx: AtomicUsize::default(),
@@ -1003,6 +1036,7 @@ mod tests {
                     shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -1010,6 +1044,7 @@ mod tests {
                     shard_id: ShardId::from(6),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
@@ -1017,6 +1052,7 @@ mod tests {
                     shard_id: ShardId::from(7),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
+                    doc_mapping_uid: DocMappingUid::new(),
                 },
             ],
             remote_round_robin_idx: AtomicUsize::default(),
