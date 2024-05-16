@@ -245,6 +245,8 @@ pub struct SplitSearchError {
     #[prost(bool, tag = "3")]
     pub retryable_error: bool,
 }
+/// / A LeafSearchRequest can span multiple indices.
+/// /
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -253,17 +255,33 @@ pub struct LeafSearchRequest {
     /// that was sent to root apart from the start_offset & max_hits params.
     #[prost(message, optional, tag = "1")]
     pub search_request: ::core::option::Option<SearchRequest>,
-    /// Index split ids to apply the query on.
-    /// This ids are resolved from the index_uri defined in the search_request.
-    #[prost(message, repeated, tag = "4")]
-    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
-    /// `DocMapper` as json serialized trait.
-    #[prost(string, tag = "5")]
-    pub doc_mapper: ::prost::alloc::string::String,
+    /// List of leaf requests, one per index.
+    #[prost(message, repeated, tag = "7")]
+    pub leaf_requests: ::prost::alloc::vec::Vec<LeafRequestRef>,
+    /// List of unique doc_mappers serialized as json.
+    #[prost(string, repeated, tag = "8")]
+    pub doc_mappers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// List of index uris
     /// Index URI. The index URI defines the location of the storage that contains the
     /// split files.
-    #[prost(string, tag = "6")]
-    pub index_uri: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "9")]
+    pub index_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+/// / LeafRequestRef references data in LeafSearchRequest to deduplicate data.
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafRequestRef {
+    /// The ordinal of the doc_mapper in `LeafSearchRequest.doc_mappers`
+    #[prost(uint32, tag = "1")]
+    pub doc_mapper_ord: u32,
+    /// The ordinal of the index uri in LeafSearchRequest.index_uris
+    #[prost(uint32, tag = "2")]
+    pub index_uri_ord: u32,
+    /// Index split ids to apply the query on.
+    /// This ids are resolved from the index_uri defined in the search_request.
+    #[prost(message, repeated, tag = "3")]
+    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -83,9 +83,8 @@ pub use crate::client::{
 pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
-use crate::leaf::leaf_search;
 pub use crate::root::{
-    check_all_index_metadata_found, jobs_to_leaf_requests, root_search, IndexMetasForLeafSearch,
+    check_all_index_metadata_found, jobs_to_leaf_request, root_search, IndexMetasForLeafSearch,
     SearchJob,
 };
 pub use crate::search_job_placer::{Job, SearchJobPlacer};
