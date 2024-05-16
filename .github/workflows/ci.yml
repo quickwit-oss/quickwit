@@ -92,6 +92,7 @@ jobs:
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: python3 ./run_tests.py --binary ../target/debug/quickwit
         working-directory: ./quickwit/rest-api-tests
+
   lints:
     name: Lints
     runs-on: "ubuntu-latest"
