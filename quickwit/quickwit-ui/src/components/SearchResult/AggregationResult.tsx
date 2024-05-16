@@ -23,7 +23,7 @@ import { BarChart } from '@mui/x-charts/BarChart';
 import { CurveType } from '@mui/x-charts/models/seriesType/line';
 
 function isHistogram(agg: ParsedAggregationResult): agg is HistogramResult {
-  return agg != null && Object.prototype.hasOwnProperty.call(agg, "timestamps");
+  return agg != null && "timestamps" in agg;
 }
 
 function isTerm(agg: ParsedAggregationResult): agg is TermResult {

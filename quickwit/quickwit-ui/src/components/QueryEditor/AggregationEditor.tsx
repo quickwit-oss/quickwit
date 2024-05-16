@@ -183,12 +183,12 @@ export function AggregationKind(props: SearchComponentProps) {
 
   function isHistogram(agg: {term: TermAgg} | {histogram: HistogramAgg} | undefined): agg is {histogram: HistogramAgg} {
     if (!agg) return false;
-    return Object.hasOwn(agg, "histogram")
+    return "histogram" in agg;
   }
 
   function isTerm(agg: {term: TermAgg} | {histogram: HistogramAgg} | undefined): agg is {term: TermAgg} {
     if (!agg) return false;
-    return Object.hasOwn(agg, "term")
+    return "term" in agg;
   }
 
   const getAggregationKind = (agg: {term: TermAgg} | {histogram: HistogramAgg} | undefined) => {
