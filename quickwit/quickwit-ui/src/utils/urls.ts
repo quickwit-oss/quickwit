@@ -117,7 +117,7 @@ export function toUrlSearchRequestParams(request: SearchRequest): URLSearchParam
       if (val == null) {
         return undefined;
       } else {
-	return val;
+        return val;
       }
     }))
   }

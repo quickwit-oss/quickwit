@@ -171,7 +171,7 @@ export class Client {
           max: request.endTimestamp,
         };
       } else {
-	extended_bounds = undefined;
+        extended_bounds = undefined;
       }
       aggregation = {
         histo_agg: {

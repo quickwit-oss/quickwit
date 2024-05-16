@@ -70,7 +70,7 @@ export default function SearchResult(props: SearchResultProps) {
   const result = useMemo(
     () => {
       if (props.searchResponse == null || props.index == null) {
-	return null;
+        return null;
       } else if (props.searchResponse.aggregations === undefined) {
         console.log("result table");
         return (<ResultTable searchResponse={props.searchResponse} index={props.index} />);
@@ -83,7 +83,7 @@ export default function SearchResult(props: SearchResultProps) {
   );
 
   return (
-    <Box sx={{ pt: 1, flexGrow: '1', flexBasis: '0%', overflow: 'hidden'}} >
+    <Box sx={{ pt: 1, flexGrow: '1', flexBasis: '0%', overflow: 'hidden'}}>
       <Box sx={{ height: '100%', flexDirection: 'column', flexGrow: 1, display: 'flex'}}>
         <Box sx={{ flexShrink: 0, display: 'flex', flexGrow: 0, flexBasis: 'auto' }}>
           <HitCount searchResponse={props.searchResponse} />
