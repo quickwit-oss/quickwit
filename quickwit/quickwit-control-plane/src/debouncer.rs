@@ -118,7 +118,7 @@ impl Debouncer {
 
     pub fn self_send_with_cooldown<M>(
         &self,
-        ctx: &ActorContext<impl Actor + Handler<M> + DeferableReplyHandler<M>>,
+        ctx: &ActorContext<impl Handler<M> + DeferableReplyHandler<M>>,
     ) where
         M: Default + std::fmt::Debug + Send + Sync + 'static,
     {

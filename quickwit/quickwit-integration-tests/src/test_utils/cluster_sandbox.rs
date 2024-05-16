@@ -413,8 +413,8 @@ pub fn build_node_configs(
     let unique_dir_name = new_coolid("test-dir");
     for (node_idx, node_services) in nodes_services.iter().enumerate() {
         let mut config = NodeConfig::for_test();
-        config.enabled_services = node_services.clone();
-        config.cluster_id = cluster_id.clone();
+        config.enabled_services.clone_from(node_services);
+        config.cluster_id.clone_from(&cluster_id);
         config.node_id = NodeId::new(format!("test-node-{node_idx}"));
         config.data_dir_path = root_data_dir.join(config.node_id.as_str());
         config.metastore_uri =

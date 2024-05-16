@@ -264,7 +264,7 @@ impl IndexingPipeline {
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
         let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
         self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
-        self.statistics.shard_ids = self.shard_ids.clone();
+        self.statistics.shard_ids.clone_from(&self.shard_ids);
         ctx.observe(self);
     }
 
@@ -543,7 +543,8 @@ impl Handler<AssignShards> for IndexingPipeline {
         assign_shards_message: AssignShards,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.shard_ids = assign_shards_message.0.shard_ids.clone();
+        self.shard_ids
+            .clone_from(&assign_shards_message.0.shard_ids);
         // If the pipeline is running, we forward the message to its source.
         // If it is not, it will be respawned soon, and the shards will be assigned afterward.
         if let Some(handles) = &mut self.handles_opt {
