@@ -38,6 +38,7 @@ use quickwit_storage::{
     wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
     StorageResolver,
 };
+use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::aggregation::AggregationLimits;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
@@ -47,7 +48,7 @@ use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
 use crate::service::{deserialize_doc_mapper, SearcherContext};
-use crate::SearchError;
+use crate::{QuickwitAggregations, SearchError};
 
 #[instrument(skip_all)]
 async fn get_split_footer_from_cache_or_fetch(
@@ -410,6 +411,52 @@ fn rewrite_request(
     if let Some(timestamp_field) = timestamp_field {
         remove_redundant_timestamp_range(search_request, split, timestamp_field);
     }
+    rewrite_aggregation(search_request);
+}
+
+/// Rewrite aggregation to make them easier to cache
+///
+/// This is only valid for options which are handled while merging results, which is
+/// mostly `extended_bounds`.
+fn rewrite_aggregation(search_request: &mut SearchRequest) {
+    if let Some(aggregation) = &search_request.aggregation_request {
+        let Ok(QuickwitAggregations::TantivyAggregations(mut aggregations)) =
+            serde_json::from_str(aggregation)
+        else {
+            return;
+        };
+        let modified_something = visit_aggregation_mut(&mut aggregations, &|aggregation_variant| {
+            match aggregation_variant {
+                // we take() away the extended bounds, and record we did something
+                AggregationVariants::Histogram(histogram) => {
+                    histogram.extended_bounds.take().is_some()
+                }
+                AggregationVariants::DateHistogram(histogram) => {
+                    histogram.extended_bounds.take().is_some()
+                }
+                _ => false,
+            }
+        });
+        if modified_something {
+            // it's fine to put a (Tantivy)Aggregations and not a QuickwitAggregations because
+            // the former is an serde-untagged variant of the later
+            search_request.aggregation_request =
+                Some(serde_json::to_string(&aggregations).expect("serializing should never fail"));
+        }
+    }
+}
+
+// this is a rather limited visitor, but enough to do the job
+fn visit_aggregation_mut(
+    aggregations: &mut Aggregations,
+    callback: &impl Fn(&mut AggregationVariants) -> bool,
+) -> bool {
+    let mut modified_something = false;
+    for aggregation in aggregations.values_mut() {
+        modified_something |= callback(&mut aggregation.agg);
+        modified_something |= visit_aggregation_mut(&mut aggregation.sub_aggregation, callback);
+    }
+    modified_something
 }
 
 // equivalent to Bound::map, which is unstable
@@ -1383,5 +1430,166 @@ mod tests {
                 ..BoolQuery::default()
             }),
         );
+    }
+
+    #[test]
+    fn test_remove_extended_bounds_from_histogram() {
+        let histo_at_root = r#"
+{
+  "date_histo": {
+    "date_histogram": {
+      "extended_bounds": {
+        "max": 1425254400000,
+        "min": 1420070400000
+      },
+      "field": "date",
+      "fixed_interval": "30d",
+      "offset": "-4d"
+    }
+  }
+}
+"#;
+
+        let histo_at_root_no_bounds = r#"
+{
+  "date_histo": {
+    "date_histogram": {
+      "field": "date",
+      "fixed_interval": "30d",
+      "offset": "-4d"
+    }
+  }
+}
+"#;
+
+        let histo_at_root_with_sibling = r#"
+{
+  "metrics": {
+    "aggs": {
+      "response": {
+        "percentiles": {
+          "field": "response",
+          "keyed": false,
+          "percents": [
+            85
+          ]
+        }
+      }
+    },
+    "date_histogram": {
+      "extended_bounds": {
+        "max": 1425254400000,
+        "min": 1420070400000
+      },
+      "field": "date",
+      "fixed_interval": "30d",
+      "offset": "-4d"
+    }
+  }
+}
+"#;
+
+        let histo_at_root_with_sibling_no_bounds = r#"
+{
+  "metrics": {
+    "aggs": {
+      "response": {
+        "percentiles": {
+          "field": "response",
+          "keyed": false,
+          "percents": [
+            85
+          ]
+        }
+      }
+    },
+    "date_histogram": {
+      "field": "date",
+      "fixed_interval": "30d",
+      "offset": "-4d"
+    }
+  }
+}
+"#;
+        let histo_at_leaf = r#"
+{
+  "metrics": {
+    "aggs": {
+      "response": {
+        "date_histogram": {
+          "extended_bounds": {
+            "max": 1425254400000,
+            "min": 1420070400000
+          },
+          "field": "date",
+          "fixed_interval": "30d",
+          "offset": "-4d"
+        }
+      }
+    },
+    "percentiles": {
+      "field": "response",
+      "keyed": false,
+      "percents": [
+        85
+      ]
+    }
+  }
+}
+"#;
+
+        let histo_at_leaf_no_bounds = r#"
+{
+  "metrics": {
+    "aggs": {
+      "response": {
+        "date_histogram": {
+          "field": "date",
+          "fixed_interval": "30d",
+          "offset": "-4d"
+        }
+      }
+    },
+    "percentiles": {
+      "field": "response",
+      "keyed": false,
+      "percents": [
+        85
+      ]
+    }
+  }
+}
+"#;
+        for (bounds, no_bounds) in [
+            (histo_at_root, histo_at_root_no_bounds),
+            (
+                histo_at_root_with_sibling,
+                histo_at_root_with_sibling_no_bounds,
+            ),
+            (histo_at_leaf, histo_at_leaf_no_bounds),
+        ] {
+            // first assert we do nothing when there are no bounds
+            let request_no_bounds = SearchRequest {
+                aggregation_request: Some(no_bounds.to_string()),
+                ..SearchRequest::default()
+            };
+            let mut request_no_bounds_clone = request_no_bounds.clone();
+            rewrite_aggregation(&mut request_no_bounds_clone);
+            assert_eq!(request_no_bounds, request_no_bounds_clone);
+
+            let mut request_bounds = SearchRequest {
+                aggregation_request: Some(bounds.to_string()),
+                ..SearchRequest::default()
+            };
+            rewrite_aggregation(&mut request_bounds);
+            // we can't just compare bounds and no_bounds, they must be structuraly equal, but not
+            // necessarily identical (field order, null vs absent...). So we parse both and verify
+            // the results are equal instead
+            let no_bounds_agg: QuickwitAggregations =
+                serde_json::from_str(&request_no_bounds.aggregation_request.unwrap()).unwrap();
+            let rewrote_bounds_agg: QuickwitAggregations =
+                serde_json::from_str(&request_bounds.aggregation_request.unwrap()).unwrap();
+            assert_eq!(rewrote_bounds_agg, no_bounds_agg);
+        }
     }
 }
