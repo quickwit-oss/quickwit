@@ -120,15 +120,14 @@ export type HistogramResult = {
 }
 
 export function extractAggregationResults(aggregation: any): ParsedAggregationResult {
-  console.log("doing the conversion");
   const extract_value = (entry: any) => {
-    if (Object.prototype.hasOwnProperty.call(entry, "metric")) {
+    if ("metric" in entry) {
       return entry.metric.value || 0;
     } else {
       return entry.doc_count;
     }
   };
-  if (Object.prototype.hasOwnProperty.call(aggregation, "histo_agg")) {
+  if ("histo_agg" in aggregation) {
     const buckets = aggregation.histo_agg.buckets;
     const timestamps = buckets.map((entry: any) => entry.key);
     const value = buckets.map(extract_value);
@@ -137,13 +136,13 @@ export function extractAggregationResults(aggregation: any): ParsedAggregationRe
       timestamps,
       data: [{name: undefined, value }]
     }
-  } else if (Object.prototype.hasOwnProperty.call(aggregation, "term_agg")) {
+  } else if ("term_agg" in aggregation) {
     // we have a term aggregation, but maybe there is an histogram inside
     const term_buckets = aggregation.term_agg.buckets;
     if (term_buckets.lenght == 0) {
       return null;
     }
-    if (term_buckets.length > 0 && Object.prototype.hasOwnProperty.call(term_buckets[0], "histo_agg")) {
+    if (term_buckets.length > 0 && "histo_agg" in term_buckets[0]) {
       // we have a term+histo aggregation
       const timestamps_set: Set<number> = new Set();
       term_buckets.forEach((bucket: any) => bucket.histo_agg.buckets.forEach(
