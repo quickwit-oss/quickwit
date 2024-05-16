@@ -28,6 +28,7 @@ mod metrics;
 mod node;
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use async_trait::async_trait;
 pub use chitchat::transport::ChannelTransport;
@@ -146,13 +147,17 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         indexing_tasks,
         indexing_cpu_capacity,
     };
+    let failure_detector_config = FailureDetectorConfig {
+        dead_node_grace_period: Duration::from_secs(2 * 60 * 60), // 2 hours
+        ..Default::default()
+    };
     let cluster = Cluster::join(
         cluster_id,
         self_node,
         gossip_listen_addr,
         peer_seed_addrs,
         node_config.gossip_interval,
-        FailureDetectorConfig::default(),
+        failure_detector_config,
         &CountingUdpTransport,
     )
     .await?;
