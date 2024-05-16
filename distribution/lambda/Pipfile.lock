@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "8cadf9eaaa31ad70212aac01c7058765e48367db0d631a1a5d63d53e5bf2cc94"
+            "sha256": "1ff8dd1cf56643a683dac32ad8cc42e8d2d24474dc2fd98b2c1b78c26203b829"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -141,6 +141,10 @@
             ],
             "markers": "python_version >= '3.8'",
             "version": "==23.2.3"
+        },
+        "cdk": {
+            "editable": true,
+            "file": "cdk"
         },
         "click": {
             "hashes": [
@@ -406,7 +410,7 @@
                 "sha256:83f085bd5ca59c80295fc2a82ab5dac679cbe02b9f33f7d83af68e241bea51b0",
                 "sha256:c1f94d72897edaf4ce775bb7558d5b79d8126906a14ea5ed1635921406c0387a"
             ],
-            "markers": "python_version >= '3.8'",
+            "markers": "python_version < '3.12'",
             "version": "==4.11.0"
         },
         "urllib3": {

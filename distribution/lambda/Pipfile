@@ -4,6 +4,7 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+cdk = {file = "cdk", editable = true}
 aws-cdk-lib = "2.95.1"
 cargo-lambda = "1.1.0"
 constructs = "10.3.0"

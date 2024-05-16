@@ -50,6 +50,7 @@ MockDataStack(
     indexer_package_location=package_location_from_env("indexer"),
     searcher_package_location=package_location_from_env("searcher"),
     search_api_key=os.getenv("SEARCHER_API_KEY", None),
+    data_generation_interval_sec=int(os.getenv("DATA_GENERATION_INTERVAL_SEC", 300)),
 )
 
 app.synth()
