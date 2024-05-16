@@ -51,6 +51,7 @@ class HdfsStack(Stack):
             searcher_memory_size=searcher_memory_size,
             indexer_package_location=indexer_package_location,
             searcher_package_location=searcher_package_location,
+            indexer_timeout=aws_cdk.Duration.minutes(10),
         )
 
         aws_cdk.CfnOutput(
