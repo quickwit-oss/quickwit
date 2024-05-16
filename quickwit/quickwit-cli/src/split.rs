@@ -24,6 +24,7 @@ use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
 use itertools::Itertools;
 use quickwit_metastore::{Split, SplitState};
+use quickwit_proto::types::{IndexId, SplitId};
 use quickwit_serve::ListSplitsQueryParams;
 use tabled::{Table, Tabled};
 use time::{format_description, Date, OffsetDateTime, PrimitiveDateTime};
@@ -133,7 +134,7 @@ impl FromStr for OutputFormat {
 #[derive(Debug, PartialEq)]
 pub struct ListSplitArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub offset: Option<usize>,
     pub limit: Option<usize>,
     pub split_states: Option<Vec<SplitState>>,
@@ -147,7 +148,7 @@ pub struct ListSplitArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct MarkForDeletionArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub split_ids: Vec<String>,
     pub assume_yes: bool,
 }
@@ -155,8 +156,8 @@ pub struct MarkForDeletionArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeSplitArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
-    pub split_id: String,
+    pub index_id: IndexId,
+    pub split_id: SplitId,
     pub verbose: bool,
 }
 
@@ -339,14 +340,6 @@ async fn mark_splits_for_deletion_cli(args: MarkForDeletionArgs) -> anyhow::Resu
     Ok(())
 }
 
-#[derive(Tabled)]
-struct FileRow {
-    #[tabled(rename = "File Name")]
-    file_name: String,
-    #[tabled(rename = "Size")]
-    size: String,
-}
-
 async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     debug!(args=?args, "describe-split");
     let qw_client = args.client_args.client();
@@ -470,7 +463,7 @@ fn parse_split_state(split_state_arg: &str) -> anyhow::Result<SplitState> {
 #[derive(Tabled)]
 struct SplitRow {
     #[tabled(rename = "ID")]
-    split_id: String,
+    split_id: SplitId,
     #[tabled(rename = "State")]
     split_state: SplitState,
     #[tabled(rename = "Num docs")]

@@ -372,7 +372,7 @@ impl fmt::Debug for SourceCheckpoint {
 /// we are not trying to add documents to the index that were already indexed.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IndexCheckpointDelta {
-    pub source_id: String,
+    pub source_id: SourceId,
     pub source_delta: SourceCheckpointDelta,
 }
 

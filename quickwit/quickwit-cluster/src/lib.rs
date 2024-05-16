@@ -28,6 +28,7 @@ mod metrics;
 mod node;
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use async_trait::async_trait;
 pub use chitchat::transport::ChannelTransport;
@@ -39,7 +40,6 @@ use quickwit_common::metrics::IntCounter;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_proto::indexing::CpuCapacity;
-use quickwit_proto::types::NodeId;
 use time::OffsetDateTime;
 
 #[cfg(any(test, feature = "testsuite"))]
@@ -129,7 +129,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
     let peer_seed_addrs = node_config.peer_seed_addrs().await?;
     let indexing_tasks = Vec::new();
 
-    let node_id: NodeId = node_config.node_id.clone().into();
+    let node_id = node_config.node_id.clone();
     let generation_id = GenerationId::now();
     let is_ready = false;
     let indexing_cpu_capacity = if node_config.is_service_enabled(QuickwitService::Indexer) {
@@ -147,13 +147,17 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         indexing_tasks,
         indexing_cpu_capacity,
     };
+    let failure_detector_config = FailureDetectorConfig {
+        dead_node_grace_period: Duration::from_secs(2 * 60 * 60), // 2 hours
+        ..Default::default()
+    };
     let cluster = Cluster::join(
         cluster_id,
         self_node,
         gossip_listen_addr,
         peer_seed_addrs,
         node_config.gossip_interval,
-        FailureDetectorConfig::default(),
+        failure_detector_config,
         &CountingUdpTransport,
     )
     .await?;

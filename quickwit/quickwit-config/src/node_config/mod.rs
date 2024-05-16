@@ -32,6 +32,7 @@ use http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
+use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -395,7 +396,7 @@ impl Default for JaegerConfig {
 #[derive(Clone, Debug, Serialize)]
 pub struct NodeConfig {
     pub cluster_id: String,
-    pub node_id: String,
+    pub node_id: NodeId,
     pub enabled_services: HashSet<QuickwitService>,
     pub gossip_listen_addr: SocketAddr,
     pub grpc_listen_addr: SocketAddr,

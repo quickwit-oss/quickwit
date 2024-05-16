@@ -29,7 +29,6 @@ use quickwit_proto::ingest::router::{
 };
 use quickwit_proto::types::IndexId;
 use serde::Deserialize;
-use thiserror::Error;
 use warp::{Filter, Rejection};
 
 use crate::decompression::get_body_bytes;
@@ -49,12 +48,6 @@ pub struct IngestApi;
     quickwit_ingest::CommitType,
 )))]
 pub struct IngestApiSchemas;
-
-#[derive(Debug, Error)]
-#[error("request body contains invalid UTF-8 characters")]
-struct InvalidUtf8;
-
-impl warp::reject::Reject for InvalidUtf8 {}
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 struct IngestOptions {
@@ -208,7 +201,7 @@ fn convert_ingest_response_v2(
 )]
 /// Ingest documents
 async fn ingest(
-    index_id: String,
+    index_id: IndexId,
     body: Body,
     ingest_options: IngestOptions,
     mut ingest_service: IngestServiceClient,
@@ -258,7 +251,7 @@ fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone 
 )]
 /// Returns the last few ingested documents.
 async fn tail_endpoint(
-    index_id: String,
+    index_id: IndexId,
     mut ingest_service: IngestServiceClient,
 ) -> Result<FetchResponse, IngestServiceError> {
     let fetch_response = ingest_service.tail(TailRequest { index_id }).await?;

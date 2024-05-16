@@ -233,8 +233,15 @@ impl PartialEq<(&'static str, u128)> for IndexUid {
 }
 
 #[cfg(feature = "postgres")]
+impl From<IndexUid> for sea_query::Value {
+    fn from(index_uid: IndexUid) -> Self {
+        index_uid.to_string().into()
+    }
+}
+
+#[cfg(feature = "postgres")]
 impl From<&IndexUid> for sea_query::Value {
-    fn from(val: &IndexUid) -> Self {
-        val.to_string().into()
+    fn from(index_uid: &IndexUid) -> Self {
+        index_uid.to_string().into()
     }
 }

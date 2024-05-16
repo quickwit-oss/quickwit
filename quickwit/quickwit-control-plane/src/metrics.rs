@@ -65,23 +65,27 @@ impl Default for ControlPlaneMetrics {
                 "restart_total",
                 "Number of control plane restart.",
                 "control_plane",
+                &[],
             ),
             schedule_total: new_counter(
                 "schedule_total",
                 "Number of control plane `schedule` operations.",
                 "control_plane",
+                &[],
             ),
             metastore_error_aborted: new_counter(
                 "metastore_error_aborted",
                 "Number of aborted metastore transaction (= do not trigger a control plane \
                  restart)",
                 "control_plane",
+                &[],
             ),
             metastore_error_maybe_executed: new_counter(
                 "metastore_error_maybe_executed",
                 "Number of metastore transaction with an uncertain outcome (= do trigger a \
                  control plane restart)",
                 "control_plane",
+                &[],
             ),
             open_shards_total: new_gauge_vec(
                 "open_shards_total",

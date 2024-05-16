@@ -22,7 +22,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::{env, fmt, io};
+use std::{fmt, io};
 
 use anyhow::{anyhow, Context as AnyhhowContext};
 use async_trait::async_trait;
@@ -59,11 +59,7 @@ use crate::{
 /// Semaphore to limit the number of concurent requests to the object store. Some object stores
 /// (R2, SeaweedFs...) return errors when too many concurrent requests are emitted.
 static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {
-    let num_permits: usize = env::var("QW_S3_MAX_CONCURRENCY")
-        .as_deref()
-        .unwrap_or("10000")
-        .parse()
-        .expect("QW_S3_MAX_CONCURRENCY value should be a number.");
+    let num_permits: usize = quickwit_common::get_from_env("QW_S3_MAX_CONCURRENCY", 10_000usize);
     Semaphore::new(num_permits)
 });
 

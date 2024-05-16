@@ -51,7 +51,7 @@ impl ThreadPool {
         }
         let thread_pool = rayon_pool_builder
             .build()
-            .expect("failed to spawn the spawning pool");
+            .expect("failed to spawn thread pool");
         let ongoing_tasks = THREAD_POOL_METRICS.ongoing_tasks.with_label_values([name]);
         let pending_tasks = THREAD_POOL_METRICS.pending_tasks.with_label_values([name]);
         ThreadPool {

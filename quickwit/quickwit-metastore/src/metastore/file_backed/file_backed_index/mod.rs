@@ -705,8 +705,14 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         Bound::Unbounded => {}
     }
 
-    if let Some(range) = split.split_metadata.time_range.as_ref() {
+    if let Some(range) = &split.split_metadata.time_range {
         if !query.time_range.overlaps_with(range.clone()) {
+            return false;
+        }
+    }
+
+    if let Some(node_id) = &query.node_id {
+        if split.split_metadata.node_id != *node_id {
             return false;
         }
     }

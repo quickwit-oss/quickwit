@@ -32,7 +32,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::FileSourceParams;
 use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::Position;
+use quickwit_proto::types::{Position, SourceId};
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tracing::info;
@@ -52,7 +52,7 @@ pub struct FileSourceCounters {
 }
 
 pub struct FileSource {
-    source_id: String,
+    source_id: SourceId,
     params: FileSourceParams,
     counters: FileSourceCounters,
     reader: FileSourceReader,
