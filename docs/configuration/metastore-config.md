@@ -68,7 +68,7 @@ You can also configure it to poll the File-Backed Metastore periodically to keep
 To configure the polling interval (in seconds), add a URI fragment to the storage URI as follows: `s3://quickwit/my-indexes#polling_interval=30s`
 
 :::note
-The polling interval can be configured in seconds only, other units like minutes or hours are not supported yet.
+The polling interval can be configured in seconds only; other units, such as minutes or hours, are not supported.
 :::
 
 :::tip
