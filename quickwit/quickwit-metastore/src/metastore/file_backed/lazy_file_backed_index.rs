@@ -30,7 +30,7 @@ use super::file_backed_index::FileBackedIndex;
 use super::store_operations::{load_index, METASTORE_FILE_NAME};
 
 /// Lazy [`FileBackedIndex`]. It loads a `FileBackedIndex` on demand. When the index is first
-/// loaded, it optionally spawns a task to regularly poll the storage and update the index.
+/// loaded, it optionally spawns a task to periodically poll the storage and update the index.
 pub(crate) struct LazyFileBackedIndex {
     index_id: IndexId,
     storage: Arc<dyn Storage>,
@@ -67,7 +67,7 @@ impl LazyFileBackedIndex {
         }
     }
 
-    /// Get a syncronized `FileBackedIndex`. If the index wasn't provided on creation, we load it
+    /// Gets a synchronized `FileBackedIndex`. If the index wasn't provided on creation, we load it
     /// lazily on the first call of this method.
     pub async fn get(&self) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
         self.lazy_index
