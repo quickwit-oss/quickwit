@@ -241,7 +241,7 @@ impl<A: Actor> ActorContext<A> {
     /// This method hides logic to prevent an actor from being identified
     /// as frozen if the destination actor channel is saturated, and we
     /// are simply experiencing back pressure.
-    pub async fn send_message<DestActor: Actor, M>(
+    pub async fn send_message<DestActor, M>(
         &self,
         mailbox: &Mailbox<DestActor>,
         msg: M,
@@ -260,7 +260,7 @@ impl<A: Actor> ActorContext<A> {
             .await
     }
 
-    pub async fn ask<DestActor: Actor, M, T>(
+    pub async fn ask<DestActor, M, T>(
         &self,
         mailbox: &Mailbox<DestActor>,
         msg: M,
@@ -278,7 +278,7 @@ impl<A: Actor> ActorContext<A> {
 
     /// Similar to `send_message`, except this method
     /// waits asynchronously for the actor reply.
-    pub async fn ask_for_res<DestActor: Actor, M, T, E>(
+    pub async fn ask_for_res<DestActor, M, T, E>(
         &self,
         mailbox: &Mailbox<DestActor>,
         msg: M,
