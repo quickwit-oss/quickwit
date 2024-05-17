@@ -93,6 +93,20 @@ pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {
     default_value
 }
 
+pub fn get_from_env_opt<T: FromStr + Debug>(key: &str) -> Option<T> {
+    let Some(value_str) = std::env::var(key).ok() else {
+        info!("{key} is not set");
+        return None;
+    };
+    if let Ok(value) = T::from_str(&value_str) {
+        info!(value=?value, "setting `{}` from environment", key);
+        Some(value)
+    } else {
+        error!(value_str=%value_str, "failed to parse `{}` from environment", key);
+        None
+    }
+}
+
 pub fn truncate_str(text: &str, max_len: usize) -> &str {
     if max_len > text.len() {
         return text;

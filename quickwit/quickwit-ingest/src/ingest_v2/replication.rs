@@ -50,7 +50,7 @@ pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
 
 /// Duration after which replication requests time out with [`ReplicationError::Timeout`].
 const REPLICATION_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_millis(50)
+    Duration::from_millis(100)
 } else {
     Duration::from_secs(3)
 };

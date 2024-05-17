@@ -471,48 +471,6 @@ fn get_score_extractor(
     })
 }
 
-/// PartialHitHeapItem order is the inverse of the natural order
-/// so that we actually have a min-heap.
-#[derive(Clone, Copy, Debug)]
-struct PartialHitHeapItem {
-    sort_value_opt1: Option<u64>,
-    sort_value_opt2: Option<u64>,
-    doc_id: DocId,
-}
-
-impl PartialOrd for PartialHitHeapItem {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for PartialHitHeapItem {
-    #[inline]
-    fn cmp(&self, other: &Self) -> Ordering {
-        let by_sorting_field1 = other.sort_value_opt1.cmp(&self.sort_value_opt1);
-        let by_sorting_field2 = other.sort_value_opt2.cmp(&self.sort_value_opt2);
-
-        let lazy_order_by_doc_id = || {
-            self.doc_id
-                .partial_cmp(&other.doc_id)
-                .unwrap_or(Ordering::Equal)
-        };
-
-        // In case of a tie on the feature, we sort by ascending `DocId`.
-        by_sorting_field1
-            .then_with(|| by_sorting_field2)
-            .then_with(lazy_order_by_doc_id)
-    }
-}
-
-impl PartialEq for PartialHitHeapItem {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == Ordering::Equal
-    }
-}
-
-impl Eq for PartialHitHeapItem {}
-
 enum AggregationSegmentCollectors {
     FindTraceIdsSegmentCollector(Box<FindTraceIdsSegmentCollector>),
     TantivyAggregationSegmentCollector(AggregationSegmentCollector),
@@ -639,7 +597,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
 }
 
 /// Available aggregation types.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum QuickwitAggregations {
     /// Aggregation used by the Jaeger service to find trace IDs that match a
@@ -1229,7 +1187,7 @@ impl IncrementalCollector {
     }
 
     /// Merge one search result with the current state
-    pub(crate) fn add_split(&mut self, leaf_response: LeafSearchResponse) -> tantivy::Result<()> {
+    pub(crate) fn add_result(&mut self, leaf_response: LeafSearchResponse) -> tantivy::Result<()> {
         let LeafSearchResponse {
             num_hits,
             partial_hits,
@@ -1300,51 +1258,8 @@ mod tests {
     use tantivy::collector::Collector;
     use tantivy::TantivyDocument;
 
-    use super::{make_merge_collector, IncrementalCollector, PartialHitHeapItem};
+    use super::{make_merge_collector, IncrementalCollector};
     use crate::collector::top_k_partial_hits;
-
-    #[test]
-    fn test_partial_hit_ordered_by_sorting_field() {
-        let lesser_score = PartialHitHeapItem {
-            doc_id: 1u32,
-            sort_value_opt1: Some(1u64),
-            sort_value_opt2: None,
-        };
-        let higher_score = PartialHitHeapItem {
-            sort_value_opt1: Some(2u64),
-            sort_value_opt2: None,
-            doc_id: 1u32,
-        };
-        assert_eq!(lesser_score.cmp(&higher_score), Ordering::Greater);
-    }
-    #[test]
-    fn test_partial_hit_ordered_by_sorting_field_2() {
-        let get_el = |val1, val2, docid| PartialHitHeapItem {
-            doc_id: docid,
-            sort_value_opt1: val1,
-            sort_value_opt2: val2,
-        };
-        let mut data = vec![
-            get_el(Some(1u64), None, 1u32),
-            get_el(Some(2u64), Some(2u64), 1u32),
-            get_el(Some(2u64), Some(1u64), 1u32),
-            get_el(Some(2u64), None, 1u32),
-            get_el(None, Some(1u64), 1u32),
-            get_el(None, None, 1u32),
-        ];
-        data.sort();
-        assert_eq!(
-            data,
-            vec![
-                get_el(Some(2u64), Some(2u64), 1u32),
-                get_el(Some(2u64), Some(1u64), 1u32),
-                get_el(Some(2u64), None, 1u32),
-                get_el(Some(1u64), None, 1u32),
-                get_el(None, Some(1u64), 1u32),
-                get_el(None, None, 1u32),
-            ]
-        );
-    }
 
     #[test]
     fn test_merge_partial_hits_no_tie() {
@@ -1851,7 +1766,7 @@ mod tests {
             .unwrap();
 
         for split_result in results {
-            incremental_collector.add_split(split_result).unwrap();
+            incremental_collector.add_result(split_result).unwrap();
         }
 
         let incremental_result = incremental_collector.finalize().unwrap();

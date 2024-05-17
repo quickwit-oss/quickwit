@@ -31,36 +31,13 @@ console](https://console.aws.amazon.com/servicequotas/home/services/lambda/quota
 
 ### Python venv
 
-This project is set up like a standard Python project. The initialization
-process also creates a virtualenv within this project, stored under the `.venv`
-directory.  To create the virtualenv it assumes that there is a `python3`
-executable in your path with access to the `venv` package. If for any reason the
-automatic creation of the virtualenv fails, you can create the virtualenv
-manually.
+The Python environment is configured using pipenv:
 
-To manually create a virtualenv on MacOS and Linux:
-
-```bash
-python3 -m venv .venv
 ```
-
-After the init process completes and the virtualenv is created, you can use the following
-step to activate your virtualenv.
-
-```bash
-source .venv/bin/activate
-```
-
-Once the virtualenv is activated, you can install the required dependencies.
-
-```bash
-pip install .
-```
-
-If you prefer using Poetry, achieve the same by running:
-```bash
-poetry shell
-poetry install
+# Install pipenv if needed.
+pip install --user pipenv
+pipenv shell
+pipenv install
 ```
 
 ### Example stacks
@@ -98,6 +75,40 @@ make deploy-mock-data
 # wait a few minutes...
 make invoke-mock-data-searcher
 ```
+
+### Configurations
+
+The following environment variables can be configured on the Lambda functions.
+Note that only a small subset of all Quickwit configurations are exposed to
+simplify the setup and avoid unstable deployments.
+
+| Variable | Description | Default |
+|---|---|---|
+| QW_LAMBDA_INDEX_ID | the index this Lambda interacts with (one and only one) | required |
+| QW_LAMBDA_METASTORE_BUCKET | bucket name for metastore files | required |
+| QW_LAMBDA_INDEX_BUCKET | bucket name for split files | required |
+| QW_LAMBDA_OPENTELEMETRY_URL | HTTP OTEL tracing collector endpoint | none, OTEL disabled |
+| QW_LAMBDA_OPENTELEMETRY_AUTHORIZATION | Authorization header value for HTTP OTEL calls | none, OTEL disabled |
+| QW_LAMBDA_ENABLE_VERBOSE_JSON_LOGS | true to enable JSON logging of spans and logs in Cloudwatch | false |
+| RUST_LOG | [Rust logging config][1] | info |
+
+[1]: https://rust-lang-nursery.github.io/rust-cookbook/development_tools/debugging/config_log.html
+
+
+Indexer only:
+| Variable | Description | Default |
+|---|---|---|
+| QW_LAMBDA_INDEX_CONFIG_URI | location of the index configuration file, e.g `s3://mybucket/index-config.yaml` | required |
+| QW_LAMBDA_DISABLE_MERGE | true to disable compaction merges | false |
+| QW_LAMBDA_DISABLE_JANITOR | true to disable retention enforcement and garbage collection | false |
+| QW_LAMBDA_MAX_CHECKPOINTS | maximum number of ingested file names to keep in source history | 100 |
+
+Searcher only:
+| Variable | Description | Default |
+|---|---|---|
+| QW_LAMBDA_SEARCHER_METASTORE_POLLING_INTERVAL_SECONDS | refresh interval of the metastore | 60 |
+| QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY | `searcher.partial_request_cache_capacity` node config | 64M |
+
 
 ### Set up a search API
 

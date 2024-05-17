@@ -35,21 +35,25 @@ impl Default for IngestMetrics {
                 "ingested_num_bytes",
                 "Total size of the docs ingested in bytes",
                 "ingest",
+                &[],
             ),
             ingested_num_docs: new_counter(
                 "ingested_num_docs",
                 "Number of docs received to be ingested",
                 "ingest",
+                &[],
             ),
             replicated_num_bytes_total: new_counter(
                 "replicated_num_bytes_total",
                 "Total size in bytes of the replicated docs.",
                 "ingest",
+                &[],
             ),
             replicated_num_docs_total: new_counter(
                 "replicated_num_docs_total",
                 "Total number of docs replicated.",
                 "ingest",
+                &[],
             ),
             queue_count: new_gauge(
                 "queue_count",

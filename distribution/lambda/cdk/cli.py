@@ -19,8 +19,8 @@ from urllib.parse import urlparse
 import boto3
 import botocore.config
 import botocore.exceptions
-from cdk import app
-from cdk.stacks.examples import hdfs_stack, mock_data_stack
+from . import app
+from stacks.examples import hdfs_stack, mock_data_stack
 
 region = os.environ["CDK_REGION"]
 

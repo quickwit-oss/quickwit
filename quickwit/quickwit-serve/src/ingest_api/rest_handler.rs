@@ -29,7 +29,6 @@ use quickwit_proto::ingest::router::{
 };
 use quickwit_proto::types::IndexId;
 use serde::Deserialize;
-use thiserror::Error;
 use warp::{Filter, Rejection};
 
 use crate::decompression::get_body_bytes;
@@ -49,12 +48,6 @@ pub struct IngestApi;
     quickwit_ingest::CommitType,
 )))]
 pub struct IngestApiSchemas;
-
-#[derive(Debug, Error)]
-#[error("request body contains invalid UTF-8 characters")]
-struct InvalidUtf8;
-
-impl warp::reject::Reject for InvalidUtf8 {}
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 struct IngestOptions {

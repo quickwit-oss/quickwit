@@ -94,7 +94,7 @@ const MIN_RESET_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "testsui
 /// Duration after which persist requests time out with
 /// [`quickwit_proto::ingest::IngestV2Error::Timeout`].
 pub(super) const PERSIST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_millis(10)
+    Duration::from_millis(100)
 } else {
     Duration::from_secs(6)
 };

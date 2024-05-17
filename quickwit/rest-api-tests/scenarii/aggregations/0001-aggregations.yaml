@@ -6,8 +6,8 @@ endpoint: _elastic/aggregations/_search
 json:
   query: { match_all: {} }
   aggs:
-    date_histo: 
-      date_histogram: 
+    date_histo:
+      date_histogram:
         field: "date"
         fixed_interval: "30d"
         offset: "-4d"
@@ -17,7 +17,31 @@ expected:
       buckets:
         -  { "doc_count": 5, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z" }
         -  { "doc_count": 2, "key": 1422662400000.0, "key_as_string": "2015-01-31T00:00:00Z" }
---- 
+---
+# Test date histogram with extended bounds
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    date_histo:
+      date_histogram:
+        field: "date"
+        fixed_interval: "30d"
+        offset: "-4d"
+        extended_bounds:
+          min: 1420070400000
+          max: 1425254400000
+expected:
+  aggregations:
+    date_histo:
+      buckets:
+        -  { "doc_count": 5, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z" }
+        -  { "doc_count": 2, "key": 1422662400000.0, "key_as_string": "2015-01-31T00:00:00Z" }
+        -  { "doc_count": 0, "key": 1425254400000.0, "key_as_string": "2015-03-02T00:00:00Z" }
+---
 # Test date histogram aggregation and sub-aggregation 
 method: [GET]
 engines:

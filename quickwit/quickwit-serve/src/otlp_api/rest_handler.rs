@@ -38,10 +38,6 @@ use warp::{Filter, Rejection};
 use crate::rest_api_response::into_rest_api_response;
 use crate::{require, with_arg, BodyFormat};
 
-#[derive(utoipa::OpenApi)]
-#[openapi(paths())]
-pub(crate) struct OtlpApi;
-
 /// Setup OpenTelemetry API handlers.
 pub(crate) fn otlp_ingest_api_handlers(
     otlp_logs_service: Option<OtlpGrpcLogsService>,

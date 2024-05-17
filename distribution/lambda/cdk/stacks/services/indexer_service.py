@@ -13,6 +13,7 @@ class IndexerService(Construct):
         index_config_bucket: str,
         index_config_key: str,
         memory_size: int,
+        timeout: aws_cdk.Duration,
         environment: dict[str, str],
         asset_path: str,
         **kwargs,
@@ -32,8 +33,7 @@ class IndexerService(Construct):
                 "QW_LAMBDA_INDEX_CONFIG_URI": f"s3://{index_config_bucket}/{index_config_key}",
                 **environment,
             },
-            # use a strict timeout and retry policy to avoid unexpected costs
-            timeout=aws_cdk.Duration.minutes(1),
+            timeout=timeout,
             retry_attempts=0,
             reserved_concurrent_executions=1,
             memory_size=memory_size,

@@ -16,9 +16,15 @@ jobs:
       - name: Install rustup
         run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
       - name: Install python dependencies
-        run: pip install ./distribution/lambda  
-      - name: Mypy lint
-        run: mypy distribution/lambda/
+        run: |
+            pip install --user pipenv
+            pipenv install --system
+        working-directory: ./distribution/lambda
+      - name: Lint and format
+        run: |
+            mypy .
+            black . --check
+        working-directory: ./distribution/lambda
       - name: Retrieve and export commit date, hash, and tags
         run: |
             echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV

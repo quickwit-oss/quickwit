@@ -9,6 +9,7 @@
 - Metrics
 - Geospatial search
 - Native Go, Java, and Python clients
+- SQL
 - Pipe-based query language
 - Security (TLS, authentication, RBAC)
 - and more...

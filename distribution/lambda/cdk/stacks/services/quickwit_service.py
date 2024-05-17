@@ -32,6 +32,8 @@ class QuickwitService(Construct):
         indexer_package_location: str,
         indexer_memory_size: int = DEFAULT_LAMBDA_MEMORY_SIZE,
         indexer_environment: dict[str, str] = {},
+        # small default timeout to avoid unexpected costs and hanging indexers
+        indexer_timeout: aws_cdk.Duration = aws_cdk.Duration.minutes(1),
         searcher_memory_size: int = DEFAULT_LAMBDA_MEMORY_SIZE,
         searcher_environment: dict[str, str] = {},
         **kwargs,
@@ -55,6 +57,7 @@ class QuickwitService(Construct):
             index_config_bucket=index_config_bucket,
             index_config_key=index_config_key,
             memory_size=indexer_memory_size,
+            timeout=indexer_timeout,
             environment=indexer_environment,
             asset_path=indexer_package_location,
         )

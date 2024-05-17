@@ -29,9 +29,8 @@ use tracing::error;
 use super::file_backed_index::FileBackedIndex;
 use super::store_operations::{load_index, METASTORE_FILE_NAME};
 
-/// Lazy [`FileBackedIndex`]. It loads a `FileBackedIndex`
-/// on demand and optionally spawns a task to poll
-/// regularly the storage and update the index.
+/// Lazy [`FileBackedIndex`]. It loads a `FileBackedIndex` on demand. When the index is first
+/// loaded, it optionally spawns a task to periodically poll the storage and update the index.
 pub(crate) struct LazyFileBackedIndex {
     index_id: IndexId,
     storage: Arc<dyn Storage>,
@@ -48,8 +47,8 @@ impl LazyFileBackedIndex {
         file_backed_index: Option<FileBackedIndex>,
     ) -> Self {
         let index_mutex_opt = file_backed_index.map(|index| Arc::new(Mutex::new(index)));
-        // If an index is given and a polling interval is given,
-        // spawn immediately the polling task.
+        // If the polling interval is configured and the index is already loaded,
+        // spawn immediately the polling task
         if let Some(index_mutex) = &index_mutex_opt {
             if let Some(polling_interval) = polling_interval_opt {
                 spawn_index_metadata_polling_task(
@@ -68,15 +67,24 @@ impl LazyFileBackedIndex {
         }
     }
 
-    /// Get `FileBackedIndex`.
+    /// Gets a synchronized `FileBackedIndex`. If the index wasn't provided on creation, we load it
+    /// lazily on the first call of this method.
     pub async fn get(&self) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
         self.lazy_index
-            .get_or_try_init(|| {
-                load_file_backed_index(
-                    self.storage.clone(),
-                    self.index_id.clone(),
-                    self.polling_interval_opt,
-                )
+            .get_or_try_init(|| async move {
+                let index = load_index(&*self.storage, &self.index_id).await?;
+                let index_mutex = Arc::new(Mutex::new(index));
+                // When the index is loaded lazily, the polling task is not started in the
+                // constructor so we do it here when the index is actually loaded.
+                if let Some(polling_interval) = self.polling_interval_opt {
+                    spawn_index_metadata_polling_task(
+                        self.storage.clone(),
+                        self.index_id.clone(),
+                        Arc::downgrade(&index_mutex),
+                        polling_interval,
+                    );
+                }
+                Ok(index_mutex)
             })
             .await
             .cloned()
@@ -122,6 +130,7 @@ fn spawn_index_metadata_polling_task(
 ) {
     tokio::task::spawn(async move {
         let mut interval = tokio::time::interval(polling_interval);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         interval.tick().await; //< this is to prevent fetch right after the first population of the data.
 
         while let Some(metadata_mutex) = metastore_weak.upgrade() {
@@ -129,22 +138,4 @@ fn spawn_index_metadata_polling_task(
             poll_index_metadata_once(&*storage, &index_id, &metadata_mutex).await;
         }
     });
-}
-
-async fn load_file_backed_index(
-    storage: Arc<dyn Storage>,
-    index_id: IndexId,
-    polling_interval_opt: Option<Duration>,
-) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
-    let index = load_index(&*storage, &index_id).await?;
-    let index_mutex = Arc::new(Mutex::new(index));
-    if let Some(polling_interval) = polling_interval_opt {
-        spawn_index_metadata_polling_task(
-            storage.clone(),
-            index_id.clone(),
-            Arc::downgrade(&index_mutex),
-            polling_interval,
-        );
-    }
-    Ok(index_mutex)
 }

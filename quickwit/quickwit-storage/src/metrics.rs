@@ -51,27 +51,32 @@ impl Default for StorageMetrics {
                 "object_storage_gets_total",
                 "Number of objects fetched.",
                 "storage",
+                &[],
             ),
             object_storage_put_total: new_counter(
                 "object_storage_puts_total",
                 "Number of objects uploaded. May differ from object_storage_requests_parts due to \
                  multipart upload.",
                 "storage",
+                &[],
             ),
             object_storage_put_parts: new_counter(
                 "object_storage_puts_parts",
                 "Number of object parts uploaded.",
                 "",
+                &[],
             ),
             object_storage_download_num_bytes: new_counter(
                 "object_storage_download_num_bytes",
                 "Amount of data downloaded from an object storage.",
                 "storage",
+                &[],
             ),
             object_storage_upload_num_bytes: new_counter(
                 "object_storage_upload_num_bytes",
                 "Amount of data uploaded to an object storage.",
                 "storage",
+                &[],
             ),
         }
     }

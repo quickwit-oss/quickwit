@@ -48,6 +48,7 @@ async fn create_local_search_service(
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
     let cluster_client = ClusterClient::new(search_job_placer);
+    // TODO configure split cache
     let searcher_context = Arc::new(SearcherContext::new(searcher_config, None));
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore,

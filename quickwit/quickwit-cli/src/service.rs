@@ -85,7 +85,7 @@ impl RunCliCommand {
 
         if let Some(services) = &self.services {
             info!(services = %services.iter().join(", "), "setting services from override");
-            node_config.enabled_services = services.clone();
+            node_config.enabled_services.clone_from(services);
         }
         let telemetry_handle_opt =
             quickwit_telemetry::start_telemetry_loop(quickwit_telemetry_info(&node_config));
