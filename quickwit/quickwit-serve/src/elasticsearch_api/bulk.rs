@@ -50,6 +50,7 @@ pub fn es_compat_bulk_handler(
         })
         .and(extract_format_from_qs())
         .map(make_elastic_api_response)
+        .recover(crate::rest::recover_fn)
 }
 
 /// POST `_elastic/<index>/_bulk`
