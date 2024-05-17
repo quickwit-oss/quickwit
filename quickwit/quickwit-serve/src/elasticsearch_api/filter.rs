@@ -74,7 +74,7 @@ pub(crate) fn elasticsearch_filter(
 pub(crate) fn elastic_bulk_filter(
 ) -> impl Filter<Extract = (Body, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_bulk")
-        .and(warp::post())
+        .and(warp::post().or(warp::put()).unify())
         .and(warp::body::content_length_limit(
             CONTENT_LENGTH_LIMIT.as_u64(),
         ))
@@ -97,7 +97,7 @@ pub(crate) fn elastic_bulk_filter(
 pub(crate) fn elastic_index_bulk_filter(
 ) -> impl Filter<Extract = (String, Body, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_bulk")
-        .and(warp::post())
+        .and(warp::post().or(warp::put()).unify())
         .and(warp::body::content_length_limit(
             CONTENT_LENGTH_LIMIT.as_u64(),
         ))
