@@ -36,9 +36,9 @@ Cloud-native search engine for observability (logs, traces, and soon metrics!). 
 
 ### 🚀 Quickstart
 
-- [Search and analytics on StackOverflow dataset](https://quickwit.io/docs/get-started/quickstart)
-- [Tracing analytics with Grafana](https://quickwit.io/docs/get-started/tutorials/trace-analytics-with-grafana)
-- [Tracing with Jaeger](https://quickwit.io/docs/get-started/tutorials/tutorial-jaeger)
+- [Search and analytics on Stack Overflow dataset](https://quickwit.io/docs/get-started/quickstart)
+- [Trace analytics with Grafana](https://quickwit.io/docs/get-started/tutorials/trace-analytics-with-grafana)
+- [Distributed tracing with Jaeger](https://quickwit.io/docs/get-started/tutorials/tutorial-jaeger)
 
 <br/>
 
@@ -94,6 +94,16 @@ Cloud-native search engine for observability (logs, traces, and soon metrics!). 
 
 # 🔮 Roadmap
 
+- Quickwit 0.9 (June 2024)
+  - Indexing and search performance improvements
+  - Index configuration updates (retention policy, indexing and search settings)
+  - Concatenated field
+
+- Quickwit 0.10 (September 2024)
+  - Schema (doc mapping) updates
+  - Native distributed ingestion
+  - Index templates
+
 - [Long-term roadmap](ROADMAP.md)
   - Live tail
   - SQL
@@ -101,27 +111,27 @@ Cloud-native search engine for observability (logs, traces, and soon metrics!). 
   - Alerting
   - [and more...](ROADMAP.md)
 
-details are also available on the [github projects](https://github.com/orgs/quickwit-oss/projects?query=is%3Aopen)
+details are also available on the [GitHub projects](https://github.com/orgs/quickwit-oss/projects?query=is%3Aopen)
 
 # 🙋 FAQ
 
-### How can I switch from Elasticsearch or Opensearch to Quickwit?
+### How can I switch from Elasticsearch or OpenSearch to Quickwit?
 
-Quickwit supports a large subset of Elasticsearch/Opensearch API.
+Quickwit supports a large subset of Elasticsearch/OpenSearch API.
 
-For instance, it has a ES-compatible ingest API to make it easier to migrate your log shippers (Vector, Fluent Bit, Syslog, ...) to Quickwit.
+For instance, it has an ES-compatible ingest API to make it easier to migrate your log shippers (Vector, Fluent Bit, Syslog, ...) to Quickwit.
 
-On the search-side, the most popular Elasticsearch endpoints, query DSL, and even aggregations are supported.
+On the search side, the most popular Elasticsearch endpoints, query DSL, and even aggregations are supported.
 
 The list of available endpoints and queries is available [here](https://quickwit.io/docs/reference/es_compatible_api), while the list of supported aggregations is available [here](https://quickwit.io/docs/reference/aggregation).
 
 Let us know if part of the API you are using is missing!
 
-If the client you are using is refusing to connect to Quickwit due to missing headers, you can use the `extra_headers` option in the [node configuration](https://quickwit.io/docs/configuration/node-config#rest-configuration) to impersonate any compatible version of Elasticsearch or Opensearch.
+If the client you are using is refusing to connect to Quickwit due to missing headers, you can use the `extra_headers` option in the [node configuration](https://quickwit.io/docs/configuration/node-config#rest-configuration) to impersonate any compatible version of Elasticsearch or OpenSearch.
 
 ### How is Quickwit different from traditional search engines like Elasticsearch or Solr?
 
-The core difference and advantage of Quickwit are its architecture built from the ground to search on cloud storage. We optimized IO paths, revamped the index data structures and made search stateless and sub-second on cloud storage.
+The core difference and advantage of Quickwit is its architecture built from the ground to search on cloud storage. We optimized IO paths, revamped the index data structures and made search stateless and sub-second on cloud storage.
 
 ### How does Quickwit compare to Elastic in terms of cost?
 
@@ -132,7 +142,7 @@ We estimate that Quickwit can be up to 10x cheaper on average than Elastic. To u
 Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means you are free to use Quickwit for your project if you don't modify Quickwit. However, if you do and you are distributing your modified version to the public, you have to make the modifications public.
 We also provide a commercial license for enterprises to provide support and a voice on our roadmap.
 
-### Is it possible to setup Quickwit for a High Availability (HA)?
+### Is it possible to set up Quickwit for a High Availability (HA)?
 
 HA is available for search, for indexing it's available only with a Kafka source.
 
