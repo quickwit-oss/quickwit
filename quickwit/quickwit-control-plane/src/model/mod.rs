@@ -152,8 +152,12 @@ impl ControlPlaneModel {
         Ok(())
     }
 
-    pub fn index_uid(&self, index_id: &str) -> Option<IndexUid> {
-        self.index_uid_table.get(index_id).cloned()
+    pub fn index_uid(&self, index_id: &str) -> Option<&IndexUid> {
+        self.index_uid_table.get(index_id)
+    }
+
+    pub fn index_metadata(&self, index_uid: &IndexUid) -> Option<&IndexMetadata> {
+        self.index_table.get(index_uid)
     }
 
     fn update_metrics(&self) {
@@ -457,9 +461,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(model.index_table.len(), 3);
-        assert_eq!(model.index_uid("test-index-0").unwrap(), index_uid);
-        assert_eq!(model.index_uid("test-index-1").unwrap(), index_uid2);
-        assert_eq!(model.index_uid("test-index-2").unwrap(), index_uid3);
+        assert_eq!(*model.index_uid("test-index-0").unwrap(), index_uid);
+        assert_eq!(*model.index_uid("test-index-1").unwrap(), index_uid2);
+        assert_eq!(*model.index_uid("test-index-2").unwrap(), index_uid3);
 
         assert_eq!(model.shard_table.num_shards(), 1);
 
@@ -500,7 +504,7 @@ mod tests {
         assert_eq!(model.index_table.get(&index_uid).unwrap(), &index_metadata);
 
         assert_eq!(model.index_uid_table.len(), 1);
-        assert_eq!(model.index_uid("test-index").unwrap(), index_uid);
+        assert_eq!(*model.index_uid("test-index").unwrap(), index_uid);
     }
 
     #[test]
@@ -518,7 +522,7 @@ mod tests {
         assert_eq!(model.index_table.get(&index_uid).unwrap(), &index_metadata);
 
         assert_eq!(model.index_uid_table.len(), 1);
-        assert_eq!(model.index_uid("test-index").unwrap(), index_uid);
+        assert_eq!(*model.index_uid("test-index").unwrap(), index_uid);
 
         assert_eq!(model.shard_table.num_sources(), 1);
 

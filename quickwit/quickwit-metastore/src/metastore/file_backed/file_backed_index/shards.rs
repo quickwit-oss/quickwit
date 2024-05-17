@@ -117,7 +117,7 @@ impl Shards {
     ) -> MetastoreResult<MutationOccurred<OpenShardSubresponse>> {
         let mut mutation_occurred = false;
 
-        let shard_id = subrequest.shard_id();
+        let shard_id = subrequest.shard_id().clone();
         let entry = self.shards.entry(shard_id.clone());
         let shard = match entry {
             Entry::Occupied(entry) => entry.get().clone(),
@@ -127,8 +127,9 @@ impl Shards {
                     source_id: self.source_id.clone(),
                     shard_id: Some(shard_id.clone()),
                     shard_state: ShardState::Open as i32,
-                    leader_id: subrequest.leader_id.clone(),
-                    follower_id: subrequest.follower_id.clone(),
+                    leader_id: subrequest.leader_id,
+                    follower_id: subrequest.follower_id,
+                    doc_mapping_json: subrequest.doc_mapping_json,
                     publish_position_inclusive: Some(Position::Beginning),
                     publish_token: None,
                 };
@@ -332,6 +333,7 @@ mod tests {
             shard_id: Some(ShardId::from(1)),
             leader_id: "leader_id".to_string(),
             follower_id: None,
+            doc_mapping_json: "{}".to_string(),
         };
         let MutationOccurred::Yes(subresponse) = shards.open_shard(subrequest.clone()).unwrap()
         else {
@@ -363,6 +365,7 @@ mod tests {
             shard_id: Some(ShardId::from(2)),
             leader_id: "leader_id".to_string(),
             follower_id: Some("follower_id".to_string()),
+            doc_mapping_json: "{}".to_string(),
         };
         let MutationOccurred::Yes(subresponse) = shards.open_shard(subrequest).unwrap() else {
             panic!("Expected `MutationOccured::No`");

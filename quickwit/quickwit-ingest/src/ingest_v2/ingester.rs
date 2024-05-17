@@ -1568,6 +1568,7 @@ mod tests {
             shard_state: ShardState::Open as i32,
             leader_id: ingester_ctx.node_id.to_string(),
             follower_id: None,
+            doc_mapping_json: "{}".to_string(),
             publish_position_inclusive: None,
             publish_token: None,
         };

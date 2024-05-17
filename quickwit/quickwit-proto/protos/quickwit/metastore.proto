@@ -404,6 +404,7 @@ message OpenShardSubrequest {
   quickwit.ingest.ShardId shard_id = 4;
   string leader_id = 5;
   optional string follower_id = 6;
+  string doc_mapping_json = 7;
 }
 
 message OpenShardsResponse {

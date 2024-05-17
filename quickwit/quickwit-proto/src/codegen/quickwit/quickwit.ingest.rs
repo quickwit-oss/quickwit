@@ -1,3 +1,4 @@
+/// Shard primary key.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -61,6 +62,9 @@ pub struct Shard {
     #[prost(string, optional, tag = "10")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish_token: ::core::option::Option<::prost::alloc::string::String>,
+    /// The doc mapping of the index when the shard was created, stored as a JSON string.
+    #[prost(string, tag = "12")]
+    pub doc_mapping_json: ::prost::alloc::string::String,
 }
 /// A group of shards belonging to the same index and source.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

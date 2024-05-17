@@ -102,6 +102,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
             shard_state: ShardState::Open as i32,
             leader_id: "leader-ingester".to_string(),
             follower_id: Some("follower-ingester".to_string()),
+            doc_mapping_json: r#"{"mode": "dynamic", "timestamp_field": "ts"}"#.to_string(),
             publish_position_inclusive: Some(Position::Beginning),
             ..Default::default()
         };

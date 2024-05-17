@@ -130,17 +130,17 @@ impl fmt::Debug for IngestController {
 /// It is up to the client to check the error type and see if the control plane actor should be
 /// restarted.
 async fn open_shards_on_metastore_and_model(
-    open_shards_subrequests: Vec<OpenShardSubrequest>,
+    open_shard_subrequests: Vec<OpenShardSubrequest>,
     metastore: &mut MetastoreServiceClient,
     model: &mut ControlPlaneModel,
 ) -> MetastoreResult<OpenShardsResponse> {
-    if open_shards_subrequests.is_empty() {
+    if open_shard_subrequests.is_empty() {
         return Ok(OpenShardsResponse {
             subresponses: Vec::new(),
         });
     }
     let open_shards_request = OpenShardsRequest {
-        subrequests: open_shards_subrequests,
+        subrequests: open_shard_subrequests,
     };
     let open_shards_response = metastore.open_shards(open_shards_request).await?;
     for open_shard_subresponse in &open_shards_response.subresponses {
@@ -159,11 +159,14 @@ fn get_open_shard_from_model(
     model: &ControlPlaneModel,
     unavailable_leaders: &FnvHashSet<NodeId>,
 ) -> Result<Option<GetOrCreateOpenShardsSuccess>, GetOrCreateOpenShardsFailureReason> {
-    let Some(index_uid) = model.index_uid(&get_open_shards_subrequest.index_id) else {
+    let Some(index_metadata) = model
+        .index_uid(&get_open_shards_subrequest.index_id)
+        .and_then(|index_uid| model.index_metadata(index_uid))
+    else {
         return Err(GetOrCreateOpenShardsFailureReason::IndexNotFound);
     };
     let Some(open_shard_entries) = model.find_open_shards(
-        &index_uid,
+        &index_metadata.index_uid,
         &get_open_shards_subrequest.source_id,
         unavailable_leaders,
     ) else {
@@ -179,7 +182,7 @@ fn get_open_shard_from_model(
         .collect();
     Ok(Some(GetOrCreateOpenShardsSuccess {
         subrequest_id: get_open_shards_subrequest.subrequest_id,
-        index_uid: index_uid.into(),
+        index_uid: Some(index_metadata.index_uid.clone()),
         source_id: get_open_shards_subrequest.source_id.clone(),
         open_shards,
     }))
@@ -336,7 +339,7 @@ impl IngestController {
         let unavailable_leaders: FnvHashSet<NodeId> = get_open_shards_request
             .unavailable_leaders
             .into_iter()
-            .map(Into::into)
+            .map(NodeId::from)
             .collect();
 
         // We do a first pass to identify the shards that are missing from the model and need to be
@@ -350,7 +353,7 @@ impl IngestController {
                 // create them after this loop.
                 let index_uid = model
                     .index_uid(&get_open_shards_subrequest.index_id)
-                    .unwrap();
+                    .expect("index should be found");
                 let source_uid = SourceUid {
                     index_uid,
                     source_id: get_open_shards_subrequest.source_id.clone(),
@@ -381,7 +384,6 @@ impl IngestController {
                 error!(error=?metastore_error, "failed to open shards on the metastore");
             }
         }
-
         for get_open_shards_subrequest in get_open_shards_request.subrequests {
             match get_open_shard_from_model(
                 &get_open_shards_subrequest,
@@ -403,11 +405,11 @@ impl IngestController {
                 }
             }
         }
-
-        Ok(GetOrCreateOpenShardsResponse {
+        let response = GetOrCreateOpenShardsResponse {
             successes: get_or_create_open_shards_successes,
             failures: get_or_create_open_shards_failures,
-        })
+        };
+        Ok(response)
     }
 
     /// Allocates and assigns new shards to ingesters.
@@ -510,7 +512,7 @@ impl IngestController {
         let mut failures = Vec::new();
 
         let mut per_leader_shards_to_init: HashMap<String, Vec<InitShardSubrequest>> =
-            HashMap::default();
+            HashMap::new();
 
         for init_shard_subrequest in init_shard_subrequests {
             let leader_id = init_shard_subrequest.shard().leader_id.clone();
@@ -535,6 +537,7 @@ impl IngestController {
                     }
                 })
                 .collect();
+
             let Some(mut leader) = self.ingester_pool.get(&leader_id) else {
                 warn!("failed to init shards: ingester `{leader_id}` is unavailable");
                 failures.extend(init_shard_failures);
@@ -593,25 +596,25 @@ impl IngestController {
         {
             return Ok(());
         }
-
         let new_num_open_shards = shard_stats.num_open_shards + 1;
-
         let new_shard_source_uids: HashMap<SourceUid, usize> =
-            std::iter::once((source_uid.clone(), 1)).collect();
+            HashMap::from_iter([(source_uid, 1)]);
         let successful_source_uids_res = self
             .try_open_shards(new_shard_source_uids, model, &Default::default(), progress)
             .await;
+
         match successful_source_uids_res {
             Ok(successful_source_uids) => {
                 assert!(successful_source_uids.len() <= 1);
+
                 if successful_source_uids.is_empty() {
                     // We did not manage to create the shard.
                     // We can release our permit.
                     model.release_scaling_permits(&source_uid, ScalingMode::Up, NUM_PERMITS);
                     warn!(
                         index_uid=%source_uid.index_uid,
-                    source_id=%source_uid.source_id,
-                    "scaling up number of shards to {new_num_open_shards} failed: shard initialization failure"
+                        source_id=%source_uid.source_id,
+                        "scaling up number of shards to {new_num_open_shards} failed: shard initialization failure"
                     );
                 } else {
                     info!(
@@ -660,12 +663,11 @@ impl IngestController {
         unavailable_leaders: &FnvHashSet<NodeId>,
         progress: &Progress,
     ) -> MetastoreResult<HashMap<SourceUid, usize>> {
-        let num_shards = source_uids.values().sum::<usize>();
+        let num_shards: usize = source_uids.values().sum();
 
         if num_shards == 0 {
             return Ok(HashMap::default());
         }
-
         // TODO unavailable leaders
         let Some(leader_follower_pairs) =
             self.allocate_shards(num_shards, unavailable_leaders, model)
@@ -683,14 +685,21 @@ impl IngestController {
                 .zip(leader_follower_pairs)
                 .enumerate()
         {
+            let shard_id = ShardId::from(Ulid::new());
+            let index_metadata = model
+                .index_metadata(&source_uid.index_uid)
+                .expect("Index metadata not found.");
+            let doc_mapping_json = get_doc_mapping_json(index_metadata);
+
             let shard = Shard {
                 index_uid: Some(source_uid.index_uid.clone()),
                 source_id: source_uid.source_id.clone(),
-                shard_id: Some(ShardId::from(Ulid::new())),
+                shard_id: Some(shard_id),
                 leader_id: leader_id.to_string(),
                 follower_id: follower_id_opt.as_ref().map(ToString::to_string),
                 shard_state: ShardState::Open as i32,
-                publish_position_inclusive: Some(quickwit_proto::types::Position::default()),
+                doc_mapping_json,
+                publish_position_inclusive: Some(Position::Beginning),
                 publish_token: None,
             };
             let init_shard_subrequest = InitShardSubrequest {
@@ -703,12 +712,13 @@ impl IngestController {
         // Let's first attempt to initialize these shards.
         let init_shards_response = self.init_shards(init_shard_subrequests, progress).await;
 
-        let open_shards_subrequests = init_shards_response
+        let open_shard_subrequests = init_shards_response
             .successes
             .into_iter()
             .enumerate()
             .map(|(subrequest_id, init_shard_success)| {
                 let shard = init_shard_success.shard();
+
                 OpenShardSubrequest {
                     subrequest_id: subrequest_id as u32,
                     index_uid: shard.index_uid.clone(),
@@ -716,19 +726,21 @@ impl IngestController {
                     shard_id: shard.shard_id.clone(),
                     leader_id: shard.leader_id.clone(),
                     follower_id: shard.follower_id.clone(),
+                    doc_mapping_json: shard.doc_mapping_json.clone(),
                 }
             })
             .collect();
 
         let OpenShardsResponse { subresponses } = progress
             .protect_future(open_shards_on_metastore_and_model(
-                open_shards_subrequests,
+                open_shard_subrequests,
                 &mut self.metastore,
                 model,
             ))
             .await?;
 
-        let mut open_shards_count = HashMap::default();
+        let mut open_shards_count = HashMap::new();
+
         for open_shard_subresponse in subresponses {
             let source_uid = open_shard_subresponse.open_shard().source_uid();
             *open_shards_count.entry(source_uid).or_default() += 1;
@@ -770,11 +782,12 @@ impl IngestController {
             return Ok(());
         };
         let shard_pkeys = vec![ShardPKey {
-            index_uid: source_uid.index_uid.clone().into(),
+            index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.clone(),
             shard_id: Some(shard_id.clone()),
         }];
         let close_shards_request = CloseShardsRequest { shard_pkeys };
+
         if let Err(error) = progress
             .protect_future(ingester.close_shards(close_shards_request))
             .await
@@ -890,7 +903,7 @@ impl IngestController {
             return Vec::new();
         }
 
-        let mut per_leader_open_shards: HashMap<&str, Vec<&ShardEntry>> = HashMap::default();
+        let mut per_leader_open_shards: HashMap<&str, Vec<&ShardEntry>> = HashMap::new();
 
         for shard in model.all_shards() {
             if shard.is_open() {
@@ -950,7 +963,7 @@ impl IngestController {
         let num_shards_to_move = shards_to_move.len();
         info!("rebalancing {} shards", num_shards_to_move);
 
-        let mut new_shards_source_uids: HashMap<SourceUid, usize> = HashMap::default();
+        let mut new_shards_source_uids: HashMap<SourceUid, usize> = HashMap::new();
         for shard in &shards_to_move {
             *new_shards_source_uids
                 .entry(shard.source_uid())
@@ -1116,6 +1129,12 @@ fn find_scale_down_candidate(
         .map(|(leader_id, (_num_shards, shard))| {
             (leader_id.clone().into(), shard.shard_id().clone())
         })
+}
+
+/// Reads the `DocMapping` of an index metadata and serializes it to a JSON string.
+fn get_doc_mapping_json(index_metadata: &IndexMetadata) -> String {
+    serde_json::to_string(&index_metadata.index_config.doc_mapping)
+        .expect("`DocMapping` should be JSON serializable")
 }
 
 #[cfg(test)]
