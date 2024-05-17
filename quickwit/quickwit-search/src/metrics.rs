@@ -27,6 +27,8 @@ use quickwit_common::metrics::{
 pub struct SearchMetrics {
     pub leaf_searches_splits_total: IntCounter,
     pub leaf_search_split_duration_secs: Histogram,
+    pub job_assigned_total: IntCounter,
+    pub job_assigned_to_affinity_searcher: IntCounter,
 }
 
 impl Default for SearchMetrics {
@@ -44,6 +46,18 @@ impl Default for SearchMetrics {
                  starts after the semaphore is obtained.",
                 "search",
                 exponential_buckets(0.005, 2.0, 10).unwrap(),
+            ),
+            job_assigned_total: new_counter(
+                "job_assigned_total",
+                "Number of job assigned to searchers",
+                "search",
+                &[],
+            ),
+            job_assigned_to_affinity_searcher: new_counter(
+                "job_assigned_to_affinity_searcher",
+                "Number of job assigned to the searcher of highest affinity",
+                "search",
+                &[],
             ),
         }
     }
