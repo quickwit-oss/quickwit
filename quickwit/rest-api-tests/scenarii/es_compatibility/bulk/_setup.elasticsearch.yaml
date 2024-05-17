@@ -1,0 +1,18 @@
+# Delete possibly remaining index
+method: DELETE
+endpoint: test-index
+status_code: null
+---
+method: PUT
+endpoint: test-index
+json: {
+  "mappings": {
+    "properties": {
+      "message": {
+        "type": "text",
+        "store": true
+      }
+    }
+  }
+}
+

@@ -1,0 +1,4 @@
+method: PUT
+ndjson:
+  - index: { "_index": "test-index", "_id": "1" }
+  - message: Hello, World!
