@@ -112,11 +112,13 @@ pub fn es_compat_search_handler(
 /// GET or POST _elastic/{index}/_field_caps
 pub fn es_compat_index_field_capabilities_handler(
     search_service: Arc<dyn SearchService>,
+    metastore_service: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_index_field_capabilities_filter()
         .or(elastic_field_capabilities_filter())
         .unify()
         .and(with_arg(search_service))
+        .and(with_arg(metastore_service))
         .then(es_compat_index_field_capabilities)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
@@ -547,13 +549,16 @@ async fn es_compat_index_field_capabilities(
     search_params: FieldCapabilityQueryParams,
     search_body: FieldCapabilityRequestBody,
     search_service: Arc<dyn SearchService>,
+    mut metastore: MetastoreServiceClient,
 ) -> Result<FieldCapabilityResponse, ElasticsearchError> {
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
+
     let search_request =
         build_list_field_request_for_es_api(index_id_patterns, search_params, search_body)?;
     let search_response: ListFieldsResponse =
         search_service.root_list_fields(search_request).await?;
     let search_response_rest: FieldCapabilityResponse =
-        convert_to_es_field_capabilities_response(search_response);
+        convert_to_es_field_capabilities_response(search_response, indexes_metadata);
     Ok(search_response_rest)
 }
 

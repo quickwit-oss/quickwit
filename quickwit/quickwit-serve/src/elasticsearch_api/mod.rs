@@ -68,6 +68,7 @@ pub fn elastic_api_handlers(
         .or(es_compat_index_multi_search_handler(search_service.clone()))
         .or(es_compat_index_field_capabilities_handler(
             search_service.clone(),
+            metastore.clone(),
         ))
         .or(es_compat_bulk_handler(
             ingest_service.clone(),
