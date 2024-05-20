@@ -62,6 +62,7 @@ use super::model::{
 };
 use super::{make_elastic_api_response, TrackTotalHits};
 use crate::format::BodyFormat;
+use crate::rest::recover_fn;
 use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::{with_arg, BuildInfo};
 
@@ -139,6 +140,7 @@ pub fn es_compat_stats_handler(
         .and(with_arg(search_service))
         .then(es_compat_stats)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 /// GET _elastic/{index}/_stats
@@ -149,6 +151,7 @@ pub fn es_compat_index_stats_handler(
         .and(with_arg(search_service))
         .then(es_compat_index_stats)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 /// GET _elastic/_cat/indices
@@ -159,6 +162,7 @@ pub fn es_compat_cat_indices_handler(
         .and(with_arg(search_service))
         .then(es_compat_cat_indices)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 /// GET _elastic/_cat/indices/{index}
@@ -169,6 +173,7 @@ pub fn es_compat_index_cat_indices_handler(
         .and(with_arg(search_service))
         .then(es_compat_index_cat_indices)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 /// GET or POST _elastic/{index}/_search

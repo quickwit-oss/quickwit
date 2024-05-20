@@ -35,6 +35,7 @@ use serde::{self, Serialize};
 use tracing::error;
 use warp::{Filter, Rejection};
 
+use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
 use crate::{require, with_arg, BodyFormat};
 
@@ -47,6 +48,7 @@ pub(crate) fn otlp_ingest_api_handlers(
         .or(otlp_default_traces_handler(otlp_traces_service.clone()))
         .or(otlp_logs_handler(otlp_logs_service))
         .or(otlp_ingest_traces_handler(otlp_traces_service))
+        .recover(recover_fn)
 }
 
 pub(crate) fn otlp_default_logs_handler(

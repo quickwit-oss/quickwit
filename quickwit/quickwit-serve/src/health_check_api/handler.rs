@@ -26,6 +26,7 @@ use warp::hyper::StatusCode;
 use warp::reply::with_status;
 use warp::{Filter, Rejection};
 
+use crate::rest::recover_fn;
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
@@ -50,6 +51,7 @@ fn liveness_handler(
         .and(with_arg(indexer_service_opt))
         .and(with_arg(janitor_service_opt))
         .then(get_liveness)
+        .recover(recover_fn)
 }
 
 fn readiness_handler(

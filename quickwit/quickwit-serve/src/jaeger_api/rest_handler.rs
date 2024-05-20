@@ -39,6 +39,7 @@ use crate::jaeger_api::model::{
     JaegerError, JaegerResponseBody, JaegerSpan, JaegerTrace, TracesSearchQueryParams,
     DEFAULT_NUMBER_OF_TRACES,
 };
+use crate::rest::recover_fn;
 use crate::rest_api_response::RestApiResponse;
 use crate::search_api::extract_index_id_patterns;
 use crate::{require, BodyFormat};
@@ -66,6 +67,7 @@ pub(crate) fn jaeger_api_handlers(
         ))
         .or(jaeger_traces_search_handler(jaeger_service_opt.clone()))
         .or(jaeger_traces_handler(jaeger_service_opt.clone()))
+        .recover(recover_fn)
 }
 
 fn jaeger_api_path_filter() -> impl Filter<Extract = (Vec<String>,), Error = Rejection> + Clone {
@@ -349,13 +351,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_when_jaeger_not_found() {
-        let jaeger_api_handler = jaeger_api_handlers(None).recover(recover_fn);
+        let jaeger_api_handler = jaeger_api_handlers(None).recover(crate::rest::recover_fn_final);
         let resp = warp::test::request()
             .path("/otel-traces-v0_7/jaeger/api/services")
             .reply(&jaeger_api_handler)
             .await;
-        let error_body = serde_json::from_slice::<HashMap<String, String>>(resp.body()).unwrap();
         assert_eq!(resp.status(), 404);
+        let error_body = serde_json::from_slice::<HashMap<String, String>>(resp.body()).unwrap();
         assert!(error_body.contains_key("message"));
         assert_eq!(error_body.get("message").unwrap(), "Route not found");
     }
