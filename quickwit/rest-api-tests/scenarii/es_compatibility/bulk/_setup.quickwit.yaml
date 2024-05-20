@@ -1,0 +1,17 @@
+# Delete possibly remaining index
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/test-index
+status_code: null
+---
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: test-index
+  doc_mapping:
+    field_mappings:
+        - name: message
+          type: text
+sleep_after: 3
