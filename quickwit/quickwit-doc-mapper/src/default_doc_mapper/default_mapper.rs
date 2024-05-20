@@ -29,8 +29,11 @@ use quickwit_query::tokenizers::TokenizerManager;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
+use tantivy::schema::document::{
+    CompactDocObjectIter, CompactDocValue, ReferenceValue, ReferenceValueLeaf,
+};
 use tantivy::schema::{
-    Field, FieldType, FieldValue, OwnedValue as TantivyValue, Schema, INDEXED, STORED,
+    Field, FieldType, OwnedValue as TantivyValue, Schema, Value, INDEXED, STORED,
 };
 use tantivy::TantivyDocument as Document;
 
@@ -458,27 +461,18 @@ fn tantivy_value_to_json(val: TantivyValue) -> JsonValue {
 }
 
 #[inline]
-fn populate_field_presence_for_json_value(
-    json_value: &TantivyValue,
+fn populate_field_presence_for_json_value<'a>(
+    json_value: CompactDocValue<'a>,
     path_hasher: &PathHasher,
     is_expand_dots_enabled: bool,
     output: &mut FnvHashSet<u64>,
 ) {
-    match json_value {
-        TantivyValue::Null => {}
-        TantivyValue::Bool(_)
-        | TantivyValue::F64(_)
-        | TantivyValue::I64(_)
-        | TantivyValue::U64(_)
-        | TantivyValue::PreTokStr(_)
-        | TantivyValue::Date(_)
-        | TantivyValue::Facet(_)
-        | TantivyValue::Bytes(_)
-        | TantivyValue::IpAddr(_)
-        | TantivyValue::Str(_) => {
+    match json_value.as_value() {
+        ReferenceValue::Leaf(ReferenceValueLeaf::Null) => {}
+        ReferenceValue::Leaf(_) => {
             output.insert(path_hasher.finish());
         }
-        TantivyValue::Array(items) => {
+        ReferenceValue::Array(items) => {
             for item in items {
                 populate_field_presence_for_json_value(
                     item,
@@ -488,7 +482,7 @@ fn populate_field_presence_for_json_value(
                 );
             }
         }
-        TantivyValue::Object(json_obj) => {
+        ReferenceValue::Object(json_obj) => {
             populate_field_presence_for_json_obj(
                 json_obj,
                 path_hasher.clone(),
@@ -500,7 +494,7 @@ fn populate_field_presence_for_json_value(
 }
 
 fn populate_field_presence_for_json_obj(
-    json_obj: &[(String, TantivyValue)],
+    json_obj: CompactDocObjectIter,
     path_hasher: PathHasher,
     is_expand_dots_enabled: bool,
     output: &mut FnvHashSet<u64>,
@@ -577,17 +571,11 @@ impl DocMapper for DefaultDocMapper {
 
         let mut dynamic_json_obj = serde_json::Map::default();
         let mut field_path = Vec::new();
-        let mut document = Document::default();
+        let mut document = Document::with_capacity(document_len as usize * 2);
 
+        let json_obj = JsonValue::Object(json_obj);
         if let Some(source_field) = self.source_field {
-            document.add_object(
-                source_field,
-                json_obj
-                    .clone()
-                    .into_iter()
-                    .map(|(key, val)| (key, TantivyValue::from(val)))
-                    .collect(),
-            );
+            document.add_field_value(source_field, &json_obj);
         }
 
         let mode = self.mode.mode_type();
@@ -610,17 +598,11 @@ impl DocMapper for DefaultDocMapper {
                         for (concatenate_dynamic_field, value) in
                             zip_cloneable(self.concatenate_dynamic_fields.iter(), value)
                         {
-                            document.add_field_value(*concatenate_dynamic_field, value);
+                            document.add_field_value(*concatenate_dynamic_field, &value);
                         }
                     }
                 }
-                document.add_object(
-                    dynamic_field,
-                    dynamic_json_obj
-                        .into_iter()
-                        .map(|(key, val)| (key, TantivyValue::from(val)))
-                        .collect(),
-                );
+                document.add_field_value(dynamic_field, &JsonValue::Object(dynamic_json_obj));
             }
         }
 
@@ -632,18 +614,18 @@ impl DocMapper for DefaultDocMapper {
 
         if self.index_field_presence {
             let mut field_presence_hashes: FnvHashSet<u64> = FnvHashSet::with_capacity_and_hasher(
-                document.field_values().len(),
+                document.field_values().count(),
                 Default::default(),
             );
-            for FieldValue { field, value } in document.field_values() {
-                let field_entry = self.schema.get_field_entry(*field);
+            for (field, value) in document.field_values() {
+                let field_entry = self.schema.get_field_entry(field);
                 if !field_entry.is_indexed() || field_entry.is_fast() {
                     // We are using an tantivy's ExistsQuery for fast fields.
                     continue;
                 }
                 let mut path_hasher: PathHasher = PathHasher::default();
                 path_hasher.append(&field.field_id().to_le_bytes()[..]);
-                if let TantivyValue::Object(json_obj) = value {
+                if let ReferenceValue::Object(json_obj) = value {
                     let is_expand_dots_enabled: bool =
                         if let FieldType::JsonObject(json_options) = field_entry.field_type() {
                             json_options.is_expand_dots_enabled()
@@ -661,11 +643,13 @@ impl DocMapper for DefaultDocMapper {
                 }
             }
             for field_presence_hash in field_presence_hashes {
-                document.add_field_value(FIELD_PRESENCE_FIELD, field_presence_hash);
+                document.add_leaf_field_value(FIELD_PRESENCE_FIELD, field_presence_hash);
             }
         }
 
         self.check_missing_required_fields(&document)?;
+
+        document.shrink_to_fit();
         Ok((partition, document))
     }
 

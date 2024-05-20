@@ -318,7 +318,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "5b7cca1", default-features = false, features = [
+tantivy = { path = "../../../tantivy/compact_doc", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
@@ -346,4 +346,5 @@ sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921
 debug = false
 
 [profile.release]
+debug = true
 lto = "thin"

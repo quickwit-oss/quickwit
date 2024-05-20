@@ -36,7 +36,7 @@ use quickwit_opentelemetry::otlp::{
 use quickwit_proto::types::{IndexId, SourceId};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use tantivy::schema::{Field, Value};
+use tantivy::schema::Field;
 use tantivy::{DateTime, TantivyDocument};
 use thiserror::Error;
 use tokio::runtime::Handle;

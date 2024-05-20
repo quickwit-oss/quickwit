@@ -318,7 +318,7 @@ impl MappingLeaf {
                         .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
                     for concat_value in concat_values {
                         for field in &self.concatenate {
-                            document.add_field_value(*field, concat_value.clone());
+                            document.add_field_value(*field, &concat_value);
                         }
                     }
                 }
@@ -326,7 +326,7 @@ impl MappingLeaf {
                     .typ
                     .value_from_json(el_json_val)
                     .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
-                document.add_field_value(self.field, value);
+                document.add_field_value(self.field, &value);
             }
             return Ok(());
         }
@@ -338,7 +338,7 @@ impl MappingLeaf {
                 .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
             for concat_value in concat_values {
                 for field in &self.concatenate {
-                    document.add_field_value(*field, concat_value.clone());
+                    document.add_field_value(*field, &concat_value.clone());
                 }
             }
         }
@@ -346,7 +346,7 @@ impl MappingLeaf {
             .typ
             .value_from_json(json_val)
             .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
-        document.add_field_value(self.field, value);
+        document.add_field_value(self.field, &value);
         Ok(())
     }
 
@@ -633,12 +633,16 @@ impl MappingNode {
 
     pub fn doc_from_json(
         &self,
-        json_obj: serde_json::Map<String, JsonValue>,
+        json_obj: JsonValue,
         mode: ModeType,
         document: &mut Document,
         path: &mut Vec<String>,
         dynamic_json_obj: &mut serde_json::Map<String, JsonValue>,
     ) -> Result<(), DocParsingError> {
+        let json_obj = match json_obj {
+            JsonValue::Object(json_obj) => json_obj,
+            _ => panic!("internal error: expected json object"),
+        };
         for (field_name, val) in json_obj {
             if let Some(child_tree) = self.branches.get(&field_name) {
                 path.push(field_name);
@@ -733,7 +737,13 @@ impl MappingTree {
             }
             MappingTree::Node(mapping_node) => {
                 if let JsonValue::Object(json_obj) = json_value {
-                    mapping_node.doc_from_json(json_obj, mode, document, path, dynamic_json_obj)
+                    mapping_node.doc_from_json(
+                        JsonValue::Object(json_obj),
+                        mode,
+                        document,
+                        path,
+                        dynamic_json_obj,
+                    )
                 } else {
                     Err(DocParsingError::ValueError(
                         path.join("."),

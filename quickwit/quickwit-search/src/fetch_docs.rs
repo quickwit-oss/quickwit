@@ -29,7 +29,8 @@ use quickwit_proto::search::{
 };
 use quickwit_storage::Storage;
 use tantivy::query::Query;
-use tantivy::schema::{Document as DocumentTrait, Field, OwnedValue, TantivyDocument, Value};
+use tantivy::schema::document::CompactDocValue;
+use tantivy::schema::{Document as DocumentTrait, Field, TantivyDocument, Value};
 use tantivy::snippet::SnippetGenerator;
 use tantivy::{ReloadPolicy, Score, Searcher, Term};
 use tracing::{error, Instrument};
@@ -184,10 +185,10 @@ async fn fetch_docs_in_split(
     .context("open-index-for-split")?;
     // we add an executor here, we could add it in open_index_with_caches, though we should verify
     // the side-effect before
-    let tantivy_executor = crate::search_thread_pool()
-        .get_underlying_rayon_thread_pool()
-        .into();
-    index.set_executor(tantivy_executor);
+    //let tantivy_executor = crate::search_thread_pool()
+        //.get_underlying_rayon_thread_pool()
+        //.into();
+    //index.set_executor(tantivy_executor);
     let index_reader = index
         .reader_builder()
         // the docs are presorted so a cache size of NUM_CONCURRENT_REQUESTS is fine
@@ -274,7 +275,7 @@ impl FieldsSnippetGenerator {
     fn snippets_from_field_values(
         &self,
         field_name: &str,
-        field_values: Vec<&OwnedValue>,
+        field_values: Vec<CompactDocValue<'_>>,
     ) -> Option<Vec<String>> {
         if let Some(snippet_generator) = self.field_generators.get(field_name) {
             let values = field_values
