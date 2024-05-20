@@ -3,7 +3,6 @@ data "aws_iam_policy_document" "quickwit_task_permission" {
   statement {
     actions = [
       "s3:ListBucket",
-      "s3:ListObjects",
       "s3:GetObject",
       "s3:PutObject",
       "s3:DeleteObject"
