@@ -20,7 +20,9 @@
 // See https://prometheus.io/docs/practices/naming/
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, new_counter_vec, new_gauge, IntCounter, IntCounterVec, IntGauge};
+use quickwit_common::metrics::{
+    new_counter, new_counter_with_labels, new_gauge, IntCounter, IntGauge,
+};
 
 /// Counters associated to storage operations.
 pub struct StorageMetrics {
@@ -88,9 +90,9 @@ pub struct CacheMetrics {
     pub component_name: String,
     pub in_cache_count: IntGauge,
     pub in_cache_num_bytes: IntGauge,
-    pub hits_num_items: IntCounterVec<0>,
-    pub hits_num_bytes: IntCounterVec<0>,
-    pub misses_num_items: IntCounterVec<0>,
+    pub hits_num_items: IntCounter,
+    pub hits_num_bytes: IntCounter,
+    pub misses_num_items: IntCounter,
 }
 
 impl CacheMetrics {
@@ -108,28 +110,25 @@ impl CacheMetrics {
                 "in_cache_num_bytes",
                 "Number of bytes in cache by component",
                 &namespace,
-                &[("componenet_name", component_name)],
+                &[("component_name", component_name)],
             ),
-            hits_num_items: new_counter_vec(
+            hits_num_items: new_counter_with_labels(
                 "cache_hits_total",
                 "Number of cache hits by component",
                 &namespace,
                 &[("component_name", component_name)],
-                [],
             ),
-            hits_num_bytes: new_counter_vec(
+            hits_num_bytes: new_counter_with_labels(
                 "cache_hits_bytes",
                 "Number of cache hits in bytes by component",
                 &namespace,
                 &[("component_name", component_name)],
-                [],
             ),
-            misses_num_items: new_counter_vec(
+            misses_num_items: new_counter_with_labels(
                 "cache_misses_total",
                 "Number of cache misses by component",
                 &namespace,
                 &[("component_name", component_name)],
-                [],
             ),
         }
     }

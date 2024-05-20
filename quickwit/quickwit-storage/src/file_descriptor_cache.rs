@@ -128,10 +128,10 @@ impl FileDescriptorCache {
         num_bytes: u64,
     ) -> std::io::Result<SplitFile> {
         if let Some(split_file) = self.get_split_file(split_id) {
-            self.fd_cache_metrics.hits_num_items.with_label_values([]).inc();
+            self.fd_cache_metrics.hits_num_items.inc();
             return Ok(split_file);
         } else {
-            self.fd_cache_metrics.misses_num_items.with_label_values([]).inc();
+            self.fd_cache_metrics.misses_num_items.inc();
         }
         let split_path = get_split_file_path(root_path, split_id);
         let fd_semaphore_guard = Semaphore::acquire_owned(self.fd_semaphore.clone())
@@ -223,8 +223,8 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(cache_metrics.in_cache_count.get(), 10);
-        assert_eq!(cache_metrics.hits_num_items.with_label_values([]).get(), 20);
-        assert_eq!(cache_metrics.misses_num_items.with_label_values([]).get(), 10);
+        assert_eq!(cache_metrics.hits_num_items.get(), 20);
+        assert_eq!(cache_metrics.misses_num_items.get(), 10);
     }
 
     // This mimicks Quickwit's workload where the fd cache is much smaller than the number of
@@ -255,8 +255,8 @@ mod tests {
             }
         }
         assert_eq!(cache_metrics.in_cache_count.get(), 10);
-        assert_eq!(cache_metrics.hits_num_items.with_label_values([]).get(), 100 * 9);
-        assert_eq!(cache_metrics.misses_num_items.with_label_values([]).get(), 100);
+        assert_eq!(cache_metrics.hits_num_items.get(), 100 * 9);
+        assert_eq!(cache_metrics.misses_num_items.get(), 100);
     }
 
     #[tokio::test]
