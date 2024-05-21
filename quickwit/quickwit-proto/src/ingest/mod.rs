@@ -25,7 +25,7 @@ use self::ingester::{PersistFailureReason, ReplicateFailureReason};
 use self::router::IngestFailureReason;
 use super::types::NodeId;
 use super::GrpcServiceError;
-use crate::types::{queue_id, IndexUid, Position, QueueId, ShardId};
+use crate::types::{queue_id, IndexUid, Position, QueueId, ShardId, SourceUid};
 use crate::{ServiceError, ServiceErrorCode};
 
 pub mod ingester;
@@ -99,6 +99,13 @@ impl Shard {
             .into_iter()
             .flatten()
             .map(|node_id| NodeId::new(node_id.clone()))
+    }
+
+    pub fn source_uid(&self) -> SourceUid {
+        SourceUid {
+            index_uid: self.index_uid().clone(),
+            source_id: self.source_id.clone(),
+        }
     }
 }
 
