@@ -21,7 +21,7 @@ use quickwit_actors::AskError;
 use quickwit_common::tower::{MakeLoadShedError, RpcName};
 use thiserror;
 
-use crate::metastore::MetastoreError;
+use crate::metastore::{MetastoreError, OpenShardSubrequest};
 use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.control_plane.rs");
@@ -123,5 +123,33 @@ impl RpcName for GetOrCreateOpenShardsRequest {
 impl RpcName for AdviseResetShardsRequest {
     fn rpc_name() -> &'static str {
         "advise_reset_shards"
+    }
+}
+
+impl GetOrCreateOpenShardsFailureReason {
+    pub fn create_failure(
+        &self,
+        sub_request: impl Into<GetOrCreateOpenShardsSubrequest>,
+    ) -> GetOrCreateOpenShardsFailure {
+        let sub_request = sub_request.into();
+        GetOrCreateOpenShardsFailure {
+            subrequest_id: sub_request.subrequest_id,
+            index_id: sub_request.index_id.clone(),
+            source_id: sub_request.source_id,
+            reason: *self as i32,
+        }
+    }
+}
+
+impl From<crate::metastore::OpenShardSubrequest> for GetOrCreateOpenShardsSubrequest {
+    fn from(metastore_open_shard_sub_request: OpenShardSubrequest) -> Self {
+        GetOrCreateOpenShardsSubrequest {
+            subrequest_id: metastore_open_shard_sub_request.subrequest_id,
+            index_id: metastore_open_shard_sub_request
+                .index_uid
+                .expect("sub request missing index_uid")
+                .index_id,
+            source_id: metastore_open_shard_sub_request.source_id,
+        }
     }
 }

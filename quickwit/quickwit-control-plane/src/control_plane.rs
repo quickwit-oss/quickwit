@@ -777,6 +777,8 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
         request: GetOrCreateOpenShardsRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        // TODO This seems incorrect... Index creation could yield a metastore error... In that
+        // case, we end up with an inconsistent state.
         if let Err(control_plane_error) = self
             .auto_create_indexes(&request.subrequests, ctx.progress())
             .await
