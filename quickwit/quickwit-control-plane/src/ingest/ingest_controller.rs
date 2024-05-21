@@ -43,8 +43,10 @@ use quickwit_proto::ingest::ingester::{
     RetainShardsRequest,
 };
 use quickwit_proto::ingest::{Shard, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey};
-use quickwit_proto::metastore;
-use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
+use quickwit_proto::metastore::{
+    self, MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardsRequest,
+    OpenShardsResponse,
+};
 use quickwit_proto::types::{IndexUid, NodeId, Position, ShardId, SourceUid};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
@@ -119,6 +121,28 @@ impl fmt::Debug for IngestController {
             .field("replication_factor", &self.replication_factor)
             .finish()
     }
+}
+
+/// Updates both the metastore and the control plane.
+/// If successful, the control plane is guaranteed to be in sync with the metastore.
+/// If an error is returend, the control plane might be out of sync with the metastore.
+/// It is up to the client to check the error type and see if the control plane actor should be
+/// restarted.
+async fn open_shards_on_metastore_and_model(
+    open_shards_request: OpenShardsRequest,
+    metastore: &mut MetastoreServiceClient,
+    model: &mut ControlPlaneModel,
+) -> MetastoreResult<OpenShardsResponse> {
+    let open_shards_response = metastore.open_shards(open_shards_request).await?;
+    for open_shard_subresponse in &open_shards_response.subresponses {
+        if let Some(shard) = &open_shard_subresponse.open_shard {
+            let shard = shard.clone();
+            let index_uid = shard.index_uid().clone();
+            let source_id = shard.source_id.clone();
+            model.insert_shards(&index_uid, &source_id, vec![shard]);
+        }
+    }
+    Ok(open_shards_response)
 }
 
 impl IngestController {
@@ -363,8 +387,13 @@ impl IngestController {
         let open_shards_request = metastore::OpenShardsRequest {
             subrequests: open_shards_subrequests,
         };
+
         let open_shards_response = progress
-            .protect_future(self.metastore.open_shards(open_shards_request))
+            .protect_future(open_shards_on_metastore_and_model(
+                open_shards_request,
+                &mut self.metastore,
+                model,
+            ))
             .await?;
 
         let init_shards_response = self
@@ -375,7 +404,6 @@ impl IngestController {
             let shard = init_shard_success.shard().clone();
             let index_uid = shard.index_uid().clone();
             let source_id = shard.source_id.clone();
-            model.insert_shards(&index_uid, &source_id, vec![shard]);
 
             if let Some(open_shard_entries) =
                 model.find_open_shards(&index_uid, &source_id, &unavailable_leaders)
