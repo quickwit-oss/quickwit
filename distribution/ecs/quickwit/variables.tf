@@ -73,8 +73,8 @@ variable "quickwit_indexer" {
   description = "Indexer service sizing configurations"
   type = object({
     desired_count          = optional(number, 1)
-    memory                 = optional(number, 4096)
-    cpu                    = optional(number, 1024)
+    memory                 = optional(number, 8192)
+    cpu                    = optional(number, 2048)
     ephemeral_storage_gib  = optional(number, 21)
     extra_task_policy_arns = optional(list(string), [])
   })
