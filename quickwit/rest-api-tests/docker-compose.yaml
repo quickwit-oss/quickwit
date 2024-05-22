@@ -1,7 +1,7 @@
 # This docker-compose file is useful to start up
 # a single node elasticsearch to test our rest api tests
 # against.
-version: '3.7'
+version: "3.7"
 
 services:
   elasticsearch:
@@ -14,3 +14,7 @@ services:
     ports:
       - 9200:9200
       - 9300:9300
+    # If you see elasticsearch lacking disk space, you can mount a local directory
+    # as follows like this.
+    #volumes:
+    #  - /Users/fulmicoton/git/quickwit/quickwit/rest-api-tests/esdata:/usr/share/elasticsearch/data
