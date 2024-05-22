@@ -100,7 +100,8 @@ pub struct SplitInfo {
 /// - downloading_splits
 /// - candidate_splits.
 ///
-/// It is possible for the split table to exceed its limits, by at most one split.
+/// It is possible for the split table size in bytes to exceed its limits, by at
+/// most one split.
 pub struct SplitTable {
     on_disk_splits: BTreeSet<SplitKey>,
     downloading_splits: BTreeSet<SplitKey>,
@@ -360,7 +361,7 @@ impl SplitTable {
             return false;
         }
         if self.on_disk_splits.len() + self.downloading_splits.len()
-            > self.limits.max_num_splits.get() as usize
+            >= self.limits.max_num_splits.get() as usize
         {
             return true;
         }
@@ -608,7 +609,7 @@ mod tests {
             splits_to_delete,
             split_to_download,
         } = split_table.find_download_opportunity().unwrap();
-        assert_eq!(&splits_to_delete[..], &[splits[0].0][..]);
+        assert_eq!(&splits_to_delete[..], &[splits[0].0, splits[1].0]);
         assert_eq!(split_to_download.split_ulid, new_ulid);
     }
 
