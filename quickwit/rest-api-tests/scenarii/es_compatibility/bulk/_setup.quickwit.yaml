@@ -1,0 +1,31 @@
+# Delete possibly remaining index
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/test-index
+status_code: null
+---
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.8"
+  index_id: test-index
+  doc_mapping:
+    field_mappings:
+        - name: message
+          type: text
+sleep_after: 3
+---
+# Create index template
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: templates
+json:
+  version: "0.8"
+  template_id: test-index-template
+  index_id_patterns:
+    - test-index-happy-path*
+  doc_mapping:
+    mode: dynamic
+  indexing_settings:
+    commit_timeout_secs: 1
