@@ -146,7 +146,7 @@ async fn elastic_ingest_bulk(
     let bulk_response = ElasticBulkResponse {
         took_millis,
         errors,
-        items: Vec::new(),
+        actions: Vec::new(),
     };
     Ok(bulk_response)
 }
