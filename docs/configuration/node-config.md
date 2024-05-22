@@ -208,7 +208,7 @@ This section contains the configuration options for a Searcher.
 | `partial_request_cache_capacity` | Partial request in memory cache capacity on a Searcher. Cache intermediate state for a request, possibly making subsequent requests faster. It can be disabled by setting the size to `0`. | `64M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `max_num_concurrent_split_streams` | Maximum number of concurrent split stream requests running on a Searcher. | `100` |
-| `split_cache` | Searcher split cache configuration options defined in the section below. | _disabled_ |
+| `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
 
 
 ### Searcher split cache configuration
