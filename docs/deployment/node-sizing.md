@@ -1,6 +1,6 @@
 ---
 title: Cluster sizing
-sidebar_position: 4
+sidebar_position: 2
 ---
 
 In this guide, we discuss how to size your Quickwit cluster and nodes. As shown
@@ -94,8 +94,6 @@ services on a single node (see
 least 2 cores and 8GB of RAM. 
 
 ## Postgres Metastore backend
-
-For clustered deployments, we recommend using Postgres as a Metastore backend.
 
 For most use cases, a Postgres instance with 4GB of RAM and 1 core is
 sufficient:
