@@ -1,26 +1,34 @@
 ---
-title: Node sizing
+title: Cluster sizing
 sidebar_position: 4
 ---
 
 In this guide, we discuss how to size your Quickwit cluster and nodes. As shown
 in the [architecture section](../overview/architecture.md), a Quickwit cluster
 has 5 main components: the Indexers, the Searchers, the Control Plane, the
-Metastore and the Janitor. Each of these components has different resource
-requirements and can be scaled independently. We will also discuss how to size
-the Postgres metastore backend.
+Metastore and the Janitor. Each component has different resource requirements
+and can be scaled independently. We will also discuss how to size the metastore
+PostgreSQL database.
+
+:::note
+
+This guide provides general guidelines. The actual resource requirements depend
+strongly on the workload. We recommend monitoring the resource usage and
+adjusting the cluster size accordingly.
+
+:::
 
 ## Quickwit services
 
 ### Indexers
 
-Here are some high level guidelines to size your Indexer nodes:
+Here are some high-level guidelines to size your Indexer nodes:
 - Quickwit can index at around **7.5MB per second per core**
-- For the general usecase, configure 4GB of RAM per core
+- For the general use case, configure 4GB of RAM per core
   - Workloads with a large number of indexes or data sources consume more RAM
-    <!-- TODO: Mention cooperative indexing here ? -->
+    <!-- TODO: revisit this when cooperative indexing becomes the default -->
   - Don't use instances with less than 8GB of RAM
-    <!-- Note: 4GB for the heap size (per pipeline), and 2GB for ingest queues -->
+    <!-- Note: 2GB for the heap size (per pipeline) and 2GB for ingest queues -->
 - Mount the data directory to a volume of at least 110GB to store the [split
   cache](../configuration/node-config.md#Indexer-configuration) and the [ingest
   queue](../configuration/node-config.md#ingest-api-configuration).
@@ -41,7 +49,7 @@ source](../configuration/source-config.md#number-of-pipelines) such as
 
 ### Searchers
 
-Search performance is highly dependent on the workload. For example term queries
+Search performance is highly dependent on the workload. For example, term queries
 are usually cheaper than aggregations. A good starting point for dimensioning
 Searcher nodes:
 - Configure 8GB of RAM per core when using a high latency / low bandwidth object
@@ -85,16 +93,11 @@ services on a single node (see
 [tutorial](../get-started/tutorials/tutorial-hdfs-logs.md)). We recommend at
 least 2 cores and 8GB of RAM. 
 
-## Metastore backend
+## Postgres Metastore backend
 
-### Postgres
+For clustered deployments, we recommend using Postgres as a Metastore backend.
 
 For most use cases, a Postgres instance with 4GB of RAM and 1 core is
 sufficient:
 - with the AWS RDS managed service, use the t4g.medium instance type. Enable
   multi-AZ with one standby for high availability.
-
-### File
-
-The file backed metastore should only be used for single-server deployments.
-Metastore files usually don't exceed a few megabytes per index. 
