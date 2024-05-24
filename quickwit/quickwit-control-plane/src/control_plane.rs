@@ -239,7 +239,7 @@ impl ControlPlane {
         &mut self,
         subrequests: &[GetOrCreateOpenShardsSubrequest],
         progress: &Progress,
-    ) -> ControlPlaneResult<()> {
+    ) -> MetastoreResult<()> {
         if !self.cluster_config.auto_create_indexes {
             return Ok(());
         }
@@ -777,11 +777,11 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
         request: GetOrCreateOpenShardsRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        if let Err(control_plane_error) = self
+        if let Err(metastore_error) = self
             .auto_create_indexes(&request.subrequests, ctx.progress())
             .await
         {
-            return Ok(Err(control_plane_error));
+            return convert_metastore_error(metastore_error);
         }
         let response = match self
             .ingest_controller
