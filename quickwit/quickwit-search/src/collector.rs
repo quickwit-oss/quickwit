@@ -722,6 +722,10 @@ pub(crate) struct QuickwitCollector {
 }
 
 impl QuickwitCollector {
+    pub fn is_count_only(&self) -> bool {
+        self.max_hits == 0 && self.aggregation.is_none() && self.search_after.is_none()
+    }
+
     pub fn fast_field_names(&self) -> HashSet<String> {
         let mut fast_field_names = HashSet::default();
         self.sort_by.first.add_fast_field(&mut fast_field_names);
