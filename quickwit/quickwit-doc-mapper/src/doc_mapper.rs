@@ -34,7 +34,7 @@ use tantivy::{TantivyDocument as Document, Term};
 pub type Partition = u64;
 
 /// An alias for serde_json's object type.
-pub type JsonObject = serde_json::Map<String, JsonValue>;
+pub type JsonObject = serde_json_borrow::OwnedValue;
 
 use crate::{DocParsingError, QueryParserError};
 
@@ -60,21 +60,33 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
         &self,
         json_doc: &[u8],
     ) -> Result<(Partition, Document), DocParsingError> {
-        let json_obj: JsonObject = serde_json::from_slice(json_doc).map_err(|_| {
-            let json_doc_sample: String = std::str::from_utf8(json_doc)
-                .map(|doc_str| doc_str.chars().take(20).chain("...".chars()).collect())
-                .unwrap_or_else(|_| "document contains some invalid UTF-8 characters".to_string());
-            DocParsingError::NotJsonObject(json_doc_sample)
+        let json_str = String::from_utf8(json_doc.to_vec()).map_err(|_| {
+            DocParsingError::NotJsonObject(
+                "document contains some invalid UTF-8 characters".to_string(),
+            )
         })?;
+        let json_obj: JsonObject =
+            serde_json_borrow::OwnedValue::parse_from(json_str).map_err(|_| {
+                let json_doc_sample: String = std::str::from_utf8(json_doc)
+                    .map(|doc_str| doc_str.chars().take(20).chain("...".chars()).collect())
+                    .unwrap_or_else(|_| {
+                        "document contains some invalid UTF-8 characters".to_string()
+                    });
+                DocParsingError::NotJsonObject(json_doc_sample)
+            })?;
+
         self.doc_from_json_obj(json_obj, json_doc.len() as u64)
     }
 
     /// Parses a JSON string into a tantivy [`Document`].
     fn doc_from_json_str(&self, json_doc: &str) -> Result<(Partition, Document), DocParsingError> {
-        let json_obj: JsonObject = serde_json::from_str(json_doc).map_err(|_| {
-            let json_doc_sample: String = json_doc.chars().take(20).chain("...".chars()).collect();
-            DocParsingError::NotJsonObject(json_doc_sample)
-        })?;
+        let json_obj: JsonObject = serde_json_borrow::OwnedValue::parse_from(json_doc.to_string())
+            .map_err(|_| {
+                let json_doc_sample: String =
+                    json_doc.chars().take(20).chain("...".chars()).collect();
+                DocParsingError::NotJsonObject(json_doc_sample)
+            })?;
+
         self.doc_from_json_obj(json_obj, json_doc.len() as u64)
     }
 

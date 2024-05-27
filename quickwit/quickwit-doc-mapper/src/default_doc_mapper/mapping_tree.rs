@@ -294,15 +294,15 @@ pub(crate) struct MappingLeaf {
 impl MappingLeaf {
     pub fn doc_from_json(
         &self,
-        json_val: JsonValue,
+        json_val: &serde_json_borrow::Value,
         document: &mut Document,
-        path: &mut [String],
+        path: &mut [&str],
     ) -> Result<(), DocParsingError> {
         if json_val.is_null() {
             // We just ignore `null`.
             return Ok(());
         }
-        if let JsonValue::Array(els) = json_val {
+        if let serde_json_borrow::Value::Array(els) = json_val {
             if self.cardinality == Cardinality::SingleValue {
                 return Err(DocParsingError::MultiValuesNotSupported(path.join(".")));
             }
@@ -314,7 +314,7 @@ impl MappingLeaf {
                 if !self.concatenate.is_empty() {
                     let concat_values = self
                         .typ
-                        .tantivy_string_value_from_json(el_json_val.clone())
+                        .tantivy_string_value_from_json(el_json_val.clone().into())
                         .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
                     for concat_value in concat_values {
                         for field in &self.concatenate {
@@ -324,7 +324,7 @@ impl MappingLeaf {
                 }
                 let value = self
                     .typ
-                    .value_from_json(el_json_val)
+                    .value_from_json(el_json_val.clone().into())
                     .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
                 document.add_field_value(self.field, &value);
             }
@@ -334,7 +334,7 @@ impl MappingLeaf {
         if !self.concatenate.is_empty() {
             let concat_values = self
                 .typ
-                .tantivy_string_value_from_json(json_val.clone())
+                .tantivy_string_value_from_json(json_val.clone().into())
                 .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
             for concat_value in concat_values {
                 for field in &self.concatenate {
@@ -344,7 +344,7 @@ impl MappingLeaf {
         }
         let value = self
             .typ
-            .value_from_json(json_val)
+            .value_from_json(json_val.clone().into())
             .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
         document.add_field_value(self.field, &value);
         Ok(())
@@ -542,19 +542,20 @@ pub(crate) struct MappingNode {
     branches_order: Vec<String>,
 }
 
-fn get_or_insert_path<'a>(
-    path: &[String],
-    mut dynamic_json_obj: &'a mut serde_json::Map<String, JsonValue>,
-) -> &'a mut serde_json::Map<String, JsonValue> {
+fn get_or_insert_path<'a, 'b>(
+    path: &[&'a str],
+    mut dynamic_json_obj: &'b mut serde_json_borrow::Map<'a>,
+) -> &'b mut serde_json_borrow::Map<'a> {
     for field_name in path {
-        let child_json_val = dynamic_json_obj
-            .entry(field_name.clone())
-            .or_insert_with(|| JsonValue::Object(Default::default()));
-        dynamic_json_obj = if let JsonValue::Object(child_map) = child_json_val {
-            child_map
-        } else {
-            panic!("Expected Json object.");
-        };
+        let child_json_val = dynamic_json_obj.insert_or_get_mut(
+            field_name,
+            serde_json_borrow::Value::Object(Default::default()),
+        );
+        if let serde_json_borrow::Value::Object(ref mut child_map) = child_json_val {
+            dynamic_json_obj = child_map;
+            continue;
+        }
+        panic!("Expected Json object.");
     }
     dynamic_json_obj
 }
@@ -631,20 +632,20 @@ impl MappingNode {
         field_mapping_entries
     }
 
-    pub fn doc_from_json(
+    pub fn doc_from_json<'a: 'b, 'b>(
         &self,
-        json_obj: JsonValue,
+        json_obj: &'a serde_json_borrow::Value<'a>,
         mode: ModeType,
         document: &mut Document,
-        path: &mut Vec<String>,
-        dynamic_json_obj: &mut serde_json::Map<String, JsonValue>,
+        path: &mut Vec<&'a str>,
+        dynamic_json_obj: &mut serde_json_borrow::Map<'b>,
     ) -> Result<(), DocParsingError> {
         let json_obj = match json_obj {
-            JsonValue::Object(json_obj) => json_obj,
+            serde_json_borrow::Value::Object(json_obj) => json_obj,
             _ => panic!("internal error: expected json object"),
         };
-        for (field_name, val) in json_obj {
-            if let Some(child_tree) = self.branches.get(&field_name) {
+        for (field_name, val) in json_obj.iter() {
+            if let Some(child_tree) = self.branches.get(field_name) {
                 path.push(field_name);
                 child_tree.doc_from_json(val, mode, document, path, dynamic_json_obj)?;
                 path.pop();
@@ -654,9 +655,9 @@ impl MappingNode {
                         // In lenient mode we simply ignore these unmapped fields.
                     }
                     ModeType::Dynamic => {
-                        let dynamic_json_obj_after_path =
-                            get_or_insert_path(path, dynamic_json_obj);
-                        dynamic_json_obj_after_path.insert(field_name, val);
+                        let dynamic_json_obj_at_path = get_or_insert_path(path, dynamic_json_obj);
+                        // TODO: Remove the clone
+                        dynamic_json_obj_at_path.insert(field_name, val.clone());
                     }
                     ModeType::Strict => {
                         path.push(field_name);
@@ -723,27 +724,21 @@ pub(crate) enum MappingTree {
 }
 
 impl MappingTree {
-    fn doc_from_json(
+    fn doc_from_json<'a: 'b, 'b>(
         &self,
-        json_value: JsonValue,
+        json_value: &'a serde_json_borrow::Value<'a>,
         mode: ModeType,
         document: &mut Document,
-        path: &mut Vec<String>,
-        dynamic_json_obj: &mut serde_json::Map<String, JsonValue>,
+        path: &mut Vec<&'a str>,
+        dynamic_json_obj: &mut serde_json_borrow::Map<'b>,
     ) -> Result<(), DocParsingError> {
         match self {
             MappingTree::Leaf(mapping_leaf) => {
                 mapping_leaf.doc_from_json(json_value, document, path)
             }
             MappingTree::Node(mapping_node) => {
-                if let JsonValue::Object(json_obj) = json_value {
-                    mapping_node.doc_from_json(
-                        JsonValue::Object(json_obj),
-                        mode,
-                        document,
-                        path,
-                        dynamic_json_obj,
-                    )
+                if let serde_json_borrow::Value::Object(_json_obj) = json_value {
+                    mapping_node.doc_from_json(json_value, mode, document, path, dynamic_json_obj)
                 } else {
                     Err(DocParsingError::ValueError(
                         path.join("."),
@@ -1105,7 +1100,7 @@ fn build_mapping_from_field_type<'a>(
 mod tests {
     use std::net::IpAddr;
 
-    use serde_json::{json, Value as JsonValue};
+    use serde_json::json;
     use tantivy::schema::{Field, IntoIpv6Addr, OwnedValue as TantivyValue, Value};
     use tantivy::{DateTime, TantivyDocument as Document};
     use time::macros::datetime;
@@ -1142,8 +1137,7 @@ mod tests {
     #[test]
     fn test_get_or_insert_path() {
         let mut map = Default::default();
-        super::get_or_insert_path(&["a".to_string(), "b".to_string()], &mut map)
-            .insert("c".to_string(), JsonValue::from(3u64));
+        super::get_or_insert_path(&["a", "b"], &mut map).insert("c", (3u64).into());
         assert_eq!(
             &serde_json::to_value(&map).unwrap(),
             &serde_json::json!({
@@ -1154,8 +1148,7 @@ mod tests {
                 }
             })
         );
-        super::get_or_insert_path(&["a".to_string(), "b".to_string()], &mut map)
-            .insert("d".to_string(), JsonValue::from(2u64));
+        super::get_or_insert_path(&["a", "b"], &mut map).insert("d", (2u64).into());
         assert_eq!(
             &serde_json::to_value(&map).unwrap(),
             &serde_json::json!({
@@ -1167,8 +1160,7 @@ mod tests {
                 }
             })
         );
-        super::get_or_insert_path(&["e".to_string()], &mut map)
-            .insert("f".to_string(), JsonValue::from(5u64));
+        super::get_or_insert_path(&["e"], &mut map).insert("f", (5u64).into());
         assert_eq!(
             &serde_json::to_value(&map).unwrap(),
             &serde_json::json!({
@@ -1181,7 +1173,7 @@ mod tests {
                 "e": { "f": 5u64 }
             })
         );
-        super::get_or_insert_path(&[], &mut map).insert("g".to_string(), JsonValue::from(6u64));
+        super::get_or_insert_path(&[], &mut map).insert("g", (6u64).into());
         assert_eq!(
             &serde_json::to_value(&map).unwrap(),
             &serde_json::json!({
@@ -1298,12 +1290,12 @@ mod tests {
         let mut document = Document::default();
         let mut path = Vec::new();
         leaf_entry
-            .doc_from_json(json!([true, false, true]), &mut document, &mut path)
+            .doc_from_json(&(vec![true, false, true]).into(), &mut document, &mut path)
             .unwrap();
         assert_eq!(document.len(), 3);
         let values: Vec<bool> = document
             .get_all(field)
-            .flat_map(|val| (&val).as_bool())
+            .flat_map(|val| val.as_bool())
             .collect();
         assert_eq!(&values, &[true, false, true])
     }
@@ -1350,12 +1342,12 @@ mod tests {
         let mut document = Document::default();
         let mut path = Vec::new();
         leaf_entry
-            .doc_from_json(serde_json::json!([10u64, 20u64]), &mut document, &mut path)
+            .doc_from_json(&(vec![10u64, 20u64]).into(), &mut document, &mut path)
             .unwrap();
         assert_eq!(document.len(), 2);
         let values: Vec<i64> = document
             .get_all(field)
-            .flat_map(|val| (&val).as_i64())
+            .flat_map(|val| val.as_i64())
             .collect();
         assert_eq!(&values, &[10i64, 20i64]);
     }
@@ -1373,7 +1365,7 @@ mod tests {
         let mut document = Document::default();
         let mut path = Vec::new();
         leaf_entry
-            .doc_from_json(serde_json::json!(null), &mut document, &mut path)
+            .doc_from_json(&serde_json_borrow::Value::Null, &mut document, &mut path)
             .unwrap();
         assert_eq!(document.len(), 0);
     }
@@ -1391,7 +1383,7 @@ mod tests {
         let mut document = Document::default();
         let mut path = Vec::new();
         leaf_entry
-            .doc_from_json(serde_json::json!(10u64), &mut document, &mut path)
+            .doc_from_json(&(10u64).into(), &mut document, &mut path)
             .unwrap();
         assert_eq!(document.len(), 1);
         assert_eq!(document.get_first(field).unwrap().as_i64().unwrap(), 10i64);
@@ -1408,10 +1400,14 @@ mod tests {
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
-        let mut path = vec!["root".to_string(), "my_field".to_string()];
+        let mut path = vec!["root", "my_field"];
         let parse_err = leaf_entry
             .doc_from_json(
-                serde_json::json!([10u64, [1u64, 2u64]]),
+                &(vec![
+                    serde_json_borrow::Value::from(10u64),
+                    (vec![1u64, 2u64]).into(),
+                ])
+                .into(),
                 &mut document,
                 &mut path,
             )
@@ -1554,13 +1550,14 @@ mod tests {
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
-        let mut path = vec!["root".to_string(), "my_field".to_string()];
+        let mut path = vec!["root", "my_field"];
         leaf_entry
             .doc_from_json(
-                serde_json::json!([
+                &(vec![
                     "dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw==",
-                    "dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw=="
-                ]),
+                    "dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw==",
+                ])
+                .into(),
                 &mut document,
                 &mut path,
             )
@@ -1568,7 +1565,7 @@ mod tests {
         assert_eq!(document.len(), 2);
         let bytes_vec: Vec<&[u8]> = document
             .get_all(field)
-            .flat_map(|val| (&val).as_bytes())
+            .flat_map(|val| val.as_bytes())
             .collect();
         assert_eq!(
             &bytes_vec[..],

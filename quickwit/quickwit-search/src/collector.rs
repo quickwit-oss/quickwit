@@ -1337,7 +1337,7 @@ mod tests {
         fn doc_to_json(
             &self,
             _named_doc: std::collections::BTreeMap<String, Vec<tantivy::schema::OwnedValue>>,
-        ) -> anyhow::Result<quickwit_doc_mapper::JsonObject> {
+        ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
             unimplemented!()
         }
         fn schema(&self) -> tantivy::schema::Schema {

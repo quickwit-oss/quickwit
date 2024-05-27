@@ -185,10 +185,10 @@ async fn fetch_docs_in_split(
     .context("open-index-for-split")?;
     // we add an executor here, we could add it in open_index_with_caches, though we should verify
     // the side-effect before
-    //let tantivy_executor = crate::search_thread_pool()
-        //.get_underlying_rayon_thread_pool()
-        //.into();
-    //index.set_executor(tantivy_executor);
+    let tantivy_executor = crate::search_thread_pool()
+        .get_underlying_rayon_thread_pool()
+        .into();
+    index.set_executor(tantivy_executor);
     let index_reader = index
         .reader_builder()
         // the docs are presorted so a cache size of NUM_CONCURRENT_REQUESTS is fine

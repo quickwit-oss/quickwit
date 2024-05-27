@@ -36,7 +36,7 @@ use quickwit_opentelemetry::otlp::{
 use quickwit_proto::types::{IndexId, SourceId};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use tantivy::schema::Field;
+use tantivy::schema::{Field, Value};
 use tantivy::{DateTime, TantivyDocument};
 use thiserror::Error;
 use tokio::runtime::Handle;
@@ -68,7 +68,14 @@ impl JsonDoc {
         num_bytes: usize,
     ) -> Result<Self, DocProcessorError> {
         match json_value {
-            JsonValue::Object(json_obj) => Ok(Self::new(json_obj, num_bytes)),
+            JsonValue::Object(json_obj) => {
+                // TODO: replace with deserializing directly from serde_json
+                let json_obj = serde_json_borrow::OwnedValue::parse_from(
+                    serde_json::to_string(&json_obj).unwrap(),
+                )
+                .unwrap();
+                Ok(Self::new(json_obj, num_bytes))
+            }
             _ => Err(DocProcessorError::JsonParsing(
                 "document is not an object".to_string(),
             )),
@@ -160,7 +167,19 @@ fn try_into_json_docs(
 ) -> JsonDocIterator {
     match input_format {
         SourceInputFormat::Json => {
-            let json_doc_result = serde_json::from_slice::<JsonObject>(&raw_doc)
+            let json_doc_result = String::from_utf8(raw_doc.to_vec())
+                .map_err(|_| {
+                    DocParsingError::NotJsonObject(
+                        "document contains some invalid UTF-8 characters".to_string(),
+                    )
+                })
+                .and_then(|json_str| {
+                    serde_json_borrow::OwnedValue::parse_from(json_str).map_err(|_| {
+                        DocParsingError::NotJsonObject(
+                            "document is not a valid JSON object".to_string(),
+                        )
+                    })
+                })
                 .map(|json_obj| JsonDoc::new(json_obj, num_bytes));
             JsonDocIterator::from(json_doc_result)
         }
@@ -185,6 +204,12 @@ fn try_into_json_docs(
                 let mut json_obj = serde_json::Map::with_capacity(1);
                 let key = PLAIN_TEXT.to_string();
                 json_obj.insert(key, JsonValue::String(value));
+                // TODO: replace with deserializing directly from serde_json
+                let json_obj = serde_json_borrow::OwnedValue::parse_from(
+                    serde_json::to_string(&json_obj).unwrap(),
+                )
+                .unwrap();
+
                 JsonDoc::new(json_obj, num_bytes)
             });
             JsonDocIterator::from(json_doc_result)
@@ -422,7 +447,7 @@ impl DocProcessor {
         };
         let timestamp = doc
             .get_first(timestamp_field)
-            .and_then(|val| val.as_datetime())
+            .and_then(|val| val.as_value().as_datetime())
             .ok_or(DocProcessorError::from(DocParsingError::RequiredField(
                 "timestamp field is required".to_string(),
             )))?;
