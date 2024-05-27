@@ -54,7 +54,7 @@ impl Default for SearchMetrics {
                 &[],
             ),
             job_assigned_to_affinity_searcher: new_counter(
-                "job_assigned_to_affinity_searcher",
+                "job_assigned_to_affinity_searcher_total",
                 "Number of job assigned to the searcher of highest affinity",
                 "search",
                 &[],

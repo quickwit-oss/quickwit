@@ -181,13 +181,6 @@ impl SearchJobPlacer {
             sort_by_rendez_vous_hash(&mut candidate_nodes, job.split_id());
             // Select the least loaded node.
             let chosen_node_idx = if candidate_nodes.len() >= 2 {
-                // TODO: we currently give little flexibility. By allowing node 0 to be slighly
-                // more loaded, we could improve the chance of picking the same node for multiple
-                // queries, without impacting load balancing much.
-                // for instance allowing node 0 to have sum(job.cost)/count(searcher) * 0.05 of
-                // load more than node 1 seems to improve choosing the 1st node in simulations,
-                // while not overloading a searcher by more than 5% over what a simple power of two
-                // choices would
                 usize::from(candidate_nodes[0].load > candidate_nodes[1].load)
             } else {
                 0
