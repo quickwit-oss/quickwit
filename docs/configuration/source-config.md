@@ -68,7 +68,7 @@ Comma-separated list of host and port pairs that are the addresses of a subset o
 Defines the behavior of the source when consuming a partition for which there is no initial offset saved in the checkpoint. `earliest` consumes from the beginning of the partition, whereas `latest` (default) consumes from the end.
 
 - `enable.auto.commit`
-The Kafka source manages commit offsets manually using the [checkpoint API](../overview/concepts/indexing.md#checkpoint) and disables auto-commit.
+This setting is ignored because the Kafka source manages commit offsets internally using the [checkpoint API](../overview/concepts/indexing.md#checkpoint) and forces auto-commits to be disabled.
 
 - `group.id`
 Kafka-based distributed indexing relies on consumer groups. Unless overridden in the client parameters, the default group ID assigned to each consumer managed by the source is `quickwit-{index_uid}-{source_id}`.
