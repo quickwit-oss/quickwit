@@ -794,7 +794,7 @@ impl IngestController {
         }
         let num_open_shards_per_leader_target = num_open_shards / num_ingesters;
         let num_open_shards_per_leader_threshold = cmp::max(
-            num_open_shards_per_leader_target * 12 / 10,
+            num_open_shards_per_leader_target * 11 / 10,
             num_open_shards_per_leader_target + 1,
         );
         let mut shards_to_move: Vec<&ShardEntry> = Vec::new();

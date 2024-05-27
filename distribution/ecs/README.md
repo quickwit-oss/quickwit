@@ -64,7 +64,7 @@ IAM policies to indexers.
 We provide an example of self contained deployment with an ad-hoc VPC. 
 
 > [!IMPORTANT]
-> This stack costs ~$150/month to run (Fargate tasks, NAT Gateways
+> This stack costs ~$200/month to run (Fargate tasks, NAT Gateways
 > and RDS)
 
 ### Deploy the Quickwit module and connect through a bastion

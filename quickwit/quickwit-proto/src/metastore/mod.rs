@@ -262,6 +262,12 @@ impl fmt::Display for SourceType {
 }
 
 impl IndexMetadataRequest {
+    pub fn into_index_id(self) -> Option<IndexId> {
+        self.index_uid
+            .map(|index_uid| index_uid.index_id)
+            .or(self.index_id)
+    }
+
     pub fn for_index_id(index_id: IndexId) -> Self {
         Self {
             index_uid: None,

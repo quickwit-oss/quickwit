@@ -416,7 +416,7 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: IndexMetadataRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
-        let response = if let Some(index_uid) = &request.index_uid {
+        let pg_index_opt = if let Some(index_uid) = &request.index_uid {
             index_opt_for_uid(&self.connection_pool, index_uid.clone()).await?
         } else if let Some(index_id) = &request.index_id {
             index_opt(&self.connection_pool, index_id).await?
@@ -427,9 +427,11 @@ impl MetastoreService for PostgresqlMetastore {
                 cause: "".to_string(),
             });
         };
-        let index_metadata = response
+        let index_metadata = pg_index_opt
             .ok_or(MetastoreError::NotFound(EntityKind::Index {
-                index_id: request.index_id.expect("`index_id` should be set"),
+                index_id: request
+                    .into_index_id()
+                    .expect("`index_id` or `index_uid` should be set"),
             }))?
             .index_metadata()?;
         let response = IndexMetadataResponse::try_from_index_metadata(&index_metadata)?;

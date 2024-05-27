@@ -275,11 +275,6 @@ fn get_status_with_error(rejection: Rejection) -> RestApiError {
             status_code: StatusCode::UNSUPPORTED_MEDIA_TYPE,
             message: error.to_string(),
         }
-    } else if rejection.is_not_found() {
-        RestApiError {
-            status_code: StatusCode::NOT_FOUND,
-            message: "Route not found".to_string(),
-        }
     } else if let Some(error) = rejection.find::<serde_qs::Error>() {
         RestApiError {
             status_code: StatusCode::BAD_REQUEST,
@@ -287,12 +282,6 @@ fn get_status_with_error(rejection: Rejection) -> RestApiError {
         }
     } else if let Some(error) = rejection.find::<InvalidJsonRequest>() {
         // Happens when the request body could not be deserialized correctly.
-        RestApiError {
-            status_code: StatusCode::BAD_REQUEST,
-            message: error.0.to_string(),
-        }
-    } else if let Some(error) = rejection.find::<InvalidArgument>() {
-        // Happens when the url path or request body contains invalid argument(s).
         RestApiError {
             status_code: StatusCode::BAD_REQUEST,
             message: error.0.to_string(),
@@ -338,11 +327,6 @@ fn get_status_with_error(rejection: Rejection) -> RestApiError {
             status_code: StatusCode::BAD_REQUEST,
             message: error.to_string(),
         }
-    } else if let Some(error) = rejection.find::<warp::reject::MethodNotAllowed>() {
-        RestApiError {
-            status_code: StatusCode::METHOD_NOT_ALLOWED,
-            message: error.to_string(),
-        }
     } else if let Some(error) = rejection.find::<warp::reject::PayloadTooLarge>() {
         RestApiError {
             status_code: StatusCode::PAYLOAD_TOO_LARGE,
@@ -352,6 +336,22 @@ fn get_status_with_error(rejection: Rejection) -> RestApiError {
         RestApiError {
             status_code: StatusCode::TOO_MANY_REQUESTS,
             message: err.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<InvalidArgument>() {
+        // Happens when the url path or request body contains invalid argument(s).
+        RestApiError {
+            status_code: StatusCode::BAD_REQUEST,
+            message: error.0.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<warp::reject::MethodNotAllowed>() {
+        RestApiError {
+            status_code: StatusCode::METHOD_NOT_ALLOWED,
+            message: error.to_string(),
+        }
+    } else if rejection.is_not_found() {
+        RestApiError {
+            status_code: StatusCode::NOT_FOUND,
+            message: "Route not found".to_string(),
         }
     } else {
         error!("REST server error: {:?}", rejection);

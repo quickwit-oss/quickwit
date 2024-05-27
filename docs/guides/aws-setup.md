@@ -46,12 +46,11 @@ AWS credentials or region resolution may take a few seconds, especially if the A
 
 Required authorized actions:
 - `ListBucket` (on the bucket directly)
-- `AbortMultipartUpload`
-- `DeleteObject`
 - `GetObject`
-- `ListMultipartUploadParts`
-- `ListObjects`
 - `PutObject`
+- `DeleteObject`
+- `ListMultipartUploadParts`
+- `AbortMultipartUpload`
 
 Here is an example of a bucket policy:
 ```json
@@ -70,12 +69,11 @@ Here is an example of a bucket policy:
     {
       "Effect": "Allow",
       "Action": [
-        "s3:AbortMultipartUpload",
-        "s3:DeleteObject",
         "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
         "s3:ListMultipartUploadParts",
-        "S3:ListObjects",
-        "s3:PutObject"
+        "s3:AbortMultipartUpload"
       ],
       "Resource": [
         "arn:aws:s3:::my-bucket/*"

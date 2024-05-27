@@ -44,15 +44,17 @@ pub enum IngestServiceError {
     IoError(String),
     #[error("rate limited")]
     RateLimited,
-    #[error("ingest service is unavailable")]
-    Unavailable,
+    #[error("ingest service is unavailable ({0})")]
+    Unavailable(String),
 }
 
 impl From<AskError<IngestServiceError>> for IngestServiceError {
     fn from(error: AskError<IngestServiceError>) -> Self {
         match error {
             AskError::ErrorReply(error) => error,
-            AskError::MessageNotDelivered => IngestServiceError::Unavailable,
+            AskError::MessageNotDelivered => {
+                IngestServiceError::Unavailable("actor not running".to_string())
+            }
             AskError::ProcessMessageError => IngestServiceError::Internal(error.to_string()),
         }
     }
@@ -61,7 +63,7 @@ impl From<AskError<IngestServiceError>> for IngestServiceError {
 impl From<BufferError> for IngestServiceError {
     fn from(error: BufferError) -> Self {
         match error {
-            BufferError::Closed => IngestServiceError::Unavailable,
+            BufferError::Closed => IngestServiceError::Unavailable(error.to_string()),
             BufferError::Unknown => IngestServiceError::Internal(error.to_string()),
         }
     }
@@ -76,8 +78,11 @@ impl From<io::Error> for IngestServiceError {
 impl From<IngestV2Error> for IngestServiceError {
     fn from(error: IngestV2Error) -> Self {
         match error {
-            IngestV2Error::Timeout(_) | IngestV2Error::Unavailable(_) => {
-                IngestServiceError::Unavailable
+            IngestV2Error::Timeout(error_msg) => {
+                IngestServiceError::Unavailable(format!("timeout {error_msg}"))
+            }
+            IngestV2Error::Unavailable(error_msg) => {
+                IngestServiceError::Unavailable(format!("unavailable: {error_msg}"))
             }
             IngestV2Error::Internal(message) => IngestServiceError::Internal(message),
             IngestV2Error::ShardNotFound { .. } => {
@@ -98,7 +103,7 @@ impl ServiceError for IngestServiceError {
             Self::InvalidPosition(_) => ServiceErrorCode::BadRequest,
             Self::IoError { .. } => ServiceErrorCode::Internal,
             Self::RateLimited => ServiceErrorCode::TooManyRequests,
-            Self::Unavailable => ServiceErrorCode::Unavailable,
+            Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
 }
@@ -116,8 +121,8 @@ impl GrpcServiceError for IngestServiceError {
         Self::RateLimited
     }
 
-    fn new_unavailable(_: String) -> Self {
-        Self::Unavailable
+    fn new_unavailable(error_msg: String) -> Self {
+        Self::Unavailable(error_msg)
     }
 }
 
@@ -141,7 +146,7 @@ impl From<IngestServiceError> for tonic::Status {
             IngestServiceError::InvalidPosition(_) => tonic::Code::InvalidArgument,
             IngestServiceError::IoError { .. } => tonic::Code::Internal,
             IngestServiceError::RateLimited => tonic::Code::ResourceExhausted,
-            IngestServiceError::Unavailable => tonic::Code::Unavailable,
+            IngestServiceError::Unavailable(_) => tonic::Code::Unavailable,
         };
         let message = error.to_string();
         tonic::Status::new(code, message)
