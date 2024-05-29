@@ -126,7 +126,7 @@ impl fmt::Debug for IngestController {
 
 /// Updates both the metastore and the control plane.
 /// If successful, the control plane is guaranteed to be in sync with the metastore.
-/// If an error is returend, the control plane might be out of sync with the metastore.
+/// If an error is returned, the control plane might be out of sync with the metastore.
 /// It is up to the client to check the error type and see if the control plane actor should be
 /// restarted.
 async fn open_shards_on_metastore_and_model(
@@ -320,10 +320,10 @@ impl IngestController {
         model: &mut ControlPlaneModel,
         progress: &Progress,
     ) -> MetastoreResult<GetOrCreateOpenShardsResponse> {
-        // Closing shard is an operation that is performed by ingesters,
+        // Closing shards is an operation performed by ingesters,
         // so the control plane is not necessarily aware that they are closed.
         //
-        // Router can tip the cp about which shard is closed, so that we can update our
+        // Routers can report closed shards so that we can update our
         // internal state.
         self.handle_closed_shards(get_open_shards_request.closed_shards, model);
 
@@ -355,10 +355,9 @@ impl IngestController {
                     index_uid,
                     source_id: get_open_shards_subrequest.source_id.clone(),
                 };
-                num_missing_shards_per_source_uids
+                *num_missing_shards_per_source_uids
                     .entry(source_uid)
-                    .and_modify(|num_missing_shards| *num_missing_shards += 1)
-                    .or_insert(1);
+                    .or_default() += 1;
             }
         }
 
@@ -953,10 +952,9 @@ impl IngestController {
 
         let mut new_shards_source_uids: HashMap<SourceUid, usize> = HashMap::default();
         for shard in &shards_to_move {
-            new_shards_source_uids
+            *new_shards_source_uids
                 .entry(shard.source_uid())
-                .and_modify(|count| *count += 1)
-                .or_insert(1);
+                .or_default() += 1;
         }
 
         let mut successfully_source_uids: HashMap<SourceUid, usize> = self
