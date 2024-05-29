@@ -378,7 +378,7 @@ impl IngestController {
             } else {
                 // If not, let's just log something.
                 // This is not critical. We will just end up return some failure in the response.
-                error!(metastore_error=?metastore_error, "failed to open shards on the metastore");
+                error!(error=?metastore_error, "failed to open shards on the metastore");
             }
         }
 
@@ -609,7 +609,7 @@ impl IngestController {
                     // We can release our permit.
                     model.release_scaling_permits(&source_uid, ScalingMode::Up, NUM_PERMITS);
                     warn!(
-                        index_id=%source_uid.index_uid.index_id,
+                        index_uid=%source_uid.index_uid,
                     source_id=%source_uid.source_id,
                     "scaling up number of shards to {new_num_open_shards} failed: shard initialization failure"
                     );
@@ -992,7 +992,7 @@ impl IngestController {
         let close_shards_fut = self.close_shards(shards_to_close);
 
         let close_shards_and_send_callback_fut = async move {
-            // We wait for a few seconds before closing the shards to give the ingesters some
+            // We wait for a few seconds before closing the shards to give the ingesters some time
             // to learn about the ones we just opened via gossip.
             tokio::time::sleep(CLOSE_SHARDS_UPON_REBALANCE_DELAY).await;
 
@@ -1138,7 +1138,9 @@ mod tests {
         MockIngesterService, RetainShardsResponse,
     };
     use quickwit_proto::ingest::{IngestV2Error, Shard, ShardState};
-    use quickwit_proto::metastore::{self, MetastoreError, MockMetastoreService};
+    use quickwit_proto::metastore::{
+        self, MetastoreError, MockMetastoreService, OpenShardSubresponse,
+    };
     use quickwit_proto::types::{Position, SourceId};
 
     use super::*;
@@ -1847,6 +1849,35 @@ mod tests {
                     message: "failed to open shards".to_string(),
                 })
             });
+        mock_metastore
+            .expect_open_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.subrequests.len(), 1);
+                let subrequest: &OpenShardSubrequest = &request.subrequests[0];
+
+                assert_eq!(subrequest.index_uid(), &IndexUid::for_test("test-index", 0));
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.leader_id, "test-ingester");
+
+                let shard = Shard {
+                    index_uid: subrequest.index_uid.clone(),
+                    source_id: subrequest.source_id.clone(),
+                    shard_id: subrequest.shard_id.clone(),
+                    leader_id: subrequest.leader_id.clone(),
+                    follower_id: subrequest.follower_id.clone(),
+                    shard_state: ShardState::Open as i32,
+                    publish_position_inclusive: Some(Position::Beginning),
+                    publish_token: None,
+                };
+                let resp = OpenShardsResponse {
+                    subresponses: vec![OpenShardSubresponse {
+                        subrequest_id: subrequest.subrequest_id,
+                        open_shard: Some(shard),
+                    }],
+                };
+                Ok(resp)
+            });
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
@@ -1889,6 +1920,7 @@ mod tests {
             source_uid: source_uid.clone(),
             shard_infos,
         };
+
         ingest_controller
             .handle_local_shards_update(local_shards_update, &mut model, &progress)
             .await
@@ -1984,6 +2016,17 @@ mod tests {
             source_uid: source_uid.clone(),
             shard_infos,
         };
+
+        // The first request fails due to an error on the metastore.
+        let MetastoreError::InvalidArgument { .. } = ingest_controller
+            .handle_local_shards_update(local_shards_update.clone(), &mut model, &progress)
+            .await
+            .unwrap_err()
+        else {
+            panic!();
+        };
+
+        // The second request works!
         ingest_controller
             .handle_local_shards_update(local_shards_update, &mut model, &progress)
             .await
@@ -2124,7 +2167,7 @@ mod tests {
         ingest_controller
             .try_scale_up_shards(source_uid.clone(), shard_stats, &mut model, &progress)
             .await
-            .unwrap();
+            .unwrap_err();
         assert_eq!(model.all_shards().count(), 0);
 
         // Test successfully opened shard.
