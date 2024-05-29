@@ -1393,9 +1393,9 @@ async fn assign_client_fetch_docs_jobs(
 }
 
 // Measure the cost associated to searching in a given split metadata.
-fn compute_split_cost(_split_metadata: &SplitMetadata) -> usize {
+fn compute_split_cost(split_metadata: &SplitMetadata) -> usize {
     // TODO: Have a smarter cost, by smoothing the number of docs.
-    1
+    split_metadata.num_docs.ilog2() as usize
 }
 
 /// Builds a LeafSearchRequest to one node, from a list of [`SearchJob`].
