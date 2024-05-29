@@ -28,6 +28,7 @@ use async_trait::async_trait;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
+use tracing::warn;
 
 use crate::{SearchJob, SearchServiceClient, SearcherPool};
 
@@ -177,13 +178,30 @@ impl SearchJobPlacer {
         let mut job_assignments: HashMap<SocketAddr, (SearchServiceClient, Vec<J>)> =
             HashMap::with_capacity(num_nodes);
 
+        let total_load: usize = jobs.iter().map(|job| job.cost()).sum();
+
+        // allow arround 2% disparity. Round up so we never end up in a case where
+        // target_load * num_nodes < total_load
+        // some of our tests needs 2 splits to be put on 2 different searchers. It makes sens for
+        // these tests to keep doing so (testing root merge). Either we can make the allowed
+        // difference stricter, find the right split names ("split6" instead of "split2" works).
+        // or modify mock_split_meta() so that not all splits have the same job cost
+        // for now i went with the mock_split_meta() changes.
+        const ALLOWED_DIFFERENCE: usize = 102;
+        let target_load = (total_load * ALLOWED_DIFFERENCE).div_ceil(num_nodes * 100);
         for job in jobs {
             sort_by_rendez_vous_hash(&mut candidate_nodes, job.split_id());
-            // Select the least loaded node.
-            let chosen_node_idx = if candidate_nodes.len() >= 2 {
-                usize::from(candidate_nodes[0].load > candidate_nodes[1].load)
-            } else {
-                0
+            let mut candidate_nodes_iter = candidate_nodes.iter().enumerate();
+            // Select a node which hasn't reached the target load
+            let chosen_node_idx = loop {
+                let Some((id, candidate_node)) = candidate_nodes_iter.next() else {
+                    warn!("found no lightly loaded searcher for split, this should never happen");
+                    // as a fallback, use the first node
+                    break 0;
+                };
+                if candidate_node.load < target_load {
+                    break id;
+                }
             };
             let chosen_node = &mut candidate_nodes[chosen_node_idx];
             chosen_node.load += job.cost();
@@ -396,14 +414,14 @@ mod tests {
                     vec![
                         SearchJob::for_test("split5", 5),
                         SearchJob::for_test("split4", 4),
-                        SearchJob::for_test("split2", 2),
+                        SearchJob::for_test("split3", 3),
                     ],
                 ),
                 (
                     expected_searcher_addr_2,
                     vec![
                         SearchJob::for_test("split6", 6),
-                        SearchJob::for_test("split3", 3),
+                        SearchJob::for_test("split2", 2),
                         SearchJob::for_test("split1", 1),
                     ],
                 ),
