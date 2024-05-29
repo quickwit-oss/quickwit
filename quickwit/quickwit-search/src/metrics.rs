@@ -21,14 +21,14 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    exponential_buckets, new_counter, new_histogram, Histogram, IntCounter,
+    exponential_buckets, new_counter, new_counter_vec, new_histogram, Histogram, IntCounter,
+    IntCounterVec,
 };
 
 pub struct SearchMetrics {
     pub leaf_searches_splits_total: IntCounter,
     pub leaf_search_split_duration_secs: Histogram,
-    pub job_assigned_total: IntCounter,
-    pub job_assigned_to_affinity_searcher: IntCounter,
+    pub job_assigned_total: IntCounterVec<1>,
 }
 
 impl Default for SearchMetrics {
@@ -47,17 +47,12 @@ impl Default for SearchMetrics {
                 "search",
                 exponential_buckets(0.005, 2.0, 10).unwrap(),
             ),
-            job_assigned_total: new_counter(
+            job_assigned_total: new_counter_vec(
                 "job_assigned_total",
-                "Number of job assigned to searchers",
+                "Number of job assigned to searchers, per affinity rank.",
                 "search",
                 &[],
-            ),
-            job_assigned_to_affinity_searcher: new_counter(
-                "job_assigned_to_affinity_searcher_total",
-                "Number of job assigned to the searcher of highest affinity",
-                "search",
-                &[],
+                ["affinity"],
             ),
         }
     }

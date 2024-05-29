@@ -185,10 +185,15 @@ impl SearchJobPlacer {
             } else {
                 0
             };
-            if chosen_node_idx == 0 {
-                SEARCH_METRICS.job_assigned_to_affinity_searcher.inc();
-            }
-            SEARCH_METRICS.job_assigned_total.inc();
+            let metric_node_idx = match chosen_node_idx {
+                0 => "0",
+                1 => "1",
+                _ => "> 1",
+            };
+            SEARCH_METRICS
+                .job_assigned_total
+                .with_label_values([metric_node_idx])
+                .inc();
 
             let chosen_node = &mut candidate_nodes[chosen_node_idx];
             chosen_node.load += job.cost();
