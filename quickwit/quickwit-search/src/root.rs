@@ -590,9 +590,19 @@ async fn search_partial_hits_phase_with_scroll(
 /// metadata count.
 ///
 /// This is done by exclusion, so we will need to keep it up to date if fields are added.
-fn is_metadata_count_request(request: &SearchRequest) -> bool {
+pub fn is_metadata_count_request(request: &SearchRequest) -> bool {
     let query_ast: QueryAst = serde_json::from_str(&request.query_ast).unwrap();
-    if query_ast != QueryAst::MatchAll {
+    is_metadata_count_request_with_ast(&query_ast, request)
+}
+
+/// Check if the request is a count request without any filters, so we can just return the split
+/// metadata count.
+///
+/// This is done by exclusion, so we will need to keep it up to date if fields are added.
+///
+/// The passed query_ast should match the serialized on in request.
+pub fn is_metadata_count_request_with_ast(query_ast: &QueryAst, request: &SearchRequest) -> bool {
+    if query_ast != &QueryAst::MatchAll {
         return false;
     }
     if request.max_hits != 0 {
@@ -611,7 +621,7 @@ fn is_metadata_count_request(request: &SearchRequest) -> bool {
 }
 
 /// Get a leaf search response that returns the num_docs of the split
-fn get_count_from_metadata(split_metadatas: &[SplitMetadata]) -> Vec<LeafSearchResponse> {
+pub fn get_count_from_metadata(split_metadatas: &[SplitMetadata]) -> Vec<LeafSearchResponse> {
     split_metadatas
         .iter()
         .map(|metadata| LeafSearchResponse {
