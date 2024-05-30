@@ -180,14 +180,14 @@ impl SearchJobPlacer {
 
         let total_load: usize = jobs.iter().map(|job| job.cost()).sum();
 
-        // allow arround 2% disparity. Round up so we never end up in a case where
+        // allow arround 1% disparity. Round up so we never end up in a case where
         // target_load * num_nodes < total_load
         // some of our tests needs 2 splits to be put on 2 different searchers. It makes sens for
         // these tests to keep doing so (testing root merge). Either we can make the allowed
         // difference stricter, find the right split names ("split6" instead of "split2" works).
         // or modify mock_split_meta() so that not all splits have the same job cost
         // for now i went with the mock_split_meta() changes.
-        const ALLOWED_DIFFERENCE: usize = 102;
+        const ALLOWED_DIFFERENCE: usize = 101;
         let target_load = (total_load * ALLOWED_DIFFERENCE).div_ceil(num_nodes * 100);
         for job in jobs {
             sort_by_rendez_vous_hash(&mut candidate_nodes, job.split_id());
@@ -427,6 +427,62 @@ mod tests {
                 ),
             ];
             assert_eq!(assigned_jobs, expected_assigned_jobs);
+        }
+        {
+            let searcher_pool = searcher_pool_for_test([
+                ("127.0.0.1:1001", MockSearchService::new()),
+                ("127.0.0.1:1002", MockSearchService::new()),
+            ]);
+            let search_job_placer = SearchJobPlacer::new(searcher_pool);
+            let jobs = vec![
+                SearchJob::for_test("split1", 1000),
+                SearchJob::for_test("split2", 1),
+            ];
+            let mut assigned_jobs: Vec<(SocketAddr, Vec<SearchJob>)> = search_job_placer
+                .assign_jobs(jobs, &HashSet::default())
+                .await
+                .unwrap()
+                .map(|(client, jobs)| (client.grpc_addr(), jobs))
+                .collect();
+            assigned_jobs.sort_unstable_by_key(|(node_uid, _)| *node_uid);
+
+            let expected_searcher_addr_1: SocketAddr = ([127, 0, 0, 1], 1001).into();
+            let expected_searcher_addr_2: SocketAddr = ([127, 0, 0, 1], 1002).into();
+            let expected_assigned_jobs = vec![
+                (
+                    expected_searcher_addr_1,
+                    vec![SearchJob::for_test("split1", 1000)],
+                ),
+                (
+                    expected_searcher_addr_2,
+                    vec![SearchJob::for_test("split2", 1)],
+                ),
+            ];
+            assert_eq!(assigned_jobs, expected_assigned_jobs);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_search_job_placer_many_splits() {
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", MockSearchService::new()),
+            ("127.0.0.1:1002", MockSearchService::new()),
+            ("127.0.0.1:1003", MockSearchService::new()),
+            ("127.0.0.1:1004", MockSearchService::new()),
+            ("127.0.0.1:1005", MockSearchService::new()),
+        ]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let jobs = (0..1000)
+            .map(|id| SearchJob::for_test(&format!("split{id}"), 1))
+            .collect();
+        let jobs_len: Vec<usize> = search_job_placer
+            .assign_jobs(jobs, &HashSet::default())
+            .await
+            .unwrap()
+            .map(|(_, jobs)| jobs.len())
+            .collect();
+        for job_len in jobs_len {
+            assert!(job_len <= 1010 / 5);
         }
     }
 }
