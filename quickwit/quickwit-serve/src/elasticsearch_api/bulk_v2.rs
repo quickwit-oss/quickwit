@@ -170,6 +170,7 @@ pub(crate) async fn elastic_bulk_ingest_v2(
 
     let took_millis = now.elapsed().as_millis() as u64;
 
+    let bulk_response = quickwit_common::thread_pool::run_cpu_intensive(move || {
     let mut bulk_response = ElasticFastBulkResponse {
         took_millis,
         errors,
@@ -187,7 +188,7 @@ pub(crate) async fn elastic_bulk_ingest_v2(
                     ),
                     None,
                 )
-            })?;
+            }).unwrap();
         for es_doc_id in es_doc_ids {
             let item = ElasticBulkItem {
                 index_id: Cow::Borrowed(success.index_uid().index_id.as_str()),
@@ -210,7 +211,7 @@ pub(crate) async fn elastic_bulk_ingest_v2(
                     ),
                     None,
                 )
-            })?;
+            }).unwrap();
         match failure.reason() {
             IngestFailureReason::IndexNotFound => {
                 for es_doc_id in es_doc_ids {
@@ -249,6 +250,8 @@ pub(crate) async fn elastic_bulk_ingest_v2(
             }
         }
     }
+        bulk_response
+    }).await.unwrap();
     Ok(bulk_response)
 }
 
