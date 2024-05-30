@@ -459,9 +459,13 @@ impl Handler<ControlPlanLoop> for ControlPlane {
         if self.disable_control_loop {
             return Ok(());
         }
-        self.ingest_controller
+        if let Err(metastore_error) = self
+            .ingest_controller
             .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
-            .await;
+            .await
+        {
+            return convert_metastore_error::<()>(metastore_error).map(|_| ());
+        }
         self.indexing_scheduler.control_running_plan(&self.model);
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop);
         Ok(())
@@ -482,23 +486,7 @@ fn convert_metastore_error<T>(
 ) -> Result<ControlPlaneResult<T>, ActorExitStatus> {
     // If true, we know that the transactions has not been recorded in the Metastore.
     // If false, we simply are not sure whether the transaction has been recorded or not.
-    let is_transaction_certainly_aborted = match &metastore_error {
-        MetastoreError::AlreadyExists(_)
-        | MetastoreError::FailedPrecondition { .. }
-        | MetastoreError::Forbidden { .. }
-        | MetastoreError::InvalidArgument { .. }
-        | MetastoreError::JsonDeserializeError { .. }
-        | MetastoreError::JsonSerializeError { .. }
-        | MetastoreError::NotFound(_)
-        | MetastoreError::TooManyRequests => true,
-
-        MetastoreError::Connection { .. }
-        | MetastoreError::Db { .. }
-        | MetastoreError::Internal { .. }
-        | MetastoreError::Io { .. }
-        | MetastoreError::Timeout { .. }
-        | MetastoreError::Unavailable(_) => false,
-    };
+    let is_transaction_certainly_aborted = metastore_error.is_transaction_certainly_aborted();
     if is_transaction_certainly_aborted {
         // If the metastore transaction is certain to have been aborted,
         // this is actually a good thing.
@@ -783,21 +771,17 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
         {
             return convert_metastore_error(metastore_error);
         }
-        let response = match self
+        match self
             .ingest_controller
             .get_or_create_open_shards(request, &mut self.model, ctx.progress())
             .await
         {
-            Ok(response) => response,
-            Err(ControlPlaneError::Metastore(metastore_error)) => {
-                return convert_metastore_error(metastore_error);
+            Ok(resp) => {
+                let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
+                Ok(Ok(resp))
             }
-            Err(control_plane_error) => {
-                return Ok(Err(control_plane_error));
-            }
-        };
-        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
-        Ok(Ok(response))
+            Err(metastore_error) => convert_metastore_error(metastore_error),
+        }
     }
 }
 
@@ -827,9 +811,13 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
         local_shards_update: LocalShardsUpdate,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        self.ingest_controller
+        if let Err(metastore_error) = self
+            .ingest_controller
             .handle_local_shards_update(local_shards_update, &mut self.model, ctx.progress())
-            .await;
+            .await
+        {
+            return convert_metastore_error(metastore_error);
+        }
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         Ok(Ok(()))
     }
@@ -921,9 +909,13 @@ impl Handler<IndexerJoined> for ControlPlane {
             message.0.node_id()
         );
         // TODO: Update shard table.
-        self.ingest_controller
+        if let Err(metastore_error) = self
+            .ingest_controller
             .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
-            .await;
+            .await
+        {
+            return convert_metastore_error::<()>(metastore_error).map(|_| ());
+        }
         self.indexing_scheduler.rebuild_plan(&self.model);
         Ok(())
     }
@@ -947,9 +939,13 @@ impl Handler<IndexerLeft> for ControlPlane {
             message.0.node_id()
         );
         // TODO: Update shard table.
-        self.ingest_controller
+        if let Err(metastore_error) = self
+            .ingest_controller
             .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
-            .await;
+            .await
+        {
+            return convert_metastore_error::<()>(metastore_error).map(|_| ());
+        }
         self.indexing_scheduler.rebuild_plan(&self.model);
         Ok(())
     }
