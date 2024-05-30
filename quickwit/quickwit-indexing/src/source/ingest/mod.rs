@@ -218,8 +218,8 @@ impl IngestSource {
         assigned_shard.status = IndexingStatus::Active;
 
         let partition_id = assigned_shard.partition_id.clone();
-        let from_position_exclusive = fetch_payload.from_position_exclusive().clone();
-        let to_position_inclusive = fetch_payload.to_position_inclusive().clone();
+        let from_position_exclusive = fetch_payload.from_position_exclusive();
+        let to_position_inclusive = fetch_payload.to_position_inclusive();
 
         for mrecord in decoded_mrecords(mrecord_batch) {
             match mrecord {
@@ -257,7 +257,7 @@ impl IngestSource {
 
         let partition_id = assigned_shard.partition_id.clone();
         let from_position_exclusive = assigned_shard.current_position_inclusive.clone();
-        let to_position_inclusive = fetch_eof.eof_position().clone();
+        let to_position_inclusive = fetch_eof.eof_position();
 
         batch_builder
             .checkpoint_delta
@@ -575,8 +575,7 @@ impl Source for IngestSource {
         for acquired_shard in acquire_shards_response.acquired_shards {
             let index_uid = acquired_shard.index_uid().clone();
             let shard_id = acquired_shard.shard_id().clone();
-            let mut current_position_inclusive =
-                acquired_shard.publish_position_inclusive().clone();
+            let mut current_position_inclusive = acquired_shard.publish_position_inclusive();
             let leader_id: NodeId = acquired_shard.leader_id.into();
             let follower_id_opt: Option<NodeId> = acquired_shard.follower_id.map(Into::into);
             let source_id: SourceId = acquired_shard.source_id;

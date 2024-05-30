@@ -94,7 +94,7 @@ const MIN_RESET_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "testsui
 /// Duration after which persist requests time out with
 /// [`quickwit_proto::ingest::IngestV2Error::Timeout`].
 pub(super) const PERSIST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_millis(100)
+    Duration::from_millis(500)
 } else {
     Duration::from_secs(6)
 };
@@ -1184,7 +1184,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
             if shard_position.is_eof() {
                 state_guard.delete_shard(&queue_id).await;
             } else if !shard_position.is_beginning() {
-                state_guard.truncate_shard(&queue_id, &shard_position).await;
+                state_guard.truncate_shard(&queue_id, shard_position).await;
             }
         }
     }

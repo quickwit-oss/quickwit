@@ -425,7 +425,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
         for (shard_id, position) in shard_positions_update.updated_shard_positions {
             if let Some(shard) = shard_entries.get_mut(&shard_id) {
                 shard.publish_position_inclusive =
-                    Some(shard.publish_position_inclusive().max(&position).clone());
+                    Some(shard.publish_position_inclusive().max(position.clone()));
                 if position.is_eof() {
                     // identify shards that have reached EOF but have not yet been removed.
                     info!(shard_id=%shard_id, position=?position, "received eof shard via gossip");

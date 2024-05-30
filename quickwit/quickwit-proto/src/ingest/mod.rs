@@ -25,7 +25,7 @@ use self::ingester::{PersistFailureReason, ReplicateFailureReason};
 use self::router::IngestFailureReason;
 use super::types::NodeId;
 use super::GrpcServiceError;
-use crate::types::{queue_id, IndexUid, Position, QueueId, ShardId, SourceUid};
+use crate::types::{queue_id, Position, QueueId, ShardId, SourceUid};
 use crate::{ServiceError, ServiceErrorCode};
 
 pub mod ingester;
@@ -200,12 +200,6 @@ impl MRecordBatch {
 }
 
 impl Shard {
-    pub fn shard_id(&self) -> &ShardId {
-        self.shard_id
-            .as_ref()
-            .expect("`shard_id` should be a required field")
-    }
-
     pub fn is_open(&self) -> bool {
         self.shard_state().is_open()
     }
@@ -220,12 +214,6 @@ impl Shard {
 
     pub fn queue_id(&self) -> super::types::QueueId {
         queue_id(self.index_uid(), &self.source_id, self.shard_id())
-    }
-
-    pub fn publish_position_inclusive(&self) -> &Position {
-        self.publish_position_inclusive
-            .as_ref()
-            .expect("`publish_position_inclusive` should be a required field")
     }
 }
 
@@ -279,31 +267,11 @@ impl ShardIds {
 }
 
 impl ShardIdPositions {
-    pub fn index_uid(&self) -> &IndexUid {
-        self.index_uid
-            .as_ref()
-            .expect("`index_uid` should be a required field")
-    }
-
-    pub fn queue_id_positions(&self) -> impl Iterator<Item = (QueueId, &Position)> + '_ {
+    pub fn queue_id_positions(&self) -> impl Iterator<Item = (QueueId, Position)> + '_ {
         self.shard_positions.iter().map(|shard_position| {
             let queue_id = queue_id(self.index_uid(), &self.source_id, shard_position.shard_id());
             (queue_id, shard_position.publish_position_inclusive())
         })
-    }
-}
-
-impl ShardIdPosition {
-    pub fn shard_id(&self) -> &ShardId {
-        self.shard_id
-            .as_ref()
-            .expect("`shard_id` should be a required field")
-    }
-
-    pub fn publish_position_inclusive(&self) -> &Position {
-        self.publish_position_inclusive
-            .as_ref()
-            .expect("`publish_position_inclusive` should be a required field")
     }
 }
 

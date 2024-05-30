@@ -816,8 +816,7 @@ impl IngestController {
 
             for shard_id in shard_ids.shard_ids {
                 if let Some(shard_entry) = shard_entries.get(&shard_id) {
-                    let publish_position_inclusive =
-                        shard_entry.publish_position_inclusive().clone();
+                    let publish_position_inclusive = shard_entry.publish_position_inclusive();
 
                     shard_positions_to_truncate.push(ShardIdPosition {
                         shard_id: Some(shard_id),
@@ -842,9 +841,8 @@ impl IngestController {
                 });
             }
         }
-
         if enabled!(Level::DEBUG) {
-            let shards_to_truncate: Vec<(&str, &Position)> = shards_to_truncate
+            let shards_to_truncate: Vec<(&str, Position)> = shards_to_truncate
                 .iter()
                 .flat_map(|shard_positions| {
                     shard_positions

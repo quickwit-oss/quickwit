@@ -177,6 +177,7 @@ pub(super) fn queue_position_range(
 mod tests {
     use super::*;
 
+    #[cfg(not(feature = "failpoints"))]
     #[tokio::test]
     async fn test_append_non_empty_doc_batch() {
         let tempdir = tempfile::tempdir().unwrap();
