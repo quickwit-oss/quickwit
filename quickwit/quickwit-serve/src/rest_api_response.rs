@@ -24,7 +24,7 @@ use quickwit_proto::ServiceError;
 use serde::{self, Serialize};
 use warp::Reply;
 
-use crate::format::BodyFormat;
+use crate::format::{BodyFormat, RestResponse};
 
 const JSON_SERIALIZATION_ERROR: &str = "JSON serialization failed.";
 
@@ -62,7 +62,7 @@ pub struct RestApiResponse {
 }
 
 impl RestApiResponse {
-    pub fn new<T: serde::Serialize, E: serde::Serialize>(
+    pub fn new<T: RestResponse, E: RestResponse>(
         result: &Result<T, E>,
         status_code: StatusCode,
         body_format: BodyFormat,

@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -33,8 +34,33 @@ use tracing::warn;
 
 use super::model::ErrorCauseException;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
+use crate::format::RestResponse;
 use crate::ingest_api::lines;
 use crate::Body;
+
+/// We do not rely on serde for serialization for performance reasons
+#[derive(Default)]
+pub struct ElasticFastBulkResponse {
+    pub took_millis: u64,
+    pub errors: bool,
+    pub actions: Vec<u8>,
+}
+
+impl RestResponse for ElasticFastBulkResponse {
+    fn format(&self, _body_format: crate::BodyFormat) -> Result<Vec<u8>, ()> {
+        use std::io::Write;
+        let mut buffer: Vec<u8> = Vec::with_capacity(self.actions.len() + 40);
+        write!(
+            &mut buffer,
+            r#"{{"took":{},"errors":{},"actions":["#,
+            self.took_millis, self.errors
+        )
+        .map_err(|_| ())?;
+        buffer.extend_from_slice(&self.actions);
+        buffer.extend_from_slice(b"]}");
+        Ok(buffer)
+    }
+}
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct ElasticBulkResponse {
@@ -45,22 +71,30 @@ pub(crate) struct ElasticBulkResponse {
     pub actions: Vec<ElasticBulkAction>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) enum ElasticBulkAction {
-    #[serde(rename = "create")]
-    Create(ElasticBulkItem),
-    #[serde(rename = "index")]
-    Index(ElasticBulkItem),
+impl ElasticFastBulkResponse {
+    pub fn add_item<'a>(&mut self, item: ElasticBulkItem<'a>) {
+        if !self.actions.is_empty() {
+            self.actions.push(b',');
+        }
+        self.actions.extend_from_slice(b"{\"index\":");
+        serde_json::to_writer(&mut self.actions, &item).unwrap();
+        self.actions.push(b'}');
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ElasticBulkItem {
-    #[serde(rename = "_index")]
-    pub index_id: IndexId,
+pub(crate) enum ElasticBulkAction {
+    // #[serde(rename = "create")]
+    // Create(ElasticBulkItem),
+    #[serde(rename = "index")]
+    Index(ElasticBulkItem<'static>),
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ElasticBulkItem<'a> {
+    pub index_id: Cow<'a, str>,
     #[serde(rename = "_id")]
     pub es_doc_id: Option<String>,
-    #[serde(with = "http_serde::status_code")]
-    pub status: StatusCode,
+    pub status: u16,
     pub error: Option<ElasticBulkError>,
 }
 
@@ -78,7 +112,7 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     body: Body,
     bulk_options: ElasticBulkOptions,
     mut ingest_router: IngestRouterServiceClient,
-) -> Result<ElasticBulkResponse, ElasticsearchError> {
+) -> Result<ElasticFastBulkResponse, ElasticsearchError> {
     let now = Instant::now();
     let mut ingest_request_builder = IngestRequestV2Builder::default();
     let mut lines = lines(&body.content).enumerate();
@@ -129,12 +163,18 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     let ingest_request_opt = ingest_request_builder.build(INGEST_V2_SOURCE_ID, commit_type);
 
     let Some(ingest_request) = ingest_request_opt else {
-        return Ok(ElasticBulkResponse::default());
+        return Ok(ElasticFastBulkResponse::default());
     };
     let ingest_response_v2 = ingest_router.ingest(ingest_request).await?;
     let errors = !ingest_response_v2.failures.is_empty();
-    let mut actions: Vec<ElasticBulkAction> = Vec::new();
 
+    let took_millis = now.elapsed().as_millis() as u64;
+
+    let mut bulk_response = ElasticFastBulkResponse {
+        took_millis,
+        errors,
+        actions: Vec::with_capacity(1_000),
+    };
     for success in ingest_response_v2.successes {
         let es_doc_ids = per_subrequest_id_es_doc_ids
             .remove(&success.subrequest_id)
@@ -150,13 +190,12 @@ pub(crate) async fn elastic_bulk_ingest_v2(
             })?;
         for es_doc_id in es_doc_ids {
             let item = ElasticBulkItem {
-                index_id: success.index_uid().index_id.clone(),
+                index_id: Cow::Borrowed(success.index_uid().index_id.as_str()),
                 es_doc_id,
-                status: StatusCode::CREATED,
+                status: StatusCode::CREATED.as_u16(),
                 error: None,
             };
-            let action = ElasticBulkAction::Index(item);
-            actions.push(action);
+            bulk_response.add_item(item);
         }
     }
     for failure in ingest_response_v2.failures {
@@ -181,13 +220,12 @@ pub(crate) async fn elastic_bulk_ingest_v2(
                         reason: format!("no such index [{}]", failure.index_id),
                     };
                     let item = ElasticBulkItem {
-                        index_id: failure.index_id.clone(),
+                        index_id: Cow::Borrowed(failure.index_id.as_str()),
                         es_doc_id,
-                        status: StatusCode::NOT_FOUND,
+                        status: StatusCode::NOT_FOUND.as_u16(),
                         error: Some(error),
                     };
-                    let action = ElasticBulkAction::Index(item);
-                    actions.push(action);
+                    bulk_response.add_item(item);
                 }
             }
             IngestFailureReason::Timeout => {
@@ -198,13 +236,12 @@ pub(crate) async fn elastic_bulk_ingest_v2(
                         reason: format!("timeout [{}]", failure.index_id),
                     };
                     let item = ElasticBulkItem {
-                        index_id: failure.index_id.clone(),
+                        index_id: Cow::Borrowed(failure.index_id.as_str()),
                         es_doc_id,
-                        status: StatusCode::REQUEST_TIMEOUT,
+                        status: StatusCode::REQUEST_TIMEOUT.as_u16(),
                         error: Some(error),
                     };
-                    let action = ElasticBulkAction::Index(item);
-                    actions.push(action);
+                    bulk_response.add_item(item);
                 }
             }
             _ => {
@@ -212,13 +249,6 @@ pub(crate) async fn elastic_bulk_ingest_v2(
             }
         }
     }
-    let took_millis = now.elapsed().as_millis() as u64;
-
-    let bulk_response = ElasticBulkResponse {
-        took_millis,
-        errors,
-        actions,
-    };
     Ok(bulk_response)
 }
 
@@ -322,7 +352,6 @@ mod tests {
             .actions
             .into_iter()
             .map(|action| match action {
-                ElasticBulkAction::Create(item) => item,
                 ElasticBulkAction::Index(item) => item,
             })
             .collect::<Vec<_>>();

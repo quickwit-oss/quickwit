@@ -45,6 +45,7 @@ use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
 use crate::elasticsearch_api::model::ElasticsearchError;
+use crate::format::RestResponse;
 use crate::rest_api_response::RestApiResponse;
 use crate::{BodyFormat, BuildInfo};
 
@@ -111,7 +112,7 @@ impl From<i64> for TrackTotalHits {
     }
 }
 
-fn make_elastic_api_response<T: serde::Serialize>(
+fn make_elastic_api_response<T: RestResponse>(
     elasticsearch_result: Result<T, ElasticsearchError>,
     body_format: BodyFormat,
 ) -> RestApiResponse {

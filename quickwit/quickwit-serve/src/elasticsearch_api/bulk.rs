@@ -29,7 +29,8 @@ use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::types::IndexId;
 use warp::{Filter, Rejection};
 
-use super::bulk_v2::{elastic_bulk_ingest_v2, ElasticBulkResponse};
+use super::bulk_v2::elastic_bulk_ingest_v2;
+use crate::elasticsearch_api::bulk_v2::ElasticFastBulkResponse;
 use crate::elasticsearch_api::filter::{elastic_bulk_filter, elastic_index_bulk_filter};
 use crate::elasticsearch_api::make_elastic_api_response;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
@@ -81,7 +82,7 @@ async fn elastic_ingest_bulk(
     bulk_options: ElasticBulkOptions,
     mut ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
-) -> Result<ElasticBulkResponse, ElasticsearchError> {
+) -> Result<ElasticFastBulkResponse, ElasticsearchError> {
     if enable_ingest_v2() || bulk_options.enable_ingest_v2 {
         return elastic_bulk_ingest_v2(default_index_id, body, bulk_options, ingest_router).await;
     }
@@ -143,7 +144,7 @@ async fn elastic_ingest_bulk(
 
     let took_millis = now.elapsed().as_millis() as u64;
     let errors = false;
-    let bulk_response = ElasticBulkResponse {
+    let bulk_response = ElasticFastBulkResponse {
         took_millis,
         errors,
         actions: Vec::new(),

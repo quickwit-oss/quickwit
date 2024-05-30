@@ -25,6 +25,22 @@ use serde::{self, Deserialize, Serialize, Serializer};
 use thiserror::Error;
 use warp::{Filter, Rejection};
 
+pub trait RestResponse {
+    fn format(&self, body_format: BodyFormat) -> Result<Vec<u8>, ()>;
+}
+
+impl<T: serde::Serialize> RestResponse for T {
+    fn format(&self, body_format: BodyFormat) -> Result<Vec<u8>, ()> {
+        match body_format {
+            BodyFormat::Json => serde_json::to_vec(self),
+            BodyFormat::PrettyJson => serde_json::to_vec_pretty(self),
+        }
+        .map_err(|_| {
+            tracing::error!("response serialization failed");
+        })
+    }
+}
+
 /// Body output format used for the REST API.
 #[derive(Deserialize, Clone, Debug, Eq, PartialEq, Copy, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -36,24 +52,14 @@ pub enum BodyFormat {
 }
 
 impl BodyFormat {
-    pub(crate) fn result_to_vec<T: serde::Serialize, E: serde::Serialize>(
+    pub(crate) fn result_to_vec<T: RestResponse, E: RestResponse>(
         &self,
         result: &Result<T, E>,
     ) -> Result<Vec<u8>, ()> {
         match result {
-            Ok(value) => self.value_to_vec(value),
-            Err(err) => self.value_to_vec(err),
+            Ok(value) => value.format(*self),
+            Err(err) => err.format(*self),
         }
-    }
-
-    fn value_to_vec(&self, value: &impl serde::Serialize) -> Result<Vec<u8>, ()> {
-        match &self {
-            Self::Json => serde_json::to_vec(value),
-            Self::PrettyJson => serde_json::to_vec_pretty(value),
-        }
-        .map_err(|_| {
-            tracing::error!("response serialization failed");
-        })
     }
 }
 
