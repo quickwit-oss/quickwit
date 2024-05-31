@@ -722,6 +722,18 @@ pub(crate) struct QuickwitCollector {
 }
 
 impl QuickwitCollector {
+    pub fn is_count_only(&self) -> bool {
+        self.max_hits == 0 && self.aggregation.is_none()
+    }
+    /// Updates search parameters affecting the returned documents.
+    /// Does not update aggregations.
+    pub fn update_search_param(&mut self, search_request: &SearchRequest) {
+        let sort_by = sort_by_from_request(search_request);
+        self.sort_by = sort_by;
+        self.max_hits = search_request.max_hits as usize;
+        self.start_offset = search_request.start_offset as usize;
+        self.search_after.clone_from(&search_request.search_after);
+    }
     pub fn fast_field_names(&self) -> HashSet<String> {
         let mut fast_field_names = HashSet::default();
         self.sort_by.first.add_fast_field(&mut fast_field_names);
