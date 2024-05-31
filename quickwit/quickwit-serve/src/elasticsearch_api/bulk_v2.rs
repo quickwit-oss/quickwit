@@ -73,12 +73,12 @@ pub(crate) struct ElasticBulkResponse {
 
 impl ElasticFastBulkResponse {
     pub fn add_item<'a>(&mut self, item: ElasticBulkItem<'a>) {
-        if !self.actions.is_empty() {
-            self.actions.push(b',');
-        }
-        self.actions.extend_from_slice(b"{\"index\":");
-        serde_json::to_writer(&mut self.actions, &item).unwrap();
-        self.actions.push(b'}');
+        // if !self.actions.is_empty() {
+        //     self.actions.push(b',');
+        // }
+        // self.actions.extend_from_slice(b"{\"index\":");
+        // serde_json::to_writer(&mut self.actions, &item).unwrap();
+        // self.actions.push(b'}');
     }
 }
 
