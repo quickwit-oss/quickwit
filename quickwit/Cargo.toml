@@ -158,7 +158,7 @@ nom = "7.1.3"
 num_cpus = "1"
 numfmt = "1.1.1"
 once_cell = "1"
-oneshot = "0.1.5"
+oneshot = "0.1.7"
 openssl = { version = "0.10.60", default-features = false }
 openssl-probe = "0.1.5"
 opentelemetry = { version = "0.20", features = ["rt-tokio"] }
@@ -335,6 +335,9 @@ encoding_rs = "=0.8.32"
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }
+
+[patch."https://github.com/fulmicoton/oneshot.git"]
+oneshot = "0.1.7"
 
 ## this patched version of tracing helps better understand what happens inside futures (when are
 ## they polled, how long does poll take...)
