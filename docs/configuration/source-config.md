@@ -168,8 +168,21 @@ EOF
 `num_pipelines` parameter is only available for sources that can be distributed: Kafka, GCP PubSub and Pulsar (coming soon).
 
 It defines the number of pipelines to run on a cluster for the source. The actual placement of these pipelines on the different indexer
-will be decided by the control plane. Note that distributions of a source like Kafka is done by assigning a set of partitions to different pipelines.
-As a result, it is recommended to make sure the number of partitions is a multiple of the number of `num_pipelines`.
+will be decided by the control plane.
+
+:::info
+
+Note that the distribution of indexing a partitioned source like Kafka is done by assigning the different partitions to different pipelines. As a result, it is important make sure that the number of partitions is a multiple of `num_pipelines`.
+
+Also, assuming you are only indexing a single Kafka source in your Quickwit cluster, you should make sure that the number of pipelines is a multiple of your number of indexers. Finally, if you are indexing a high throughput you should provision between 2vcpus and 4vcpus per pipeline.
+
+For instance, let's assume you have a pre-existing topic of 60 partitions, and each partition receiving a throughput of 10MB/s. If you measured that Quickwit was able to index your data at a pace of 40MB/s per pipeline, a possible setting could be:
+- 5 indexers of 8vcpus each
+- 15 pipelines
+
+Each indexer will then be in charge of 3 pipelines, and each pipeline will cover 4 partitions.
+:::
+
 
 ## Transform parameters
 
