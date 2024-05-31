@@ -723,7 +723,7 @@ pub(crate) struct QuickwitCollector {
 
 impl QuickwitCollector {
     pub fn is_count_only(&self) -> bool {
-        self.max_hits == 0 && self.aggregation.is_none() && self.search_after.is_none()
+        self.max_hits == 0 && self.aggregation.is_none()
     }
     /// Updates search parameters affecting the returned documents.
     /// Does not update aggregations.

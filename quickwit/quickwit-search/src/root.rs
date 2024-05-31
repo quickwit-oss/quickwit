@@ -609,8 +609,11 @@ pub fn is_metadata_count_request_with_ast(query_ast: &QueryAst, request: &Search
         return false;
     }
 
-    // TODO: if the start and end timestamp encompass the whole split, it is still a count query
-    // So some could be checked on metadata
+    // If the start and end timestamp encompass the whole split, it is still a count query.
+    // We remove this currently on the leaf level, but not yet on the root level.
+    // There's a small advantage when we would do this on the root level, since we have the
+    // counts available on the split. On the leaf it is currently required to open the split
+    // to get the count.
     if request.start_timestamp.is_some() || request.end_timestamp.is_some() {
         return false;
     }

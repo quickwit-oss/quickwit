@@ -1038,7 +1038,7 @@ async fn resolve_storage_and_leaf_search(
 }
 
 /// Optimizes the search_request based on CanSplitDoBetter
-/// Returns a tuple of (the search_request was optimized, split can return better results)
+/// Returns true if the split can return better results
 fn check_optimize_search_request(
     search_request: &mut SearchRequest,
     split: &SplitIdAndFooterOffsets,
