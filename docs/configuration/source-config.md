@@ -165,19 +165,19 @@ EOF
 
 ## Number of pipelines
 
-`num_pipelines` parameter is only available for sources that can be distributed: Kafka, GCP PubSub and Pulsar (coming soon).
+The `num_pipelines` parameter is only available for distributed sources like Kafka, GCP PubSub, and Pulsar.
 
 It defines the number of pipelines to run on a cluster for the source. The actual placement of these pipelines on the different indexer
 will be decided by the control plane.
 
 :::info
 
-Note that the distribution of indexing a partitioned source like Kafka is done by assigning the different partitions to different pipelines. As a result, it is important make sure that the number of partitions is a multiple of `num_pipelines`.
+Note that distributing the indexing load of partitioned sources like Kafka is done by assigning the different partitions to different pipelines. As a result, it is important to ensure that the number of partitions is a multiple of `num_pipelines`.
 
-Also, assuming you are only indexing a single Kafka source in your Quickwit cluster, you should make sure that the number of pipelines is a multiple of your number of indexers. Finally, if you are indexing a high throughput you should provision between 2vcpus and 4vcpus per pipeline.
+Also, assuming you are only indexing a single Kafka source in your Quickwit cluster, you should set the number of pipelines to a multiple of the number of indexers. Finally, if your indexing throughput is high, you should provision between 2 and 4 vCPUs per pipeline.
 
-For instance, let's assume you have a pre-existing topic of 60 partitions, and each partition receiving a throughput of 10MB/s. If you measured that Quickwit was able to index your data at a pace of 40MB/s per pipeline, a possible setting could be:
-- 5 indexers of 8vcpus each
+For instance, assume you want to index a 60-partition topic, with each partition receiving a throughput of 10 MB/s. If you measured that Quickwit can index your data at a pace of 40MB/s per pipeline, a possible setting could be:
+- 5 indexers with 8 vCPUs each
 - 15 pipelines
 
 Each indexer will then be in charge of 3 pipelines, and each pipeline will cover 4 partitions.
