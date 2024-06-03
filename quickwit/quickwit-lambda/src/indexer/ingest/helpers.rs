@@ -184,7 +184,7 @@ pub(super) async fn init_index_if_necessary(
             if !current_metadata.sources.contains_key(LAMBDA_SOURCE_ID) {
                 let add_source_request = AddSourceRequest::try_from_source_config(
                     current_metadata.index_uid.clone(),
-                    &source_config,
+                    source_config,
                 )?;
                 metastore.add_source(add_source_request).await?;
                 metadata_changed = true;
