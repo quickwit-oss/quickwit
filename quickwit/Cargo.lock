@@ -5867,7 +5867,6 @@ dependencies = [
  "once_cell",
  "quickwit-common",
  "quickwit-doc-mapper",
- "quickwit-macros",
  "quickwit-proto",
  "regex",
  "serde",

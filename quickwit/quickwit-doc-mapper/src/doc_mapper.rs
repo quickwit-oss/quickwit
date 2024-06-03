@@ -249,8 +249,8 @@ mod tests {
 
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
     use crate::{
-        Cardinality, DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, DocParsingError,
-        FieldMappingEntry, Mode, TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
+        Cardinality, DefaultDocMapperBuilder, DocMapper, DocParsingError, FieldMappingEntry,
+        TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -333,35 +333,18 @@ mod tests {
     }
 
     #[test]
-    fn test_serdeserialize_doc_mapper() -> anyhow::Result<()> {
-        let deserialized_default_doc_mapper =
-            serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
-        let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build()?;
-        assert_eq!(
-            format!("{deserialized_default_doc_mapper:?}"),
-            format!("{expected_default_doc_mapper:?}"),
-        );
-
-        let serialized_doc_mapper = serde_json::to_string(&deserialized_default_doc_mapper)?;
-        let deserialized_default_doc_mapper =
-            serde_json::from_str::<Box<dyn DocMapper>>(&serialized_doc_mapper)?;
-        let serialized_doc_mapper_2 = serde_json::to_string(&deserialized_default_doc_mapper)?;
-
-        assert_eq!(serialized_doc_mapper, serialized_doc_mapper_2);
-
-        Ok(())
-    }
-
-    #[test]
     fn test_doc_mapper_query_with_json_field() {
         let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
-        doc_mapper_builder.field_mappings.push(FieldMappingEntry {
-            name: "json_field".to_string(),
-            mapping_type: FieldMappingType::Json(
-                QuickwitJsonOptions::default(),
-                Cardinality::SingleValue,
-            ),
-        });
+        doc_mapper_builder
+            .doc_mapping
+            .field_mappings
+            .push(FieldMappingEntry {
+                name: "json_field".to_string(),
+                mapping_type: FieldMappingType::Json(
+                    QuickwitJsonOptions::default(),
+                    Cardinality::SingleValued,
+                ),
+            });
         let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();
         let query_ast = UserInputQuery {
@@ -380,12 +363,7 @@ mod tests {
 
     #[test]
     fn test_doc_mapper_query_with_json_field_default_search_fields() {
-        let doc_mapper: DefaultDocMapper = DefaultDocMapperBuilder {
-            mode: Mode::default(),
-            ..Default::default()
-        }
-        .try_build()
-        .unwrap();
+        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
         let schema = doc_mapper.schema();
         let query_ast = query_ast_from_user_text("toto.titi:hello", None)
             .parse_user_query(doc_mapper.default_search_fields())
@@ -399,12 +377,7 @@ mod tests {
 
     #[test]
     fn test_doc_mapper_query_with_json_field_ambiguous_term() {
-        let doc_mapper: DefaultDocMapper = DefaultDocMapperBuilder {
-            mode: Mode::default(),
-            ..Default::default()
-        }
-        .try_build()
-        .unwrap();
+        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
         let schema = doc_mapper.schema();
         let query_ast = query_ast_from_user_text("toto:5", None)
             .parse_user_query(&[])
@@ -582,27 +555,33 @@ mod tests {
         };
         use crate::{TokenizerConfig, TokenizerEntry};
         let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
-        doc_mapper_builder.field_mappings.push(FieldMappingEntry {
-            name: "multilang".to_string(),
-            mapping_type: FieldMappingType::Text(
-                QuickwitTextOptions {
-                    indexing_options: Some(TextIndexingOptions {
-                        tokenizer: QuickwitTextTokenizer::from_static("multilang"),
-                        record: IndexRecordOption::Basic,
-                        fieldnorms: false,
-                    }),
-                    ..Default::default()
+        doc_mapper_builder
+            .doc_mapping
+            .field_mappings
+            .push(FieldMappingEntry {
+                name: "multilang".to_string(),
+                mapping_type: FieldMappingType::Text(
+                    QuickwitTextOptions {
+                        indexing_options: Some(TextIndexingOptions {
+                            tokenizer: QuickwitTextTokenizer::from_static("multilang"),
+                            record: IndexRecordOption::Basic,
+                            fieldnorms: false,
+                        }),
+                        ..Default::default()
+                    },
+                    Cardinality::SingleValued,
+                ),
+            });
+        doc_mapper_builder
+            .doc_mapping
+            .tokenizers
+            .push(TokenizerEntry {
+                name: "multilang".to_string(),
+                config: TokenizerConfig {
+                    tokenizer_type: TokenizerType::Multilang,
+                    filters: Vec::new(),
                 },
-                Cardinality::SingleValue,
-            ),
-        });
-        doc_mapper_builder.tokenizers.push(TokenizerEntry {
-            name: "multilang".to_string(),
-            config: TokenizerConfig {
-                tokenizer_type: TokenizerType::Multilang,
-                filters: Vec::new(),
-            },
-        });
+            });
         let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();
         let query_ast = quickwit_query::query_ast::QueryAst::Term(TermQuery {

@@ -27,6 +27,7 @@
 
 mod default_doc_mapper;
 mod doc_mapper;
+mod doc_mapping;
 mod error;
 mod query_builder;
 mod routing_expression;
@@ -36,8 +37,7 @@ pub mod tag_pruning;
 
 pub use default_doc_mapper::{
     analyze_text, BinaryFormat, DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry,
-    FieldMappingType, Mode, ModeType, QuickwitBytesOptions, QuickwitJsonOptions, TokenizerConfig,
-    TokenizerEntry,
+    FieldMappingType, QuickwitBytesOptions, QuickwitJsonOptions, TokenizerConfig, TokenizerEntry,
 };
 use default_doc_mapper::{
     FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionSchema,
@@ -45,6 +45,7 @@ use default_doc_mapper::{
     TokenFilterType, TokenizerType,
 };
 pub use doc_mapper::{DocMapper, JsonObject, NamedField, TermRange, WarmupInfo};
+pub use doc_mapping::{DocMapping, Mode, ModeType};
 pub use error::{DocParsingError, QueryParserError};
 use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
 pub use routing_expression::RoutingExpr;
@@ -56,23 +57,23 @@ pub const SOURCE_FIELD_NAME: &str = "_source";
 pub const DYNAMIC_FIELD_NAME: &str = "_dynamic";
 
 /// Field name reserved for storing the length of source document.
-pub const DOCUMENT_LEN_FIELD_NAME: &str = "_doc_length";
+pub const DOCUMENT_SIZE_FIELD_NAME: &str = "_doc_length";
 
 /// Quickwit reserved field names.
 const QW_RESERVED_FIELD_NAMES: &[&str] = &[
-    SOURCE_FIELD_NAME,
+    DOCUMENT_SIZE_FIELD_NAME,
     DYNAMIC_FIELD_NAME,
     FIELD_PRESENCE_FIELD_NAME,
-    DOCUMENT_LEN_FIELD_NAME,
+    SOURCE_FIELD_NAME,
 ];
 
 /// Cardinality of a field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Cardinality {
     /// Single-valued field.
-    SingleValue,
+    SingleValued,
     /// Multivalued field.
-    MultiValues,
+    MultiValued,
 }
 
 #[derive(utoipa::OpenApi)]
