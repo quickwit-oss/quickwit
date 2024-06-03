@@ -156,6 +156,29 @@ pub enum MetastoreError {
     Unavailable(String),
 }
 
+impl MetastoreError {
+    /// Returns `true` if the transaction that emitted this error is "certainly abort".
+    /// Returns `false` if we cannot know whether the transaction was successful or not.
+    pub fn is_transaction_certainly_aborted(&self) -> bool {
+        match self {
+            MetastoreError::AlreadyExists(_)
+            | MetastoreError::FailedPrecondition { .. }
+            | MetastoreError::Forbidden { .. }
+            | MetastoreError::InvalidArgument { .. }
+            | MetastoreError::JsonDeserializeError { .. }
+            | MetastoreError::JsonSerializeError { .. }
+            | MetastoreError::NotFound(_)
+            | MetastoreError::TooManyRequests => true,
+            MetastoreError::Connection { .. }
+            | MetastoreError::Db { .. }
+            | MetastoreError::Internal { .. }
+            | MetastoreError::Io { .. }
+            | MetastoreError::Timeout { .. }
+            | MetastoreError::Unavailable(_) => false,
+        }
+    }
+}
+
 #[cfg(feature = "postgres")]
 impl From<sqlx::Error> for MetastoreError {
     fn from(error: sqlx::Error) -> Self {
