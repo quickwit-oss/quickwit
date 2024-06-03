@@ -181,12 +181,14 @@ impl IngesterState {
                 } else {
                     Position::offset(*position_range.start() - 1)
                 };
-                let solo_shard = IngesterShard::new_solo(
+                let mut solo_shard = IngesterShard::new_solo(
                     ShardState::Closed,
                     replication_position_inclusive,
                     truncation_position_inclusive,
                     now,
                 );
+                // We want to advertise the shard as read-only right away.
+                solo_shard.is_advertisable = true;
                 inner_guard.shards.insert(queue_id.clone(), solo_shard);
 
                 let rate_limiter = RateLimiter::from_settings(rate_limiter_settings);
