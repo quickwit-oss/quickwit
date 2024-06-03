@@ -42,12 +42,13 @@ use quickwit_indexing::IndexingPipeline;
 use quickwit_ingest::IngesterPool;
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
-    AddSourceRequestExt, CreateIndexResponseExt, IndexMetadata, IndexMetadataResponseExt,
+    AddSourceRequestExt, CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadata,
+    IndexMetadataResponseExt,
 };
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::metastore::{
-    serde_utils, AddSourceRequest, CreateIndexRequest, IndexMetadataRequest, MetastoreError,
-    MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest,
+    AddSourceRequest, CreateIndexRequest, IndexMetadataRequest, MetastoreError, MetastoreService,
+    MetastoreServiceClient, ResetSourceCheckpointRequest,
 };
 use quickwit_proto::types::PipelineUid;
 use quickwit_search::SearchJobPlacer;
@@ -172,10 +173,7 @@ pub(super) async fn init_index_if_necessary(
             let current_metadata = metadata_resp.deserialize_index_metadata()?;
             let mut metadata_changed = false;
             if overwrite {
-                info!(
-                    index_id = *INDEX_ID,
-                    "Overwrite enabled, clearing existing index",
-                );
+                info!(index_uid = %current_metadata.index_uid, "overwrite enabled, clearing existing index");
                 let mut index_service =
                     IndexService::new(metastore.clone(), storage_resolver.clone());
                 index_service.clear_index(&INDEX_ID).await?;
@@ -212,14 +210,13 @@ pub(super) async fn init_index_if_necessary(
                     index_config.index_id,
                 );
             }
-            let index_config_json = serde_utils::to_json_str(&index_config)?;
-            let source_configs_json = vec![serde_utils::to_json_str(&source_config)?];
-            let create_index_request = CreateIndexRequest {
-                index_config_json,
-                source_configs_json,
-            };
+            let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
+                &index_config,
+                std::slice::from_ref(source_config),
+            )?;
             let create_resp = metastore.create_index(create_index_request).await?;
-            info!("index created");
+
+            info!(index_uid = %create_resp.index_uid(), "index created");
             create_resp.deserialize_index_metadata()?
         }
         Err(e) => bail!(e),
