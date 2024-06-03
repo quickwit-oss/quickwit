@@ -210,6 +210,7 @@ sea-query-binder = { version = "0.5", features = [
 # ^1.0.184 due to serde-rs/serde#2538
 serde = { version = "1.0.184", features = ["derive", "rc"] }
 serde_json = "1.0"
+serde_json_borrow = { version = "0.5" }
 serde_qs = { version = "0.12", features = ["warp"] }
 serde_with = "3.8.0"
 serde_yaml = "0.9"
@@ -318,7 +319,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "5b7cca1", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "2e3641c", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
@@ -349,4 +350,5 @@ oneshot = "0.1.7"
 debug = false
 
 [profile.release]
+#debug = true
 lto = "thin"

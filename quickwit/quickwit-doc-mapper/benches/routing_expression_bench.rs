@@ -19,7 +19,6 @@
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use quickwit_doc_mapper::{DocMapper, RoutingExpr};
-use serde_json::Value as JsonValue;
 
 const JSON_TEST_DATA: &str = include_str!("data/simple-routing-expression-bench.json");
 
@@ -48,7 +47,7 @@ pub fn simple_routing_expression_benchmark(c: &mut Criterion) {
     let doc_mapper: Box<dyn DocMapper> = serde_json::from_str(DOC_MAPPER_CONF).unwrap();
     let lines: Vec<&str> = JSON_TEST_DATA.lines().map(|line| line.trim()).collect();
 
-    let json_lines: Vec<serde_json::Map<String, JsonValue>> = lines
+    let json_lines: Vec<serde_json_borrow::Value> = lines
         .iter()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();

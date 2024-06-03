@@ -29,10 +29,15 @@ use quickwit_query::tokenizers::TokenizerManager;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
-use tantivy::schema::{
-    Field, FieldType, FieldValue, OwnedValue as TantivyValue, Schema, INDEXED, STORED,
+use tantivy::schema::document::{
+    CompactDocObjectIter, CompactDocValue, ReferenceValue, ReferenceValueLeaf,
 };
-use tantivy::TantivyDocument as Document;
+use tantivy::schema::{
+    Field, FieldType, OwnedValue as TantivyValue, Schema, Value, INDEXED, STORED,
+};
+use tantivy::{DateTime, TantivyDocument as Document};
+use time::format_description::well_known::Rfc3339;
+use time::{OffsetDateTime, UtcOffset};
 
 use super::field_mapping_entry::RAW_TOKENIZER_NAME;
 use super::DefaultDocMapperBuilder;
@@ -459,26 +464,17 @@ fn tantivy_value_to_json(val: TantivyValue) -> JsonValue {
 
 #[inline]
 fn populate_field_presence_for_json_value(
-    json_value: &TantivyValue,
+    json_value: CompactDocValue,
     path_hasher: &PathHasher,
     is_expand_dots_enabled: bool,
     output: &mut FnvHashSet<u64>,
 ) {
-    match json_value {
-        TantivyValue::Null => {}
-        TantivyValue::Bool(_)
-        | TantivyValue::F64(_)
-        | TantivyValue::I64(_)
-        | TantivyValue::U64(_)
-        | TantivyValue::PreTokStr(_)
-        | TantivyValue::Date(_)
-        | TantivyValue::Facet(_)
-        | TantivyValue::Bytes(_)
-        | TantivyValue::IpAddr(_)
-        | TantivyValue::Str(_) => {
+    match json_value.as_value() {
+        ReferenceValue::Leaf(ReferenceValueLeaf::Null) => {}
+        ReferenceValue::Leaf(_) => {
             output.insert(path_hasher.finish());
         }
-        TantivyValue::Array(items) => {
+        ReferenceValue::Array(items) => {
             for item in items {
                 populate_field_presence_for_json_value(
                     item,
@@ -488,7 +484,7 @@ fn populate_field_presence_for_json_value(
                 );
             }
         }
-        TantivyValue::Object(json_obj) => {
+        ReferenceValue::Object(json_obj) => {
             populate_field_presence_for_json_obj(
                 json_obj,
                 path_hasher.clone(),
@@ -500,7 +496,7 @@ fn populate_field_presence_for_json_value(
 }
 
 fn populate_field_presence_for_json_obj(
-    json_obj: &[(String, TantivyValue)],
+    json_obj: CompactDocObjectIter,
     path_hasher: PathHasher,
     is_expand_dots_enabled: bool,
     output: &mut FnvHashSet<u64>,
@@ -566,6 +562,91 @@ impl<T, I: Iterator<Item = T>, U: Clone> Iterator for ZipCloneable<T, I, U> {
     }
 }
 
+#[derive(Debug, Clone)]
+/// This wrapper is there to implement the `Value` trait for `serde_json_borrow::Value`.
+/// We could move this to tantivy
+pub struct BorrowJson<'a>(&'a serde_json_borrow::Value<'a>);
+pub fn can_be_rfc3339_date_time(text: &str) -> bool {
+    if let Some(&first_byte) = text.as_bytes().first() {
+        if first_byte.is_ascii_digit() {
+            return true;
+        }
+    }
+
+    false
+}
+
+impl<'a> Value<'a> for BorrowJson<'a> {
+    type ArrayIter = JsonArrayIter<'a>;
+    type ObjectIter = JsonObjectIter<'a>;
+
+    #[inline]
+    fn as_value(&self) -> ReferenceValue<'a, Self> {
+        match self.0 {
+            serde_json_borrow::Value::Null => ReferenceValueLeaf::Null.into(),
+            serde_json_borrow::Value::Bool(value) => ReferenceValueLeaf::Bool(*value).into(),
+            serde_json_borrow::Value::Number(number) => {
+                if let Some(val) = number.as_i64() {
+                    ReferenceValueLeaf::I64(val).into()
+                } else if let Some(val) = number.as_u64() {
+                    ReferenceValueLeaf::U64(val).into()
+                } else if let Some(val) = number.as_f64() {
+                    ReferenceValueLeaf::F64(val).into()
+                } else {
+                    panic!("Unsupported serde_json_borrow number");
+                }
+            }
+            serde_json_borrow::Value::Str(text) => {
+                if can_be_rfc3339_date_time(text) {
+                    match OffsetDateTime::parse(text, &Rfc3339) {
+                        Ok(dt) => {
+                            let dt_utc = dt.to_offset(UtcOffset::UTC);
+                            ReferenceValueLeaf::Date(DateTime::from_utc(dt_utc)).into()
+                        }
+                        Err(_) => ReferenceValueLeaf::Str(text).into(),
+                    }
+                } else {
+                    ReferenceValueLeaf::Str(text).into()
+                }
+            }
+            serde_json_borrow::Value::Array(elements) => ReferenceValue::Array(JsonArrayIter {
+                iter: elements.iter(),
+            }),
+            serde_json_borrow::Value::Object(object) => ReferenceValue::Object(JsonObjectIter {
+                iter: object.as_vec().iter(),
+            }),
+        }
+    }
+}
+
+/// A wrapper struct for an interator producing [Value]s.
+pub struct JsonArrayIter<'a> {
+    iter: std::slice::Iter<'a, serde_json_borrow::Value<'a>>,
+}
+
+impl<'a> Iterator for JsonArrayIter<'a> {
+    type Item = BorrowJson<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let value = self.iter.next()?;
+        Some(BorrowJson(value))
+    }
+}
+
+/// A wrapper struct for an interator producing [Value]s.
+pub struct JsonObjectIter<'a> {
+    iter: std::slice::Iter<'a, (std::borrow::Cow<'a, str>, serde_json_borrow::Value<'a>)>,
+}
+
+impl<'a> Iterator for JsonObjectIter<'a> {
+    type Item = (&'a str, BorrowJson<'a>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (key, value) = self.iter.next()?;
+        Some((key.as_ref(), BorrowJson(value)))
+    }
+}
+
 #[typetag::serde(name = "default")]
 impl DocMapper for DefaultDocMapper {
     fn doc_from_json_obj(
@@ -573,26 +654,20 @@ impl DocMapper for DefaultDocMapper {
         json_obj: JsonObject,
         document_len: u64,
     ) -> Result<(Partition, Document), DocParsingError> {
-        let partition: Partition = self.partition_key.eval_hash(&json_obj);
+        let partition: Partition = self.partition_key.eval_hash(json_obj.get_value());
 
-        let mut dynamic_json_obj = serde_json::Map::default();
+        let mut dynamic_json_obj = serde_json_borrow::Map::default();
         let mut field_path = Vec::new();
-        let mut document = Document::default();
+        // CompactDoc in tantivy is typically similar in size as the serialized JSON
+        let mut document = Document::with_capacity(document_len as usize * 3 / 2);
 
         if let Some(source_field) = self.source_field {
-            document.add_object(
-                source_field,
-                json_obj
-                    .clone()
-                    .into_iter()
-                    .map(|(key, val)| (key, TantivyValue::from(val)))
-                    .collect(),
-            );
+            document.add_field_value(source_field, BorrowJson(&json_obj));
         }
 
         let mode = self.mode.mode_type();
         self.field_mappings.doc_from_json(
-            json_obj,
+            json_obj.get_value(),
             mode,
             &mut document,
             &mut field_path,
@@ -602,24 +677,23 @@ impl DocMapper for DefaultDocMapper {
         if let Some(dynamic_field) = self.dynamic_field {
             if !dynamic_json_obj.is_empty() {
                 if !self.concatenate_dynamic_fields.is_empty() {
-                    let json_obj_values =
-                        JsonValueIterator::new(serde_json::Value::Object(dynamic_json_obj.clone()))
-                            .flat_map(map_primitive_json_to_tantivy);
+                    // TODO: work on serde_json_borrow::Value
+                    let json_obj_values = JsonValueIterator::new(serde_json::Value::Object(
+                        serde_json::Map::from(dynamic_json_obj.clone()),
+                    ))
+                    .flat_map(map_primitive_json_to_tantivy);
 
                     for value in json_obj_values {
                         for (concatenate_dynamic_field, value) in
                             zip_cloneable(self.concatenate_dynamic_fields.iter(), value)
                         {
-                            document.add_field_value(*concatenate_dynamic_field, value);
+                            document.add_field_value(*concatenate_dynamic_field, &value);
                         }
                     }
                 }
-                document.add_object(
+                document.add_field_value(
                     dynamic_field,
-                    dynamic_json_obj
-                        .into_iter()
-                        .map(|(key, val)| (key, TantivyValue::from(val)))
-                        .collect(),
+                    BorrowJson(&serde_json_borrow::Value::Object(dynamic_json_obj)),
                 );
             }
         }
@@ -632,18 +706,18 @@ impl DocMapper for DefaultDocMapper {
 
         if self.index_field_presence {
             let mut field_presence_hashes: FnvHashSet<u64> = FnvHashSet::with_capacity_and_hasher(
-                document.field_values().len(),
+                document.field_values().count(),
                 Default::default(),
             );
-            for FieldValue { field, value } in document.field_values() {
-                let field_entry = self.schema.get_field_entry(*field);
+            for (field, value) in document.field_values() {
+                let field_entry = self.schema.get_field_entry(field);
                 if !field_entry.is_indexed() || field_entry.is_fast() {
                     // We are using an tantivy's ExistsQuery for fast fields.
                     continue;
                 }
                 let mut path_hasher: PathHasher = PathHasher::default();
                 path_hasher.append(&field.field_id().to_le_bytes()[..]);
-                if let TantivyValue::Object(json_obj) = value {
+                if let ReferenceValue::Object(json_obj) = value.as_value() {
                     let is_expand_dots_enabled: bool =
                         if let FieldType::JsonObject(json_options) = field_entry.field_type() {
                             json_options.is_expand_dots_enabled()
@@ -661,11 +735,13 @@ impl DocMapper for DefaultDocMapper {
                 }
             }
             for field_presence_hash in field_presence_hashes {
-                document.add_field_value(FIELD_PRESENCE_FIELD, field_presence_hash);
+                document.add_leaf_field_value(FIELD_PRESENCE_FIELD, field_presence_hash);
             }
         }
 
         self.check_missing_required_fields(&document)?;
+
+        document.shrink_to_fit();
         Ok((partition, document))
     }
 
@@ -735,10 +811,10 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use itertools::Itertools;
     use quickwit_common::PathHasher;
     use quickwit_query::query_ast::query_ast_from_user_text;
     use serde_json::{self, json, Value as JsonValue};
+    use serde_json_borrow::OwnedValue;
     use tantivy::schema::{FieldType, IndexRecordOption, OwnedValue as TantivyValue, Type, Value};
 
     use super::DefaultDocMapper;
@@ -749,8 +825,8 @@ mod tests {
         DYNAMIC_FIELD_NAME, FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
     };
 
-    fn example_json_doc_value() -> JsonValue {
-        serde_json::json!({
+    fn example_json_doc_value() -> OwnedValue {
+        let val = serde_json::json!({
             "timestamp": 1586960586i64,
             "body": "20200415T072306-0700 INFO This is a great log",
             "response_date2": "2021-12-19T16:39:57+00:00",
@@ -765,7 +841,8 @@ mod tests {
                 "server.status": ["200", "201"],
                 "server.payload": ["YQ==", "Yg=="]
             }
-        })
+        });
+        OwnedValue::from_string(serde_json::to_string(&val).unwrap()).unwrap()
     }
 
     const EXPECTED_JSON_PATHS_AND_VALUES: &str = r#"{
@@ -799,11 +876,9 @@ mod tests {
 
     #[test]
     fn test_parsing_document() {
-        let json_doc = example_json_doc_value();
+        let json_doc: OwnedValue = example_json_doc_value();
         let doc_mapper = crate::default_doc_mapper_for_test();
-        let (_, document) = doc_mapper
-            .doc_from_json_obj(json_doc.as_object().unwrap().clone(), 0)
-            .unwrap();
+        let (_, document) = doc_mapper.doc_from_json_obj(json_doc.clone(), 0).unwrap();
         let schema = doc_mapper.schema();
         // 9 property entry + 1 field "_source" + 2 fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
@@ -812,33 +887,26 @@ mod tests {
         let expected_json_paths_and_values: HashMap<String, JsonValue> =
             serde_json::from_str(EXPECTED_JSON_PATHS_AND_VALUES).unwrap();
         let mut field_presences: HashSet<u64> = HashSet::new();
-        for field_value in document.field_values() {
-            let field_name = schema.get_field_name(field_value.field());
+        for (field, value) in document.field_values() {
+            let field_name = schema.get_field_name(field);
             if field_name == SOURCE_FIELD_NAME {
-                // some part of aws-sdk enables `preserve_order` on serde_json.
-                // to get "normal" equality, we are forced to recreate the json object
-                // with sorted keys.
-                let sorted_json_values = json_doc
-                    .as_object()
-                    .unwrap()
-                    .clone()
-                    .into_iter()
-                    .sorted_by(|k1, k2| k1.0.cmp(&k2.0))
-                    .collect::<serde_json::Map<_, _>>();
                 assert_eq!(
-                    tantivy::schema::OwnedValue::from(field_value.value().as_value()),
-                    tantivy::schema::OwnedValue::from(sorted_json_values)
+                    tantivy::schema::OwnedValue::from(value),
+                    tantivy::schema::OwnedValue::from(serde_json::Value::from(
+                        json_doc.get_value()
+                    ))
                 );
             } else if field_name == DYNAMIC_FIELD_NAME {
                 assert_eq!(
-                    serde_json::to_string(&field_value.value()).unwrap(),
+                    serde_json::to_string(&tantivy::schema::OwnedValue::from(value)).unwrap(),
                     r#"{"response_date2":"2021-12-19T16:39:57Z"}"#
                 );
             } else if field_name == FIELD_PRESENCE_FIELD_NAME {
-                let field_presence_u64 = field_value.value().as_u64().unwrap();
+                let field_presence_u64 = value.as_u64().unwrap();
                 field_presences.insert(field_presence_u64);
             } else {
-                let value = serde_json::to_string(field_value.value()).unwrap();
+                let value =
+                    serde_json::to_string(&tantivy::schema::OwnedValue::from(value)).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
                     .get(field_name)
                     .unwrap()
@@ -1286,12 +1354,15 @@ mod tests {
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
         let doc_mapper = builder.try_build().unwrap();
         let schema = doc_mapper.schema();
-        let json_doc_value: JsonValue = serde_json::json!({
+        let json_doc_value = serde_json_borrow::OwnedValue::from_str(
+            r#"{
             "city": "tokio",
             "image": "YWJj"
-        });
+        }"#,
+        )
+        .unwrap();
         let (_, document) = doc_mapper
-            .doc_from_json_obj(json_doc_value.as_object().unwrap().clone(), 0)
+            .doc_from_json_obj(json_doc_value.clone(), 0)
             .unwrap();
 
         // 2 properties, + 1 value for "_source" + 2 for field presence.
@@ -1304,18 +1375,21 @@ mod tests {
         )
         .unwrap();
         let mut field_presences: HashSet<u64> = HashSet::default();
-        document.field_values().iter().for_each(|field_value| {
-            let field_name = schema.get_field_name(field_value.field());
+        document.field_values().for_each(|(field, value)| {
+            let field_name = schema.get_field_name(field);
             if field_name == SOURCE_FIELD_NAME {
                 assert_eq!(
-                    tantivy::schema::OwnedValue::from(field_value.value().as_value()),
-                    tantivy::schema::OwnedValue::from(json_doc_value.as_object().unwrap().clone())
+                    tantivy::schema::OwnedValue::from(value),
+                    tantivy::schema::OwnedValue::from(serde_json::Value::from(
+                        json_doc_value.get_value()
+                    ))
                 );
             } else if field_name == FIELD_PRESENCE_FIELD_NAME {
-                let field_value_hash = field_value.value().as_u64().unwrap();
+                let field_value_hash = value.as_u64().unwrap();
                 field_presences.insert(field_value_hash);
             } else {
-                let value = serde_json::to_string(field_value.value()).unwrap();
+                let value =
+                    serde_json::to_string(&tantivy::schema::OwnedValue::from(value)).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
                     .get(field_name)
                     .unwrap()
@@ -1621,10 +1695,10 @@ mod tests {
         let schema = default_doc_mapper.schema();
         let field = schema.get_field(field).unwrap();
         let (_, doc) = default_doc_mapper.doc_from_json_str(document_json).unwrap();
-        let vals: Vec<&TantivyValue> = doc.get_all(field).collect();
+        let vals: Vec<_> = doc.get_all(field).collect();
         assert_eq!(vals.len(), expected.len());
         for (val, exp) in vals.into_iter().zip(expected.iter()) {
-            assert_eq!(val, exp);
+            assert_eq!(&TantivyValue::from(val), exp);
         }
     }
 

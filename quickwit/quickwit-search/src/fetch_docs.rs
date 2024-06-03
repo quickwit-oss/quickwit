@@ -29,7 +29,8 @@ use quickwit_proto::search::{
 };
 use quickwit_storage::Storage;
 use tantivy::query::Query;
-use tantivy::schema::{Document as DocumentTrait, Field, OwnedValue, TantivyDocument, Value};
+use tantivy::schema::document::CompactDocValue;
+use tantivy::schema::{Document as DocumentTrait, Field, TantivyDocument, Value};
 use tantivy::snippet::SnippetGenerator;
 use tantivy::{ReloadPolicy, Score, Searcher, Term};
 use tracing::{error, Instrument};
@@ -274,7 +275,7 @@ impl FieldsSnippetGenerator {
     fn snippets_from_field_values(
         &self,
         field_name: &str,
-        field_values: Vec<&OwnedValue>,
+        field_values: Vec<CompactDocValue<'_>>,
     ) -> Option<Vec<String>> {
         if let Some(snippet_generator) = self.field_generators.get(field_name) {
             let values = field_values

@@ -23,7 +23,9 @@ once_cell = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_json_borrow = { workspace = true }
 siphasher = { workspace = true }
+time = { workspace = true }
 tantivy = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

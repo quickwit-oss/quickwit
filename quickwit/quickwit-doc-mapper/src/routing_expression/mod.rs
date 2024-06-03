@@ -23,7 +23,7 @@ use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::sync::Arc;
 
-use serde_json::Value as JsonValue;
+use serde_json_borrow::Value as JsonValue;
 use siphasher::sip::SipHasher;
 
 pub trait RoutingExprContext {
@@ -46,7 +46,7 @@ fn hash_json_val<H: Hasher>(json_val: &JsonValue, hasher: &mut H) {
             hasher.write_u8(2u8);
             num.hash(hasher);
         }
-        JsonValue::String(s) => {
+        JsonValue::Str(s) => {
             hasher.write_u8(3u8);
             hasher.write_u64(s.len() as u64);
             hasher.write(s.as_bytes());
@@ -70,7 +70,7 @@ fn hash_json_val<H: Hasher>(json_val: &JsonValue, hasher: &mut H) {
     }
 }
 
-fn find_value<'a>(mut root: &'a JsonValue, keys: &[String]) -> Option<&'a JsonValue> {
+fn find_value<'a>(mut root: &'a JsonValue<'a>, keys: &[String]) -> Option<&'a JsonValue<'a>> {
     for key in keys {
         match root {
             JsonValue::Object(obj) => {
@@ -82,20 +82,19 @@ fn find_value<'a>(mut root: &'a JsonValue, keys: &[String]) -> Option<&'a JsonVa
     Some(root)
 }
 
-fn find_value_in_map<'a>(
-    obj: &'a serde_json::Map<String, JsonValue>,
-    keys: &[String],
-) -> Option<&'a JsonValue> {
+fn find_value_in_map<'a>(obj: &'a JsonValue<'a>, keys: &[String]) -> Option<&'a JsonValue<'a>> {
     // we can't have an empty path and this is used only for the root map, so there is no risk of
     // out of bound
-    if let Some(value) = obj.get(&keys[0]) {
-        find_value(value, &keys[1..])
-    } else {
-        None
-    }
+    obj.as_object().and_then(|obj| {
+        if let Some(value) = obj.get(&keys[0]) {
+            find_value(value, &keys[1..])
+        } else {
+            None
+        }
+    })
 }
 
-impl RoutingExprContext for serde_json::Map<String, JsonValue> {
+impl<'a> RoutingExprContext for JsonValue<'a> {
     fn hash_attribute<H: Hasher>(&self, attr_name: &[String], hasher: &mut H) {
         if let Some(json_val) = find_value_in_map(self, attr_name) {
             hasher.write_u8(1u8);
@@ -514,7 +513,7 @@ mod tests {
     #[test]
     fn test_routing_expr_empty_hashes_to_0() {
         let expr = RoutingExpr::new("").unwrap();
-        let ctx: serde_json::Map<String, JsonValue> = Default::default();
+        let ctx: JsonValue = Default::default();
         assert_eq!(expr.eval_hash(&ctx), 0u64);
     }
 
@@ -638,7 +637,7 @@ mod tests {
             .collect();
         assert_eq!(keys, vec![String::from("tenant.id")]);
         let value = find_value(&ctx, &keys).unwrap();
-        assert_eq!(value, &JsonValue::String(String::from("happy")));
+        assert_eq!(value, &JsonValue::Str("happy".into()));
     }
 
     #[test]
@@ -654,7 +653,7 @@ mod tests {
             .collect();
         assert_eq!(keys, vec!["app", "id"]);
         let value = find_value(&ctx, &keys).unwrap();
-        assert_eq!(value, &JsonValue::String(String::from("123")));
+        assert_eq!(value, &JsonValue::Str(("123").into()));
     }
     // This unit test is here to ensure that the routing expr hash depends on
     // the expression itself as well as the expression value.
@@ -662,10 +661,9 @@ mod tests {
     fn test_routing_expr_depends_on_both_expr_and_value() {
         let routing_expr = RoutingExpr::new("tenant_id").unwrap();
         let routing_expr2 = RoutingExpr::new("app").unwrap();
-        let ctx: serde_json::Map<String, JsonValue> =
+        let ctx: JsonValue =
             serde_json::from_str(r#"{"tenant_id": "happy", "app": "happy"}"#).unwrap();
-        let ctx2: serde_json::Map<String, JsonValue> =
-            serde_json::from_str(r#"{"tenant_id": "happy2"}"#).unwrap();
+        let ctx2: JsonValue = serde_json::from_str(r#"{"tenant_id": "happy2"}"#).unwrap();
         // This assert is important.
         assert_ne!(routing_expr.eval_hash(&ctx), routing_expr2.eval_hash(&ctx),);
         assert_ne!(routing_expr.eval_hash(&ctx), routing_expr.eval_hash(&ctx2),);
@@ -676,7 +674,7 @@ mod tests {
     #[test]
     fn test_routing_expr_change_detection() {
         let routing_expr = RoutingExpr::new("tenant_id").unwrap();
-        let ctx: serde_json::Map<String, JsonValue> =
+        let ctx: JsonValue =
             serde_json::from_str(r#"{"tenant_id": "happy-tenant", "app": "happy"}"#).unwrap();
         assert_eq!(routing_expr.eval_hash(&ctx), 13914409176935416182);
     }
@@ -684,7 +682,7 @@ mod tests {
     #[test]
     fn test_routing_expr_missing_value_does_not_panic() {
         let routing_expr = RoutingExpr::new("tenant_id").unwrap();
-        let ctx: serde_json::Map<String, JsonValue> = Default::default();
+        let ctx: JsonValue = Default::default();
         assert_eq!(routing_expr.eval_hash(&ctx), 12482849403534986143);
     }
 
@@ -694,8 +692,8 @@ mod tests {
         let routing_expr = RoutingExpr::new("hash_mod(tenant_id, 10)").unwrap();
 
         for i in 0..1000 {
-            let ctx: serde_json::Map<String, JsonValue> =
-                serde_json::from_str(&format!(r#"{{"tenant_id": "happy{i}"}}"#)).unwrap();
+            let json = format!(r#"{{"tenant_id": "happy{i}"}}"#);
+            let ctx: JsonValue = serde_json::from_str(&json).unwrap();
             seen.insert(routing_expr.eval_hash(&ctx));
         }
 
