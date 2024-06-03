@@ -29,7 +29,7 @@ use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 
-use crate::{SearchJob, SearchServiceClient, SearcherPool};
+use crate::{SearchJob, SearchServiceClient, SearcherPool, SEARCH_METRICS};
 
 /// Job.
 /// The unit in which distributed search is performed.
@@ -185,6 +185,16 @@ impl SearchJobPlacer {
             } else {
                 0
             };
+            let metric_node_idx = match chosen_node_idx {
+                0 => "0",
+                1 => "1",
+                _ => "> 1",
+            };
+            SEARCH_METRICS
+                .job_assigned_total
+                .with_label_values([metric_node_idx])
+                .inc();
+
             let chosen_node = &mut candidate_nodes[chosen_node_idx];
             chosen_node.load += job.cost();
 
