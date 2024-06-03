@@ -73,8 +73,8 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::spawn_named_task;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
-    EventListenerLayer, GrpcMetricsLayer, LoadShedLayer, OneTaskPerCallLayer, RateLimitLayer,
-    RetryLayer, RetryPolicy, SmaRateEstimator,
+    EventListenerLayer, GrpcMetricsLayer, LoadShedLayer, RateLimitLayer, RetryLayer, RetryPolicy,
+    SmaRateEstimator,
 };
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
@@ -331,20 +331,9 @@ async fn start_control_plane_if_needed(
         .await?;
 
         let control_plane_server_opt = Some(control_plane_mailbox.clone());
-
-        // These layers apply to all the RPCs of the control plane.
-        let shared_layers = ServiceBuilder::new()
-            .layer(CP_GRPC_SERVER_METRICS_LAYER.clone())
-            .layer(LoadShedLayer::new(100))
-            .into_inner();
         let control_plane_client = ControlPlaneServiceClient::tower()
-            .stack_layer(shared_layers)
-            .stack_create_index_layer(OneTaskPerCallLayer)
-            .stack_delete_index_layer(OneTaskPerCallLayer)
-            .stack_add_source_layer(OneTaskPerCallLayer)
-            .stack_toggle_source_layer(OneTaskPerCallLayer)
-            .stack_delete_source_layer(OneTaskPerCallLayer)
-            .stack_get_or_create_open_shards_layer(OneTaskPerCallLayer)
+            .stack_layer(CP_GRPC_SERVER_METRICS_LAYER.clone())
+            .stack_layer(LoadShedLayer::new(100))
             .build_from_mailbox(control_plane_mailbox);
         Ok((control_plane_server_opt, control_plane_client))
     } else {

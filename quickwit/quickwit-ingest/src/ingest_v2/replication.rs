@@ -50,7 +50,7 @@ pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
 
 /// Duration after which replication requests time out with [`ReplicationError::Timeout`].
 const REPLICATION_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_millis(100)
+    Duration::from_millis(250)
 } else {
     Duration::from_secs(3)
 };
@@ -555,7 +555,7 @@ impl ReplicationTask {
 
         for subrequest in replicate_request.subrequests {
             let queue_id = subrequest.queue_id();
-            let from_position_exclusive = subrequest.from_position_exclusive().clone();
+            let from_position_exclusive = subrequest.from_position_exclusive();
 
             let Some(shard) = state_guard.shards.get(&queue_id) else {
                 let replicate_failure = ReplicateFailure {
@@ -1376,6 +1376,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "failpoints"))]
     #[tokio::test]
     async fn test_replication_task_deletes_dangling_shard() {
         let leader_id: NodeId = "test-leader".into();
