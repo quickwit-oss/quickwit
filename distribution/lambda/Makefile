@@ -28,8 +28,11 @@ package:
 	then
 	  pushd ../../quickwit/
 	  rustc --version
+	  # TODO: remove --disable-optimizations when upgrading to a release containing
+	  # https://github.com/cargo-lambda/cargo-lambda/issues/649 (> 1.2.1)
 	  cargo lambda build \
 	    -p quickwit-lambda \
+		--disable-optimizations \
 	    --release \
 	    --output-format zip \
 	    --target x86_64-unknown-linux-gnu
