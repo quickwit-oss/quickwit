@@ -1,4 +1,3 @@
-# regression test for bizare handling of - vs NOT when no positive clause is present
 endpoint: dyn/search
 params:
   query: "my_field:CaSe"
@@ -9,4 +8,10 @@ endpoint: dyn/search
 params:
   query: "my_field:IN [CaSe]"
 expected:
-  num_hits: 3
+---
+# we want lower-case to hit only lower-case, not all lower and all case
+endpoint: dyn/search
+params:
+  query: "my_field:IN [mixed lower-case]"
+expected:
+  num_hits: 2
