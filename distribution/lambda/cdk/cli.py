@@ -256,6 +256,13 @@ def get_logs(
     last_event_found = True
     start_time = time.time()
     while time.time() - start_time < timeout:
+        describe_resp = client.describe_log_groups(logGroupNamePrefix=log_group_name)
+        group_names = [group["logGroupName"] for group in describe_resp["logGroups"]]
+        if log_group_name in group_names:
+            break
+        print(f"log group not found, retrying...")
+        time.sleep(3)
+    while time.time() - start_time < timeout:
         for page in paginator.paginate(
             logGroupName=log_group_name,
             filterPattern=f"%{request_id}%",
@@ -268,7 +275,6 @@ def get_logs(
                     last_event_id = event["eventId"]
                     yield event["message"]
                     if event["message"].startswith("REPORT"):
-                        lower_time_bound = int(event["timestamp"])
                         last_event_id = "REPORT"
                         break
             if last_event_id == "REPORT":
