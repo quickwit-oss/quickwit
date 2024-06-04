@@ -29,6 +29,7 @@ use quickwit_proto::types::{IndexUid, PublishToken};
 use tantivy::directory::MmapDirectory;
 use tantivy::IndexBuilder;
 use tracing::{instrument, Span};
+use ulid::Ulid;
 
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeTask;
@@ -82,7 +83,7 @@ impl IndexedSplitBuilder {
         pipeline_id: IndexingPipelineId,
         partition_id: u64,
         last_delete_opstamp: u64,
-        doc_mapper_version: u64,
+        doc_mapper_version: Ulid,
         scratch_directory: TempDirectory,
         index_builder: IndexBuilder,
         io_controls: IoControls,

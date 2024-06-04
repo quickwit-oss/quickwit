@@ -98,7 +98,7 @@ struct IndexerState {
     publish_lock: PublishLock,
     publish_token_opt: Option<PublishToken>,
     schema: Schema,
-    doc_mapper_version: u64,
+    doc_mapper_version: Ulid,
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,

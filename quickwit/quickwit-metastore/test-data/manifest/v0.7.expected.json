@@ -51,7 +51,7 @@
         "tag_fields": [],
         "timestamp_field": "ts",
         "tokenizers": [],
-        "version": 0
+        "version": "00000000000000000000000000"
       },
       "index_id_patterns": [
         "test-index-foo*",

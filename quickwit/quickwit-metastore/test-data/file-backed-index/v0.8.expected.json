@@ -91,7 +91,7 @@
             "type": "regex"
           }
         ],
-        "version": 0
+        "version": "00000000000000000000000000"
       },
       "index_id": "my-index",
       "index_uri": "s3://quickwit-indexes/my-index",
@@ -160,7 +160,7 @@
     {
       "create_timestamp": 3,
       "delete_opstamp": 10,
-      "doc_mapper_version": 2,
+      "doc_mapper_version": "00000000000000000000000002",
       "footer_offsets": {
         "end": 2000,
         "start": 1000

@@ -30,6 +30,7 @@ use serde_json::Value as JsonValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, OwnedValue as Value, Schema};
 use tantivy::{TantivyDocument as Document, Term};
+use ulid::Ulid;
 
 pub type Partition = u64;
 
@@ -102,7 +103,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the version of the doc mapper
     ///
     /// Splits with the same doc mapper version should use the same schema
-    fn version(&self) -> u64;
+    fn version(&self) -> Ulid;
 
     /// Returns the query.
     ///

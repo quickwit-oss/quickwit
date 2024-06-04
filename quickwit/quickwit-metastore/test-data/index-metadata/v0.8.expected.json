@@ -80,7 +80,7 @@
           "type": "regex"
         }
       ],
-      "version": 0
+      "version": "00000000000000000000000000"
     },
     "index_id": "my-index",
     "index_uri": "s3://quickwit-indexes/my-index",

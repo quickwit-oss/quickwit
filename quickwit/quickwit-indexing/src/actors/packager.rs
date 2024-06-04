@@ -394,6 +394,7 @@ mod tests {
     use tantivy::schema::{NumericOptions, Schema, Type, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, IndexBuilder, IndexSettings};
     use tracing::Span;
+    use ulid::Ulid;
 
     use super::*;
     use crate::models::{PublishLock, SplitAttrs};
@@ -528,7 +529,7 @@ mod tests {
                 replaced_split_ids: Vec::new(),
                 delete_opstamp: 0,
                 num_merge_ops: 0,
-                doc_mapper_version: 0,
+                doc_mapper_version: Ulid(0),
             },
             index,
             split_scratch_directory,

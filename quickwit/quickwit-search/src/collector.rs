@@ -1298,6 +1298,7 @@ mod tests {
     };
     use tantivy::collector::Collector;
     use tantivy::TantivyDocument;
+    use ulid::Ulid;
 
     use super::{make_merge_collector, IncrementalCollector, PartialHitHeapItem};
     use crate::collector::top_k_partial_hits;
@@ -1427,7 +1428,7 @@ mod tests {
         fn schema(&self) -> tantivy::schema::Schema {
             unimplemented!()
         }
-        fn version(&self) -> u64 {
+        fn version(&self) -> Ulid {
             unimplemented!()
         }
         fn query(

@@ -497,6 +497,7 @@ mod tests {
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
     use tokio::sync::oneshot;
+    use ulid::Ulid;
 
     use super::*;
     use crate::merge_policy::{default_merge_policy, NopMergePolicy};
@@ -563,7 +564,7 @@ mod tests {
                         split_id: "test-split".to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
-                        doc_mapper_version: 0,
+                        doc_mapper_version: Ulid(0),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,
@@ -676,7 +677,7 @@ mod tests {
                 ],
                 delete_opstamp: 0,
                 num_merge_ops: 0,
-                doc_mapper_version: 0,
+                doc_mapper_version: Ulid(0),
             },
             serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_1,
@@ -701,7 +702,7 @@ mod tests {
                 ],
                 delete_opstamp: 0,
                 num_merge_ops: 0,
-                doc_mapper_version: 0,
+                doc_mapper_version: Ulid(0),
             },
             serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_2,
@@ -822,7 +823,7 @@ mod tests {
                         split_id: "test-split".to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
-                        doc_mapper_version: 0,
+                        doc_mapper_version: Ulid(0),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,
@@ -1002,7 +1003,7 @@ mod tests {
                         split_id: SPLIT_ULID_STR.to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
-                        doc_mapper_version: 0,
+                        doc_mapper_version: Ulid(0),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,

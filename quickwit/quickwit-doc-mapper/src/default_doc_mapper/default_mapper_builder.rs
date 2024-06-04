@@ -20,6 +20,7 @@
 use std::num::NonZeroU32;
 
 use serde::{Deserialize, Serialize};
+use ulid::Ulid;
 
 use super::tokenizer_entry::TokenizerEntry;
 use super::FieldMappingEntry;
@@ -85,7 +86,7 @@ pub struct DefaultDocMapperBuilder {
     pub document_length: bool,
     /// Version of the doc mapper
     #[serde(default)]
-    pub version: u64,
+    pub version: Ulid,
 }
 
 /// Defines how an unmapped field should be handled.

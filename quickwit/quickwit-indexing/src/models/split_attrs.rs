@@ -26,6 +26,7 @@ use quickwit_metastore::SplitMetadata;
 use quickwit_proto::indexing::IndexingPipelineId;
 use tantivy::DateTime;
 use time::OffsetDateTime;
+use ulid::Ulid;
 
 use crate::merge_policy::MergePolicy;
 
@@ -64,7 +65,7 @@ pub struct SplitAttrs {
     // Number of merge operation the split has been through so far.
     pub num_merge_ops: usize,
 
-    pub doc_mapper_version: u64,
+    pub doc_mapper_version: Ulid,
 }
 
 impl fmt::Debug for SplitAttrs {

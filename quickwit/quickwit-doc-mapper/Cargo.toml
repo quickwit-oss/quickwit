@@ -28,6 +28,7 @@ tantivy = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 typetag = { workspace = true }
+ulid = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-common = { workspace = true }

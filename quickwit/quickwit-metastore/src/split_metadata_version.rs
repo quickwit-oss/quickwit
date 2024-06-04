@@ -22,6 +22,7 @@ use std::ops::{Range, RangeInclusive};
 
 use quickwit_proto::types::IndexUid;
 use serde::{Deserialize, Serialize};
+use ulid::Ulid;
 
 use crate::split_metadata::{utc_now_timestamp, SplitMaturity};
 use crate::SplitMetadata;
@@ -93,7 +94,8 @@ pub(crate) struct SplitMetadataV0_8 {
     num_merge_ops: usize,
 
     #[serde(default)]
-    pub doc_mapper_version: u64,
+    #[schema(value_type = String)]
+    pub doc_mapper_version: Ulid,
 }
 
 impl From<SplitMetadataV0_8> for SplitMetadata {

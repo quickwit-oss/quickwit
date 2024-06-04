@@ -5624,6 +5624,7 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+ "ulid",
  "utoipa",
  "vrl",
 ]
@@ -5719,6 +5720,7 @@ dependencies = [
  "time",
  "tracing",
  "typetag",
+ "ulid",
  "utoipa",
 ]
 
