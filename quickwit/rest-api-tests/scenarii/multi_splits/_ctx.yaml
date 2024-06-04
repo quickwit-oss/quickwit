@@ -1,0 +1,5 @@
+method: [GET]
+endpoint: "multi_splits/_search"
+# The entire suite is just for Quickwit
+engines: [quickwit]
+api_root: "http://localhost:7280/api/v1/_elastic/"

@@ -1,0 +1,133 @@
+json:
+  size: 1
+  track_total_hits: true
+  query:
+      match_all: {}
+  sort:
+    - timestamp:
+        order: asc
+expected:
+  hits:
+    hits:
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+---
+json:
+  size: 2
+  track_total_hits: true
+  query:
+      match_all: {}
+  sort:
+    - timestamp:
+        order: asc
+expected:
+  hits:
+    hits:
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+---
+json:
+  size: 3
+  track_total_hits: true
+  query:
+      match_all: {}
+  sort:
+    - timestamp:
+        order: asc
+expected:
+  hits:
+    hits:
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+---
+json:
+  size: 5
+  track_total_hits: true
+  query:
+      match_all: {}
+  sort:
+    - timestamp:
+        order: asc
+expected:
+  hits:
+    hits:
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T12:00:00Z"}
+--- # ASC + TIMESTAMP filter
+json:
+  size: 5
+  track_total_hits: true
+  query:
+    range:
+      timestamp:
+        gte: "2015-01-10T12:00:00Z"
+  sort:
+    - timestamp:
+        order: asc
+expected:
+  hits:
+    hits:
+      - _source: {"timestamp": "2015-01-10T12:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T13:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T14:00:00Z"}
+      - _source: {"timestamp": "2015-01-11T12:00:00Z"}
+      - _source: {"timestamp": "2015-01-11T12:00:00Z"}
+--- # ASC + TIMESTAMP filter
+json:
+  size: 5
+  track_total_hits: true
+  query:
+    range:
+      timestamp:
+        lt: "2015-01-10T12:00:00Z"
+  sort:
+    - timestamp:
+        order: asc
+expected:
+  hits:
+    hits:
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T10:00:00Z"}
+--- # DESC
+json:
+  size: 6
+  track_total_hits: true
+  query:
+      match_all: {}
+  sort:
+    - timestamp:
+        order: desc
+expected:
+  hits:
+    hits:
+      - _source: {"timestamp": "2016-01-11T12:00:00Z"}
+      - _source: {"timestamp": "2016-01-10T10:00:00Z"}
+      - _source: {"timestamp": "2015-01-11T12:00:00Z"}
+      - _source: {"timestamp": "2015-01-11T12:00:00Z"}
+      - _source: {"timestamp": "2015-01-11T12:00:00Z"}
+      - _source: {"timestamp": "2015-01-11T12:00:00Z"}
+---
+json:
+  size: 7
+  track_total_hits: true
+  query:
+      match_all: {}
+  sort:
+    - timestamp:
+        order: desc
+expected:
+  hits:
+    hits:
+      - _source: {"timestamp": "2016-01-11T12:00:00Z"}
+      - _source: {"timestamp": "2016-01-10T10:00:00Z"}
+      - _source: {"timestamp": "2015-01-11T12:00:00Z"}
+      - _source: {"timestamp": "2015-01-11T12:00:00Z"}
+      - _source: {"timestamp": "2015-01-11T12:00:00Z"}
+      - _source: {"timestamp": "2015-01-11T12:00:00Z"}
+      - _source: {"timestamp": "2015-01-10T14:00:00Z"}
+
