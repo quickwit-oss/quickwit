@@ -114,7 +114,7 @@ fn json_body<T: DeserializeOwned + Send>(
     warp::body::content_length_limit(1024 * 1024).and(warp::body::json())
 }
 
-fn get_index_metadata_handler(
+pub fn get_index_metadata_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String)

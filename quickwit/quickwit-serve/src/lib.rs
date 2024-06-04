@@ -1248,6 +1248,7 @@ pub mod lambda_search_api {
         es_compat_index_stats_handler, es_compat_scroll_handler, es_compat_search_handler,
         es_compat_stats_handler,
     };
+    pub use crate::index_api::get_index_metadata_handler;
     pub use crate::rest::recover_fn;
     pub use crate::search_api::{search_get_handler, search_post_handler};
 }
