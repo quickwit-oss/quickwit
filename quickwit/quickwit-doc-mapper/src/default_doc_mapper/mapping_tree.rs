@@ -1719,7 +1719,23 @@ mod tests {
         assert_eq!(
             value_to_json(
                 TantivyValue::F64(0.1),
-                &LeafType::F64(numeric_options_number)
+                &LeafType::F64(numeric_options_number.clone())
+            )
+            .unwrap(),
+            serde_json::json!(0.1)
+        );
+        assert_eq!(
+            value_to_json(
+                TantivyValue::U64(1),
+                &LeafType::F64(numeric_options_number.clone())
+            )
+            .unwrap(),
+            serde_json::json!(1.0)
+        );
+        assert_eq!(
+            value_to_json(
+                TantivyValue::Str("0.1".to_string()),
+                &LeafType::F64(numeric_options_number.clone())
             )
             .unwrap(),
             serde_json::json!(0.1)
@@ -1741,10 +1757,14 @@ mod tests {
         assert_eq!(
             value_to_json(
                 TantivyValue::I64(-1),
-                &LeafType::I64(numeric_options_number)
+                &LeafType::I64(numeric_options_number.clone())
             )
             .unwrap(),
             serde_json::json!(-1)
+        );
+        assert_eq!(
+            value_to_json(TantivyValue::I64(1), &LeafType::I64(numeric_options_number)).unwrap(),
+            serde_json::json!(1)
         );
 
         let numeric_options_str = QuickwitNumericOptions {
@@ -1761,7 +1781,15 @@ mod tests {
     fn test_tantivy_value_to_json_value_u64() {
         let numeric_options_number = QuickwitNumericOptions::default();
         assert_eq!(
-            value_to_json(TantivyValue::U64(1), &LeafType::U64(numeric_options_number)).unwrap(),
+            value_to_json(
+                TantivyValue::U64(1),
+                &LeafType::U64(numeric_options_number.clone())
+            )
+            .unwrap(),
+            serde_json::json!(1u64)
+        );
+        assert_eq!(
+            value_to_json(TantivyValue::I64(1), &LeafType::U64(numeric_options_number)).unwrap(),
             serde_json::json!(1u64)
         );
 
