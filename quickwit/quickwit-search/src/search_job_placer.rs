@@ -28,7 +28,6 @@ use async_trait::async_trait;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
-use tracing::warn;
 
 use crate::{SearchJob, SearchServiceClient, SearcherPool, SEARCH_METRICS};
 
@@ -187,22 +186,25 @@ impl SearchJobPlacer {
         // difference stricter, find the right split names ("split6" instead of "split2" works).
         // or modify mock_split_meta() so that not all splits have the same job cost
         // for now i went with the mock_split_meta() changes.
-        const ALLOWED_DIFFERENCE: usize = 101;
-        let target_load = (total_load * ALLOWED_DIFFERENCE).div_ceil(num_nodes * 100);
+        const ALLOWED_DIFFERENCE: usize = 105;
+        let max_job_load = jobs.iter().map(|job| job.cost()).max().unwrap_or(0);
+        let target_load = (total_load * ALLOWED_DIFFERENCE).div_ceil(num_nodes * 100)
+            .max(
+                max_job_load + (total_load - max_job_load).div_ceil(num_nodes)
+            );
+
         for job in jobs {
             sort_by_rendez_vous_hash(&mut candidate_nodes, job.split_id());
-            let mut candidate_nodes_iter = candidate_nodes.iter().enumerate();
-            // Select a node which hasn't reached the target load
-            let chosen_node_idx = loop {
-                let Some((id, candidate_node)) = candidate_nodes_iter.next() else {
-                    warn!("found no lightly loaded searcher for split, this should never happen");
-                    // as a fallback, use the first node
-                    break 0;
-                };
-                if candidate_node.load < target_load {
-                    break id;
-                }
-            };
+            let chosen_node_idx = candidate_nodes.iter_mut()
+                .enumerate()
+                .find_map(|(node_idx, candidate)| {
+                    if candidate.load < target_load {
+                        Some(node_idx)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(0);
             let metric_node_idx = match chosen_node_idx {
                 0 => "0",
                 1 => "1",
