@@ -103,7 +103,7 @@ jobs:
         run: |
           echo "::error title=User not allowed to run the benchmark::User must be in list ${{ steps.authorized-users.outputs.users }}"
       - name: Add a PR comment with comparison results
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name == 'pull_request_target'
         # Inspired from: https://github.com/actions/github-script/blob/60a0d83039c74a4aee543508d2ffcb1c3799cdea/.github/workflows/pull-request-test.yml
         with:
