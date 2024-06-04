@@ -380,6 +380,7 @@ mod tests {
                 split_footer_start: 0,
                 timestamp_start: None,
                 timestamp_end: None,
+                num_docs: 0,
             }],
             ..Default::default()
         }
@@ -406,6 +407,7 @@ mod tests {
                         split_footer_end: 100,
                         timestamp_start: None,
                         timestamp_end: None,
+                        num_docs: 0,
                     },
                     SplitIdAndFooterOffsets {
                         split_id: "split_2".to_string(),
@@ -413,6 +415,7 @@ mod tests {
                         split_footer_end: 100,
                         timestamp_start: None,
                         timestamp_end: None,
+                        num_docs: 0,
                     },
                 ],
             }],
@@ -441,6 +444,7 @@ mod tests {
                     split_footer_end: 100,
                     timestamp_start: None,
                     timestamp_end: None,
+                    num_docs: 0,
                 },
                 SplitIdAndFooterOffsets {
                     split_id: "split_2".to_string(),
@@ -448,6 +452,7 @@ mod tests {
                     split_footer_end: 100,
                     timestamp_start: None,
                     timestamp_end: None,
+                    num_docs: 0,
                 },
             ],
         }

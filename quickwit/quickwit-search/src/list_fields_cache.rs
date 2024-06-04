@@ -87,6 +87,7 @@ mod tests {
             split_footer_end: 100,
             timestamp_start: None,
             timestamp_end: None,
+            num_docs: 0,
         };
 
         let split_2 = SplitIdAndFooterOffsets {
@@ -95,6 +96,7 @@ mod tests {
             split_footer_end: 100,
             timestamp_start: None,
             timestamp_end: None,
+            num_docs: 0,
         };
 
         let result = ListFieldsEntryResponse {
