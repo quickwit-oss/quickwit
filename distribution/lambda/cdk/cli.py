@@ -460,3 +460,4 @@ def test_mock_data_endpoints():
         expected_status=400,
     )
     req("GET", f"/api/v1/_elastic/_search?q=animal", expected_status=501)
+    req("GET", f"/api/v1/indexes/{mock_sales_index_id}")
