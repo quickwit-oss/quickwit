@@ -32,7 +32,7 @@ use cron::Schedule;
 use humantime::parse_duration;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::{DefaultDocMapperBuilder, DocMapper, DocMapping, Mode};
-use quickwit_proto::types::IndexId;
+use quickwit_proto::types::{DocMappingUid, IndexId};
 use serde::{Deserialize, Serialize};
 pub use serialize::{load_index_config_from_user_config, load_index_config_update};
 use tracing::warn;
@@ -386,6 +386,7 @@ impl TestableForRegression for IndexConfig {
         )
         .unwrap();
         let doc_mapping = DocMapping {
+            doc_mapping_uid: DocMappingUid::default(),
             mode: Mode::default(),
             field_mappings: vec![
                 tenant_id_mapping,

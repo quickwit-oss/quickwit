@@ -5934,6 +5934,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-datetime",
  "quickwit-macros",
+ "quickwit-proto",
  "quickwit-query",
  "regex",
  "serde",

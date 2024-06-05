@@ -24,6 +24,7 @@ use std::ops::Bound;
 
 use anyhow::Context;
 use dyn_clone::{clone_trait_object, DynClone};
+use quickwit_proto::types::DocMappingUid;
 use quickwit_query::query_ast::QueryAst;
 use quickwit_query::tokenizers::TokenizerManager;
 use serde_json::Value as JsonValue;
@@ -47,6 +48,9 @@ use crate::{DocParsingError, QueryParserError};
 /// - supplying a tantivy [`Schema`]
 #[typetag::serde(tag = "type")]
 pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
+    /// Returns the unique identifier of the doc mapper.
+    fn doc_mapping_uid(&self) -> DocMappingUid;
+
     /// Transforms a JSON object into a tantivy [`Document`] according to the rules
     /// defined for the `DocMapper`.
     fn doc_from_json_obj(

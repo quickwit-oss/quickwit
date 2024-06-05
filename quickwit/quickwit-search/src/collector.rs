@@ -1267,6 +1267,7 @@ mod tests {
         LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortField, SortOrder,
         SortValue, SplitSearchError,
     };
+    use quickwit_proto::types::DocMappingUid;
     use tantivy::collector::Collector;
     use tantivy::TantivyDocument;
 
@@ -1338,6 +1339,10 @@ mod tests {
 
     #[typetag::serde(name = "mock")]
     impl quickwit_doc_mapper::DocMapper for MockDocMapper {
+        fn doc_mapping_uid(&self) -> DocMappingUid {
+            DocMappingUid::default()
+        }
+
         // Required methods
         fn doc_from_json_obj(
             &self,

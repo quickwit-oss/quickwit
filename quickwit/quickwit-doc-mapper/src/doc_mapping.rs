@@ -20,6 +20,7 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
+use quickwit_proto::types::DocMappingUid;
 use serde::{Deserialize, Serialize};
 
 use crate::{FieldMappingEntry, QuickwitJsonOptions, TokenizerEntry};
@@ -99,6 +100,10 @@ impl Default for Mode {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocMapping {
+    /// UID of the doc mapping.
+    #[serde(default = "DocMappingUid::new")]
+    pub doc_mapping_uid: DocMappingUid,
+
     /// Defines how unmapped fields should be handled.
     #[serde_multikey(
         deserializer = Mode::from_parts,
@@ -177,6 +182,7 @@ mod tests {
     #[test]
     fn test_doc_mapping_serde_roundtrip() {
         let doc_mapping = DocMapping {
+            doc_mapping_uid: DocMappingUid::new(),
             mode: Mode::Strict,
             field_mappings: vec![
                 FieldMappingEntry {
