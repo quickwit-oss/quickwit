@@ -22,25 +22,24 @@ use warp::Filter;
 /// pprof/start disabled
 /// pprof/flamegraph disabled
 #[cfg(not(feature = "pprof"))]
-pub fn pprof_routes() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+pub fn pprof_handlers() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
+{
     let start_profiler = {
         warp::path!("pprof" / "start").map(move || {
             warp::reply::with_status(
-                "not compiled with pprof feature",
-                warp::http::StatusCode::BAD_REQUEST,
+                "Quickwit was compiled without the `pprof` feature",
+                warp::http::StatusCode::NOT_IMPLEMENTED,
             )
         })
     };
-
     let stop_profiler = {
         warp::path!("pprof" / "flamegraph").map(move || {
             warp::reply::with_status(
-                "not compiled with pprof feature",
-                warp::http::StatusCode::BAD_REQUEST,
+                "Quickwit was compiled without the `pprof` feature",
+                warp::http::StatusCode::NOT_IMPLEMENTED,
             )
         })
     };
-
     start_profiler.or(stop_profiler)
 }
 
@@ -54,7 +53,8 @@ pub fn pprof_routes() -> impl Filter<Extract = impl warp::Reply, Error = warp::R
 ///   300
 /// - sampling: the sampling rate, default is 100, max value is 1000
 #[cfg(feature = "pprof")]
-pub fn pprof_routes() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+pub fn pprof_handlers() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
+{
     use std::sync::{Arc, Mutex};
 
     use pprof::ProfilerGuard;
@@ -101,6 +101,7 @@ pub fn pprof_routes() -> impl Filter<Extract = impl warp::Reply, Error = warp::R
         params: ProfilerQueryParams,
     ) -> Result<impl warp::Reply, warp::Rejection> {
         let mut state = profiler_state.lock().unwrap();
+
         if state.profiler_guard.is_none() {
             let max_duration = params.max_duration.unwrap_or(30).min(300);
             let sampling = params.sampling.unwrap_or(100).min(1000);
@@ -128,11 +129,12 @@ pub fn pprof_routes() -> impl Filter<Extract = impl warp::Reply, Error = warp::R
         save_flamegraph(profiler_state.clone()).await;
 
         let state = profiler_state.lock().unwrap();
+
         if let Some(data) = state.flamegraph_data.clone() {
             Ok(warp::reply::with_header(data, "Content-Type", "image/svg+xml").into_response())
         } else {
             Ok(warp::reply::with_status(
-                "No flamegraph available",
+                "flamegraph is not available",
                 warp::http::StatusCode::BAD_REQUEST,
             )
             .into_response())
@@ -144,6 +146,7 @@ pub fn pprof_routes() -> impl Filter<Extract = impl warp::Reply, Error = warp::R
     ) -> tokio::task::JoinHandle<()> {
         spawn_blocking(move || {
             let mut state = profiler_state.lock().unwrap();
+
             if let Some(profiler) = state.profiler_guard.take() {
                 if let Ok(report) = profiler.report().build() {
                     let mut buffer = Vec::new();

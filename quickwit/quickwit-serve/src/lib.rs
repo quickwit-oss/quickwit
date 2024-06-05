@@ -38,7 +38,6 @@ mod metrics_api;
 mod node_info_handler;
 mod openapi;
 mod otlp_api;
-mod pprof;
 mod rate_modulator;
 mod rest;
 mod rest_api_response;

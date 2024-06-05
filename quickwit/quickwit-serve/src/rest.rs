@@ -46,7 +46,6 @@ use crate::jaeger_api::jaeger_api_handlers;
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
-use crate::pprof::pprof_routes;
 use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::template_api::index_template_api_handlers;
@@ -158,10 +157,6 @@ pub(crate) async fn start_rest_server(
         quickwit_services.cluster.clone(),
         quickwit_services.env_filter_reload_fn.clone(),
     );
-
-    // `/pprof` route.
-    let cpu_pprof_routes = pprof_routes();
-
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
@@ -185,7 +180,6 @@ pub(crate) async fn start_rest_server(
         .or(health_check_routes)
         .or(metrics_routes)
         .or(developer_routes)
-        .or(cpu_pprof_routes)
         .with(request_counter)
         .recover(recover_fn)
         .with(extra_headers)

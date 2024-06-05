@@ -421,7 +421,7 @@ pub async fn check_source_connectivity(
         #[allow(unused_variables)]
         SourceParams::Kafka(params) => {
             #[cfg(not(feature = "kafka"))]
-            anyhow::bail!("Quickwit binary was not compiled with the `kafka` feature");
+            anyhow::bail!("Quickwit was compiled without the `kafka` feature");
 
             #[cfg(feature = "kafka")]
             {
@@ -432,7 +432,7 @@ pub async fn check_source_connectivity(
         #[allow(unused_variables)]
         SourceParams::Kinesis(params) => {
             #[cfg(not(feature = "kinesis"))]
-            anyhow::bail!("Quickwit binary was not compiled with the `kinesis` feature");
+            anyhow::bail!("Quickwit was compiled without the `kinesis` feature");
 
             #[cfg(feature = "kinesis")]
             {
@@ -443,7 +443,7 @@ pub async fn check_source_connectivity(
         #[allow(unused_variables)]
         SourceParams::Pulsar(params) => {
             #[cfg(not(feature = "pulsar"))]
-            anyhow::bail!("Quickwit binary was not compiled with the `pulsar` feature");
+            anyhow::bail!("Quickwit was compiled without the `pulsar` feature");
 
             #[cfg(feature = "pulsar")]
             {
