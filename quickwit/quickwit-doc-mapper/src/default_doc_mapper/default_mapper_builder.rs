@@ -20,6 +20,7 @@
 use std::num::NonZeroU32;
 
 use serde::{Deserialize, Serialize};
+use ulid::Ulid;
 
 use super::tokenizer_entry::TokenizerEntry;
 use super::FieldMappingEntry;
@@ -30,7 +31,7 @@ use crate::DefaultDocMapper;
 /// to create a valid DocMapper.
 ///
 /// It is also used to serialize/deserialize a DocMapper.
-/// note that this is not the way is the DocMapping is deserialized
+/// note that this is not the way the DocMapping is deserialized
 /// from the configuration.
 #[quickwit_macros::serde_multikey]
 #[derive(Serialize, Deserialize, Clone)]
@@ -83,6 +84,9 @@ pub struct DefaultDocMapperBuilder {
     /// Record document length
     #[serde(default)]
     pub document_length: bool,
+    /// Version of the doc mapper
+    #[serde(default)]
+    pub version: Ulid,
 }
 
 /// Defines how an unmapped field should be handled.

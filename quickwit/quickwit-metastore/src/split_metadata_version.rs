@@ -22,6 +22,7 @@ use std::ops::{Range, RangeInclusive};
 
 use quickwit_proto::types::{IndexUid, SplitId};
 use serde::{Deserialize, Serialize};
+use ulid::Ulid;
 
 use crate::split_metadata::{utc_now_timestamp, SplitMaturity};
 use crate::SplitMetadata;
@@ -92,6 +93,10 @@ pub(crate) struct SplitMetadataV0_8 {
 
     #[serde(default)]
     num_merge_ops: usize,
+
+    #[serde(default)]
+    #[schema(value_type = String)]
+    pub doc_mapper_version: Ulid,
 }
 
 impl From<SplitMetadataV0_8> for SplitMetadata {
@@ -127,6 +132,7 @@ impl From<SplitMetadataV0_8> for SplitMetadata {
             tags: v8.tags,
             footer_offsets: v8.footer_offsets,
             num_merge_ops: v8.num_merge_ops,
+            doc_mapper_version: v8.doc_mapper_version,
         }
     }
 }
@@ -148,6 +154,7 @@ impl From<SplitMetadata> for SplitMetadataV0_8 {
             tags: split.tags,
             footer_offsets: split.footer_offsets,
             num_merge_ops: split.num_merge_ops,
+            doc_mapper_version: split.doc_mapper_version,
         }
     }
 }

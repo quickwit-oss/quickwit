@@ -379,7 +379,7 @@ pub mod tests {
             index_uid: IndexUid::new_with_random_ulid("test_index"),
             source_id: "test_source".to_string(),
         };
-        let split_attrs = merge_split_attrs(pipeline_id, merged_split_id, splits);
+        let split_attrs = merge_split_attrs(pipeline_id, merged_split_id, splits).unwrap();
         create_split_metadata(merge_policy, &split_attrs, tags, 0..0)
     }
 

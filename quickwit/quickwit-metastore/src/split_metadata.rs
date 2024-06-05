@@ -29,6 +29,7 @@ use quickwit_proto::types::{IndexUid, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationMilliSeconds};
 use time::OffsetDateTime;
+use ulid::Ulid;
 
 use crate::split_metadata_version::VersionedSplitMetadata;
 
@@ -133,6 +134,11 @@ pub struct SplitMetadata {
     /// Number of merge operations that was involved to create
     /// this split.
     pub num_merge_ops: usize,
+
+    /// Version of the doc mapper.
+    ///
+    /// Splits with different versions are never candidate for merging.
+    pub doc_mapper_version: Ulid,
 }
 
 impl fmt::Debug for SplitMetadata {
@@ -177,6 +183,7 @@ impl fmt::Debug for SplitMetadata {
         debug_struct.field("footer_offsets", &self.footer_offsets);
         debug_struct.field("delete_opstamp", &self.delete_opstamp);
         debug_struct.field("num_merge_ops", &self.num_merge_ops);
+        debug_struct.field("doc_mapper_version", &self.doc_mapper_version);
         debug_struct.finish()
     }
 }
@@ -264,8 +271,6 @@ pub struct SplitInfo {
 #[cfg(any(test, feature = "testsuite"))]
 impl quickwit_config::TestableForRegression for SplitMetadata {
     fn sample_for_regression() -> Self {
-        use ulid::Ulid;
-
         SplitMetadata {
             split_id: "split".to_string(),
             index_uid: IndexUid::from_parts("my-index", Ulid::nil()),
@@ -283,6 +288,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
             footer_offsets: 1000..2000,
             num_merge_ops: 3,
+            doc_mapper_version: Ulid(2),
         }
     }
 
@@ -425,16 +431,17 @@ mod tests {
             footer_offsets: 0..1024,
             delete_opstamp: 0,
             num_merge_ops: 0,
+            doc_mapper_version: Ulid::nil(),
         };
 
-        let expected_output = "SplitMetadata { split_id: \"split-1\", index_uid: IndexUid { \
-                               index_id: \"00000000-0000-0000-0000-000000000000\", \
-                               incarnation_id: Ulid(0) }, partition_id: 0, source_id: \
-                               \"source-1\", node_id: \"node-1\", num_docs: 100, \
-                               uncompressed_docs_size_in_bytes: 1024, time_range: Some(0..=100), \
-                               create_timestamp: 1629867600, maturity: Mature, tags: \
-                               \"{\\\"🐱\\\", \\\"😻\\\", \\\"😼\\\", \\\"😿\\\", and 1 more}\", \
-                               footer_offsets: 0..1024, delete_opstamp: 0, num_merge_ops: 0 }";
+        let expected_output =
+            "SplitMetadata { split_id: \"split-1\", index_uid: IndexUid { index_id: \
+             \"00000000-0000-0000-0000-000000000000\", incarnation_id: Ulid(0) }, partition_id: \
+             0, source_id: \"source-1\", node_id: \"node-1\", num_docs: 100, \
+             uncompressed_docs_size_in_bytes: 1024, time_range: Some(0..=100), create_timestamp: \
+             1629867600, maturity: Mature, tags: \"{\\\"🐱\\\", \\\"😻\\\", \\\"😼\\\", \
+             \\\"😿\\\", and 1 more}\", footer_offsets: 0..1024, delete_opstamp: 0, \
+             num_merge_ops: 0, doc_mapper_version: Ulid(0) }";
 
         assert_eq!(format!("{:?}", split_metadata), expected_output);
     }
