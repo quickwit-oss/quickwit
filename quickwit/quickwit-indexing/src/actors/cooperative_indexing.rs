@@ -21,6 +21,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
+use once_cell::sync::Lazy;
 use quickwit_proto::indexing::{CpuCapacity, PipelineMetrics, PIPELINE_FULL_CAPACITY};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
@@ -28,6 +29,9 @@ use tokio::time::Instant;
 /// We allow ourselves to adjust the sleep time by at most `NUDGE_TOLERANCE`
 /// in order to steer a pipeline to its phase.
 const NUDGE_TOLERANCE: Duration = Duration::from_secs(2);
+
+// Origin of time. It is used to compute the phase of the pipeline.
+static ORIGIN_OF_TIME: Lazy<Instant> = Lazy::new(Instant::now);
 
 /// Cooperative indexing is a mechanism to deal with a large amount of pipelines.
 ///
@@ -77,7 +81,6 @@ pub(crate) struct CooperativeIndexingCycle {
     target_phase: Duration,
     commit_timeout: Duration,
     indexing_permits: Arc<Semaphore>,
-    t0: Instant,
 }
 
 impl CooperativeIndexingCycle {
@@ -108,7 +111,6 @@ impl CooperativeIndexingCycle {
             target_phase,
             commit_timeout,
             indexing_permits,
-            t0: Instant::now(),
         }
     }
 
@@ -123,7 +125,6 @@ impl CooperativeIndexingCycle {
             t_work_start,
             commit_timeout: self.commit_timeout,
             target_phase: self.target_phase,
-            t0: self.t0,
             _permit: permit,
         }
     }
@@ -136,7 +137,6 @@ pub(crate) struct CooperativeIndexingPeriod {
     t_work_start: Instant,
     commit_timeout: Duration,
     target_phase: Duration,
-    t0: Instant,
     _permit: OwnedSemaphorePermit,
 }
 
@@ -161,7 +161,7 @@ impl CooperativeIndexingPeriod {
 
     fn compute_sleep_duration(&self, t_work_end: Instant) -> Duration {
         let commit_timeout_millis = self.commit_timeout.as_millis() as u64;
-        let phase_millis: u64 = ((t_work_end - self.t0).as_millis() as u64) % commit_timeout_millis;
+        let phase_millis: u64 = ((t_work_end - *ORIGIN_OF_TIME).as_millis() as u64) % commit_timeout_millis;
         let delta_phase: i64 = phase_millis as i64 - self.target_phase.as_millis() as i64;
         // delta phase is within (-commit_timeout_millis, commit_timeout_millis)
         // We fold it back to [-commit_timeout_millis/2, commit_timeout_millis/2)
