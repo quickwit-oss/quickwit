@@ -26,11 +26,11 @@ use anyhow::bail;
 use itertools::Itertools;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
-    BytesOptions, Field, IntoIpv6Addr, IpAddrOptions, JsonObjectOptions, NumericOptions,
-    OwnedValue as TantivyValue, SchemaBuilder, TextOptions,
+    BytesOptions, DateOptions, Field, IntoIpv6Addr, IpAddrOptions, JsonObjectOptions,
+    NumericOptions, OwnedValue as TantivyValue, SchemaBuilder, TextOptions,
 };
 use tantivy::tokenizer::{PreTokenizedString, Token};
-use tantivy::{DateOptions, TantivyDocument as Document};
+use tantivy::TantivyDocument as Document;
 use tracing::warn;
 
 use super::date_time_type::QuickwitDateTimeOptions;

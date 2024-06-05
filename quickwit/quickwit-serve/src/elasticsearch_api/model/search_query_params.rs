@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -312,14 +313,15 @@ impl FromStr for ExpandWildcards {
         }
     }
 }
-impl ToString for ExpandWildcards {
-    fn to_string(&self) -> String {
-        match &self {
-            Self::Open => "open".to_string(),
-            Self::Closed => "closed".to_string(),
-            Self::Hidden => "hidden".to_string(),
-            Self::None => "none".to_string(),
-            Self::All => "all".to_string(),
+
+impl fmt::Display for ExpandWildcards {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Open => write!(formatter, "open"),
+            Self::Closed => write!(formatter, "closed"),
+            Self::Hidden => write!(formatter, "hidden"),
+            Self::None => write!(formatter, "none"),
+            Self::All => write!(formatter, "all"),
         }
     }
 }
@@ -358,12 +360,13 @@ impl FromStr for SuggestMode {
         }
     }
 }
-impl ToString for SuggestMode {
-    fn to_string(&self) -> String {
-        match &self {
-            Self::Missing => "missing".to_string(),
-            Self::Popular => "popular".to_string(),
-            Self::Always => "always".to_string(),
+
+impl fmt::Display for SuggestMode {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Missing => write!(formatter, "missing"),
+            Self::Popular => write!(formatter, "popular"),
+            Self::Always => write!(formatter, "always"),
         }
     }
 }

@@ -745,6 +745,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
+    use itertools::Itertools;
     use quickwit_common::PathHasher;
     use quickwit_query::query_ast::query_ast_from_user_text;
     use serde_json::{self, json, Value as JsonValue};
@@ -824,9 +825,19 @@ mod tests {
         for field_value in document.field_values() {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
+                // some part of aws-sdk enables `preserve_order` on serde_json.
+                // to get "normal" equality, we are forced to recreate the json object
+                // with sorted keys.
+                let sorted_json_values = json_doc
+                    .as_object()
+                    .unwrap()
+                    .clone()
+                    .into_iter()
+                    .sorted_by(|k1, k2| k1.0.cmp(&k2.0))
+                    .collect::<serde_json::Map<_, _>>();
                 assert_eq!(
                     tantivy::schema::OwnedValue::from(field_value.value().as_value()),
-                    tantivy::schema::OwnedValue::from(json_doc.as_object().unwrap().clone())
+                    tantivy::schema::OwnedValue::from(sorted_json_values)
                 );
             } else if field_name == DYNAMIC_FIELD_NAME {
                 assert_eq!(
@@ -1927,7 +1938,7 @@ mod tests {
             }"#,
             "concat",
             r#"{"some_text": "this is a text", "other_text": "this is a text too"}"#,
-            vec!["this is a text too".into(), "this is a text".into()],
+            vec!["this is a text".into(), "this is a text too".into()],
         );
     }
 

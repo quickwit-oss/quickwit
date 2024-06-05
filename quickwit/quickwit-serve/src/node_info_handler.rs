@@ -105,7 +105,7 @@ mod tests {
 
         let runtime_info_json = info_json.get("runtime").unwrap();
         let expected_runtime_info_json = serde_json::json!({
-            "num_cpus_physical": runtime_info.num_cpus_physical,
+            "num_cpus": runtime_info.num_cpus,
         });
         assert_json_include!(
             actual: runtime_info_json,

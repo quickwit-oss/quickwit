@@ -199,3 +199,25 @@ expected:
   hits:
     total:
       value: 1
+---
+json:
+  query:
+    query_string:
+      default_field: actor.id
+      query: ">=10791466"
+      lenient: true
+expected:
+  hits:
+    total:
+      value: 2
+---
+json:
+  query:
+    query_string:
+      default_field: actor.id
+      query: ">10791466"
+      lenient: true
+expected:
+  hits:
+    total:
+      value: 1

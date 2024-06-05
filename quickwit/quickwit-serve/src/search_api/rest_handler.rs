@@ -26,6 +26,7 @@ use hyper::HeaderMap;
 use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::search::{CountHits, OutputFormat, SortField, SortOrder};
+use quickwit_proto::types::IndexId;
 use quickwit_proto::ServiceError;
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
@@ -431,7 +432,7 @@ struct SearchStreamRequestQueryString {
 }
 
 async fn search_stream_endpoint(
-    index_id: String,
+    index_id: IndexId,
     search_request: SearchStreamRequestQueryString,
     search_service: &dyn SearchService,
 ) -> Result<hyper::Body, SearchError> {
@@ -498,7 +499,7 @@ fn make_streaming_reply(result: Result<hyper::Body, SearchError>) -> impl Reply 
 }
 
 async fn search_stream(
-    index_id: String,
+    index_id: IndexId,
     request: SearchStreamRequestQueryString,
     search_service: Arc<dyn SearchService>,
 ) -> impl warp::Reply {

@@ -31,11 +31,12 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{
-    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitState,
+    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
+    SplitState,
 };
-use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::{
-    ListSplitsRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
+    ListSplitsRequest, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
 };
 use time::OffsetDateTime;
 use tokio::sync::Semaphore;
@@ -54,9 +55,6 @@ use crate::split_store::IndexingSplitStore;
 /// we rely on this semaphore to limit the number of merge pipelines that can be spawned
 /// concurrently.
 static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
-
-#[derive(Debug)]
-struct ObserveLoop;
 
 struct MergePipelineHandles {
     merge_planner: ActorHandle<MergePlanner>,
@@ -96,6 +94,8 @@ pub struct MergePipeline {
     statistics: MergeStatistics,
     handles_opt: Option<MergePipelineHandles>,
     kill_switch: KillSwitch,
+    /// Immature splits passed to the merge planner the first time the pipeline is spawned.
+    initial_immature_splits_opt: Option<Vec<SplitMetadata>>,
 }
 
 #[async_trait]
@@ -118,9 +118,18 @@ impl Actor for MergePipeline {
 }
 
 impl MergePipeline {
-    // TODO improve API. Maybe it could take a spawnbuilder as argument, hence removing the need
-    // for a public create_mailbox / MessageCount.
-    pub fn new(params: MergePipelineParams, spawn_ctx: &SpawnContext) -> Self {
+    /// Creates a new merge pipeline. `initial_immature_splits_opt` is typically "seeded" by the
+    /// indexing service who fetches the immature splits from the metastore for all the merge
+    /// pipelines it is about to spawn. By issuing a single metastore query instead of one per merge
+    /// pipeline, we reduce the load on the metastore. If the merge pipeline crashes and is
+    /// respawned by the supervisor, the immature splits are fetched directly from the metastore.
+    pub fn new(
+        params: MergePipelineParams,
+        initial_immature_splits_opt: Option<Vec<SplitMetadata>>,
+        spawn_ctx: &SpawnContext,
+    ) -> Self {
+        // TODO improve API. Maybe it could take a spawnbuilder as argument, hence removing the need
+        // for a public create_mailbox / MessageCount.
         let (merge_planner_mailbox, merge_planner_inbox) = spawn_ctx
             .create_mailbox::<MergePlanner>("MergePlanner", MergePlanner::queue_capacity());
         Self {
@@ -131,6 +140,7 @@ impl MergePipeline {
             statistics: MergeStatistics::default(),
             merge_planner_inbox,
             merge_planner_mailbox,
+            initial_immature_splits_opt,
         }
     }
 
@@ -160,6 +170,7 @@ impl MergePipeline {
         let mut healthy_actors: Vec<&str> = Default::default();
         let mut failure_or_unhealthy_actors: Vec<&str> = Default::default();
         let mut success_actors: Vec<&str> = Default::default();
+
         for supervisable in self.supervisables() {
             match supervisable.check_health(check_for_progress) {
                 Health::Healthy => {
@@ -174,35 +185,37 @@ impl MergePipeline {
                 }
             }
         }
-
         if !failure_or_unhealthy_actors.is_empty() {
             error!(
-                pipeline_id=?self.params.pipeline_id,
+                index_uid=%self.params.pipeline_id.index_uid,
+                source_id=%self.params.pipeline_id.source_id,
                 generation=self.generation(),
                 healthy_actors=?healthy_actors,
                 failed_or_unhealthy_actors=?failure_or_unhealthy_actors,
                 success_actors=?success_actors,
-                "Merge pipeline failure."
+                "merge pipeline failed"
             );
             return Health::FailureOrUnhealthy;
         }
         if healthy_actors.is_empty() {
             // All the actors finished successfully.
             info!(
-                pipeline_id=?self.params.pipeline_id,
+                index_uid=%self.params.pipeline_id.index_uid,
+                source_id=%self.params.pipeline_id.source_id,
                 generation=self.generation(),
-                "Merge pipeline success."
+                "merge pipeline completed successfully"
             );
             return Health::Success;
         }
         // No error at this point and there are still some actors running.
         debug!(
-            pipeline_id=?self.params.pipeline_id,
+            index_uid=%self.params.pipeline_id.index_uid,
+            source_id=%self.params.pipeline_id.source_id,
             generation=self.generation(),
             healthy_actors=?healthy_actors,
             failed_or_unhealthy_actors=?failure_or_unhealthy_actors,
             success_actors=?success_actors,
-            "Merge pipeline running."
+            "merge pipeline is running and healthy"
         );
         Health::Healthy
     }
@@ -212,7 +225,7 @@ impl MergePipeline {
     }
 
     // TODO: Should return an error saying whether we can retry or not.
-    #[instrument(name="spawn_merge_pipeline", level="info", skip_all, fields(index=self.params.pipeline_id.index_uid.index_id, gen=self.generation()))]
+    #[instrument(name="spawn_merge_pipeline", level="info", skip_all, fields(index_uid=%self.params.pipeline_id.index_uid, generation=self.generation()))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         let _spawn_pipeline_permit = ctx
             .protect_future(SPAWN_PIPELINE_SEMAPHORE.acquire())
@@ -223,27 +236,13 @@ impl MergePipeline {
         self.kill_switch = ctx.kill_switch().child();
 
         info!(
-            index_id=%self.params.pipeline_id.index_uid.index_id,
+            index_uid=%self.params.pipeline_id.index_uid,
             source_id=%self.params.pipeline_id.source_id,
-            pipeline_uid=%self.params.pipeline_id.pipeline_uid,
             root_dir=%self.params.indexing_directory.path().display(),
             merge_policy=?self.params.merge_policy,
             "spawning merge pipeline",
         );
-        let query = ListSplitsQuery::for_index(self.params.pipeline_id.index_uid.clone())
-            .with_split_state(SplitState::Published)
-            .retain_immature(OffsetDateTime::now_utc());
-        let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
-        let published_splits_stream = ctx
-            .protect_future(self.params.metastore.list_splits(list_splits_request))
-            .await?;
-        let published_splits_metadata = ctx
-            .protect_future(published_splits_stream.collect_splits_metadata())
-            .await?;
-        info!(
-            num_splits = published_splits_metadata.len(),
-            "loaded list of published splits"
-        );
+        let immature_splits = self.fetch_immature_splits(ctx).await?;
 
         // Merge publisher
         let merge_publisher = Publisher::new(
@@ -329,8 +328,8 @@ impl MergePipeline {
 
         // Merge planner
         let merge_planner = MergePlanner::new(
-            self.params.pipeline_id.clone(),
-            published_splits_metadata,
+            &self.params.pipeline_id,
+            immature_splits,
             self.params.merge_policy.clone(),
             merge_split_downloader_mailbox,
             self.params.merge_scheduler_service.clone(),
@@ -418,6 +417,39 @@ impl MergePipeline {
         }
         Ok(())
     }
+
+    async fn fetch_immature_splits(
+        &mut self,
+        ctx: &ActorContext<Self>,
+    ) -> MetastoreResult<Vec<quickwit_metastore::SplitMetadata>> {
+        // We consume the initial immature splits provided by the indexing service on the first
+        // spawn.
+        if let Some(immature_splits) = self.initial_immature_splits_opt.take() {
+            return Ok(immature_splits);
+        }
+        // On subsequent spawns, we fetch the immature splits directly from the metastore.
+        let index_uid = self.params.pipeline_id.index_uid.clone();
+        let node_id = self.params.pipeline_id.node_id.clone();
+        let list_splits_query = ListSplitsQuery::for_index(index_uid)
+            .with_node_id(node_id)
+            .with_split_state(SplitState::Published)
+            .retain_immature(OffsetDateTime::now_utc());
+        let list_splits_request =
+            ListSplitsRequest::try_from_list_splits_query(&list_splits_query)?;
+        let immature_splits_stream = ctx
+            .protect_future(self.params.metastore.list_splits(list_splits_request))
+            .await?;
+        let immature_splits = ctx
+            .protect_future(immature_splits_stream.collect_splits_metadata())
+            .await?;
+        info!(
+            index_uid=%self.params.pipeline_id.index_uid,
+            source_id=%self.params.pipeline_id.source_id,
+            "fetched {} splits candidates for merge",
+            immature_splits.len()
+        );
+        Ok(immature_splits)
+    }
 }
 
 #[async_trait]
@@ -470,7 +502,7 @@ impl Handler<Spawn> for MergePipeline {
 
 #[derive(Clone)]
 pub struct MergePipelineParams {
-    pub pipeline_id: IndexingPipelineId,
+    pub pipeline_id: MergePipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
     pub indexing_directory: TempDirectory,
     pub metastore: MetastoreServiceClient,
@@ -492,9 +524,9 @@ mod tests {
     use quickwit_common::ServiceStream;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::ListSplitsRequestExt;
-    use quickwit_proto::indexing::IndexingPipelineId;
+    use quickwit_proto::indexing::MergePipelineId;
     use quickwit_proto::metastore::{MetastoreServiceClient, MockMetastoreService};
-    use quickwit_proto::types::{IndexUid, PipelineUid};
+    use quickwit_proto::types::{IndexUid, NodeId};
     use quickwit_storage::RamStorage;
 
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
@@ -503,14 +535,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_pipeline_simple() -> anyhow::Result<()> {
-        let mut mock_metastore = MockMetastoreService::new();
-        let index_uid = IndexUid::new_with_random_ulid("test-index");
-        let pipeline_id = IndexingPipelineId {
+        let node_id = NodeId::from("test-node");
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = "test-source".to_string();
+        let pipeline_id = MergePipelineId {
             index_uid: index_uid.clone(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_uid: PipelineUid::default(),
+            source_id,
+            node_id,
         };
+        let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_splits()
             .times(1)
@@ -522,7 +555,7 @@ mod tests {
                     vec![quickwit_metastore::SplitState::Published]
                 );
                 let Bound::Excluded(_) = list_split_query.mature else {
-                    panic!("Expected excluded bound.");
+                    panic!("expected `Bound::Excluded`");
                 };
                 true
             })
@@ -542,7 +575,7 @@ mod tests {
             merge_io_throughput_limiter_opt: None,
             event_broker: Default::default(),
         };
-        let pipeline = MergePipeline::new(pipeline_params, universe.spawn_ctx());
+        let pipeline = MergePipeline::new(pipeline_params, None, universe.spawn_ctx());
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.quit().await;
         assert_eq!(pipeline_statistics.generation, 1);

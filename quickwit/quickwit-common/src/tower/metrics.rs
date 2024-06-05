@@ -23,6 +23,7 @@ use std::time::Instant;
 
 use futures::{ready, Future};
 use pin_project::{pin_project, pinned_drop};
+use prometheus::exponential_buckets;
 use tower::{Layer, Service};
 
 use crate::metrics::{
@@ -103,6 +104,7 @@ impl GrpcMetricsLayer {
                 subsystem,
                 &[("kind", kind)],
                 ["rpc", "status"],
+                exponential_buckets(0.001, 2.0, 12).unwrap(),
             ),
         }
     }

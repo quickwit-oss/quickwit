@@ -20,7 +20,7 @@
 use std::collections::BTreeSet;
 use std::ops::{Range, RangeInclusive};
 
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, SplitId};
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
@@ -33,7 +33,8 @@ pub(crate) struct SplitMetadataV0_8 {
     /// should be enough to uniquely identify a split.
     /// In reality, some information may be implicitly configured
     /// in the storage resolver: for instance, the Amazon S3 region.
-    pub split_id: String,
+    #[schema(value_type = String)]
+    pub split_id: SplitId,
 
     /// Uid of the index this split belongs to.
     #[schema(value_type = String)]

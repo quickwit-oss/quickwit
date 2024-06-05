@@ -19,7 +19,6 @@
 
 use std::collections::BTreeSet;
 use std::fmt;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -39,7 +38,8 @@ use quickwit_proto::ingest::ingester::{
 };
 use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::metastore::{
-    AcquireShardsRequest, MetastoreService, MetastoreServiceClient, SourceType,
+    AcquireShardsRequest, AcquireShardsResponse, MetastoreService, MetastoreServiceClient,
+    SourceType,
 };
 use quickwit_proto::types::{
     NodeId, PipelineUid, Position, PublishToken, ShardId, SourceId, SourceUid,
@@ -51,8 +51,8 @@ use tracing::{debug, error, info, warn};
 use ulid::Ulid;
 
 use super::{
-    BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
-    BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
+    BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory, BATCH_NUM_BYTES_LIMIT,
+    EMIT_BATCHES_TIMEOUT,
 };
 use crate::actors::DocProcessor;
 use crate::models::{LocalShardPositionsUpdate, NewPublishLock, NewPublishToken, PublishLock};
@@ -65,9 +65,8 @@ impl TypedSourceFactory for IngestSourceFactory {
     type Params = ();
 
     async fn typed_create_source(
-        runtime_args: Arc<SourceRuntimeArgs>,
+        source_runtime: SourceRuntime,
         _params: Self::Params,
-        _checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
         // Retry parameters for the fetch stream: retry indefinitely until the shard is complete or
         // unassigned.
@@ -76,7 +75,7 @@ impl TypedSourceFactory for IngestSourceFactory {
             base_delay: Duration::from_secs(5),
             max_delay: Duration::from_secs(10 * 60), // 10 minutes
         };
-        IngestSource::try_new(runtime_args, retry_params).await
+        IngestSource::try_new(source_runtime, retry_params).await
     }
 }
 
@@ -161,20 +160,20 @@ impl fmt::Debug for IngestSource {
 
 impl IngestSource {
     pub async fn try_new(
-        runtime_args: Arc<SourceRuntimeArgs>,
+        source_runtime: SourceRuntime,
         retry_params: RetryParams,
     ) -> anyhow::Result<IngestSource> {
-        let self_node_id: NodeId = runtime_args.node_id().into();
+        let self_node_id: NodeId = source_runtime.node_id().into();
         let client_id = ClientId::new(
             self_node_id.clone(),
             SourceUid {
-                index_uid: runtime_args.index_uid().clone(),
-                source_id: runtime_args.source_id().to_string(),
+                index_uid: source_runtime.index_uid().clone(),
+                source_id: source_runtime.source_id().to_string(),
             },
-            runtime_args.pipeline_uid(),
+            source_runtime.pipeline_uid(),
         );
-        let metastore = runtime_args.metastore.clone();
-        let ingester_pool = runtime_args.ingester_pool.clone();
+        let metastore = source_runtime.metastore.clone();
+        let ingester_pool = source_runtime.ingester_pool.clone();
         let assigned_shards = FnvHashMap::default();
         let fetch_stream = MultiFetchStream::new(
             self_node_id,
@@ -195,7 +194,7 @@ impl IngestSource {
             fetch_stream,
             publish_lock,
             publish_token,
-            event_broker: runtime_args.event_broker.clone(),
+            event_broker: source_runtime.event_broker.clone(),
         })
     }
 
@@ -219,8 +218,8 @@ impl IngestSource {
         assigned_shard.status = IndexingStatus::Active;
 
         let partition_id = assigned_shard.partition_id.clone();
-        let from_position_exclusive = fetch_payload.from_position_exclusive().clone();
-        let to_position_inclusive = fetch_payload.to_position_inclusive().clone();
+        let from_position_exclusive = fetch_payload.from_position_exclusive();
+        let to_position_inclusive = fetch_payload.to_position_inclusive();
 
         for mrecord in decoded_mrecords(mrecord_batch) {
             match mrecord {
@@ -258,7 +257,7 @@ impl IngestSource {
 
         let partition_id = assigned_shard.partition_id.clone();
         let from_position_exclusive = assigned_shard.current_position_inclusive.clone();
-        let to_position_inclusive = fetch_eof.eof_position().clone();
+        let to_position_inclusive = fetch_eof.eof_position();
 
         batch_builder
             .checkpoint_delta
@@ -299,6 +298,9 @@ impl IngestSource {
     }
 
     async fn truncate(&mut self, truncate_up_to_positions: Vec<(ShardId, Position)>) {
+        if truncate_up_to_positions.is_empty() {
+            return;
+        }
         let shard_positions_update = LocalShardPositionsUpdate::new(
             self.client_id.source_uid.clone(),
             truncate_up_to_positions.clone(),
@@ -311,6 +313,7 @@ impl IngestSource {
                 }
             }
         }
+
         // We publish the event to the event broker.
         self.event_broker.publish(shard_positions_update);
 
@@ -537,18 +540,34 @@ impl Source for IngestSource {
             .filter(|shard_id| !self.assigned_shards.contains_key(shard_id))
             .collect();
 
+        assert!(!added_shard_ids.is_empty());
         info!(added_shards=?added_shard_ids, "adding shards assignment");
 
         let acquire_shards_request = AcquireShardsRequest {
             index_uid: Some(self.client_id.source_uid.index_uid.clone()),
             source_id: self.client_id.source_uid.source_id.clone(),
-            shard_ids: added_shard_ids,
+            shard_ids: added_shard_ids.clone(),
             publish_token: self.publish_token.clone(),
         };
-        let acquire_shards_response = ctx
+        let acquire_shards_response: AcquireShardsResponse = ctx
             .protect_future(self.metastore.acquire_shards(acquire_shards_request))
             .await
             .context("failed to acquire shards")?;
+
+        if acquire_shards_response.acquired_shards.len() != added_shard_ids.len() {
+            let missing_shards = added_shard_ids
+                .iter()
+                .filter(|shard_id| {
+                    !acquire_shards_response
+                        .acquired_shards
+                        .iter()
+                        .any(|acquired_shard| acquired_shard.shard_id() == *shard_id)
+                })
+                .collect::<Vec<_>>();
+            // This can happen if the shards have been deleted by the control plane, after building
+            // the plan and before the apply terminated. See #4888.
+            info!(missing_shards=?missing_shards, "failed to acquire all assigned shards");
+        }
 
         let mut truncate_up_to_positions =
             Vec::with_capacity(acquire_shards_response.acquired_shards.len());
@@ -556,8 +575,7 @@ impl Source for IngestSource {
         for acquired_shard in acquire_shards_response.acquired_shards {
             let index_uid = acquired_shard.index_uid().clone();
             let shard_id = acquired_shard.shard_id().clone();
-            let mut current_position_inclusive =
-                acquired_shard.publish_position_inclusive().clone();
+            let mut current_position_inclusive = acquired_shard.publish_position_inclusive();
             let leader_id: NodeId = acquired_shard.leader_id.into();
             let follower_id_opt: Option<NodeId> = acquired_shard.follower_id.map(Into::into);
             let source_id: SourceId = acquired_shard.source_id;
@@ -599,6 +617,7 @@ impl Source for IngestSource {
             };
             self.assigned_shards.insert(shard_id, assigned_shard);
         }
+
         self.truncate(truncate_up_to_positions).await;
 
         Ok(())
@@ -616,9 +635,7 @@ impl Source for IngestSource {
                 (shard_id, position)
             })
             .collect();
-        if !truncate_up_to_positions.is_empty() {
-            self.truncate(truncate_up_to_positions).await;
-        }
+        self.truncate(truncate_up_to_positions).await;
         Ok(())
     }
 
@@ -651,6 +668,8 @@ impl Source for IngestSource {
 mod tests {
     use std::iter::once;
     use std::path::PathBuf;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
 
     use bytesize::ByteSize;
     use itertools::Itertools;
@@ -682,7 +701,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_assign_shards() {
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -913,7 +932,7 @@ mod tests {
 
         let event_broker = EventBroker::default();
 
-        let runtime_args: Arc<SourceRuntimeArgs> = Arc::new(SourceRuntimeArgs {
+        let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
@@ -921,9 +940,9 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
             event_broker,
-        });
+        };
         let retry_params = RetryParams::no_retries();
-        let mut source = IngestSource::try_new(runtime_args, retry_params)
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
             .await
             .unwrap();
 
@@ -1024,7 +1043,7 @@ mod tests {
         // - emission of a suggest truncate
         // - no stream request is emitted
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1112,7 +1131,7 @@ mod tests {
             })
             .forever();
 
-        let runtime_args = Arc::new(SourceRuntimeArgs {
+        let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
@@ -1120,9 +1139,9 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
             event_broker,
-        });
+        };
         let retry_params = RetryParams::for_test();
-        let mut source = IngestSource::try_new(runtime_args, retry_params)
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
             .await
             .unwrap();
 
@@ -1164,7 +1183,7 @@ mod tests {
         // - emission of a suggest truncate
         // - the stream request emitted does not include the EOF shards
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1272,7 +1291,7 @@ mod tests {
             })
             .forever();
 
-        let runtime_args = Arc::new(SourceRuntimeArgs {
+        let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
@@ -1280,9 +1299,9 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
             event_broker,
-        });
+        };
         let retry_params = RetryParams::for_test();
-        let mut source = IngestSource::try_new(runtime_args, retry_params)
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
             .await
             .unwrap();
 
@@ -1327,7 +1346,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_emit_batches() {
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1337,7 +1356,7 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let event_broker = EventBroker::default();
 
-        let runtime_args = Arc::new(SourceRuntimeArgs {
+        let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
@@ -1345,9 +1364,9 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
             event_broker,
-        });
+        };
         let retry_params = RetryParams::for_test();
-        let mut source = IngestSource::try_new(runtime_args, retry_params)
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
             .await
             .unwrap();
 
@@ -1515,7 +1534,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_emit_batches_shard_not_found() {
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1568,7 +1587,7 @@ mod tests {
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
-        let runtime_args = Arc::new(SourceRuntimeArgs {
+        let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
@@ -1576,9 +1595,9 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
             event_broker,
-        });
+        };
         let retry_params = RetryParams::for_test();
-        let mut source = IngestSource::try_new(runtime_args, retry_params)
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
             .await
             .unwrap();
 
@@ -1622,7 +1641,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_suggest_truncate() {
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1722,7 +1741,7 @@ mod tests {
             })
             .forever();
 
-        let runtime_args = Arc::new(SourceRuntimeArgs {
+        let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
@@ -1730,9 +1749,9 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
             event_broker,
-        });
+        };
         let retry_params = RetryParams::for_test();
-        let mut source = IngestSource::try_new(runtime_args, retry_params)
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
             .await
             .unwrap();
 
@@ -1820,5 +1839,76 @@ mod tests {
             ],
         );
         assert_eq!(local_shards_update, expected_local_shards_update);
+    }
+
+    // Motivated by #4888
+    #[tokio::test]
+    async fn test_assigned_deleted_shards() {
+        // It is possible for the control plan to assign a shard to an indexer and delete it right
+        // away. In that case, the ingester should just ignore the assigned shard, as
+        // opposed to fail as the metastore does not let it `acquire` the shard.
+        let pipeline_id = IndexingPipelineId {
+            node_id: NodeId::from("test-node"),
+            index_uid: IndexUid::for_test("test-index", 0),
+            source_id: "test-source".to_string(),
+            pipeline_uid: PipelineUid::default(),
+        };
+        let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_acquire_shards()
+            .once()
+            .returning(|request: AcquireShardsRequest| {
+                assert_eq!(request.index_uid(), &("test-index", 0));
+                assert_eq!(request.source_id, "test-source");
+                assert_eq!(request.shard_ids, [ShardId::from(1)]);
+
+                let response = AcquireShardsResponse {
+                    acquired_shards: Vec::new(),
+                };
+                Ok(response)
+            });
+        let ingester_pool = IngesterPool::default();
+
+        let event_broker = EventBroker::default();
+        let source_runtime = SourceRuntime {
+            pipeline_id,
+            source_config,
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
+            ingester_pool,
+            queues_dir_path: PathBuf::from("./queues"),
+            storage_resolver: StorageResolver::for_test(),
+            event_broker: event_broker.clone(),
+        };
+        let retry_params = RetryParams::for_test();
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
+            .await
+            .unwrap();
+
+        let universe = Universe::with_accelerated_time();
+        let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
+        let (doc_processor_mailbox, _doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
+        let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
+        let ctx: SourceContext =
+            ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+
+        let shard_ids: BTreeSet<ShardId> = BTreeSet::from_iter([ShardId::from(1)]);
+
+        let truncation_happened = Arc::new(AtomicBool::new(false));
+        let truncation_happened_clone = truncation_happened.clone();
+
+        let _subscription_guard = event_broker.subscribe(move |_: LocalShardPositionsUpdate| {
+            truncation_happened_clone.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+
+        source
+            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!truncation_happened.load(std::sync::atomic::Ordering::Relaxed));
     }
 }

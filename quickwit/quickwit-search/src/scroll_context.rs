@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::ops::Range;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -192,15 +193,16 @@ impl ScrollKeyAndStartOffset {
     }
 }
 
-impl ToString for ScrollKeyAndStartOffset {
-    fn to_string(&self) -> String {
+impl fmt::Display for ScrollKeyAndStartOffset {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         let mut payload = vec![0u8; 28];
         payload[..16].copy_from_slice(&u128::from(self.scroll_ulid).to_le_bytes());
         payload[16..24].copy_from_slice(&self.start_offset.to_le_bytes());
         payload[24..28].copy_from_slice(&self.max_hits_per_page.to_le_bytes());
         serde_json::to_writer(&mut payload, &self.search_after)
             .expect("serializing PartialHit should never fail");
-        BASE64_STANDARD.encode(payload)
+        let b64_payload = BASE64_STANDARD.encode(payload);
+        write!(formatter, "{}", b64_payload)
     }
 }
 

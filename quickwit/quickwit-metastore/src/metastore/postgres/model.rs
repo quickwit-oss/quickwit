@@ -24,7 +24,7 @@ use std::str::FromStr;
 
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreError, MetastoreResult};
-use quickwit_proto::types::{IndexUid, ShardId, SourceId};
+use quickwit_proto::types::{IndexId, IndexUid, ShardId, SourceId, SplitId};
 use sea_query::{Iden, Write};
 use tracing::error;
 
@@ -38,7 +38,7 @@ pub(super) struct PgIndex {
     #[sqlx(try_from = "String")]
     pub index_uid: IndexUid,
     /// Index ID. The index ID is used to resolve user queries.
-    pub index_id: String,
+    pub index_id: IndexId,
     // A JSON string containing all of the IndexMetadata.
     pub index_metadata_json: String,
     /// Timestamp for tracking when the split was created.
@@ -81,6 +81,7 @@ pub enum Splits {
     Tags,
     SplitMetadataJson,
     IndexUid,
+    NodeId,
     DeleteOpstamp,
 }
 
@@ -96,7 +97,7 @@ impl Iden for ToTimestampFunc {
 #[derive(sqlx::FromRow)]
 pub(super) struct PgSplit {
     /// Split ID.
-    pub split_id: String,
+    pub split_id: SplitId,
     /// The state of the split. With `update_timestamp`, this is the only mutable attribute of the
     /// split.
     pub split_state: String,
@@ -265,7 +266,7 @@ pub(super) struct PgShard {
 impl From<PgShard> for Shard {
     fn from(pg_shard: PgShard) -> Self {
         Shard {
-            index_uid: pg_shard.index_uid.into(),
+            index_uid: Some(pg_shard.index_uid),
             source_id: pg_shard.source_id,
             shard_id: Some(pg_shard.shard_id),
             shard_state: ShardState::from(pg_shard.shard_state) as i32,

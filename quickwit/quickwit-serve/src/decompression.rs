@@ -18,14 +18,22 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::io::Read;
+use std::sync::OnceLock;
 
 use bytes::Bytes;
 use flate2::read::GzDecoder;
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::thread_pool::run_cpu_intensive;
 use thiserror::Error;
-use tokio::task;
 use warp::reject::Reject;
 use warp::Filter;
+
+use crate::load_shield::{LoadShield, LoadShieldPermit};
+
+fn get_ingest_load_shield() -> &'static LoadShield {
+    static LOAD_SHIELD: OnceLock<LoadShield> = OnceLock::new();
+    LOAD_SHIELD.get_or_init(|| LoadShield::new("ingest"))
+}
 
 /// There are two ways to decompress the body:
 /// - Stream the body through an async decompressor
@@ -37,7 +45,7 @@ use warp::Filter;
 async fn decompress_body(encoding: Option<String>, body: Bytes) -> Result<Bytes, warp::Rejection> {
     match encoding.as_deref() {
         Some("gzip" | "x-gzip") => {
-            let decompressed = task::spawn_blocking(move || {
+            let decompressed = run_cpu_intensive(move || {
                 let mut decompressed = Vec::new();
                 let mut decoder = GzDecoder::new(body.as_ref());
                 decoder
@@ -50,7 +58,7 @@ async fn decompress_body(encoding: Option<String>, body: Bytes) -> Result<Bytes,
             Ok(decompressed)
         }
         Some("zstd") => {
-            let decompressed = task::spawn_blocking(move || {
+            let decompressed = run_cpu_intensive(move || {
                 zstd::decode_all(body.as_ref())
                     .map(Bytes::from)
                     .map_err(|_| warp::reject::custom(CorruptedData))
@@ -83,22 +91,27 @@ pub(crate) fn get_body_bytes() -> impl Filter<Extract = (Body,), Error = warp::R
     warp::header::optional("content-encoding")
         .and(warp::body::bytes())
         .and_then(|encoding: Option<String>, body: Bytes| async move {
-            decompress_body(encoding, body).await.map(Body::from)
+            let permit = get_ingest_load_shield().acquire_permit().await?;
+            decompress_body(encoding, body)
+                .await
+                .map(|content| Body::new(content, permit))
         })
 }
 
 pub(crate) struct Body {
     pub content: Bytes,
-    _gauge_guard: GaugeGuard,
+    _gauge_guard: GaugeGuard<'static>,
+    _permit: LoadShieldPermit,
 }
 
-impl From<Bytes> for Body {
-    fn from(content: Bytes) -> Self {
+impl Body {
+    pub fn new(content: Bytes, load_shield_permit: LoadShieldPermit) -> Body {
         let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.rest_server);
         gauge_guard.add(content.len() as i64);
         Body {
             content,
             _gauge_guard: gauge_guard,
+            _permit: load_shield_permit,
         }
     }
 }

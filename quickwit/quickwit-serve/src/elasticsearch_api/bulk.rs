@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use hyper::StatusCode;
-use quickwit_config::enable_ingest_v2;
+use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
 };
@@ -85,6 +85,13 @@ async fn elastic_ingest_bulk(
     if enable_ingest_v2() || bulk_options.enable_ingest_v2 {
         return elastic_bulk_ingest_v2(default_index_id, body, bulk_options, ingest_router).await;
     }
+    if disable_ingest_v1() {
+        return Err(ElasticsearchError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "ingest v1 is disabled: environment variable `QW_DISABLE_INGEST_V1` is set".to_string(),
+            None,
+        ));
+    }
     let now = Instant::now();
     let mut doc_batch_builders = HashMap::new();
     let mut lines = lines(&body.content).enumerate();
@@ -139,7 +146,7 @@ async fn elastic_ingest_bulk(
     let bulk_response = ElasticBulkResponse {
         took_millis,
         errors,
-        items: Vec::new(),
+        actions: Vec::new(),
     };
     Ok(bulk_response)
 }

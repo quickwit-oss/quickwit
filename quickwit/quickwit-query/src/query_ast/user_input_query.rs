@@ -20,7 +20,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Bound;
 
-use anyhow::Context;
+use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use tantivy::query_grammar::{
     Delimiter, Occur, UserInputAst, UserInputBound, UserInputLeaf, UserInputLiteral,
@@ -129,7 +129,15 @@ fn convert_user_input_ast_to_query_ast(
                 lower,
                 upper,
             } => {
-                let field: String = field.context("range query without field is not supported")?;
+                let field = if let Some(field) = field {
+                    field
+                } else if default_search_fields.len() == 1 {
+                    default_search_fields[0].clone()
+                } else if default_search_fields.is_empty() {
+                    bail!("range query without field is not supported");
+                } else {
+                    bail!("range query with multiple fields is not supported");
+                };
                 let convert_bound = |user_input_bound: UserInputBound| match user_input_bound {
                     UserInputBound::Inclusive(user_text) => {
                         Bound::Included(JsonLiteral::String(user_text))

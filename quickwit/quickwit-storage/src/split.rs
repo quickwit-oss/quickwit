@@ -21,11 +21,13 @@ use std::collections::HashMap;
 use std::io::{self, SeekFrom};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 
 use async_trait::async_trait;
-use aws_smithy_http::byte_stream::ByteStream;
-use futures::{stream, StreamExt};
-use hyper::body::Body;
+use aws_sdk_s3::primitives::{ByteStream, SdkBody};
+use futures::{stream, Stream, StreamExt};
+use hyper::body::{Body, Bytes};
+use pin_project::pin_project;
 use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
@@ -59,9 +61,37 @@ async fn range_byte_stream_from_payloads(
         );
     }
 
-    let body = Body::wrap_stream(stream::iter(bytestreams).flatten());
-    let concat_stream = ByteStream::new(body.into());
+    let body = Body::wrap_stream(stream::iter(bytestreams).map(StreamAdaptor).flatten());
+    let concat_stream = ByteStream::new(SdkBody::from_body_0_4(body));
     Ok(concat_stream)
+}
+
+// With sdk 1.0, ByteStream no longer implement Stream, despite having analogous functions
+// this adaptor is just meant to make it implement Stream for places where we really need it
+#[pin_project]
+struct StreamAdaptor(#[pin] ByteStream);
+
+impl Stream for StreamAdaptor {
+    type Item = Result<Bytes, aws_smithy_types::byte_stream::error::Error>;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        ctx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.project().0.poll_next(ctx)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lower_bound_u64, upper_bound_u64) = self.0.size_hint();
+        // if conversion fails, it means lower_bound is too large to fit in an usize on this
+        // platform. When that's the case, we return usize::MAX as best effort. Any value is valid,
+        // but MAX is the most informative.
+        let lower_bound = lower_bound_u64.try_into().unwrap_or(usize::MAX);
+        // for the upperbound, if conversion fails, we just say the upper bound is unknown
+        let upper_bound =
+            upper_bound_u64.and_then(|upper_bound_u64| upper_bound_u64.try_into().ok());
+        (lower_bound, upper_bound)
+    }
 }
 
 #[async_trait]
@@ -101,7 +131,7 @@ impl PutPayload for FilePayload {
             Body::wrap_stream(ReaderStream::new(file.take(range.end - range.start)))
         };
 
-        Ok(ByteStream::new(body.into()))
+        Ok(ByteStream::new(SdkBody::from_body_0_4(body)))
     }
 }
 

@@ -259,7 +259,7 @@ impl QuickwitClient {
         index_id: &str,
         ingest_source: IngestSource,
         batch_size_limit_opt: Option<usize>,
-        on_ingest_event: Option<&(dyn Fn(IngestEvent) + Sync)>,
+        mut on_ingest_event: Option<&mut (dyn FnMut(IngestEvent) + Sync)>,
         last_block_commit: CommitType,
     ) -> Result<(), Error> {
         let ingest_path = if self.ingest_v2 {
@@ -297,16 +297,16 @@ impl QuickwitClient {
                     )
                     .await?;
                 if response.status_code() == StatusCode::TOO_MANY_REQUESTS {
-                    if let Some(event_fn) = &on_ingest_event {
+                    if let Some(event_fn) = &mut on_ingest_event {
                         event_fn(IngestEvent::Sleep)
                     }
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    tokio::time::sleep(Duration::from_millis(500)).await;
                 } else {
                     response.check().await?;
                     break;
                 }
             }
-            if let Some(event_fn) = on_ingest_event {
+            if let Some(event_fn) = &mut on_ingest_event {
                 event_fn(IngestEvent::IngestedDocBatch(batch.len()))
             }
         }

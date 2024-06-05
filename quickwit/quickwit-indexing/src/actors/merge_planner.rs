@@ -24,7 +24,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
-use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::indexing::MergePipelineId;
 use serde::Serialize;
 use tantivy::Inventory;
 use time::OffsetDateTime;
@@ -169,15 +169,15 @@ impl MergePlanner {
     }
 
     pub fn new(
-        pipeline_id: IndexingPipelineId,
-        published_splits: Vec<SplitMetadata>,
+        pipeline_id: &MergePipelineId,
+        immature_splits: Vec<SplitMetadata>,
         merge_policy: Arc<dyn MergePolicy>,
         merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
         merge_scheduler_service: Mailbox<MergeSchedulerService>,
     ) -> MergePlanner {
-        let published_splits: Vec<SplitMetadata> = published_splits
+        let immature_splits: Vec<SplitMetadata> = immature_splits
             .into_iter()
-            .filter(|split_metadata| belongs_to_pipeline(&pipeline_id, split_metadata))
+            .filter(|split_metadata| belongs_to_pipeline(pipeline_id, split_metadata))
             .collect();
         let mut merge_planner = MergePlanner {
             known_split_ids: Default::default(),
@@ -190,7 +190,7 @@ impl MergePlanner {
 
             incarnation_started_at: Instant::now(),
         };
-        merge_planner.record_splits_if_necessary(published_splits);
+        merge_planner.record_splits_if_necessary(immature_splits);
         merge_planner
     }
 
@@ -312,11 +312,11 @@ impl MergePlanner {
     }
 }
 
-/// We can merge splits from the same (index_id, source_id, node_id).
-fn belongs_to_pipeline(pipeline_id: &IndexingPipelineId, split: &SplitMetadata) -> bool {
-    pipeline_id.index_uid == split.index_uid
+/// We can only merge splits with the same (node_id, index_id, source_id).
+fn belongs_to_pipeline(pipeline_id: &MergePipelineId, split: &SplitMetadata) -> bool {
+    pipeline_id.node_id == split.node_id
+        && pipeline_id.index_uid == split.index_uid
         && pipeline_id.source_id == split.source_id
-        && pipeline_id.node_id == split.node_id
 }
 
 #[derive(Debug)]
@@ -341,8 +341,8 @@ mod tests {
     };
     use quickwit_config::IndexingSettings;
     use quickwit_metastore::{SplitMaturity, SplitMetadata};
-    use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::types::{IndexUid, PipelineUid};
+    use quickwit_proto::indexing::MergePipelineId;
+    use quickwit_proto::types::{IndexUid, NodeId};
     use time::OffsetDateTime;
     use ulid::Ulid;
 
@@ -379,15 +379,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_planner_with_stable_custom_merge_policy() -> anyhow::Result<()> {
-        let universe = Universe::with_accelerated_time();
+        let node_id = NodeId::from("test-node");
         let index_uid = IndexUid::new_with_random_ulid("test-index");
-        let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
-            universe.create_test_mailbox();
-        let pipeline_id = IndexingPipelineId {
+        let source_id = "test-source".to_string();
+        let pipeline_id = MergePipelineId {
+            node_id,
             index_uid: index_uid.clone(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_uid: PipelineUid::default(),
+            source_id,
         };
         let merge_policy = Arc::new(StableLogMergePolicy::new(
             StableLogMergePolicyConfig {
@@ -398,14 +396,17 @@ mod tests {
             },
             50_000,
         ));
+        let universe = Universe::with_accelerated_time();
+        let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
+            universe.create_test_mailbox();
+
         let merge_planner = MergePlanner::new(
-            pipeline_id,
+            &pipeline_id,
             Vec::new(),
             merge_policy,
             merge_split_downloader_mailbox,
             universe.get_or_spawn_one(),
         );
-
         let (merge_planner_mailbox, merge_planner_handle) =
             universe.spawn_builder().spawn(merge_planner);
         {
@@ -482,17 +483,18 @@ mod tests {
     #[tokio::test]
     async fn test_merge_planner_spawns_merge_over_existing_splits_on_startup() -> anyhow::Result<()>
     {
+        let node_id = NodeId::from("test-node");
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let source_id = "test-source".to_string();
+        let pipeline_id = MergePipelineId {
+            node_id,
+            index_uid: index_uid.clone(),
+            source_id,
+        };
         let universe = Universe::with_accelerated_time();
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) = universe
             .spawn_ctx()
             .create_mailbox("MergeSplitDownloader", QueueCapacity::Bounded(2));
-        let index_uid = IndexUid::new_with_random_ulid("test-index");
-        let pipeline_id = IndexingPipelineId {
-            index_uid: index_uid.clone(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_uid: PipelineUid::default(),
-        };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
             max_merge_factor: 2,
@@ -503,7 +505,7 @@ mod tests {
             merge_policy: MergePolicyConfig::ConstWriteAmplification(merge_policy_config),
             ..Default::default()
         };
-        let pre_existing_splits = vec![
+        let immature_splits = vec![
             split_metadata_for_test(
                 &index_uid,
                 "a_small",
@@ -523,8 +525,8 @@ mod tests {
         ];
         let merge_policy: Arc<dyn MergePolicy> = merge_policy_from_settings(&indexing_settings);
         let merge_planner = MergePlanner::new(
-            pipeline_id,
-            pre_existing_splits.clone(),
+            &pipeline_id,
+            immature_splits.clone(),
             merge_policy,
             merge_split_downloader_mailbox,
             universe.get_or_spawn_one(),
@@ -543,7 +545,7 @@ mod tests {
         // merge.
         merge_planner_mailbox
             .ask(NewSplits {
-                new_splits: pre_existing_splits,
+                new_splits: immature_splits,
             })
             .await?;
 
@@ -565,19 +567,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_planner_dismiss_splits_from_different_pipeline_id() -> anyhow::Result<()> {
+        let node_id = NodeId::from("test-node");
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let source_id = "test-source".to_string();
+        let pipeline_id = MergePipelineId {
+            node_id,
+            index_uid,
+            source_id,
+        };
         // This test makes sure that the merge planner ignores the splits that do not belong
         // to the same pipeline
         let universe = Universe::with_accelerated_time();
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) = universe
             .spawn_ctx()
             .create_mailbox("MergeSplitDownloader", QueueCapacity::Bounded(2));
-        let index_uid = IndexUid::new_with_random_ulid("test-index");
-        let pipeline_id = IndexingPipelineId {
-            index_uid,
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_uid: PipelineUid::default(),
-        };
+
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
             max_merge_factor: 2,
@@ -592,7 +596,7 @@ mod tests {
         // It is different from the index_uid because the index uid has a unique suffix.
         let other_index_uid = IndexUid::new_with_random_ulid("test-index");
 
-        let pre_existing_splits = vec![
+        let immature_splits = vec![
             split_metadata_for_test(
                 &other_index_uid,
                 "a_small",
@@ -612,8 +616,8 @@ mod tests {
         ];
         let merge_policy: Arc<dyn MergePolicy> = merge_policy_from_settings(&indexing_settings);
         let merge_planner = MergePlanner::new(
-            pipeline_id,
-            pre_existing_splits.clone(),
+            &pipeline_id,
+            immature_splits.clone(),
             merge_policy,
             merge_split_downloader_mailbox,
             universe.get_or_spawn_one(),
@@ -633,17 +637,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_planner_inherit_mailbox_with_splits_bug_3847() -> anyhow::Result<()> {
+        let node_id = NodeId::from("test-node");
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let source_id = "test-source".to_string();
+        let pipeline_id = MergePipelineId {
+            node_id,
+            index_uid: index_uid.clone(),
+            source_id,
+        };
         let universe = Universe::with_accelerated_time();
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) = universe
             .spawn_ctx()
             .create_mailbox("MergeSplitDownloader", QueueCapacity::Bounded(2));
-        let index_uid = IndexUid::new_with_random_ulid("test-index");
-        let pipeline_id = IndexingPipelineId {
-            index_uid: index_uid.clone(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_uid: PipelineUid::default(),
-        };
+
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
             max_merge_factor: 2,
@@ -654,8 +660,7 @@ mod tests {
             merge_policy: MergePolicyConfig::ConstWriteAmplification(merge_policy_config),
             ..Default::default()
         };
-
-        let pre_existing_splits = vec![
+        let immature_splits = vec![
             split_metadata_for_test(
                 &index_uid,
                 "a_small",
@@ -673,16 +678,14 @@ mod tests {
                 2,
             ),
         ];
-
         let merge_policy: Arc<dyn MergePolicy> = merge_policy_from_settings(&indexing_settings);
         let merge_planner = MergePlanner::new(
-            pipeline_id,
-            pre_existing_splits.clone(),
+            &pipeline_id,
+            immature_splits.clone(),
             merge_policy,
             merge_split_downloader_mailbox,
             universe.get_or_spawn_one(),
         );
-
         // We create a fake old mailbox that contains two new splits and a PlanMerge message from an
         // old incarnation. This could happen in real life if the merge pipeline failed
         // right after a `PlanMerge` was pushed to the pipeline. Note that #3847 did not

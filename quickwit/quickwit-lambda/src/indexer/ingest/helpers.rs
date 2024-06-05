@@ -36,22 +36,21 @@ use quickwit_config::{
     SourceInputFormat, SourceParams, TransformConfig,
 };
 use quickwit_index_management::IndexService;
-use quickwit_indexing::actors::{
-    IndexingService, MergePipeline, MergePipelineId, MergeSchedulerService,
-};
+use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
 use quickwit_indexing::models::{DetachIndexingPipeline, DetachMergePipeline, SpawnPipeline};
 use quickwit_indexing::IndexingPipeline;
 use quickwit_ingest::IngesterPool;
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
-    CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadata, IndexMetadataResponseExt,
+    AddSourceRequestExt, CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadata,
+    IndexMetadataResponseExt,
 };
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::metastore::{
-    CreateIndexRequest, IndexMetadataRequest, MetastoreError, MetastoreService,
+    AddSourceRequest, CreateIndexRequest, IndexMetadataRequest, MetastoreError, MetastoreService,
     MetastoreServiceClient, ResetSourceCheckpointRequest,
 };
-use quickwit_proto::types::{NodeId, PipelineUid};
+use quickwit_proto::types::PipelineUid;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::StorageResolver;
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
@@ -62,7 +61,7 @@ use crate::indexer::environment::{
     DISABLE_JANITOR, DISABLE_MERGE, INDEX_CONFIG_URI, MAX_CHECKPOINTS,
 };
 
-const LAMBDA_SOURCE_ID: &str = "_ingest-lambda-source";
+const LAMBDA_SOURCE_ID: &str = "ingest-lambda-source";
 
 /// The indexing service needs to update its cluster chitchat state so that the control plane is
 /// aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
@@ -72,7 +71,7 @@ pub(super) async fn create_empty_cluster(
     services: &[QuickwitService],
 ) -> anyhow::Result<Cluster> {
     let self_node = ClusterMember {
-        node_id: NodeId::new(config.node_id.clone()),
+        node_id: config.node_id.clone(),
         generation_id: quickwit_cluster::GenerationId::now(),
         is_ready: false,
         enabled_services: HashSet::from_iter(services.to_owned()),
@@ -156,29 +155,47 @@ pub(super) async fn configure_source(
 }
 
 /// Check if the index exists, creating or overwriting it if necessary
+///
+/// If the index exists but without the Lambda source ([`LAMBDA_SOURCE_ID`]),
+/// the source is added.
 pub(super) async fn init_index_if_necessary(
     metastore: &mut MetastoreServiceClient,
     storage_resolver: &StorageResolver,
     default_index_root_uri: &Uri,
     overwrite: bool,
+    source_config: &SourceConfig,
 ) -> anyhow::Result<IndexMetadata> {
     let metadata_result = metastore
         .index_metadata(IndexMetadataRequest::for_index_id(INDEX_ID.clone()))
         .await;
     let metadata = match metadata_result {
-        Ok(_) if overwrite => {
-            info!(
-                index_id = *INDEX_ID,
-                "Overwrite enabled, clearing existing index",
-            );
-            let mut index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
-            index_service.clear_index(&INDEX_ID).await?;
-            metastore
-                .index_metadata(IndexMetadataRequest::for_index_id(INDEX_ID.clone()))
-                .await?
-                .deserialize_index_metadata()?
+        Ok(metadata_resp) => {
+            let current_metadata = metadata_resp.deserialize_index_metadata()?;
+            let mut metadata_changed = false;
+            if overwrite {
+                info!(index_uid = %current_metadata.index_uid, "overwrite enabled, clearing existing index");
+                let mut index_service =
+                    IndexService::new(metastore.clone(), storage_resolver.clone());
+                index_service.clear_index(&INDEX_ID).await?;
+                metadata_changed = true;
+            }
+            if !current_metadata.sources.contains_key(LAMBDA_SOURCE_ID) {
+                let add_source_request = AddSourceRequest::try_from_source_config(
+                    current_metadata.index_uid.clone(),
+                    source_config,
+                )?;
+                metastore.add_source(add_source_request).await?;
+                metadata_changed = true;
+            }
+            if metadata_changed {
+                metastore
+                    .index_metadata(IndexMetadataRequest::for_index_id(INDEX_ID.clone()))
+                    .await?
+                    .deserialize_index_metadata()?
+            } else {
+                current_metadata
+            }
         }
-        Ok(metadata_resp) => metadata_resp.deserialize_index_metadata()?,
         Err(MetastoreError::NotFound(_)) => {
             info!(
                 index_id = *INDEX_ID,
@@ -193,10 +210,13 @@ pub(super) async fn init_index_if_necessary(
                     index_config.index_id,
                 );
             }
-            let create_resp = metastore
-                .create_index(CreateIndexRequest::try_from_index_config(&index_config)?)
-                .await?;
-            info!("index created");
+            let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
+                &index_config,
+                std::slice::from_ref(source_config),
+            )?;
+            let create_resp = metastore.create_index(create_index_request).await?;
+
+            info!(index_uid = %create_resp.index_uid(), "index created");
             create_resp.deserialize_index_metadata()?
         }
         Err(e) => bail!(e),
@@ -274,7 +294,7 @@ pub(super) async fn spawn_pipelines(
         .await?;
     let merge_pipeline_handle = indexing_server_mailbox
         .ask_for_res(DetachMergePipeline {
-            pipeline_id: MergePipelineId::from(&pipeline_id),
+            pipeline_id: pipeline_id.merge_pipeline_id(),
         })
         .await?;
     let indexing_pipeline_handle = indexing_server_mailbox

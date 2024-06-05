@@ -37,6 +37,7 @@ use tantivy::schema::OwnedValue as TantivyValue;
 use tantivy::time::OffsetDateTime;
 use tantivy::Term;
 
+use self::leaf::leaf_search;
 use super::*;
 use crate::find_trace_ids_collector::Span;
 use crate::list_terms::leaf_list_terms;
@@ -1054,15 +1055,20 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
     });
     let searcher_context: Arc<SearcherContext> =
         Arc::new(SearcherContext::new(SearcherConfig::default(), None));
+
+    let agg_limits = searcher_context.create_new_aggregation_limits();
+
     let search_response = leaf_search(
         searcher_context,
         request,
         test_sandbox.storage(),
         splits_offsets,
         test_sandbox.doc_mapper(),
+        agg_limits,
     )
     .await
     .unwrap();
+
     search_response
         .partial_hits
         .into_iter()

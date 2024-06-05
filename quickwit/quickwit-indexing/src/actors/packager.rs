@@ -387,9 +387,8 @@ mod tests {
 
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-    use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::search::{deserialize_split_fields, ListFieldsEntryResponse};
-    use quickwit_proto::types::{IndexUid, PipelineUid};
+    use quickwit_proto::types::{IndexUid, NodeId};
     use tantivy::directory::MmapDirectory;
     use tantivy::schema::{NumericOptions, Schema, Type, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, IndexBuilder, IndexSettings};
@@ -509,20 +508,20 @@ mod tests {
             }
         }
         let index = index_writer.finalize()?;
-        let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new_with_random_ulid("test-index"),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_uid: PipelineUid::default(),
-        };
+
+        let node_id = NodeId::from("test-node");
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let source_id = "test-source".to_string();
 
         // TODO: In the future we would like that kind of segment flush to emit a new split,
         // but this will require work on tantivy.
         let indexed_split = IndexedSplit {
             split_attrs: SplitAttrs {
+                node_id,
+                index_uid,
+                source_id,
                 split_id: "test-split".to_string(),
                 partition_id: 17u64,
-                pipeline_id,
                 num_docs,
                 uncompressed_docs_size_in_bytes: num_docs * 15,
                 time_range: timerange_opt,

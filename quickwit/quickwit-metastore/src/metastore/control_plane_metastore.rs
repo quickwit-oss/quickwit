@@ -25,18 +25,18 @@ use quickwit_proto::control_plane::{ControlPlaneService, ControlPlaneServiceClie
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
-    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteSourceRequest,
-    DeleteSplitsRequest, DeleteTask, EmptyResponse, FindIndexTemplateMatchesRequest,
-    FindIndexTemplateMatchesResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
-    IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest,
-    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
-    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult,
-    MetastoreService, MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest,
-    OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
-    ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest,
-    UpdateSplitsDeleteOpstampResponse,
+    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
+    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
+    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetIndexTemplateRequest,
+    GetIndexTemplateResponse, IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataRequest,
+    IndexesMetadataResponse, LastDeleteOpstampRequest, LastDeleteOpstampResponse,
+    ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexTemplatesRequest,
+    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 
 /// A [`MetastoreService`] implementation that proxies some requests to the control plane so it can
@@ -86,6 +86,19 @@ impl MetastoreService for ControlPlaneMetastore {
         Ok(response)
     }
 
+    // Technically, proxying this call via the control plane is not necessary at the moment because
+    // it does not modify attributes the control plane cares about (retention policy, search
+    // settings). However, it would be easy to forget to do so when we add the ability to update the
+    // doc mapping or merge policy of an index, so we've already set up the proxy here since calling
+    // `update_index` is very infrequent anyway.
+    async fn update_index(
+        &mut self,
+        request: UpdateIndexRequest,
+    ) -> MetastoreResult<IndexMetadataResponse> {
+        let response = self.control_plane.update_index(request).await?;
+        Ok(response)
+    }
+
     async fn delete_index(
         &mut self,
         request: DeleteIndexRequest,
@@ -117,19 +130,18 @@ impl MetastoreService for ControlPlaneMetastore {
 
     // Other metastore API calls.
 
-    async fn update_index(
-        &mut self,
-        request: UpdateIndexRequest,
-    ) -> MetastoreResult<IndexMetadataResponse> {
-        let response = self.metastore.update_index(request).await?;
-        Ok(response)
-    }
-
     async fn index_metadata(
         &mut self,
         request: IndexMetadataRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
         self.metastore.index_metadata(request).await
+    }
+
+    async fn indexes_metadata(
+        &mut self,
+        request: IndexesMetadataRequest,
+    ) -> MetastoreResult<IndexesMetadataResponse> {
+        self.metastore.indexes_metadata(request).await
     }
 
     async fn list_indexes_metadata(
@@ -244,7 +256,7 @@ impl MetastoreService for ControlPlaneMetastore {
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
-    ) -> MetastoreResult<EmptyResponse> {
+    ) -> MetastoreResult<DeleteShardsResponse> {
         self.metastore.delete_shards(request).await
     }
 

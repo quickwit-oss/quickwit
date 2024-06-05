@@ -17,9 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
-
-use aws_sdk_kinesis::config::Region;
+use aws_sdk_kinesis::config::{BehaviorVersion, Region, SharedAsyncSleep};
 use aws_sdk_kinesis::{Client, Config};
 use quickwit_aws::{get_aws_config, DEFAULT_AWS_REGION};
 use quickwit_config::RegionOrEndpoint;
@@ -27,13 +25,17 @@ use quickwit_config::RegionOrEndpoint;
 pub async fn get_kinesis_client(region_or_endpoint: RegionOrEndpoint) -> anyhow::Result<Client> {
     let aws_config = get_aws_config().await;
 
-    let mut kinesis_config = Config::builder();
+    let mut kinesis_config = Config::builder().behavior_version(BehaviorVersion::v2024_03_28());
     kinesis_config.set_retry_config(aws_config.retry_config().cloned());
-    kinesis_config.set_credentials_provider(aws_config.credentials_provider().cloned());
-    kinesis_config.set_http_connector(aws_config.http_connector().cloned());
+    kinesis_config.set_credentials_provider(aws_config.credentials_provider());
+    kinesis_config.set_http_client(aws_config.http_client());
     kinesis_config.set_timeout_config(aws_config.timeout_config().cloned());
-    kinesis_config.set_credentials_cache(aws_config.credentials_cache().cloned());
-    kinesis_config.set_sleep_impl(Some(Arc::new(quickwit_aws::TokioSleep::default())));
+    if let Some(identity_cache) = aws_config.identity_cache() {
+        kinesis_config.set_identity_cache(identity_cache);
+    }
+    kinesis_config.set_sleep_impl(Some(SharedAsyncSleep::new(
+        quickwit_aws::TokioSleep::default(),
+    )));
 
     match region_or_endpoint {
         RegionOrEndpoint::Region(region) => {
@@ -100,11 +102,8 @@ pub(crate) mod tests {
                 .await?
                 .into_iter()
                 .flat_map(|shard| {
-                    let starting_hash_key = shard.hash_key_range?.starting_hash_key?;
-                    shard
-                        .shard_id
-                        .and_then(parse_shard_id)
-                        .map(|shard_id| (shard_id, starting_hash_key))
+                    let starting_hash_key = shard.hash_key_range?.starting_hash_key;
+                    parse_shard_id(shard.shard_id).map(|shard_id| (shard_id, starting_hash_key))
                 })
                 .collect();
 
@@ -117,7 +116,7 @@ pub(crate) mod tests {
                     .data(Blob::new(record.as_bytes()))
                     .build()
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let response = kinesis_client
             .put_records()
@@ -127,7 +126,7 @@ pub(crate) mod tests {
             .await?;
 
         let mut sequence_numbers = HashMap::new();
-        for record in response.records.unwrap_or_default() {
+        for record in response.records {
             if let Some(sequence_number) = record.sequence_number {
                 sequence_numbers
                     .entry(record.shard_id.and_then(parse_shard_id).unwrap())

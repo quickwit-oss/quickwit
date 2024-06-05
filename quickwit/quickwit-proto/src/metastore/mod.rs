@@ -73,7 +73,7 @@ pub enum EntityKind {
     /// A set of splits.
     Splits {
         /// Split IDs.
-        split_ids: Vec<SplitId>,
+        split_ids: Vec<String>,
     },
     /// An index template.
     IndexTemplate {
@@ -154,6 +154,29 @@ pub enum MetastoreError {
 
     #[error("service unavailable: {0}")]
     Unavailable(String),
+}
+
+impl MetastoreError {
+    /// Returns `true` if the transaction that emitted this error is "certainly abort".
+    /// Returns `false` if we cannot know whether the transaction was successful or not.
+    pub fn is_transaction_certainly_aborted(&self) -> bool {
+        match self {
+            MetastoreError::AlreadyExists(_)
+            | MetastoreError::FailedPrecondition { .. }
+            | MetastoreError::Forbidden { .. }
+            | MetastoreError::InvalidArgument { .. }
+            | MetastoreError::JsonDeserializeError { .. }
+            | MetastoreError::JsonSerializeError { .. }
+            | MetastoreError::NotFound(_)
+            | MetastoreError::TooManyRequests => true,
+            MetastoreError::Connection { .. }
+            | MetastoreError::Db { .. }
+            | MetastoreError::Internal { .. }
+            | MetastoreError::Io { .. }
+            | MetastoreError::Timeout { .. }
+            | MetastoreError::Unavailable(_) => false,
+        }
+    }
 }
 
 #[cfg(feature = "postgres")]
@@ -241,7 +264,33 @@ impl SourceType {
     }
 }
 
+impl fmt::Display for SourceType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let source_type_str = match self {
+            SourceType::Cli => "CLI ingest",
+            SourceType::File => "file",
+            SourceType::IngestV1 => "ingest API v1",
+            SourceType::IngestV2 => "ingest API v2",
+            SourceType::Kafka => "Apache Kafka",
+            SourceType::Kinesis => "Amazon Kinesis",
+            SourceType::Nats => "NATS",
+            SourceType::PubSub => "Google Cloud Pub/Sub",
+            SourceType::Pulsar => "Apache Pulsar",
+            SourceType::Unspecified => "unspecified",
+            SourceType::Vec => "vec",
+            SourceType::Void => "void",
+        };
+        write!(f, "{}", source_type_str)
+    }
+}
+
 impl IndexMetadataRequest {
+    pub fn into_index_id(self) -> Option<IndexId> {
+        self.index_uid
+            .map(|index_uid| index_uid.index_id)
+            .or(self.index_id)
+    }
+
     pub fn for_index_id(index_id: IndexId) -> Self {
         Self {
             index_uid: None,
@@ -253,21 +302,6 @@ impl IndexMetadataRequest {
         Self {
             index_uid: Some(index_uid),
             index_id: None,
-        }
-    }
-
-    /// Returns the index id either from the `index_id` or the `index_uid`.
-    /// If none of them is set, an error is returned.
-    pub fn get_index_id(&self) -> MetastoreResult<IndexId> {
-        if let Some(index_id) = &self.index_id {
-            Ok(index_id.to_string())
-        } else if let Some(index_uid) = &self.index_uid {
-            Ok(index_uid.index_id.to_string())
-        } else {
-            Err(MetastoreError::Internal {
-                message: "index_id or index_uid must be set".to_string(),
-                cause: "".to_string(),
-            })
         }
     }
 }

@@ -28,6 +28,7 @@ use quickwit_proto::search::{
     LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortOrder, SortValue,
     SplitSearchError,
 };
+use quickwit_proto::types::SplitId;
 use serde::Deserialize;
 use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
@@ -470,48 +471,6 @@ fn get_score_extractor(
     })
 }
 
-/// PartialHitHeapItem order is the inverse of the natural order
-/// so that we actually have a min-heap.
-#[derive(Clone, Copy, Debug)]
-struct PartialHitHeapItem {
-    sort_value_opt1: Option<u64>,
-    sort_value_opt2: Option<u64>,
-    doc_id: DocId,
-}
-
-impl PartialOrd for PartialHitHeapItem {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for PartialHitHeapItem {
-    #[inline]
-    fn cmp(&self, other: &Self) -> Ordering {
-        let by_sorting_field1 = other.sort_value_opt1.cmp(&self.sort_value_opt1);
-        let by_sorting_field2 = other.sort_value_opt2.cmp(&self.sort_value_opt2);
-
-        let lazy_order_by_doc_id = || {
-            self.doc_id
-                .partial_cmp(&other.doc_id)
-                .unwrap_or(Ordering::Equal)
-        };
-
-        // In case of a tie on the feature, we sort by ascending `DocId`.
-        by_sorting_field1
-            .then_with(|| by_sorting_field2)
-            .then_with(lazy_order_by_doc_id)
-    }
-}
-
-impl PartialEq for PartialHitHeapItem {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == Ordering::Equal
-    }
-}
-
-impl Eq for PartialHitHeapItem {}
-
 enum AggregationSegmentCollectors {
     FindTraceIdsSegmentCollector(Box<FindTraceIdsSegmentCollector>),
     TantivyAggregationSegmentCollector(AggregationSegmentCollector),
@@ -536,7 +495,7 @@ pub(crate) struct SegmentPartialHit {
 impl SegmentPartialHit {
     pub fn into_partial_hit(
         self,
-        split_id: String,
+        split_id: SplitId,
         segment_ord: SegmentOrdinal,
         first: &SortingFieldExtractorComponent,
         second: &Option<SortingFieldExtractorComponent>,
@@ -638,7 +597,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
 }
 
 /// Available aggregation types.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum QuickwitAggregations {
     /// Aggregation used by the Jaeger service to find trace IDs that match a
@@ -711,7 +670,7 @@ impl QuickwitIncrementalAggregations {
                                     sort_value: Some(SortValue::I64(timestamp)),
                                 }),
                                 sort_value2: None,
-                                split_id: String::new(),
+                                split_id: SplitId::new(),
                                 segment_ord: 0,
                                 doc_id: 0,
                             });
@@ -753,7 +712,7 @@ impl QuickwitIncrementalAggregations {
 /// the query.
 #[derive(Clone)]
 pub(crate) struct QuickwitCollector {
-    pub split_id: String,
+    pub split_id: SplitId,
     pub start_offset: usize,
     pub max_hits: usize,
     pub sort_by: SortByPair,
@@ -763,6 +722,18 @@ pub(crate) struct QuickwitCollector {
 }
 
 impl QuickwitCollector {
+    pub fn is_count_only(&self) -> bool {
+        self.max_hits == 0 && self.aggregation.is_none()
+    }
+    /// Updates search parameters affecting the returned documents.
+    /// Does not update aggregations.
+    pub fn update_search_param(&mut self, search_request: &SearchRequest) {
+        let sort_by = sort_by_from_request(search_request);
+        self.sort_by = sort_by;
+        self.max_hits = search_request.max_hits as usize;
+        self.start_offset = search_request.start_offset as usize;
+        self.search_after.clone_from(&search_request.search_after);
+    }
     pub fn fast_field_names(&self) -> HashSet<String> {
         let mut fast_field_names = HashSet::default();
         self.sort_by.first.add_fast_field(&mut fast_field_names);
@@ -1044,7 +1015,7 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair
 
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
 pub(crate) fn make_collector_for_split(
-    split_id: String,
+    split_id: SplitId,
     search_request: &SearchRequest,
     aggregation_limits: AggregationLimits,
 ) -> crate::Result<QuickwitCollector> {
@@ -1075,7 +1046,7 @@ pub(crate) fn make_merge_collector(
     };
     let sort_by = sort_by_from_request(search_request);
     Ok(QuickwitCollector {
-        split_id: String::default(),
+        split_id: SplitId::default(),
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by,
@@ -1228,7 +1199,7 @@ impl IncrementalCollector {
     }
 
     /// Merge one search result with the current state
-    pub(crate) fn add_split(&mut self, leaf_response: LeafSearchResponse) -> tantivy::Result<()> {
+    pub(crate) fn add_result(&mut self, leaf_response: LeafSearchResponse) -> tantivy::Result<()> {
         let LeafSearchResponse {
             num_hits,
             partial_hits,
@@ -1300,51 +1271,8 @@ mod tests {
     use tantivy::TantivyDocument;
     use ulid::Ulid;
 
-    use super::{make_merge_collector, IncrementalCollector, PartialHitHeapItem};
+    use super::{make_merge_collector, IncrementalCollector};
     use crate::collector::top_k_partial_hits;
-
-    #[test]
-    fn test_partial_hit_ordered_by_sorting_field() {
-        let lesser_score = PartialHitHeapItem {
-            doc_id: 1u32,
-            sort_value_opt1: Some(1u64),
-            sort_value_opt2: None,
-        };
-        let higher_score = PartialHitHeapItem {
-            sort_value_opt1: Some(2u64),
-            sort_value_opt2: None,
-            doc_id: 1u32,
-        };
-        assert_eq!(lesser_score.cmp(&higher_score), Ordering::Greater);
-    }
-    #[test]
-    fn test_partial_hit_ordered_by_sorting_field_2() {
-        let get_el = |val1, val2, docid| PartialHitHeapItem {
-            doc_id: docid,
-            sort_value_opt1: val1,
-            sort_value_opt2: val2,
-        };
-        let mut data = vec![
-            get_el(Some(1u64), None, 1u32),
-            get_el(Some(2u64), Some(2u64), 1u32),
-            get_el(Some(2u64), Some(1u64), 1u32),
-            get_el(Some(2u64), None, 1u32),
-            get_el(None, Some(1u64), 1u32),
-            get_el(None, None, 1u32),
-        ];
-        data.sort();
-        assert_eq!(
-            data,
-            vec![
-                get_el(Some(2u64), Some(2u64), 1u32),
-                get_el(Some(2u64), Some(1u64), 1u32),
-                get_el(Some(2u64), None, 1u32),
-                get_el(Some(1u64), None, 1u32),
-                get_el(None, Some(1u64), 1u32),
-                get_el(None, None, 1u32),
-            ]
-        );
-    }
 
     #[test]
     fn test_merge_partial_hits_no_tie() {
@@ -1854,7 +1782,7 @@ mod tests {
             .unwrap();
 
         for split_result in results {
-            incremental_collector.add_split(split_result).unwrap();
+            incremental_collector.add_result(split_result).unwrap();
         }
 
         let incremental_result = incremental_collector.finalize().unwrap();

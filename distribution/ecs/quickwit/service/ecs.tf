@@ -22,12 +22,7 @@ module "quickwit_service" {
 
       command = ["run"]
 
-      environment = concat(local.quickwit_common_environment, [
-        {
-          name  = "QW_ENABLED_SERVICES"
-          value = var.service_name
-        }
-      ])
+      environment = local.quickwit_common_environment
 
       secrets = [
         {

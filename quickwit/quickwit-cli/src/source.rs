@@ -26,6 +26,7 @@ use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{validate_identifier, ConfigFormat, SourceConfig};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
+use quickwit_proto::types::{IndexId, SourceId};
 use quickwit_storage::{load_file, StorageResolver};
 use serde_json::Value as JsonValue;
 use tabled::{Table, Tabled};
@@ -142,44 +143,44 @@ pub fn build_source_command() -> Command {
 #[derive(Debug, Eq, PartialEq)]
 pub struct CreateSourceArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
     pub source_config_uri: Uri,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ToggleSourceArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
-    pub source_id: String,
+    pub index_id: IndexId,
+    pub source_id: SourceId,
     pub enable: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DeleteSourceArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
-    pub source_id: String,
+    pub index_id: IndexId,
+    pub source_id: SourceId,
     pub assume_yes: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeSourceArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
-    pub source_id: String,
+    pub index_id: IndexId,
+    pub source_id: SourceId,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ListSourcesArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
+    pub index_id: IndexId,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ResetCheckpointArgs {
     pub client_args: ClientArgs,
-    pub index_id: String,
-    pub source_id: String,
+    pub index_id: IndexId,
+    pub source_id: SourceId,
     pub assume_yes: bool,
 }
 
@@ -469,7 +470,7 @@ where I: IntoIterator<Item = SourceConfig> {
 #[derive(Tabled)]
 struct SourceRow {
     #[tabled(rename = "ID")]
-    source_id: String,
+    source_id: SourceId,
     #[tabled(rename = "Type")]
     source_type: String,
     #[tabled(rename = "Enabled")]
@@ -574,8 +575,8 @@ mod tests {
                 json!({"foo": {"bar": JsonValue::Bool(true)}, "baz": JsonValue::Bool(false)})
             ),
             vec![
-                ("foo.bar".to_string(), JsonValue::Bool(true)),
                 ("baz".to_string(), JsonValue::Bool(false)),
+                ("foo.bar".to_string(), JsonValue::Bool(true)),
             ]
         );
     }

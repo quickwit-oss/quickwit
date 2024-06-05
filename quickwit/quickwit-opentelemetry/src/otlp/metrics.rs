@@ -18,7 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter_vec, new_histogram_vec, HistogramVec, IntCounterVec};
+use quickwit_common::metrics::{
+    exponential_buckets, new_counter_vec, new_histogram_vec, HistogramVec, IntCounterVec,
+};
 
 pub struct OtlpServiceMetrics {
     pub requests_total: IntCounterVec<4>,
@@ -52,6 +54,7 @@ impl Default for OtlpServiceMetrics {
                 "otlp",
                 &[],
                 ["service", "index", "transport", "format", "error"],
+                exponential_buckets(0.02, 2.0, 8).unwrap(),
             ),
             ingested_log_records_total: new_counter_vec(
                 "ingested_log_records_total",

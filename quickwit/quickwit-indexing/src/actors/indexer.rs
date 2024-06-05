@@ -363,8 +363,8 @@ struct IndexingWorkbench {
     // We use this value to set the `delete_opstamp` of the workbench splits.
     last_delete_opstamp: u64,
     // Number of bytes declared as used by tantivy.
-    memory_usage: GaugeGuard,
-    split_builders_guard: GaugeGuard,
+    memory_usage: GaugeGuard<'static>,
+    split_builders_guard: GaugeGuard<'static>,
     cooperative_indexing_period: Option<CooperativeIndexingPeriod>,
 }
 
@@ -710,7 +710,7 @@ mod tests {
     use quickwit_proto::metastore::{
         EmptyResponse, LastDeleteOpstampResponse, MockMetastoreService,
     };
-    use quickwit_proto::types::{IndexUid, PipelineUid};
+    use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
     use tantivy::{doc, DateTime};
 
     use super::*;
@@ -751,7 +751,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
@@ -889,7 +889,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
@@ -966,7 +966,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
@@ -1050,7 +1050,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
@@ -1138,7 +1138,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
@@ -1218,7 +1218,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> = Arc::new(
@@ -1319,7 +1319,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> =
@@ -1390,7 +1390,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> =
@@ -1462,7 +1462,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> =
@@ -1527,7 +1527,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> =
@@ -1588,7 +1588,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());

@@ -46,7 +46,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
-use quickwit_proto::types::{IndexUid, PipelineUid};
+use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
 use quickwit_search::{
     start_searcher_service, SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext,
     SearcherPool,
@@ -340,7 +340,7 @@ async fn indexer_for_test(
 ) -> (Mailbox<IndexingService>, ActorHandle<IndexingService>) {
     let indexer_config = IndexerConfig::for_test().unwrap();
     let indexing_service = IndexingService::new(
-        "test-node".to_string(),
+        NodeId::from("test-node"),
         data_dir_path.to_path_buf(),
         indexer_config,
         1,

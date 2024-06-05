@@ -104,7 +104,9 @@ impl IndexedSplitBuilder {
             index_builder.single_segment_index_writer(controlled_directory.clone(), 15_000_000)?;
         Ok(Self {
             split_attrs: SplitAttrs {
-                pipeline_id,
+                node_id: pipeline_id.node_id,
+                index_uid: pipeline_id.index_uid,
+                source_id: pipeline_id.source_id,
                 partition_id,
                 split_id,
                 num_docs: 0,
@@ -124,10 +126,9 @@ impl IndexedSplitBuilder {
     #[instrument(name="serialize_split",
         skip_all,
         fields(
-            index_id=%self.split_attrs.pipeline_id.index_uid.index_id,
-            source_id=%self.split_attrs.pipeline_id.source_id,
-            node_id=%self.split_attrs.pipeline_id.node_id,
-            pipeline_uid=%self.split_attrs.pipeline_id.pipeline_uid,
+            node_id=%self.split_attrs.node_id,
+            index_uid=%self.split_attrs.index_uid,
+            source_id=%self.split_attrs.source_id,
             split_id=%self.split_attrs.split_id,
             partition_id=%self.split_attrs.partition_id,
             num_docs=%self.split_attrs.num_docs,
@@ -187,8 +188,8 @@ pub struct IndexedSplitBatchBuilder {
     pub publish_token_opt: Option<PublishToken>,
     pub commit_trigger: CommitTrigger,
     pub batch_parent_span: Span,
-    pub memory_usage: GaugeGuard,
-    pub _split_builders_guard: GaugeGuard,
+    pub memory_usage: GaugeGuard<'static>,
+    pub _split_builders_guard: GaugeGuard<'static>,
 }
 
 /// Sends notifications to the Publisher that the last batch of splits was emtpy.

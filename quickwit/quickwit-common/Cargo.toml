@@ -25,18 +25,19 @@ hostname = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
-num_cpus = { workspace = true }
 once_cell = { workspace = true }
 pin-project = { workspace = true }
 pnet = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
+rayon = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 siphasher = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-metrics ={ workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }

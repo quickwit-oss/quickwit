@@ -25,6 +25,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 pub use ulid::Ulid;
 
 mod index_uid;
@@ -56,6 +57,15 @@ pub fn queue_id(index_uid: &IndexUid, source_id: &str, shard_id: &ShardId) -> Qu
 }
 
 pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
+    let parts_opt = split_queue_id_inner(queue_id);
+
+    if parts_opt.is_none() {
+        warn!("failed to parse queue ID `{queue_id}`: this should never happen, please report");
+    }
+    parts_opt
+}
+
+fn split_queue_id_inner(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
     let mut parts = queue_id.split('/');
     let index_uid = parts.next()?;
     let source_id = parts.next()?;
@@ -261,6 +271,13 @@ impl ToOwned for NodeIdRef {
 
     fn to_owned(&self) -> Self::Owned {
         NodeId(self.0.to_string())
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl From<&NodeId> for sea_query::Value {
+    fn from(node_id: &NodeId) -> Self {
+        node_id.to_string().into()
     }
 }
 
