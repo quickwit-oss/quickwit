@@ -41,7 +41,15 @@ pub struct Queues {
 
 impl Queues {
     pub async fn open(queues_dir_path: &Path) -> crate::Result<Queues> {
-        tokio::fs::create_dir_all(queues_dir_path).await.unwrap();
+        tokio::fs::create_dir_all(queues_dir_path)
+            .await
+            .map_err(|error| {
+                IngestServiceError::IoError(format!(
+                    "failed to create WAL directory `{}`: {}",
+                    queues_dir_path.display(),
+                    error
+                ))
+            })?;
         let record_log = MultiRecordLogAsync::open(queues_dir_path).await?;
         Ok(Queues { record_log })
     }
