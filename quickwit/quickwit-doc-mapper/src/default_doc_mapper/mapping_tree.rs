@@ -31,7 +31,6 @@ use tantivy::schema::{
 };
 use tantivy::tokenizer::{PreTokenizedString, Token};
 use tantivy::TantivyDocument as Document;
-use tracing::warn;
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::field_mapping_entry::{NumericOutputFormat, QuickwitBoolOptions};
@@ -425,7 +424,7 @@ fn value_to_bool(value: &TantivyValue) -> Option<JsonValue> {
 fn value_to_ip(value: &TantivyValue) -> Option<JsonValue> {
     match value {
         TantivyValue::Str(s) => s
-            .parse()
+            .parse::<std::net::Ipv6Addr>()
             .or_else(|_| {
                 s.parse::<std::net::Ipv4Addr>()
                     .map(|ip| ip.to_ipv6_mapped())
@@ -520,26 +519,20 @@ fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue>
             let json_value = bytes_options.output_format.format_to_json(bytes);
             Some(json_value)
         }
-        (_, LeafType::DateTime(date_time_options)) => {
-            let date_time = match date_time_options.reparse_tantivy_value(&value) {
-                Some(date_time) => date_time,
-                None => {
-                    warn!("TODO");
-                    return None;
-                }
-            };
-            let json_value = date_time_options
-                .output_format
-                .format_to_json(date_time)
-                .expect("Invalid datetime is not allowed.");
-            Some(json_value)
-        }
+        (_, LeafType::DateTime(date_time_options)) => date_time_options
+            .reparse_tantivy_value(&value)
+            .map(|date_time| {
+                date_time_options
+                    .output_format
+                    .format_to_json(date_time)
+                    .expect("Invalid datetime is not allowed.")
+            }),
         _ => None,
     };
     if res.is_none() {
         quickwit_common::rate_limited_warn!(
             limit_per_min = 2,
-            "The value type `{:?}` doesn't match the requested type `{:?}`",
+            "the value type `{:?}` doesn't match the requested type `{:?}`",
             value,
             leaf_type
         );
