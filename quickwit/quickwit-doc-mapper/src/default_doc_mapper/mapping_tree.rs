@@ -391,9 +391,9 @@ fn value_to_string(value: TantivyValue) -> Result<JsonValue, TantivyValue> {
         TantivyValue::I64(number) => Some(number.to_string()),
         TantivyValue::F64(number) => Some(number.to_string()),
         TantivyValue::Bool(b) => Some(b.to_string()),
-        TantivyValue::Date(ref date) => {
+        TantivyValue::Date(date) => {
             return quickwit_datetime::DateTimeOutputFormat::default()
-                .format_to_json(*date)
+                .format_to_json(date)
                 .map_err(|_| value);
         }
         TantivyValue::IpAddr(ip) => Some(ip.to_string()),
@@ -502,7 +502,7 @@ fn value_to_i64(
     .ok_or(value)
 }
 
-/// Transform a tantivy object into a serde_json one, without cloning strings.
+/// Transforms a tantivy object into a serde_json one, without cloning strings.
 /// It still allocates maps.
 // TODO we should probably move this to tantivy, it has the opposite conversion already
 fn tantivy_object_to_json_value_nocopy(object: Vec<(String, TantivyValue)>) -> JsonValue {
