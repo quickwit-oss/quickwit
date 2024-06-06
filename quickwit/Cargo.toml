@@ -261,7 +261,7 @@ ttl_cache = "0.5"
 typetag = "0.2"
 ulid = "1.1"
 username = "0.2"
-utoipa = "4.2.0"
+utoipa = { version = "4.2", features = ["time", "ulid"] }
 uuid = { version = "1.8", features = ["v4", "serde"] }
 vrl = { version = "0.8.1", default-features = false, features = [
   "compiler",

@@ -48,7 +48,7 @@ use crate::{DocParsingError, QueryParserError};
 /// - supplying a tantivy [`Schema`]
 #[typetag::serde(tag = "type")]
 pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
-    /// Returns the unique identifier of the doc mapper.
+    /// Returns the unique identifier of the doc mapping.
     fn doc_mapping_uid(&self) -> DocMappingUid;
 
     /// Transforms a JSON object into a tantivy [`Document`] according to the rules

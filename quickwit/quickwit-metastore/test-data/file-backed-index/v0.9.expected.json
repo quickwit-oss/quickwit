@@ -3,7 +3,7 @@
     {
       "create_timestamp": 0,
       "delete_query": {
-        "index_uid": "my-index:00000000000000000000000000",
+        "index_uid": "my-index:00000000000000000000000001",
         "query_ast": "{\"type\":\"bool\",\"must\":[{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Harry\",\"params\":{\"mode\":{\"type\":\"phrase_fallback_to_intersection\"}}},{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Potter\",\"params\":{\"mode\":{\"type\":\"phrase_fallback_to_intersection\"}}}]}"
       },
       "opstamp": 10
@@ -18,7 +18,7 @@
     "create_timestamp": 1789,
     "index_config": {
       "doc_mapping": {
-        "doc_mapping_uid": "00000000000000000000000000",
+        "doc_mapping_uid": "00000000000000000000000001",
         "dynamic_mapping": {
           "expand_dots": true,
           "fast": {
@@ -122,7 +122,7 @@
       },
       "version": "0.9"
     },
-    "index_uid": "my-index:00000000000000000000000000",
+    "index_uid": "my-index:00000000000000000000000001",
     "sources": [
       {
         "enabled": true,
@@ -147,7 +147,7 @@
     "_ingest-source": [
       {
         "follower_id": "follower-ingester",
-        "index_uid": "my-index:00000000000000000000000000",
+        "index_uid": "my-index:00000000000000000000000001",
         "leader_id": "leader-ingester",
         "publish_position_inclusive": "",
         "shard_id": "00000000000000000001",
@@ -164,7 +164,7 @@
         "end": 2000,
         "start": 1000
       },
-      "index_uid": "my-index:00000000000000000000000000",
+      "index_uid": "my-index:00000000000000000000000001",
       "maturity": {
         "maturation_period_millis": 4000,
         "type": "immature"

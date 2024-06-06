@@ -179,6 +179,8 @@ impl quickwit_config::TestableForRegression for IndexMetadata {
 
         use crate::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
 
+        let index_config = IndexConfig::sample_for_regression();
+
         let mut source_checkpoint = SourceCheckpoint::default();
         let delta = SourceCheckpointDelta::from_partition_delta(
             PartitionId::from(0i64),
@@ -187,12 +189,13 @@ impl quickwit_config::TestableForRegression for IndexMetadata {
         )
         .unwrap();
         source_checkpoint.try_apply_delta(delta).unwrap();
-        let mut per_source_checkpoint: BTreeMap<String, SourceCheckpoint> = BTreeMap::default();
-        per_source_checkpoint.insert("kafka-source".to_string(), source_checkpoint);
+
+        let per_source_checkpoint: BTreeMap<String, SourceCheckpoint> =
+            BTreeMap::from_iter([("kafka-source".to_string(), source_checkpoint)]);
         let checkpoint = IndexCheckpoint::from(per_source_checkpoint);
-        let index_config = IndexConfig::sample_for_regression();
+
         let mut index_metadata = IndexMetadata {
-            index_uid: IndexUid::for_test(&index_config.index_id, 0),
+            index_uid: IndexUid::for_test(&index_config.index_id, 1),
             index_config,
             checkpoint,
             create_timestamp: 1789,

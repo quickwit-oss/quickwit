@@ -8,7 +8,7 @@
     {
       "description": "Test description.",
       "doc_mapping": {
-        "doc_mapping_uid": "00000000000000000000000000",
+        "doc_mapping_uid": "00000000000000000000000001",
         "dynamic_mapping": {
           "expand_dots": true,
           "fast": {

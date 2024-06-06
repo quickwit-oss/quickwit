@@ -45,7 +45,7 @@ impl Display for PipelineUid {
 
 impl PipelineUid {
     /// Creates a new random pipeline uid.
-    pub fn new() -> Self {
+    pub fn random() -> Self {
         Self(Ulid::new())
     }
 
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_uid_prost_serde_roundtrip() {
-        let pipeline_uid = PipelineUid::new();
+        let pipeline_uid = PipelineUid::random();
 
         let encoded = pipeline_uid.encode_to_vec();
         assert_eq!(

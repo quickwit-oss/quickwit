@@ -26,8 +26,8 @@ pub use ulid::Ulid;
 
 use crate::types::pipeline_uid::ULID_SIZE;
 
-/// A doc mapping UID identifies a document across segments, splits, and indexes.
-#[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
+/// Unique identifier for a document mapping.
+#[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd, utoipa::ToSchema)]
 pub struct DocMappingUid(Ulid);
 
 impl fmt::Debug for DocMappingUid {
@@ -50,7 +50,7 @@ impl From<Ulid> for DocMappingUid {
 
 impl DocMappingUid {
     /// Creates a new random doc mapping UID.
-    pub fn new() -> Self {
+    pub fn random() -> Self {
         Self(Ulid::new())
     }
 
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_doc_mapping_uid_prost_serde_roundtrip() {
-        let doc_mapping_uid = DocMappingUid::new();
+        let doc_mapping_uid = DocMappingUid::random();
 
         let encoded = doc_mapping_uid.encode_to_vec();
         assert_eq!(

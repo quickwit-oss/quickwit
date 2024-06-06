@@ -19,7 +19,7 @@
 
 use anyhow::{ensure, Context};
 use quickwit_common::uri::Uri;
-use quickwit_proto::types::IndexId;
+use quickwit_proto::types::{DocMappingUid, IndexId};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -35,8 +35,12 @@ type IndexConfigForSerialization = IndexConfigV0_8;
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedIndexConfig {
-    #[serde(rename = "0.8")]
+    // The two versions use the same format but for v0.8 and below, we need to set the
+    // `doc_mapping_uid` to the nil value upon deserialization.
+    #[serde(rename = "0.9")]
+    V0_9(IndexConfigV0_8),
     // Retro compatibility
+    #[serde(rename = "0.8")]
     #[serde(alias = "0.7")]
     V0_8(IndexConfigV0_8),
 }
@@ -45,6 +49,7 @@ impl From<VersionedIndexConfig> for IndexConfigForSerialization {
     fn from(versioned_config: VersionedIndexConfig) -> IndexConfigForSerialization {
         match versioned_config {
             VersionedIndexConfig::V0_8(v0_8) => v0_8,
+            VersionedIndexConfig::V0_9(v0_8) => v0_8,
         }
     }
 }
@@ -147,7 +152,7 @@ impl IndexConfigForSerialization {
 
 impl From<IndexConfig> for VersionedIndexConfig {
     fn from(index_config: IndexConfig) -> Self {
-        VersionedIndexConfig::V0_8(index_config.into())
+        VersionedIndexConfig::V0_9(index_config.into())
     }
 }
 
@@ -156,7 +161,12 @@ impl TryFrom<VersionedIndexConfig> for IndexConfig {
 
     fn try_from(versioned_index_config: VersionedIndexConfig) -> anyhow::Result<Self> {
         match versioned_index_config {
-            VersionedIndexConfig::V0_8(v0_8) => v0_8.build_and_validate(None),
+            VersionedIndexConfig::V0_8(mut v0_8) => {
+                // Override the randomly generated doc mapping UID with the nil value.
+                v0_8.doc_mapping.doc_mapping_uid = DocMappingUid::default();
+                v0_8.build_and_validate(None)
+            }
+            VersionedIndexConfig::V0_9(v0_8) => v0_8.build_and_validate(None),
         }
     }
 }
