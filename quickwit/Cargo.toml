@@ -323,7 +323,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "5b7cca1", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "8c73505e3", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
