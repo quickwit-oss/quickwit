@@ -502,30 +502,84 @@ fn value_to_i64(
     .ok_or(value)
 }
 
+/// Transform a tantivy object into a serde_json one, without cloning strings.
+/// It still allocates maps.
+// TODO we should probably move this to tantivy, it has the opposite conversion already
+fn tantivy_object_to_json_value_nocopy(object: Vec<(String, TantivyValue)>) -> JsonValue {
+    JsonValue::Object(
+        object
+            .into_iter()
+            .map(|(key, value)| (key, tantivy_value_to_json_value_nocopy(value)))
+            .collect(),
+    )
+}
+
+fn tantivy_value_to_json_value_nocopy(value: TantivyValue) -> JsonValue {
+    match value {
+        TantivyValue::Null => JsonValue::Null,
+        TantivyValue::Str(s) => JsonValue::String(s),
+        TantivyValue::U64(number) => JsonValue::Number(number.into()),
+        TantivyValue::I64(number) => JsonValue::Number(number.into()),
+        TantivyValue::F64(f) => {
+            JsonValue::Number(serde_json::Number::from_f64(f).expect("expected finite f64"))
+        }
+        TantivyValue::Bool(b) => JsonValue::Bool(b),
+        TantivyValue::Array(array) => JsonValue::Array(
+            array
+                .into_iter()
+                .map(tantivy_value_to_json_value_nocopy)
+                .collect(),
+        ),
+        TantivyValue::Object(object) => tantivy_object_to_json_value_nocopy(object),
+        // we shouldn't have these types inside a json field in quickwit
+        TantivyValue::PreTokStr(pretok) => JsonValue::String(pretok.text),
+        TantivyValue::Date(date) => quickwit_datetime::DateTimeOutputFormat::Rfc3339
+            .format_to_json(date)
+            .expect("Invalid datetime is not allowed."),
+        TantivyValue::Facet(facet) => JsonValue::String(facet.to_string()),
+        // TantivyValue::Bytes(Vec<u8>) => (), // tantivy would do b64 here
+        TantivyValue::IpAddr(ip_v6) => {
+            let ip_str = if let Some(ip_v4) = ip_v6.to_ipv4_mapped() {
+                ip_v4.to_string()
+            } else {
+                ip_v6.to_string()
+            };
+            JsonValue::String(ip_str)
+        }
+        value => unimplemented!("got unexpected type {value:?} inside json field"),
+    }
+}
+
 /// Converts Tantivy::Value into Json Value.
 ///
 /// Makes sure the type and value are consistent before converting.
 /// For certain LeafType, we use the type options to format the output.
 fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue> {
-    let res = match (&value, leaf_type) {
-        (_, LeafType::Text(_)) => value_to_string(value),
-        (_, LeafType::Bool(_)) => value_to_bool(value),
-        (_, LeafType::IpAddr(_)) => value_to_ip(value),
-        (_, LeafType::F64(numeric_options)) => value_to_float(value, numeric_options),
-        (_, LeafType::U64(numeric_options)) => value_to_u64(value, numeric_options),
-        (_, LeafType::I64(numeric_options)) => value_to_i64(value, numeric_options),
-        (TantivyValue::Object(_), LeafType::Json(_)) => {
-            // TODO do we want to allow almost everything here?
-            let json_value =
-                serde_json::to_value(value).expect("Json serialization should never fail.");
-            return Some(json_value);
+    let res = match leaf_type {
+        LeafType::Text(_) => value_to_string(value),
+        LeafType::Bool(_) => value_to_bool(value),
+        LeafType::IpAddr(_) => value_to_ip(value),
+        LeafType::F64(numeric_options) => value_to_float(value, numeric_options),
+        LeafType::U64(numeric_options) => value_to_u64(value, numeric_options),
+        LeafType::I64(numeric_options) => value_to_i64(value, numeric_options),
+        LeafType::Json(_) => {
+            if let TantivyValue::Object(obj) = value {
+                // TODO do we want to allow almost everything here?
+                return Some(tantivy_object_to_json_value_nocopy(obj));
+            } else {
+                Err(value)
+            }
         }
-        (TantivyValue::Bytes(bytes), LeafType::Bytes(bytes_options)) => {
-            // TODO we could cast str to bytes
-            let json_value = bytes_options.output_format.format_to_json(bytes);
-            Ok(json_value)
+        LeafType::Bytes(bytes_options) => {
+            if let TantivyValue::Bytes(ref bytes) = value {
+                // TODO we could cast str to bytes
+                let json_value = bytes_options.output_format.format_to_json(bytes);
+                Ok(json_value)
+            } else {
+                Err(value)
+            }
         }
-        (_, LeafType::DateTime(date_time_options)) => date_time_options
+        LeafType::DateTime(date_time_options) => date_time_options
             .reparse_tantivy_value(&value)
             .map(|date_time| {
                 date_time_options
@@ -534,7 +588,6 @@ fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue>
                     .expect("Invalid datetime is not allowed.")
             })
             .ok_or(value),
-        _ => Err(value),
     };
     match res {
         Ok(res) => Some(res),
