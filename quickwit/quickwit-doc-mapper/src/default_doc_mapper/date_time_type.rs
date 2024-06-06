@@ -156,7 +156,7 @@ mod tests {
         assert_eq!(field_mapping_entry.name, "updated_at");
 
         let date_time_options = match field_mapping_entry.mapping_type {
-            FieldMappingType::DateTime(date_time_options, Cardinality::SingleValue) => {
+            FieldMappingType::DateTime(date_time_options, Cardinality::SingleValued) => {
                 date_time_options
             }
             _ => panic!("Expected a date time field mapping"),
@@ -226,7 +226,7 @@ mod tests {
         assert_eq!(field_mapping_entry.name, "updated_at");
 
         let date_time_options = match field_mapping_entry.mapping_type {
-            FieldMappingType::DateTime(date_time_options, Cardinality::MultiValues) => {
+            FieldMappingType::DateTime(date_time_options, Cardinality::MultiValued) => {
                 date_time_options
             }
             _ => panic!("Expected a date time field mapping."),

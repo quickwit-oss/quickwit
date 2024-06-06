@@ -303,7 +303,7 @@ impl MappingLeaf {
             return Ok(());
         }
         if let JsonValue::Array(els) = json_val {
-            if self.cardinality == Cardinality::SingleValue {
+            if self.cardinality == Cardinality::SingleValued {
                 return Err(DocParsingError::MultiValuesNotSupported(path.join(".")));
             }
             for el_json_val in els {
@@ -380,8 +380,8 @@ fn extract_json_val(
         .into_iter()
         .flat_map(|value| value_to_json(value, leaf_type));
     match cardinality {
-        Cardinality::SingleValue => vals_with_correct_type_it.next(),
-        Cardinality::MultiValues => Some(JsonValue::Array(vals_with_correct_type_it.collect())),
+        Cardinality::SingleValued => vals_with_correct_type_it.next(),
+        Cardinality::MultiValued => Some(JsonValue::Array(vals_with_correct_type_it.collect())),
     }
 }
 
@@ -1282,7 +1282,7 @@ mod tests {
         let leaf_entry = MappingLeaf {
             field,
             typ,
-            cardinality: Cardinality::MultiValues,
+            cardinality: Cardinality::MultiValued,
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
@@ -1334,7 +1334,7 @@ mod tests {
         let leaf_entry = MappingLeaf {
             field,
             typ,
-            cardinality: Cardinality::MultiValues,
+            cardinality: Cardinality::MultiValued,
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
@@ -1357,7 +1357,7 @@ mod tests {
         let leaf_entry = MappingLeaf {
             field,
             typ,
-            cardinality: Cardinality::MultiValues,
+            cardinality: Cardinality::MultiValued,
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
@@ -1375,7 +1375,7 @@ mod tests {
         let leaf_entry = MappingLeaf {
             field,
             typ,
-            cardinality: Cardinality::MultiValues,
+            cardinality: Cardinality::MultiValued,
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
@@ -1394,7 +1394,7 @@ mod tests {
         let leaf_entry = MappingLeaf {
             field,
             typ,
-            cardinality: Cardinality::MultiValues,
+            cardinality: Cardinality::MultiValued,
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
@@ -1540,7 +1540,7 @@ mod tests {
         let leaf_entry = MappingLeaf {
             field,
             typ,
-            cardinality: Cardinality::MultiValues,
+            cardinality: Cardinality::MultiValued,
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
