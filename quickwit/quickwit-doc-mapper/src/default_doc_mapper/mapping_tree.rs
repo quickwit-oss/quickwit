@@ -384,26 +384,27 @@ fn extract_json_val(
     }
 }
 
-fn value_to_string(value: &TantivyValue) -> Option<JsonValue> {
+fn value_to_string(value: TantivyValue) -> Result<JsonValue, TantivyValue> {
     match value {
-        TantivyValue::Str(s) => Some(s.clone()),
+        TantivyValue::Str(s) => return Ok(JsonValue::String(s)),
         TantivyValue::U64(number) => Some(number.to_string()),
         TantivyValue::I64(number) => Some(number.to_string()),
         TantivyValue::F64(number) => Some(number.to_string()),
         TantivyValue::Bool(b) => Some(b.to_string()),
-        TantivyValue::Date(date) => {
+        TantivyValue::Date(ref date) => {
             return quickwit_datetime::DateTimeOutputFormat::default()
                 .format_to_json(*date)
-                .ok()
+                .map_err(|_| value);
         }
         TantivyValue::IpAddr(ip) => Some(ip.to_string()),
         _ => None,
     }
     .map(JsonValue::String)
+    .ok_or(value)
 }
 
-fn value_to_bool(value: &TantivyValue) -> Option<JsonValue> {
-    match value {
+fn value_to_bool(value: TantivyValue) -> Result<JsonValue, TantivyValue> {
+    match &value {
         TantivyValue::Str(s) => s.parse().ok(),
         TantivyValue::U64(number) => match number {
             0 => Some(false),
@@ -419,10 +420,11 @@ fn value_to_bool(value: &TantivyValue) -> Option<JsonValue> {
         _ => None,
     }
     .map(JsonValue::Bool)
+    .ok_or(value)
 }
 
-fn value_to_ip(value: &TantivyValue) -> Option<JsonValue> {
-    match value {
+fn value_to_ip(value: TantivyValue) -> Result<JsonValue, TantivyValue> {
+    match &value {
         TantivyValue::Str(s) => s
             .parse::<std::net::Ipv6Addr>()
             .or_else(|_| {
@@ -437,13 +439,14 @@ fn value_to_ip(value: &TantivyValue) -> Option<JsonValue> {
         serde_json::to_value(TantivyValue::IpAddr(ip))
             .expect("Json serialization should never fail.")
     })
+    .ok_or(value)
 }
 
 fn value_to_float(
-    value: &TantivyValue,
+    value: TantivyValue,
     numeric_options: &QuickwitNumericOptions,
-) -> Option<JsonValue> {
-    match value {
+) -> Result<JsonValue, TantivyValue> {
+    match &value {
         TantivyValue::Str(s) => s.parse().ok(),
         TantivyValue::U64(number) => Some(*number as f64),
         TantivyValue::I64(number) => Some(*number as f64),
@@ -452,13 +455,14 @@ fn value_to_float(
         _ => None,
     }
     .and_then(|f64_val| f64_val.to_json(numeric_options.output_format))
+    .ok_or(value)
 }
 
 fn value_to_u64(
-    value: &TantivyValue,
+    value: TantivyValue,
     numeric_options: &QuickwitNumericOptions,
-) -> Option<JsonValue> {
-    match value {
+) -> Result<JsonValue, TantivyValue> {
+    match &value {
         TantivyValue::Str(s) => s.parse().ok(),
         TantivyValue::U64(number) => Some(*number),
         TantivyValue::I64(number) => (*number).try_into().ok(),
@@ -473,13 +477,14 @@ fn value_to_u64(
         _ => None,
     }
     .and_then(|u64_val| u64_val.to_json(numeric_options.output_format))
+    .ok_or(value)
 }
 
 fn value_to_i64(
-    value: &TantivyValue,
+    value: TantivyValue,
     numeric_options: &QuickwitNumericOptions,
-) -> Option<JsonValue> {
-    match value {
+) -> Result<JsonValue, TantivyValue> {
+    match &value {
         TantivyValue::Str(s) => s.parse().ok(),
         TantivyValue::U64(number) => (*number).try_into().ok(),
         TantivyValue::I64(number) => Some(*number),
@@ -494,6 +499,7 @@ fn value_to_i64(
         _ => None,
     }
     .and_then(|u64_val| u64_val.to_json(numeric_options.output_format))
+    .ok_or(value)
 }
 
 /// Converts Tantivy::Value into Json Value.
@@ -502,22 +508,22 @@ fn value_to_i64(
 /// For certain LeafType, we use the type options to format the output.
 fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue> {
     let res = match (&value, leaf_type) {
-        (_, LeafType::Text(_)) => value_to_string(&value),
-        (_, LeafType::Bool(_)) => value_to_bool(&value),
-        (_, LeafType::IpAddr(_)) => value_to_ip(&value),
-        (_, LeafType::F64(numeric_options)) => value_to_float(&value, numeric_options),
-        (_, LeafType::U64(numeric_options)) => value_to_u64(&value, numeric_options),
-        (_, LeafType::I64(numeric_options)) => value_to_i64(&value, numeric_options),
+        (_, LeafType::Text(_)) => value_to_string(value),
+        (_, LeafType::Bool(_)) => value_to_bool(value),
+        (_, LeafType::IpAddr(_)) => value_to_ip(value),
+        (_, LeafType::F64(numeric_options)) => value_to_float(value, numeric_options),
+        (_, LeafType::U64(numeric_options)) => value_to_u64(value, numeric_options),
+        (_, LeafType::I64(numeric_options)) => value_to_i64(value, numeric_options),
         (TantivyValue::Object(_), LeafType::Json(_)) => {
             // TODO do we want to allow almost everything here?
             let json_value =
-                serde_json::to_value(&value).expect("Json serialization should never fail.");
-            Some(json_value)
+                serde_json::to_value(value).expect("Json serialization should never fail.");
+            return Some(json_value);
         }
         (TantivyValue::Bytes(bytes), LeafType::Bytes(bytes_options)) => {
             // TODO we could cast str to bytes
             let json_value = bytes_options.output_format.format_to_json(bytes);
-            Some(json_value)
+            Ok(json_value)
         }
         (_, LeafType::DateTime(date_time_options)) => date_time_options
             .reparse_tantivy_value(&value)
@@ -526,18 +532,22 @@ fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue>
                     .output_format
                     .format_to_json(date_time)
                     .expect("Invalid datetime is not allowed.")
-            }),
-        _ => None,
+            })
+            .ok_or(value),
+        _ => Err(value),
     };
-    if res.is_none() {
-        quickwit_common::rate_limited_warn!(
-            limit_per_min = 2,
-            "the value type `{:?}` doesn't match the requested type `{:?}`",
-            value,
-            leaf_type
-        );
+    match res {
+        Ok(res) => Some(res),
+        Err(value) => {
+            quickwit_common::rate_limited_warn!(
+                limit_per_min = 2,
+                "the value type `{:?}` doesn't match the requested type `{:?}`",
+                value,
+                leaf_type
+            );
+            None
+        }
     }
-    res
 }
 
 fn insert_json_val(
