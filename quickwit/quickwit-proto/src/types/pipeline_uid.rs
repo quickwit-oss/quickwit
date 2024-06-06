@@ -60,7 +60,7 @@ impl FromStr for PipelineUid {
 
     fn from_str(pipeline_uid_str: &str) -> Result<PipelineUid, Self::Err> {
         let pipeline_ulid =
-            Ulid::from_string(pipeline_uid_str).map_err(|_| "invalid pipeline uid")?;
+            Ulid::from_string(pipeline_uid_str).map_err(|_| "invalid pipeline UID")?;
         Ok(PipelineUid(pipeline_ulid))
     }
 }

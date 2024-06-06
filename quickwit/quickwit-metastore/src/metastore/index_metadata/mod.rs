@@ -31,7 +31,6 @@ use quickwit_proto::types::{IndexUid, Position, SourceId};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedIndexMetadata;
 use time::OffsetDateTime;
-use ulid::Ulid;
 
 use crate::checkpoint::{IndexCheckpoint, PartitionId, SourceCheckpoint, SourceCheckpointDelta};
 
@@ -75,7 +74,7 @@ impl IndexMetadata {
     /// An incarnation id of `0` will be used to complete the index id into a index uuid.
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
-        let index_uid = IndexUid::from_parts(index_id, 0);
+        let index_uid = IndexUid::for_test(index_id, 0);
         let mut index_metadata = IndexMetadata::new(IndexConfig::for_test(index_id, index_uri));
         index_metadata.index_uid = index_uid;
         index_metadata
@@ -161,6 +160,7 @@ impl IndexMetadata {
     }
 }
 
+#[cfg(any(test, feature = "testsuite"))]
 impl TestableForRegression for IndexMetadata {
     fn sample_for_regression() -> IndexMetadata {
         let mut source_checkpoint = SourceCheckpoint::default();
@@ -176,7 +176,7 @@ impl TestableForRegression for IndexMetadata {
         let checkpoint = IndexCheckpoint::from(per_source_checkpoint);
         let index_config = IndexConfig::sample_for_regression();
         let mut index_metadata = IndexMetadata {
-            index_uid: IndexUid::from_parts(&index_config.index_id, Ulid::nil()),
+            index_uid: IndexUid::for_test(&index_config.index_id, 0),
             index_config,
             checkpoint,
             create_timestamp: 1789,
