@@ -20,19 +20,17 @@
 pub(crate) mod serialize;
 
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use quickwit_common::uri::Uri;
-use quickwit_config::{
-    IndexConfig, RetentionPolicy, SearchSettings, SourceConfig, TestableForRegression,
-};
+use quickwit_config::{IndexConfig, RetentionPolicy, SearchSettings, SourceConfig};
 use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
-use quickwit_proto::types::{IndexUid, Position, SourceId};
+use quickwit_proto::types::{IndexUid, SourceId};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedIndexMetadata;
 use time::OffsetDateTime;
 
-use crate::checkpoint::{IndexCheckpoint, PartitionId, SourceCheckpoint, SourceCheckpointDelta};
+use crate::checkpoint::IndexCheckpoint;
 
 /// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -161,8 +159,14 @@ impl IndexMetadata {
 }
 
 #[cfg(any(test, feature = "testsuite"))]
-impl TestableForRegression for IndexMetadata {
+impl quickwit_config::TestableForRegression for IndexMetadata {
     fn sample_for_regression() -> IndexMetadata {
+        use std::collections::BTreeMap;
+
+        use quickwit_proto::types::Position;
+
+        use crate::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
+
         let mut source_checkpoint = SourceCheckpoint::default();
         let delta = SourceCheckpointDelta::from_partition_delta(
             PartitionId::from(0i64),
