@@ -8,7 +8,6 @@
     {
       "description": "Test description.",
       "doc_mapping": {
-        "document_length": false,
         "dynamic_mapping": {
           "expand_dots": true,
           "fast": {
@@ -47,6 +46,7 @@
         "index_field_presence": false,
         "max_num_partitions": 200,
         "mode": "dynamic",
+        "store_document_size": false,
         "store_source": false,
         "tag_fields": [],
         "timestamp_field": "ts",

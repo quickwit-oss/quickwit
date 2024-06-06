@@ -58,16 +58,17 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     let (config, storage_resolver, mut metastore) =
         load_node_config(CONFIGURATION_TEMPLATE).await?;
 
+    let source_config =
+        configure_source(args.input_path, args.input_format, args.vrl_script).await?;
+
     let index_metadata = init_index_if_necessary(
         &mut metastore,
         &storage_resolver,
         &config.default_index_root_uri,
         args.overwrite,
+        &source_config,
     )
     .await?;
-
-    let source_config =
-        configure_source(args.input_path, args.input_format, args.vrl_script).await?;
 
     let mut services = vec![QuickwitService::Indexer];
     if !*DISABLE_JANITOR {

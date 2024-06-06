@@ -19,10 +19,12 @@
 
 mod debug;
 mod log_level;
+mod pprof;
 mod server;
 
 use debug::debug_handler;
 use log_level::log_level_handler;
+use pprof::pprof_handlers;
 use quickwit_cluster::Cluster;
 pub(crate) use server::DeveloperApiServer;
 use warp::{Filter, Rejection};
@@ -37,6 +39,9 @@ pub(crate) fn developer_api_routes(
     cluster: Cluster,
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("api" / "developer" / ..)
-        .and(debug_handler(cluster.clone()).or(log_level_handler(env_filter_reload_fn.clone())))
+    warp::path!("api" / "developer" / ..).and(
+        debug_handler(cluster.clone())
+            .or(log_level_handler(env_filter_reload_fn.clone()))
+            .or(pprof_handlers()),
+    )
 }

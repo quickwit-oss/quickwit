@@ -44,6 +44,13 @@ pub(super) struct IngesterShard {
     pub replication_position_inclusive: Position,
     /// Position up to which the shard has been truncated.
     pub truncation_position_inclusive: Position,
+    /// Whether the shard should be advertised to other nodes (routers) via gossip.
+    ///
+    /// Because shards  are created in multiple steps, (e.g., init shard on leader, create shard in
+    /// metastore), we must receive a "signal" from the control plane confirming that a shard
+    /// was successfully opened before advertising it. Currently, this confirmation comes in the
+    /// form of `PersistRequest` or `FetchRequest`.
+    pub is_advertisable: bool,
     pub shard_status_tx: watch::Sender<ShardStatus>,
     pub shard_status_rx: watch::Receiver<ShardStatus>,
     /// Instant at which the shard was last written to.
@@ -65,6 +72,7 @@ impl IngesterShard {
             shard_state,
             replication_position_inclusive,
             truncation_position_inclusive,
+            is_advertisable: false,
             shard_status_tx,
             shard_status_rx,
             last_write_instant: now,
@@ -85,6 +93,9 @@ impl IngesterShard {
             shard_state,
             replication_position_inclusive,
             truncation_position_inclusive,
+            // This is irrelevant for replica shards since they are not advertised via gossip
+            // anyway.
+            is_advertisable: false,
             shard_status_tx,
             shard_status_rx,
             last_write_instant: now,
@@ -104,6 +115,7 @@ impl IngesterShard {
             shard_state,
             replication_position_inclusive,
             truncation_position_inclusive,
+            is_advertisable: false,
             shard_status_tx,
             shard_status_rx,
             last_write_instant: now,
@@ -240,6 +252,7 @@ mod tests {
             primary_shard.truncation_position_inclusive,
             Position::Beginning
         );
+        assert!(!primary_shard.is_advertisable);
     }
 
     #[test]
@@ -265,6 +278,7 @@ mod tests {
             replica_shard.truncation_position_inclusive,
             Position::Beginning
         );
+        assert!(!replica_shard.is_advertisable);
     }
 
     #[test]
@@ -286,5 +300,6 @@ mod tests {
             solo_shard.truncation_position_inclusive,
             Position::Beginning
         );
+        assert!(!solo_shard.is_advertisable);
     }
 }

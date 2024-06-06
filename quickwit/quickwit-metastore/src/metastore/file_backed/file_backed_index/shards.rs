@@ -76,7 +76,7 @@ impl Shards {
         for shard in shards_vec {
             let shard_id = shard.shard_id().clone();
             let partition_id = PartitionId::from(shard_id.as_str());
-            let position = shard.publish_position_inclusive().clone();
+            let position = shard.publish_position_inclusive();
             checkpoint.add_partition(partition_id, position);
             shards.insert(shard_id, shard);
         }

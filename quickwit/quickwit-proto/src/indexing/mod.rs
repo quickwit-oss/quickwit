@@ -320,13 +320,6 @@ pub struct ShardPositionsUpdate {
 
 impl Event for ShardPositionsUpdate {}
 
-impl IndexingTask {
-    pub fn pipeline_uid(&self) -> PipelineUid {
-        self.pipeline_uid
-            .expect("`pipeline_uid` should be a required field")
-    }
-}
-
 impl RpcName for ApplyIndexingPlanRequest {
     fn rpc_name() -> &'static str {
         "apply_indexing_plan"
