@@ -355,3 +355,4 @@ debug = false
 
 [profile.release]
 lto = "thin"
+debug = true
