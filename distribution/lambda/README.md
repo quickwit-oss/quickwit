@@ -142,7 +142,7 @@ curl -d '{"query":"quantity:>5", "max_hits": 10}' -H "Content-Type: application/
 
 ### Grafana data source setup
 
-You can query and visualize Quickwit Searcher Lambda data from Grafana by using Quickwit data source for Grafana.
+You can query and visualize the Quickwit Searcher Lambda from Grafana by using the [Quickwit data source for Grafana](https://grafana.com/grafana/plugins/quickwit-quickwit-datasource/).
 
 #### Prerequisites
 
