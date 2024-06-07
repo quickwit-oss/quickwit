@@ -146,7 +146,7 @@ You can query and visualize Quickwit Searcher Lambda data from Grafana by using 
 
 #### Prerequisites
 
-- [Setup HTTP API endpoint for Quickwit Searcher Lambda](#set-up-a-search-api)
+- [Set up HTTP API endpoint for Quickwit Searcher Lambda](#set-up-a-search-api)
 - [Install Quickwit data source plugin on Grafana](https://github.com/quickwit-oss/quickwit-datasource#installation)
 
 #### Configure Grafana data source
