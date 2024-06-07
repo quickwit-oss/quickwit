@@ -140,7 +140,7 @@ inputs = [ "generate_syslog"]
 type = "remap"
 source = '''
   structured = parse_syslog!(.message)
-  .timestamp_nanos, err = to_unix_timestamp(structured.timestamp, unit: "nanoseconds")
+  .timestamp_nanos = to_unix_timestamp!(structured.timestamp, unit: "nanoseconds")
   .body = structured
   .service_name = structured.appname
   .resource_attributes.source_type = .source_type
@@ -163,6 +163,7 @@ source = '''
   .scope_name = structured.msgid
   del(.message)
   del(.timestamp)
+  del(.service)
   del(.source_type)
 '''
 
