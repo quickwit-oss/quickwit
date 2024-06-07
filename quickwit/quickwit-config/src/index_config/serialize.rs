@@ -37,9 +37,6 @@ type IndexConfigForSerialization = IndexConfigV0_8;
 pub(crate) enum VersionedIndexConfig {
     #[serde(rename = "0.8")]
     // Retro compatibility
-    #[serde(alias = "0.4")]
-    #[serde(alias = "0.5")]
-    #[serde(alias = "0.6")]
     #[serde(alias = "0.7")]
     V0_8(IndexConfigV0_8),
 }
