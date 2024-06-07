@@ -156,7 +156,7 @@ You need to provide the following information.
 |Variable|Description|Example|
 |--|--|--|
 |HTTP URL| HTTP search endpoint for Quickwit Searcher Lambda | https://*******.execute-api.us-east-1.amazonaws.com/api/v1 |
-|Custom HTTP Headers| (Optional) If you configure API Gateway to require an API key, set `x-api-key` HTTP Header | Header: `x-api-key` <br> Value: API key value|
+|Custom HTTP Headers| If you configure API Gateway to require an API key, set `x-api-key` HTTP Header | Header: `x-api-key` <br> Value: API key value|
 |Index ID| Same as `QW_LAMBDA_INDEX_ID` | hdfs-logs |
 
 After entering these values, click "Save & test" and you can now query your Quickwit Lambda from Grafana!
