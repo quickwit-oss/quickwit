@@ -110,7 +110,7 @@ Searcher only:
 | QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY | `searcher.partial_request_cache_capacity` node config | 64M |
 
 
-### <a name=set-up-a-search-api />Set up a search API
+### Set up a search API
 
 You can configure an HTTP API endpoint around the Quickwit Searcher Lambda. The
 mock data example stack shows such a configuration. The API Gateway is enabled
