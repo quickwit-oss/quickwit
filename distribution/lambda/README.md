@@ -159,4 +159,4 @@ You need to provide the following information.
 |Custom HTTP Headers| (Optional) If you configure API Gateway to require an API key, set `x-api-key` HTTP Header | Header: `x-api-key` <br> Value: API key value|
 |Index ID| Same as `QW_LAMBDA_INDEX_ID` | hdfs-logs |
 
-After enter the above values, click "Save & test" and you can query Quickwit data from Grafana!
+After entering the above values, click "Save & test" and you can query Quickwit data from Grafana!
