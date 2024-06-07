@@ -46,7 +46,7 @@ data "aws_iam_policy_document" "quickwit_task_execution_permission" {
   statement {
     actions = ["ssm:GetParameters"]
 
-    resources = [local.postgres_uri_parameter_arn]
+    resources = [local.postgres_uri_secret_arn]
   }
 
   statement {

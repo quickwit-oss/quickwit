@@ -153,8 +153,8 @@ This section contains the configuration options for an indexer. The split store 
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `split_store_max_num_bytes` | Maximum size in bytes allowed in the split store for each index-source pair. | `100G` |
-| `split_store_max_num_splits` | Maximum number of files allowed in the split store for each index-source pair. | `1000` |
+| `split_store_max_num_bytes` | Maximum size in bytes allowed in the split store. | `100G` |
+| `split_store_max_num_splits` | Maximum number of files allowed in the split store. | `1000` |
 | `max_concurrent_split_uploads` | Maximum number of concurrent split uploads allowed on the node. | `12` |
 | `merge_concurrency` | Maximum number of merge operations that can be executed on the node at one point in time. | `(2 x num threads available) / 3` |
 | `enable_otlp_endpoint` | If true, enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry Protocol (OTLP). | `false` |

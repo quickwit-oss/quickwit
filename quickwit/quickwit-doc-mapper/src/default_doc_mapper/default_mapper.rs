@@ -45,8 +45,9 @@ use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
-    Cardinality, DocMapper, DocParsingError, Mode, QueryParserError, TokenizerEntry, WarmupInfo,
-    DOCUMENT_LEN_FIELD_NAME, DYNAMIC_FIELD_NAME, FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
+    Cardinality, DocMapper, DocMapping, DocParsingError, Mode, QueryParserError, TokenizerEntry,
+    WarmupInfo, DOCUMENT_SIZE_FIELD_NAME, DYNAMIC_FIELD_NAME, FIELD_PRESENCE_FIELD_NAME,
+    SOURCE_FIELD_NAME,
 };
 
 const FIELD_PRESENCE_FIELD: Field = Field::from_field_id(0u32);
@@ -55,8 +56,8 @@ const FIELD_PRESENCE_FIELD: Field = Field::from_field_id(0u32);
 /// to tantivy index fields.
 ///
 /// The mains rules are defined by the field mappings.
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(try_from = "DefaultDocMapperBuilder", into = "DefaultDocMapperBuilder")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(into = "DefaultDocMapperBuilder", try_from = "DefaultDocMapperBuilder")]
 pub struct DefaultDocMapper {
     /// Field in which the source should be stored.
     /// This field is only valid when using the schema associated with the default
@@ -70,7 +71,7 @@ pub struct DefaultDocMapper {
     /// doc mapper, and therefore cannot be used in the `query` method.
     dynamic_field: Option<Field>,
     /// Field in which the len of the source document is stored as a fast field.
-    document_len_field: Option<Field>,
+    document_size_field: Option<Field>,
     /// Default list of field names used for search.
     default_search_field_names: Vec<String>,
     /// Timestamp field name.
@@ -89,8 +90,6 @@ pub struct DefaultDocMapper {
     partition_key: RoutingExpr,
     /// Maximum number of partitions
     max_num_partitions: NonZeroU32,
-    /// List of required fields. Right now this is unused.
-    required_fields: Vec<Field>,
     /// Defines how unmapped fields should be handle.
     mode: Mode,
     /// User-defined tokenizers.
@@ -100,21 +99,9 @@ pub struct DefaultDocMapper {
 }
 
 impl DefaultDocMapper {
-    fn check_missing_required_fields(&self, doc: &Document) -> Result<(), DocParsingError> {
-        for &required_field in &self.required_fields {
-            if doc.get_first(required_field).is_none() {
-                let missing_field_name = self.schema.get_field_name(required_field);
-                return Err(DocParsingError::RequiredField(
-                    missing_field_name.to_string(),
-                ));
-            }
-        }
-        Ok(())
-    }
-
     /// Default maximum number of partitions.
     pub fn default_max_num_partitions() -> NonZeroU32 {
-        NonZeroU32::new(200).unwrap()
+        DocMapping::default_max_num_partitions()
     }
 }
 
@@ -134,7 +121,7 @@ fn validate_timestamp_field(
         bail!("could not find timestamp field `{timestamp_field_path}` in field mappings");
     };
     if let FieldMappingType::DateTime(date_time_option, cardinality) = &timestamp_field_type {
-        if cardinality != &Cardinality::SingleValue {
+        if cardinality != &Cardinality::SingleValued {
             bail!("timestamp field `{timestamp_field_path}` should be single-valued");
         }
         if !date_time_option.fast {
@@ -146,50 +133,79 @@ fn validate_timestamp_field(
     Ok(())
 }
 
+impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
+    fn from(default_doc_mapper: DefaultDocMapper) -> Self {
+        let partition_key_str = default_doc_mapper.partition_key.to_string();
+        let partition_key_opt: Option<String> = if !partition_key_str.is_empty() {
+            Some(partition_key_str)
+        } else {
+            None
+        };
+        let doc_mapping = DocMapping {
+            mode: default_doc_mapper.mode,
+            field_mappings: default_doc_mapper.field_mappings.into(),
+            timestamp_field: default_doc_mapper.timestamp_field_name,
+            tag_fields: default_doc_mapper.tag_field_names,
+            partition_key: partition_key_opt,
+            max_num_partitions: default_doc_mapper.max_num_partitions,
+            index_field_presence: default_doc_mapper.index_field_presence,
+            store_document_size: default_doc_mapper.document_size_field.is_some(),
+            store_source: default_doc_mapper.source_field.is_some(),
+            tokenizers: default_doc_mapper.tokenizer_entries,
+        };
+        Self {
+            doc_mapping,
+            default_search_fields: default_doc_mapper.default_search_field_names,
+        }
+    }
+}
+
 impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
     type Error = anyhow::Error;
 
     fn try_from(builder: DefaultDocMapperBuilder) -> anyhow::Result<DefaultDocMapper> {
         let mut schema_builder = Schema::builder();
+
+        // We want the field ID of the field presence field to be 0, so we add it to the schema
+        // first.
         let field_presence_field = schema_builder.add_u64_field(FIELD_PRESENCE_FIELD_NAME, INDEXED);
         assert_eq!(field_presence_field, FIELD_PRESENCE_FIELD);
 
-        let dynamic_field = if let Mode::Dynamic(json_options) = &builder.mode {
+        let doc_mapping = builder.doc_mapping;
+
+        let dynamic_field = if let Mode::Dynamic(json_options) = &doc_mapping.mode {
             Some(schema_builder.add_json_field(DYNAMIC_FIELD_NAME, json_options.clone()))
         } else {
             None
         };
-
-        let document_len_field = if builder.document_length {
-            let document_len_field_options = tantivy::schema::NumericOptions::default().set_fast();
-            Some(schema_builder.add_u64_field(DOCUMENT_LEN_FIELD_NAME, document_len_field_options))
+        let document_size_field = if doc_mapping.store_document_size {
+            let document_size_field_options = tantivy::schema::NumericOptions::default().set_fast();
+            Some(
+                schema_builder.add_u64_field(DOCUMENT_SIZE_FIELD_NAME, document_size_field_options),
+            )
         } else {
             None
         };
-
-        // Adding regular fields.
-        let MappingNodeRoot {
-            field_mappings,
-            concatenate_dynamic_fields,
-        } = build_mapping_tree(&builder.field_mappings, &mut schema_builder)?;
-        if !concatenate_dynamic_fields.is_empty() && dynamic_field.is_none() {
-            bail!("concatenate field has `include_dynamic_fields` set, but index isn't dynamic");
-        }
-        let source_field = if builder.store_source {
+        let source_field = if doc_mapping.store_source {
             Some(schema_builder.add_json_field(SOURCE_FIELD_NAME, STORED))
         } else {
             None
         };
-
-        if let Some(timestamp_field_path) = builder.timestamp_field.as_ref() {
+        let MappingNodeRoot {
+            field_mappings,
+            concatenate_dynamic_fields,
+        } = build_mapping_tree(&doc_mapping.field_mappings, &mut schema_builder)?;
+        if !concatenate_dynamic_fields.is_empty() && dynamic_field.is_none() {
+            bail!("concatenate field has `include_dynamic_fields` set, but index isn't dynamic");
+        }
+        if let Some(timestamp_field_path) = &doc_mapping.timestamp_field {
             validate_timestamp_field(timestamp_field_path, &field_mappings)?;
         };
-
         let schema = schema_builder.build();
 
         let tokenizer_manager = create_default_quickwit_tokenizer_manager();
         let mut custom_tokenizer_names = HashSet::new();
-        for tokenizer_config_entry in builder.tokenizers.iter() {
+        for tokenizer_config_entry in &doc_mapping.tokenizers {
             if custom_tokenizer_names.contains(&tokenizer_config_entry.name) {
                 bail!(
                     "duplicated custom tokenizer: `{}`",
@@ -247,40 +263,38 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         }
 
         // Resolve tag fields
-        let mut tag_field_names: BTreeSet<String> = builder.tag_fields.iter().cloned().collect();
-        for tag_field_name in &builder.tag_fields {
+        for tag_field_name in &doc_mapping.tag_fields {
             validate_tag(tag_field_name, &schema)?;
         }
 
-        let partition_key_expr: &str = builder.partition_key.as_deref().unwrap_or("");
+        let partition_key_expr: &str = doc_mapping.partition_key.as_deref().unwrap_or("");
         let partition_key = RoutingExpr::new(partition_key_expr).with_context(|| {
             format!("failed to interpret the partition key: `{partition_key_expr}`")
         })?;
 
         // If valid, partition key fields should be considered as tags.
+        let mut tag_field_names = doc_mapping.tag_fields;
+
         for partition_key in partition_key.field_names() {
             if validate_tag(&partition_key, &schema).is_ok() {
                 tag_field_names.insert(partition_key);
             }
         }
-
-        let required_fields = Vec::new();
         Ok(DefaultDocMapper {
             schema,
-            index_field_presence: builder.index_field_presence,
+            index_field_presence: doc_mapping.index_field_presence,
             source_field,
             dynamic_field,
-            document_len_field,
+            document_size_field,
             default_search_field_names,
-            timestamp_field_name: builder.timestamp_field,
+            timestamp_field_name: doc_mapping.timestamp_field,
             field_mappings,
             concatenate_dynamic_fields,
             tag_field_names,
-            required_fields,
             partition_key,
-            max_num_partitions: builder.max_num_partitions,
-            mode: builder.mode,
-            tokenizer_entries: builder.tokenizers,
+            max_num_partitions: doc_mapping.max_num_partitions,
+            mode: doc_mapping.mode,
+            tokenizer_entries: doc_mapping.tokenizers,
             tokenizer_manager,
         })
     }
@@ -364,32 +378,6 @@ fn validate_fields_tokenizers(
         }
     }
     Ok(())
-}
-
-impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
-    fn from(default_doc_mapper: DefaultDocMapper) -> Self {
-        let partition_key_str = default_doc_mapper.partition_key.to_string();
-        let partition_key_opt: Option<String> = if partition_key_str.is_empty() {
-            None
-        } else {
-            Some(partition_key_str)
-        };
-        Self {
-            store_source: default_doc_mapper.source_field.is_some(),
-            index_field_presence: default_doc_mapper.index_field_presence,
-            timestamp_field: default_doc_mapper
-                .timestamp_field_name()
-                .map(ToString::to_string),
-            field_mappings: default_doc_mapper.field_mappings.into(),
-            tag_fields: default_doc_mapper.tag_field_names.into_iter().collect(),
-            default_search_fields: default_doc_mapper.default_search_field_names,
-            mode: default_doc_mapper.mode,
-            partition_key: partition_key_opt,
-            max_num_partitions: default_doc_mapper.max_num_partitions,
-            tokenizers: default_doc_mapper.tokenizer_entries,
-            document_length: false,
-        }
-    }
 }
 
 impl std::fmt::Debug for DefaultDocMapper {
@@ -624,8 +612,8 @@ impl DocMapper for DefaultDocMapper {
             }
         }
 
-        if let Some(document_len_field) = self.document_len_field {
-            document.add_u64(document_len_field, document_len);
+        if let Some(document_size_field) = self.document_size_field {
+            document.add_u64(document_size_field, document_len);
         }
 
         // The capacity is inexact here.
@@ -664,8 +652,6 @@ impl DocMapper for DefaultDocMapper {
                 document.add_field_value(FIELD_PRESENCE_FIELD, field_presence_hash);
             }
         }
-
-        self.check_missing_required_fields(&document)?;
         Ok((partition, document))
     }
 
@@ -732,6 +718,7 @@ impl DocMapper for DefaultDocMapper {
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
+    use std::iter::zip;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -745,7 +732,7 @@ mod tests {
     use crate::default_doc_mapper::field_mapping_entry::DEFAULT_TOKENIZER_NAME;
     use crate::default_doc_mapper::mapping_tree::value_to_pretokenized;
     use crate::{
-        DefaultDocMapperBuilder, DocMapper, DocParsingError, DOCUMENT_LEN_FIELD_NAME,
+        DefaultDocMapperBuilder, DocMapper, DocParsingError, DOCUMENT_SIZE_FIELD_NAME,
         DYNAMIC_FIELD_NAME, FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
     };
 
@@ -1611,20 +1598,23 @@ mod tests {
         assert_eq!(doc.len(), 0);
     }
 
+    #[track_caller]
     fn test_doc_from_json_test_aux(
         doc_mapper_json: &str,
         field: &str,
         document_json: &str,
-        expected: Vec<TantivyValue>,
+        expected_values: Vec<TantivyValue>,
     ) {
         let default_doc_mapper: DefaultDocMapper = serde_json::from_str(doc_mapper_json).unwrap();
         let schema = default_doc_mapper.schema();
         let field = schema.get_field(field).unwrap();
         let (_, doc) = default_doc_mapper.doc_from_json_str(document_json).unwrap();
-        let vals: Vec<&TantivyValue> = doc.get_all(field).collect();
-        assert_eq!(vals.len(), expected.len());
-        for (val, exp) in vals.into_iter().zip(expected.iter()) {
-            assert_eq!(val, exp);
+
+        let values: Vec<&TantivyValue> = doc.get_all(field).collect();
+        assert_eq!(values.len(), expected_values.len());
+
+        for (value, expected_value) in zip(values, expected_values) {
+            assert_eq!(*value, expected_value);
         }
     }
 
@@ -2048,7 +2038,7 @@ mod tests {
                 "document_length": true,
                 "mode": "dynamic"
             }"#,
-            DOCUMENT_LEN_FIELD_NAME,
+            DOCUMENT_SIZE_FIELD_NAME,
             raw_doc,
             vec![(raw_doc.len() as u64).into()],
         );

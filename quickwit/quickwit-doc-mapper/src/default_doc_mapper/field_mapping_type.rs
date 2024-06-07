@@ -74,8 +74,8 @@ impl FieldMappingType {
             FieldMappingType::Concatenate(_) => return QuickwitFieldType::Concatenate,
         };
         match cardinality {
-            Cardinality::SingleValue => QuickwitFieldType::Simple(primitive_type),
-            Cardinality::MultiValues => QuickwitFieldType::Array(primitive_type),
+            Cardinality::SingleValued => QuickwitFieldType::Simple(primitive_type),
+            Cardinality::MultiValued => QuickwitFieldType::Array(primitive_type),
         }
     }
 }

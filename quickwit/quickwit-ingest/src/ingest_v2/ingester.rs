@@ -94,7 +94,7 @@ const MIN_RESET_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "testsui
 /// Duration after which persist requests time out with
 /// [`quickwit_proto::ingest::IngestV2Error::Timeout`].
 pub(super) const PERSIST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_millis(100)
+    Duration::from_millis(500)
 } else {
     Duration::from_secs(6)
 };
@@ -472,7 +472,6 @@ impl Ingester {
             };
             return Ok(persist_response);
         }
-
         // first verify if we would locally accept each subrequest
         {
             let mut total_requested_capacity = bytesize::ByteSize::b(0);
@@ -491,6 +490,11 @@ impl Ingester {
                     persist_failures.push(persist_failure);
                     continue;
                 };
+                // A router can only know about a newly opened shard if it has been informed by the
+                // control plane, which confirms that the shard was correctly opened in the
+                // metastore.
+                shard.is_advertisable = true;
+
                 if shard.is_closed() {
                     let persist_failure = PersistFailure {
                         subrequest_id: subrequest.subrequest_id,
@@ -597,7 +601,6 @@ impl Ingester {
                 }
             }
         }
-
         // replicate to the follower
         {
             let mut replicate_futures = FuturesUnordered::new();
@@ -846,17 +849,22 @@ impl Ingester {
         open_fetch_stream_request: OpenFetchStreamRequest,
     ) -> IngestV2Result<ServiceStream<IngestV2Result<FetchMessage>>> {
         let queue_id = open_fetch_stream_request.queue_id();
-        let shard_status_rx = self
-            .state
-            .lock_partially()
-            .await?
-            .shards
-            .get(&queue_id)
-            .ok_or_else(|| IngestV2Error::ShardNotFound {
-                shard_id: open_fetch_stream_request.shard_id().clone(),
-            })?
-            .shard_status_rx
-            .clone();
+
+        let mut state_guard = self.state.lock_partially().await?;
+
+        let shard =
+            state_guard
+                .shards
+                .get_mut(&queue_id)
+                .ok_or_else(|| IngestV2Error::ShardNotFound {
+                    shard_id: open_fetch_stream_request.shard_id().clone(),
+                })?;
+        // An indexer can only know about a newly opened shard if it has been scheduled by the
+        // control plane, which confirms that the shard was correctly opened in the
+        // metastore.
+        shard.is_advertisable = true;
+
+        let shard_status_rx = shard.shard_status_rx.clone();
         let mrecordlog = self.state.mrecordlog();
         let (service_stream, _fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
@@ -1184,7 +1192,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
             if shard_position.is_eof() {
                 state_guard.delete_shard(&queue_id).await;
             } else if !shard_position.is_beginning() {
-                state_guard.truncate_shard(&queue_id, &shard_position).await;
+                state_guard.truncate_shard(&queue_id, shard_position).await;
             }
         }
     }
@@ -1478,6 +1486,7 @@ mod tests {
         solo_shard_02.assert_is_closed();
         solo_shard_02.assert_replication_position(Position::offset(1u64));
         solo_shard_02.assert_truncation_position(Position::offset(0u64));
+        assert!(solo_shard_02.is_advertisable);
 
         state_guard
             .mrecordlog
@@ -1495,21 +1504,32 @@ mod tests {
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
 
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
-        let shard = IngesterShard::new_solo(
+        let queue_id_00 = queue_id(&index_uid, "test-source", &ShardId::from(0));
+        let shard_00 = IngesterShard::new_solo(
             ShardState::Open,
             Position::Beginning,
             Position::Beginning,
             Instant::now(),
         );
-        state_guard.shards.insert(queue_id_01.clone(), shard);
+        state_guard.shards.insert(queue_id_00.clone(), shard_00);
 
-        let rate_limiter = RateLimiter::from_settings(RateLimiterSettings::default());
-        let rate_meter = RateMeter::default();
-        state_guard
-            .rate_trackers
-            .insert(queue_id_01.clone(), (rate_limiter, rate_meter));
+        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let mut shard_01 = IngesterShard::new_solo(
+            ShardState::Open,
+            Position::Beginning,
+            Position::Beginning,
+            Instant::now(),
+        );
+        shard_01.is_advertisable = true;
+        state_guard.shards.insert(queue_id_01.clone(), shard_01);
 
+        for queue_id in [&queue_id_00, &queue_id_01] {
+            let rate_limiter = RateLimiter::from_settings(RateLimiterSettings::default());
+            let rate_meter = RateMeter::default();
+            state_guard
+                .rate_trackers
+                .insert(queue_id.clone(), (rate_limiter, rate_meter));
+        }
         drop(state_guard);
 
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -2548,12 +2568,9 @@ mod tests {
             .await
             .unwrap();
 
-        state_guard
-            .shards
-            .get(&queue_id)
-            .unwrap()
-            .notify_shard_status();
-
+        let shard = state_guard.shards.get(&queue_id).unwrap();
+        assert!(shard.is_advertisable);
+        shard.notify_shard_status();
         drop(state_guard);
 
         let fetch_response = fetch_stream.next().await.unwrap().unwrap();

@@ -425,7 +425,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
         for (shard_id, position) in shard_positions_update.updated_shard_positions {
             if let Some(shard) = shard_entries.get_mut(&shard_id) {
                 shard.publish_position_inclusive =
-                    Some(shard.publish_position_inclusive().max(&position).clone());
+                    Some(shard.publish_position_inclusive().max(position.clone()));
                 if position.is_eof() {
                     // identify shards that have reached EOF but have not yet been removed.
                     info!(shard_id=%shard_id, position=?position, "received eof shard via gossip");
@@ -2114,7 +2114,7 @@ mod tests {
             assert_eq!(source_configs[0].source_id, INGEST_V2_SOURCE_ID);
             assert_eq!(source_configs[1].source_id, CLI_SOURCE_ID);
 
-            let index_uid = IndexUid::from_parts("test-index-foo", 0);
+            let index_uid = IndexUid::for_test("test-index-foo", 0);
             let mut index_metadata = IndexMetadata::new_with_index_uid(index_uid, index_config);
 
             for source_config in source_configs {

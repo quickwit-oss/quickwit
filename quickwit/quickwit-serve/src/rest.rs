@@ -26,7 +26,7 @@ use hyper::{http, Method, StatusCode};
 use quickwit_common::tower::BoxFutureInfaillible;
 use tower::make::Shared;
 use tower::ServiceBuilder;
-use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove};
+use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
@@ -51,10 +51,6 @@ use crate::search_api::{search_get_handler, search_post_handler, search_stream_h
 use crate::template_api::index_template_api_handlers;
 use crate::ui_handler::ui_handler;
 use crate::{BodyFormat, BuildInfo, QuickwitServices, RuntimeInfo};
-
-/// The minimum size a response body must be in order to
-/// be automatically compressed with gzip.
-const MINIMUM_RESPONSE_COMPRESSION_SIZE: u16 = 10 << 10;
 
 #[derive(Debug)]
 pub(crate) struct InvalidJsonRequest(pub serde_json::Error);
@@ -85,6 +81,39 @@ impl warp::reject::Reject for InternalError {}
 impl std::fmt::Display for InternalError {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         write!(f, "internal error: {}", self.0)
+    }
+}
+
+/// Env variable key to define the minimum size above which a response should be compressed.
+/// If unset, no compression is applied.
+const QW_MINIMUM_COMPRESSION_SIZE_KEY: &str = "QW_MINIMUM_COMPRESSION_SIZE";
+
+#[derive(Clone, Copy)]
+struct CompressionPredicate {
+    size_above_opt: Option<SizeAbove>,
+}
+
+impl CompressionPredicate {
+    fn from_env() -> CompressionPredicate {
+        let minimum_compression_size_opt: Option<u16> = quickwit_common::get_from_env_opt::<usize>(
+            QW_MINIMUM_COMPRESSION_SIZE_KEY,
+        )
+        .map(|minimum_compression_size: usize| {
+            u16::try_from(minimum_compression_size).unwrap_or(u16::MAX)
+        });
+        let size_above_opt = minimum_compression_size_opt.map(SizeAbove::new);
+        CompressionPredicate { size_above_opt }
+    }
+}
+
+impl Predicate for CompressionPredicate {
+    fn should_compress<B>(&self, response: &http::Response<B>) -> bool
+    where B: hyper::body::HttpBody {
+        if let Some(size_above) = self.size_above_opt {
+            size_above.should_compress(response)
+        } else {
+            false
+        }
     }
 }
 
@@ -128,7 +157,6 @@ pub(crate) async fn start_rest_server(
         quickwit_services.cluster.clone(),
         quickwit_services.env_filter_reload_fn.clone(),
     );
-
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
@@ -158,14 +186,15 @@ pub(crate) async fn start_rest_server(
         .boxed();
 
     let warp_service = warp::service(rest_routes);
-    let compression_predicate =
-        DefaultPredicate::new().and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
+    let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
     let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
     let service = ServiceBuilder::new()
         .layer(
             CompressionLayer::new()
+                .zstd(true)
                 .gzip(true)
+                .quality(tower_http::CompressionLevel::Fastest)
                 .compress_when(compression_predicate),
         )
         .layer(cors)
