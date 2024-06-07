@@ -286,7 +286,7 @@ pub fn mock_split_meta(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
         index_uid: index_uid.clone(),
         split_id: split_id.to_string(),
         partition_id: 13u64,
-        num_docs: if split_id == "split1" { 20 } else { 10 },
+        num_docs: if split_id == "split1" { 1_000_000 } else { 10 },
         uncompressed_docs_size_in_bytes: 256,
         time_range: Some(121000..=130198),
         create_timestamp: 0,

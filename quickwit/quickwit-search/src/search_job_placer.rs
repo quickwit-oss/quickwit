@@ -187,23 +187,21 @@ impl SearchJobPlacer {
         // difference stricter, find the right split names ("split6" instead of "split2" works).
         // or modify mock_split_meta() so that not all splits have the same job cost
         // for now i went with the mock_split_meta() changes.
-        const ALLOWED_DIFFERENCE: usize = 101;
+        const ALLOWED_DIFFERENCE: usize = 105;
         let target_load = (total_load * ALLOWED_DIFFERENCE).div_ceil(num_nodes * 100);
         for job in jobs {
             sort_by_rendez_vous_hash(&mut candidate_nodes, job.split_id());
-            let mut candidate_nodes_iter = candidate_nodes.iter().enumerate();
-            // Select a node which hasn't reached the target load
-            let chosen_node_idx = loop {
-                let Some((id, candidate_node)) = candidate_nodes_iter.next() else {
-                    warn!("found no lightly loaded searcher for split, this should never happen");
-                    // as a fallback, use the first node
-                    break 0;
-                };
-                if candidate_node.load < target_load {
-                    break id;
-                }
+
+            let (_chosen_node_idx, chosen_node) = if let Some((idx, node)) = candidate_nodes
+                .iter_mut()
+                .enumerate()
+                .find(|(_pos, node)| node.load < target_load)
+            {
+                (idx, node)
+            } else {
+                warn!("found no lightly loaded searcher for split, this should never happen");
+                (0, &mut candidate_nodes[0])
             };
-            let chosen_node = &mut candidate_nodes[chosen_node_idx];
             chosen_node.load += job.cost();
 
             job_assignments
@@ -482,7 +480,7 @@ mod tests {
             .map(|(_, jobs)| jobs.len())
             .collect();
         for job_len in jobs_len {
-            assert!(job_len <= 1010 / 5);
+            assert!(job_len <= 1050 / 5);
         }
     }
 }
