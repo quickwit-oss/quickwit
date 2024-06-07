@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use indexmap::IndexSet;
-use quickwit_datetime::{DateTimeInputFormat, DateTimeOutputFormat};
+use quickwit_datetime::{DateTimeInputFormat, DateTimeOutputFormat, TantivyDateTime};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use tantivy::schema::{DateTimePrecision, OwnedValue as TantivyValue};
@@ -97,6 +97,29 @@ impl QuickwitDateTimeOptions {
             }
         };
         Ok(TantivyValue::Date(date_time))
+    }
+
+    pub(crate) fn reparse_tantivy_value(
+        &self,
+        tantivy_value: &TantivyValue,
+    ) -> Option<TantivyDateTime> {
+        match tantivy_value {
+            TantivyValue::Date(date) => Some(*date),
+            TantivyValue::Str(date_time_str) => {
+                quickwit_datetime::parse_date_time_str(date_time_str, &self.input_formats.0).ok()
+            }
+            TantivyValue::U64(timestamp_u64) => {
+                let timestamp_i64 = (*timestamp_u64).try_into().ok()?;
+                quickwit_datetime::parse_timestamp_int(timestamp_i64, &self.input_formats.0).ok()
+            }
+            TantivyValue::I64(timestamp_i64) => {
+                quickwit_datetime::parse_timestamp_int(*timestamp_i64, &self.input_formats.0).ok()
+            }
+            TantivyValue::F64(timestamp_f64) => {
+                quickwit_datetime::parse_timestamp_float(*timestamp_f64, &self.input_formats.0).ok()
+            }
+            _ => None,
+        }
     }
 }
 
