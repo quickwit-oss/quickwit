@@ -20,7 +20,6 @@
 use std::collections::HashMap;
 
 use itertools::Itertools;
-use quickwit_doc_mapper::{BinaryFormat, FieldMappingType};
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::SourceId;
@@ -37,9 +36,6 @@ pub(crate) enum VersionedFileBackedIndex {
     #[serde(rename = "0.8")]
     // Retro compatibility.
     #[serde(alias = "0.7")]
-    #[serde(alias = "0.6")]
-    #[serde(alias = "0.5")]
-    #[serde(alias = "0.4")]
     V0_8(FileBackedIndexV0_8),
 }
 
@@ -106,35 +102,7 @@ impl From<FileBackedIndex> for FileBackedIndexV0_8 {
 }
 
 impl From<FileBackedIndexV0_8> for FileBackedIndex {
-    fn from(mut index: FileBackedIndexV0_8) -> Self {
-        // if the index is otel-traces-v0_6, convert set bytes fields input and output format to hex
-        // to be compatible with the v0_6 version.
-        // TODO: remove after 0.8 release.
-        if index.metadata.index_id() == "otel-traces-v0_6" {
-            index
-                .metadata
-                .index_config
-                .doc_mapping
-                .field_mappings
-                .iter_mut()
-                .filter(|field_mapping| {
-                    field_mapping.name == "trace_id" || field_mapping.name == "span_id"
-                })
-                .for_each(|field_mapping| {
-                    if let FieldMappingType::Bytes(bytes_options, _) =
-                        &mut field_mapping.mapping_type
-                    {
-                        bytes_options.input_format = BinaryFormat::Hex;
-                        bytes_options.output_format = BinaryFormat::Hex;
-                    }
-                });
-        }
-        // Override split index_id to support old SplitMetadata format.
-        for split in index.splits.iter_mut() {
-            if split.split_metadata.index_uid.is_empty() {
-                split.split_metadata.index_uid = index.metadata.index_uid.clone();
-            }
-        }
+    fn from(index: FileBackedIndexV0_8) -> Self {
         let mut per_source_shards: HashMap<SourceId, Shards> = index
             .shards
             .into_iter()

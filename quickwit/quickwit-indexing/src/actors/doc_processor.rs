@@ -82,6 +82,7 @@ impl JsonDoc {
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Error, Debug)]
 pub enum DocProcessorError {
     #[error("doc mapper parse error: {0}")]

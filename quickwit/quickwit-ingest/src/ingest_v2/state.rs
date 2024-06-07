@@ -181,12 +181,14 @@ impl IngesterState {
                 } else {
                     Position::offset(*position_range.start() - 1)
                 };
-                let solo_shard = IngesterShard::new_solo(
+                let mut solo_shard = IngesterShard::new_solo(
                     ShardState::Closed,
                     replication_position_inclusive,
                     truncation_position_inclusive,
                     now,
                 );
+                // We want to advertise the shard as read-only right away.
+                solo_shard.is_advertisable = true;
                 inner_guard.shards.insert(queue_id.clone(), solo_shard);
 
                 let rate_limiter = RateLimiter::from_settings(rate_limiter_settings);
@@ -355,7 +357,7 @@ impl FullyLockedIngesterState<'_> {
     pub async fn truncate_shard(
         &mut self,
         queue_id: &QueueId,
-        truncate_up_to_position_inclusive: &Position,
+        truncate_up_to_position_inclusive: Position,
     ) {
         // TODO: Replace with if-let-chains when stabilized.
         let Some(truncate_up_to_offset_inclusive) = truncate_up_to_position_inclusive.as_u64()
@@ -365,7 +367,7 @@ impl FullyLockedIngesterState<'_> {
         let Some(shard) = self.inner.shards.get_mut(queue_id) else {
             return;
         };
-        if shard.truncation_position_inclusive >= *truncate_up_to_position_inclusive {
+        if shard.truncation_position_inclusive >= truncate_up_to_position_inclusive {
             return;
         }
         match self
@@ -374,8 +376,8 @@ impl FullyLockedIngesterState<'_> {
             .await
         {
             Ok(_) => {
-                shard.truncation_position_inclusive = truncate_up_to_position_inclusive.clone();
                 info!("truncated shard `{queue_id}` at {truncate_up_to_position_inclusive}");
+                shard.truncation_position_inclusive = truncate_up_to_position_inclusive;
             }
             Err(TruncateError::MissingQueue(_)) => {
                 error!("failed to truncate shard `{queue_id}`: WAL queue not found");

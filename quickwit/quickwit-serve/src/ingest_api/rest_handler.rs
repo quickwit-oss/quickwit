@@ -177,7 +177,9 @@ fn convert_ingest_response_v2(
             ingest_failure.index_id
         )),
         IngestFailureReason::Internal => IngestServiceError::Internal("internal error".to_string()),
-        IngestFailureReason::NoShardsAvailable => IngestServiceError::Unavailable,
+        IngestFailureReason::NoShardsAvailable => {
+            IngestServiceError::Unavailable("no shards available".to_string())
+        }
         IngestFailureReason::RateLimited => IngestServiceError::RateLimited,
         IngestFailureReason::ResourceExhausted => IngestServiceError::RateLimited,
         IngestFailureReason::Timeout => {

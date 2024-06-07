@@ -32,14 +32,11 @@ type SourceConfigForSerialization = SourceConfigV0_8;
 #[serde(deny_unknown_fields)]
 #[serde(tag = "version")]
 pub enum VersionedSourceConfig {
-    #[serde(rename = "0.7")]
-    // Retro compatibility.
-    #[serde(alias = "0.6")]
-    #[serde(alias = "0.5")]
-    #[serde(alias = "0.4")]
-    V0_7(SourceConfigV0_7),
     #[serde(rename = "0.8")]
     V0_8(SourceConfigV0_8),
+    // Retro compatibility.
+    #[serde(rename = "0.7")]
+    V0_7(SourceConfigV0_7),
 }
 
 impl From<VersionedSourceConfig> for SourceConfigForSerialization {

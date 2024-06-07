@@ -239,7 +239,7 @@ impl ControlPlane {
         &mut self,
         subrequests: &[GetOrCreateOpenShardsSubrequest],
         progress: &Progress,
-    ) -> ControlPlaneResult<()> {
+    ) -> MetastoreResult<()> {
         if !self.cluster_config.auto_create_indexes {
             return Ok(());
         }
@@ -425,7 +425,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
         for (shard_id, position) in shard_positions_update.updated_shard_positions {
             if let Some(shard) = shard_entries.get_mut(&shard_id) {
                 shard.publish_position_inclusive =
-                    Some(shard.publish_position_inclusive().max(&position).clone());
+                    Some(shard.publish_position_inclusive().max(position.clone()));
                 if position.is_eof() {
                     // identify shards that have reached EOF but have not yet been removed.
                     info!(shard_id=%shard_id, position=?position, "received eof shard via gossip");
@@ -459,9 +459,13 @@ impl Handler<ControlPlanLoop> for ControlPlane {
         if self.disable_control_loop {
             return Ok(());
         }
-        self.ingest_controller
+        if let Err(metastore_error) = self
+            .ingest_controller
             .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
-            .await;
+            .await
+        {
+            return convert_metastore_error::<()>(metastore_error).map(|_| ());
+        }
         self.indexing_scheduler.control_running_plan(&self.model);
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop);
         Ok(())
@@ -482,23 +486,7 @@ fn convert_metastore_error<T>(
 ) -> Result<ControlPlaneResult<T>, ActorExitStatus> {
     // If true, we know that the transactions has not been recorded in the Metastore.
     // If false, we simply are not sure whether the transaction has been recorded or not.
-    let is_transaction_certainly_aborted = match &metastore_error {
-        MetastoreError::AlreadyExists(_)
-        | MetastoreError::FailedPrecondition { .. }
-        | MetastoreError::Forbidden { .. }
-        | MetastoreError::InvalidArgument { .. }
-        | MetastoreError::JsonDeserializeError { .. }
-        | MetastoreError::JsonSerializeError { .. }
-        | MetastoreError::NotFound(_)
-        | MetastoreError::TooManyRequests => true,
-
-        MetastoreError::Connection { .. }
-        | MetastoreError::Db { .. }
-        | MetastoreError::Internal { .. }
-        | MetastoreError::Io { .. }
-        | MetastoreError::Timeout { .. }
-        | MetastoreError::Unavailable(_) => false,
-    };
+    let is_transaction_certainly_aborted = metastore_error.is_transaction_certainly_aborted();
     if is_transaction_certainly_aborted {
         // If the metastore transaction is certain to have been aborted,
         // this is actually a good thing.
@@ -777,27 +765,23 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
         request: GetOrCreateOpenShardsRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        if let Err(control_plane_error) = self
+        if let Err(metastore_error) = self
             .auto_create_indexes(&request.subrequests, ctx.progress())
             .await
         {
-            return Ok(Err(control_plane_error));
+            return convert_metastore_error(metastore_error);
         }
-        let response = match self
+        match self
             .ingest_controller
             .get_or_create_open_shards(request, &mut self.model, ctx.progress())
             .await
         {
-            Ok(response) => response,
-            Err(ControlPlaneError::Metastore(metastore_error)) => {
-                return convert_metastore_error(metastore_error);
+            Ok(resp) => {
+                let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
+                Ok(Ok(resp))
             }
-            Err(control_plane_error) => {
-                return Ok(Err(control_plane_error));
-            }
-        };
-        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
-        Ok(Ok(response))
+            Err(metastore_error) => convert_metastore_error(metastore_error),
+        }
     }
 }
 
@@ -827,9 +811,13 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
         local_shards_update: LocalShardsUpdate,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        self.ingest_controller
+        if let Err(metastore_error) = self
+            .ingest_controller
             .handle_local_shards_update(local_shards_update, &mut self.model, ctx.progress())
-            .await;
+            .await
+        {
+            return convert_metastore_error(metastore_error);
+        }
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         Ok(Ok(()))
     }
@@ -921,9 +909,13 @@ impl Handler<IndexerJoined> for ControlPlane {
             message.0.node_id()
         );
         // TODO: Update shard table.
-        self.ingest_controller
+        if let Err(metastore_error) = self
+            .ingest_controller
             .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
-            .await;
+            .await
+        {
+            return convert_metastore_error::<()>(metastore_error).map(|_| ());
+        }
         self.indexing_scheduler.rebuild_plan(&self.model);
         Ok(())
     }
@@ -947,9 +939,13 @@ impl Handler<IndexerLeft> for ControlPlane {
             message.0.node_id()
         );
         // TODO: Update shard table.
-        self.ingest_controller
+        if let Err(metastore_error) = self
+            .ingest_controller
             .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
-            .await;
+            .await
+        {
+            return convert_metastore_error::<()>(metastore_error).map(|_| ());
+        }
         self.indexing_scheduler.rebuild_plan(&self.model);
         Ok(())
     }
@@ -2118,7 +2114,7 @@ mod tests {
             assert_eq!(source_configs[0].source_id, INGEST_V2_SOURCE_ID);
             assert_eq!(source_configs[1].source_id, CLI_SOURCE_ID);
 
-            let index_uid = IndexUid::from_parts("test-index-foo", 0);
+            let index_uid = IndexUid::for_test("test-index-foo", 0);
             let mut index_metadata = IndexMetadata::new_with_index_uid(index_uid, index_config);
 
             for source_config in source_configs {

@@ -13,8 +13,8 @@ locals {
 
   quickwit_index_s3_prefix = var.quickwit_index_s3_prefix == "" ? aws_s3_bucket.index[0].id : var.quickwit_index_s3_prefix
 
-  use_external_rds           = var.external_postgres_uri_ssm_parameter_arn != ""
-  postgres_uri_parameter_arn = var.external_postgres_uri_ssm_parameter_arn != "" ? var.external_postgres_uri_ssm_parameter_arn : aws_ssm_parameter.postgres_credential[0].arn
+  use_external_rds        = var.external_postgres_uri_secret_arn != ""
+  postgres_uri_secret_arn = var.external_postgres_uri_secret_arn != "" ? var.external_postgres_uri_secret_arn : aws_ssm_parameter.postgres_credential[0].arn
 }
 
 resource "random_id" "module" {

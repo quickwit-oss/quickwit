@@ -88,12 +88,22 @@ fn es_compat_api(
         .or(es_compat_cat_indices_handler(metastore.clone()))
 }
 
+fn index_api(
+    metastore: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    get_index_metadata_handler(metastore)
+}
+
 fn v1_searcher_api(
     search_service: Arc<dyn SearchService>,
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("api" / "v1" / ..)
-        .and(native_api(search_service.clone()).or(es_compat_api(search_service, metastore)))
+        .and(
+            native_api(search_service.clone())
+                .or(es_compat_api(search_service, metastore.clone()))
+                .or(index_api(metastore)),
+        )
         .with(warp::filters::compression::gzip())
         .recover(|rejection| {
             error!(?rejection, "request rejected");

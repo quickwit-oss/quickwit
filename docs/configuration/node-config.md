@@ -123,17 +123,7 @@ This section may contain one configuration subsection per available metastore im
 
 ### File-backed metastore configuration
 
-| Property | Description | Default value |
-| --- | --- | --- |
-| `polling_interval` | Time interval between successive polling attempts to detect metastore changes. | `30s` |
-
-Example of a metastore configuration for a file-backed implementation in YAML format:
-
-```yaml
-metastore:
-  file:
-    polling_interval: 1m
-```
+File-backed metastore doesn't have any node level configuration. You can configure the poll interval [at the index level](./metastore-config.md#polling-configuration).
 
 ### PostgreSQL metastore configuration
 
@@ -163,8 +153,8 @@ This section contains the configuration options for an indexer. The split store 
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `split_store_max_num_bytes` | Maximum size in bytes allowed in the split store for each index-source pair. | `100G` |
-| `split_store_max_num_splits` | Maximum number of files allowed in the split store for each index-source pair. | `1000` |
+| `split_store_max_num_bytes` | Maximum size in bytes allowed in the split store. | `100G` |
+| `split_store_max_num_splits` | Maximum number of files allowed in the split store. | `1000` |
 | `max_concurrent_split_uploads` | Maximum number of concurrent split uploads allowed on the node. | `12` |
 | `merge_concurrency` | Maximum number of merge operations that can be executed on the node at one point in time. | `(2 x num threads available) / 3` |
 | `enable_otlp_endpoint` | If true, enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry Protocol (OTLP). | `false` |
