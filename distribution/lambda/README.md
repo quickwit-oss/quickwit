@@ -110,7 +110,7 @@ Searcher only:
 | QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY | `searcher.partial_request_cache_capacity` node config | 64M |
 
 
-### Set up a search API
+### <a name=set-up-a-search-api />Set up a search API
 
 You can configure an HTTP API endpoint around the Quickwit Searcher Lambda. The
 mock data example stack shows such a configuration. The API Gateway is enabled
@@ -139,3 +139,24 @@ curl -d '{"query":"quantity:>5", "max_hits": 10}' -H "Content-Type: application/
  * `cdk deploy`      deploy this stack to your default AWS account/region
  * `cdk diff`        compare deployed stack with current state
  * `cdk docs`        open CDK documentation
+
+### Grafana data source setup
+
+You can query and visualize Quickwit Searcher Lambda data from Grafana by using Quickwit data source for Grafana.
+
+#### Prerequisites
+
+- [Setup HTTP API endpoint for Quickwit Searcher Lambda](#set-up-a-search-api)
+- [Install Quickwit data source plugin on Grafana](https://github.com/quickwit-oss/quickwit-datasource#installation)
+
+#### Configure Grafana data source
+
+You need to provide the following information.
+
+|Variable|Description|Example|
+|--|--|--|
+|HTTP URL| HTTP search endpoint for Quickwit Searcher Lambda | https://*******.execute-api.us-east-1.amazonaws.com/api/v1 |
+|Custom HTTP Headers| (Optional) If you configure API Gateway to require an API key, set `x-api-key` HTTP Header | Header: `x-api-key` <br> Value: API key value|
+|Index ID| Same as `QW_LAMBDA_INDEX_ID` | hdfs-logs |
+
+After enter the above values, click "Save & test" and you can query Quickwit data from Grafana!
