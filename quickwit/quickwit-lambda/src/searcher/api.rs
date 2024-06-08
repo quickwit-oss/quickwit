@@ -86,6 +86,7 @@ fn es_compat_api(
         .or(es_compat_stats_handler(metastore.clone()))
         .or(es_compat_index_cat_indices_handler(metastore.clone()))
         .or(es_compat_cat_indices_handler(metastore.clone()))
+        .or(es_compat_resolve_index_handler(metastore.clone()))
 }
 
 fn index_api(

@@ -30,7 +30,10 @@ mod stats;
 
 pub use bulk_body::BulkAction;
 pub use bulk_query_params::ElasticBulkOptions;
-pub use cat_indices::{CatIndexQueryParams, ElasticsearchCatIndexResponse};
+pub use cat_indices::{
+    CatIndexQueryParams, ElasticsearchCatIndexResponse, ElasticsearchResolveIndexEntryResponse,
+    ElasticsearchResolveIndexResponse,
+};
 pub use error::{ElasticsearchError, ErrorCauseException};
 pub use field_capability::{
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
