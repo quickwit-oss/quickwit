@@ -40,6 +40,8 @@ pub struct RangeQueryParams {
     lte: Option<JsonLiteral>,
     #[serde(default)]
     boost: Option<NotNaNf32>,
+    #[serde(default)]
+    format: Option<JsonLiteral>,
 }
 
 pub type RangeQuery = OneFieldMap<RangeQueryParams>;
@@ -53,6 +55,7 @@ impl ConvertableToQueryAst for RangeQuery {
             lt,
             lte,
             boost,
+            format: _,
         } = self.value;
         let range_query_ast = crate::query_ast::RangeQuery {
             field,
