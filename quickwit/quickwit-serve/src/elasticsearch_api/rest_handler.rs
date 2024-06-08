@@ -135,30 +135,30 @@ pub fn es_compat_delete_index_handler(
 
 /// GET _elastic/_stats
 pub fn es_compat_stats_handler(
-    search_service: MetastoreServiceClient,
+    metastore_service: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_stats_filter()
-        .and(with_arg(search_service))
+        .and(with_arg(metastore_service))
         .then(es_compat_stats)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
 /// GET _elastic/{index}/_stats
 pub fn es_compat_index_stats_handler(
-    search_service: MetastoreServiceClient,
+    metastore_service: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_index_stats_filter()
-        .and(with_arg(search_service))
+        .and(with_arg(metastore_service))
         .then(es_compat_index_stats)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
 /// GET _elastic/_cat/indices
 pub fn es_compat_cat_indices_handler(
-    search_service: MetastoreServiceClient,
+    metastore_service: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_cat_indices_filter()
-        .and(with_arg(search_service))
+        .and(with_arg(metastore_service))
         .then(es_compat_cat_indices)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
