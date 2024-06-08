@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt::Formatter;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -25,7 +26,7 @@ use hyper::{http, Method, StatusCode};
 use quickwit_common::tower::BoxFutureInfaillible;
 use tower::make::Shared;
 use tower::ServiceBuilder;
-use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove};
+use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
@@ -51,10 +52,6 @@ use crate::template_api::index_template_api_handlers;
 use crate::ui_handler::ui_handler;
 use crate::{BodyFormat, BuildInfo, QuickwitServices, RuntimeInfo};
 
-/// The minimum size a response body must be in order to
-/// be automatically compressed with gzip.
-const MINIMUM_RESPONSE_COMPRESSION_SIZE: u16 = 10 << 10;
-
 #[derive(Debug)]
 pub(crate) struct InvalidJsonRequest(pub serde_json::Error);
 
@@ -64,6 +61,61 @@ impl warp::reject::Reject for InvalidJsonRequest {}
 pub(crate) struct InvalidArgument(pub String);
 
 impl warp::reject::Reject for InvalidArgument {}
+
+#[derive(Debug)]
+pub struct TooManyRequests;
+
+impl warp::reject::Reject for TooManyRequests {}
+
+impl std::fmt::Display for TooManyRequests {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "too many requests")
+    }
+}
+
+#[derive(Debug)]
+pub struct InternalError(pub String);
+
+impl warp::reject::Reject for InternalError {}
+
+impl std::fmt::Display for InternalError {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "internal error: {}", self.0)
+    }
+}
+
+/// Env variable key to define the minimum size above which a response should be compressed.
+/// If unset, no compression is applied.
+const QW_MINIMUM_COMPRESSION_SIZE_KEY: &str = "QW_MINIMUM_COMPRESSION_SIZE";
+
+#[derive(Clone, Copy)]
+struct CompressionPredicate {
+    size_above_opt: Option<SizeAbove>,
+}
+
+impl CompressionPredicate {
+    fn from_env() -> CompressionPredicate {
+        let minimum_compression_size_opt: Option<u16> = quickwit_common::get_from_env_opt::<usize>(
+            QW_MINIMUM_COMPRESSION_SIZE_KEY,
+        )
+        .map(|minimum_compression_size: usize| {
+            u16::try_from(minimum_compression_size).unwrap_or(u16::MAX)
+        });
+        let size_above_opt = minimum_compression_size_opt.map(SizeAbove::new);
+        CompressionPredicate { size_above_opt }
+    }
+}
+
+impl Predicate for CompressionPredicate {
+    fn should_compress<B>(&self, response: &http::Response<B>) -> bool
+    where B: hyper::body::HttpBody {
+        if let Some(size_above) = self.size_above_opt {
+            size_above.should_compress(response)
+        } else {
+            false
+        }
+    }
+}
 
 /// Starts REST services.
 pub(crate) async fn start_rest_server(
@@ -105,7 +157,6 @@ pub(crate) async fn start_rest_server(
         quickwit_services.cluster.clone(),
         quickwit_services.env_filter_reload_fn.clone(),
     );
-
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
@@ -135,14 +186,15 @@ pub(crate) async fn start_rest_server(
         .boxed();
 
     let warp_service = warp::service(rest_routes);
-    let compression_predicate =
-        DefaultPredicate::new().and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
+    let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
     let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
     let service = ServiceBuilder::new()
         .layer(
             CompressionLayer::new()
+                .zstd(true)
                 .gzip(true)
+                .quality(tower_http::CompressionLevel::Fastest)
                 .compress_when(compression_predicate),
         )
         .layer(cors)
@@ -252,11 +304,6 @@ fn get_status_with_error(rejection: Rejection) -> RestApiError {
             status_code: StatusCode::UNSUPPORTED_MEDIA_TYPE,
             message: error.to_string(),
         }
-    } else if rejection.is_not_found() {
-        RestApiError {
-            status_code: StatusCode::NOT_FOUND,
-            message: "Route not found".to_string(),
-        }
     } else if let Some(error) = rejection.find::<serde_qs::Error>() {
         RestApiError {
             status_code: StatusCode::BAD_REQUEST,
@@ -264,12 +311,6 @@ fn get_status_with_error(rejection: Rejection) -> RestApiError {
         }
     } else if let Some(error) = rejection.find::<InvalidJsonRequest>() {
         // Happens when the request body could not be deserialized correctly.
-        RestApiError {
-            status_code: StatusCode::BAD_REQUEST,
-            message: error.0.to_string(),
-        }
-    } else if let Some(error) = rejection.find::<InvalidArgument>() {
-        // Happens when the url path or request body contains invalid argument(s).
         RestApiError {
             status_code: StatusCode::BAD_REQUEST,
             message: error.0.to_string(),
@@ -315,15 +356,31 @@ fn get_status_with_error(rejection: Rejection) -> RestApiError {
             status_code: StatusCode::BAD_REQUEST,
             message: error.to_string(),
         }
+    } else if let Some(error) = rejection.find::<warp::reject::PayloadTooLarge>() {
+        RestApiError {
+            status_code: StatusCode::PAYLOAD_TOO_LARGE,
+            message: error.to_string(),
+        }
+    } else if let Some(err) = rejection.find::<TooManyRequests>() {
+        RestApiError {
+            status_code: StatusCode::TOO_MANY_REQUESTS,
+            message: err.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<InvalidArgument>() {
+        // Happens when the url path or request body contains invalid argument(s).
+        RestApiError {
+            status_code: StatusCode::BAD_REQUEST,
+            message: error.0.to_string(),
+        }
     } else if let Some(error) = rejection.find::<warp::reject::MethodNotAllowed>() {
         RestApiError {
             status_code: StatusCode::METHOD_NOT_ALLOWED,
             message: error.to_string(),
         }
-    } else if let Some(error) = rejection.find::<warp::reject::PayloadTooLarge>() {
+    } else if rejection.is_not_found() {
         RestApiError {
-            status_code: StatusCode::PAYLOAD_TOO_LARGE,
-            message: error.to_string(),
+            status_code: StatusCode::NOT_FOUND,
+            message: "Route not found".to_string(),
         }
     } else {
         error!("REST server error: {:?}", rejection);
@@ -628,8 +685,9 @@ mod tests {
             indexing_service_opt: None,
             index_manager: index_service,
             ingest_service: ingest_service_client(),
-            ingester_opt: None,
+            ingest_router_opt: None,
             ingest_router_service: IngestRouterServiceClient::mocked(),
+            ingester_opt: None,
             janitor_service_opt: None,
             otlp_logs_service_opt: None,
             otlp_traces_service_opt: None,

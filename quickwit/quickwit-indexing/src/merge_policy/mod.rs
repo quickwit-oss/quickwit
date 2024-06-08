@@ -31,6 +31,7 @@ pub use nop_merge_policy::NopMergePolicy;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
+use quickwit_proto::types::SplitId;
 use serde::Serialize;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
 use tantivy::TrackedObject;
@@ -86,7 +87,7 @@ impl Deref for MergeTask {
 pub struct MergeOperation {
     #[serde(skip_serializing)]
     pub merge_parent_span: Span,
-    pub merge_split_id: String,
+    pub merge_split_id: SplitId,
     pub splits: Vec<SplitMetadata>,
     pub operation_type: MergeOperationType,
 }
@@ -210,8 +211,8 @@ pub mod tests {
 
     use proptest::prelude::*;
     use quickwit_actors::Universe;
-    use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::types::{IndexUid, PipelineUid};
+    use quickwit_proto::indexing::{IndexingPipelineId, MergePipelineId};
+    use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
     use rand::seq::SliceRandom;
     use time::OffsetDateTime;
 
@@ -373,13 +374,12 @@ pub mod tests {
         assert!(!splits.is_empty(), "Split list should not be empty.");
         let merged_split_id = new_split_id();
         let tags = merge_tags(splits);
-        let pipeline_id = IndexingPipelineId {
+        let pipeline_id = MergePipelineId {
+            node_id: NodeId::from("test_node"),
             index_uid: IndexUid::new_with_random_ulid("test_index"),
             source_id: "test_source".to_string(),
-            node_id: "test_node".to_string(),
-            pipeline_uid: PipelineUid::for_test(0u128),
         };
-        let split_attrs = merge_split_attrs(merged_split_id, &pipeline_id, splits);
+        let split_attrs = merge_split_attrs(pipeline_id, merged_split_id, splits);
         create_split_metadata(merge_policy, &split_attrs, tags, 0..0)
     }
 
@@ -407,11 +407,11 @@ pub mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let merge_planner = MergePlanner::new(
-            pipeline_id,
+            &pipeline_id.merge_pipeline_id(),
             Vec::new(),
             merge_policy.clone(),
             merge_task_mailbox,

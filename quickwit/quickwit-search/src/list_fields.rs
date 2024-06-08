@@ -34,7 +34,7 @@ use quickwit_proto::search::{
     deserialize_split_fields, LeafListFieldsRequest, ListFields, ListFieldsEntryResponse,
     ListFieldsRequest, ListFieldsResponse, SplitIdAndFooterOffsets,
 };
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
 
 use crate::leaf::open_split_bundle;
@@ -45,7 +45,7 @@ use crate::{list_relevant_splits, resolve_index_patterns, ClusterClient, SearchE
 /// Get the list of splits for the request which we need to scan.
 pub async fn get_fields_from_split<'a>(
     searcher_context: &SearcherContext,
-    index_id: String,
+    index_id: IndexId,
     split_and_footer_offsets: &'a SplitIdAndFooterOffsets,
     index_storage: Arc<dyn Storage>,
 ) -> anyhow::Result<Box<dyn Iterator<Item = ListFieldsEntryResponse> + Send>> {
@@ -230,7 +230,7 @@ fn matches_pattern(field_pattern: &str, field_name: &str) -> bool {
 
 /// `leaf` step of list fields.
 pub async fn leaf_list_fields(
-    index_id: String,
+    index_id: IndexId,
     index_storage: Arc<dyn Storage>,
     searcher_context: &SearcherContext,
     split_ids: &[SplitIdAndFooterOffsets],
@@ -276,7 +276,7 @@ pub async fn leaf_list_fields(
 #[derive(Clone, Debug)]
 pub struct IndexMetasForLeafSearch {
     /// Index id.
-    pub index_id: String,
+    pub index_id: IndexId,
     /// Index URI.
     pub index_uri: Uri,
 }

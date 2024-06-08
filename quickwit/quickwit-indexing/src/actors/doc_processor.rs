@@ -33,6 +33,7 @@ use quickwit_opentelemetry::otlp::{
     parse_otlp_logs_json, parse_otlp_logs_protobuf, parse_otlp_spans_json,
     parse_otlp_spans_protobuf, JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError,
 };
+use quickwit_proto::types::{IndexId, SourceId};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{Field, Value};
@@ -81,6 +82,7 @@ impl JsonDoc {
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Error, Debug)]
 pub enum DocProcessorError {
     #[error("doc mapper parse error: {0}")]
@@ -271,8 +273,8 @@ impl From<Result<JsonSpanIterator, OtlpTracesError>> for JsonDocIterator {
 
 #[derive(Debug, Serialize)]
 pub struct DocProcessorCounters {
-    index_id: String,
-    source_id: String,
+    index_id: IndexId,
+    source_id: SourceId,
     /// Overall number of documents received, partitioned
     /// into 4 categories:
     /// - number of docs that could not be parsed.
@@ -292,7 +294,7 @@ pub struct DocProcessorCounters {
 }
 
 impl DocProcessorCounters {
-    pub fn new(index_id: String, source_id: String) -> Self {
+    pub fn new(index_id: IndexId, source_id: SourceId) -> Self {
         Self {
             index_id,
             source_id,
@@ -382,8 +384,8 @@ pub struct DocProcessor {
 
 impl DocProcessor {
     pub fn try_new(
-        index_id: String,
-        source_id: String,
+        index_id: IndexId,
+        source_id: SourceId,
         doc_mapper: Arc<dyn DocMapper>,
         indexer_mailbox: Mailbox<Indexer>,
         transform_config_opt: Option<TransformConfig>,

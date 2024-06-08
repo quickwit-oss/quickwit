@@ -39,9 +39,7 @@ pub use doc_processor::{DocProcessor, DocProcessorCounters};
 pub use index_serializer::IndexSerializer;
 pub use indexer::{Indexer, IndexerCounters};
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineParams};
-pub use indexing_service::{
-    IndexingService, IndexingServiceCounters, MergePipelineId, INDEXING_DIR_NAME,
-};
+pub use indexing_service::{IndexingService, IndexingServiceCounters, INDEXING_DIR_NAME};
 pub use merge_executor::{combine_partition_ids, merge_split_attrs, MergeExecutor};
 pub use merge_pipeline::MergePipeline;
 pub use merge_planner::MergePlanner;

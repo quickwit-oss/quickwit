@@ -25,7 +25,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use bytesize::ByteSize;
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationMilliSeconds};
 use time::OffsetDateTime;
@@ -60,7 +60,7 @@ impl Split {
 /// Carries immutable split metadata.
 /// This struct can deserialize older format automatically
 /// but can only serialize to the last version.
-#[derive(Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(into = "VersionedSplitMetadata")]
 #[serde(try_from = "VersionedSplitMetadata")]
 pub struct SplitMetadata {
@@ -68,7 +68,8 @@ pub struct SplitMetadata {
     /// should be enough to uniquely identify a split.
     /// In reality, some information may be implicitly configured
     /// in the storage resolver: for instance, the Amazon S3 region.
-    pub split_id: String,
+    #[schema(value_type = String)]
+    pub split_id: SplitId,
 
     /// Id of the index this split belongs to.
     pub index_uid: IndexUid,
@@ -82,7 +83,7 @@ pub struct SplitMetadata {
     pub partition_id: u64,
 
     /// Source ID.
-    pub source_id: String,
+    pub source_id: SourceId,
 
     /// Node ID.
     pub node_id: String,
@@ -183,10 +184,10 @@ impl fmt::Debug for SplitMetadata {
 impl SplitMetadata {
     /// Creates a new instance of split metadata.
     pub fn new(
-        split_id: String,
+        split_id: SplitId,
         index_uid: IndexUid,
         partition_id: u64,
-        source_id: String,
+        source_id: SourceId,
         node_id: String,
     ) -> Self {
         Self {
@@ -220,7 +221,7 @@ impl SplitMetadata {
 
     #[cfg(any(test, feature = "testsuite"))]
     /// Returns an instance of `SplitMetadata` for testing.
-    pub fn for_test(split_id: String) -> SplitMetadata {
+    pub fn for_test(split_id: SplitId) -> SplitMetadata {
         SplitMetadata {
             split_id,
             ..Default::default()
@@ -245,7 +246,8 @@ impl SplitMetadata {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SplitInfo {
     /// The split ID.
-    pub split_id: String,
+    #[schema(value_type = String)]
+    pub split_id: SplitId,
     /// The number of documents in the split.
     pub num_docs: usize,
     /// The sum of the sizes of the original JSON payloads in bytes.
@@ -262,11 +264,9 @@ pub struct SplitInfo {
 #[cfg(any(test, feature = "testsuite"))]
 impl quickwit_config::TestableForRegression for SplitMetadata {
     fn sample_for_regression() -> Self {
-        use ulid::Ulid;
-
         SplitMetadata {
             split_id: "split".to_string(),
-            index_uid: IndexUid::from_parts("my-index", Ulid::nil()),
+            index_uid: IndexUid::for_test("my-index", 0),
             source_id: "source".to_string(),
             node_id: "node".to_string(),
             delete_opstamp: 10,
@@ -399,10 +399,7 @@ mod tests {
     fn test_split_metadata_debug() {
         let split_metadata = SplitMetadata {
             split_id: "split-1".to_string(),
-            index_uid: IndexUid::from_parts(
-                "00000000-0000-0000-0000-000000000000",
-                ulid::Ulid::nil(),
-            ),
+            index_uid: IndexUid::for_test("00000000-0000-0000-0000-000000000000", 0),
             partition_id: 0,
             source_id: "source-1".to_string(),
             node_id: "node-1".to_string(),

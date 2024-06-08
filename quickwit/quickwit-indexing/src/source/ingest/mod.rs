@@ -218,8 +218,8 @@ impl IngestSource {
         assigned_shard.status = IndexingStatus::Active;
 
         let partition_id = assigned_shard.partition_id.clone();
-        let from_position_exclusive = fetch_payload.from_position_exclusive().clone();
-        let to_position_inclusive = fetch_payload.to_position_inclusive().clone();
+        let from_position_exclusive = fetch_payload.from_position_exclusive();
+        let to_position_inclusive = fetch_payload.to_position_inclusive();
 
         for mrecord in decoded_mrecords(mrecord_batch) {
             match mrecord {
@@ -257,7 +257,7 @@ impl IngestSource {
 
         let partition_id = assigned_shard.partition_id.clone();
         let from_position_exclusive = assigned_shard.current_position_inclusive.clone();
-        let to_position_inclusive = fetch_eof.eof_position().clone();
+        let to_position_inclusive = fetch_eof.eof_position();
 
         batch_builder
             .checkpoint_delta
@@ -575,8 +575,7 @@ impl Source for IngestSource {
         for acquired_shard in acquire_shards_response.acquired_shards {
             let index_uid = acquired_shard.index_uid().clone();
             let shard_id = acquired_shard.shard_id().clone();
-            let mut current_position_inclusive =
-                acquired_shard.publish_position_inclusive().clone();
+            let mut current_position_inclusive = acquired_shard.publish_position_inclusive();
             let leader_id: NodeId = acquired_shard.leader_id.into();
             let follower_id_opt: Option<NodeId> = acquired_shard.follower_id.map(Into::into);
             let source_id: SourceId = acquired_shard.source_id;
@@ -702,7 +701,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_assign_shards() {
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1044,7 +1043,7 @@ mod tests {
         // - emission of a suggest truncate
         // - no stream request is emitted
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1184,7 +1183,7 @@ mod tests {
         // - emission of a suggest truncate
         // - the stream request emitted does not include the EOF shards
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1347,7 +1346,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_emit_batches() {
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1535,7 +1534,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_emit_batches_shard_not_found() {
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1642,7 +1641,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_suggest_truncate() {
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1849,7 +1848,7 @@ mod tests {
         // away. In that case, the ingester should just ignore the assigned shard, as
         // opposed to fail as the metastore does not let it `acquire` the shard.
         let pipeline_id = IndexingPipelineId {
-            node_id: "test-node".to_string(),
+            node_id: NodeId::from("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),

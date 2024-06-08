@@ -19,6 +19,7 @@
 
 use anyhow::Context;
 use quickwit_common::uri::Uri;
+use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -36,9 +37,6 @@ type IndexConfigForSerialization = IndexConfigV0_8;
 pub(crate) enum VersionedIndexConfig {
     #[serde(rename = "0.8")]
     // Retro compatibility
-    #[serde(alias = "0.4")]
-    #[serde(alias = "0.5")]
-    #[serde(alias = "0.6")]
     #[serde(alias = "0.7")]
     V0_8(IndexConfigV0_8),
 }
@@ -127,7 +125,8 @@ impl TryFrom<VersionedIndexConfig> for IndexConfig {
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IndexConfigV0_8 {
-    pub index_id: String,
+    #[schema(value_type = String)]
+    pub index_id: IndexId,
     #[schema(value_type = String)]
     #[serde(default)]
     pub index_uri: Option<Uri>,

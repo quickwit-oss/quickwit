@@ -11,14 +11,13 @@ status_code: null
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: aggregations
   doc_mapping:
     mode: dynamic
     dynamic_mapping:
       tokenizer: default
       fast: true
-    document_length: true
     field_mappings:
       - name: date
         type: datetime
@@ -26,12 +25,13 @@ json:
           - rfc3339
         fast_precision: seconds
         fast: true
+    store_document_size: true
 ---
 # Create empty index
 method: POST
 endpoint: indexes/
 json:
-  version: "0.7"
+  version: "0.8"
   index_id: empty_aggregations
   doc_mapping:
     mode: dynamic

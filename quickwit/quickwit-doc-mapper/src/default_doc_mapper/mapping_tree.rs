@@ -30,7 +30,6 @@ use tantivy::schema::{
     NumericOptions, OwnedValue as TantivyValue, SchemaBuilder, TextOptions,
 };
 use tantivy::TantivyDocument as Document;
-use tracing::warn;
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::field_mapping_entry::{NumericOutputFormat, QuickwitBoolOptions};
@@ -288,7 +287,7 @@ impl MappingLeaf {
             return Ok(());
         }
         if let JsonValue::Array(els) = json_val {
-            if self.cardinality == Cardinality::SingleValue {
+            if self.cardinality == Cardinality::SingleValued {
                 return Err(DocParsingError::MultiValuesNotSupported(path.join(".")));
             }
             for el_json_val in els {
@@ -365,8 +364,174 @@ fn extract_json_val(
         .into_iter()
         .flat_map(|value| value_to_json(value, leaf_type));
     match cardinality {
-        Cardinality::SingleValue => vals_with_correct_type_it.next(),
-        Cardinality::MultiValues => Some(JsonValue::Array(vals_with_correct_type_it.collect())),
+        Cardinality::SingleValued => vals_with_correct_type_it.next(),
+        Cardinality::MultiValued => Some(JsonValue::Array(vals_with_correct_type_it.collect())),
+    }
+}
+
+fn value_to_string(value: TantivyValue) -> Result<JsonValue, TantivyValue> {
+    match value {
+        TantivyValue::Str(s) => return Ok(JsonValue::String(s)),
+        TantivyValue::U64(number) => Some(number.to_string()),
+        TantivyValue::I64(number) => Some(number.to_string()),
+        TantivyValue::F64(number) => Some(number.to_string()),
+        TantivyValue::Bool(b) => Some(b.to_string()),
+        TantivyValue::Date(date) => {
+            return quickwit_datetime::DateTimeOutputFormat::default()
+                .format_to_json(date)
+                .map_err(|_| value);
+        }
+        TantivyValue::IpAddr(ip) => Some(ip.to_string()),
+        _ => None,
+    }
+    .map(JsonValue::String)
+    .ok_or(value)
+}
+
+fn value_to_bool(value: TantivyValue) -> Result<JsonValue, TantivyValue> {
+    match &value {
+        TantivyValue::Str(s) => s.parse().ok(),
+        TantivyValue::U64(number) => match number {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        },
+        TantivyValue::I64(number) => match number {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        },
+        TantivyValue::Bool(b) => Some(*b),
+        _ => None,
+    }
+    .map(JsonValue::Bool)
+    .ok_or(value)
+}
+
+fn value_to_ip(value: TantivyValue) -> Result<JsonValue, TantivyValue> {
+    match &value {
+        TantivyValue::Str(s) => s
+            .parse::<std::net::Ipv6Addr>()
+            .or_else(|_| {
+                s.parse::<std::net::Ipv4Addr>()
+                    .map(|ip| ip.to_ipv6_mapped())
+            })
+            .ok(),
+        TantivyValue::IpAddr(ip) => Some(*ip),
+        _ => None,
+    }
+    .map(|ip| {
+        serde_json::to_value(TantivyValue::IpAddr(ip))
+            .expect("Json serialization should never fail.")
+    })
+    .ok_or(value)
+}
+
+fn value_to_float(
+    value: TantivyValue,
+    numeric_options: &QuickwitNumericOptions,
+) -> Result<JsonValue, TantivyValue> {
+    match &value {
+        TantivyValue::Str(s) => s.parse().ok(),
+        TantivyValue::U64(number) => Some(*number as f64),
+        TantivyValue::I64(number) => Some(*number as f64),
+        TantivyValue::F64(number) => Some(*number),
+        TantivyValue::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+        _ => None,
+    }
+    .and_then(|f64_val| f64_val.to_json(numeric_options.output_format))
+    .ok_or(value)
+}
+
+fn value_to_u64(
+    value: TantivyValue,
+    numeric_options: &QuickwitNumericOptions,
+) -> Result<JsonValue, TantivyValue> {
+    match &value {
+        TantivyValue::Str(s) => s.parse().ok(),
+        TantivyValue::U64(number) => Some(*number),
+        TantivyValue::I64(number) => (*number).try_into().ok(),
+        TantivyValue::F64(number) => {
+            if (0.0..=(u64::MAX as f64)).contains(number) {
+                Some(*number as u64)
+            } else {
+                None
+            }
+        }
+        TantivyValue::Bool(b) => Some(*b as u64),
+        _ => None,
+    }
+    .and_then(|u64_val| u64_val.to_json(numeric_options.output_format))
+    .ok_or(value)
+}
+
+fn value_to_i64(
+    value: TantivyValue,
+    numeric_options: &QuickwitNumericOptions,
+) -> Result<JsonValue, TantivyValue> {
+    match &value {
+        TantivyValue::Str(s) => s.parse().ok(),
+        TantivyValue::U64(number) => (*number).try_into().ok(),
+        TantivyValue::I64(number) => Some(*number),
+        TantivyValue::F64(number) => {
+            if ((i64::MIN as f64)..=(i64::MAX as f64)).contains(number) {
+                Some(*number as i64)
+            } else {
+                None
+            }
+        }
+        TantivyValue::Bool(b) => Some(*b as i64),
+        _ => None,
+    }
+    .and_then(|u64_val| u64_val.to_json(numeric_options.output_format))
+    .ok_or(value)
+}
+
+/// Transforms a tantivy object into a serde_json one, without cloning strings.
+/// It still allocates maps.
+// TODO we should probably move this to tantivy, it has the opposite conversion already
+fn tantivy_object_to_json_value_nocopy(object: Vec<(String, TantivyValue)>) -> JsonValue {
+    JsonValue::Object(
+        object
+            .into_iter()
+            .map(|(key, value)| (key, tantivy_value_to_json_value_nocopy(value)))
+            .collect(),
+    )
+}
+
+fn tantivy_value_to_json_value_nocopy(value: TantivyValue) -> JsonValue {
+    match value {
+        TantivyValue::Null => JsonValue::Null,
+        TantivyValue::Str(s) => JsonValue::String(s),
+        TantivyValue::U64(number) => JsonValue::Number(number.into()),
+        TantivyValue::I64(number) => JsonValue::Number(number.into()),
+        TantivyValue::F64(f) => {
+            JsonValue::Number(serde_json::Number::from_f64(f).expect("expected finite f64"))
+        }
+        TantivyValue::Bool(b) => JsonValue::Bool(b),
+        TantivyValue::Array(array) => JsonValue::Array(
+            array
+                .into_iter()
+                .map(tantivy_value_to_json_value_nocopy)
+                .collect(),
+        ),
+        TantivyValue::Object(object) => tantivy_object_to_json_value_nocopy(object),
+        // we shouldn't have these types inside a json field in quickwit
+        TantivyValue::PreTokStr(pretok) => JsonValue::String(pretok.text),
+        TantivyValue::Date(date) => quickwit_datetime::DateTimeOutputFormat::Rfc3339
+            .format_to_json(date)
+            .expect("Invalid datetime is not allowed."),
+        TantivyValue::Facet(facet) => JsonValue::String(facet.to_string()),
+        // TantivyValue::Bytes(Vec<u8>) => (), // tantivy would do b64 here
+        TantivyValue::IpAddr(ip_v6) => {
+            let ip_str = if let Some(ip_v4) = ip_v6.to_ipv4_mapped() {
+                ip_v4.to_string()
+            } else {
+                ip_v6.to_string()
+            };
+            JsonValue::String(ip_str)
+        }
+        value => unimplemented!("got unexpected type {value:?} inside json field"),
     }
 }
 
@@ -375,39 +540,48 @@ fn extract_json_val(
 /// Makes sure the type and value are consistent before converting.
 /// For certain LeafType, we use the type options to format the output.
 fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue> {
-    match (&value, leaf_type) {
-        (TantivyValue::Str(_), LeafType::Text(_))
-        | (TantivyValue::Bool(_), LeafType::Bool(_))
-        | (TantivyValue::IpAddr(_), LeafType::IpAddr(_))
-        | (TantivyValue::Object(_), LeafType::Json(_)) => {
-            let json_value =
-                serde_json::to_value(&value).expect("Json serialization should never fail.");
-            Some(json_value)
+    let res = match leaf_type {
+        LeafType::Text(_) => value_to_string(value),
+        LeafType::Bool(_) => value_to_bool(value),
+        LeafType::IpAddr(_) => value_to_ip(value),
+        LeafType::F64(numeric_options) => value_to_float(value, numeric_options),
+        LeafType::U64(numeric_options) => value_to_u64(value, numeric_options),
+        LeafType::I64(numeric_options) => value_to_i64(value, numeric_options),
+        LeafType::Json(_) => {
+            if let TantivyValue::Object(obj) = value {
+                // TODO do we want to allow almost everything here?
+                return Some(tantivy_object_to_json_value_nocopy(obj));
+            } else {
+                Err(value)
+            }
         }
-        (TantivyValue::Bytes(bytes), LeafType::Bytes(bytes_options)) => {
-            let json_value = bytes_options.output_format.format_to_json(bytes);
-            Some(json_value)
+        LeafType::Bytes(bytes_options) => {
+            if let TantivyValue::Bytes(ref bytes) = value {
+                // TODO we could cast str to bytes
+                let json_value = bytes_options.output_format.format_to_json(bytes);
+                Ok(json_value)
+            } else {
+                Err(value)
+            }
         }
-        (TantivyValue::Date(date_time), LeafType::DateTime(date_time_options)) => {
-            let json_value = date_time_options
-                .output_format
-                .format_to_json(*date_time)
-                .expect("Invalid datetime is not allowed.");
-            Some(json_value)
-        }
-        (TantivyValue::F64(f64_val), LeafType::F64(numeric_options)) => {
-            f64_val.to_json(numeric_options.output_format)
-        }
-        (TantivyValue::I64(i64_val), LeafType::I64(numeric_options)) => {
-            i64_val.to_json(numeric_options.output_format)
-        }
-        (TantivyValue::U64(u64_val), LeafType::U64(numeric_options)) => {
-            u64_val.to_json(numeric_options.output_format)
-        }
-        _ => {
-            warn!(
-                "The value type `{:?}` doesn't match the requested type `{:?}`",
-                value, leaf_type
+        LeafType::DateTime(date_time_options) => date_time_options
+            .reparse_tantivy_value(&value)
+            .map(|date_time| {
+                date_time_options
+                    .output_format
+                    .format_to_json(date_time)
+                    .expect("Invalid datetime is not allowed.")
+            })
+            .ok_or(value),
+    };
+    match res {
+        Ok(res) => Some(res),
+        Err(value) => {
+            quickwit_common::rate_limited_warn!(
+                limit_per_min = 2,
+                "the value type `{:?}` doesn't match the requested type `{:?}`",
+                value,
+                leaf_type
             );
             None
         }
@@ -1267,7 +1441,7 @@ mod tests {
         let leaf_entry = MappingLeaf {
             field,
             typ,
-            cardinality: Cardinality::MultiValues,
+            cardinality: Cardinality::MultiValued,
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
@@ -1319,7 +1493,7 @@ mod tests {
         let leaf_entry = MappingLeaf {
             field,
             typ,
-            cardinality: Cardinality::MultiValues,
+            cardinality: Cardinality::MultiValued,
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
@@ -1342,7 +1516,7 @@ mod tests {
         let leaf_entry = MappingLeaf {
             field,
             typ,
-            cardinality: Cardinality::MultiValues,
+            cardinality: Cardinality::MultiValued,
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
@@ -1360,7 +1534,7 @@ mod tests {
         let leaf_entry = MappingLeaf {
             field,
             typ,
-            cardinality: Cardinality::MultiValues,
+            cardinality: Cardinality::MultiValued,
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
@@ -1379,7 +1553,7 @@ mod tests {
         let leaf_entry = MappingLeaf {
             field,
             typ,
-            cardinality: Cardinality::MultiValues,
+            cardinality: Cardinality::MultiValued,
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
@@ -1525,7 +1699,7 @@ mod tests {
         let leaf_entry = MappingLeaf {
             field,
             typ,
-            cardinality: Cardinality::MultiValues,
+            cardinality: Cardinality::MultiValued,
             concatenate: Vec::new(),
         };
         let mut document = Document::default();
@@ -1586,7 +1760,23 @@ mod tests {
         assert_eq!(
             value_to_json(
                 TantivyValue::F64(0.1),
-                &LeafType::F64(numeric_options_number)
+                &LeafType::F64(numeric_options_number.clone())
+            )
+            .unwrap(),
+            serde_json::json!(0.1)
+        );
+        assert_eq!(
+            value_to_json(
+                TantivyValue::U64(1),
+                &LeafType::F64(numeric_options_number.clone())
+            )
+            .unwrap(),
+            serde_json::json!(1.0)
+        );
+        assert_eq!(
+            value_to_json(
+                TantivyValue::Str("0.1".to_string()),
+                &LeafType::F64(numeric_options_number.clone())
             )
             .unwrap(),
             serde_json::json!(0.1)
@@ -1608,10 +1798,14 @@ mod tests {
         assert_eq!(
             value_to_json(
                 TantivyValue::I64(-1),
-                &LeafType::I64(numeric_options_number)
+                &LeafType::I64(numeric_options_number.clone())
             )
             .unwrap(),
             serde_json::json!(-1)
+        );
+        assert_eq!(
+            value_to_json(TantivyValue::I64(1), &LeafType::I64(numeric_options_number)).unwrap(),
+            serde_json::json!(1)
         );
 
         let numeric_options_str = QuickwitNumericOptions {
@@ -1628,7 +1822,15 @@ mod tests {
     fn test_tantivy_value_to_json_value_u64() {
         let numeric_options_number = QuickwitNumericOptions::default();
         assert_eq!(
-            value_to_json(TantivyValue::U64(1), &LeafType::U64(numeric_options_number)).unwrap(),
+            value_to_json(
+                TantivyValue::U64(1),
+                &LeafType::U64(numeric_options_number.clone())
+            )
+            .unwrap(),
+            serde_json::json!(1u64)
+        );
+        assert_eq!(
+            value_to_json(TantivyValue::I64(1), &LeafType::U64(numeric_options_number)).unwrap(),
             serde_json::json!(1u64)
         );
 

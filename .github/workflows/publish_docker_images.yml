@@ -22,9 +22,7 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux/amd64
-          # Using 16 vcpu on arm as 8vcpu seems to stay stuck on runner acquisition.
-          # (5/13). We can switch back to 8vcpu one buildjet starts working as intended again.
-          - os: buildjet-16vcpu-ubuntu-2204-arm
+          - os: buildjet-8vcpu-ubuntu-2204-arm
             platform: linux/arm64
     runs-on: ${{ matrix.os }}
     steps:

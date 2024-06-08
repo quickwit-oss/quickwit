@@ -27,6 +27,7 @@ use json_comments::StripComments;
 use once_cell::sync::Lazy;
 use quickwit_common::net::is_valid_hostname;
 use quickwit_common::uri::Uri;
+use quickwit_proto::types::NodeIdRef;
 use regex::Regex;
 
 mod cluster_config;
@@ -47,9 +48,10 @@ pub use cluster_config::ClusterConfig;
 // See #2048
 use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
 pub use index_config::{
-    build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig,
-    IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
+    build_doc_mapper, load_index_config_from_user_config, IndexConfig, IndexingResources,
+    IndexingSettings, RetentionPolicy, SearchSettings,
 };
+pub use quickwit_doc_mapper::DocMapping;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -179,8 +181,8 @@ pub fn validate_index_id_pattern(pattern: &str, allow_negative: bool) -> anyhow:
     Ok(())
 }
 
-pub fn validate_node_id(node_id: &str) -> anyhow::Result<()> {
-    if !is_valid_hostname(node_id) {
+pub fn validate_node_id(node_id: &NodeIdRef) -> anyhow::Result<()> {
+    if !is_valid_hostname(node_id.as_str()) {
         bail!(
             "node identifier `{node_id}` is invalid. node identifiers must be valid short \
              hostnames (see RFC 1123)"
@@ -224,7 +226,7 @@ impl ConfigFormat {
                     serde_json::from_reader(StripComments::new(payload))?;
                 let version_value = json_value.get_mut("version").context("missing version")?;
                 if let Some(version_number) = version_value.as_u64() {
-                    warn!(version_value=?version_value, "`version` is supposed to be a string");
+                    warn!(version_value=?version_value, "`version` should be a string");
                     *version_value = JsonValue::String(version_number.to_string());
                 }
                 serde_json::from_value(json_value).context("failed to parse JSON file")
@@ -236,7 +238,7 @@ impl ConfigFormat {
                     toml::from_str(payload_str).context("failed to parse TOML file")?;
                 let version_value = toml_value.get_mut("version").context("missing version")?;
                 if let Some(version_number) = version_value.as_integer() {
-                    warn!(version_value=?version_value, "`version` is supposed to be a string");
+                    warn!(version_value=?version_value, "`version` should be a string");
                     *version_value = toml::Value::String(version_number.to_string());
                     let reserialized = toml::to_string(version_value)
                         .context("failed to reserialize toml config")?;

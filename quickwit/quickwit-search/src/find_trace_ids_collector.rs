@@ -111,7 +111,7 @@ impl Eq for TraceIdTermOrd {}
 /// Finds the most recent trace ids among a set of matching spans. Multiple spans belonging to the
 /// same trace can be found in the document set. As a result, this problem is akin to finding the
 /// top k elements with duplicates
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FindTraceIdsCollector {
     /// The number of traces to select.
     pub num_traces: usize,

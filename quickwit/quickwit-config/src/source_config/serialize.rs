@@ -20,6 +20,7 @@
 use std::num::NonZeroUsize;
 
 use anyhow::bail;
+use quickwit_proto::types::SourceId;
 use serde::{Deserialize, Serialize};
 
 use super::{TransformConfig, RESERVED_SOURCE_IDS};
@@ -31,14 +32,11 @@ type SourceConfigForSerialization = SourceConfigV0_8;
 #[serde(deny_unknown_fields)]
 #[serde(tag = "version")]
 pub enum VersionedSourceConfig {
-    #[serde(rename = "0.7")]
-    // Retro compatibility.
-    #[serde(alias = "0.6")]
-    #[serde(alias = "0.5")]
-    #[serde(alias = "0.4")]
-    V0_7(SourceConfigV0_7),
     #[serde(rename = "0.8")]
     V0_8(SourceConfigV0_8),
+    // Retro compatibility.
+    #[serde(rename = "0.7")]
+    V0_7(SourceConfigV0_7),
 }
 
 impl From<VersionedSourceConfig> for SourceConfigForSerialization {
@@ -74,7 +72,7 @@ impl SourceConfigForSerialization {
     /// TODO refactor #1065
     fn validate_and_build(self) -> anyhow::Result<SourceConfig> {
         if !RESERVED_SOURCE_IDS.contains(&self.source_id.as_str()) {
-            validate_identifier("Source ID", &self.source_id)?;
+            validate_identifier("source", &self.source_id)?;
         }
         let num_pipelines = NonZeroUsize::new(self.num_pipelines)
             .ok_or_else(|| anyhow::anyhow!("`desired_num_pipelines` must be strictly positive"))?;
@@ -174,7 +172,8 @@ fn default_source_enabled() -> bool {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceConfigV0_7 {
-    pub source_id: String,
+    #[schema(value_type = String)]
+    pub source_id: SourceId,
 
     #[serde(
         default = "default_max_num_pipelines_per_indexer",
@@ -203,7 +202,8 @@ pub struct SourceConfigV0_7 {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceConfigV0_8 {
-    pub source_id: String,
+    #[schema(value_type = String)]
+    pub source_id: SourceId,
 
     #[serde(default = "default_num_pipelines")]
     pub num_pipelines: usize,

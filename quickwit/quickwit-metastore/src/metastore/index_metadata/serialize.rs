@@ -33,9 +33,6 @@ pub(crate) enum VersionedIndexMetadata {
     #[serde(rename = "0.8")]
     // Retro compatibility.
     #[serde(alias = "0.7")]
-    #[serde(alias = "0.6")]
-    #[serde(alias = "0.5")]
-    #[serde(alias = "0.4")]
     V0_8(IndexMetadataV0_8),
 }
 
@@ -73,8 +70,6 @@ impl From<IndexMetadata> for IndexMetadataV0_8 {
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub(crate) struct IndexMetadataV0_8 {
     #[schema(value_type = String)]
-    // Defaults to nil for backward compatibility.
-    #[serde(default, alias = "index_id")]
     pub index_uid: IndexUid,
     #[schema(value_type = VersionedIndexConfig)]
     pub index_config: IndexConfig,
@@ -98,11 +93,7 @@ impl TryFrom<IndexMetadataV0_8> for IndexMetadata {
             sources.insert(source.source_id.clone(), source);
         }
         Ok(Self {
-            index_uid: if v0_8.index_uid.is_empty() {
-                IndexUid::from_parts(&v0_8.index_config.index_id, 0)
-            } else {
-                v0_8.index_uid
-            },
+            index_uid: v0_8.index_uid,
             index_config: v0_8.index_config,
             checkpoint: v0_8.checkpoint,
             create_timestamp: v0_8.create_timestamp,

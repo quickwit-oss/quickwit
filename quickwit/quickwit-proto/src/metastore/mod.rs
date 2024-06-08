@@ -73,7 +73,7 @@ pub enum EntityKind {
     /// A set of splits.
     Splits {
         /// Split IDs.
-        split_ids: Vec<SplitId>,
+        split_ids: Vec<String>,
     },
     /// An index template.
     IndexTemplate {
@@ -154,6 +154,29 @@ pub enum MetastoreError {
 
     #[error("service unavailable: {0}")]
     Unavailable(String),
+}
+
+impl MetastoreError {
+    /// Returns `true` if the transaction that emitted this error is "certainly abort".
+    /// Returns `false` if we cannot know whether the transaction was successful or not.
+    pub fn is_transaction_certainly_aborted(&self) -> bool {
+        match self {
+            MetastoreError::AlreadyExists(_)
+            | MetastoreError::FailedPrecondition { .. }
+            | MetastoreError::Forbidden { .. }
+            | MetastoreError::InvalidArgument { .. }
+            | MetastoreError::JsonDeserializeError { .. }
+            | MetastoreError::JsonSerializeError { .. }
+            | MetastoreError::NotFound(_)
+            | MetastoreError::TooManyRequests => true,
+            MetastoreError::Connection { .. }
+            | MetastoreError::Db { .. }
+            | MetastoreError::Internal { .. }
+            | MetastoreError::Io { .. }
+            | MetastoreError::Timeout { .. }
+            | MetastoreError::Unavailable(_) => false,
+        }
+    }
 }
 
 #[cfg(feature = "postgres")]
@@ -262,6 +285,12 @@ impl fmt::Display for SourceType {
 }
 
 impl IndexMetadataRequest {
+    pub fn into_index_id(self) -> Option<IndexId> {
+        self.index_uid
+            .map(|index_uid| index_uid.index_id)
+            .or(self.index_id)
+    }
+
     pub fn for_index_id(index_id: IndexId) -> Self {
         Self {
             index_uid: None,

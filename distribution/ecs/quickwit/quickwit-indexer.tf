@@ -3,7 +3,7 @@ module "quickwit_indexer" {
   service_name                   = "indexer"
   service_discovery_registry_arn = aws_service_discovery_service.indexer.arn
   cluster_arn                    = module.ecs_cluster.arn
-  postgres_credential_arn        = local.postgres_uri_parameter_arn
+  postgres_uri_secret_arn        = local.postgres_uri_secret_arn
   quickwit_peer_list             = local.quickwit_peer_list
   s3_access_policy_arn           = aws_iam_policy.quickwit_task_permission.arn
   task_execution_policy_arn      = aws_iam_policy.quickwit_task_execution_permission.arn

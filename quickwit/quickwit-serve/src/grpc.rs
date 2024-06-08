@@ -91,11 +91,11 @@ pub(crate) async fn start_grpc_server(
         .is_service_enabled(QuickwitService::Indexer)
     {
         enabled_grpc_services.insert("ingest-router");
-        Some(
-            services
-                .ingest_router_service
-                .as_grpc_service(max_message_size),
-        )
+
+        let ingest_router_service = services
+            .ingest_router_service
+            .as_grpc_service(max_message_size);
+        Some(ingest_router_service)
     } else {
         None
     };

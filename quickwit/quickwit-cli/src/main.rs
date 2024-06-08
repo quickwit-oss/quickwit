@@ -21,6 +21,7 @@
 
 use std::collections::BTreeMap;
 
+use anyhow::Context;
 use colored::Colorize;
 use opentelemetry::global;
 use quickwit_cli::busy_detector;
@@ -29,17 +30,21 @@ use quickwit_cli::cli::{build_cli, CliCommand};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::logger::setup_logging_and_tracing;
+use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::BuildInfo;
 use tracing::error;
 
 fn main() -> anyhow::Result<()> {
-    tokio::runtime::Builder::new_multi_thread()
+    let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .on_thread_unpark(busy_detector::thread_unpark)
         .on_thread_park(busy_detector::thread_park)
         .build()
-        .unwrap()
-        .block_on(main_impl())
+        .context("failed to start main Tokio runtime")?;
+
+    scrape_tokio_runtime_metrics(rt.handle(), "main");
+
+    rt.block_on(main_impl())
 }
 
 fn register_build_info_metric() {

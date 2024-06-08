@@ -1,8 +1,12 @@
+[build]
+rustflags = ["--cfg", "tokio_unstable"]
+rustdocflags = ["--cfg", "tokio_unstable"]
+
 [target.x86_64-unknown-linux-gnu]
-# Targetting x86-64-v2 gives a ~2% performance boost while only
+# Targeting x86-64-v2 gives a ~2% performance boost while only
 # disallowing Intel CPUs older than 2008 and AMD CPUs older than 2011.
 # None of those very old CPUs are used in GCP
 # (https://cloud.google.com/compute/docs/cpu-platforms). Unfortunately,
 # AWS does not seem to disclose the exact CPUs they use.
-rustflags = ["-C", "target-cpu=x86-64-v2"]
+rustflags = ["-C", "target-cpu=x86-64-v2", "--cfg", "tokio_unstable"]
 

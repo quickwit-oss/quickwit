@@ -416,7 +416,7 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: IndexMetadataRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
-        let response = if let Some(index_uid) = &request.index_uid {
+        let pg_index_opt = if let Some(index_uid) = &request.index_uid {
             index_opt_for_uid(&self.connection_pool, index_uid.clone()).await?
         } else if let Some(index_id) = &request.index_id {
             index_opt(&self.connection_pool, index_id).await?
@@ -427,9 +427,11 @@ impl MetastoreService for PostgresqlMetastore {
                 cause: "".to_string(),
             });
         };
-        let index_metadata = response
+        let index_metadata = pg_index_opt
             .ok_or(MetastoreError::NotFound(EntityKind::Index {
-                index_id: request.index_id.expect("`index_id` should be set"),
+                index_id: request
+                    .into_index_id()
+                    .expect("`index_id` or `index_uid` should be set"),
             }))?
             .index_metadata()?;
         let response = IndexMetadataResponse::try_from_index_metadata(&index_metadata)?;
@@ -559,24 +561,24 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: StageSplitsRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        let split_metadata_list = request.deserialize_splits_metadata()?;
-        let index_uid: IndexUid = request.index_uid().clone();
-        let mut split_ids = Vec::with_capacity(split_metadata_list.len());
-        let mut time_range_start_list = Vec::with_capacity(split_metadata_list.len());
-        let mut time_range_end_list = Vec::with_capacity(split_metadata_list.len());
-        let mut tags_list = Vec::with_capacity(split_metadata_list.len());
-        let mut split_metadata_json_list = Vec::with_capacity(split_metadata_list.len());
-        let mut delete_opstamps = Vec::with_capacity(split_metadata_list.len());
-        let mut maturity_timestamps = Vec::with_capacity(split_metadata_list.len());
+        let splits_metadata = request.deserialize_splits_metadata()?;
 
-        for split_metadata in split_metadata_list {
-            let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|error| {
-                MetastoreError::JsonSerializeError {
-                    struct_name: "SplitMetadata".to_string(),
-                    message: error.to_string(),
-                }
-            })?;
-            split_metadata_json_list.push(split_metadata_json);
+        if splits_metadata.is_empty() {
+            return Ok(Default::default());
+        }
+        let index_uid: IndexUid = request.index_uid().clone();
+        let mut split_ids = Vec::with_capacity(splits_metadata.len());
+        let mut time_range_start_list = Vec::with_capacity(splits_metadata.len());
+        let mut time_range_end_list = Vec::with_capacity(splits_metadata.len());
+        let mut tags_list = Vec::with_capacity(splits_metadata.len());
+        let mut splits_metadata_json = Vec::with_capacity(splits_metadata.len());
+        let mut delete_opstamps = Vec::with_capacity(splits_metadata.len());
+        let mut maturity_timestamps = Vec::with_capacity(splits_metadata.len());
+        let mut node_ids = Vec::with_capacity(splits_metadata.len());
+
+        for split_metadata in splits_metadata {
+            let split_metadata_json = serde_utils::to_json_str(&split_metadata)?;
+            splits_metadata_json.push(split_metadata_json);
 
             let time_range_start = split_metadata
                 .time_range
@@ -592,13 +594,15 @@ impl MetastoreService for PostgresqlMetastore {
             tags_list.push(sqlx::types::Json(tags));
             split_ids.push(split_metadata.split_id);
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
+            node_ids.push(split_metadata.node_id);
         }
         tracing::Span::current().record("split_ids", format!("{split_ids:?}"));
 
+        // TODO: Remove transaction.
         run_with_tx!(self.connection_pool, tx, {
             let upserted_split_ids: Vec<String> = sqlx::query_scalar(r#"
                 INSERT INTO splits
-                    (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, maturity_timestamp, split_state, index_uid)
+                    (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, maturity_timestamp, split_state, index_uid, node_id)
                 SELECT
                     split_id,
                     time_range_start,
@@ -607,11 +611,12 @@ impl MetastoreService for PostgresqlMetastore {
                     split_metadata_json,
                     delete_opstamp,
                     to_timestamp(maturity_timestamp),
-                    $8 as split_state,
-                    $9 as index_uid
+                    $9 as split_state,
+                    $10 as index_uid,
+                    node_id
                 FROM
-                    UNNEST($1, $2, $3, $4, $5, $6, $7)
-                    AS staged_splits (split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp, maturity_timestamp)
+                    UNNEST($1, $2, $3, $4, $5, $6, $7, $8)
+                    AS staged_splits (split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp, maturity_timestamp, node_id)
                 ON CONFLICT(split_id) DO UPDATE
                     SET
                         time_range_start = excluded.time_range_start,
@@ -621,6 +626,7 @@ impl MetastoreService for PostgresqlMetastore {
                         delete_opstamp = excluded.delete_opstamp,
                         maturity_timestamp = excluded.maturity_timestamp,
                         index_uid = excluded.index_uid,
+                        node_id = excluded.node_id,
                         update_timestamp = CURRENT_TIMESTAMP,
                         create_timestamp = CURRENT_TIMESTAMP
                     WHERE splits.split_id = excluded.split_id AND splits.split_state = 'Staged'
@@ -630,9 +636,10 @@ impl MetastoreService for PostgresqlMetastore {
                 .bind(time_range_start_list)
                 .bind(time_range_end_list)
                 .bind(tags_list)
-                .bind(split_metadata_json_list)
+                .bind(splits_metadata_json)
                 .bind(delete_opstamps)
                 .bind(maturity_timestamps)
+                .bind(&node_ids)
                 .bind(SplitState::Staged.as_str())
                 .bind(&index_uid)
                 .fetch_all(tx.as_mut())
@@ -651,7 +658,7 @@ impl MetastoreService for PostgresqlMetastore {
                 return Err(MetastoreError::FailedPrecondition { entity, message });
             }
             info!(
-                index_id=%index_uid.index_id,
+                %index_uid,
                 "staged `{}` splits successfully", split_ids.len()
             );
             Ok(EmptyResponse {})
@@ -818,7 +825,7 @@ impl MetastoreService for PostgresqlMetastore {
                 return Err(MetastoreError::FailedPrecondition { entity, message });
             }
             info!(
-                index_id=%index_uid.index_id,
+                %index_uid,
                 "published {} splits and marked {} for deletion successfully",
                 num_published_splits, num_marked_splits
             );
@@ -936,14 +943,14 @@ impl MetastoreService for PostgresqlMetastore {
             }));
         }
         info!(
-            index_id=%index_uid.index_id,
+            %index_uid,
             "Marked {} splits for deletion, among which {} were newly marked.",
             split_ids.len() - not_found_split_ids.len(),
             num_marked_splits
         );
         if !not_found_split_ids.is_empty() {
             warn!(
-                index_id=%index_uid.index_id,
+                %index_uid,
                 split_ids=?PrettySample::new(&not_found_split_ids, 5),
                 "{} splits were not found and could not be marked for deletion.",
                 not_found_split_ids.len()
@@ -1028,11 +1035,11 @@ impl MetastoreService for PostgresqlMetastore {
             };
             return Err(MetastoreError::FailedPrecondition { entity, message });
         }
-        info!(index_id=%index_uid.index_id, "Deleted {} splits from index.", num_deleted_splits);
+        info!(%index_uid, "deleted {} splits from index", num_deleted_splits);
 
         if !not_found_split_ids.is_empty() {
             warn!(
-                index_id=%index_uid.index_id,
+                %index_uid,
                 split_ids=?PrettySample::new(&not_found_split_ids, 5),
                 "{} splits were not found and could not be deleted.",
                 not_found_split_ids.len()

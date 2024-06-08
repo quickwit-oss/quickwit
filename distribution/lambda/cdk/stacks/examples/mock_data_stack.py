@@ -30,6 +30,7 @@ class Source(Construct):
         construct_id: str,
         index_id: str,
         qw_svc: quickwit_service.QuickwitService,
+        data_generation_interval_sec: int,
         **kwargs,
     ):
         super().__init__(scope, construct_id, **kwargs)
@@ -59,7 +60,9 @@ class Source(Construct):
         rule = aws_events.Rule(
             self,
             "ScheduledRule",
-            schedule=aws_events.Schedule.rate(aws_cdk.Duration.minutes(5)),
+            schedule=aws_events.Schedule.rate(
+                aws_cdk.Duration.seconds(data_generation_interval_sec)
+            ),
         )
         rule.add_target(aws_events_targets.LambdaFunction(generator_lambda))
 
@@ -139,6 +142,7 @@ class MockDataStack(Stack):
         indexer_package_location: str,
         searcher_package_location: str,
         search_api_key: str | None = None,
+        data_generation_interval_sec: int = 300,
         **kwargs,
     ) -> None:
         """If `search_api_key` is not set, the search API is not deployed."""
@@ -167,7 +171,13 @@ class MockDataStack(Stack):
             searcher_package_location=searcher_package_location,
         )
 
-        Source(self, "Source", index_id=index_id, qw_svc=qw_svc)
+        Source(
+            self,
+            "Source",
+            index_id=index_id,
+            qw_svc=qw_svc,
+            data_generation_interval_sec=data_generation_interval_sec,
+        )
 
         if search_api_key is not None:
             SearchAPI(

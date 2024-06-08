@@ -27,7 +27,7 @@ docker-compose-up:
 	COMPOSE_PROFILES=$(DOCKER_SERVICES) docker compose -f docker-compose.yml up -d --remove-orphans --wait
 
 docker-compose-down:
-	docker compose -f docker-compose.yml down --remove-orphans
+	docker compose -p quickwit down --remove-orphans
 
 docker-compose-logs:
 	docker compose logs -f -t

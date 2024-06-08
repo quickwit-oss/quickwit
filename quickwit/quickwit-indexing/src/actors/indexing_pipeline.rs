@@ -264,7 +264,7 @@ impl IndexingPipeline {
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
         let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
         self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
-        self.statistics.shard_ids = self.shard_ids.clone();
+        self.statistics.shard_ids.clone_from(&self.shard_ids);
         ctx.observe(self);
     }
 
@@ -543,7 +543,8 @@ impl Handler<AssignShards> for IndexingPipeline {
         assign_shards_message: AssignShards,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.shard_ids = assign_shards_message.0.shard_ids.clone();
+        self.shard_ids
+            .clone_from(&assign_shards_message.0.shard_ids);
         // If the pipeline is running, we forward the message to its source.
         // If it is not, it will be respawned soon, and the shards will be assigned afterward.
         if let Some(handles) = &mut self.handles_opt {
@@ -605,7 +606,7 @@ mod tests {
         EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, MetastoreError,
         MockMetastoreService,
     };
-    use quickwit_proto::types::{IndexUid, PipelineUid};
+    use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
@@ -626,7 +627,7 @@ mod tests {
         mut num_fails: usize,
         test_file: &str,
     ) -> anyhow::Result<()> {
-        let node_id = "test-node".to_string();
+        let node_id = NodeId::from("test-node");
         let index_uid = IndexUid::for_test("test-index", 2);
         let pipeline_id = IndexingPipelineId {
             node_id,
@@ -745,7 +746,7 @@ mod tests {
     }
 
     async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {
-        let node_id = "test-node".to_string();
+        let node_id = NodeId::from("test-node");
         let index_uid: IndexUid = IndexUid::for_test("test-index", 1);
         let pipeline_id = IndexingPipelineId {
             node_id,
@@ -850,7 +851,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() {
-        let node_id = "test-node".to_string();
+        let node_id = NodeId::from("test-node");
         let pipeline_id = IndexingPipelineId {
             node_id,
             index_uid: IndexUid::new_with_random_ulid("test-index"),
@@ -891,7 +892,7 @@ mod tests {
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let merge_pipeline_params = MergePipelineParams {
-            pipeline_id: pipeline_id.clone(),
+            pipeline_id: pipeline_id.merge_pipeline_id(),
             doc_mapper: doc_mapper.clone(),
             indexing_directory: TempDirectory::for_test(),
             metastore: metastore.clone(),
@@ -902,7 +903,7 @@ mod tests {
             merge_scheduler_service: universe.get_or_spawn_one(),
             event_broker: Default::default(),
         };
-        let merge_pipeline = MergePipeline::new(merge_pipeline_params, universe.spawn_ctx());
+        let merge_pipeline = MergePipeline::new(merge_pipeline_params, None, universe.spawn_ctx());
         let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
         let (_merge_pipeline_mailbox, merge_pipeline_handler) =
             universe.spawn_builder().spawn(merge_pipeline);
@@ -952,7 +953,7 @@ mod tests {
     }
 
     async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
-        let node_id = "test-node".to_string();
+        let node_id = NodeId::from("test-node");
         let index_uid: IndexUid = IndexUid::for_test("test-index", 2);
         let pipeline_id = IndexingPipelineId {
             node_id,

@@ -29,7 +29,7 @@ use quickwit_cluster::Cluster;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_control_plane::control_plane::{ControlPlane, GetDebugInfo};
-use quickwit_ingest::Ingester;
+use quickwit_ingest::{IngestRouter, Ingester};
 use quickwit_proto::developer::{
     DeveloperError, DeveloperResult, DeveloperService, GetDebugInfoRequest, GetDebugInfoResponse,
 };
@@ -42,6 +42,7 @@ pub(crate) struct DeveloperApiServer {
     node_config: Arc<NodeConfig>,
     cluster: Cluster,
     control_plane_mailbox_opt: Option<Mailbox<ControlPlane>>,
+    ingest_router_opt: Option<IngestRouter>,
     ingester_opt: Option<Ingester>,
 }
 
@@ -59,6 +60,7 @@ impl DeveloperApiServer {
             node_config: services.node_config.clone(),
             cluster: services.cluster.clone(),
             control_plane_mailbox_opt: services.control_plane_server_opt.clone(),
+            ingest_router_opt: services.ingest_router_opt.clone(),
             ingester_opt: services.ingester_opt.clone(),
         }
     }
@@ -99,6 +101,9 @@ impl DeveloperService for DeveloperApiServer {
                     }
                 };
             }
+        }
+        if let Some(ingest_router) = &self.ingest_router_opt {
+            debug_info["ingest_router"] = ingest_router.debug_info().await;
         }
         if let Some(ingester) = &self.ingester_opt {
             if roles.is_empty() || roles.contains(&QuickwitService::Indexer) {
@@ -143,6 +148,7 @@ mod tests {
             node_config,
             cluster,
             control_plane_mailbox_opt: None,
+            ingest_router_opt: None,
             ingester_opt: None,
         };
         let request = GetDebugInfoRequest { roles: Vec::new() };

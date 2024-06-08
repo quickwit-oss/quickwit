@@ -35,6 +35,7 @@ use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_metastore::{MetastoreResolver, SplitState};
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_client::TraceServiceClient;
+use quickwit_proto::types::NodeId;
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{
     CommitType, QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL,
@@ -412,10 +413,10 @@ pub fn build_node_configs(
     let unique_dir_name = new_coolid("test-dir");
     for (node_idx, node_services) in nodes_services.iter().enumerate() {
         let mut config = NodeConfig::for_test();
-        config.enabled_services = node_services.clone();
-        config.cluster_id = cluster_id.clone();
-        config.node_id = format!("test-node-{node_idx}");
-        config.data_dir_path = root_data_dir.join(&config.node_id);
+        config.enabled_services.clone_from(node_services);
+        config.cluster_id.clone_from(&cluster_id);
+        config.node_id = NodeId::new(format!("test-node-{node_idx}"));
+        config.data_dir_path = root_data_dir.join(config.node_id.as_str());
         config.metastore_uri =
             QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/metastore")).unwrap();
         config.default_index_root_uri =
