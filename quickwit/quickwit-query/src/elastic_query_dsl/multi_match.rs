@@ -22,6 +22,7 @@ use serde_with::formats::PreferMany;
 use serde_with::{serde_as, OneOrMany};
 
 use crate::elastic_query_dsl::bool_query::BoolQuery;
+use crate::elastic_query_dsl::match_bool_prefix::MatchBoolPrefixQuery;
 use crate::elastic_query_dsl::match_phrase_query::{MatchPhraseQuery, MatchPhraseQueryParams};
 use crate::elastic_query_dsl::match_query::{MatchQuery, MatchQueryParams};
 use crate::elastic_query_dsl::phrase_prefix_query::{
@@ -78,7 +79,15 @@ fn deserialize_match_query_for_one_field(
             };
             Ok(ElasticQueryDslInner::MatchPhrasePrefix(phrase_prefix))
         }
-        MatchType::MostFields => {
+        MatchType::BoolPrefix => {
+            let bool_prefix_params: MatchQueryParams = serde_json::from_value(json_val)?;
+            let bool_prefix = MatchBoolPrefixQuery {
+                params: bool_prefix_params,
+                field: field.to_string(),
+            };
+            Ok(ElasticQueryDslInner::MatchBoolPrefix(bool_prefix))
+        }
+        MatchType::MostFields | MatchType::BestFields | MatchType::CrossFields => {
             let match_query_params: MatchQueryParams = serde_json::from_value(json_val)?;
             let match_query = MatchQuery {
                 field: field.to_string(),
@@ -110,6 +119,7 @@ impl TryFrom<MultiMatchQueryForDeserialization> for MultiMatchQuery {
 
     fn try_from(multi_match_query: MultiMatchQueryForDeserialization) -> Result<Self, Self::Error> {
         if multi_match_query.fields.is_empty() {
+            // TODO: We can use default field from index configuration instead
             return Err(serde::de::Error::custom(
                 "Quickwit does not support multi match query with 0 fields. MultiMatchQueries \
                  must have at least one field.",
@@ -139,8 +149,11 @@ impl TryFrom<MultiMatchQueryForDeserialization> for MultiMatchQuery {
 pub enum MatchType {
     #[default]
     MostFields,
+    BestFields,  // Not implemented will be converted to MostFields
+    CrossFields, // Not implemented will be converted to MostFields
     Phrase,
     PhrasePrefix,
+    BoolPrefix,
 }
 
 impl ConvertableToQueryAst for MultiMatchQuery {
@@ -151,8 +164,8 @@ impl ConvertableToQueryAst for MultiMatchQuery {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
+    use crate::elastic_query_dsl::default_max_expansions;
 
     #[track_caller]
     fn test_multimatch_query_ok_aux<T: Into<ElasticQueryDslInner>>(json: &str, expected: T) {
@@ -193,6 +206,158 @@ mod tests {
                     field: "body".to_string(),
                     params: MatchQueryParams {
                         query: "quick brown fox".to_string(),
+                        operator: crate::BooleanOperand::Or,
+                        zero_terms_query: Default::default(),
+                        _lenient: false,
+                    },
+                }
+                .into(),
+            ]),
+        );
+
+        test_multimatch_query_ok_aux(
+            r#"{
+            "query": "quick brown fox",
+            "type": "best_fields",
+            "fields": ["title", "body"]
+        }"#,
+            BoolQuery::union(vec![
+                MatchQuery {
+                    field: "title".to_string(),
+                    params: MatchQueryParams {
+                        query: "quick brown fox".to_string(),
+                        operator: crate::BooleanOperand::Or,
+                        zero_terms_query: Default::default(),
+                        _lenient: false,
+                    },
+                }
+                .into(),
+                MatchQuery {
+                    field: "body".to_string(),
+                    params: MatchQueryParams {
+                        query: "quick brown fox".to_string(),
+                        operator: crate::BooleanOperand::Or,
+                        zero_terms_query: Default::default(),
+                        _lenient: false,
+                    },
+                }
+                .into(),
+            ]),
+        );
+
+        test_multimatch_query_ok_aux(
+            r#"{
+            "query": "quick brown fox",
+            "type": "cross_fields",
+            "fields": ["title", "body"]
+        }"#,
+            BoolQuery::union(vec![
+                MatchQuery {
+                    field: "title".to_string(),
+                    params: MatchQueryParams {
+                        query: "quick brown fox".to_string(),
+                        operator: crate::BooleanOperand::Or,
+                        zero_terms_query: Default::default(),
+                        _lenient: false,
+                    },
+                }
+                .into(),
+                MatchQuery {
+                    field: "body".to_string(),
+                    params: MatchQueryParams {
+                        query: "quick brown fox".to_string(),
+                        operator: crate::BooleanOperand::Or,
+                        zero_terms_query: Default::default(),
+                        _lenient: false,
+                    },
+                }
+                .into(),
+            ]),
+        );
+
+        test_multimatch_query_ok_aux(
+            r#"{
+            "query": "quick brown fox",
+            "type": "phrase",
+            "fields": ["title", "body"]
+        }"#,
+            BoolQuery::union(vec![
+                MatchPhraseQuery {
+                    field: "title".to_string(),
+                    params: MatchPhraseQueryParams {
+                        query: "quick brown fox".to_string(),
+                        zero_terms_query: Default::default(),
+                        analyzer: None,
+                        slop: Default::default(),
+                    },
+                }
+                .into(),
+                MatchPhraseQuery {
+                    field: "body".to_string(),
+                    params: MatchPhraseQueryParams {
+                        query: "quick brown fox".to_string(),
+                        zero_terms_query: Default::default(),
+                        analyzer: None,
+                        slop: Default::default(),
+                    },
+                }
+                .into(),
+            ]),
+        );
+
+        test_multimatch_query_ok_aux(
+            r#"{
+            "query": "quick brown fox",
+            "type": "phrase_prefix",
+            "fields": ["title", "body"]
+        }"#,
+            BoolQuery::union(vec![
+                MatchPhrasePrefixQuery {
+                    field: "title".to_string(),
+                    value: MatchPhrasePrefixQueryParams {
+                        query: "quick brown fox".to_string(),
+                        analyzer: Default::default(),
+                        max_expansions: default_max_expansions(),
+                        slop: Default::default(),
+                        zero_terms_query: Default::default(),
+                    },
+                }
+                .into(),
+                MatchPhrasePrefixQuery {
+                    field: "body".to_string(),
+                    value: MatchPhrasePrefixQueryParams {
+                        query: "quick brown fox".to_string(),
+                        analyzer: Default::default(),
+                        max_expansions: default_max_expansions(),
+                        slop: Default::default(),
+                        zero_terms_query: Default::default(),
+                    },
+                }
+                .into(),
+            ]),
+        );
+
+        test_multimatch_query_ok_aux(
+            r#"{
+            "query": "quick brown",
+            "type": "bool_prefix",
+            "fields": ["title", "body"]
+        }"#,
+            BoolQuery::union(vec![
+                MatchBoolPrefixQuery {
+                    field: "title".to_string(),
+                    params: MatchQueryParams {
+                        query: "quick brown".to_string(),
+                        operator: crate::BooleanOperand::Or,
+                        zero_terms_query: Default::default(),
+                        _lenient: false,
+                    },
+                }
+                .into(),
+                MatchBoolPrefixQuery {
+                    field: "body".to_string(),
+                    params: MatchQueryParams {
+                        query: "quick brown".to_string(),
                         operator: crate::BooleanOperand::Or,
                         zero_terms_query: Default::default(),
                         _lenient: false,
