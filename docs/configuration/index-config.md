@@ -676,8 +676,7 @@ This section describes search settings for a given index.
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `default_search_fields`      | Default list of fields that will be used for search. The field names in this list may be declared
-explicitly in the schema, or may refer to a field captured by the dynamic mode.   | `None` |
+| `default_search_fields` | Default list of fields that will be used for search. The field names in this list may be declared explicitly in the schema, or may refer to a field captured by the dynamic mode. | `None` |
 
 ## Retention policy
 
