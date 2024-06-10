@@ -45,10 +45,9 @@ pub(crate) fn otlp_ingest_api_handlers(
     otlp_traces_service: Option<OtlpGrpcTracesService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     otlp_default_logs_handler(otlp_logs_service.clone())
-        .or(otlp_default_traces_handler(otlp_traces_service.clone()))
-        .or(otlp_logs_handler(otlp_logs_service))
-        .or(otlp_ingest_traces_handler(otlp_traces_service))
-        .recover(recover_fn)
+        .or(otlp_default_traces_handler(otlp_traces_service.clone()).recover(recover_fn))
+        .or(otlp_logs_handler(otlp_logs_service).recover(recover_fn))
+        .or(otlp_ingest_traces_handler(otlp_traces_service).recover(recover_fn))
 }
 
 pub(crate) fn otlp_default_logs_handler(
