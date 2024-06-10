@@ -29,8 +29,9 @@ use quickwit_query::tokenizers::TokenizerManager;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
+use tantivy::schema::document::{ReferenceValue, ReferenceValueLeaf};
 use tantivy::schema::{
-    Field, FieldType, FieldValue, OwnedValue as TantivyValue, Schema, INDEXED, STORED,
+    Field, FieldType, OwnedValue as TantivyValue, Schema, Value, INDEXED, STORED,
 };
 use tantivy::TantivyDocument as Document;
 
@@ -446,27 +447,18 @@ fn tantivy_value_to_json(val: TantivyValue) -> JsonValue {
 }
 
 #[inline]
-fn populate_field_presence_for_json_value(
-    json_value: &TantivyValue,
+fn populate_field_presence_for_json_value<'a>(
+    json_value: impl Value<'a>,
     path_hasher: &PathHasher,
     is_expand_dots_enabled: bool,
     output: &mut FnvHashSet<u64>,
 ) {
-    match json_value {
-        TantivyValue::Null => {}
-        TantivyValue::Bool(_)
-        | TantivyValue::F64(_)
-        | TantivyValue::I64(_)
-        | TantivyValue::U64(_)
-        | TantivyValue::PreTokStr(_)
-        | TantivyValue::Date(_)
-        | TantivyValue::Facet(_)
-        | TantivyValue::Bytes(_)
-        | TantivyValue::IpAddr(_)
-        | TantivyValue::Str(_) => {
+    match json_value.as_value() {
+        ReferenceValue::Leaf(ReferenceValueLeaf::Null) => {}
+        ReferenceValue::Leaf(_) => {
             output.insert(path_hasher.finish());
         }
-        TantivyValue::Array(items) => {
+        ReferenceValue::Array(items) => {
             for item in items {
                 populate_field_presence_for_json_value(
                     item,
@@ -476,7 +468,7 @@ fn populate_field_presence_for_json_value(
                 );
             }
         }
-        TantivyValue::Object(json_obj) => {
+        ReferenceValue::Object(json_obj) => {
             populate_field_presence_for_json_obj(
                 json_obj,
                 path_hasher.clone(),
@@ -487,8 +479,8 @@ fn populate_field_presence_for_json_value(
     }
 }
 
-fn populate_field_presence_for_json_obj(
-    json_obj: &[(String, TantivyValue)],
+fn populate_field_presence_for_json_obj<'a, Iter: Iterator<Item = (&'a str, impl Value<'a>)>>(
+    json_obj: Iter,
     path_hasher: PathHasher,
     is_expand_dots_enabled: bool,
     output: &mut FnvHashSet<u64>,
@@ -508,49 +500,6 @@ fn populate_field_presence_for_json_obj(
             is_expand_dots_enabled,
             output,
         );
-    }
-}
-
-fn zip_cloneable<T, I: Iterator<Item = T>, U: Clone>(iter: I, item: U) -> ZipCloneable<T, I, U> {
-    let mut inner = iter.peekable();
-    if inner.peek().is_some() {
-        ZipCloneable::Running { inner, item }
-    } else {
-        ZipCloneable::Ended
-    }
-}
-
-/// An iterator which zip a value alongside another iterator, cloning it each time it yields,
-/// except for the last iteration.
-#[derive(Default, Debug)]
-enum ZipCloneable<T, I: Iterator<Item = T>, U: Clone> {
-    Running {
-        inner: std::iter::Peekable<I>,
-        item: U,
-    },
-    #[default]
-    Ended,
-}
-
-impl<T, I: Iterator<Item = T>, U: Clone> Iterator for ZipCloneable<T, I, U> {
-    type Item = (T, U);
-
-    fn next(&mut self) -> Option<(T, U)> {
-        match self {
-            ZipCloneable::Running { inner, item } => {
-                let current_value = inner.next()?;
-                if inner.peek().is_some() {
-                    Some((current_value, item.clone()))
-                } else {
-                    // we are in the latest iteration, take item so we don't clone it
-                    let ZipCloneable::Running { item, .. } = std::mem::take(self) else {
-                        unreachable!()
-                    };
-                    Some((current_value, item))
-                }
-            }
-            ZipCloneable::Ended => None,
-        }
     }
 }
 
@@ -595,10 +544,8 @@ impl DocMapper for DefaultDocMapper {
                             .flat_map(map_primitive_json_to_tantivy);
 
                     for value in json_obj_values {
-                        for (concatenate_dynamic_field, value) in
-                            zip_cloneable(self.concatenate_dynamic_fields.iter(), value)
-                        {
-                            document.add_field_value(*concatenate_dynamic_field, value);
+                        for concatenate_dynamic_field in self.concatenate_dynamic_fields.iter() {
+                            document.add_field_value(*concatenate_dynamic_field, &value);
                         }
                     }
                 }
@@ -619,19 +566,17 @@ impl DocMapper for DefaultDocMapper {
         // The capacity is inexact here.
 
         if self.index_field_presence {
-            let mut field_presence_hashes: FnvHashSet<u64> = FnvHashSet::with_capacity_and_hasher(
-                document.field_values().len(),
-                Default::default(),
-            );
-            for FieldValue { field, value } in document.field_values() {
-                let field_entry = self.schema.get_field_entry(*field);
+            let mut field_presence_hashes: FnvHashSet<u64> =
+                FnvHashSet::with_capacity_and_hasher(document.len(), Default::default());
+            for (field, value) in document.field_values() {
+                let field_entry = self.schema.get_field_entry(field);
                 if !field_entry.is_indexed() || field_entry.is_fast() {
                     // We are using an tantivy's ExistsQuery for fast fields.
                     continue;
                 }
                 let mut path_hasher: PathHasher = PathHasher::default();
                 path_hasher.append(&field.field_id().to_le_bytes()[..]);
-                if let TantivyValue::Object(json_obj) = value {
+                if let Some(json_obj) = value.as_object() {
                     let is_expand_dots_enabled: bool =
                         if let FieldType::JsonObject(json_options) = field_entry.field_type() {
                             json_options.is_expand_dots_enabled()
@@ -649,7 +594,7 @@ impl DocMapper for DefaultDocMapper {
                 }
             }
             for field_presence_hash in field_presence_hashes {
-                document.add_field_value(FIELD_PRESENCE_FIELD, field_presence_hash);
+                document.add_field_value(FIELD_PRESENCE_FIELD, &field_presence_hash);
             }
         }
         Ok((partition, document))
@@ -719,14 +664,14 @@ impl DocMapper for DefaultDocMapper {
 mod tests {
     use std::collections::{HashMap, HashSet};
     use std::iter::zip;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
 
     use itertools::Itertools;
     use quickwit_common::PathHasher;
     use quickwit_query::query_ast::query_ast_from_user_text;
     use serde_json::{self, json, Value as JsonValue};
-    use tantivy::schema::{FieldType, IndexRecordOption, OwnedValue as TantivyValue, Type, Value};
+    use tantivy::schema::{
+        FieldType, IndexRecordOption, OwnedValue as TantivyValue, OwnedValue, Type, Value,
+    };
 
     use super::DefaultDocMapper;
     use crate::default_doc_mapper::field_mapping_entry::DEFAULT_TOKENIZER_NAME;
@@ -798,8 +743,9 @@ mod tests {
         let expected_json_paths_and_values: HashMap<String, JsonValue> =
             serde_json::from_str(EXPECTED_JSON_PATHS_AND_VALUES).unwrap();
         let mut field_presences: HashSet<u64> = HashSet::new();
-        for field_value in document.field_values() {
-            let field_name = schema.get_field_name(field_value.field());
+        for (field, value) in document.field_values() {
+            let owned_value: OwnedValue = value.into();
+            let field_name = schema.get_field_name(field);
             if field_name == SOURCE_FIELD_NAME {
                 // some part of aws-sdk enables `preserve_order` on serde_json.
                 // to get "normal" equality, we are forced to recreate the json object
@@ -812,19 +758,19 @@ mod tests {
                     .sorted_by(|k1, k2| k1.0.cmp(&k2.0))
                     .collect::<serde_json::Map<_, _>>();
                 assert_eq!(
-                    tantivy::schema::OwnedValue::from(field_value.value().as_value()),
+                    tantivy::schema::OwnedValue::from(value.as_value()),
                     tantivy::schema::OwnedValue::from(sorted_json_values)
                 );
             } else if field_name == DYNAMIC_FIELD_NAME {
                 assert_eq!(
-                    serde_json::to_string(&field_value.value()).unwrap(),
+                    serde_json::to_string(&owned_value).unwrap(),
                     r#"{"response_date2":"2021-12-19T16:39:57Z"}"#
                 );
             } else if field_name == FIELD_PRESENCE_FIELD_NAME {
-                let field_presence_u64 = field_value.value().as_u64().unwrap();
+                let field_presence_u64 = value.as_u64().unwrap();
                 field_presences.insert(field_presence_u64);
             } else {
-                let value = serde_json::to_string(field_value.value()).unwrap();
+                let value = serde_json::to_string(&owned_value).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
                     .get(field_name)
                     .unwrap()
@@ -1290,18 +1236,19 @@ mod tests {
         )
         .unwrap();
         let mut field_presences: HashSet<u64> = HashSet::default();
-        document.field_values().iter().for_each(|field_value| {
-            let field_name = schema.get_field_name(field_value.field());
+        document.field_values().for_each(|(field, value)| {
+            let owned_value: OwnedValue = value.into();
+            let field_name = schema.get_field_name(field);
             if field_name == SOURCE_FIELD_NAME {
                 assert_eq!(
-                    tantivy::schema::OwnedValue::from(field_value.value().as_value()),
+                    tantivy::schema::OwnedValue::from(value.as_value()),
                     tantivy::schema::OwnedValue::from(json_doc_value.as_object().unwrap().clone())
                 );
             } else if field_name == FIELD_PRESENCE_FIELD_NAME {
-                let field_value_hash = field_value.value().as_u64().unwrap();
+                let field_value_hash = value.as_u64().unwrap();
                 field_presences.insert(field_value_hash);
             } else {
-                let value = serde_json::to_string(field_value.value()).unwrap();
+                let value = serde_json::to_string(&owned_value).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
                     .get(field_name)
                     .unwrap()
@@ -1609,11 +1556,11 @@ mod tests {
         let field = schema.get_field(field).unwrap();
         let (_, doc) = default_doc_mapper.doc_from_json_str(document_json).unwrap();
 
-        let values: Vec<&TantivyValue> = doc.get_all(field).collect();
+        let values: Vec<OwnedValue> = doc.get_all(field).map(|value| value.into()).collect();
         assert_eq!(values.len(), expected_values.len());
 
         for (value, expected_value) in zip(values, expected_values) {
-            assert_eq!(*value, expected_value);
+            assert_eq!(value, expected_value);
         }
     }
 
@@ -2393,61 +2340,6 @@ mod tests {
                 default_token_stream.next().unwrap().text,
                 token_stream.next().unwrap().text
             );
-        }
-    }
-
-    struct CloneLimiter {
-        clone_left: Arc<AtomicUsize>,
-    }
-
-    impl Clone for CloneLimiter {
-        fn clone(&self) -> Self {
-            if self.clone_left.fetch_sub(1, Ordering::Relaxed) == 0 {
-                panic!("clone count exceeded");
-            }
-            CloneLimiter {
-                clone_left: self.clone_left.clone(),
-            }
-        }
-    }
-
-    impl CloneLimiter {
-        fn new(max_clone: usize) -> Self {
-            CloneLimiter {
-                clone_left: Arc::new(AtomicUsize::new(max_clone)),
-            }
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "clone count exceeded")]
-    fn test_clone_limiter_panic() {
-        let limiter = CloneLimiter::new(1);
-        let _ = limiter.clone();
-        let _ = limiter.clone();
-    }
-
-    #[test]
-    fn test_clone_limiter_doesnt_panic_early() {
-        let limiter = CloneLimiter::new(1);
-        let _ = limiter.clone();
-    }
-
-    #[test]
-    fn test_zip_cloneable() {
-        for (_val, _limiter) in super::zip_cloneable(std::iter::empty::<()>(), CloneLimiter::new(0))
-        {
-        }
-
-        for iter_len in 1..5 {
-            // to generate an iter with X items, we need only X-1 clone. In particular, for X=1, we
-            // don't need to clone
-            let limiter = CloneLimiter::new(iter_len - 1);
-            for ((val, _limiter), expected) in
-                super::zip_cloneable(0..iter_len, limiter).zip(0..iter_len)
-            {
-                assert_eq!(val, expected);
-            }
         }
     }
 }

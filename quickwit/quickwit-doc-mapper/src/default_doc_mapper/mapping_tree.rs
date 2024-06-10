@@ -302,7 +302,7 @@ impl MappingLeaf {
                         .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
                     for concat_value in concat_values {
                         for field in &self.concatenate {
-                            document.add_field_value(*field, concat_value.clone());
+                            document.add_field_value(*field, &concat_value);
                         }
                     }
                 }
@@ -310,7 +310,7 @@ impl MappingLeaf {
                     .typ
                     .value_from_json(el_json_val)
                     .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
-                document.add_field_value(self.field, value);
+                document.add_field_value(self.field, &value);
             }
             return Ok(());
         }
@@ -322,7 +322,7 @@ impl MappingLeaf {
                 .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
             for concat_value in concat_values {
                 for field in &self.concatenate {
-                    document.add_field_value(*field, concat_value.clone());
+                    document.add_field_value(*field, &concat_value);
                 }
             }
         }
@@ -330,7 +330,7 @@ impl MappingLeaf {
             .typ
             .value_from_json(json_val)
             .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
-        document.add_field_value(self.field, value);
+        document.add_field_value(self.field, &value);
         Ok(())
     }
 
@@ -1452,7 +1452,7 @@ mod tests {
         assert_eq!(document.len(), 3);
         let values: Vec<bool> = document
             .get_all(field)
-            .flat_map(|val| (&val).as_bool())
+            .flat_map(|val| val.as_bool())
             .collect();
         assert_eq!(&values, &[true, false, true])
     }
@@ -1504,7 +1504,7 @@ mod tests {
         assert_eq!(document.len(), 2);
         let values: Vec<i64> = document
             .get_all(field)
-            .flat_map(|val| (&val).as_i64())
+            .flat_map(|val| val.as_i64())
             .collect();
         assert_eq!(&values, &[10i64, 20i64]);
     }
@@ -1717,7 +1717,7 @@ mod tests {
         assert_eq!(document.len(), 2);
         let bytes_vec: Vec<&[u8]> = document
             .get_all(field)
-            .flat_map(|val| (&val).as_bytes())
+            .flat_map(|val| val.as_bytes())
             .collect();
         assert_eq!(
             &bytes_vec[..],
