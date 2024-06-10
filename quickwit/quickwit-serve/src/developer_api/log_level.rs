@@ -29,7 +29,8 @@ struct EnvFilter {
     filter: String,
 }
 
-#[utoipa::path(get, tag = "Log level", path = "/log-level")]
+/// Dynamically Quickwit's log level
+#[utoipa::path(get, tag = "Debug", path = "/log-level")]
 pub fn log_level_handler(
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {

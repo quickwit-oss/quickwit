@@ -39,6 +39,10 @@ use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
 use crate::{require, with_arg, BodyFormat};
 
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(otlp_default_logs_handler, otlp_default_traces_handler))]
+pub struct OtlpApi;
+
 /// Setup OpenTelemetry API handlers.
 pub(crate) fn otlp_ingest_api_handlers(
     otlp_logs_service: Option<OtlpGrpcLogsService>,
@@ -50,6 +54,16 @@ pub(crate) fn otlp_ingest_api_handlers(
         .or(otlp_ingest_traces_handler(otlp_traces_service).recover(recover_fn))
 }
 
+/// Open Telemetry REST/Protobuf logs ingest endpoint.
+#[utoipa::path(
+    post,
+    tag = "Open Telemetry",
+    path = "/otlp/v1/logs",
+    request_body(content = String, description = "`ExportLogsServiceRequest` protobuf message", content_type = "application/x-protobuf"),
+    responses(
+        (status = 200, description = "Successfully exported logs.", body = ExportLogsServiceResponse)
+    ),
+)]
 pub(crate) fn otlp_default_logs_handler(
     otlp_logs_service: Option<OtlpGrpcLogsService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -84,6 +98,16 @@ pub(crate) fn otlp_logs_handler(
         .map(into_rest_api_response)
 }
 
+/// Open Telemetry REST/Protobuf traces ingest endpoint.
+#[utoipa::path(
+    post,
+    tag = "Open Telemetry",
+    path = "/otlp/v1/traces",
+    request_body(content = String, description = "`ExportTraceServiceRequest` protobuf message", content_type = "application/x-protobuf"),
+    responses(
+        (status = 200, description = "Successfully exported traces.", body = ExportTracesServiceResponse)
+    ),
+)]
 pub(crate) fn otlp_default_traces_handler(
     otlp_traces_service: Option<OtlpGrpcTracesService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
