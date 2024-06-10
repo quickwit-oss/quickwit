@@ -94,20 +94,22 @@ pub fn es_compat_cluster_info_handler(
 pub fn es_compat_search_handler(
     _search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elasticsearch_filter().then(|_params: SearchQueryParams| async move {
-        // TODO
-        let api_error = RestApiError {
-            status_code: StatusCode::NOT_IMPLEMENTED,
-            message: "_elastic/_search is not supported yet. Please try the index search endpoint \
-                      (_elastic/{index}/search)"
-                .to_string(),
-        };
-        RestApiResponse::new::<(), _>(
-            &Err(api_error),
-            StatusCode::NOT_IMPLEMENTED,
-            BodyFormat::default(),
-        )
-    })
+    elasticsearch_filter()
+        .then(|_params: SearchQueryParams| async move {
+            // TODO
+            let api_error = RestApiError {
+                status_code: StatusCode::NOT_IMPLEMENTED,
+                message: "_elastic/_search is not supported yet. Please try the index search \
+                          endpoint (_elastic/{index}/search)"
+                    .to_string(),
+            };
+            RestApiResponse::new::<(), _>(
+                &Err(api_error),
+                StatusCode::NOT_IMPLEMENTED,
+                BodyFormat::default(),
+            )
+        })
+        .recover(recover_fn)
 }
 
 /// GET or POST _elastic/{index}/_field_caps
@@ -120,6 +122,7 @@ pub fn es_compat_index_field_capabilities_handler(
         .and(with_arg(search_service))
         .then(es_compat_index_field_capabilities)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 /// DELETE _elastic/{index}
@@ -184,6 +187,7 @@ pub fn es_compat_index_search_handler(
         .and(with_arg(search_service))
         .then(es_compat_index_search)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 /// GET or POST _elastic/{index}/_count
@@ -194,9 +198,10 @@ pub fn es_compat_index_count_handler(
         .and(with_arg(search_service))
         .then(es_compat_index_count)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
-/// POST _elastic/_search
+/// POST _elastic/_msearch
 pub fn es_compat_index_multi_search_handler(
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -210,6 +215,7 @@ pub fn es_compat_index_multi_search_handler(
             };
             RestApiResponse::new(&result, status_code, BodyFormat::default())
         })
+        .recover(recover_fn)
 }
 
 /// GET or POST _elastic/_search/scroll
@@ -220,6 +226,7 @@ pub fn es_compat_scroll_handler(
         .and(with_arg(search_service))
         .then(es_scroll)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 fn build_request_for_es_api(

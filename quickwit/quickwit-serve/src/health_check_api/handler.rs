@@ -61,6 +61,7 @@ fn readiness_handler(
         .and(warp::get())
         .and(with_arg(cluster))
         .then(get_readiness)
+        .recover(recover_fn)
 }
 
 #[utoipa::path(
