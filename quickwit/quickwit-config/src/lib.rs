@@ -19,12 +19,12 @@
 
 #![deny(clippy::disallowed_methods)]
 
-use std::env;
 use std::str::FromStr;
 
 use anyhow::{bail, ensure, Context};
 use json_comments::StripComments;
 use once_cell::sync::Lazy;
+use quickwit_common::get_bool_from_env;
 use quickwit_common::net::is_valid_hostname;
 use quickwit_common::uri::Uri;
 use quickwit_proto::types::NodeIdRef;
@@ -83,14 +83,16 @@ pub use crate::storage_config::{
 
 /// Returns true if the ingest API v2 is enabled.
 pub fn enable_ingest_v2() -> bool {
-    static ENABLE_INGEST_V2: Lazy<bool> = Lazy::new(|| env::var("QW_ENABLE_INGEST_V2").is_ok());
+    static ENABLE_INGEST_V2: Lazy<bool> =
+        Lazy::new(|| get_bool_from_env("QW_ENABLE_INGEST_V2", false));
     *ENABLE_INGEST_V2
 }
 
 /// Returns true if the ingest API v1 is disabled.
 pub fn disable_ingest_v1() -> bool {
-    static ENABLE_INGEST_V2: Lazy<bool> = Lazy::new(|| env::var("QW_DISABLE_INGEST_V1").is_ok());
-    *ENABLE_INGEST_V2
+    static DISABLE_INGEST_V1: Lazy<bool> =
+        Lazy::new(|| get_bool_from_env("QW_DISABLE_INGEST_V1", false));
+    *DISABLE_INGEST_V1
 }
 
 #[derive(utoipa::OpenApi)]
