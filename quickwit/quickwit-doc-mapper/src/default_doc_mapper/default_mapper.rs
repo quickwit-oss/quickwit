@@ -675,7 +675,6 @@ mod tests {
 
     use super::DefaultDocMapper;
     use crate::default_doc_mapper::field_mapping_entry::DEFAULT_TOKENIZER_NAME;
-    use crate::default_doc_mapper::mapping_tree::value_to_pretokenized;
     use crate::{
         DefaultDocMapperBuilder, DocMapper, DocParsingError, DOCUMENT_SIZE_FIELD_NAME,
         DYNAMIC_FIELD_NAME, FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
@@ -1762,7 +1761,7 @@ mod tests {
             }"#,
             "concat",
             r#"{"some_int": 25}"#,
-            vec![value_to_pretokenized(25).into()],
+            vec![25_u64.into()],
         );
         test_doc_from_json_test_aux(
             r#"{
@@ -1777,7 +1776,7 @@ mod tests {
             }"#,
             "concat",
             r#"{"some_int": 25}"#,
-            vec![value_to_pretokenized(25).into()],
+            vec![25_u64.into()],
         );
     }
 
@@ -1800,7 +1799,7 @@ mod tests {
             }"#,
             "concat",
             r#"{"some_bool": false}"#,
-            vec![value_to_pretokenized(false).into()],
+            vec![false.into()],
         );
         test_doc_from_json_test_aux(
             r#"{
@@ -1815,7 +1814,7 @@ mod tests {
             }"#,
             "concat",
             r#"{"some_bool": true}"#,
-            vec![value_to_pretokenized(true).into()],
+            vec![true.into()],
         );
     }
 
