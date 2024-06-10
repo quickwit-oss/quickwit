@@ -62,7 +62,7 @@ async fn fetch_docs_to_map(
     global_doc_addrs.sort_by(|a, b| a.split.cmp(&b.split));
     for (split_id, global_doc_addrs) in global_doc_addrs
         .iter()
-        .group_by(|global_doc_addr| global_doc_addr.split.as_str())
+        .chunk_by(|global_doc_addr| global_doc_addr.split.as_str())
         .into_iter()
     {
         let global_doc_addrs: Vec<GlobalDocAddress> =
