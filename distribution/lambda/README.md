@@ -139,3 +139,24 @@ curl -d '{"query":"quantity:>5", "max_hits": 10}' -H "Content-Type: application/
  * `cdk deploy`      deploy this stack to your default AWS account/region
  * `cdk diff`        compare deployed stack with current state
  * `cdk docs`        open CDK documentation
+
+### Grafana data source setup
+
+You can query and visualize the Quickwit Searcher Lambda from Grafana by using the [Quickwit data source for Grafana](https://grafana.com/grafana/plugins/quickwit-quickwit-datasource/).
+
+#### Prerequisites
+
+- [Set up HTTP API endpoint for Quickwit Searcher Lambda](#set-up-a-search-api)
+- [Install Quickwit data source plugin on Grafana](https://github.com/quickwit-oss/quickwit-datasource#installation)
+
+#### Configure Grafana data source
+
+You need to provide the following information.
+
+|Variable|Description|Example|
+|--|--|--|
+|HTTP URL| HTTP search endpoint for Quickwit Searcher Lambda | https://*******.execute-api.us-east-1.amazonaws.com/api/v1 |
+|Custom HTTP Headers| If you configure API Gateway to require an API key, set `x-api-key` HTTP Header | Header: `x-api-key` <br> Value: API key value|
+|Index ID| Same as `QW_LAMBDA_INDEX_ID` | hdfs-logs |
+
+After entering these values, click "Save & test" and you can now query your Quickwit Lambda from Grafana!
