@@ -54,13 +54,7 @@ pub fn find_field_or_hit_dynamic<'a>(
     };
     let field_entry = schema.get_field_entry(field);
     let typ = field_entry.field_type().value_type();
-    if path.is_empty() {
-        if typ == Type::Json {
-            return Err(InvalidQuery::JsonFieldRootNotSearchable {
-                full_path: full_path.to_string(),
-            });
-        }
-    } else if typ != Type::Json {
+    if !path.is_empty() && typ != Type::Json {
         return Err(InvalidQuery::FieldDoesNotExist {
             full_path: full_path.to_string(),
         });

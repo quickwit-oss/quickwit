@@ -35,6 +35,7 @@ use crate::elasticsearch_api::make_elastic_api_response;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::format::extract_format_from_qs;
 use crate::ingest_api::lines;
+use crate::rest::recover_fn;
 use crate::{with_arg, Body};
 
 /// POST `_elastic/_bulk`
@@ -50,6 +51,7 @@ pub fn es_compat_bulk_handler(
         })
         .and(extract_format_from_qs())
         .map(make_elastic_api_response)
+        .recover(recover_fn)
 }
 
 /// POST `_elastic/<index>/_bulk`
@@ -73,6 +75,7 @@ pub fn es_compat_index_bulk_handler(
         )
         .and(extract_format_from_qs())
         .map(make_elastic_api_response)
+        .recover(recover_fn)
 }
 
 async fn elastic_ingest_bulk(
@@ -146,7 +149,7 @@ async fn elastic_ingest_bulk(
     let bulk_response = ElasticBulkResponse {
         took_millis,
         errors,
-        items: Vec::new(),
+        actions: Vec::new(),
     };
     Ok(bulk_response)
 }

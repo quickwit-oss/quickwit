@@ -20,24 +20,27 @@
 use std::env::var;
 
 use once_cell::sync::Lazy;
+use quickwit_common::get_bool_from_env;
 
-pub const CONFIGURATION_TEMPLATE: &str = "version: 0.8
+pub const CONFIGURATION_TEMPLATE: &str = r#"
+version: 0.8
 node_id: lambda-indexer
 cluster_id: lambda-ephemeral
 metastore_uri: s3://${QW_LAMBDA_METASTORE_BUCKET}/index
 default_index_root_uri: s3://${QW_LAMBDA_INDEX_BUCKET}/index
 data_dir: /tmp
-";
+"#;
 
 pub static INDEX_CONFIG_URI: Lazy<String> = Lazy::new(|| {
-    var("QW_LAMBDA_INDEX_CONFIG_URI").expect("QW_LAMBDA_INDEX_CONFIG_URI must be set")
+    var("QW_LAMBDA_INDEX_CONFIG_URI")
+        .expect("environment variable `QW_LAMBDA_INDEX_CONFIG_URI` should be set")
 });
 
 pub static DISABLE_MERGE: Lazy<bool> =
-    Lazy::new(|| var("QW_LAMBDA_DISABLE_MERGE").is_ok_and(|v| v.as_str() == "true"));
+    Lazy::new(|| get_bool_from_env("QW_LAMBDA_DISABLE_MERGE", false));
 
 pub static DISABLE_JANITOR: Lazy<bool> =
-    Lazy::new(|| var("QW_LAMBDA_DISABLE_JANITOR").is_ok_and(|v| v.as_str() == "true"));
+    Lazy::new(|| get_bool_from_env("QW_LAMBDA_DISABLE_JANITOR", false));
 
 pub static MAX_CHECKPOINTS: Lazy<usize> = Lazy::new(|| {
     var("QW_LAMBDA_MAX_CHECKPOINTS").map_or(100, |v| {

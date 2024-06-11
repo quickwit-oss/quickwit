@@ -74,7 +74,7 @@ pub(crate) fn elasticsearch_filter(
 pub(crate) fn elastic_bulk_filter(
 ) -> impl Filter<Extract = (Body, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_bulk")
-        .and(warp::post())
+        .and(warp::post().or(warp::put()).unify())
         .and(warp::body::content_length_limit(
             CONTENT_LENGTH_LIMIT.as_u64(),
         ))
@@ -97,7 +97,7 @@ pub(crate) fn elastic_bulk_filter(
 pub(crate) fn elastic_index_bulk_filter(
 ) -> impl Filter<Extract = (String, Body, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_bulk")
-        .and(warp::post())
+        .and(warp::post().or(warp::put()).unify())
         .and(warp::body::content_length_limit(
             CONTENT_LENGTH_LIMIT.as_u64(),
         ))
@@ -177,8 +177,8 @@ pub(crate) fn elastic_index_count_filter(
 pub(crate) fn elastic_delete_index_filter(
 ) -> impl Filter<Extract = (Vec<String>, DeleteQueryParams), Error = Rejection> + Clone {
     warp::path!("_elastic" / String)
-        .and_then(extract_index_id_patterns)
         .and(warp::delete())
+        .and_then(extract_index_id_patterns)
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 

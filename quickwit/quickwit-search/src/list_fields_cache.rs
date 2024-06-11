@@ -20,6 +20,7 @@
 use quickwit_proto::search::{
     deserialize_split_fields, serialize_split_fields, ListFields, SplitIdAndFooterOffsets,
 };
+use quickwit_proto::types::SplitId;
 use quickwit_storage::{MemorySizedCache, OwnedBytes};
 
 /// A cache to memoize `leaf_search_single_split` results.
@@ -57,7 +58,7 @@ impl ListFieldsCache {
 #[derive(Debug, Hash, PartialEq, Eq)]
 struct CacheKey {
     /// The split this entry refers to
-    split_id: String,
+    split_id: SplitId,
 }
 
 impl CacheKey {

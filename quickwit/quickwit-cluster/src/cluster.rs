@@ -1113,13 +1113,13 @@ mod tests {
         let node_grouped_tasks: HashMap<IndexingTask, usize> = node
             .indexing_tasks
             .iter()
-            .group_by(|task| (*task).clone())
+            .chunk_by(|task| (*task).clone())
             .into_iter()
             .map(|(key, group)| (key, group.count()))
             .collect();
         let grouped_tasks: HashMap<IndexingTask, usize> = indexing_tasks
             .iter()
-            .group_by(|task| (*task).clone())
+            .chunk_by(|task| (*task).clone())
             .into_iter()
             .map(|(key, group)| (key, group.count()))
             .collect();

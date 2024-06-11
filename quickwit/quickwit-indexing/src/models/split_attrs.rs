@@ -23,28 +23,33 @@ use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
 
 use quickwit_metastore::SplitMetadata;
-use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::types::{IndexUid, NodeId, SourceId, SplitId};
 use tantivy::DateTime;
 use time::OffsetDateTime;
 
 use crate::merge_policy::MergePolicy;
 
 pub struct SplitAttrs {
+    /// ID of the node that produced the split.
+    pub node_id: NodeId,
+    // Index UID to which the split belongs.
+    pub index_uid: IndexUid,
+    /// Source ID to which the split belongs.
+    pub source_id: SourceId,
+
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
     /// In reality, some information may be implicitly configured
     /// in the storage resolver: for instance, the Amazon S3 region.
-    pub split_id: String,
+    pub split_id: SplitId,
 
-    /// Partition to which the split belongs to.
+    /// Partition to which the split belongs.
     ///
     /// Partitions are usually meant to isolate documents based on some field like
     /// `tenant_id`. For this reason, ideally splits with a different `partition_id`
     /// should not be merged together. Merging two splits with different `partition_id`
     /// does not hurt correctness however.
     pub partition_id: u64,
-
-    pub pipeline_id: IndexingPipelineId,
 
     /// Number of valid documents in the split.
     pub num_docs: u64,
@@ -92,11 +97,11 @@ pub fn create_split_metadata(
     let maturity =
         merge_policy.split_maturity(split_attrs.num_docs as usize, split_attrs.num_merge_ops);
     SplitMetadata {
+        node_id: split_attrs.node_id.to_string(),
+        index_uid: split_attrs.index_uid.clone(),
+        source_id: split_attrs.source_id.clone(),
         split_id: split_attrs.split_id.clone(),
-        index_uid: split_attrs.pipeline_id.index_uid.clone(),
         partition_id: split_attrs.partition_id,
-        source_id: split_attrs.pipeline_id.source_id.clone(),
-        node_id: split_attrs.pipeline_id.node_id.clone(),
         num_docs: split_attrs.num_docs as usize,
         time_range: split_attrs
             .time_range

@@ -28,7 +28,7 @@ use quickwit_proto::metastore::{
     CreateIndexRequest, ListSplitsRequest, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
     PublishSplitsRequest, StageSplitsRequest,
 };
-use quickwit_proto::types::{IndexUid, SplitId};
+use quickwit_proto::types::{IndexUid, NodeId, SplitId};
 use time::OffsetDateTime;
 use tokio::time::sleep;
 use tracing::info;
@@ -896,6 +896,68 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
 
         cleanup_index(&mut metastore, index_uid).await;
     }
+}
+
+pub async fn test_metastore_list_splits_by_node_id<
+    MetastoreToTest: MetastoreServiceExt + DefaultForTest,
+>() {
+    let mut metastore = MetastoreToTest::default_for_test().await;
+
+    let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+    let index_id = append_random_suffix("test-list-splits-by-node-id");
+    let index_uri = format!("ram:///indexes/{index_id}");
+    let index_config = IndexConfig::for_test(&index_id, &index_uri);
+
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid
+        .unwrap();
+
+    let split_id_1 = format!("{index_id}--split-1");
+    let split_metadata_1 = SplitMetadata {
+        split_id: split_id_1.clone(),
+        index_uid: index_uid.clone(),
+        create_timestamp: current_timestamp,
+        delete_opstamp: 20,
+        node_id: "test-node-1".to_string(),
+        ..Default::default()
+    };
+    let split_id_2 = format!("{index_id}--split-2");
+    let split_metadata_2 = SplitMetadata {
+        split_id: split_id_2.clone(),
+        index_uid: index_uid.clone(),
+        create_timestamp: current_timestamp,
+        delete_opstamp: 10,
+        node_id: "test-node-2".to_string(),
+        ..Default::default()
+    };
+    let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+        index_uid.clone(),
+        vec![split_metadata_1.clone(), split_metadata_2.clone()],
+    )
+    .unwrap();
+
+    metastore.stage_splits(stage_splits_request).await.unwrap();
+
+    let list_splits_query =
+        ListSplitsQuery::for_index(index_uid.clone()).with_node_id(NodeId::from("test-node-1"));
+    let list_splits_request =
+        ListSplitsRequest::try_from_list_splits_query(&list_splits_query).unwrap();
+
+    let splits = metastore
+        .list_splits(list_splits_request)
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
+
+    assert_eq!(splits.len(), 1);
+    assert_eq!(splits[0].split_metadata.split_id, split_id_1);
+    assert_eq!(splits[0].split_metadata.node_id, "test-node-1");
 }
 
 pub async fn test_metastore_list_stale_splits<

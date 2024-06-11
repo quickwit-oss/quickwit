@@ -38,7 +38,7 @@ use quickwit_metastore::{
     CreateIndexRequestExt, MetastoreResolver, Split, SplitMetadata, SplitState,
 };
 use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::{IndexUid, PipelineUid};
+use quickwit_proto::types::{IndexUid, NodeId, PipelineUid, SourceId};
 use quickwit_storage::{Storage, StorageResolver};
 use serde_json::Value as JsonValue;
 
@@ -51,7 +51,9 @@ use crate::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
 /// The test index content is entirely in RAM and isolated,
 /// but the construction of the index involves temporary file directory.
 pub struct TestSandbox {
+    node_id: NodeId,
     index_uid: IndexUid,
+    source_id: SourceId,
     indexing_service: Mailbox<IndexingService>,
     doc_mapper: Arc<dyn DocMapper>,
     metastore: MetastoreServiceClient,
@@ -76,7 +78,7 @@ impl TestSandbox {
         indexing_settings_yaml: &str,
         search_fields: &[&str],
     ) -> anyhow::Result<TestSandbox> {
-        let node_id = append_random_suffix("test-node");
+        let node_id = NodeId::new(append_random_suffix("test-node"));
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
@@ -118,7 +120,7 @@ impl TestSandbox {
         let ingest_api_service =
             init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default()).await?;
         let indexing_service_actor = IndexingService::new(
-            node_id.to_string(),
+            node_id.clone(),
             temp_dir.path().to_path_buf(),
             indexer_config,
             num_blocking_threads,
@@ -134,7 +136,9 @@ impl TestSandbox {
         let (indexing_service, _indexing_service_handle) =
             universe.spawn_builder().spawn(indexing_service_actor);
         Ok(TestSandbox {
+            node_id,
             index_uid,
+            source_id: INGEST_API_SOURCE_ID.to_string(),
             indexing_service,
             doc_mapper,
             metastore,
@@ -214,9 +218,19 @@ impl TestSandbox {
         self.doc_mapper.clone()
     }
 
+    /// Returns the node ID.
+    pub fn node_id(&self) -> NodeId {
+        self.node_id.clone()
+    }
+
     /// Returns the index UID.
     pub fn index_uid(&self) -> IndexUid {
         self.index_uid.clone()
+    }
+
+    /// Returns the source ID.
+    pub fn source_id(&self) -> SourceId {
+        self.source_id.clone()
     }
 
     /// Returns the underlying universe.
@@ -242,7 +256,7 @@ pub struct MockSplitBuilder {
 impl MockSplitBuilder {
     pub fn new(split_id: &str) -> Self {
         Self {
-            split_metadata: mock_split_meta(split_id, &IndexUid::from_parts("test-index", 0)),
+            split_metadata: mock_split_meta(split_id, &IndexUid::for_test("test-index", 0)),
         }
     }
 
@@ -272,7 +286,7 @@ pub fn mock_split_meta(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
         index_uid: index_uid.clone(),
         split_id: split_id.to_string(),
         partition_id: 13u64,
-        num_docs: 10,
+        num_docs: if split_id == "split1" { 1_000_000 } else { 10 },
         uncompressed_docs_size_in_bytes: 256,
         time_range: Some(121000..=130198),
         create_timestamp: 0,

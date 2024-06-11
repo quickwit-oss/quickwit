@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use thiserror;
 
 use crate::metastore::MetastoreError;
-use crate::types::{IndexUid, PipelineUid, Position, ShardId, SourceId, SourceUid};
+use crate::types::{IndexUid, NodeId, PipelineUid, Position, ShardId, SourceId, SourceUid};
 use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.indexing.rs");
@@ -101,17 +101,45 @@ impl From<AskError<IndexingError>> for IndexingError {
     }
 }
 
+/// Uniquely identifies an indexing pipeline. There can be multiple indexing pipelines per
+/// source `(index_uid, source_id)` running simultaneously on an indexer.
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct IndexingPipelineId {
-    pub node_id: String,
+    pub node_id: NodeId,
     pub index_uid: IndexUid,
     pub source_id: SourceId,
     pub pipeline_uid: PipelineUid,
 }
 
+impl IndexingPipelineId {
+    pub fn merge_pipeline_id(&self) -> MergePipelineId {
+        MergePipelineId {
+            node_id: self.node_id.clone(),
+            index_uid: self.index_uid.clone(),
+            source_id: self.source_id.clone(),
+        }
+    }
+}
+
 impl Display for IndexingPipelineId {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}:{}", self.index_uid, &self.source_id)
+    }
+}
+
+/// Uniquely identifies a merge pipeline. There exists at most one merge pipeline per
+/// `(index_uid, source_id)` running on indexer at any given time fed by one or more indexing
+/// pipelines.
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+pub struct MergePipelineId {
+    pub node_id: NodeId,
+    pub index_uid: IndexUid,
+    pub source_id: SourceId,
+}
+
+impl Display for MergePipelineId {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "merge:{}:{}", self.index_uid, &self.source_id)
     }
 }
 
@@ -291,13 +319,6 @@ pub struct ShardPositionsUpdate {
 }
 
 impl Event for ShardPositionsUpdate {}
-
-impl IndexingTask {
-    pub fn pipeline_uid(&self) -> PipelineUid {
-        self.pipeline_uid
-            .expect("`pipeline_uid` should be a required field")
-    }
-}
 
 impl RpcName for ApplyIndexingPlanRequest {
     fn rpc_name() -> &'static str {

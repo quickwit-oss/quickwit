@@ -20,6 +20,7 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+use hyper::StatusCode;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
 use quickwit_metastore::SplitState;
@@ -299,17 +300,39 @@ async fn test_ingest_v2_happy_path() {
         .toggle("_ingest-source", true)
         .await
         .unwrap();
-    sandbox
-        .indexer_rest_client
-        .ingest(
-            "test_index",
-            ingest_json!({"body": "doc1"}),
-            None,
-            None,
-            CommitType::WaitFor,
-        )
-        .await
-        .unwrap();
+
+    // The server have been detected as ready. Unfortunately, they may not have been added
+    // to the ingester pool yet.
+    //
+    // If we get an unavailable error, we retry up to 10 times.
+    // See #4213
+    const MAX_NUM_RETRIES: usize = 10;
+    for i in 1..=MAX_NUM_RETRIES {
+        let ingest_res = sandbox
+            .indexer_rest_client
+            .ingest(
+                "test_index",
+                ingest_json!({"body": "doc1"}),
+                None,
+                None,
+                CommitType::WaitFor,
+            )
+            .await;
+        let Some(ingest_error) = ingest_res.err() else {
+            // Success
+            break;
+        };
+        assert_eq!(
+            ingest_error.status_code(),
+            Some(StatusCode::SERVICE_UNAVAILABLE)
+        );
+        assert!(
+            i < MAX_NUM_RETRIES,
+            "service not available after {MAX_NUM_RETRIES} tries"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
     sandbox
         .wait_for_splits("test_index", Some(vec![SplitState::Published]), 1)
         .await

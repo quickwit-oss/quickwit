@@ -37,7 +37,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::search::SearchRequest;
 use quickwit_proto::types::IndexUid;
-use quickwit_search::{jobs_to_leaf_requests, IndexMetasForLeafSearch, SearchJob, SearchJobPlacer};
+use quickwit_search::{jobs_to_leaf_request, IndexMetasForLeafSearch, SearchJob, SearchJobPlacer};
 use serde::Serialize;
 use tantivy::Inventory;
 use tracing::{debug, info};
@@ -325,17 +325,15 @@ impl DeleteTaskPlanner {
                     index_uri,
                 },
             );
-            let leaf_search_request = jobs_to_leaf_requests(
+            let leaf_search_request = jobs_to_leaf_request(
                 &search_request,
                 &search_indexes_metas,
                 vec![search_job.clone()],
             )?;
-            for leaf_request in leaf_search_request {
-                let response = search_client.leaf_search(leaf_request).await?;
-                ctx.record_progress();
-                if response.num_hits > 0 {
-                    return Ok(true);
-                }
+            let response = search_client.leaf_search(leaf_search_request).await?;
+            ctx.record_progress();
+            if response.num_hits > 0 {
+                return Ok(true);
             }
         }
         Ok(false)
@@ -522,7 +520,7 @@ mod tests {
             move |request: LeafSearchRequest| {
                 // Search on body:delete should return one hit only on the last split
                 // that should contains the doc.
-                if request.split_offsets[0].split_id == split_id_with_doc_to_delete
+                if request.leaf_requests[0].split_offsets[0].split_id == split_id_with_doc_to_delete
                     && request.search_request.as_ref().unwrap().query_ast == body_delete_ast
                 {
                     return Ok(LeafSearchResponse {

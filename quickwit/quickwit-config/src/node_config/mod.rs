@@ -32,6 +32,7 @@ use http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
+use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -121,7 +122,7 @@ impl IndexerConfig {
         }
         #[cfg(not(any(test, feature = "testsuite")))]
         {
-            true
+            quickwit_common::get_bool_from_env("QW_ENABLE_OTLP_ENDPOINT", true)
         }
     }
 
@@ -364,7 +365,7 @@ impl JaegerConfig {
         }
         #[cfg(not(any(test, feature = "testsuite")))]
         {
-            true
+            quickwit_common::get_bool_from_env("QW_ENABLE_JAEGER_ENDPOINT", true)
         }
     }
 
@@ -395,7 +396,7 @@ impl Default for JaegerConfig {
 #[derive(Clone, Debug, Serialize)]
 pub struct NodeConfig {
     pub cluster_id: String,
-    pub node_id: String,
+    pub node_id: NodeId,
     pub enabled_services: HashSet<QuickwitService>,
     pub gossip_listen_addr: SocketAddr,
     pub grpc_listen_addr: SocketAddr,

@@ -27,6 +27,7 @@ use bytes::Bytes;
 use quickwit_common::is_false;
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::SourceType;
+use quickwit_proto::types::SourceId;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
@@ -53,7 +54,7 @@ pub const RESERVED_SOURCE_IDS: &[&str] =
 #[serde(into = "VersionedSourceConfig")]
 #[serde(try_from = "VersionedSourceConfig")]
 pub struct SourceConfig {
-    pub source_id: String,
+    pub source_id: SourceId,
 
     /// Number of indexing pipelines to run on a cluster for the source.
     pub num_pipelines: NonZeroUsize,

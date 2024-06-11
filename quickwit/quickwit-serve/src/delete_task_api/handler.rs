@@ -25,12 +25,13 @@ use quickwit_proto::metastore::{
     MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::search::SearchRequest;
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_query::query_ast::{query_ast_from_user_text, QueryAst};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
 use crate::format::extract_format_from_qs;
+use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
 use crate::with_arg;
 
@@ -61,7 +62,9 @@ pub struct DeleteQueryRequest {
 pub fn delete_task_api_handlers(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    get_delete_tasks_handler(metastore.clone()).or(post_delete_tasks_handler(metastore.clone()))
+    get_delete_tasks_handler(metastore.clone())
+        .or(post_delete_tasks_handler(metastore.clone()))
+        .recover(recover_fn)
 }
 
 pub fn get_delete_tasks_handler(
@@ -94,7 +97,7 @@ pub fn get_delete_tasks_handler(
 // `DeleteTaskService`. This is ensured by requiring a `Mailbox<DeleteTaskService>` in
 // `get_delete_tasks_handler` and consequently we get the mailbox in `get_delete_tasks` signature.
 pub async fn get_delete_tasks(
-    index_id: String,
+    index_id: IndexId,
     mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<Vec<DeleteTask>> {
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
@@ -140,7 +143,7 @@ pub fn post_delete_tasks_handler(
 /// This operation will not be immediately executed, instead it will be added to a queue
 /// and cleaned up in the near future.
 pub async fn post_delete_request(
-    index_id: String,
+    index_id: IndexId,
     delete_request: DeleteQueryRequest,
     mut metastore: MetastoreServiceClient,
 ) -> Result<DeleteTask, JanitorError> {

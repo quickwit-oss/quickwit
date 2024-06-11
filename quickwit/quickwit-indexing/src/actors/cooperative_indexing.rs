@@ -21,13 +21,17 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
+use once_cell::sync::Lazy;
 use quickwit_proto::indexing::{CpuCapacity, PipelineMetrics, PIPELINE_FULL_CAPACITY};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 
 /// We allow ourselves to adjust the sleep time by at most `NUDGE_TOLERANCE`
 /// in order to steer a pipeline to its phase.
-const NUDGE_TOLERANCE: Duration = Duration::from_secs(2);
+const NUDGE_TOLERANCE: Duration = Duration::from_secs(5);
+
+// Origin of time. It is used to compute the phase of the pipeline.
+static ORIGIN_OF_TIME: Lazy<Instant> = Lazy::new(Instant::now);
 
 /// Cooperative indexing is a mechanism to deal with a large amount of pipelines.
 ///
@@ -77,7 +81,6 @@ pub(crate) struct CooperativeIndexingCycle {
     target_phase: Duration,
     commit_timeout: Duration,
     indexing_permits: Arc<Semaphore>,
-    t0: Instant,
 }
 
 impl CooperativeIndexingCycle {
@@ -104,12 +107,29 @@ impl CooperativeIndexingCycle {
         commit_timeout: Duration,
         indexing_permits: Arc<Semaphore>,
     ) -> CooperativeIndexingCycle {
+        // Force the initial of the origin of time.
+        let _t0 = *ORIGIN_OF_TIME;
         CooperativeIndexingCycle {
             target_phase,
             commit_timeout,
             indexing_permits,
-            t0: Instant::now(),
         }
+    }
+
+    pub fn initial_sleep_duration(&self) -> Duration {
+        let t0 = *ORIGIN_OF_TIME;
+        let commit_timeout_millis = self.commit_timeout.as_millis() as u64;
+        let current_phase_millis: u64 = t0.elapsed().as_millis() as u64 % commit_timeout_millis;
+        let target_phase_millis: u64 = self.target_phase.as_millis() as u64 % commit_timeout_millis;
+        let initial_sleep_millis: u64 = (commit_timeout_millis + target_phase_millis
+            - current_phase_millis)
+            % commit_timeout_millis;
+        if initial_sleep_millis + 2 * NUDGE_TOLERANCE.as_millis() as u64 > commit_timeout_millis {
+            // We are reasonably close to the target phase. No need to sleep. The nudge
+            // will be enough.
+            return Duration::default();
+        }
+        Duration::from_millis(initial_sleep_millis)
     }
 
     pub async fn cooperative_indexing_period(&self) -> CooperativeIndexingPeriod {
@@ -123,7 +143,6 @@ impl CooperativeIndexingCycle {
             t_work_start,
             commit_timeout: self.commit_timeout,
             target_phase: self.target_phase,
-            t0: self.t0,
             _permit: permit,
         }
     }
@@ -136,7 +155,6 @@ pub(crate) struct CooperativeIndexingPeriod {
     t_work_start: Instant,
     commit_timeout: Duration,
     target_phase: Duration,
-    t0: Instant,
     _permit: OwnedSemaphorePermit,
 }
 
@@ -161,7 +179,8 @@ impl CooperativeIndexingPeriod {
 
     fn compute_sleep_duration(&self, t_work_end: Instant) -> Duration {
         let commit_timeout_millis = self.commit_timeout.as_millis() as u64;
-        let phase_millis: u64 = ((t_work_end - self.t0).as_millis() as u64) % commit_timeout_millis;
+        let phase_millis: u64 =
+            ((t_work_end - *ORIGIN_OF_TIME).as_millis() as u64) % commit_timeout_millis;
         let delta_phase: i64 = phase_millis as i64 - self.target_phase.as_millis() as i64;
         // delta phase is within (-commit_timeout_millis, commit_timeout_millis)
         // We fold it back to [-commit_timeout_millis/2, commit_timeout_millis/2)
@@ -225,6 +244,33 @@ mod tests {
             left_metrics.cpu_load.cpu_millis(),
             right_metrics.cpu_load.cpu_millis(),
         );
+    }
+
+    #[tokio::test]
+    async fn test_initial_sleep_time() {
+        tokio::time::pause();
+        let t0 = *ORIGIN_OF_TIME;
+        for target_phase_secs in [0, 1, 2, 5, 10, 15, 20, 25, 29, 30, 1_000] {
+            for start_time_secs in [0, 1, 2, 5, 10, 15, 20, 25, 29, 30] {
+                let target_phase = Duration::from_secs(target_phase_secs);
+                let semaphore = Arc::new(Semaphore::new(1));
+                tokio::time::sleep(Duration::from_secs(start_time_secs)).await;
+                let cooperative_indexing = CooperativeIndexingCycle::new_with_phase(
+                    target_phase,
+                    Duration::from_secs(30),
+                    semaphore.clone(),
+                );
+                let initial_sleep_duration: Duration =
+                    cooperative_indexing.initial_sleep_duration();
+                tokio::time::sleep(initial_sleep_duration).await;
+                let target_phase_millis = cooperative_indexing.target_phase.as_millis() as i64;
+                let commit_timeout_ms = cooperative_indexing.commit_timeout.as_millis() as i64;
+                let phase_millis =
+                    (t0.elapsed().as_millis() as i64 - target_phase_millis) % commit_timeout_ms;
+                assert!(phase_millis >= -100, "{phase_millis}");
+                assert!(phase_millis <= (NUDGE_TOLERANCE.as_millis() as i64) * 2 + 100);
+            }
+        }
     }
 
     #[tokio::test]

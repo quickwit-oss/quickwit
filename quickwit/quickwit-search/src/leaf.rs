@@ -20,7 +20,8 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Bound;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::str::FromStr;
+use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::Context;
 use futures::future::try_join_all;
@@ -28,14 +29,17 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
-    CountHits, LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue,
-    SplitIdAndFooterOffsets, SplitSearchError,
+    CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest, SortOrder,
+    SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery, TermQuery};
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
+    StorageResolver,
 };
+use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
+use tantivy::aggregation::AggregationLimits;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::Field;
@@ -43,8 +47,9 @@ use tantivy::{DateTime, Index, ReloadPolicy, Searcher, Term};
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
-use crate::service::SearcherContext;
-use crate::SearchError;
+use crate::root::is_metadata_count_request_with_ast;
+use crate::service::{deserialize_doc_mapper, SearcherContext};
+use crate::{QuickwitAggregations, SearchError};
 
 #[instrument(skip_all)]
 async fn get_split_footer_from_cache_or_fetch(
@@ -326,14 +331,25 @@ async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyh
     Ok(())
 }
 
+fn get_leaf_resp_from_count(count: u64) -> LeafSearchResponse {
+    LeafSearchResponse {
+        num_hits: count,
+        partial_hits: Vec::new(),
+        failed_splits: Vec::new(),
+        num_attempted_splits: 1,
+        intermediate_aggregation_result: None,
+    }
+}
+
 /// Apply a leaf search on a single split.
-#[instrument(skip_all, fields(split_id = split.split_id))]
 async fn leaf_search_single_split(
     searcher_context: &SearcherContext,
     mut search_request: SearchRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
+    split_filter: Arc<RwLock<CanSplitDoBetter>>,
+    aggregations_limits: AggregationLimits,
 ) -> crate::Result<LeafSearchResponse> {
     rewrite_request(
         &mut search_request,
@@ -358,35 +374,67 @@ async fn leaf_search_single_split(
     .await?;
     let split_schema = index.schema();
 
-    let quickwit_collector = make_collector_for_split(
-        split_id.clone(),
-        &search_request,
-        searcher_context.get_aggregation_limits(),
-    )?;
-    let query_ast: QueryAst = serde_json::from_str(search_request.query_ast.as_str())
-        .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
-    let (query, mut warmup_info) = doc_mapper.query(split_schema, &query_ast, false)?;
     let reader = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
 
-    let collector_warmup_info = quickwit_collector.warmup_info();
+    let mut collector =
+        make_collector_for_split(split_id.clone(), &search_request, aggregations_limits)?;
+    let query_ast: QueryAst = serde_json::from_str(search_request.query_ast.as_str())
+        .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
+
+    // CanSplitDoBetter or rewrite_request may have changed the request to be a count only request
+    // This may be the case for AllQuery with a sort by date, where the current split can't have
+    // better results.
+    //
+    // TODO: SplitIdAndFooterOffsets could carry the number of docs in a split, so we could save
+    // opening the index and execute this earlier. Opening splits is typically served from the
+    // cache, so there may be no gain adding that info to SplitIdAndFooterOffsets.
+    if is_metadata_count_request_with_ast(&query_ast, &search_request) {
+        return Ok(get_leaf_resp_from_count(searcher.num_docs() as u64));
+    }
+
+    let (query, mut warmup_info) = doc_mapper.query(split_schema.clone(), &query_ast, false)?;
+
+    let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);
     warmup_info.simplify();
 
     warmup(&searcher, &warmup_info).await?;
     let span = info_span!("tantivy_search");
-    let leaf_search_response = crate::search_thread_pool()
-        .run_cpu_intensive(move || {
-            let _span_guard = span.enter();
-            searcher.search(&query, &quickwit_collector)
-        })
-        .await
-        .map_err(|_| {
-            crate::SearchError::Internal(format!("leaf search panicked. split={split_id}"))
-        })??;
+
+    let (search_request, leaf_search_response) = {
+        let split = split.clone();
+
+        crate::search_thread_pool()
+            .run_cpu_intensive(move || {
+                let _span_guard = span.enter();
+                // Our search execution has been scheduled, let's check if we can improve the
+                // request based on the results of the preceding searches
+                check_optimize_search_request(&mut search_request, &split, &split_filter);
+                collector.update_search_param(&search_request);
+                if is_metadata_count_request_with_ast(&query_ast, &search_request) {
+                    return Ok((
+                        search_request,
+                        get_leaf_resp_from_count(searcher.num_docs() as u64),
+                    ));
+                }
+                if collector.is_count_only() {
+                    let count = query.count(&searcher)? as u64;
+                    Ok((search_request, get_leaf_resp_from_count(count)))
+                } else {
+                    searcher
+                        .search(&query, &collector)
+                        .map(|resp| (search_request, resp))
+                }
+            })
+            .await
+            .map_err(|_| {
+                crate::SearchError::Internal(format!("leaf search panicked. split={split_id}"))
+            })??
+    };
 
     searcher_context
         .leaf_search_cache
@@ -410,6 +458,52 @@ fn rewrite_request(
     if let Some(timestamp_field) = timestamp_field {
         remove_redundant_timestamp_range(search_request, split, timestamp_field);
     }
+    rewrite_aggregation(search_request);
+}
+
+/// Rewrite aggregation to make them easier to cache
+///
+/// This is only valid for options which are handled while merging results, which is
+/// mostly `extended_bounds`.
+fn rewrite_aggregation(search_request: &mut SearchRequest) {
+    if let Some(aggregation) = &search_request.aggregation_request {
+        let Ok(QuickwitAggregations::TantivyAggregations(mut aggregations)) =
+            serde_json::from_str(aggregation)
+        else {
+            return;
+        };
+        let modified_something = visit_aggregation_mut(&mut aggregations, &|aggregation_variant| {
+            match aggregation_variant {
+                // we take() away the extended bounds, and record we did something
+                AggregationVariants::Histogram(histogram) => {
+                    histogram.extended_bounds.take().is_some()
+                }
+                AggregationVariants::DateHistogram(histogram) => {
+                    histogram.extended_bounds.take().is_some()
+                }
+                _ => false,
+            }
+        });
+        if modified_something {
+            // it's fine to put a (Tantivy)Aggregations and not a QuickwitAggregations because
+            // the former is an serde-untagged variant of the later
+            search_request.aggregation_request =
+                Some(serde_json::to_string(&aggregations).expect("serializing should never fail"));
+        }
+    }
+}
+
+// this is a rather limited visitor, but enough to do the job
+fn visit_aggregation_mut(
+    aggregations: &mut Aggregations,
+    callback: &impl Fn(&mut AggregationVariants) -> bool,
+) -> bool {
+    let mut modified_something = false;
+    for aggregation in aggregations.values_mut() {
+        modified_something |= callback(&mut aggregation.agg);
+        modified_something |= visit_aggregation_mut(&mut aggregation.sub_aggregation, callback);
+    }
+    modified_something
 }
 
 // equivalent to Bound::map, which is unstable
@@ -803,7 +897,7 @@ impl CanSplitDoBetter {
 
     /// Record the new worst-of-the-top document, that is, the document which would first be
     /// evicted from the list of best documents, if a better document was found. Only call this
-    /// funciton if you have at least max_hits documents already.
+    /// function if you have at least max_hits documents already.
     fn record_new_worst_hit(&mut self, hit: &PartialHit) {
         match self {
             CanSplitDoBetter::Uninformative => (),
@@ -830,6 +924,142 @@ impl CanSplitDoBetter {
     }
 }
 
+/// `multi_leaf_search` searches multiple indices and multiple splits.
+#[instrument(skip_all, fields(index = ?leaf_search_request.search_request.as_ref().unwrap().index_id_patterns))]
+pub async fn multi_leaf_search(
+    searcher_context: Arc<SearcherContext>,
+    leaf_search_request: LeafSearchRequest,
+    storage_resolver: &StorageResolver,
+) -> Result<LeafSearchResponse, SearchError> {
+    let search_request: Arc<SearchRequest> = leaf_search_request
+        .search_request
+        .ok_or_else(|| SearchError::Internal("no search request".to_string()))?
+        .into();
+
+    let doc_mappers: Vec<Arc<dyn DocMapper>> = leaf_search_request
+        .doc_mappers
+        .iter()
+        .map(|doc_mapper| deserialize_doc_mapper(doc_mapper))
+        .collect::<crate::Result<_>>()?;
+    // Creates a collector which merges responses into one
+    let aggregation_limits = searcher_context.create_new_aggregation_limits();
+    // TODO: to avoid lockstep, we should pull up the future creation over the list of split ids
+    // and have the semaphore on this level.
+    // This will lower resource consumption due to less in-flight futures and avoid contention.
+    // It also allows passing early exit conditions between indices.
+    //
+    // It is a little bit tricky how to handle which is now the incremental_merge_collector, one
+    // per index, e.g. when to merge results and how to avoid lock contention.
+    let mut leaf_request_tasks = Vec::new();
+
+    for leaf_search_request_ref in leaf_search_request.leaf_requests.into_iter() {
+        let index_uri = quickwit_common::uri::Uri::from_str(
+            leaf_search_request
+                .index_uris
+                .get(leaf_search_request_ref.index_uri_ord as usize)
+                .ok_or_else(|| {
+                    SearchError::Internal(format!(
+                        "Received incorrect request, index_uri_ord out of bounds: {}",
+                        leaf_search_request_ref.index_uri_ord
+                    ))
+                })?,
+        )?;
+        let doc_mapper = doc_mappers
+            .get(leaf_search_request_ref.doc_mapper_ord as usize)
+            .ok_or_else(|| {
+                SearchError::Internal(format!(
+                    "Received incorrect request, doc_mapper_ord out of bounds: {}",
+                    leaf_search_request_ref.doc_mapper_ord
+                ))
+            })?
+            .clone();
+
+        let leaf_request_future = tokio::spawn(
+            resolve_storage_and_leaf_search(
+                searcher_context.clone(),
+                search_request.clone(),
+                index_uri,
+                storage_resolver.clone(),
+                leaf_search_request_ref.split_offsets,
+                doc_mapper,
+                aggregation_limits.clone(),
+            )
+            .in_current_span(),
+        );
+        leaf_request_tasks.push(leaf_request_future);
+    }
+
+    let leaf_responses = try_join_all(leaf_request_tasks).await?;
+    let merge_collector = make_merge_collector(&search_request, &aggregation_limits)?;
+    let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
+    for result in leaf_responses {
+        match result {
+            Ok(result) => {
+                incremental_merge_collector.add_result(result)?;
+            }
+            Err(err) => {
+                incremental_merge_collector.add_failed_split(SplitSearchError {
+                    split_id: "unknown".to_string(),
+                    error: format!("{}", err),
+                    retryable_error: true,
+                });
+            }
+        }
+    }
+
+    crate::search_thread_pool()
+        .run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
+        .instrument(info_span!("incremental_merge_finalize"))
+        .await
+        .context("failed to merge split search responses")?
+}
+
+/// Resolves storage and calls leaf_search
+async fn resolve_storage_and_leaf_search(
+    searcher_context: Arc<SearcherContext>,
+    search_request: Arc<SearchRequest>,
+    index_uri: quickwit_common::uri::Uri,
+    storage_resolver: StorageResolver,
+    splits: Vec<SplitIdAndFooterOffsets>,
+    doc_mapper: Arc<dyn DocMapper>,
+    aggregations_limits: AggregationLimits,
+) -> crate::Result<LeafSearchResponse> {
+    let storage = storage_resolver.resolve(&index_uri).await?;
+
+    leaf_search(
+        searcher_context.clone(),
+        search_request.clone(),
+        storage.clone(),
+        splits,
+        doc_mapper,
+        aggregations_limits,
+    )
+    .await
+}
+
+/// Optimizes the search_request based on CanSplitDoBetter
+/// Returns true if the split can return better results
+fn check_optimize_search_request(
+    search_request: &mut SearchRequest,
+    split: &SplitIdAndFooterOffsets,
+    split_filter: &Arc<RwLock<CanSplitDoBetter>>,
+) -> bool {
+    let can_be_better = split_filter.read().unwrap().can_be_better(split);
+    if !can_be_better {
+        disable_search_request_hits(search_request);
+    }
+    can_be_better
+}
+
+/// Alter the search request so it does not return any docs.
+///
+/// This is usually done since it cannot provide better hits results than existing fetched results.
+fn disable_search_request_hits(search_request: &mut SearchRequest) {
+    search_request.max_hits = 0;
+    search_request.start_offset = 0;
+    search_request.sort_fields.clear();
+}
+
 /// `leaf` step of search.
 ///
 /// The leaf search collects all kind of information, and returns a set of
@@ -843,6 +1073,7 @@ pub async fn leaf_search(
     index_storage: Arc<dyn Storage>,
     mut splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
+    aggregations_limits: AggregationLimits,
 ) -> Result<LeafSearchResponse, SearchError> {
     info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(&splits, 5));
 
@@ -855,32 +1086,27 @@ pub async fn leaf_search(
         || (request.aggregation_request.is_some()
             && !matches!(split_filter, CanSplitDoBetter::FindTraceIdsAggregation(_)));
 
-    // Creates a collector which merges responses into one
-    let merge_collector =
-        make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
-    let incremental_merge_collector = IncrementalCollector::new(merge_collector);
-
-    let split_filter = Arc::new(Mutex::new(split_filter));
-    let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
+    let split_filter = Arc::new(RwLock::new(split_filter));
 
     let mut leaf_search_single_split_futures: Vec<_> = Vec::with_capacity(splits.len());
+
+    let merge_collector = make_merge_collector(&request, &aggregations_limits)?;
+    let incremental_merge_collector = IncrementalCollector::new(merge_collector);
+    let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
 
     for split in splits {
         let leaf_split_search_permit = searcher_context.leaf_search_split_semaphore
             .clone()
             .acquire_owned()
+            .instrument(info_span!("waiting_for_leaf_search_split_semaphore"))
             .await
             .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
 
         let mut request = (*request).clone();
 
-        if !split_filter.lock().unwrap().can_be_better(&split) {
-            if !run_all_splits {
-                continue;
-            }
-            request.max_hits = 0;
-            request.start_offset = 0;
-            request.sort_fields.clear();
+        let can_be_better = check_optimize_search_request(&mut request, &split, &split_filter);
+        if !can_be_better && !run_all_splits {
+            continue;
         }
 
         leaf_search_single_split_futures.push(tokio::spawn(
@@ -893,13 +1119,14 @@ pub async fn leaf_search(
                 split_filter.clone(),
                 incremental_merge_collector.clone(),
                 leaf_split_search_permit,
+                aggregations_limits.clone(),
             )
             .in_current_span(),
         ));
     }
 
-    // TODO we could cancel running splits when !run_all_splits and the running split can no longer
-    // give better results after some other split answered.
+    // TODO we could cancel running splits when !run_all_splits and the running split can no
+    // longer give better results after some other split answered.
     let split_search_results: Vec<Result<(), _>> =
         futures::future::join_all(leaf_search_single_split_futures).await;
 
@@ -922,23 +1149,27 @@ pub async fn leaf_search(
         }
     }
 
-    crate::search_thread_pool()
-        .run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
-        .instrument(info_span!("incremental_merge_finalize"))
+    let result = crate::search_thread_pool()
+        .run_cpu_intensive(|| incremental_merge_collector.finalize())
+        .instrument(info_span!("incremental_merge_intermediate"))
         .await
-        .context("failed to merge split search responses")?
+        .context("failed to merge split search responses")??;
+
+    Ok(result)
 }
 
 #[allow(clippy::too_many_arguments)]
+#[instrument(skip_all, fields(split_id = split.split_id))]
 async fn leaf_search_single_split_wrapper(
     request: SearchRequest,
     searcher_context: Arc<SearcherContext>,
     index_storage: Arc<dyn Storage>,
     doc_mapper: Arc<dyn DocMapper>,
     split: SplitIdAndFooterOffsets,
-    split_filter: Arc<Mutex<CanSplitDoBetter>>,
+    split_filter: Arc<RwLock<CanSplitDoBetter>>,
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
     leaf_split_search_permit: tokio::sync::OwnedSemaphorePermit,
+    aggregations_limits: AggregationLimits,
 ) {
     crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
     let timer = crate::SEARCH_METRICS
@@ -950,6 +1181,8 @@ async fn leaf_search_single_split_wrapper(
         index_storage,
         split.clone(),
         doc_mapper,
+        split_filter.clone(),
+        aggregations_limits,
     )
     .await;
 
@@ -963,7 +1196,7 @@ async fn leaf_search_single_split_wrapper(
     let mut locked_incremental_merge_collector = incremental_merge_collector.lock().unwrap();
     match leaf_search_single_split_res {
         Ok(split_search_res) => {
-            if let Err(err) = locked_incremental_merge_collector.add_split(split_search_res) {
+            if let Err(err) = locked_incremental_merge_collector.add_result(split_search_res) {
                 locked_incremental_merge_collector.add_failed_split(SplitSearchError {
                     split_id: split.split_id.clone(),
                     error: format!("Error parsing aggregation result: {err}"),
@@ -978,8 +1211,10 @@ async fn leaf_search_single_split_wrapper(
         }),
     }
     if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {
+        // TODO: we could use the RWLock instead and read the value instead of updateing it
+        // unconditionally.
         split_filter
-            .lock()
+            .write()
             .unwrap()
             .record_new_worst_hit(last_hit.as_ref());
     }
@@ -1262,5 +1497,166 @@ mod tests {
                 ..BoolQuery::default()
             }),
         );
+    }
+
+    #[test]
+    fn test_remove_extended_bounds_from_histogram() {
+        let histo_at_root = r#"
+{
+  "date_histo": {
+    "date_histogram": {
+      "extended_bounds": {
+        "max": 1425254400000,
+        "min": 1420070400000
+      },
+      "field": "date",
+      "fixed_interval": "30d",
+      "offset": "-4d"
+    }
+  }
+}
+"#;
+
+        let histo_at_root_no_bounds = r#"
+{
+  "date_histo": {
+    "date_histogram": {
+      "field": "date",
+      "fixed_interval": "30d",
+      "offset": "-4d"
+    }
+  }
+}
+"#;
+
+        let histo_at_root_with_sibling = r#"
+{
+  "metrics": {
+    "aggs": {
+      "response": {
+        "percentiles": {
+          "field": "response",
+          "keyed": false,
+          "percents": [
+            85
+          ]
+        }
+      }
+    },
+    "date_histogram": {
+      "extended_bounds": {
+        "max": 1425254400000,
+        "min": 1420070400000
+      },
+      "field": "date",
+      "fixed_interval": "30d",
+      "offset": "-4d"
+    }
+  }
+}
+"#;
+
+        let histo_at_root_with_sibling_no_bounds = r#"
+{
+  "metrics": {
+    "aggs": {
+      "response": {
+        "percentiles": {
+          "field": "response",
+          "keyed": false,
+          "percents": [
+            85
+          ]
+        }
+      }
+    },
+    "date_histogram": {
+      "field": "date",
+      "fixed_interval": "30d",
+      "offset": "-4d"
+    }
+  }
+}
+"#;
+        let histo_at_leaf = r#"
+{
+  "metrics": {
+    "aggs": {
+      "response": {
+        "date_histogram": {
+          "extended_bounds": {
+            "max": 1425254400000,
+            "min": 1420070400000
+          },
+          "field": "date",
+          "fixed_interval": "30d",
+          "offset": "-4d"
+        }
+      }
+    },
+    "percentiles": {
+      "field": "response",
+      "keyed": false,
+      "percents": [
+        85
+      ]
+    }
+  }
+}
+"#;
+
+        let histo_at_leaf_no_bounds = r#"
+{
+  "metrics": {
+    "aggs": {
+      "response": {
+        "date_histogram": {
+          "field": "date",
+          "fixed_interval": "30d",
+          "offset": "-4d"
+        }
+      }
+    },
+    "percentiles": {
+      "field": "response",
+      "keyed": false,
+      "percents": [
+        85
+      ]
+    }
+  }
+}
+"#;
+        for (bounds, no_bounds) in [
+            (histo_at_root, histo_at_root_no_bounds),
+            (
+                histo_at_root_with_sibling,
+                histo_at_root_with_sibling_no_bounds,
+            ),
+            (histo_at_leaf, histo_at_leaf_no_bounds),
+        ] {
+            // first assert we do nothing when there are no bounds
+            let request_no_bounds = SearchRequest {
+                aggregation_request: Some(no_bounds.to_string()),
+                ..SearchRequest::default()
+            };
+            let mut request_no_bounds_clone = request_no_bounds.clone();
+            rewrite_aggregation(&mut request_no_bounds_clone);
+            assert_eq!(request_no_bounds, request_no_bounds_clone);
+
+            let mut request_bounds = SearchRequest {
+                aggregation_request: Some(bounds.to_string()),
+                ..SearchRequest::default()
+            };
+            rewrite_aggregation(&mut request_bounds);
+            // we can't just compare bounds and no_bounds, they must be structuraly equal, but not
+            // necessarily identical (field order, null vs absent...). So we parse both and verify
+            // the results are equal instead
+            let no_bounds_agg: QuickwitAggregations =
+                serde_json::from_str(&request_no_bounds.aggregation_request.unwrap()).unwrap();
+            let rewrote_bounds_agg: QuickwitAggregations =
+                serde_json::from_str(&request_bounds.aggregation_request.unwrap()).unwrap();
+            assert_eq!(rewrote_bounds_agg, no_bounds_agg);
+        }
     }
 }

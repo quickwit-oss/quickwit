@@ -3,7 +3,6 @@ data "aws_iam_policy_document" "quickwit_task_permission" {
   statement {
     actions = [
       "s3:ListBucket",
-      "s3:ListObjects",
       "s3:GetObject",
       "s3:PutObject",
       "s3:DeleteObject"
@@ -47,7 +46,7 @@ data "aws_iam_policy_document" "quickwit_task_execution_permission" {
   statement {
     actions = ["ssm:GetParameters"]
 
-    resources = [local.postgres_uri_parameter_arn]
+    resources = [local.postgres_uri_secret_arn]
   }
 
   statement {

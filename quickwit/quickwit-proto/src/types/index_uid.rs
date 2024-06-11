@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
 use std::fmt;
 use std::str::FromStr;
 
@@ -37,31 +38,61 @@ pub struct IndexUid {
     pub incarnation_id: Ulid,
 }
 
+impl fmt::Display for IndexUid {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:{}", self.index_id, self.incarnation_id)
+    }
+}
+
+impl IndexUid {
+    /// Creates a new index UID from an index ID using a random ULID as incarnation ID.
+    pub fn new_with_random_ulid(index_id: &str) -> Self {
+        Self::new(index_id, Ulid::new())
+    }
+
+    fn new(index_id: &str, incarnation_id: impl Into<Ulid>) -> Self {
+        assert!(!index_id.contains(':'), "index ID may not contain `:`");
+
+        Self {
+            index_id: index_id.to_string(),
+            incarnation_id: incarnation_id.into(),
+        }
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(index_id: &str, incarnation_id: u128) -> Self {
+        Self {
+            index_id: index_id.to_string(),
+            incarnation_id: incarnation_id.into(),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("invalid index UID `{0}`")]
+pub struct InvalidIndexUid(String);
+
 impl FromStr for IndexUid {
     type Err = InvalidIndexUid;
 
     fn from_str(index_uid_str: &str) -> Result<Self, Self::Err> {
-        let Some((index_id, ulid)) = index_uid_str.split_once(':') else {
-            return Err(InvalidIndexUid {
-                invalid_index_uid_str: index_uid_str.to_string(),
-            });
+        let Some((index_id, incarnation_id_str)) = index_uid_str.split_once(':') else {
+            return Err(InvalidIndexUid(index_uid_str.to_string()));
         };
-        let incarnation_id = Ulid::from_string(ulid).map_err(|_| InvalidIndexUid {
-            invalid_index_uid_str: index_uid_str.to_string(),
-        })?;
-        Ok(IndexUid {
+        let incarnation_id = Ulid::from_string(incarnation_id_str)
+            .map_err(|_| InvalidIndexUid(index_uid_str.to_string()))?;
+        let index_uid = IndexUid {
             index_id: index_id.to_string(),
             incarnation_id,
-        })
+        };
+        Ok(index_uid)
     }
 }
 
-// It is super lame, but for backward compatibility reasons we accept having a missing ulid part.
-// TODO DEPRECATED ME and remove
 impl<'de> Deserialize<'de> for IndexUid {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
-        let index_uid_str: String = String::deserialize(deserializer)?;
+        let index_uid_str: Cow<'de, str> = Cow::deserialize(deserializer)?;
         let index_uid = IndexUid::from_str(&index_uid_str).map_err(D::Error::custom)?;
         Ok(index_uid)
     }
@@ -147,53 +178,6 @@ impl prost::Message for IndexUid {
     }
 }
 
-impl fmt::Display for IndexUid {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}", self.index_id, self.incarnation_id)
-    }
-}
-
-impl IndexUid {
-    /// Creates a new index uid from index_id.
-    /// A random ULID will be used as incarnation
-    pub fn new_with_random_ulid(index_id: &str) -> Self {
-        Self::from_parts(index_id, Ulid::new())
-    }
-
-    pub fn from_parts(index_id: &str, incarnation_id: impl Into<Ulid>) -> Self {
-        assert!(!index_id.contains(':'), "index ID may not contain `:`");
-        let incarnation_id = incarnation_id.into();
-        IndexUid {
-            index_id: index_id.to_string(),
-            incarnation_id,
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.index_id.is_empty()
-    }
-
-    #[cfg(any(test, feature = "testsuite"))]
-    pub fn for_test(index_id: &str, ulid: u128) -> Self {
-        IndexUid {
-            index_id: index_id.to_string(),
-            incarnation_id: Ulid(ulid),
-        }
-    }
-}
-
-impl From<IndexUid> for String {
-    fn from(val: IndexUid) -> Self {
-        val.to_string()
-    }
-}
-
-#[derive(Error, Debug)]
-#[error("invalid index uid `{invalid_index_uid_str}`")]
-pub struct InvalidIndexUid {
-    pub invalid_index_uid_str: String,
-}
-
 #[cfg(feature = "postgres")]
 impl TryFrom<String> for IndexUid {
     type Error = InvalidIndexUid;
@@ -233,8 +217,15 @@ impl PartialEq<(&'static str, u128)> for IndexUid {
 }
 
 #[cfg(feature = "postgres")]
+impl From<IndexUid> for sea_query::Value {
+    fn from(index_uid: IndexUid) -> Self {
+        index_uid.to_string().into()
+    }
+}
+
+#[cfg(feature = "postgres")]
 impl From<&IndexUid> for sea_query::Value {
-    fn from(val: &IndexUid) -> Self {
-        val.to_string().into()
+    fn from(index_uid: &IndexUid) -> Self {
+        index_uid.to_string().into()
     }
 }

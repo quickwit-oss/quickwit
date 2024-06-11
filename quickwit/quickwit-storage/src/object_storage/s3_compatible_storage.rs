@@ -22,7 +22,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::{env, fmt, io};
+use std::{fmt, io};
 
 use anyhow::{anyhow, Context as AnyhhowContext};
 use async_trait::async_trait;
@@ -59,11 +59,7 @@ use crate::{
 /// Semaphore to limit the number of concurent requests to the object store. Some object stores
 /// (R2, SeaweedFs...) return errors when too many concurrent requests are emitted.
 static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {
-    let num_permits: usize = env::var("QW_S3_MAX_CONCURRENCY")
-        .as_deref()
-        .unwrap_or("10000")
-        .parse()
-        .expect("QW_S3_MAX_CONCURRENCY value should be a number.");
+    let num_permits: usize = quickwit_common::get_from_env("QW_S3_MAX_CONCURRENCY", 10_000usize);
     Semaphore::new(num_permits)
 });
 
@@ -137,7 +133,7 @@ async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
         get_credentials_provider(s3_storage_config).or(aws_config.credentials_provider());
     let region = get_region(s3_storage_config).or(aws_config.region().cloned());
     let mut s3_config = aws_sdk_s3::Config::builder()
-        .behavior_version(BehaviorVersion::v2023_11_09())
+        .behavior_version(BehaviorVersion::v2024_03_28())
         .region(region);
 
     if let Some(identity_cache) = aws_config.identity_cache() {
@@ -943,7 +939,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_s3_compatible_storage_relative_path() {
-        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::v2023_11_09())
+        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::v2024_03_28())
             .load()
             .await;
         let s3_client = S3Client::new(&sdk_config);
@@ -996,7 +992,7 @@ mod tests {
         ]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
-            .behavior_version(BehaviorVersion::v2023_11_09())
+            .behavior_version(BehaviorVersion::v2024_03_28())
             .region(Some(Region::new("Foo")))
             .http_client(client.clone())
             .credentials_provider(credentials)
@@ -1037,7 +1033,7 @@ mod tests {
         )]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
-            .behavior_version(BehaviorVersion::v2023_11_09())
+            .behavior_version(BehaviorVersion::v2024_03_28())
             .region(Some(Region::new("Foo")))
             .http_client(client.clone())
             .credentials_provider(credentials)
@@ -1119,7 +1115,7 @@ mod tests {
         ]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
-            .behavior_version(BehaviorVersion::v2023_11_09())
+            .behavior_version(BehaviorVersion::v2024_03_28())
             .region(Some(Region::new("Foo")))
             .http_client(client)
             .credentials_provider(credentials)

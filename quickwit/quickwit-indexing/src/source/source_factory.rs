@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_proto::metastore::SourceType;
+use quickwit_proto::types::SourceId;
 use thiserror::Error;
 
 use super::Source;
@@ -74,7 +75,7 @@ pub enum SourceLoaderError {
     },
     #[error("failed to create source `{source_id}` of type `{source_type}`. Cause: {error:?}")]
     FailedToCreateSource {
-        source_id: String,
+        source_id: SourceId,
         source_type: SourceType,
         #[source]
         error: anyhow::Error,

@@ -293,7 +293,7 @@ mod gcp_pubsub_emulator_tests {
     use google_cloud_pubsub::subscription::SubscriptionConfig;
     use quickwit_actors::Universe;
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexId, IndexUid};
     use serde_json::json;
 
     use super::*;
@@ -376,7 +376,7 @@ mod gcp_pubsub_emulator_tests {
         let source_id = source_config.source_id.clone();
 
         let source_loader = quickwit_supported_sources();
-        let index_id: String = append_random_suffix("test-gcp-pubsub-source--index");
+        let index_id: IndexId = append_random_suffix("test-gcp-pubsub-source--index");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
 
         let mut pubsub_messages = Vec::with_capacity(6);

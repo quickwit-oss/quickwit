@@ -23,6 +23,7 @@ use std::marker::PhantomData;
 
 use quickwit_common::binary_heap::TopK;
 use quickwit_proto::search::{PartialHit, SortOrder};
+use quickwit_proto::types::SplitId;
 use tantivy::{DocId, Score};
 
 use crate::collector::{
@@ -192,7 +193,7 @@ impl<
 }
 
 pub fn specialized_top_k_segment_collector(
-    split_id: String,
+    split_id: SplitId,
     score_extractor: SortingFieldExtractorPair,
     leaf_max_hits: usize,
     segment_ord: u32,
@@ -546,7 +547,7 @@ struct SpecializedSegmentTopKCollector<
     V2: Copy + PartialEq + Eq + PartialOrd + Ord + IntoOptionU64 + Debug + MinValue,
     const REVERSE_DOCID: bool,
 > {
-    split_id: String,
+    split_id: SplitId,
     hit_fetcher: SpecSortingFieldExtractor<V1, V2>,
     top_k_hits: TopKComputer<Hit<V1, V2, REVERSE_DOCID>>,
     segment_ord: u32,
@@ -559,7 +560,7 @@ impl<
     > SpecializedSegmentTopKCollector<V1, V2, REVERSE_DOCID>
 {
     pub fn new(
-        split_id: String,
+        split_id: SplitId,
         score_extractor: SortingFieldExtractorPair,
         leaf_max_hits: usize,
         segment_ord: u32,
@@ -614,7 +615,7 @@ impl<
 
 /// Quickwit collector working at the scale of the segment.
 pub(crate) struct GenericQuickwitSegmentTopKCollector {
-    split_id: String,
+    split_id: SplitId,
     score_extractor: SortingFieldExtractorPair,
     // PartialHits in this heap don't contain a split_id yet.
     top_k_hits: TopK<SegmentPartialHit, SegmentPartialHitSortingKey, HitSortingMapper>,
@@ -628,7 +629,7 @@ pub(crate) struct GenericQuickwitSegmentTopKCollector {
 
 impl GenericQuickwitSegmentTopKCollector {
     pub fn new(
-        split_id: String,
+        split_id: SplitId,
         score_extractor: SortingFieldExtractorPair,
         leaf_max_hits: usize,
         segment_ord: u32,

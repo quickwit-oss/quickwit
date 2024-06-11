@@ -32,7 +32,9 @@ variable "subnet_ids" {
   type = list(string)
 }
 
-variable "postgres_credential_arn" {}
+variable "postgres_uri_secret_arn" {
+  description = "ARN of the SSM parameter or Secret Manager secret containing the URI of a Postgres instance"
+}
 
 variable "quickwit_image" {}
 

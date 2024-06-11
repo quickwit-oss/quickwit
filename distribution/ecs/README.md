@@ -33,8 +33,8 @@ Metastore database backups are disabled as restoring one would lead to
 inconsistencies with the index store on S3. To ensure high availability, you
 should enable `rds_config.multi_az` instead. To use your own Postgres database
 instead of creating a new RDS instance, configure the
-`external_postgres_uri_ssm_parameter_arn` variable (e.g
-`postgres://user:password@domain:port/db`).
+`external_postgres_uri_secret_arn` variable (e.g ARN of an SSM parameter with
+the value `postgres://user:password@domain:port/db`).
 
 Using NAT Gateways for the image registry is quite costly (approx. $0.05/hour/AZ). If
 you are not already using NAT Gateways in the AZs where Quickwit will be
@@ -64,7 +64,7 @@ IAM policies to indexers.
 We provide an example of self contained deployment with an ad-hoc VPC. 
 
 > [!IMPORTANT]
-> This stack costs ~$150/month to run (Fargate tasks, NAT Gateways
+> This stack costs ~$200/month to run (Fargate tasks, NAT Gateways
 > and RDS)
 
 ### Deploy the Quickwit module and connect through a bastion

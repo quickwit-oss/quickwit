@@ -9,14 +9,21 @@ on:
       - "quickwit/**"
       - "!quickwit/quickwit-ui/**"
   # For security reasons (to make sure the list of allowed users is
-  # trusted), make sure we run the workflow definition the base of the
-  # pull request.
+  # trusted), make sure we run the workflow definition from the base
+  # commit of the pull request.
   pull_request_target:
+
+# This is required for github.rest.issues.createComment.
+permissions:
+  issues: write
+  pull-requests: write
+
+env:
+  RUSTFLAGS: --cfg tokio_unstable
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-
 
 jobs:
   tests:
@@ -24,7 +31,7 @@ jobs:
     # The self-hosted runner must have the system deps installed for QW and
     # the benchmark, because we don't have root access.
     runs-on: self-hosted
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - name: Set authorized users
         id: authorized-users
@@ -32,6 +39,7 @@ jobs:
         # Because it executes code on a self-hosted runner, it must be restricted to trusted users.
         run: |
           echo 'users=["ddelemeny", "fmassot", "fulmicoton", "guilload", "PSeitz", "rdettai", "trinity-1686a"]' >> $GITHUB_OUTPUT
+
       - uses: actions/checkout@v4
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name == 'pull_request_target'
         name: Checkout quickwit (pull request commit)
@@ -39,6 +47,7 @@ jobs:
           repository: quickwit-oss/quickwit
           ref: ${{ github.event.pull_request.head.sha }}
           path: ./quickwit
+
       - uses: actions/checkout@v4
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name != 'pull_request_target'
         name: Checkout quickwit
@@ -46,6 +55,7 @@ jobs:
           repository: quickwit-oss/quickwit
           ref: ${{ github.sha }}
           path: ./quickwit
+
       - name: Checkout benchmarking code
         uses: actions/checkout@v4
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
@@ -53,6 +63,15 @@ jobs:
           repository: quickwit-oss/benchmarks
           ref: main
           path: ./benchmarks
+
+      - name: Install Rust
+        run: rustup update stable
+
+      - name: Install protoc
+        uses: taiki-e/install-action@v2
+        with:
+          tool: protoc
+
       # We don't use rust-cache as it requires root access on the self-hosted runner, which we don't have.
       - name: cargo build
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
@@ -65,19 +84,54 @@ jobs:
       - name: Run Benchmark on SSD
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
         id: bench-run-ssd
-        run: python3 ./run.py --search-only --storage pd-ssd --engine quickwit --track generated-logs --tags "${{ github.event_name }}_${{ github.ref_name }}" --manage-engine --source github_workflow --binary-path ../quickwit/quickwit/target/release/quickwit  --instance "{autodetect_gcp}" --export-to-endpoint=https://qw-benchmarks.104.155.161.122.nip.io --engine-data-dir "{qwdata_local}" --write-exported-run-url-to-file $GITHUB_OUTPUT
+        run: python3 ./run.py --search-only --storage pd-ssd --engine quickwit --track generated-logs --tags "${{ github.event_name }}_${{ github.ref_name }}" --manage-engine --source github_workflow --binary-path ../quickwit/quickwit/target/release/quickwit  --instance "{autodetect_gcp}" --export-to-endpoint=https://qw-benchmarks.104.155.161.122.nip.io --engine-data-dir "{qwdata_local}" --github-workflow-user "${{ github.actor }}" --github-workflow-run-id "${{ github.run_id }}" --comparison-reference-tag="push_main" --github-pr "${{ github.event_name == 'pull_request_target' && github.event.number || 0 }}" --comparison-reference-commit "${{ github.event_name == 'pull_request_target' && github.sha || github.event.before }}" --write-exported-run-url-to-file $GITHUB_OUTPUT
         working-directory: ./benchmarks
       - name: Run Benchmark on cloud storage
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
         id: bench-run-cloud-storage
-        run: python3 ./run.py --search-only --storage gcs --engine quickwit --track generated-logs --tags "${{ github.event_name }}_${{ github.ref_name }}" --manage-engine --source github_workflow --binary-path ../quickwit/quickwit/target/release/quickwit  --instance "{autodetect_gcp}" --export-to-endpoint=https://qw-benchmarks.104.155.161.122.nip.io --engine-data-dir "{qwdata_gcs}" --write-exported-run-url-to-file $GITHUB_OUTPUT
+        run: python3 ./run.py --search-only --storage gcs --engine quickwit --track generated-logs --tags "${{ github.event_name }}_${{ github.ref_name }}" --manage-engine --source github_workflow --binary-path ../quickwit/quickwit/target/release/quickwit  --instance "{autodetect_gcp}" --export-to-endpoint=https://qw-benchmarks.104.155.161.122.nip.io --engine-data-dir "{qwdata_gcs}" --engine-config-file engines/quickwit/configs/cbench_quickwit_gcs.yaml --github-workflow-user "${{ github.actor }}" --github-workflow-run-id "${{ github.run_id }}" --comparison-reference-tag="push_main" --github-pr "${{ github.event_name == 'pull_request_target' && github.event.number || 0 }}" --comparison-reference-commit "${{ github.event_name == 'pull_request_target' && github.sha || github.event.before }}" --write-exported-run-url-to-file $GITHUB_OUTPUT
         working-directory: ./benchmarks
       - name: Show results links
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
         run: |
           echo "::notice title=Benchmark Results on SSD::${{ steps.bench-run-ssd.outputs.url }}"
+          echo "::notice title=Comparison of results on SSD::${{ steps.bench-run-ssd.outputs.comparison_text }}"
           echo "::notice title=Benchmark Results on Cloud Storage::${{ steps.bench-run-cloud-storage.outputs.url }}"
+          echo "::notice title=Comparison of results on Cloud Storage::${{ steps.bench-run-cloud-storage.outputs.comparison_text }}"
       - name: In case of auth error
         if: ${{ ! contains(fromJSON(steps.authorized-users.outputs.users), github.actor) }}
         run: |
           echo "::error title=User not allowed to run the benchmark::User must be in list ${{ steps.authorized-users.outputs.users }}"
+      - name: Add a PR comment with comparison results
+        uses: actions/github-script@v7
+        if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name == 'pull_request_target'
+        # Inspired from: https://github.com/actions/github-script/blob/60a0d83039c74a4aee543508d2ffcb1c3799cdea/.github/workflows/pull-request-test.yml
+        with:
+          script: |
+            // Get the existing comments.
+            const {data: comments} = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.number,
+            })
+
+            // Find any comment already made by the bot to update it.
+            const botComment = comments.find(comment => comment.user.id === 41898282)
+            const commentBody = "### On SSD:\n${{ steps.bench-run-ssd.outputs.comparison_text }}\n### On GCS:\n${{ steps.bench-run-cloud-storage.outputs.comparison_text }}\n"
+            if (botComment) {
+              // Update existing comment.
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              })
+            } else {
+              // New comment.
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.number,
+                body: commentBody
+              })
+            }

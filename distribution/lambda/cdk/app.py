@@ -4,9 +4,9 @@ from typing import Literal
 
 import aws_cdk as cdk
 
-from cdk.stacks.services.quickwit_service import DEFAULT_LAMBDA_MEMORY_SIZE
-from cdk.stacks.examples.hdfs_stack import HdfsStack
-from cdk.stacks.examples.mock_data_stack import MockDataStack
+from stacks.services.quickwit_service import DEFAULT_LAMBDA_MEMORY_SIZE
+from stacks.examples.hdfs_stack import HdfsStack
+from stacks.examples.mock_data_stack import MockDataStack
 
 HDFS_STACK_NAME = "HdfsStack"
 MOCK_DATA_STACK_NAME = "MockDataStack"
@@ -50,6 +50,7 @@ MockDataStack(
     indexer_package_location=package_location_from_env("indexer"),
     searcher_package_location=package_location_from_env("searcher"),
     search_api_key=os.getenv("SEARCHER_API_KEY", None),
+    data_generation_interval_sec=int(os.getenv("DATA_GENERATION_INTERVAL_SEC", 300)),
 )
 
 app.synth()
