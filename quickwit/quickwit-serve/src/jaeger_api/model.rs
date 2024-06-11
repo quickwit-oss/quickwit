@@ -33,7 +33,7 @@ pub(super) const DEFAULT_NUMBER_OF_TRACES: i32 = 20;
 pub(super) fn build_jaeger_traces(spans: Vec<JaegerSpan>) -> anyhow::Result<Vec<JaegerTrace>> {
     let jaeger_traces: Vec<JaegerTrace> = spans
         .into_iter()
-        .group_by(|span| span.trace_id.clone())
+        .chunk_by(|span| span.trace_id.clone())
         .into_iter()
         .map(|(span_id, group)| JaegerTrace::new(span_id, group.collect()))
         .collect();
