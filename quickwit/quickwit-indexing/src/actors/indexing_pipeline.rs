@@ -639,7 +639,7 @@ mod tests {
             source_id: "test-source".to_string(),
             num_pipelines: NonZeroUsize::MIN,
             enabled: true,
-            source_params: SourceParams::file(PathBuf::from(test_file)),
+            source_params: SourceParams::file_from_str(test_file).unwrap(),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
@@ -758,7 +758,7 @@ mod tests {
             source_id: "test-source".to_string(),
             num_pipelines: NonZeroUsize::MIN,
             enabled: true,
-            source_params: SourceParams::file(PathBuf::from(test_file)),
+            source_params: SourceParams::file_from_str(test_file).unwrap(),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
@@ -965,7 +965,7 @@ mod tests {
             source_id: "test-source".to_string(),
             num_pipelines: NonZeroUsize::MIN,
             enabled: true,
-            source_params: SourceParams::file(PathBuf::from(test_file)),
+            source_params: SourceParams::file_from_str(test_file).unwrap(),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };

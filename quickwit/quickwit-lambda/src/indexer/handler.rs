@@ -34,7 +34,7 @@ async fn indexer_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     let payload = serde_json::from_value::<IndexerEvent>(event.payload)?;
 
     let ingest_res = ingest(IngestArgs {
-        input_path: payload.uri(),
+        input_path: payload.uri()?,
         input_format: quickwit_config::SourceInputFormat::Json,
         overwrite: false,
         vrl_script: None,
