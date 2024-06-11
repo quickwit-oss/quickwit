@@ -309,7 +309,7 @@ pub fn is_telemetry_disabled() -> bool {
 /// Check to see if telemetry is enabled.
 #[cfg(not(test))]
 pub fn is_telemetry_disabled() -> bool {
-    std::env::var_os(crate::DISABLE_TELEMETRY_ENV_KEY).is_some()
+    quickwit_common::get_bool_from_env(crate::DISABLE_TELEMETRY_ENV_KEY, false)
 }
 
 fn start_monitor_if_server_running_task(telemetry_sender: Arc<Inner>) {

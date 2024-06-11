@@ -70,13 +70,13 @@ use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
-use quickwit_common::spawn_named_task;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
     EventListenerLayer, GrpcMetricsLayer, LoadShedLayer, RateLimitLayer, RetryLayer, RetryPolicy,
     SmaRateEstimator,
 };
 use quickwit_common::uri::Uri;
+use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
@@ -634,7 +634,7 @@ pub async fn serve_quickwit(
             search_job_placer,
             storage_resolver.clone(),
             event_broker.clone(),
-            std::env::var(DISABLE_DELETE_TASK_SERVICE_ENV_KEY).is_err(),
+            !get_bool_from_env(DISABLE_DELETE_TASK_SERVICE_ENV_KEY, false),
         )
         .await
         .context("failed to start janitor service")?;
