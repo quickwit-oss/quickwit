@@ -22,11 +22,10 @@
 mod helpers;
 
 use std::path::Path;
-use std::str::FromStr;
 
 use anyhow::Result;
 use clap::error::ErrorKind;
-use helpers::{TestEnv, TestStorageType};
+use helpers::{uri_from_path, TestEnv, TestStorageType};
 use quickwit_cli::checklist::ChecklistError;
 use quickwit_cli::cli::build_cli;
 use quickwit_cli::index::{
@@ -258,15 +257,17 @@ async fn test_ingest_docs_cli() {
 
     // Ensure cache directory is empty.
     let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
-    let data_dir_uri = Uri::from_str(test_env.data_dir_path.to_str().unwrap()).unwrap();
-
     assert!(cache_directory_path.read_dir().unwrap().next().is_none());
+
+    let does_not_exit_uri = uri_from_path(&test_env.data_dir_path)
+        .join("file-does-not-exist.json")
+        .unwrap();
 
     // Ingest a non-existing file should fail.
     let args = LocalIngestDocsArgs {
         config_uri: test_env.resource_files.config,
         index_id: test_env.index_id,
-        input_path_opt: Some(data_dir_uri.join("file-does-not-exist.json").unwrap()),
+        input_path_opt: Some(does_not_exit_uri),
         input_format: SourceInputFormat::Json,
         overwrite: false,
         clear_cache: true,

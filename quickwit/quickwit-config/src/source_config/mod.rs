@@ -20,10 +20,8 @@
 pub(crate) mod serialize;
 
 use std::num::NonZeroUsize;
-use std::path::Path;
 use std::str::FromStr;
 
-use anyhow::Context;
 use bytes::Bytes;
 use quickwit_common::is_false;
 use quickwit_common::uri::Uri;
@@ -239,14 +237,6 @@ impl SourceParams {
 
     pub fn file_from_str<P: AsRef<str>>(filepath: P) -> anyhow::Result<Self> {
         FileSourceParams::from_str(filepath.as_ref()).map(Self::File)
-    }
-
-    pub fn file_from_path<P: AsRef<Path>>(filepath: P) -> anyhow::Result<Self> {
-        let path_str = filepath
-            .as_ref()
-            .to_str()
-            .context("failed to convert path to string")?;
-        Self::file_from_str(path_str)
     }
 
     pub fn stdin() -> Self {
