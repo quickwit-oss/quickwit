@@ -134,7 +134,7 @@ hyper = { version = "0.14", features = [
 hyper-rustls = "0.24"
 indexmap = { version = "2.1.0", features = ["serde"] }
 indicatif = "0.17.3"
-itertools = "0.12"
+itertools = "0.13"
 json_comments = "0.2"
 libz-sys = "1.1.8"
 lru = "0.12"
@@ -280,7 +280,7 @@ aws-sdk-kinesis = "1.21"
 aws-sdk-s3 = "1.24"
 aws-smithy-async = "1.2"
 aws-smithy-runtime = "1.5"
-aws-smithy-types = { version = "1.1", features = ["byte-stream-poll-next"] }
+aws-smithy-types = { version = "1.2", features = ["byte-stream-poll-next"] }
 aws-types = "1.2"
 
 azure_core = { version = "0.13.0", features = ["enable_reqwest_rustls"] }
@@ -323,7 +323,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "5b7cca1", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "08b9fc0", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
