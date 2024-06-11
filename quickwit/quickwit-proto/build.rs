@@ -198,6 +198,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
         .type_attribute("StatusCode", r#"#[serde(rename_all = "snake_case")]"#)
+        .type_attribute(
+            "ExportLogsServiceResponse",
+            r#"#[derive(utoipa::ToSchema)]"#,
+        )
         .out_dir("src/codegen/opentelemetry")
         .compile_with_config(prost_config, &protos, &["protos/third-party"])?;
     Ok(())

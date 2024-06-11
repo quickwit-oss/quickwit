@@ -25,6 +25,7 @@ use warp::{Filter, Rejection};
 
 use crate::format::extract_format_from_qs;
 use crate::require;
+use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
 
 #[derive(utoipa::OpenApi)]
@@ -60,4 +61,5 @@ pub fn indexing_get_handler(
         .then(indexing_endpoint)
         .and(extract_format_from_qs())
         .map(into_rest_api_response)
+        .recover(recover_fn)
 }

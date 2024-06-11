@@ -31,6 +31,7 @@ use serde::Deserialize;
 use warp::{Filter, Rejection};
 
 use crate::format::extract_format_from_qs;
+use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
 use crate::with_arg;
 
@@ -61,7 +62,9 @@ pub struct DeleteQueryRequest {
 pub fn delete_task_api_handlers(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    get_delete_tasks_handler(metastore.clone()).or(post_delete_tasks_handler(metastore.clone()))
+    get_delete_tasks_handler(metastore.clone())
+        .or(post_delete_tasks_handler(metastore.clone()))
+        .recover(recover_fn)
 }
 
 pub fn get_delete_tasks_handler(
