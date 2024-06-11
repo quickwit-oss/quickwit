@@ -1,72 +1,71 @@
 [workspace]
 resolver = "2"
 members = [
-  "quickwit-actors",
-  "quickwit-aws",
-  "quickwit-cli",
-  "quickwit-cluster",
-  "quickwit-codegen",
-  "quickwit-codegen/example",
-  "quickwit-common",
-  "quickwit-config",
-  "quickwit-control-plane",
-  "quickwit-index-management",
-  "quickwit-datetime",
-  "quickwit-directories",
-  "quickwit-doc-mapper",
-  "quickwit-indexing",
-  "quickwit-ingest",
-  "quickwit-integration-tests",
-  "quickwit-jaeger",
-  "quickwit-janitor",
-  "quickwit-lambda",
-  "quickwit-macros",
-  "quickwit-metastore",
-
-  # Disabling metastore-utils from the quickwit projects to ease build/deps.
-  # We can reenable it when we need it.
-  # "quickwit-metastore-utils",
-  "quickwit-opentelemetry",
-  "quickwit-proto",
-  "quickwit-query",
-  "quickwit-rest-client",
-  "quickwit-search",
-  "quickwit-serve",
-  "quickwit-storage",
-  "quickwit-telemetry",
+    "quickwit-actors",
+    "quickwit-aws",
+    "quickwit-cli",
+    "quickwit-cluster",
+    "quickwit-codegen",
+    "quickwit-codegen/example",
+    "quickwit-common",
+    "quickwit-config",
+    "quickwit-control-plane",
+    "quickwit-index-management",
+    "quickwit-datetime",
+    "quickwit-directories",
+    "quickwit-doc-mapper",
+    "quickwit-indexing",
+    "quickwit-ingest",
+    "quickwit-integration-tests",
+    "quickwit-jaeger",
+    "quickwit-janitor",
+    "quickwit-lambda",
+    "quickwit-macros",
+    "quickwit-metastore",
+    # Disabling metastore-utils from the quickwit projects to ease build/deps.
+    # We can reenable it when we need it.
+    # "quickwit-metastore-utils",
+    "quickwit-opentelemetry",
+    "quickwit-proto",
+    "quickwit-query",
+    "quickwit-rest-client",
+    "quickwit-search",
+    "quickwit-serve",
+    "quickwit-storage",
+    "quickwit-telemetry",
 ]
 
 # The following list excludes `quickwit-metastore-utils` and `quickwit-lambda`
 # from the default member to ease build/deps.
 default-members = [
-  "quickwit-actors",
-  "quickwit-aws",
-  "quickwit-cli",
-  "quickwit-cluster",
-  "quickwit-codegen",
-  "quickwit-codegen/example",
-  "quickwit-common",
-  "quickwit-config",
-  "quickwit-control-plane",
-  "quickwit-datetime",
-  "quickwit-directories",
-  "quickwit-doc-mapper",
-  "quickwit-index-management",
-  "quickwit-indexing",
-  "quickwit-ingest",
-  "quickwit-integration-tests",
-  "quickwit-jaeger",
-  "quickwit-janitor",
-  "quickwit-macros",
-  "quickwit-metastore",
-  "quickwit-opentelemetry",
-  "quickwit-proto",
-  "quickwit-query",
-  "quickwit-rest-client",
-  "quickwit-search",
-  "quickwit-serve",
-  "quickwit-storage",
-  "quickwit-telemetry",
+    "quickwit-actors",
+    "quickwit-aws",
+    "quickwit-cli",
+    "quickwit-cluster",
+    "quickwit-codegen",
+    "quickwit-codegen/example",
+    "quickwit-common",
+    "quickwit-config",
+    "quickwit-control-plane",
+    "quickwit-datetime",
+    "quickwit-directories",
+    "quickwit-doc-mapper",
+    "quickwit-index-management",
+    "quickwit-indexing",
+    "quickwit-ingest",
+    "quickwit-integration-tests",
+    "quickwit-jaeger",
+    "quickwit-janitor",
+    "quickwit-macros",
+    "quickwit-metastore",
+    "quickwit-opentelemetry",
+    "quickwit-proto",
+    "quickwit-query",
+    "quickwit-rest-client",
+    "quickwit-search",
+    "quickwit-serve",
+    "quickwit-storage",
+    "quickwit-telemetry",
 ]
 
 [workspace.package]
@@ -91,8 +90,8 @@ bytesize = { version = "1.3.0", features = ["serde"] }
 bytestring = "1.3.0"
 chitchat = { git = "https://github.com/quickwit-oss/chitchat.git", rev = "d039699" }
 chrono = { version = "0.4", default-features = false, features = [
-  "clock",
-  "std",
+    "clock",
+    "std",
 ] }
 clap = { version = "4.5.0", features = ["env", "string"] }
 coarsetime = "0.1.33"
@@ -124,12 +123,12 @@ http = "0.2.9"
 http-serde = "1.1.2"
 humantime = "2.1.0"
 hyper = { version = "0.14", features = [
-  "client",
-  "http1",
-  "http2",
-  "server",
-  "stream",
-  "tcp",
+    "client",
+    "http1",
+    "http2",
+    "server",
+    "stream",
+    "tcp",
 ] }
 hyper-rustls = "0.24"
 indexmap = { version = "2.1.0", features = ["serde"] }
@@ -141,12 +140,12 @@ lru = "0.12"
 lindera-core = "0.27.0"
 lindera-dictionary = "0.27.0"
 lindera-tokenizer = { version = "0.27.0", features = [
-  "cc-cedict-compress",
-  "cc-cedict",
-  "ipadic-compress",
-  "ipadic",
-  "ko-dic-compress",
-  "ko-dic",
+    "cc-cedict-compress",
+    "cc-cedict",
+    "ipadic-compress",
+    "ipadic",
+    "ko-dic-compress",
+    "ko-dic",
 ] }
 matches = "0.1.9"
 md5 = "0.7"
@@ -167,7 +166,7 @@ percent-encoding = "2.3.1"
 pin-project = "1.1.0"
 pnet = { version = "0.33.0", features = ["std"] }
 postcard = { version = "1.0.4", features = [
-  "use-std",
+    "use-std",
 ], default-features = false }
 predicates = "3"
 prettyplease = "0.2.0"
@@ -176,37 +175,37 @@ proc-macro2 = "1.0.50"
 prometheus = { version = "0.13", features = ["process"] }
 proptest = "1"
 prost = { version = "0.11.6", default-features = false, features = [
-  "prost-derive",
+    "prost-derive",
 ] }
 prost-build = "0.11.6"
 prost-types = "0.11.6"
 pulsar = { git = "https://github.com/quickwit-oss/pulsar-rs.git", rev = "f9eff04", default-features = false, features = [
-  "auth-oauth2",
-  "compression",
-  "tokio-runtime",
+    "auth-oauth2",
+    "compression",
+    "tokio-runtime",
 ] }
 quote = "1.0.23"
 rand = "0.8"
 rand_distr = "0.4"
 rayon = "1.10"
 rdkafka = { version = "0.33", default-features = false, features = [
-  "cmake-build",
-  "libz",
-  "ssl",
-  "tokio",
-  "zstd",
+    "cmake-build",
+    "libz",
+    "ssl",
+    "tokio",
+    "zstd",
 ] }
 regex = "1.10.0"
 regex-syntax = "0.8"
-reqwest = { version = "0.11", default-features = false, features = [
-  "json",
-  "rustls-tls",
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
 ] }
 rust-embed = "6.8.1"
 sea-query = { version = "0.30" }
 sea-query-binder = { version = "0.5", features = [
-  "runtime-tokio-rustls",
-  "sqlx-postgres",
+    "runtime-tokio-rustls",
+    "sqlx-postgres",
 ] }
 # ^1.0.184 due to serde-rs/serde#2538
 serde = { version = "1.0.184", features = ["derive", "rc"] }
@@ -217,10 +216,10 @@ serde_yaml = "0.9"
 siphasher = "0.3"
 smallvec = "1"
 sqlx = { version = "0.7", features = [
-  "migrate",
-  "postgres",
-  "runtime-tokio-rustls",
-  "time",
+    "migrate",
+    "postgres",
+    "runtime-tokio-rustls",
+    "time",
 ] }
 syn = { version = "2.0.11", features = ["extra-traits", "full", "parsing"] }
 sync_wrapper = "0.1.2"
@@ -239,23 +238,23 @@ toml = "0.7.6"
 tonic = { version = "0.9.0", features = ["gzip"] }
 tonic-build = "0.9.0"
 tower = { version = "0.4.13", features = [
-  "balance",
-  "buffer",
-  "load",
-  "retry",
-  "util",
+    "balance",
+    "buffer",
+    "load",
+    "retry",
+    "util",
 ] }
 tower-http = { version = "0.4.0", features = [
-  "compression-zstd",
-  "compression-gzip",
-  "cors",
+    "compression-zstd",
+    "compression-gzip",
+    "cors",
 ] }
 tracing = "0.1.37"
 tracing-opentelemetry = "0.20.0"
 tracing-subscriber = { version = "0.3.16", features = [
-  "env-filter",
-  "std",
-  "time",
+    "env-filter",
+    "std",
+    "time",
 ] }
 ttl_cache = "0.5"
 typetag = "0.2"
@@ -264,10 +263,10 @@ username = "0.2"
 utoipa = "4.2.0"
 uuid = { version = "1.8", features = ["v4", "serde"] }
 vrl = { version = "0.8.1", default-features = false, features = [
-  "compiler",
-  "diagnostic",
-  "stdlib",
-  "value",
+    "compiler",
+    "diagnostic",
+    "stdlib",
+    "value",
 ] }
 warp = "0.3"
 whichlang = { git = "https://github.com/quickwit-oss/whichlang", rev = "fe406416" }
@@ -285,14 +284,14 @@ aws-types = "1.2"
 
 azure_core = { version = "0.13.0", features = ["enable_reqwest_rustls"] }
 azure_storage = { version = "0.13.0", default-features = false, features = [
-  "enable_reqwest_rustls",
+    "enable_reqwest_rustls",
 ] }
 azure_storage_blobs = { version = "0.13.0", default-features = false, features = [
-  "enable_reqwest_rustls",
+    "enable_reqwest_rustls",
 ] }
 
-opendal = { version = "0.44", default-features = false }
-reqsign = { version = "0.14", default-features = false }
+opendal = { version = "0.47", default-features = false }
+reqsign = { version = "0.15", default-features = false }
 
 quickwit-actors = { path = "quickwit-actors" }
 quickwit-aws = { path = "quickwit-aws" }
@@ -324,10 +323,10 @@ quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
 tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "08b9fc0", default-features = false, features = [
-  "lz4-compression",
-  "mmap",
-  "quickwit",
-  "zstd-compression",
+    "lz4-compression",
+    "mmap",
+    "quickwit",
+    "zstd-compression",
 ] }
 
 # This is actually not used directly the goal is to fix the version

@@ -23,9 +23,11 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use bytesize::ByteSize;
+use futures::SinkExt;
 use opendal::Operator;
 use quickwit_common::uri::Uri;
 use tokio::io::{AsyncRead, AsyncWriteExt};
+use tokio_util::compat::FuturesAsyncReadCompatExt;
 
 use crate::storage::SendableAsync;
 use crate::{
@@ -78,22 +80,36 @@ impl Storage for OpendalStorage {
     /// If the payload is small enough, we can call `op.write()` at once.
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
-        let mut payload_reader = payload.byte_stream().await?.into_async_read();
+        let mut payload_stream = payload.byte_stream().await?;
 
-        let mut storage_writer = self
+        let mut storage_sink = self
             .op
             .writer_with(&path)
-            .buffer(ByteSize::mb(8).as_u64() as usize)
-            .await?;
-        tokio::io::copy(&mut payload_reader, &mut storage_writer).await?;
-        storage_writer.close().await?;
+            .chunk(ByteSize::mb(8).as_u64() as usize)
+            .await?
+            .into_bytes_sink();
 
+        // Use bytes stream and sink to avoid extra memory copy.
+        while let Some(bs) = payload_stream
+            .try_next()
+            .await
+            .map_err(|err| StorageErrorKind::Io.with_error(err))?
+        {
+            storage_sink.feed(bs).await?;
+        }
+        storage_sink.close().await?;
         Ok(())
     }
 
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
-        let mut storage_reader = self.op.reader(&path).await?;
+        let mut storage_reader = self
+            .op
+            .reader(&path)
+            .await?
+            .into_futures_async_read(..)
+            .await?
+            .compat();
         tokio::io::copy(&mut storage_reader, output).await?;
         output.flush().await?;
         Ok(())
@@ -102,7 +118,7 @@ impl Storage for OpendalStorage {
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let path = path.as_os_str().to_string_lossy();
         let range = range.start as u64..range.end as u64;
-        let storage_content = self.op.read_with(&path).range(range).await?;
+        let storage_content = self.op.read_with(&path).range(range).await?.to_vec();
 
         Ok(OwnedBytes::new(storage_content))
     }
@@ -114,14 +130,20 @@ impl Storage for OpendalStorage {
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
         let path = path.as_os_str().to_string_lossy();
         let range = range.start as u64..range.end as u64;
-        let storage_reader = self.op.reader_with(&path).range(range).await?;
+        let storage_reader = self
+            .op
+            .reader_with(&path)
+            .await?
+            .into_futures_async_read(range)
+            .await?
+            .compat();
 
         Ok(Box::new(storage_reader))
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let path = path.as_os_str().to_string_lossy();
-        let storage_content = self.op.read(&path).await?;
+        let storage_content = self.op.read(&path).await?.to_vec();
 
         Ok(OwnedBytes::new(storage_content))
     }
