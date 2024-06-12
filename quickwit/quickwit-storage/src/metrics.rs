@@ -97,37 +97,37 @@ pub struct CacheMetrics {
 
 impl CacheMetrics {
     pub fn for_component(component_name: &str) -> Self {
-        let namespace = "cache";
+        const CACHE_METRICS_NAMESPACE: &str = "cache";
         CacheMetrics {
             component_name: component_name.to_string(),
             in_cache_count: new_gauge(
                 "in_cache_count",
                 "Count of in cache by component",
-                &namespace,
+                CACHE_METRICS_NAMESPACE,
                 &[("component_name", component_name)],
             ),
             in_cache_num_bytes: new_gauge(
                 "in_cache_num_bytes",
                 "Number of bytes in cache by component",
-                &namespace,
+                CACHE_METRICS_NAMESPACE,
                 &[("component_name", component_name)],
             ),
             hits_num_items: new_counter_with_labels(
                 "cache_hits_total",
                 "Number of cache hits by component",
-                &namespace,
+                CACHE_METRICS_NAMESPACE,
                 &[("component_name", component_name)],
             ),
             hits_num_bytes: new_counter_with_labels(
                 "cache_hits_bytes",
                 "Number of cache hits in bytes by component",
-                &namespace,
+                CACHE_METRICS_NAMESPACE,
                 &[("component_name", component_name)],
             ),
             misses_num_items: new_counter_with_labels(
                 "cache_misses_total",
                 "Number of cache misses by component",
-                &namespace,
+                CACHE_METRICS_NAMESPACE,
                 &[("component_name", component_name)],
             ),
         }
