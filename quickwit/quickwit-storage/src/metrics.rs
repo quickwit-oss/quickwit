@@ -20,7 +20,9 @@
 // See https://prometheus.io/docs/practices/naming/
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, new_gauge, IntCounter, IntGauge};
+use quickwit_common::metrics::{
+    new_counter, new_counter_with_labels, new_gauge, IntCounter, IntGauge,
+};
 
 /// Counters associated to storage operations.
 pub struct StorageMetrics {
@@ -95,38 +97,38 @@ pub struct CacheMetrics {
 
 impl CacheMetrics {
     pub fn for_component(component_name: &str) -> Self {
-        let namespace = format!("cache_{component_name}");
+        const CACHE_METRICS_NAMESPACE: &str = "cache";
         CacheMetrics {
             component_name: component_name.to_string(),
             in_cache_count: new_gauge(
                 "in_cache_count",
-                "Count of {component_name} in cache",
-                &namespace,
-                &[],
+                "Count of in cache by component",
+                CACHE_METRICS_NAMESPACE,
+                &[("component_name", component_name)],
             ),
             in_cache_num_bytes: new_gauge(
                 "in_cache_num_bytes",
-                "Number of {component_name} bytes in cache",
-                &namespace,
-                &[],
+                "Number of bytes in cache by component",
+                CACHE_METRICS_NAMESPACE,
+                &[("component_name", component_name)],
             ),
-            hits_num_items: new_counter(
+            hits_num_items: new_counter_with_labels(
                 "cache_hits_total",
-                "Number of {component_name} cache hits",
-                &namespace,
-                &[],
+                "Number of cache hits by component",
+                CACHE_METRICS_NAMESPACE,
+                &[("component_name", component_name)],
             ),
-            hits_num_bytes: new_counter(
+            hits_num_bytes: new_counter_with_labels(
                 "cache_hits_bytes",
-                "Number of {component_name} cache hits in bytes",
-                &namespace,
-                &[],
+                "Number of cache hits in bytes by component",
+                CACHE_METRICS_NAMESPACE,
+                &[("component_name", component_name)],
             ),
-            misses_num_items: new_counter(
+            misses_num_items: new_counter_with_labels(
                 "cache_misses_total",
-                "Number of {component_name} cache misses",
-                &namespace,
-                &[],
+                "Number of cache misses by component",
+                CACHE_METRICS_NAMESPACE,
+                &[("component_name", component_name)],
             ),
         }
     }
