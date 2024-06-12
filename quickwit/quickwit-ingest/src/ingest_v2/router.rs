@@ -206,7 +206,7 @@ impl IngestRouter {
     }
 
     async fn populate_routing_table_debounced(
-        &mut self,
+        &self,
         workbench: &mut IngestWorkbench,
         debounced_request: DebouncedGetOrCreateOpenShardsRequest,
     ) {
@@ -221,7 +221,7 @@ impl IngestRouter {
     /// Issues a [`GetOrCreateOpenShardsRequest`] request to the control plane and populates the
     /// shard table according to the response received.
     async fn populate_routing_table(
-        &mut self,
+        &self,
         workbench: &mut IngestWorkbench,
         request: GetOrCreateOpenShardsRequest,
     ) {
@@ -263,7 +263,7 @@ impl IngestRouter {
     }
 
     async fn process_persist_results(
-        &mut self,
+        &self,
         workbench: &mut IngestWorkbench,
         mut persist_futures: FuturesUnordered<impl Future<Output = PersistResult>>,
     ) {
@@ -332,7 +332,7 @@ impl IngestRouter {
         }
     }
 
-    async fn batch_persist(&mut self, workbench: &mut IngestWorkbench, commit_type: CommitTypeV2) {
+    async fn batch_persist(&self, workbench: &mut IngestWorkbench, commit_type: CommitTypeV2) {
         let debounced_request = self
             .make_get_or_create_open_shard_request(workbench, &self.ingester_pool)
             .await;
@@ -381,7 +381,7 @@ impl IngestRouter {
                 .iter()
                 .map(|subrequest| subrequest.subrequest_id)
                 .collect();
-            let Some(mut ingester) = self.ingester_pool.get(&leader_id) else {
+            let Some(ingester) = self.ingester_pool.get(&leader_id) else {
                 no_shards_available_subrequest_ids.extend(subrequest_ids);
                 continue;
             };
@@ -421,7 +421,7 @@ impl IngestRouter {
     }
 
     async fn retry_batch_persist(
-        &mut self,
+        &self,
         ingest_request: IngestRequestV2,
         max_num_attempts: usize,
     ) -> IngestV2Result<IngestResponseV2> {
@@ -435,7 +435,7 @@ impl IngestRouter {
     }
 
     async fn ingest_timeout(
-        &mut self,
+        &self,
         ingest_request: IngestRequestV2,
         timeout_duration: Duration,
     ) -> IngestV2Result<IngestResponseV2> {
@@ -465,10 +465,7 @@ impl IngestRouter {
 
 #[async_trait]
 impl IngestRouterService for IngestRouter {
-    async fn ingest(
-        &mut self,
-        ingest_request: IngestRequestV2,
-    ) -> IngestV2Result<IngestResponseV2> {
+    async fn ingest(&self, ingest_request: IngestRequestV2) -> IngestV2Result<IngestResponseV2> {
         let request_size_bytes = ingest_request.num_bytes();
 
         let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingest_router);
@@ -820,7 +817,7 @@ mod tests {
         let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
-        let mut router = IngestRouter::new(
+        let router = IngestRouter::new(
             self_node_id,
             control_plane,
             ingester_pool.clone(),
@@ -934,7 +931,7 @@ mod tests {
         let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
-        let mut router = IngestRouter::new(
+        let router = IngestRouter::new(
             self_node_id,
             control_plane,
             ingester_pool.clone(),
@@ -992,7 +989,7 @@ mod tests {
         let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
-        let mut router = IngestRouter::new(
+        let router = IngestRouter::new(
             self_node_id,
             control_plane,
             ingester_pool.clone(),
@@ -1021,7 +1018,7 @@ mod tests {
         let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
-        let mut router = IngestRouter::new(
+        let router = IngestRouter::new(
             self_node_id,
             control_plane,
             ingester_pool.clone(),
@@ -1072,7 +1069,7 @@ mod tests {
         let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
-        let mut router = IngestRouter::new(
+        let router = IngestRouter::new(
             self_node_id,
             control_plane,
             ingester_pool.clone(),
@@ -1123,7 +1120,7 @@ mod tests {
         let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
-        let mut router = IngestRouter::new(
+        let router = IngestRouter::new(
             self_node_id,
             control_plane,
             ingester_pool.clone(),
@@ -1209,7 +1206,7 @@ mod tests {
         ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
 
         let replication_factor = 1;
-        let mut router = IngestRouter::new(
+        let router = IngestRouter::new(
             self_node_id,
             control_plane,
             ingester_pool.clone(),
@@ -1288,7 +1285,7 @@ mod tests {
         let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
-        let mut router = IngestRouter::new(
+        let router = IngestRouter::new(
             self_node_id,
             control_plane,
             ingester_pool.clone(),
@@ -1502,7 +1499,7 @@ mod tests {
         let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
-        let mut router = IngestRouter::new(
+        let router = IngestRouter::new(
             self_node_id,
             control_plane,
             ingester_pool.clone(),

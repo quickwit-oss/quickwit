@@ -96,7 +96,7 @@ impl TestSandbox {
         let storage_resolver = StorageResolver::for_test();
         let metastore_resolver =
             MetastoreResolver::configured(storage_resolver.clone(), &MetastoreConfigs::default());
-        let mut metastore = metastore_resolver
+        let metastore = metastore_resolver
             .resolve(&Uri::for_test(METASTORE_URI))
             .await?;
         let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
@@ -321,7 +321,7 @@ mod tests {
             serde_json::json!({"title": "Ganimede", "body": "...", "url": "http://ganimede"}),
         ]).await?;
         assert_eq!(statistics.num_uploaded_splits, 1);
-        let mut metastore = test_sandbox.metastore();
+        let metastore = test_sandbox.metastore();
         {
             let splits = metastore
                 .list_splits(

@@ -656,7 +656,7 @@ async fn test_garbage_collect_cli_no_grace() {
         .await
         .unwrap();
 
-    let mut metastore = MetastoreResolver::unconfigured()
+    let metastore = MetastoreResolver::unconfigured()
         .resolve(&test_env.metastore_uri)
         .await
         .unwrap();
@@ -698,7 +698,7 @@ async fn test_garbage_collect_cli_no_grace() {
     assert_eq!(index_path.try_exists().unwrap(), true);
 
     let split_ids = vec![splits_metadata[0].split_id().to_string()];
-    let mut metastore = refresh_metastore(metastore).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
     let mark_for_deletion_request =
         MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids.clone());
     metastore
@@ -728,7 +728,7 @@ async fn test_garbage_collect_cli_no_grace() {
         assert_eq!(split_filepath.try_exists().unwrap(), false);
     }
 
-    let mut metastore = refresh_metastore(metastore).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
     assert_eq!(
         metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
@@ -785,7 +785,7 @@ async fn test_garbage_collect_index_cli() {
         dry_run: false,
     };
 
-    let mut metastore = MetastoreResolver::unconfigured()
+    let metastore = MetastoreResolver::unconfigured()
         .resolve(&test_env.metastore_uri)
         .await
         .unwrap();
@@ -809,7 +809,7 @@ async fn test_garbage_collect_index_cli() {
     garbage_collect_index_cli(args).await.unwrap();
 
     // Split should still exists within grace period.
-    let mut metastore = refresh_metastore(metastore).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
     let splits_metadata = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
@@ -848,7 +848,7 @@ async fn test_garbage_collect_index_cli() {
         .unwrap();
     assert_eq!(split_path.try_exists().unwrap(), true);
 
-    let mut metastore = refresh_metastore(metastore).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
     let splits = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
@@ -864,7 +864,7 @@ async fn test_garbage_collect_index_cli() {
 
     assert_eq!(split_path.try_exists().unwrap(), true);
     // Staged splits should still exist within grace period.
-    let mut metastore = refresh_metastore(metastore).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
     let splits = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
@@ -883,7 +883,7 @@ async fn test_garbage_collect_index_cli() {
 
     garbage_collect_index_cli(args).await.unwrap();
 
-    let mut metastore = refresh_metastore(metastore).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
     let splits = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
         .await

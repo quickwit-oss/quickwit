@@ -350,7 +350,7 @@ impl IngestSource {
                 .push(truncate_shards_subrequest);
         }
         for (ingester_id, truncate_subrequests) in per_ingester_truncate_subrequests {
-            let Some(mut ingester) = self.ingester_pool.get(ingester_id) else {
+            let Some(ingester) = self.ingester_pool.get(ingester_id) else {
                 warn!("failed to truncate shard(s): ingester `{ingester_id}` is unavailable");
                 continue;
             };

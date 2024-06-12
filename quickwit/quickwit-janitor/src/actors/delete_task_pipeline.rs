@@ -351,7 +351,7 @@ mod tests {
             serde_json::json!({"body": "delete", "ts": 0 }),
         ];
         test_sandbox.add_documents(docs).await?;
-        let mut metastore = test_sandbox.metastore();
+        let metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
                 index_uid: Some(index_uid.clone()),

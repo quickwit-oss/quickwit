@@ -32,24 +32,19 @@ use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
-pub trait IndexingService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+pub trait IndexingService: std::fmt::Debug + Send + Sync + 'static {
     /// Apply an indexing plan on the node.
     async fn apply_indexing_plan(
-        &mut self,
+        &self,
         request: ApplyIndexingPlanRequest,
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse>;
 }
-dyn_clone::clone_trait_object!(IndexingService);
-#[cfg(any(test, feature = "testsuite"))]
-impl Clone for MockIndexingService {
-    fn clone(&self) -> Self {
-        MockIndexingService::new()
-    }
-}
 #[derive(Debug, Clone)]
 pub struct IndexingServiceClient {
-    inner: Box<dyn IndexingService>,
+    inner: InnerIndexingServiceClient,
 }
+#[derive(Debug, Clone)]
+struct InnerIndexingServiceClient(std::sync::Arc<dyn IndexingService>);
 impl IndexingServiceClient {
     pub fn new<T>(instance: T) -> Self
     where
@@ -61,7 +56,9 @@ impl IndexingServiceClient {
             MockIndexingService > (),
             "`MockIndexingService` must be wrapped in a `MockIndexingServiceWrapper`: use `IndexingServiceClient::from_mock(mock)` to instantiate the client"
         );
-        Self { inner: Box::new(instance) }
+        Self {
+            inner: InnerIndexingServiceClient(std::sync::Arc::new(instance)),
+        }
     }
     pub fn as_grpc_service(
         &self,
@@ -122,7 +119,7 @@ impl IndexingServiceClient {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn from_mock(mock: MockIndexingService) -> Self {
         let mock_wrapper = mock_indexing_service::MockIndexingServiceWrapper {
-            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+            inner: tokio::sync::Mutex::new(mock),
         };
         Self::new(mock_wrapper)
     }
@@ -134,23 +131,23 @@ impl IndexingServiceClient {
 #[async_trait::async_trait]
 impl IndexingService for IndexingServiceClient {
     async fn apply_indexing_plan(
-        &mut self,
+        &self,
         request: ApplyIndexingPlanRequest,
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
-        self.inner.apply_indexing_plan(request).await
+        self.inner.0.apply_indexing_plan(request).await
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_indexing_service {
     use super::*;
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub struct MockIndexingServiceWrapper {
-        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockIndexingService>>,
+        pub(super) inner: tokio::sync::Mutex<MockIndexingService>,
     }
     #[async_trait::async_trait]
     impl IndexingService for MockIndexingServiceWrapper {
         async fn apply_indexing_plan(
-            &mut self,
+            &self,
             request: super::ApplyIndexingPlanRequest,
         ) -> crate::indexing::IndexingResult<super::ApplyIndexingPlanResponse> {
             self.inner.lock().await.apply_indexing_plan(request).await
@@ -160,7 +157,7 @@ pub mod mock_indexing_service {
 pub type BoxFuture<T, E> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
 >;
-impl tower::Service<ApplyIndexingPlanRequest> for Box<dyn IndexingService> {
+impl tower::Service<ApplyIndexingPlanRequest> for InnerIndexingServiceClient {
     type Response = ApplyIndexingPlanResponse;
     type Error = crate::indexing::IndexingError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -171,36 +168,29 @@ impl tower::Service<ApplyIndexingPlanRequest> for Box<dyn IndexingService> {
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: ApplyIndexingPlanRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.apply_indexing_plan(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.apply_indexing_plan(request).await };
         Box::pin(fut)
     }
 }
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct IndexingServiceTowerServiceStack {
-    inner: Box<dyn IndexingService>,
+    #[allow(dead_code)]
+    inner: InnerIndexingServiceClient,
     apply_indexing_plan_svc: quickwit_common::tower::BoxService<
         ApplyIndexingPlanRequest,
         ApplyIndexingPlanResponse,
         crate::indexing::IndexingError,
     >,
 }
-impl Clone for IndexingServiceTowerServiceStack {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            apply_indexing_plan_svc: self.apply_indexing_plan_svc.clone(),
-        }
-    }
-}
 #[async_trait::async_trait]
 impl IndexingService for IndexingServiceTowerServiceStack {
     async fn apply_indexing_plan(
-        &mut self,
+        &self,
         request: ApplyIndexingPlanRequest,
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
-        self.apply_indexing_plan_svc.ready().await?.call(request).await
+        self.apply_indexing_plan_svc.clone().ready().await?.call(request).await
     }
 }
 type ApplyIndexingPlanLayer = quickwit_common::tower::BoxLayer<
@@ -274,7 +264,8 @@ impl IndexingServiceTowerLayerStack {
     where
         T: IndexingService,
     {
-        self.build_from_boxed(Box::new(instance))
+        let inner_client = InnerIndexingServiceClient(std::sync::Arc::new(instance));
+        self.build_from_inner_client(inner_client)
     }
     pub fn build_from_channel(
         self,
@@ -282,25 +273,25 @@ impl IndexingServiceTowerLayerStack {
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
     ) -> IndexingServiceClient {
-        self.build_from_boxed(
-            Box::new(
-                IndexingServiceClient::from_channel(addr, channel, max_message_size),
-            ),
-        )
+        let client = IndexingServiceClient::from_channel(
+            addr,
+            channel,
+            max_message_size,
+        );
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
     }
     pub fn build_from_balance_channel(
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
     ) -> IndexingServiceClient {
-        self.build_from_boxed(
-            Box::new(
-                IndexingServiceClient::from_balance_channel(
-                    balance_channel,
-                    max_message_size,
-                ),
-            ),
-        )
+        let client = IndexingServiceClient::from_balance_channel(
+            balance_channel,
+            max_message_size,
+        );
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -310,26 +301,31 @@ impl IndexingServiceTowerLayerStack {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         IndexingServiceMailbox<A>: IndexingService,
     {
-        self.build_from_boxed(Box::new(IndexingServiceMailbox::new(mailbox)))
+        let inner_client = InnerIndexingServiceClient(
+            std::sync::Arc::new(IndexingServiceMailbox::new(mailbox)),
+        );
+        self.build_from_inner_client(inner_client)
     }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn build_from_mock(self, mock: MockIndexingService) -> IndexingServiceClient {
-        self.build_from_boxed(Box::new(IndexingServiceClient::from_mock(mock)))
+        let client = IndexingServiceClient::from_mock(mock);
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
     }
-    fn build_from_boxed(
+    fn build_from_inner_client(
         self,
-        boxed_instance: Box<dyn IndexingService>,
+        inner_client: InnerIndexingServiceClient,
     ) -> IndexingServiceClient {
         let apply_indexing_plan_svc = self
             .apply_indexing_plan_layers
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let tower_svc_stack = IndexingServiceTowerServiceStack {
-            inner: boxed_instance.clone(),
+            inner: inner_client,
             apply_indexing_plan_svc,
         };
         IndexingServiceClient::new(tower_svc_stack)
@@ -415,10 +411,10 @@ where
     >,
 {
     async fn apply_indexing_plan(
-        &mut self,
+        &self,
         request: ApplyIndexingPlanRequest,
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
-        self.call(request).await
+        self.clone().call(request).await
     }
 }
 #[derive(Debug, Clone)]
@@ -456,10 +452,11 @@ where
     T::Future: Send,
 {
     async fn apply_indexing_plan(
-        &mut self,
+        &self,
         request: ApplyIndexingPlanRequest,
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
         self.inner
+            .clone()
             .apply_indexing_plan(request)
             .await
             .map(|response| response.into_inner())
@@ -471,14 +468,16 @@ where
 }
 #[derive(Debug)]
 pub struct IndexingServiceGrpcServerAdapter {
-    inner: Box<dyn IndexingService>,
+    inner: InnerIndexingServiceClient,
 }
 impl IndexingServiceGrpcServerAdapter {
     pub fn new<T>(instance: T) -> Self
     where
         T: IndexingService,
     {
-        Self { inner: Box::new(instance) }
+        Self {
+            inner: InnerIndexingServiceClient(std::sync::Arc::new(instance)),
+        }
     }
 }
 #[async_trait::async_trait]
@@ -489,7 +488,7 @@ for IndexingServiceGrpcServerAdapter {
         request: tonic::Request<ApplyIndexingPlanRequest>,
     ) -> Result<tonic::Response<ApplyIndexingPlanResponse>, tonic::Status> {
         self.inner
-            .clone()
+            .0
             .apply_indexing_plan(request.into_inner())
             .await
             .map(tonic::Response::new)

@@ -570,7 +570,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_index() {
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
         let index_config =
             OtlpGrpcLogsService::index_config(&Uri::for_test("ram:///indexes")).unwrap();
         let create_index_request =

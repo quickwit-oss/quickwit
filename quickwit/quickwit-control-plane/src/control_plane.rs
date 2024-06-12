@@ -280,7 +280,7 @@ impl ControlPlane {
                 &source_configs,
             )?;
             let create_index_future = {
-                let mut metastore = self.metastore.clone();
+                let metastore = self.metastore.clone();
                 async move { metastore.create_index(create_index_request).await }
             };
             create_index_futures.push(create_index_future);

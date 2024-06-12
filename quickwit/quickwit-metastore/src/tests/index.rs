@@ -88,7 +88,7 @@ pub async fn test_metastore_create_index<
 async fn setup_metastore_for_update<
     MetastoreToTest: MetastoreService + MetastoreServiceExt + DefaultForTest,
 >() -> (MetastoreToTest, IndexUid, IndexConfig) {
-    let mut metastore = MetastoreToTest::default_for_test().await;
+    let metastore = MetastoreToTest::default_for_test().await;
 
     let index_id = append_random_suffix("test-update-index");
     let index_uri = format!("ram:///indexes/{index_id}");
