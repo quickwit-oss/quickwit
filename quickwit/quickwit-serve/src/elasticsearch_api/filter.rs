@@ -177,8 +177,8 @@ pub(crate) fn elastic_index_count_filter(
 pub(crate) fn elastic_delete_index_filter(
 ) -> impl Filter<Extract = (Vec<String>, DeleteQueryParams), Error = Rejection> + Clone {
     warp::path!("_elastic" / String)
-        .and_then(extract_index_id_patterns)
         .and(warp::delete())
+        .and_then(extract_index_id_patterns)
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 

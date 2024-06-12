@@ -47,6 +47,7 @@ use tracing::{info, warn};
 use warp::{Filter, Rejection};
 
 use crate::format::{extract_config_format, extract_format_from_qs};
+use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
 use crate::with_arg;
@@ -107,6 +108,7 @@ pub fn index_management_handlers(
         .or(analyze_request_handler())
         // Parse query into query AST handler.
         .or(parse_query_request_handler())
+        .recover(recover_fn)
 }
 
 fn json_body<T: DeserializeOwned + Send>(

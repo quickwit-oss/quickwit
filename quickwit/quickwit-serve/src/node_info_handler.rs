@@ -23,6 +23,7 @@ use quickwit_config::NodeConfig;
 use serde_json::json;
 use warp::{Filter, Rejection};
 
+use crate::rest::recover_fn;
 use crate::{with_arg, BuildInfo, RuntimeInfo};
 
 #[derive(utoipa::OpenApi)]
@@ -34,7 +35,9 @@ pub fn node_info_handler(
     runtime_info: &'static RuntimeInfo,
     config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    node_version_handler(build_info, runtime_info).or(node_config_handler(config))
+    node_version_handler(build_info, runtime_info)
+        .or(node_config_handler(config))
+        .recover(recover_fn)
 }
 
 #[utoipa::path(get, tag = "Node Info", path = "/version")]

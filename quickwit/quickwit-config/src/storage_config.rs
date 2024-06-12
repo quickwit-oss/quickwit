@@ -22,6 +22,7 @@ use std::{env, fmt};
 
 use anyhow::ensure;
 use itertools::Itertools;
+use quickwit_common::get_bool_from_env;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, EnumMap};
 
@@ -369,7 +370,11 @@ impl S3StorageConfig {
     }
 
     pub fn force_path_style_access(&self) -> Option<bool> {
-        Some(env::var("QW_S3_FORCE_PATH_STYLE_ACCESS").is_ok() || self.force_path_style_access)
+        let force_path_style_access = get_bool_from_env(
+            "QW_S3_FORCE_PATH_STYLE_ACCESS",
+            self.force_path_style_access,
+        );
+        Some(force_path_style_access)
     }
 }
 

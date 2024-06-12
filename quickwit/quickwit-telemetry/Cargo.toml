@@ -26,6 +26,8 @@ uuid = { workspace = true }
 # used by reqwest. 0.8.30 has an unclear license.
 encoding_rs = { workspace = true }
 
+quickwit-common = { workspace = true }
+
 [dev-dependencies]
 serde_json = { workspace = true }
 

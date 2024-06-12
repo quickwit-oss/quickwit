@@ -45,6 +45,7 @@ use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
 use crate::elasticsearch_api::model::ElasticsearchError;
+use crate::rest::recover_fn;
 use crate::rest_api_response::RestApiResponse;
 use crate::{BodyFormat, BuildInfo};
 
@@ -79,6 +80,7 @@ pub fn elastic_api_handlers(
         .or(es_compat_stats_handler(metastore.clone()))
         .or(es_compat_index_cat_indices_handler(metastore.clone()))
         .or(es_compat_cat_indices_handler(metastore.clone()))
+        .recover(recover_fn)
     // Register newly created handlers here.
 }
 

@@ -26,6 +26,7 @@ use opentelemetry::sdk::trace::BatchConfig;
 use opentelemetry::sdk::{trace, Resource};
 use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
+use quickwit_common::get_bool_from_env;
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use tracing::Level;
 use tracing_subscriber::fmt::time::UtcTime;
@@ -43,7 +44,7 @@ pub fn setup_logging_and_tracing(
 ) -> anyhow::Result<EnvFilterReloadFn> {
     #[cfg(feature = "tokio-console")]
     {
-        if std::env::var_os(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY).is_some() {
+        if get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
             console_subscriber::init();
             return Ok(quickwit_serve::do_nothing_env_filter_reload_fn());
         }
@@ -69,7 +70,7 @@ pub fn setup_logging_and_tracing(
         );
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
-    if std::env::var_os(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY).is_some() {
+    if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
         let otlp_exporter = opentelemetry_otlp::new_exporter().tonic().with_env();
         // In debug mode, Quickwit can generate a lot of spans, and the default queue size of 2048
         // is too small.

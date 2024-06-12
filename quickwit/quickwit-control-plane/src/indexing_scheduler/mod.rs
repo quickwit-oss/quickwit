@@ -501,13 +501,13 @@ fn get_indexing_tasks_diff<'a>(
     let mut unplanned_tasks: Vec<&IndexingTask> = Vec::new();
     let grouped_running_tasks: FnvHashMap<&IndexingTask, usize> = running_tasks
         .iter()
-        .group_by(|&task| task)
+        .chunk_by(|&task| task)
         .into_iter()
         .map(|(key, group)| (key, group.count()))
         .collect();
     let grouped_last_applied_tasks: FnvHashMap<&IndexingTask, usize> = last_applied_tasks
         .iter()
-        .group_by(|&task| task)
+        .chunk_by(|&task| task)
         .into_iter()
         .map(|(key, group)| (key, group.count()))
         .collect();

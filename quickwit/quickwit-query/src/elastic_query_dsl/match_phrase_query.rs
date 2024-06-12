@@ -19,7 +19,9 @@
 
 use serde::Deserialize;
 
-use crate::elastic_query_dsl::{ConvertableToQueryAst, StringOrStructForSerialization};
+use crate::elastic_query_dsl::{
+    ConvertableToQueryAst, ElasticQueryDslInner, StringOrStructForSerialization,
+};
 use crate::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use crate::{MatchAllOrNone, OneFieldMap};
 
@@ -35,13 +37,13 @@ pub(crate) struct MatchPhraseQuery {
 #[derive(Clone, Deserialize, PartialEq, Eq, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MatchPhraseQueryParams {
-    query: String,
+    pub(crate) query: String,
     #[serde(default)]
-    zero_terms_query: MatchAllOrNone,
+    pub(crate) zero_terms_query: MatchAllOrNone,
     #[serde(default)]
-    analyzer: Option<String>,
+    pub(crate) analyzer: Option<String>,
     #[serde(default)]
-    slop: u32,
+    pub(crate) slop: u32,
 }
 
 impl ConvertableToQueryAst for MatchPhraseQuery {
@@ -58,6 +60,12 @@ impl ConvertableToQueryAst for MatchPhraseQuery {
             text: self.params.query,
             params: full_text_params,
         }))
+    }
+}
+
+impl From<MatchPhraseQuery> for ElasticQueryDslInner {
+    fn from(match_phrase_query: MatchPhraseQuery) -> Self {
+        ElasticQueryDslInner::MatchPhrase(match_phrase_query)
     }
 }
 

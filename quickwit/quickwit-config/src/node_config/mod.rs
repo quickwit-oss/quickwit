@@ -122,7 +122,7 @@ impl IndexerConfig {
         }
         #[cfg(not(any(test, feature = "testsuite")))]
         {
-            true
+            quickwit_common::get_bool_from_env("QW_ENABLE_OTLP_ENDPOINT", true)
         }
     }
 
@@ -365,7 +365,7 @@ impl JaegerConfig {
         }
         #[cfg(not(any(test, feature = "testsuite")))]
         {
-            true
+            quickwit_common::get_bool_from_env("QW_ENABLE_JAEGER_ENDPOINT", true)
         }
     }
 

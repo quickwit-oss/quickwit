@@ -26,6 +26,8 @@ use warp::path::Tail;
 use warp::reply::Response;
 use warp::{Filter, Rejection};
 
+use crate::rest::recover_fn;
+
 /// Regular expression to identify which path should serve an asset file.
 /// If not matched, the server serves the `index.html` file.
 const PATH_PATTERN: &str = r"(^static|\.(png|json|txt|ico|js|map)$)";
@@ -40,6 +42,7 @@ pub fn ui_handler() -> impl Filter<Extract = (impl warp::Reply,), Error = Reject
     warp::path("ui")
         .and(warp::path::tail())
         .and_then(serve_file)
+        .recover(recover_fn)
 }
 
 async fn serve_file(path: Tail) -> Result<impl warp::Reply, Rejection> {

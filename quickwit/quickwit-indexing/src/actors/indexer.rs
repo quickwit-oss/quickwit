@@ -398,6 +398,15 @@ impl Actor for Indexer {
         false
     }
 
+    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        if let Some(cooperative_indexing_cycle) = &self.indexer_state.cooperative_indexing_opt {
+            let initial_sleep_duration = cooperative_indexing_cycle.initial_sleep_duration();
+            ctx.pause();
+            ctx.schedule_self_msg(initial_sleep_duration, Command::Resume);
+        }
+        Ok(())
+    }
+
     async fn on_drained_messages(
         &mut self,
         ctx: &ActorContext<Self>,

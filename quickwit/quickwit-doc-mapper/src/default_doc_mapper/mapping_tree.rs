@@ -29,7 +29,6 @@ use tantivy::schema::{
     BytesOptions, DateOptions, Field, IntoIpv6Addr, IpAddrOptions, JsonObjectOptions,
     NumericOptions, OwnedValue as TantivyValue, SchemaBuilder, TextOptions,
 };
-use tantivy::tokenizer::{PreTokenizedString, Token};
 use tantivy::TantivyDocument as Document;
 
 use super::date_time_type::QuickwitDateTimeOptions;
@@ -52,20 +51,6 @@ pub enum LeafType {
     IpAddr(QuickwitIpAddrOptions),
     Json(QuickwitJsonOptions),
     Text(QuickwitTextOptions),
-}
-
-pub(crate) fn value_to_pretokenized<T: ToString>(val: T) -> PreTokenizedString {
-    let text = val.to_string();
-    PreTokenizedString {
-        text: text.clone(),
-        tokens: vec![Token {
-            offset_from: 0,
-            offset_to: 1,
-            position: 0,
-            text,
-            position_length: 1,
-        }],
-    }
 }
 
 enum MapOrArrayIter {
@@ -161,12 +146,12 @@ pub(crate) fn map_primitive_json_to_tantivy(value: JsonValue) -> Option<TantivyV
     match value {
         JsonValue::Array(_) | JsonValue::Object(_) | JsonValue::Null => None,
         JsonValue::String(text) => Some(TantivyValue::Str(text)),
-        JsonValue::Bool(val) => Some(value_to_pretokenized(val).into()),
+        JsonValue::Bool(val) => Some((val).into()),
         JsonValue::Number(number) => {
             if let Some(val) = u64::from_json_number(&number) {
-                Some(value_to_pretokenized(val).into())
+                Some((val).into())
             } else {
-                i64::from_json_number(&number).map(|val| value_to_pretokenized(val).into())
+                i64::from_json_number(&number).map(|val| (val).into())
             }
         }
     }
@@ -219,7 +204,7 @@ impl LeafType {
         }
     }
 
-    fn tantivy_string_value_from_json(
+    fn tantivy_value_from_json(
         &self,
         json_val: JsonValue,
     ) -> Result<impl Iterator<Item = TantivyValue>, String> {
@@ -233,16 +218,16 @@ impl LeafType {
             }
             LeafType::I64(numeric_options) => {
                 let val = i64::from_json_to_self(json_val, numeric_options.coerce)?;
-                Ok(OneOrIter::one(value_to_pretokenized(val).into()))
+                Ok(OneOrIter::one((val).into()))
             }
             LeafType::U64(numeric_options) => {
                 let val = u64::from_json_to_self(json_val, numeric_options.coerce)?;
-                Ok(OneOrIter::one(value_to_pretokenized(val).into()))
+                Ok(OneOrIter::one((val).into()))
             }
             LeafType::F64(_) => Err("unsuported concat type: f64".to_string()),
             LeafType::Bool(_) => {
                 if let JsonValue::Bool(val) = json_val {
-                    Ok(OneOrIter::one(value_to_pretokenized(val).into()))
+                    Ok(OneOrIter::one((val).into()))
                 } else {
                     Err(format!("expected boolean, got `{json_val}`"))
                 }
@@ -313,11 +298,11 @@ impl MappingLeaf {
                 if !self.concatenate.is_empty() {
                     let concat_values = self
                         .typ
-                        .tantivy_string_value_from_json(el_json_val.clone())
+                        .tantivy_value_from_json(el_json_val.clone())
                         .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
                     for concat_value in concat_values {
                         for field in &self.concatenate {
-                            document.add_field_value(*field, concat_value.clone());
+                            document.add_field_value(*field, &concat_value);
                         }
                     }
                 }
@@ -325,7 +310,7 @@ impl MappingLeaf {
                     .typ
                     .value_from_json(el_json_val)
                     .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
-                document.add_field_value(self.field, value);
+                document.add_field_value(self.field, &value);
             }
             return Ok(());
         }
@@ -333,11 +318,11 @@ impl MappingLeaf {
         if !self.concatenate.is_empty() {
             let concat_values = self
                 .typ
-                .tantivy_string_value_from_json(json_val.clone())
+                .tantivy_value_from_json(json_val.clone())
                 .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
             for concat_value in concat_values {
                 for field in &self.concatenate {
-                    document.add_field_value(*field, concat_value.clone());
+                    document.add_field_value(*field, &concat_value);
                 }
             }
         }
@@ -345,7 +330,7 @@ impl MappingLeaf {
             .typ
             .value_from_json(json_val)
             .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
-        document.add_field_value(self.field, value);
+        document.add_field_value(self.field, &value);
         Ok(())
     }
 
@@ -982,8 +967,8 @@ fn build_mapping_tree_from_entries<'a>(
         if mapping_node.branches.contains_key(name) {
             bail!("duplicated field definition `{}`", name);
         }
-        let text_options: TextOptions = options.clone().into();
-        let field = schema.add_text_field(name, text_options);
+        let text_options: JsonObjectOptions = options.clone().into();
+        let field = schema.add_json_field(name, text_options);
         for sub_field in &options.concatenate_fields {
             for matched_field in
                 mapping_node
@@ -1467,7 +1452,7 @@ mod tests {
         assert_eq!(document.len(), 3);
         let values: Vec<bool> = document
             .get_all(field)
-            .flat_map(|val| (&val).as_bool())
+            .flat_map(|val| val.as_bool())
             .collect();
         assert_eq!(&values, &[true, false, true])
     }
@@ -1519,7 +1504,7 @@ mod tests {
         assert_eq!(document.len(), 2);
         let values: Vec<i64> = document
             .get_all(field)
-            .flat_map(|val| (&val).as_i64())
+            .flat_map(|val| val.as_i64())
             .collect();
         assert_eq!(&values, &[10i64, 20i64]);
     }
@@ -1732,7 +1717,7 @@ mod tests {
         assert_eq!(document.len(), 2);
         let bytes_vec: Vec<&[u8]> = document
             .get_all(field)
-            .flat_map(|val| (&val).as_bytes())
+            .flat_map(|val| val.as_bytes())
             .collect();
         assert_eq!(
             &bytes_vec[..],

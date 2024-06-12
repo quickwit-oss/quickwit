@@ -20,15 +20,17 @@
 use std::env::var;
 
 use once_cell::sync::Lazy;
+use quickwit_common::get_bool_from_env;
 
-pub static INDEX_ID: Lazy<String> =
-    Lazy::new(|| var("QW_LAMBDA_INDEX_ID").expect("QW_LAMBDA_INDEX_ID must be set"));
+pub static INDEX_ID: Lazy<String> = Lazy::new(|| {
+    var("QW_LAMBDA_INDEX_ID").expect("environment variable `QW_LAMBDA_INDEX_ID` should be set")
+});
 
-/// Configure the fmt tracing subscriber to log as json and include span
+/// Configures the fmt tracing subscriber to log as json and include span
 /// boundaries. This is very verbose and is only used to generate advanced KPIs
-/// from Lambda runs (e.g for blog post benchmarks)
+/// from Lambda runs (e.g. for blog post benchmarks)
 pub static ENABLE_VERBOSE_JSON_LOGS: Lazy<bool> =
-    Lazy::new(|| var("QW_LAMBDA_ENABLE_VERBOSE_JSON_LOGS").is_ok_and(|v| v.as_str() == "true"));
+    Lazy::new(|| get_bool_from_env("QW_LAMBDA_ENABLE_VERBOSE_JSON_LOGS", false));
 
 pub static OPENTELEMETRY_URL: Lazy<Option<String>> =
     Lazy::new(|| var("QW_LAMBDA_OPENTELEMETRY_URL").ok());
