@@ -300,6 +300,8 @@ The response is the index metadata of the created index, and the content type is
 
 | Field                | Description                             |         Type          |
 |----------------------|-----------------------------------------|:---------------------:|
+| `version`          | The current server configuration version. |       `string`        |
+| `index_uid`        | The server generated index id.            |       `string`        |
 | `index_config`     | The posted index config.                  |     `IndexConfig`     |
 | `checkpoint`       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
 | `create_timestamp` | Index creation timestamp                  |       `number`        |
@@ -393,6 +395,8 @@ The response is the index metadata of the updated index, and the content type is
 
 | Field                | Description                             |         Type          |
 |----------------------|-----------------------------------------|:---------------------:|
+| `version`          | The current server configuration version. |       `string`        |
+| `index_uid`        | The server generated index id.            |       `string`        |
 | `index_config`     | The posted index config.                  |     `IndexConfig`     |
 | `checkpoint`       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
 | `create_timestamp` | Index creation timestamp                  |       `number`        |
@@ -413,6 +417,8 @@ The response is the index metadata of the requested index, and the content type 
 
 | Field                | Description                               |         Type          |
 |----------------------|-------------------------------------------|:---------------------:|
+| `version`          | The current server configuration version. |       `string`        |
+| `index_uid`        | The server generated index id.            |       `string`        |
 | `index_config`     | The posted index config.                  |     `IndexConfig`     |
 | `checkpoint`       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
 | `create_timestamp` | Index creation timestamp.                 |       `number`        |
