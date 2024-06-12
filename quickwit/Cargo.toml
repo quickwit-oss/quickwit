@@ -281,7 +281,7 @@ aws-sdk-s3 = "1.24"
 aws-smithy-async = "1.2"
 aws-smithy-runtime = "1.5"
 aws-smithy-types = { version = "1.2", features = ["byte-stream-poll-next"] }
-aws-types = "1.2"
+aws-types = "1.3"
 
 azure_core = { version = "0.13.0", features = ["enable_reqwest_rustls"] }
 azure_storage = { version = "0.13.0", default-features = false, features = [
