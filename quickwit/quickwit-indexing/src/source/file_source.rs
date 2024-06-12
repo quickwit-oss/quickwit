@@ -160,7 +160,6 @@ mod tests {
     use std::str::FromStr;
 
     use quickwit_actors::{Command, Universe};
-    use quickwit_common::uri::Uri;
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpointDelta};
     use quickwit_proto::types::{IndexUid, Position};
@@ -236,7 +235,7 @@ mod tests {
         let temp_file = generate_dummy_doc_file(gzip, 20_000).await;
         let filepath = temp_file.path().to_str().unwrap();
         let params = FileSourceParams::from_str(filepath).unwrap();
-
+        let uri = params.filepath.as_ref().unwrap().clone();
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
@@ -270,7 +269,6 @@ mod tests {
         let batch1 = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
         let batch2 = indexer_msgs[1].downcast_ref::<RawDocBatch>().unwrap();
         let command = indexer_msgs[2].downcast_ref::<Command>().unwrap();
-        let uri = Uri::from_str(filepath).unwrap();
         assert_eq!(
             format!("{:?}", &batch1.checkpoint_delta),
             format!(
@@ -309,6 +307,7 @@ mod tests {
         let temp_file = generate_index_doc_file(gzip, 100).await;
         let temp_file_path = temp_file.path().to_str().unwrap();
         let params = FileSourceParams::from_str(temp_file_path).unwrap();
+        let uri = params.filepath.as_ref().unwrap();
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
@@ -317,7 +316,7 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        let partition_id = PartitionId::from(temp_file_path);
+        let partition_id = PartitionId::from(uri.as_str());
         let source_checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             partition_id,
             Position::Beginning,
