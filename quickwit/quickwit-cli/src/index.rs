@@ -547,9 +547,7 @@ pub async fn update_index_cli(args: UpdateIndexArgs) -> anyhow::Result<()> {
     let config_format = ConfigFormat::sniff_from_uri(&args.index_config_uri)?;
     let qw_client = args.client_args.client();
     if !args.assume_yes {
-        // Stop if user answers no.
-        let prompt = "This operation will overwrite the index and delete all its data. Do you \
-                      want to proceed?"
+        let prompt = "This operation will update the index configuration. Do you want to proceed?"
             .to_string();
         if !prompt_confirmation(&prompt, false) {
             return Ok(());
@@ -559,7 +557,7 @@ pub async fn update_index_cli(args: UpdateIndexArgs) -> anyhow::Result<()> {
         .indexes()
         .update(&args.index_id, &index_config_str, config_format)
         .await?;
-    println!("{} Index successfully created.", "✔".color(GREEN_COLOR));
+    println!("{} Index successfully updated.", "✔".color(GREEN_COLOR));
     Ok(())
 }
 
