@@ -87,7 +87,7 @@ pub struct SearchBody {
     #[serde(default)]
     pub search_after: Vec<serde_json::Value>,
 
-    // Ignored values, only here for compatibility with opendashboard.
+    // Ignored values, only here for compatibility with OpenSearch Dashboards.
     #[serde(default)]
     pub _source: serde::de::IgnoredAny,
     #[serde(default)]
