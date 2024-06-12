@@ -240,7 +240,7 @@ Create an index by posting an `IndexConfig` payload. The API accepts JSON with `
 
 **Payload Example**
 
-curl -XPOST http://0.0.0.0:8080/api/v1/indexes --data @index_config.json -H "Content-Type: application/json"
+curl -XPOST http://localhost:7280/api/v1/indexes --data @index_config.json -H "Content-Type: application/json"
 
 ```json title="index_config.json
 {
@@ -333,7 +333,7 @@ Updates the configurations of an index. This endpoint follows PUT semantics, whi
 
 **Payload Example**
 
-curl -XPUT http://0.0.0.0:8080/api/v1/indexes --data @index_update.json -H "Content-Type: application/json"
+curl -XPUT http://localhost:7280/api/v1/indexes/hdfs-logs --data @updated_index_update.json -H "Content-Type: application/json"
 
 ```json title="updated_index_update.json
 {
@@ -383,16 +383,6 @@ curl -XPUT http://0.0.0.0:8080/api/v1/indexes --data @index_update.json -H "Cont
     "retention": {
         "period": "30 days",
         "schedule": "@daily"
-    }
-}
-```
-
-:::warning
-Calling the update endpoint with the following payload will remove the current retention policy.
-```json
-{
-    "search_settings": {
-        "default_search_fields": ["body"]
     }
 }
 ```
@@ -600,7 +590,7 @@ Create source by posting a source config JSON payload.
 
 **Payload Example**
 
-curl -XPOST http://0.0.0.0:8080/api/v1/indexes/my-index/sources --data @source_config.json -H "Content-Type: application/json"
+curl -XPOST http://localhost:7280/api/v1/indexes/my-index/sources --data @source_config.json -H "Content-Type: application/json"
 
 ```json title="source_config.json
 {

@@ -80,7 +80,7 @@ pub fn build_index_command() -> Command {
         .subcommand(
             Command::new("update")
             .display_order(1)
-            .about("Update an index using an index config file.")
+            .about("Updates an index using an index config file.")
             .long_about("This command follows PUT semantics, which means that all the fields of the current configuration are replaced by the values specified in this request or the associated defaults. In particular if the field is optional (e.g `retention_policy`), omitting it will delete the associated configuration. If the new configuration file contains updates that cannot be applied, the request fails and none of the updates are applied.")
             .args(&[
                 arg!(--index <INDEX> "ID of the target index")

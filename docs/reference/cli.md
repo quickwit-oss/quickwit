@@ -182,7 +182,7 @@ quickwit index create --endpoint=http://127.0.0.1:7280 --index-config wikipedia_
 
 ### index update
 
-Update an index using an index config file.  
+Updates an index using an index config file.  
 `quickwit index update [args]`
 
 *Synopsis*
