@@ -244,7 +244,7 @@ curl -XPOST http://0.0.0.0:8080/api/v1/indexes --data @index_config.json -H "Con
 
 ```json title="index_config.json
 {
-    "version": "0.7",
+    "version": "0.8",
     "index_id": "hdfs-logs",
     "doc_mapping": {
         "field_mappings": [
@@ -285,9 +285,6 @@ curl -XPOST http://0.0.0.0:8080/api/v1/indexes --data @index_config.json -H "Con
             "max_merge_ops": 3,
             "merge_factor": 10,
             "max_merge_factor": 12
-        },
-        "resources": {
-            "max_merge_write_throughput": "80mb"
         }
     },
     "retention": {
@@ -317,6 +314,10 @@ PUT api/v1/indexes/<index id>
 
 Updates the configurations of an index. This endpoint follows PUT semantics, which means that all the fields of the current configuration are replaced by the values specified in this request or the associated defaults. In particular if the field is optional (e.g `retention_policy`), omitting it will delete the associated configuration. If the new configuration file contains updates that cannot be applied, the request fails and none of the updates are applied. The API accepts JSON with `content-type: application/json` and YAML with `content-type: application/yaml`.
 
+- The retention policy update is automatically picked up by the janitor service on its next state refresh.
+- The search settings update is automatically picked up by searcher nodes when the next query is executed.
+- The indexing settings update is not automatically picked up by the indexer nodes, they need to be manually restarted.
+
 #### PUT payload
 
 | Variable            | Type               | Description                                                                                                           | Default value                         |
@@ -334,13 +335,53 @@ Updates the configurations of an index. This endpoint follows PUT semantics, whi
 
 curl -XPUT http://0.0.0.0:8080/api/v1/indexes --data @index_update.json -H "Content-Type: application/json"
 
-```json title="index_update.json
+```json title="updated_index_update.json
 {
+    "version": "0.8",
+    "index_id": "hdfs-logs",
+    "doc_mapping": {
+        "field_mappings": [
+            {
+                "name": "tenant_id",
+                "type": "u64",
+                "fast": true
+            },
+            {
+                "name": "app_id",
+                "type": "u64",
+                "fast": true
+            },
+            {
+                "name": "timestamp",
+                "type": "datetime",
+                "input_formats": ["unix_timestamp"],
+                "fast_precision": "seconds",
+                "fast": true
+            },
+            {
+                "name": "body",
+                "type": "text",
+                "record": "position"
+            }
+        ],
+        "partition_key": "tenant_id",
+        "max_num_partitions": 200,
+        "tag_fields": ["tenant_id"],
+        "timestamp_field": "timestamp"
+    },
     "search_settings": {
         "default_search_fields": ["body"]
     },
+    "indexing_settings": {
+        "merge_policy": {
+            "type": "limit_merge",
+            "max_merge_ops": 3,
+            "merge_factor": 10,
+            "max_merge_factor": 12
+        }
+    },
     "retention": {
-        "period": "3 days",
+        "period": "30 days",
         "schedule": "@daily"
     }
 }
@@ -563,7 +604,7 @@ curl -XPOST http://0.0.0.0:8080/api/v1/indexes/my-index/sources --data @source_c
 
 ```json title="source_config.json
 {
-    "version": "0.7",
+    "version": "0.8",
     "source_id": "kafka-source",
     "source_type": "kafka",
     "params": {
