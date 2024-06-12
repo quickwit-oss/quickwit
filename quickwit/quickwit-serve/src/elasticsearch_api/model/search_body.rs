@@ -86,6 +86,18 @@ pub struct SearchBody {
     pub stored_fields: Option<BTreeSet<String>>,
     #[serde(default)]
     pub search_after: Vec<serde_json::Value>,
+
+    // Ignored values, only here for compatibility with OpenSearch Dashboards.
+    #[serde(default)]
+    pub _source: serde::de::IgnoredAny,
+    #[serde(default)]
+    pub docvalue_fields: serde::de::IgnoredAny,
+    #[serde(default)]
+    pub script_fields: serde::de::IgnoredAny,
+    #[serde(default)]
+    pub highlight: serde::de::IgnoredAny,
+    #[serde(default)]
+    pub version: serde::de::IgnoredAny,
 }
 
 struct FieldSortVecVisitor;
@@ -264,9 +276,6 @@ mod tests {
         let search_body = serde_json::from_str::<SearchBody>(json);
         let error_msg = search_body.unwrap_err().to_string();
         assert!(error_msg.contains("unknown field `term`"));
-        assert!(error_msg.contains(
-            "expected one of `from`, `size`, `query`, `sort`, `aggs`, `track_total_hits`, \
-             `stored_fields`, `search_after`"
-        ));
+        assert!(error_msg.contains("expected one of "));
     }
 }

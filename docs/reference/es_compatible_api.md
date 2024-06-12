@@ -463,8 +463,6 @@ The following query types are supported.
 | `analyzer`         | String          | Analyzer meant to cut the query into terms. It is recommended to NOT use this parameter.                                       | The actual field tokenizer. |
 
 
-
-
 ### `match_bool_prefix`
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query-phrase-prefix.html)
@@ -559,12 +557,18 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 #### Supported Multi-match Queries
 | Type            | Description                                                                                 |
 | --------------- | ------------------------------------------------------------------------------------------- |
-| `most_fields`   | (default) Finds documents which match any field and combines the `_score` from each field.  |
-| `phrase`        | Runs a `match_phrase` query on each field and uses the `_score` from the best field .       |
-| `phrase_prefix` | Runs a `match_phrase_prefix` query on each field and uses the `_score` from the best field. |
+| `most_fields`   | Finds documents matching any field and combines the `_score` from each field (default).  |
+| `phrase`        | Runs a `match_phrase` query on each field.       |
+| `phrase_prefix` | Runs a `match_phrase_prefix` query on each field. |
+| `bool_prefix`   | Runs a `match_bool_prefix` query on each field. |
 
+:::warning
 
+In `phrase`, `phrase_prefix` and `bool_prefix` modes, Quickwit sums the score of the different fields instead of returning their max.
 
+Moreover, while Quickwit does not support `best_fields` or `cross_fields`, it will not return an error when presented a `best_fields` or `cross_fields` type. For compatibilility reasons, Quickwit silently accepts these parameters and interprets them as a `most_fields` type.
+
+:::
 
 ### `term`
 
