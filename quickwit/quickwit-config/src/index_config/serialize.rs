@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use anyhow::{bail, Context};
+use anyhow::{ensure, Context};
 use quickwit_common::uri::Uri;
 use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
@@ -61,11 +61,12 @@ pub fn load_index_config_from_user_config(
     index_config_for_serialization.build_and_validate(Some(default_index_root_uri))
 }
 
-/// Parses and validates an [`IndexConfig`] update. Ensures that the new
-/// configuration is valid in itself and compared to the current index config.
-/// If the new configuration omits some fields, the default values will be used,
-/// not those of the current index config. The only exception is the index_uri
-/// because it cannot be updated.
+/// Parses and validates an [`IndexConfig`] update.
+///
+/// Ensures that the new configuration is valid in itself and compared to the
+/// current index config. If the new configuration omits some fields, the
+/// default values will be used, not those of the current index config. The only
+/// exception is the index_uri because it cannot be updated.
 pub fn load_index_config_update(
     config_format: ConfigFormat,
     index_config_bytes: &[u8],
@@ -74,34 +75,28 @@ pub fn load_index_config_update(
     let current_index_parent_dir = &current_index_config
         .index_uri
         .parent()
-        .context("Unexpected index_uri format on current configuration")?;
-
+        .context("Unexpected `index_uri` format on current configuration")?;
     let new_index_config = load_index_config_from_user_config(
         config_format,
         index_config_bytes,
         current_index_parent_dir,
     )?;
-
-    if current_index_config.index_id != new_index_config.index_id {
-        bail!(
-            "`index_id` in config file {} does not match updated index_id {}",
-            current_index_config.index_id,
-            new_index_config.index_id
-        );
-    }
-
-    if current_index_config.index_uri != new_index_config.index_uri {
-        bail!(
-            "`index_uri` cannot be updated, current value {}, new expected value {}",
-            current_index_config.index_uri,
-            new_index_config.index_uri
-        );
-    }
-
-    if current_index_config.doc_mapping != new_index_config.doc_mapping {
-        bail!("`doc_mapping` cannot be updated");
-    }
-
+    ensure!(
+        current_index_config.index_id == new_index_config.index_id,
+        "`index_id` in config file {} does not match updated `index_id` {}",
+        current_index_config.index_id,
+        new_index_config.index_id
+    );
+    ensure!(
+        current_index_config.index_uri == new_index_config.index_uri,
+        "`index_uri` cannot be updated, current value {}, new expected value {}",
+        current_index_config.index_uri,
+        new_index_config.index_uri
+    );
+    ensure!(
+        current_index_config.doc_mapping == new_index_config.doc_mapping,
+        "`doc_mapping` cannot be updated"
+    );
     Ok(new_index_config)
 }
 

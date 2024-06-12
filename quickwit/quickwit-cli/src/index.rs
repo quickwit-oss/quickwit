@@ -537,7 +537,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
 }
 
 pub async fn update_index_cli(args: UpdateIndexArgs) -> anyhow::Result<()> {
-    debug!(args=?args, "create-index");
+    debug!(args=?args, "update-index");
     println!("❯ Updating index...");
     let storage_resolver = StorageResolver::unconfigured();
     let file_content = load_file(&storage_resolver, &args.index_config_uri).await?;
@@ -552,9 +552,8 @@ pub async fn update_index_cli(args: UpdateIndexArgs) -> anyhow::Result<()> {
     let config_format = ConfigFormat::sniff_from_uri(&args.index_config_uri)?;
     let qw_client = args.client_args.client();
     if !args.assume_yes {
-        let prompt = "This operation will update the index configuration. Do you want to proceed?"
-            .to_string();
-        if !prompt_confirmation(&prompt, false) {
+        let prompt = "This operation will update the index configuration. Do you want to proceed?";
+        if !prompt_confirmation(prompt, false) {
             return Ok(());
         }
     }
