@@ -223,7 +223,7 @@ The response is a JSON object, and the content type is `application/json; charse
 POST api/v1/indexes
 ```
 
-Create an index by posting an `IndexConfig` payload. The API accepts JSON with `content-type: application/json` and YAML `content-type: application/yaml`.
+Create an index by posting an `IndexConfig` payload. The API accepts JSON with `content-type: application/json` and YAML with `content-type: application/yaml`.
 
 #### POST payload
 
@@ -309,18 +309,23 @@ The response is the index metadata of the created index, and the content type is
 | `sources`          | List of the index sources configurations. | `Array<SourceConfig>` |
 
 
-### Update an index (search settings and retention policy only)
+### Update an index
 
 ```
 PUT api/v1/indexes/<index id>
 ```
 
-Updates the search settings and retention policy of an index. This endpoint follows PUT semantics (not PATCH), which means that all the updatable fields of the index configuration are replaced by the values specified in this request. In particular, omitting an optional field like retention_policy will delete the associated configuration. Unlike the create endpoint, this API only accepts JSON payloads.
+Updates the configurations of an index. This endpoint follows PUT semantics, which means that all the fields of the current configuration are replaced by the values specified in this request or the associated defaults. In particular if the field is optional (e.g `retention_policy`), omitting it will delete the associated configuration. If the new configuration file contains updates that cannot be applied, the request fails and none of the updates are applied. The API accepts JSON with `content-type: application/json` and YAML with `content-type: application/yaml`.
 
 #### PUT payload
 
 | Variable            | Type               | Description                                                                                                           | Default value                         |
 |---------------------|--------------------|-----------------------------------------------------------------------------------------------------------------------|---------------------------------------|
+| `version`           | `String`           | Config format version, use the same as your Quickwit version. (mandatory)                                             |                                       |
+| `index_id`          | `String`           | Index ID, must be the same index as in the request URI. (mandatory)                                                   |                                       |
+| `index_uri`         | `String`           | Defines where the index files are stored. (cannot be updated)                                                         | `{current_index_uri}`    |
+| `doc_mapping`       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping). (cannot be updated)  |                                       |
+| `indexing_settings` | `IndexingSettings` | Indexing settings object as specified in the [index config docs](../configuration/index-config.md#indexing-settings). |                                       |
 | `search_settings`   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).     |                                       |
 | `retention`         | `Retention`        | Retention policy object as specified in the [index config docs](../configuration/index-config.md#retention-policy).   |                                       |
 

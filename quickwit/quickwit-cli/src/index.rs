@@ -57,12 +57,9 @@ use tabled::{Table, Tabled};
 use thousands::Separable;
 use tracing::{debug, Level};
 
-use self::update::{build_index_update_command, IndexUpdateCliCommand};
 use crate::checklist::GREEN_COLOR;
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{client_args, make_table, prompt_confirmation, ClientArgs, THROUGHPUT_WINDOW_SIZE};
-
-pub mod update;
 
 pub fn build_index_command() -> Command {
     Command::new("index")
@@ -81,7 +78,18 @@ pub fn build_index_command() -> Command {
                 ])
             )
         .subcommand(
-            build_index_update_command().display_order(2)
+            Command::new("update")
+            .display_order(1)
+            .about("Update an index using an index config file.")
+            .long_about("This command follows PUT semantics, which means that all the fields of the current configuration are replaced by the values specified in this request or the associated defaults. In particular if the field is optional (e.g `retention_policy`), omitting it will delete the associated configuration. If the new configuration file contains updates that cannot be applied, the request fails and none of the updates are applied.")
+            .args(&[
+                arg!(--index <INDEX> "ID of the target index")
+                    .display_order(1)
+                    .required(true),
+                arg!(--"index-config" <INDEX_CONFIG> "Location of the index config file.")
+                    .display_order(2)
+                    .required(true),
+            ])
         )
         .subcommand(
             Command::new("clear")
@@ -214,6 +222,14 @@ pub struct CreateIndexArgs {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+pub struct UpdateIndexArgs {
+    pub client_args: ClientArgs,
+    pub index_id: IndexId,
+    pub index_config_uri: Uri,
+    pub assume_yes: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
     pub client_args: ClientArgs,
     pub index_id: IndexId,
@@ -260,12 +276,12 @@ pub struct ListIndexesArgs {
 pub enum IndexCliCommand {
     Clear(ClearIndexArgs),
     Create(CreateIndexArgs),
+    Update(UpdateIndexArgs),
     Delete(DeleteIndexArgs),
     Describe(DescribeIndexArgs),
     Ingest(IngestDocsArgs),
     List(ListIndexesArgs),
     Search(SearchIndexArgs),
-    Update(IndexUpdateCliCommand),
 }
 
 impl IndexCliCommand {
@@ -288,7 +304,7 @@ impl IndexCliCommand {
             "ingest" => Self::parse_ingest_args(submatches),
             "list" => Self::parse_list_args(submatches),
             "search" => Self::parse_search_args(submatches),
-            "update" => Ok(Self::Update(IndexUpdateCliCommand::parse_args(submatches)?)),
+            "update" => Self::parse_update_args(submatches),
             _ => bail!("unknown index subcommand `{subcommand}`"),
         }
     }
@@ -319,6 +335,25 @@ impl IndexCliCommand {
             client_args,
             index_config_uri,
             overwrite,
+            assume_yes,
+        }))
+    }
+
+    fn parse_update_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
+        let client_args = ClientArgs::parse(&mut matches)?;
+        let index_id = matches
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
+        let index_config_uri = matches
+            .remove_one::<String>("index-config")
+            .map(|uri| Uri::from_str(&uri))
+            .expect("`index-config` should be a required arg.")?;
+        let assume_yes = matches.get_flag("yes");
+
+        Ok(Self::Update(UpdateIndexArgs {
+            index_id,
+            client_args,
+            index_config_uri,
             assume_yes,
         }))
     }
@@ -449,7 +484,7 @@ impl IndexCliCommand {
             Self::Ingest(args) => ingest_docs_cli(args).await,
             Self::List(args) => list_index_cli(args).await,
             Self::Search(args) => search_index_cli(args).await,
-            Self::Update(args) => args.execute().await,
+            Self::Update(args) => update_index_cli(args).await,
         }
     }
 }
@@ -496,6 +531,33 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     qw_client
         .indexes()
         .create(&index_config_str, config_format, args.overwrite)
+        .await?;
+    println!("{} Index successfully created.", "✔".color(GREEN_COLOR));
+    Ok(())
+}
+
+pub async fn update_index_cli(args: UpdateIndexArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "create-index");
+    println!("❯ Updating index...");
+    let storage_resolver = StorageResolver::unconfigured();
+    let file_content = load_file(&storage_resolver, &args.index_config_uri).await?;
+    let index_config_str: String = std::str::from_utf8(&file_content)
+        .with_context(|| format!("Invalid utf8: `{}`", args.index_config_uri))?
+        .to_string();
+    let config_format = ConfigFormat::sniff_from_uri(&args.index_config_uri)?;
+    let qw_client = args.client_args.client();
+    if !args.assume_yes {
+        // Stop if user answers no.
+        let prompt = "This operation will overwrite the index and delete all its data. Do you \
+                      want to proceed?"
+            .to_string();
+        if !prompt_confirmation(&prompt, false) {
+            return Ok(());
+        }
+    }
+    qw_client
+        .indexes()
+        .update(&args.index_id, &index_config_str, config_format)
         .await?;
     println!("{} Index successfully created.", "✔".color(GREEN_COLOR));
     Ok(())

@@ -148,6 +148,7 @@ pub async fn test_metastore_update_index<
             index_uid.clone(),
             &new_search_setting,
             &loop_retention_policy_opt,
+            &index_metadata.index_config.indexing_settings,
         )
         .unwrap();
         let response_metadata = metastore

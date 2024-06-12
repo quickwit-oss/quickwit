@@ -29,7 +29,7 @@ use anyhow::bail;
 use fnv::{FnvHashMap, FnvHashSet};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::Progress;
-use quickwit_config::SourceConfig;
+use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_ingest::ShardInfos;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::control_plane::ControlPlaneResult;
@@ -192,6 +192,21 @@ impl ControlPlaneModel {
         }
         self.index_table.insert(index_uid, index_metadata);
         self.update_metrics();
+    }
+
+    /// Update the configuration of the specified index, returning an error if
+    /// the index didn't exist.
+    pub(crate) fn update_index_config(
+        &mut self,
+        index_uid: &IndexUid,
+        index_config: IndexConfig,
+    ) -> anyhow::Result<()> {
+        let Some(index_model) = self.index_table.get_mut(index_uid) else {
+            bail!("index `{}` not found", index_uid.index_id);
+        };
+        index_model.index_config = index_config;
+        self.update_metrics();
+        Ok(())
     }
 
     pub(crate) fn delete_index(&mut self, index_uid: &IndexUid) {
@@ -527,6 +542,27 @@ mod tests {
             source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
         assert_eq!(model.shard_table.get_shards(&source_uid).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_control_plane_model_update_index_config() {
+        let mut model = ControlPlaneModel::default();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes");
+        let index_uid = index_metadata.index_uid.clone();
+        model.add_index(index_metadata.clone());
+
+        // Update the index config
+        let mut index_config = index_metadata.index_config.clone();
+        index_config.search_settings.default_search_fields = vec!["myfield".to_string()];
+        model
+            .update_index_config(&index_uid, index_config.clone())
+            .unwrap();
+
+        assert_eq!(model.index_table.len(), 1);
+        assert_eq!(
+            model.index_table.get(&index_uid).unwrap().index_config,
+            index_config
+        );
     }
 
     #[test]

@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -27,6 +26,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use predicates::str;
 use quickwit_cli::service::RunCliCommand;
+use quickwit_cli::ClientArgs;
 use quickwit_common::net::find_available_tcp_port;
 use quickwit_common::test_utils::wait_for_server_ready;
 use quickwit_common::uri::Uri;
@@ -81,6 +81,14 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
       default_search_fields: [event]
 "#;
 
+const RETENTION_CONFIG: &str = r#"
+
+    retention:
+      period: 1 week
+      schedule: daily
+
+"#;
+
 const DEFAULT_QUICKWIT_CONFIG: &str = r#"
     version: 0.8
     metastore_uri: #metastore_uri
@@ -103,6 +111,15 @@ const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "http
 {"body": "biz", "title": "modern", "url": "https://wiki.com?id=13"}
 "#;
 
+pub struct TestResourceFiles {
+    pub config: Uri,
+    pub index_config: Uri,
+    pub index_config_without_uri: Uri,
+    pub index_config_with_retention: Uri,
+    pub log_docs: PathBuf,
+    pub wikipedia_docs: PathBuf,
+}
+
 /// A struct to hold few info about the test environment.
 pub struct TestEnv {
     /// The temporary directory of the test.
@@ -112,14 +129,14 @@ pub struct TestEnv {
     /// Path of the directory where indexes are stored.
     pub indexes_dir_path: PathBuf,
     /// Resource files needed for the test.
-    pub resource_files: HashMap<&'static str, PathBuf>,
+    pub resource_files: TestResourceFiles,
     /// The metastore URI.
     pub metastore_uri: Uri,
     pub metastore_resolver: MetastoreResolver,
     pub metastore: MetastoreServiceClient,
-    pub config_uri: Uri,
+
     pub cluster_endpoint: Url,
-    pub index_config_uri: Uri,
+
     /// The index ID.
     pub index_id: IndexId,
     pub index_uri: Uri,
@@ -137,12 +154,6 @@ impl TestEnv {
             .unwrap()
     }
 
-    pub fn index_config_without_uri(&self) -> String {
-        self.resource_files["index_config_without_uri"]
-            .display()
-            .to_string()
-    }
-
     pub async fn index_metadata(&self) -> anyhow::Result<IndexMetadata> {
         let index_metadata = self
             .metastore()
@@ -155,7 +166,7 @@ impl TestEnv {
 
     pub async fn start_server(&self) -> anyhow::Result<()> {
         let run_command = RunCliCommand {
-            config_uri: self.config_uri.clone(),
+            config_uri: self.resource_files.config.clone(),
             services: Some(QuickwitService::supported_services()),
         };
         tokio::spawn(async move {
@@ -169,11 +180,22 @@ impl TestEnv {
         wait_for_server_ready(([127, 0, 0, 1], self.rest_listen_port).into()).await?;
         Ok(())
     }
+
+    pub fn default_client_args(&self) -> ClientArgs {
+        ClientArgs {
+            cluster_endpoint: self.cluster_endpoint.clone(),
+            ..Default::default()
+        }
+    }
 }
 
 pub enum TestStorageType {
     S3,
     LocalFileSystem,
+}
+
+fn uri_from_path(path: PathBuf) -> Uri {
+    Uri::from_str(&format!("file://{}", path.display())).unwrap()
 }
 
 /// Creates all necessary artifacts in a test environment.
@@ -216,6 +238,14 @@ pub async fn create_test_env(
             .replace("#index_id", &index_id)
             .replace("index_uri: #index_uri\n", ""),
     )?;
+    let index_config_with_retention_path =
+        resources_dir_path.join("index_config_with_retention.yaml");
+    fs::write(
+        &index_config_with_retention_path,
+        format!("{DEFAULT_INDEX_CONFIG}{RETENTION_CONFIG}")
+            .replace("#index_id", &index_id)
+            .replace("#index_uri", index_uri.as_str()),
+    )?;
     let node_config_path = resources_dir_path.join("config.yaml");
     let rest_listen_port = find_available_tcp_port()?;
     let grpc_listen_port = find_available_tcp_port()?;
@@ -233,22 +263,17 @@ pub async fn create_test_env(
     let wikipedia_docs_path = resources_dir_path.join("wikis.json");
     fs::write(&wikipedia_docs_path, WIKI_JSON_DOCS)?;
 
-    let mut resource_files = HashMap::new();
-    resource_files.insert("config", node_config_path);
-    resource_files.insert("index_config", index_config_path);
-    resource_files.insert("index_config_without_uri", index_config_without_uri_path);
-    resource_files.insert("logs", log_docs_path);
-    resource_files.insert("wiki", wikipedia_docs_path);
-
-    let config_uri =
-        Uri::from_str(&format!("file://{}", resource_files["config"].display())).unwrap();
-    let index_config_uri = Uri::from_str(&format!(
-        "file://{}",
-        resource_files["index_config"].display()
-    ))
-    .unwrap();
     let cluster_endpoint = Url::parse(&format!("http://localhost:{rest_listen_port}"))
         .context("failed to parse cluster endpoint")?;
+
+    let resource_files = TestResourceFiles {
+        config: uri_from_path(node_config_path),
+        index_config: uri_from_path(index_config_path),
+        index_config_without_uri: uri_from_path(index_config_without_uri_path),
+        index_config_with_retention: uri_from_path(index_config_with_retention_path),
+        log_docs: log_docs_path,
+        wikipedia_docs: wikipedia_docs_path,
+    };
 
     Ok(TestEnv {
         _temp_dir: temp_dir,
@@ -258,9 +283,7 @@ pub async fn create_test_env(
         metastore_uri,
         metastore_resolver,
         metastore,
-        config_uri,
         cluster_endpoint,
-        index_config_uri,
         index_id,
         index_uri,
         rest_listen_port,

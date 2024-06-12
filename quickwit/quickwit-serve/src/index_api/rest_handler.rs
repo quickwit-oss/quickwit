@@ -19,12 +19,12 @@
 
 use std::sync::Arc;
 
+use anyhow::Context;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     load_source_config_from_user_config, validate_index_id_pattern, ConfigFormat, NodeConfig,
-    RetentionPolicy, SearchSettings, SourceConfig, SourceParams, CLI_SOURCE_ID,
-    INGEST_API_SOURCE_ID,
+    SourceConfig, SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
@@ -68,7 +68,7 @@ use crate::with_arg;
         toggle_source,
         delete_source,
     ),
-    components(schemas(ToggleSource, SplitsForDeletion, IndexStats, IndexUpdates))
+    components(schemas(ToggleSource, SplitsForDeletion, IndexStats))
 )]
 pub struct IndexApi;
 
@@ -529,22 +529,14 @@ async fn create_index(
         .await
 }
 
-/// The body of the index update request. All fields will be replaced in the
-/// existing configuration.
-#[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Default, utoipa::ToSchema)]
-#[serde(deny_unknown_fields)] // Remove when adding new fields to allow to ensure forward compatibility
-pub struct IndexUpdates {
-    pub search_settings: SearchSettings,
-    #[serde(rename = "retention_policy")]
-    pub retention_policy_opt: Option<RetentionPolicy>,
-}
-
 fn update_index_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String)
         .and(warp::put())
-        .and(json_body())
+        .and(extract_config_format())
+        .and(warp::body::content_length_limit(1024 * 1024))
+        .and(warp::filters::body::bytes())
         .and(with_arg(metastore))
         .then(update_index)
         .map(log_failure("failed to update index"))
@@ -556,9 +548,9 @@ fn update_index_handler(
     put,
     tag = "Indexes",
     path = "/indexes/{index_id}",
-    request_body = IndexUpdates,
+    request_body = VersionedIndexConfig,
     responses(
-        (status = 200, description = "Successfully updated the index configuration.")
+        (status = 200, description = "Successfully updated the index configuration.", body = VersionedIndexMetadata)
     ),
     params(
         ("index_id" = String, Path, description = "The index ID to update."),
@@ -566,26 +558,64 @@ fn update_index_handler(
 )]
 /// Updates an existing index.
 ///
-/// This endpoint has PUT semantics, which means that all the updatable fields of the index
-/// configuration are replaced by the values specified in the request. In particular, omitting an
-/// optional field like `retention_policy` will delete the associated configuration.
+/// This endpoint follows PUT semantics, which means that all the fields of the
+/// current configuration are replaced by the values specified in this request
+/// or the associated defaults. In particular if the field is optional (e.g
+/// `retention_policy`), omitting it will delete the associated configuration.
+/// If the new configuration file contains updates that cannot be applied, the
+/// request fails and none of the updates are applied.
 async fn update_index(
     index_id: IndexId,
-    request: IndexUpdates,
+    config_format: ConfigFormat,
+    index_config_bytes: Bytes,
     mut metastore: MetastoreServiceClient,
 ) -> Result<IndexMetadata, IndexServiceError> {
     info!(index_id = %index_id, "update-index");
+
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
-    let index_uid: IndexUid = metastore
+    let current_index_metadata = metastore
         .index_metadata(index_metadata_request)
         .await?
-        .deserialize_index_metadata()?
-        .index_uid;
+        .deserialize_index_metadata()?;
+    let index_uid = current_index_metadata.index_uid.clone();
+    let current_index_config = current_index_metadata.into_index_config();
+
+    let new_index_config = quickwit_config::load_index_config_from_user_config(
+        config_format,
+        &index_config_bytes,
+        &current_index_config
+            .index_uri
+            .parent()
+            .context("Unexpected index_uri format on current configuration")
+            .map_err(IndexServiceError::InvalidConfig)?,
+    )
+    .map_err(IndexServiceError::InvalidConfig)?;
+
+    if new_index_config.index_id != index_id {
+        return Err(IndexServiceError::OperationNotAllowed(format!(
+            "index_id in config file {} does not match updated index_id {}",
+            current_index_config.index_uri, new_index_config.index_uri
+        )));
+    }
+
+    if current_index_config.index_uri != new_index_config.index_uri {
+        return Err(IndexServiceError::OperationNotAllowed(format!(
+            "index_uri cannot be updated, current value {}, new expected value {}",
+            current_index_config.index_uri, new_index_config.index_uri
+        )));
+    }
+
+    if current_index_config.doc_mapping != new_index_config.doc_mapping {
+        return Err(IndexServiceError::OperationNotAllowed(
+            "doc_mapping cannot be updated".to_string(),
+        ));
+    }
 
     let update_request = UpdateIndexRequest::try_from_updates(
         index_uid,
-        &request.search_settings,
-        &request.retention_policy_opt,
+        &new_index_config.search_settings,
+        &new_index_config.retention_policy_opt,
+        &new_index_config.indexing_settings,
     )?;
     let update_resp = metastore.update_index(update_request).await?;
     Ok(update_resp.deserialize_index_metadata()?)
@@ -1813,7 +1843,7 @@ mod tests {
                 .path("/indexes/hdfs-logs")
                 .method("PUT")
                 .json(&true)
-                .body(r#"{"search_settings":{"default_search_fields":["severity_text","body"]}}"#)
+                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]},"search_settings":{"default_search_fields":["severity_text", "body"]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
