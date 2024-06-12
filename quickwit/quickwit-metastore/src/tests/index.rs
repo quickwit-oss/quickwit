@@ -124,7 +124,7 @@ pub async fn test_metastore_update_retention_policy<
         let index_update = UpdateIndexRequest::try_from_updates(
             index_uid.clone(),
             &index_config.search_settings,
-            &new_retention_policy_opt,
+            &loop_retention_policy_opt,
             &index_config.indexing_settings,
         )
         .unwrap();
