@@ -20,9 +20,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            platform: linux/amd64
-          - os: buildjet-8vcpu-ubuntu-2204-arm
+          - os: gh-ubuntu-arm64
             platform: linux/arm64
     runs-on: ${{ matrix.os }}
     steps:
