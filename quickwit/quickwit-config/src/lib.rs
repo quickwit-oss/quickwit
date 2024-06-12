@@ -27,7 +27,6 @@ use once_cell::sync::Lazy;
 use quickwit_common::get_bool_from_env;
 use quickwit_common::net::is_valid_hostname;
 use quickwit_common::uri::Uri;
-use quickwit_doc_mapper::DocMapping;
 use quickwit_proto::types::NodeIdRef;
 use regex::Regex;
 
@@ -52,6 +51,7 @@ pub use index_config::{
     build_doc_mapper, load_index_config_from_user_config, load_index_config_update, IndexConfig,
     IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
 };
+pub use quickwit_doc_mapper::DocMapping;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
