@@ -331,12 +331,12 @@ impl<'a> IndexClient<'a> {
 
     pub async fn create(
         &self,
-        index_config: impl ToString,
+        index_config: impl AsRef<[u8]>,
         config_format: ConfigFormat,
         overwrite: bool,
     ) -> Result<IndexMetadata, Error> {
         let header_map = header_from_config_format(config_format);
-        let body = Bytes::from(index_config.to_string());
+        let body = Bytes::copy_from_slice(index_config.as_ref());
         let response = self
             .transport
             .send(
@@ -355,11 +355,11 @@ impl<'a> IndexClient<'a> {
     pub async fn update(
         &self,
         index_id: &str,
-        index_config: impl ToString,
+        index_config: impl AsRef<[u8]>,
         config_format: ConfigFormat,
     ) -> Result<IndexMetadata, Error> {
         let header_map = header_from_config_format(config_format);
-        let body = Bytes::from(index_config.to_string());
+        let body = Bytes::copy_from_slice(index_config.as_ref());
         let path = format!("indexes/{index_id}");
         let response = self
             .transport
@@ -497,11 +497,11 @@ impl<'a> SourceClient<'a> {
 
     pub async fn create(
         &self,
-        source_config_input: impl ToString,
+        source_config_input: impl AsRef<[u8]>,
         config_format: ConfigFormat,
     ) -> Result<SourceConfig, Error> {
         let header_map = header_from_config_format(config_format);
-        let source_config_bytes: Bytes = Bytes::from(source_config_input.to_string());
+        let source_config_bytes = Bytes::copy_from_slice(source_config_input.as_ref());
         let response = self
             .transport
             .send::<()>(

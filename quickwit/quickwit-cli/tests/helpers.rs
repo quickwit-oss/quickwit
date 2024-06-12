@@ -82,11 +82,9 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
 "#;
 
 const RETENTION_CONFIG: &str = r#"
-
     retention:
       period: 1 week
       schedule: daily
-
 "#;
 
 const DEFAULT_QUICKWIT_CONFIG: &str = r#"

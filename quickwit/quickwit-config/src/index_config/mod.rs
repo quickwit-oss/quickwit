@@ -34,7 +34,7 @@ use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::{DefaultDocMapperBuilder, DocMapper, DocMapping, Mode};
 use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
-pub use serialize::load_index_config_from_user_config;
+pub use serialize::{load_index_config_from_user_config, load_index_config_update};
 use tracing::warn;
 
 use crate::index_config::serialize::VersionedIndexConfig;

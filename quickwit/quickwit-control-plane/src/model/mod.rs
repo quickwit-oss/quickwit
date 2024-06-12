@@ -194,7 +194,7 @@ impl ControlPlaneModel {
         self.update_metrics();
     }
 
-    /// Update the configuration of the specified index, returning an error if
+    /// Updates the configuration of the specified index, returning an error if
     /// the index didn't exist.
     pub(crate) fn update_index_config(
         &mut self,

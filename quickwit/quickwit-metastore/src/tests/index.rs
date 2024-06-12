@@ -159,11 +159,11 @@ pub async fn test_metastore_update_search_settings<
         setup_metastore_for_update::<MetastoreToTest>().await;
 
     for loop_search_settings in [
-        vec![],
-        vec!["body".to_owned()],
-        vec!["body".to_owned()],
-        vec!["body".to_owned(), "owner".to_owned()],
-        vec![],
+        Vec::new(),
+        vec!["body".to_string()],
+        vec!["body".to_string()],
+        vec!["body".to_string(), "owner".to_string()],
+        Vec::new(),
     ] {
         let index_update = UpdateIndexRequest::try_from_updates(
             index_uid.clone(),

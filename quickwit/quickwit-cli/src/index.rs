@@ -81,7 +81,7 @@ pub fn build_index_command() -> Command {
             Command::new("update")
             .display_order(1)
             .about("Updates an index using an index config file.")
-            .long_about("This command follows PUT semantics, which means that all the fields of the current configuration are replaced by the values specified in this request or the associated defaults. In particular if the field is optional (e.g `retention_policy`), omitting it will delete the associated configuration. If the new configuration file contains updates that cannot be applied, the request fails and none of the updates are applied.")
+            .long_about("This command follows PUT semantics, which means that all the fields of the current configuration are replaced by the values specified in this request or the associated defaults. In particular, if the field is optional (e.g. `retention_policy`), omitting it will delete the associated configuration. If the new configuration file contains updates that cannot be applied, the request fails, and none of the updates are applied.")
             .args(&[
                 arg!(--index <INDEX> "ID of the target index")
                     .display_order(1)
@@ -541,8 +541,13 @@ pub async fn update_index_cli(args: UpdateIndexArgs) -> anyhow::Result<()> {
     println!("❯ Updating index...");
     let storage_resolver = StorageResolver::unconfigured();
     let file_content = load_file(&storage_resolver, &args.index_config_uri).await?;
-    let index_config_str: String = std::str::from_utf8(&file_content)
-        .with_context(|| format!("Invalid utf8: `{}`", args.index_config_uri))?
+    let index_config_str = std::str::from_utf8(&file_content)
+        .with_context(|| {
+            format!(
+                "index config file `{}` contains some invalid UTF-8 characters",
+                args.index_config_uri
+            )
+        })?
         .to_string();
     let config_format = ConfigFormat::sniff_from_uri(&args.index_config_uri)?;
     let qw_client = args.client_args.client();
