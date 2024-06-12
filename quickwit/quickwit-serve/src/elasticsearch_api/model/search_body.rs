@@ -66,28 +66,9 @@ struct FieldSortParams {
     pub date_format: Option<ElasticDateFormat>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct SourceObject {
-    includes: Option<Vec<String>>,
-    excludes: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-#[serde(untagged)]
-pub enum Source {
-    Bool(bool),
-    String(String),
-    List(Vec<String>),
-    Object(SourceObject),
-}
-
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SearchBody {
-    #[serde(default)]
-    pub _source: Option<Source>,
-    #[serde(default)]
-    pub docvalue_fields: Option<serde_json::Value>,
     #[serde(default)]
     pub from: Option<u64>,
     #[serde(default)]
@@ -105,12 +86,18 @@ pub struct SearchBody {
     pub stored_fields: Option<BTreeSet<String>>,
     #[serde(default)]
     pub search_after: Vec<serde_json::Value>,
+
+    // Ignored values, only here for compatibility with opendashboard.
     #[serde(default)]
-    pub script_fields: Option<serde_json::Value>,
+    pub _source: serde::de::IgnoredAny,
     #[serde(default)]
-    pub highlight: Option<serde_json::Value>,
+    pub docvalue_fields: serde::de::IgnoredAny,
     #[serde(default)]
-    pub version: Option<bool>,
+    pub script_fields: serde::de::IgnoredAny,
+    #[serde(default)]
+    pub highlight: serde::de::IgnoredAny,
+    #[serde(default)]
+    pub version: serde::de::IgnoredAny,
 }
 
 struct FieldSortVecVisitor;
@@ -289,10 +276,6 @@ mod tests {
         let search_body = serde_json::from_str::<SearchBody>(json);
         let error_msg = search_body.unwrap_err().to_string();
         assert!(error_msg.contains("unknown field `term`"));
-        assert!(error_msg.contains(
-            "expected one of `_source`, `docvalue_fields`, `from`, `size`, `query`, `sort`, \
-             `aggs`, `track_total_hits`, `stored_fields`, `search_after`, `script_fields`, \
-             `highlight`, `version`"
-        ));
+        assert!(error_msg.contains("expected one of "));
     }
 }
