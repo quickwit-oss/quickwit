@@ -40,6 +40,7 @@ pub struct RangeQueryParams {
     lte: Option<JsonLiteral>,
     #[serde(default)]
     boost: Option<NotNaNf32>,
+    // Currently NO-OP (see #5109)
     #[serde(default)]
     format: Option<JsonLiteral>,
 }
