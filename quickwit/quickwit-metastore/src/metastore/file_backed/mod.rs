@@ -504,12 +504,14 @@ impl MetastoreService for FileBackedMetastore {
     ) -> MetastoreResult<IndexMetadataResponse> {
         let retention_policy_opt = request.deserialize_retention_policy()?;
         let search_settings = request.deserialize_search_settings()?;
+        let indexing_settings = request.deserialize_indexing_settings()?;
         let index_uid = request.index_uid();
 
         let index_metadata = self
             .mutate(index_uid, |index| {
                 let mut mutation_occurred = index.set_retention_policy(retention_policy_opt);
                 mutation_occurred |= index.set_search_settings(search_settings);
+                mutation_occurred |= index.set_indexing_settings(indexing_settings);
 
                 let index_metadata = index.metadata().clone();
 

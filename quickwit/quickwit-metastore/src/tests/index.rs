@@ -25,13 +25,12 @@
 //  - list_indexes
 //  - delete_index
 
-use std::collections::BTreeSet;
-
 use quickwit_common::rand::append_random_suffix;
+use quickwit_config::merge_policy_config::{MergePolicyConfig, StableLogMergePolicyConfig};
 use quickwit_config::{
-    IndexConfig, RetentionPolicy, SearchSettings, SourceConfig, CLI_SOURCE_ID, INGEST_V2_SOURCE_ID,
+    IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig, CLI_SOURCE_ID,
+    INGEST_V2_SOURCE_ID,
 };
-use quickwit_doc_mapper::FieldMappingType;
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataFailure,
     IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataSubrequest,
@@ -86,15 +85,14 @@ pub async fn test_metastore_create_index<
     cleanup_index(&mut metastore, index_uid).await;
 }
 
-pub async fn test_metastore_update_index<
+async fn setup_metastore_for_update<
     MetastoreToTest: MetastoreService + MetastoreServiceExt + DefaultForTest,
->() {
+>() -> (MetastoreToTest, IndexUid, IndexConfig) {
     let mut metastore = MetastoreToTest::default_for_test().await;
 
     let index_id = append_random_suffix("test-update-index");
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
-
     let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
     let index_uid = metastore
         .create_index(create_index_request.clone())
@@ -103,51 +101,31 @@ pub async fn test_metastore_update_index<
         .index_uid()
         .clone();
 
-    let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
-        .await
-        .unwrap()
-        .deserialize_index_metadata()
-        .unwrap();
+    (metastore, index_uid, index_config)
+}
 
-    // use all fields that are currently not set as default
-    let current_defaults = BTreeSet::from_iter(
-        index_metadata
-            .index_config
-            .search_settings
-            .default_search_fields,
-    );
-    let new_search_setting = SearchSettings {
-        default_search_fields: index_metadata
-            .index_config
-            .doc_mapping
-            .field_mappings
-            .iter()
-            .filter(|f| matches!(f.mapping_type, FieldMappingType::Text(..)))
-            .filter(|f| !current_defaults.contains(&f.name))
-            .map(|f| f.name.clone())
-            .collect(),
-    };
-
+pub async fn test_metastore_update_retention_policy<
+    MetastoreToTest: MetastoreService + MetastoreServiceExt + DefaultForTest,
+>() {
+    let (mut metastore, index_uid, index_config) =
+        setup_metastore_for_update::<MetastoreToTest>().await;
     let new_retention_policy_opt = Some(RetentionPolicy {
         retention_period: String::from("3 days"),
         evaluation_schedule: String::from("daily"),
     });
-    assert_ne!(
-        index_metadata.index_config.retention_policy_opt, new_retention_policy_opt,
-        "original and updated value are the same, test became inefficient"
-    );
 
-    // run same update twice to check idempotence, then None as a corner case check
+    // set and unset retention policy multiple times
     for loop_retention_policy_opt in [
+        None,
         new_retention_policy_opt.clone(),
         new_retention_policy_opt.clone(),
         None,
     ] {
         let index_update = UpdateIndexRequest::try_from_updates(
             index_uid.clone(),
-            &new_search_setting,
+            &index_config.search_settings,
             &loop_retention_policy_opt,
+            &index_config.indexing_settings,
         )
         .unwrap();
         let response_metadata = metastore
@@ -158,22 +136,123 @@ pub async fn test_metastore_update_index<
             .unwrap();
         assert_eq!(response_metadata.index_uid, index_uid);
         assert_eq!(
-            response_metadata.index_config.search_settings,
-            new_search_setting
-        );
-        assert_eq!(
             response_metadata.index_config.retention_policy_opt,
             loop_retention_policy_opt
         );
         let updated_metadata = metastore
-            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+            .index_metadata(IndexMetadataRequest::for_index_id(
+                index_uid.index_id.to_string(),
+            ))
             .await
             .unwrap()
             .deserialize_index_metadata()
             .unwrap();
         assert_eq!(response_metadata, updated_metadata);
     }
+    cleanup_index(&mut metastore, index_uid).await;
+}
 
+pub async fn test_metastore_update_search_settings<
+    MetastoreToTest: MetastoreService + MetastoreServiceExt + DefaultForTest,
+>() {
+    let (mut metastore, index_uid, index_config) =
+        setup_metastore_for_update::<MetastoreToTest>().await;
+
+    for loop_search_settings in [
+        Vec::new(),
+        vec!["body".to_string()],
+        vec!["body".to_string()],
+        vec!["body".to_string(), "owner".to_string()],
+        Vec::new(),
+    ] {
+        let index_update = UpdateIndexRequest::try_from_updates(
+            index_uid.clone(),
+            &SearchSettings {
+                default_search_fields: loop_search_settings.clone(),
+            },
+            &index_config.retention_policy_opt,
+            &index_config.indexing_settings,
+        )
+        .unwrap();
+        let response_metadata = metastore
+            .update_index(index_update)
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert_eq!(
+            response_metadata
+                .index_config
+                .search_settings
+                .default_search_fields,
+            loop_search_settings
+        );
+        let updated_metadata = metastore
+            .index_metadata(IndexMetadataRequest::for_index_id(
+                index_uid.index_id.to_string(),
+            ))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert_eq!(
+            updated_metadata
+                .index_config
+                .search_settings
+                .default_search_fields,
+            loop_search_settings
+        );
+    }
+    cleanup_index(&mut metastore, index_uid).await;
+}
+
+pub async fn test_metastore_update_indexing_settings<
+    MetastoreToTest: MetastoreService + MetastoreServiceExt + DefaultForTest,
+>() {
+    let (mut metastore, index_uid, index_config) =
+        setup_metastore_for_update::<MetastoreToTest>().await;
+
+    for loop_indexing_settings in [
+        MergePolicyConfig::Nop,
+        MergePolicyConfig::Nop,
+        MergePolicyConfig::StableLog(StableLogMergePolicyConfig {
+            merge_factor: 5,
+            ..Default::default()
+        }),
+    ] {
+        let index_update = UpdateIndexRequest::try_from_updates(
+            index_uid.clone(),
+            &index_config.search_settings,
+            &index_config.retention_policy_opt,
+            &IndexingSettings {
+                merge_policy: loop_indexing_settings.clone(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let resp_metadata = metastore
+            .update_index(index_update)
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert_eq!(
+            resp_metadata.index_config.indexing_settings.merge_policy,
+            loop_indexing_settings
+        );
+        let updated_metadata = metastore
+            .index_metadata(IndexMetadataRequest::for_index_id(
+                index_uid.index_id.to_string(),
+            ))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert_eq!(
+            updated_metadata.index_config.indexing_settings.merge_policy,
+            loop_indexing_settings
+        );
+    }
     cleanup_index(&mut metastore, index_uid).await;
 }
 

@@ -21,9 +21,8 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use quickwit_config::service::QuickwitService;
-use quickwit_config::SearchSettings;
 use quickwit_rest_client::rest_client::CommitType;
-use quickwit_serve::{IndexUpdates, SearchRequestQueryString};
+use quickwit_serve::SearchRequestQueryString;
 use serde_json::json;
 
 use crate::ingest_json;
@@ -121,12 +120,21 @@ async fn test_update_on_multi_nodes_cluster() {
         .indexes()
         .update(
             "my-updatable-index",
-            IndexUpdates {
-                search_settings: SearchSettings {
-                    default_search_fields: vec!["title".to_string(), "body".to_string()],
-                },
-                retention_policy_opt: None,
-            },
+            r#"
+            version: 0.8
+            index_id: my-updatable-index
+            doc_mapping:
+              field_mappings:
+              - name: title
+                type: text
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 1
+            search_settings:
+              default_search_fields: [title, body]
+            "#,
+            quickwit_config::ConfigFormat::Yaml,
         )
         .await
         .unwrap();

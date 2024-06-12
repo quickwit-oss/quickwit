@@ -215,6 +215,7 @@ message UpdateIndexRequest {
   quickwit.common.IndexUid index_uid = 1;
   string search_settings_json = 2;
   optional string retention_policy_json = 3;
+  string indexing_settings_json = 4;
 }
 
 message ListIndexesMetadataRequest {
