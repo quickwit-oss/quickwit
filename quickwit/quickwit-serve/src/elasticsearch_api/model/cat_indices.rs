@@ -180,6 +180,9 @@ impl From<SplitMetadata> for ElasticsearchCatIndexResponse {
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ElasticsearchResolveIndexResponse {
     pub indices: Vec<ElasticsearchResolveIndexEntryResponse>,
+    // Unused for the moment.
+    pub aliases: Vec<serde_json::Value>,
+    pub data_streams: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]

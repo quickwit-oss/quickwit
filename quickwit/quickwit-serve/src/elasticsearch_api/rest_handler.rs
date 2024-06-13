@@ -576,9 +576,12 @@ async fn es_compat_resolve_index(
         .map(|metadata| metadata.into())
         .collect();
 
-    indices.sort_by(|a, b| a.name.cmp(&b.name));
+    indices.sort_by(|left, right| left.name.cmp(&right.name));
 
-    Ok(ElasticsearchResolveIndexResponse { indices })
+    Ok(ElasticsearchResolveIndexResponse {
+        indices,
+        ..Default::default()
+    })
 }
 
 async fn es_compat_index_field_capabilities(
