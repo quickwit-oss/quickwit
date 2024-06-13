@@ -567,7 +567,7 @@ _Expensive_ : When set to 0, this will return all terms in the field.
 
 Set the order. String is here a target, which is either “_count”, “_key”, or the name of a metric sub_aggregation.
 Single value metrics like average can be addressed by its name. Multi value metrics like stats are required to address their field by name e.g. “stats.avg”.
-
+_Limitation_ : Ordering is only supported by one property currently. Passing and array for `order` is not supported `"order": [{ "average_price": "asc" }, { "_key": "asc" }]`.
 
 Order alphabetically
 ```json skip
