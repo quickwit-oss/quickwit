@@ -15,7 +15,6 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
-dyn-clone = { workspace = true }
 fail = { workspace = true, optional = true }
 futures = { workspace = true }
 http = { workspace = true }

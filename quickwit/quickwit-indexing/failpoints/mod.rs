@@ -268,7 +268,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     }
     tokio::time::sleep(Duration::from_millis(10)).await;
 
-    let mut metastore = test_index_builder.metastore();
+    let metastore = test_index_builder.metastore();
     let split_metadatas: Vec<SplitMetadata> = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(test_index_builder.index_uid()).unwrap())
         .await?

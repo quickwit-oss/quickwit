@@ -386,7 +386,7 @@ impl Ingester {
             .try_send(open_message)
             .expect("channel should be open and have capacity");
 
-        let mut ingester = self.ingester_pool.get(&follower_id).ok_or_else(|| {
+        let ingester = self.ingester_pool.get(&follower_id).ok_or_else(|| {
             let message = format!("ingester `{follower_id}` is unavailable");
             IngestV2Error::Unavailable(message)
         })?;
@@ -422,7 +422,7 @@ impl Ingester {
     }
 
     async fn persist_inner(
-        &mut self,
+        &self,
         persist_request: PersistRequest,
     ) -> IngestV2Result<PersistResponse> {
         if persist_request.leader_id != self.self_node_id {
@@ -794,7 +794,7 @@ impl Ingester {
 
     /// Opens a replication stream, which is a bi-directional gRPC stream. The client-side stream
     async fn open_replication_stream_inner(
-        &mut self,
+        &self,
         mut syn_replication_stream: quickwit_common::ServiceStream<SynReplicationMessage>,
     ) -> IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
         let open_replication_stream_request = syn_replication_stream
@@ -845,7 +845,7 @@ impl Ingester {
     }
 
     async fn open_fetch_stream_inner(
-        &mut self,
+        &self,
         open_fetch_stream_request: OpenFetchStreamRequest,
     ) -> IngestV2Result<ServiceStream<IngestV2Result<FetchMessage>>> {
         let queue_id = open_fetch_stream_request.queue_id();
@@ -876,7 +876,7 @@ impl Ingester {
     }
 
     async fn open_observation_stream_inner(
-        &mut self,
+        &self,
         _open_observation_stream_request: OpenObservationStreamRequest,
     ) -> IngestV2Result<IngesterServiceStream<ObservationMessage>> {
         let status_stream = ServiceStream::from(self.state.status_rx.clone());
@@ -892,7 +892,7 @@ impl Ingester {
     }
 
     async fn init_shards_inner(
-        &mut self,
+        &self,
         init_shards_request: InitShardsRequest,
     ) -> IngestV2Result<InitShardsResponse> {
         let mut state_guard =
@@ -939,7 +939,7 @@ impl Ingester {
     }
 
     async fn truncate_shards_inner(
-        &mut self,
+        &self,
         truncate_shards_request: TruncateShardsRequest,
     ) -> IngestV2Result<TruncateShardsResponse> {
         if truncate_shards_request.ingester_id != self.self_node_id {
@@ -972,7 +972,7 @@ impl Ingester {
     }
 
     async fn close_shards_inner(
-        &mut self,
+        &self,
         close_shards_request: CloseShardsRequest,
     ) -> IngestV2Result<CloseShardsResponse> {
         let mut state_guard =
@@ -994,7 +994,7 @@ impl Ingester {
     }
 
     async fn decommission_inner(
-        &mut self,
+        &self,
         _decommission_request: DecommissionRequest,
     ) -> IngestV2Result<DecommissionResponse> {
         info!("decommissioning ingester");
@@ -1065,10 +1065,7 @@ impl Ingester {
 
 #[async_trait]
 impl IngesterService for Ingester {
-    async fn persist(
-        &mut self,
-        persist_request: PersistRequest,
-    ) -> IngestV2Result<PersistResponse> {
+    async fn persist(&self, persist_request: PersistRequest) -> IngestV2Result<PersistResponse> {
         // If the request is local, the amount of memory it occupies is already
         // accounted for in the router.
         let request_size_bytes = persist_request
@@ -1086,7 +1083,7 @@ impl IngesterService for Ingester {
     }
 
     async fn open_replication_stream(
-        &mut self,
+        &self,
         syn_replication_stream: quickwit_common::ServiceStream<SynReplicationMessage>,
     ) -> IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
         self.open_replication_stream_inner(syn_replication_stream)
@@ -1094,7 +1091,7 @@ impl IngesterService for Ingester {
     }
 
     async fn open_fetch_stream(
-        &mut self,
+        &self,
         open_fetch_stream_request: OpenFetchStreamRequest,
     ) -> IngestV2Result<ServiceStream<IngestV2Result<FetchMessage>>> {
         self.open_fetch_stream_inner(open_fetch_stream_request)
@@ -1102,7 +1099,7 @@ impl IngesterService for Ingester {
     }
 
     async fn open_observation_stream(
-        &mut self,
+        &self,
         open_observation_stream_request: OpenObservationStreamRequest,
     ) -> IngestV2Result<IngesterServiceStream<ObservationMessage>> {
         self.open_observation_stream_inner(open_observation_stream_request)
@@ -1110,14 +1107,14 @@ impl IngesterService for Ingester {
     }
 
     async fn init_shards(
-        &mut self,
+        &self,
         init_shards_request: InitShardsRequest,
     ) -> IngestV2Result<InitShardsResponse> {
         self.init_shards_inner(init_shards_request).await
     }
 
     async fn retain_shards(
-        &mut self,
+        &self,
         request: RetainShardsRequest,
     ) -> IngestV2Result<RetainShardsResponse> {
         let retain_queue_ids: HashSet<QueueId> = request
@@ -1150,21 +1147,21 @@ impl IngesterService for Ingester {
     }
 
     async fn truncate_shards(
-        &mut self,
+        &self,
         truncate_shards_request: TruncateShardsRequest,
     ) -> IngestV2Result<TruncateShardsResponse> {
         self.truncate_shards_inner(truncate_shards_request).await
     }
 
     async fn close_shards(
-        &mut self,
+        &self,
         close_shards_request: CloseShardsRequest,
     ) -> IngestV2Result<CloseShardsResponse> {
         self.close_shards_inner(close_shards_request).await
     }
 
     async fn decommission(
-        &mut self,
+        &self,
         decommission_request: DecommissionRequest,
     ) -> IngestV2Result<DecommissionResponse> {
         self.decommission_inner(decommission_request).await
@@ -1199,7 +1196,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
 }
 
 pub async fn wait_for_ingester_status(
-    mut ingester: impl IngesterService,
+    ingester: impl IngesterService,
     status: IngesterStatus,
 ) -> anyhow::Result<()> {
     let mut observation_stream = ingester
@@ -1218,7 +1215,7 @@ pub async fn wait_for_ingester_status(
     Ok(())
 }
 
-pub async fn wait_for_ingester_decommission(mut ingester: Ingester) -> anyhow::Result<()> {
+pub async fn wait_for_ingester_decommission(ingester: Ingester) -> anyhow::Result<()> {
     let now = Instant::now();
 
     ingester
@@ -1578,7 +1575,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_init_shards() {
-        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let shard = Shard {
@@ -1620,7 +1617,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist() {
-        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);
@@ -1731,7 +1728,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist_empty() {
-        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let persist_request = PersistRequest {
@@ -1798,7 +1795,7 @@ mod tests {
         let scenario = fail::FailScenario::setup();
         fail::cfg("ingester:append_records", "return").unwrap();
 
-        let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
@@ -1857,7 +1854,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist_deletes_dangling_shard() {
-        let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
@@ -1911,7 +1908,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist_replicate() {
-        let (leader_ctx, mut leader) = IngesterForTest::default()
+        let (leader_ctx, leader) = IngesterForTest::default()
             .with_node_id("test-leader")
             .with_replication()
             .build()
@@ -2070,7 +2067,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist_replicate_grpc() {
-        let (leader_ctx, mut leader) = IngesterForTest::default()
+        let (leader_ctx, leader) = IngesterForTest::default()
             .with_node_id("test-leader")
             .with_replication()
             .build()
@@ -2254,7 +2251,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist_shard_closed() {
-        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let solo_shard = IngesterShard::new_solo(
@@ -2305,7 +2302,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist_rate_limited() {
-        let (ingester_ctx, mut ingester) = IngesterForTest::default()
+        let (ingester_ctx, ingester) = IngesterForTest::default()
             .with_rate_limiter_settings(RateLimiterSettings {
                 burst_limit: 0,
                 rate_limit: ConstantRate::bytes_per_sec(ByteSize(0)),
@@ -2377,7 +2374,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist_resource_exhausted() {
-        let (ingester_ctx, mut ingester) = IngesterForTest::default()
+        let (ingester_ctx, ingester) = IngesterForTest::default()
             .with_disk_capacity(ByteSize(0))
             .build()
             .await;
@@ -2447,7 +2444,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_open_replication_stream() {
-        let (_ingester_ctx, mut ingester) = IngesterForTest::default()
+        let (_ingester_ctx, ingester) = IngesterForTest::default()
             .with_node_id("test-follower")
             .build()
             .await;
@@ -2481,7 +2478,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_open_fetch_stream() {
-        let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let open_fetch_stream_request = OpenFetchStreamRequest {
@@ -2595,7 +2592,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_truncate_shards() {
-        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let shard_01 = Shard {
@@ -2709,7 +2706,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_truncate_shards_deletes_dangling_shards() {
-        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
@@ -2859,7 +2856,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_retain_shards() {
-        let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let shard_17 = Shard {
@@ -2930,7 +2927,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_close_shards() {
-        let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let shard = Shard {
@@ -3014,7 +3011,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_open_observation_stream() {
-        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let mut observation_stream = ingester
             .open_observation_stream(OpenObservationStreamRequest {})

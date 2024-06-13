@@ -43,7 +43,7 @@ use crate::actors::RetentionPolicyExecutor;
 /// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
 pub async fn run_execute_retention_policy(
     index_uid: IndexUid,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
     retention_policy: &RetentionPolicy,
     ctx: &ActorContext<RetentionPolicyExecutor>,
 ) -> anyhow::Result<Vec<SplitMetadata>> {

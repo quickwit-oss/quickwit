@@ -102,7 +102,7 @@ async fn perform_grpc_gossip_rounds<Factory, Fut>(
     info!("pulling cluster state from node(s): {node_ids:?}");
 
     for (node_id, grpc_advertise_addr) in zip(node_ids, grpc_advertise_addrs) {
-        let mut cluster_client = grpc_client_factory(grpc_advertise_addr).await;
+        let cluster_client = grpc_client_factory(grpc_advertise_addr).await;
 
         let request = FetchClusterStateRequest {
             cluster_id: cluster_id.clone(),

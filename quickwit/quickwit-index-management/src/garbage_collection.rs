@@ -87,7 +87,7 @@ pub struct SplitRemovalInfo {
 pub async fn run_garbage_collect(
     index_uid: IndexUid,
     storage: Arc<dyn Storage>,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
     staged_grace_period: Duration,
     deletion_grace_period: Duration,
     dry_run: bool,
@@ -175,7 +175,7 @@ async fn delete_splits_marked_for_deletion(
     index_uid: IndexUid,
     updated_before_timestamp: i64,
     storage: Arc<dyn Storage>,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
     progress_opt: Option<&Progress>,
 ) -> SplitRemovalInfo {
     let mut removed_splits = Vec::new();
@@ -257,7 +257,7 @@ async fn delete_splits_marked_for_deletion(
 pub async fn delete_splits_from_storage_and_metastore(
     index_uid: IndexUid,
     storage: Arc<dyn Storage>,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
     splits: Vec<SplitMetadata>,
     progress_opt: Option<&Progress>,
 ) -> anyhow::Result<Vec<SplitInfo>, DeleteSplitsError> {
@@ -372,7 +372,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_gc_marks_stale_staged_splits_for_deletion_after_grace_period() {
         let storage = storage_for_test();
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
 
         let index_id = "test-run-gc--index";
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -472,7 +472,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_gc_deletes_splits_marked_for_deletion_after_grace_period() {
         let storage = storage_for_test();
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
 
         let index_id = "test-run-gc--index";
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -599,7 +599,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_splits_from_storage_and_metastore_happy_path() {
         let storage = storage_for_test();
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
 
         let index_id = "test-delete-splits-happy--index";
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -702,7 +702,7 @@ mod tests {
                 Err(bulk_delete_error)
             });
         let storage = Arc::new(mock_storage);
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
 
         let index_id = "test-delete-splits-storage-error--index";
         let index_uri = format!("ram:///indexes/{index_id}");

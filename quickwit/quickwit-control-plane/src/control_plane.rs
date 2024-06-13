@@ -39,7 +39,7 @@ use quickwit_common::Progress;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
-use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt};
+use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadataResponseExt};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
@@ -280,7 +280,7 @@ impl ControlPlane {
                 &source_configs,
             )?;
             let create_index_future = {
-                let mut metastore = self.metastore.clone();
+                let metastore = self.metastore.clone();
                 async move { metastore.create_index(create_index_request).await }
             };
             create_index_futures.push(create_index_future);
@@ -582,6 +582,15 @@ impl Handler<UpdateIndexRequest> for ControlPlane {
                 return convert_metastore_error(metastore_error);
             }
         };
+        let index_metadata = match response.deserialize_index_metadata() {
+            Ok(index_metadata) => index_metadata,
+            Err(serde_error) => {
+                error!(error=?serde_error, "failed to deserialize index metadata");
+                return Err(ActorExitStatus::from(anyhow::anyhow!(serde_error)));
+            }
+        };
+        self.model
+            .update_index_config(&index_uid, index_metadata.index_config)?;
         // TODO: Handle doc mapping and/or indexing settings update here.
         info!(%index_uid, "updated index");
         Ok(Ok(response))

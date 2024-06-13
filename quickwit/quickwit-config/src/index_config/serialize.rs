@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use anyhow::Context;
+use anyhow::{ensure, Context};
 use quickwit_common::uri::Uri;
 use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
@@ -59,6 +59,45 @@ pub fn load_index_config_from_user_config(
     let versioned_index_config: VersionedIndexConfig = config_format.parse(config_content)?;
     let index_config_for_serialization: IndexConfigForSerialization = versioned_index_config.into();
     index_config_for_serialization.build_and_validate(Some(default_index_root_uri))
+}
+
+/// Parses and validates an [`IndexConfig`] update.
+///
+/// Ensures that the new configuration is valid in itself and compared to the
+/// current index config. If the new configuration omits some fields, the
+/// default values will be used, not those of the current index config. The only
+/// exception is the index_uri because it cannot be updated.
+pub fn load_index_config_update(
+    config_format: ConfigFormat,
+    index_config_bytes: &[u8],
+    current_index_config: &IndexConfig,
+) -> anyhow::Result<IndexConfig> {
+    let current_index_parent_dir = &current_index_config
+        .index_uri
+        .parent()
+        .context("Unexpected `index_uri` format on current configuration")?;
+    let new_index_config = load_index_config_from_user_config(
+        config_format,
+        index_config_bytes,
+        current_index_parent_dir,
+    )?;
+    ensure!(
+        current_index_config.index_id == new_index_config.index_id,
+        "`index_id` in config file {} does not match updated `index_id` {}",
+        current_index_config.index_id,
+        new_index_config.index_id
+    );
+    ensure!(
+        current_index_config.index_uri == new_index_config.index_uri,
+        "`index_uri` cannot be updated, current value {}, new expected value {}",
+        current_index_config.index_uri,
+        new_index_config.index_uri
+    );
+    ensure!(
+        current_index_config.doc_mapping == new_index_config.doc_mapping,
+        "`doc_mapping` cannot be updated"
+    );
+    Ok(new_index_config)
 }
 
 impl IndexConfigForSerialization {
@@ -245,5 +284,156 @@ mod test {
             .unwrap();
             assert_eq!(index_config.index_uri.as_str(), "s3://mybucket/hdfs-logs");
         }
+    }
+
+    #[test]
+    fn test_update_index_root_uri() {
+        let original_config_yaml = r#"
+            version: 0.8
+            index_id: hdfs-logs
+            doc_mapping: {}
+        "#;
+        let original_config: IndexConfig = load_index_config_from_user_config(
+            ConfigFormat::Yaml,
+            original_config_yaml.as_bytes(),
+            &Uri::for_test("s3://mybucket"),
+        )
+        .unwrap();
+        {
+            // use default in update
+            let updated_config_yaml = r#"
+                version: 0.8
+                index_id: hdfs-logs
+                doc_mapping: {}
+            "#;
+            let updated_config = load_index_config_update(
+                ConfigFormat::Yaml,
+                updated_config_yaml.as_bytes(),
+                &original_config,
+            )
+            .unwrap();
+            assert_eq!(updated_config.index_uri.as_str(), "s3://mybucket/hdfs-logs");
+        }
+        {
+            // use the current index_uri explicitely
+            let updated_config_yaml = r#"
+                version: 0.8
+                index_id: hdfs-logs
+                index_uri: s3://mybucket/hdfs-logs
+                doc_mapping: {}
+            "#;
+            let updated_config = load_index_config_update(
+                ConfigFormat::Yaml,
+                updated_config_yaml.as_bytes(),
+                &original_config,
+            )
+            .unwrap();
+            assert_eq!(updated_config.index_uri.as_str(), "s3://mybucket/hdfs-logs");
+        }
+        {
+            // try using a different index_uri
+            let updated_config_yaml = r#"
+                version: 0.8
+                index_id: hdfs-logs
+                index_uri: s3://mybucket/new-directory/
+                doc_mapping: {}
+            "#;
+            let load_error = load_index_config_update(
+                ConfigFormat::Yaml,
+                updated_config_yaml.as_bytes(),
+                &original_config,
+            )
+            .unwrap_err();
+            assert!(format!("{:?}", load_error).contains("`index_uri` cannot be updated"));
+        }
+    }
+
+    #[test]
+    fn test_update_reset_defaults() {
+        let original_config_yaml = r#"
+            version: 0.8
+            index_id: hdfs-logs
+            doc_mapping:
+                field_mappings:
+                    - name: timestamp
+                      type: datetime
+                      fast: true
+                timestamp_field: timestamp
+
+            search_settings:
+                default_search_fields: [body]
+
+            indexing_settings:
+                commit_timeout_secs: 10
+
+            retention:
+                period: 90 days
+                schedule: daily
+        "#;
+        let original_config: IndexConfig = load_index_config_from_user_config(
+            ConfigFormat::Yaml,
+            original_config_yaml.as_bytes(),
+            &Uri::for_test("s3://mybucket"),
+        )
+        .unwrap();
+
+        let updated_config_yaml = r#"
+            version: 0.8
+            index_id: hdfs-logs
+            doc_mapping:
+                field_mappings:
+                    - name: timestamp
+                      type: datetime
+                      fast: true
+                timestamp_field: timestamp
+        "#;
+        let updated_config = load_index_config_update(
+            ConfigFormat::Yaml,
+            updated_config_yaml.as_bytes(),
+            &original_config,
+        )
+        .unwrap();
+        assert_eq!(
+            updated_config.search_settings.default_search_fields,
+            Vec::<String>::default(),
+        );
+        assert_eq!(
+            updated_config.indexing_settings.commit_timeout_secs,
+            IndexingSettings::default_commit_timeout_secs()
+        );
+        assert_eq!(updated_config.retention_policy_opt, None);
+    }
+
+    #[test]
+    fn test_update_doc_mappings() {
+        let original_config_yaml = r#"
+            version: 0.8
+            index_id: hdfs-logs
+            doc_mapping: {}
+        "#;
+        let original_config: IndexConfig = load_index_config_from_user_config(
+            ConfigFormat::Yaml,
+            original_config_yaml.as_bytes(),
+            &Uri::for_test("s3://mybucket"),
+        )
+        .unwrap();
+
+        let updated_config_yaml = r#"
+            version: 0.8
+            index_id: hdfs-logs
+            doc_mapping:
+                field_mappings:
+                    - name: body
+                      type: text
+                      tokenizer: default
+                      record: position
+        "#;
+        let load_error = load_index_config_update(
+            ConfigFormat::Yaml,
+            updated_config_yaml.as_bytes(),
+            &original_config,
+        )
+        .unwrap_err();
+        assert!(format!("{:?}", load_error).contains("`doc_mapping` cannot be updated"));
     }
 }

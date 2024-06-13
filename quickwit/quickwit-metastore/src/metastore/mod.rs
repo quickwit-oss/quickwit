@@ -32,7 +32,9 @@ use futures::TryStreamExt;
 pub use index_metadata::IndexMetadata;
 use itertools::Itertools;
 use quickwit_common::thread_pool::run_cpu_intensive;
-use quickwit_config::{IndexConfig, RetentionPolicy, SearchSettings, SourceConfig};
+use quickwit_config::{
+    IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
+};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask,
@@ -188,6 +190,7 @@ pub trait UpdateIndexRequestExt {
         index_uid: impl Into<IndexUid>,
         search_settings: &SearchSettings,
         retention_policy_opt: &Option<RetentionPolicy>,
+        indexing_settings: &IndexingSettings,
     ) -> MetastoreResult<UpdateIndexRequest>;
 
     /// Deserializes the `search_settings_json` field of an [`UpdateIndexRequest`] into a
@@ -197,6 +200,10 @@ pub trait UpdateIndexRequestExt {
     /// Deserializes the `retention_policy_json` field of an [`UpdateIndexRequest`] into a
     /// [`RetentionPolicy`] object.
     fn deserialize_retention_policy(&self) -> MetastoreResult<Option<RetentionPolicy>>;
+
+    /// Deserializes the `indexing_settings_json` field of an [`UpdateIndexRequest`] into a
+    /// [`IndexingSettings`] object.
+    fn deserialize_indexing_settings(&self) -> MetastoreResult<IndexingSettings>;
 }
 
 impl UpdateIndexRequestExt for UpdateIndexRequest {
@@ -204,17 +211,20 @@ impl UpdateIndexRequestExt for UpdateIndexRequest {
         index_uid: impl Into<IndexUid>,
         search_settings: &SearchSettings,
         retention_policy_opt: &Option<RetentionPolicy>,
+        indexing_settings: &IndexingSettings,
     ) -> MetastoreResult<UpdateIndexRequest> {
-        let search_settings_json = serde_utils::to_json_str(&search_settings)?;
+        let search_settings_json = serde_utils::to_json_str(search_settings)?;
         let retention_policy_json = retention_policy_opt
             .as_ref()
             .map(serde_utils::to_json_str)
             .transpose()?;
+        let indexing_settings_json = serde_utils::to_json_str(indexing_settings)?;
 
         let update_request = UpdateIndexRequest {
             index_uid: Some(index_uid.into()),
             search_settings_json,
             retention_policy_json,
+            indexing_settings_json,
         };
         Ok(update_request)
     }
@@ -228,6 +238,10 @@ impl UpdateIndexRequestExt for UpdateIndexRequest {
             .as_ref()
             .map(|policy| serde_utils::from_json_str(policy))
             .transpose()
+    }
+
+    fn deserialize_indexing_settings(&self) -> MetastoreResult<IndexingSettings> {
+        serde_utils::from_json_str(&self.indexing_settings_json)
     }
 }
 

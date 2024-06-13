@@ -48,8 +48,8 @@ pub use cluster_config::ClusterConfig;
 // See #2048
 use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
 pub use index_config::{
-    build_doc_mapper, load_index_config_from_user_config, IndexConfig, IndexingResources,
-    IndexingSettings, RetentionPolicy, SearchSettings,
+    build_doc_mapper, load_index_config_from_user_config, load_index_config_update, IndexConfig,
+    IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
 };
 pub use quickwit_doc_mapper::DocMapping;
 use serde::de::DeserializeOwned;

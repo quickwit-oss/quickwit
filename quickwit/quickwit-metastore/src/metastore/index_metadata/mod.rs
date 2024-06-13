@@ -23,7 +23,9 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use quickwit_common::uri::Uri;
-use quickwit_config::{IndexConfig, RetentionPolicy, SearchSettings, SourceConfig};
+use quickwit_config::{
+    IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
+};
 use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
 use quickwit_proto::types::{IndexUid, SourceId};
 use serde::{Deserialize, Serialize};
@@ -108,10 +110,20 @@ impl IndexMetadata {
         }
     }
 
-    /// Replaces or removes the current search settings, returning whether a mutation occurred.
+    /// Replaces the current search settings, returning whether a mutation occurred.
     pub fn set_search_settings(&mut self, search_settings: SearchSettings) -> bool {
         if self.index_config.search_settings != search_settings {
             self.index_config.search_settings = search_settings;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Replaces the current indexing settings, returning whether a mutation occurred.
+    pub fn set_indexing_settings(&mut self, indexing_settings: IndexingSettings) -> bool {
+        if self.index_config.indexing_settings != indexing_settings {
+            self.index_config.indexing_settings = indexing_settings;
             true
         } else {
             false

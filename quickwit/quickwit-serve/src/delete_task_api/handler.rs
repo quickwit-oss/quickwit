@@ -98,7 +98,7 @@ pub fn get_delete_tasks_handler(
 // `get_delete_tasks_handler` and consequently we get the mailbox in `get_delete_tasks` signature.
 pub async fn get_delete_tasks(
     index_id: IndexId,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<Vec<DeleteTask>> {
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
@@ -145,7 +145,7 @@ pub fn post_delete_tasks_handler(
 pub async fn post_delete_request(
     index_id: IndexId,
     delete_request: DeleteQueryRequest,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> Result<DeleteTask, JanitorError> {
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let metadata = metastore

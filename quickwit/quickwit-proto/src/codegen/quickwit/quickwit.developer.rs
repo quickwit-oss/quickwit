@@ -25,23 +25,18 @@ impl RpcName for GetDebugInfoRequest {
 }
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
-pub trait DeveloperService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+pub trait DeveloperService: std::fmt::Debug + Send + Sync + 'static {
     async fn get_debug_info(
-        &mut self,
+        &self,
         request: GetDebugInfoRequest,
     ) -> crate::developer::DeveloperResult<GetDebugInfoResponse>;
 }
-dyn_clone::clone_trait_object!(DeveloperService);
-#[cfg(any(test, feature = "testsuite"))]
-impl Clone for MockDeveloperService {
-    fn clone(&self) -> Self {
-        MockDeveloperService::new()
-    }
-}
 #[derive(Debug, Clone)]
 pub struct DeveloperServiceClient {
-    inner: Box<dyn DeveloperService>,
+    inner: InnerDeveloperServiceClient,
 }
+#[derive(Debug, Clone)]
+struct InnerDeveloperServiceClient(std::sync::Arc<dyn DeveloperService>);
 impl DeveloperServiceClient {
     pub fn new<T>(instance: T) -> Self
     where
@@ -53,7 +48,9 @@ impl DeveloperServiceClient {
             MockDeveloperService > (),
             "`MockDeveloperService` must be wrapped in a `MockDeveloperServiceWrapper`: use `DeveloperServiceClient::from_mock(mock)` to instantiate the client"
         );
-        Self { inner: Box::new(instance) }
+        Self {
+            inner: InnerDeveloperServiceClient(std::sync::Arc::new(instance)),
+        }
     }
     pub fn as_grpc_service(
         &self,
@@ -114,7 +111,7 @@ impl DeveloperServiceClient {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn from_mock(mock: MockDeveloperService) -> Self {
         let mock_wrapper = mock_developer_service::MockDeveloperServiceWrapper {
-            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+            inner: tokio::sync::Mutex::new(mock),
         };
         Self::new(mock_wrapper)
     }
@@ -126,23 +123,23 @@ impl DeveloperServiceClient {
 #[async_trait::async_trait]
 impl DeveloperService for DeveloperServiceClient {
     async fn get_debug_info(
-        &mut self,
+        &self,
         request: GetDebugInfoRequest,
     ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
-        self.inner.get_debug_info(request).await
+        self.inner.0.get_debug_info(request).await
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_developer_service {
     use super::*;
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub struct MockDeveloperServiceWrapper {
-        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockDeveloperService>>,
+        pub(super) inner: tokio::sync::Mutex<MockDeveloperService>,
     }
     #[async_trait::async_trait]
     impl DeveloperService for MockDeveloperServiceWrapper {
         async fn get_debug_info(
-            &mut self,
+            &self,
             request: super::GetDebugInfoRequest,
         ) -> crate::developer::DeveloperResult<super::GetDebugInfoResponse> {
             self.inner.lock().await.get_debug_info(request).await
@@ -152,7 +149,7 @@ pub mod mock_developer_service {
 pub type BoxFuture<T, E> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
 >;
-impl tower::Service<GetDebugInfoRequest> for Box<dyn DeveloperService> {
+impl tower::Service<GetDebugInfoRequest> for InnerDeveloperServiceClient {
     type Response = GetDebugInfoResponse;
     type Error = crate::developer::DeveloperError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -163,36 +160,29 @@ impl tower::Service<GetDebugInfoRequest> for Box<dyn DeveloperService> {
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: GetDebugInfoRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.get_debug_info(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.get_debug_info(request).await };
         Box::pin(fut)
     }
 }
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct DeveloperServiceTowerServiceStack {
-    inner: Box<dyn DeveloperService>,
+    #[allow(dead_code)]
+    inner: InnerDeveloperServiceClient,
     get_debug_info_svc: quickwit_common::tower::BoxService<
         GetDebugInfoRequest,
         GetDebugInfoResponse,
         crate::developer::DeveloperError,
     >,
 }
-impl Clone for DeveloperServiceTowerServiceStack {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            get_debug_info_svc: self.get_debug_info_svc.clone(),
-        }
-    }
-}
 #[async_trait::async_trait]
 impl DeveloperService for DeveloperServiceTowerServiceStack {
     async fn get_debug_info(
-        &mut self,
+        &self,
         request: GetDebugInfoRequest,
     ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
-        self.get_debug_info_svc.ready().await?.call(request).await
+        self.get_debug_info_svc.clone().ready().await?.call(request).await
     }
 }
 type GetDebugInfoLayer = quickwit_common::tower::BoxLayer<
@@ -265,7 +255,8 @@ impl DeveloperServiceTowerLayerStack {
     where
         T: DeveloperService,
     {
-        self.build_from_boxed(Box::new(instance))
+        let inner_client = InnerDeveloperServiceClient(std::sync::Arc::new(instance));
+        self.build_from_inner_client(inner_client)
     }
     pub fn build_from_channel(
         self,
@@ -273,25 +264,25 @@ impl DeveloperServiceTowerLayerStack {
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
     ) -> DeveloperServiceClient {
-        self.build_from_boxed(
-            Box::new(
-                DeveloperServiceClient::from_channel(addr, channel, max_message_size),
-            ),
-        )
+        let client = DeveloperServiceClient::from_channel(
+            addr,
+            channel,
+            max_message_size,
+        );
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
     }
     pub fn build_from_balance_channel(
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
     ) -> DeveloperServiceClient {
-        self.build_from_boxed(
-            Box::new(
-                DeveloperServiceClient::from_balance_channel(
-                    balance_channel,
-                    max_message_size,
-                ),
-            ),
-        )
+        let client = DeveloperServiceClient::from_balance_channel(
+            balance_channel,
+            max_message_size,
+        );
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -301,26 +292,31 @@ impl DeveloperServiceTowerLayerStack {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         DeveloperServiceMailbox<A>: DeveloperService,
     {
-        self.build_from_boxed(Box::new(DeveloperServiceMailbox::new(mailbox)))
+        let inner_client = InnerDeveloperServiceClient(
+            std::sync::Arc::new(DeveloperServiceMailbox::new(mailbox)),
+        );
+        self.build_from_inner_client(inner_client)
     }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn build_from_mock(self, mock: MockDeveloperService) -> DeveloperServiceClient {
-        self.build_from_boxed(Box::new(DeveloperServiceClient::from_mock(mock)))
+        let client = DeveloperServiceClient::from_mock(mock);
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
     }
-    fn build_from_boxed(
+    fn build_from_inner_client(
         self,
-        boxed_instance: Box<dyn DeveloperService>,
+        inner_client: InnerDeveloperServiceClient,
     ) -> DeveloperServiceClient {
         let get_debug_info_svc = self
             .get_debug_info_layers
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let tower_svc_stack = DeveloperServiceTowerServiceStack {
-            inner: boxed_instance.clone(),
+            inner: inner_client,
             get_debug_info_svc,
         };
         DeveloperServiceClient::new(tower_svc_stack)
@@ -406,10 +402,10 @@ where
     >,
 {
     async fn get_debug_info(
-        &mut self,
+        &self,
         request: GetDebugInfoRequest,
     ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
-        self.call(request).await
+        self.clone().call(request).await
     }
 }
 #[derive(Debug, Clone)]
@@ -447,10 +443,11 @@ where
     T::Future: Send,
 {
     async fn get_debug_info(
-        &mut self,
+        &self,
         request: GetDebugInfoRequest,
     ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
         self.inner
+            .clone()
             .get_debug_info(request)
             .await
             .map(|response| response.into_inner())
@@ -462,14 +459,16 @@ where
 }
 #[derive(Debug)]
 pub struct DeveloperServiceGrpcServerAdapter {
-    inner: Box<dyn DeveloperService>,
+    inner: InnerDeveloperServiceClient,
 }
 impl DeveloperServiceGrpcServerAdapter {
     pub fn new<T>(instance: T) -> Self
     where
         T: DeveloperService,
     {
-        Self { inner: Box::new(instance) }
+        Self {
+            inner: InnerDeveloperServiceClient(std::sync::Arc::new(instance)),
+        }
     }
 }
 #[async_trait::async_trait]
@@ -480,7 +479,7 @@ for DeveloperServiceGrpcServerAdapter {
         request: tonic::Request<GetDebugInfoRequest>,
     ) -> Result<tonic::Response<GetDebugInfoResponse>, tonic::Status> {
         self.inner
-            .clone()
+            .0
             .get_debug_info(request.into_inner())
             .await
             .map(tonic::Response::new)

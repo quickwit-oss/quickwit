@@ -654,9 +654,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime"
-version = "1.5.0"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9ac79e9f3a4d576f3cd4a470a0275b138d9e7b11b1cd514a6858ae0a79dd5bb"
+checksum = "8508de54f34b8feca6638466c2bd2de9d1df5bf79c578de9a649b72d644006b3"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-http",
@@ -669,6 +669,7 @@ dependencies = [
  "http 0.2.12",
  "http-body 0.4.6",
  "http-body 1.0.0",
+ "httparse",
  "hyper 0.14.28",
  "hyper-rustls",
  "indexmap 2.1.0",
@@ -5765,7 +5766,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bytesize",
- "dyn-clone",
  "futures",
  "http 0.2.12",
  "mockall",
@@ -6035,7 +6035,6 @@ dependencies = [
  "async-trait",
  "bytes",
  "bytesize",
- "dyn-clone",
  "fail",
  "futures",
  "http 0.2.12",
@@ -6280,7 +6279,6 @@ dependencies = [
  "bytes",
  "bytesize",
  "bytestring",
- "dyn-clone",
  "futures",
  "glob",
  "http 0.2.12",

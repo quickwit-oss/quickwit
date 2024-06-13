@@ -226,7 +226,7 @@ impl IngestController {
     fn sync_with_ingester(&self, ingester: &NodeId, model: &ControlPlaneModel) -> WaitHandle {
         info!(ingester = %ingester, "sync_with_ingester");
         let (wait_drop_guard, wait_handle) = WaitHandle::new();
-        let Some(mut ingester_client) = self.ingester_pool.get(ingester) else {
+        let Some(ingester_client) = self.ingester_pool.get(ingester) else {
             // TODO: (Maybe) We should mark the ingester as unavailable, and stop advertise its
             // shard to routers.
             warn!("failed to sync with ingester `{ingester}`: not available");
@@ -535,7 +535,7 @@ impl IngestController {
                     }
                 })
                 .collect();
-            let Some(mut leader) = self.ingester_pool.get(&leader_id) else {
+            let Some(leader) = self.ingester_pool.get(&leader_id) else {
                 warn!("failed to init shards: ingester `{leader_id}` is unavailable");
                 failures.extend(init_shard_failures);
                 continue;
@@ -765,7 +765,7 @@ impl IngestController {
             model.release_scaling_permits(&source_uid, ScalingMode::Down, NUM_PERMITS);
             return Ok(());
         };
-        let Some(mut ingester) = self.ingester_pool.get(&leader_id) else {
+        let Some(ingester) = self.ingester_pool.get(&leader_id) else {
             model.release_scaling_permits(&source_uid, ScalingMode::Down, NUM_PERMITS);
             return Ok(());
         };
@@ -1024,7 +1024,7 @@ impl IngestController {
         let mut close_shards_futures = FuturesUnordered::new();
 
         for (leader_id, shard_pkeys) in per_leader_shards_to_close {
-            let Some(mut ingester) = self.ingester_pool.get(&leader_id) else {
+            let Some(ingester) = self.ingester_pool.get(&leader_id) else {
                 warn!("failed to close shards: ingester `{leader_id}` is unavailable");
                 continue;
             };

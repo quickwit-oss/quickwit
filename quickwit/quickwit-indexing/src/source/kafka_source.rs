@@ -914,7 +914,7 @@ mod kafka_broker_tests {
     }
 
     async fn setup_index(
-        mut metastore: MetastoreServiceClient,
+        metastore: MetastoreServiceClient,
         index_id: &str,
         source_config: &SourceConfig,
         partition_deltas: &[(u64, i64, i64)],

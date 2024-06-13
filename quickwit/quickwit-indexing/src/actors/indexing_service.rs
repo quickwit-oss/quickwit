@@ -1037,7 +1037,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
 
         let index_id = append_random_suffix("test-indexing-service");
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -1139,7 +1139,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
 
         let index_id = append_random_suffix("test-indexing-service");
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -1196,7 +1196,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
 
         let index_id = append_random_suffix("test-indexing-service");
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -1426,7 +1426,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
 
         let index_id = append_random_suffix("test-indexing-service");
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -1635,7 +1635,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
         let create_index_request =
             CreateIndexRequest::try_from_index_config(&index_config).unwrap();
         let index_uid: IndexUid = metastore
