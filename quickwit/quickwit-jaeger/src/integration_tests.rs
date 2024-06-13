@@ -388,7 +388,7 @@ async fn searcher_for_test(
 
 async fn setup_traces_index(
     temp_dir: &TempDir,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
     ingester_service: &Mailbox<IngestApiService>,
     indexer_service: &Mailbox<IndexingService>,
 ) {

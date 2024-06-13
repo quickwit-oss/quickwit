@@ -15,7 +15,6 @@ async-trait = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 bytestring = { workspace = true }
-dyn-clone = { workspace = true }
 futures = { workspace = true, optional = true }
 http = { workspace = true }
 mockall = { workspace = true, optional = true }

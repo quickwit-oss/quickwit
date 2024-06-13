@@ -35,12 +35,7 @@ use crate::{AddSourceRequestExt, CreateIndexRequestExt, MetastoreServiceExt};
 
 #[async_trait]
 pub trait ReadWriteShardsForTest {
-    async fn insert_shards(
-        &mut self,
-        index_uid: &IndexUid,
-        source_id: &SourceId,
-        shards: Vec<Shard>,
-    );
+    async fn insert_shards(&self, index_uid: &IndexUid, source_id: &SourceId, shards: Vec<Shard>);
 
     async fn list_all_shards(&self, index_uid: &IndexUid, source_id: &SourceId) -> Vec<Shard>;
 }

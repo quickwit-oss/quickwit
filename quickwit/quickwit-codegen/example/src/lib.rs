@@ -120,7 +120,7 @@ struct HelloImpl {
 
 #[async_trait]
 impl Hello for HelloImpl {
-    async fn hello(&mut self, request: HelloRequest) -> HelloResult<HelloResponse> {
+    async fn hello(&self, request: HelloRequest) -> HelloResult<HelloResponse> {
         tokio::time::sleep(self.delay).await;
 
         if request.name.is_empty() {
@@ -131,7 +131,7 @@ impl Hello for HelloImpl {
         })
     }
 
-    async fn goodbye(&mut self, request: GoodbyeRequest) -> HelloResult<GoodbyeResponse> {
+    async fn goodbye(&self, request: GoodbyeRequest) -> HelloResult<GoodbyeResponse> {
         tokio::time::sleep(self.delay).await;
 
         Ok(GoodbyeResponse {
@@ -140,13 +140,13 @@ impl Hello for HelloImpl {
     }
 
     async fn ping(
-        &mut self,
+        &self,
         request: ServiceStream<PingRequest>,
     ) -> HelloResult<HelloStream<PingResponse>> {
         Ok(spawn_ping_response_stream(request))
     }
 
-    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -179,7 +179,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hello_codegen() {
-        let mut hello = HelloImpl::default();
+        let hello = HelloImpl::default();
 
         assert_eq!(
             hello
@@ -193,7 +193,7 @@ mod tests {
             }
         );
 
-        let mut client = HelloClient::new(hello.clone()).clone();
+        let client = HelloClient::new(hello.clone()).clone();
 
         assert_eq!(
             client
@@ -283,7 +283,7 @@ mod tests {
             "127.0.0.1:6666".parse().unwrap(),
             Endpoint::from_static("http://127.0.0.1:6666").connect_lazy(),
         );
-        let mut grpc_client = HelloClient::from_balance_channel(channel, MAX_GRPC_MESSAGE_SIZE);
+        let grpc_client = HelloClient::from_balance_channel(channel, MAX_GRPC_MESSAGE_SIZE);
 
         assert_eq!(
             grpc_client
@@ -342,8 +342,7 @@ mod tests {
 
         // The connectivity check fails if there is no client behind the channel.
         let (balance_channel, _): (BalanceChannel<SocketAddr>, _) = BalanceChannel::new();
-        let mut grpc_client =
-            HelloClient::from_balance_channel(balance_channel, MAX_GRPC_MESSAGE_SIZE);
+        let grpc_client = HelloClient::from_balance_channel(balance_channel, MAX_GRPC_MESSAGE_SIZE);
         assert_eq!(
             grpc_client
                 .check_connectivity()
@@ -411,7 +410,7 @@ mod tests {
         let universe = Universe::new();
         let hello_actor = HelloActor;
         let (actor_mailbox, _actor_handle) = universe.spawn_builder().spawn(hello_actor);
-        let mut actor_client = HelloClient::from_mailbox(actor_mailbox.clone());
+        let actor_client = HelloClient::from_mailbox(actor_mailbox.clone());
 
         assert_eq!(
             actor_client
@@ -448,7 +447,7 @@ mod tests {
             "Pong, beautiful actor!"
         );
 
-        let mut hello_tower = HelloClient::tower().build_from_mailbox(actor_mailbox);
+        let hello_tower = HelloClient::tower().build_from_mailbox(actor_mailbox);
 
         assert_eq!(
             hello_tower
@@ -499,7 +498,7 @@ mod tests {
         let goodbye_layer = CounterLayer::default();
         let ping_layer = CounterLayer::default();
 
-        let mut hello_tower = HelloClient::tower()
+        let hello_tower = HelloClient::tower()
             .stack_layer(layer.clone())
             .stack_hello_layer(hello_layer.clone())
             .stack_goodbye_layer(goodbye_layer.clone())
@@ -616,7 +615,7 @@ mod tests {
                 }
             }
         }
-        let mut hello_tower = HelloClient::tower()
+        let hello_tower = HelloClient::tower()
             .stack_layer(AppendSuffixLayer::new("->foo"))
             .stack_hello_layer(AppendSuffixLayer::new("->bar"))
             .stack_layer(AppendSuffixLayer::new("->qux"))
@@ -698,7 +697,7 @@ mod tests {
             })
         });
         mock_hello.expect_check_connectivity().returning(|| Ok(()));
-        let mut hello = HelloClient::from_mock(mock_hello);
+        let hello = HelloClient::from_mock(mock_hello);
 
         assert_eq!(
             hello
@@ -735,7 +734,7 @@ mod tests {
             .timeout(Duration::from_millis(100))
             .connect_lazy();
         let max_message_size = ByteSize::mib(1);
-        let mut grpc_client = HelloClient::from_channel(addr, channel, max_message_size);
+        let grpc_client = HelloClient::from_channel(addr, channel, max_message_size);
 
         let error = grpc_client
             .hello(HelloRequest {

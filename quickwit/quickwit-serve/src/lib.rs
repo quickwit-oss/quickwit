@@ -1151,7 +1151,7 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
 async fn node_readiness_reporting_task(
     cluster: Cluster,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
@@ -1199,7 +1199,7 @@ async fn node_readiness_reporting_task(
 async fn check_cluster_configuration(
     services: &HashSet<QuickwitService>,
     peer_seeds: &[String],
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> anyhow::Result<()> {
     if !services.contains(&QuickwitService::Metastore) || peer_seeds.is_empty() {
         return Ok(());

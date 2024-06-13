@@ -128,7 +128,7 @@ pub fn get_index_metadata_handler(
 
 async fn get_index_metadata(
     index_id: IndexId,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<IndexMetadata> {
     info!(index_id = %index_id, "get-index-metadata");
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
@@ -193,7 +193,7 @@ struct IndexStats {
 /// Describes an index.
 async fn describe_index(
     index_id: IndexId,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<IndexStats> {
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_metadata = metastore
@@ -321,7 +321,7 @@ pub struct ListSplitsResponse {
 async fn list_splits(
     index_id: IndexId,
     list_split_query: ListSplitsQueryParams,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<ListSplitsResponse> {
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
@@ -398,7 +398,7 @@ struct SplitsForDeletion {
 async fn mark_splits_for_deletion(
     index_id: IndexId,
     splits_for_deletion: SplitsForDeletion,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<()> {
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
@@ -448,7 +448,7 @@ fn mark_splits_for_deletion_handler(
 /// Gets indexes metadata.
 async fn list_indexes_metadata(
     list_indexes_params: ListIndexesQueryParams,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<Vec<IndexMetadata>> {
     let list_indexes_metata_request =
         if let Some(index_id_patterns) = list_indexes_params.index_id_patterns {
@@ -567,7 +567,7 @@ async fn update_index(
     target_index_id: IndexId,
     config_format: ConfigFormat,
     index_config_bytes: Bytes,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> Result<IndexMetadata, IndexServiceError> {
     info!(index_id = %target_index_id, "update-index");
 
@@ -739,7 +739,7 @@ fn get_source_handler(
 async fn get_source(
     index_id: IndexId,
     source_id: SourceId,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<SourceConfig> {
     info!(index_id = %index_id, source_id = %source_id, "get-source");
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
@@ -785,7 +785,7 @@ fn reset_source_checkpoint_handler(
 async fn reset_source_checkpoint(
     index_id: IndexId,
     source_id: SourceId,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<()> {
     let index_metadata_resquest = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
@@ -840,7 +840,7 @@ async fn toggle_source(
     index_id: IndexId,
     source_id: SourceId,
     toggle_source: ToggleSource,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> Result<(), IndexServiceError> {
     info!(index_id = %index_id, source_id = %source_id, enable = toggle_source.enable, "toggle-source");
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
@@ -891,7 +891,7 @@ fn delete_source_handler(
 async fn delete_source(
     index_id: IndexId,
     source_id: SourceId,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> Result<(), IndexServiceError> {
     info!(index_id = %index_id, source_id = %source_id, "delete-source");
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
@@ -1519,7 +1519,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_delete_index_and_source() {
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
         node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
@@ -1785,7 +1785,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_index() {
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
         node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");

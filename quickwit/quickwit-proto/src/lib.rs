@@ -43,8 +43,7 @@ pub mod search;
 pub mod types;
 
 pub use error::{GrpcServiceError, ServiceError, ServiceErrorCode};
-
-use crate::search::ReportSplitsRequest;
+use search::ReportSplitsRequest;
 
 pub mod jaeger {
     pub mod api_v2 {

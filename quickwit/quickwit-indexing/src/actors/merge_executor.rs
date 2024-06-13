@@ -591,7 +591,7 @@ mod tests {
             );
             test_sandbox.add_documents(single_doc).await?;
         }
-        let mut metastore = test_sandbox.metastore();
+        let metastore = test_sandbox.metastore();
         let index_uid = test_sandbox.index_uid();
         let list_splits_request = ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap();
         let split_metas: Vec<SplitMetadata> = metastore
@@ -709,7 +709,7 @@ mod tests {
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
         test_sandbox.add_documents(docs).await?;
-        let mut metastore = test_sandbox.metastore();
+        let metastore = test_sandbox.metastore();
         let index_uid = test_sandbox.index_uid();
         metastore
             .create_delete_task(DeleteQuery {
@@ -832,7 +832,7 @@ mod tests {
             }
         } else {
             assert!(packager_msgs.is_empty());
-            let mut metastore = test_sandbox.metastore();
+            let metastore = test_sandbox.metastore();
             let index_uid = test_sandbox.index_uid();
             let splits = metastore
                 .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())

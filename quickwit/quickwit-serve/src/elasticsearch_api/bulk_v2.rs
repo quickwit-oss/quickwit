@@ -77,7 +77,7 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     default_index_id: Option<IndexId>,
     body: Body,
     bulk_options: ElasticBulkOptions,
-    mut ingest_router: IngestRouterServiceClient,
+    ingest_router: IngestRouterServiceClient,
 ) -> Result<ElasticBulkResponse, ElasticsearchError> {
     let now = Instant::now();
     let mut ingest_request_builder = IngestRequestV2Builder::default();

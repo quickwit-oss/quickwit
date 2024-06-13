@@ -125,7 +125,7 @@ impl IndexService {
                 }
             }
         }
-        let mut metastore = self.metastore.clone();
+        let metastore = self.metastore.clone();
 
         let index_config_json = serde_utils::to_json_str(&index_config)?;
 
@@ -253,7 +253,7 @@ impl IndexService {
             }
         }
 
-        let mut metastore = self.metastore.clone();
+        let metastore = self.metastore.clone();
         let indexes_metadata = metastore
             .list_indexes_metadata(list_indexes_metadatas_request)
             .await?
@@ -525,7 +525,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_index() {
-        let mut metastore = metastore_for_test();
+        let metastore = metastore_for_test();
         let storage_resolver = StorageResolver::for_test();
         let mut index_service = IndexService::new(metastore.clone(), storage_resolver);
         let index_id = "test-index";

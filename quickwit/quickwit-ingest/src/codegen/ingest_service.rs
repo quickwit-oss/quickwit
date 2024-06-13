@@ -182,7 +182,7 @@ impl RpcName for TailRequest {
 }
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
-pub trait IngestService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+pub trait IngestService: std::fmt::Debug + Send + Sync + 'static {
     /// Ingests document in a given queue.
     ///
     /// Upon any kind of error, the client should
@@ -190,7 +190,7 @@ pub trait IngestService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + '
     /// - not retry to get at most once delivery.
     ///
     /// Exactly once delivery is not supported yet.
-    async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse>;
+    async fn ingest(&self, request: IngestRequest) -> crate::Result<IngestResponse>;
     /// Fetches record from a given queue.
     ///
     /// Records are returned in order.
@@ -201,25 +201,20 @@ pub trait IngestService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + '
     /// Fetching does not necessarily return all of the available records.
     /// If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
     /// the response will be partial.
-    async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse>;
+    async fn fetch(&self, request: FetchRequest) -> crate::Result<FetchResponse>;
     /// Returns a batch containing the last records.
     ///
     /// It returns the last documents, from the newest
     /// to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
     /// is exceeded.
-    async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse>;
-}
-dyn_clone::clone_trait_object!(IngestService);
-#[cfg(any(test, feature = "testsuite"))]
-impl Clone for MockIngestService {
-    fn clone(&self) -> Self {
-        MockIngestService::new()
-    }
+    async fn tail(&self, request: TailRequest) -> crate::Result<FetchResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct IngestServiceClient {
-    inner: Box<dyn IngestService>,
+    inner: InnerIngestServiceClient,
 }
+#[derive(Debug, Clone)]
+struct InnerIngestServiceClient(std::sync::Arc<dyn IngestService>);
 impl IngestServiceClient {
     pub fn new<T>(instance: T) -> Self
     where
@@ -231,7 +226,9 @@ impl IngestServiceClient {
             > (),
             "`MockIngestService` must be wrapped in a `MockIngestServiceWrapper`: use `IngestServiceClient::from_mock(mock)` to instantiate the client"
         );
-        Self { inner: Box::new(instance) }
+        Self {
+            inner: InnerIngestServiceClient(std::sync::Arc::new(instance)),
+        }
     }
     pub fn as_grpc_service(
         &self,
@@ -290,7 +287,7 @@ impl IngestServiceClient {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn from_mock(mock: MockIngestService) -> Self {
         let mock_wrapper = mock_ingest_service::MockIngestServiceWrapper {
-            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+            inner: tokio::sync::Mutex::new(mock),
         };
         Self::new(mock_wrapper)
     }
@@ -301,39 +298,39 @@ impl IngestServiceClient {
 }
 #[async_trait::async_trait]
 impl IngestService for IngestServiceClient {
-    async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
-        self.inner.ingest(request).await
+    async fn ingest(&self, request: IngestRequest) -> crate::Result<IngestResponse> {
+        self.inner.0.ingest(request).await
     }
-    async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse> {
-        self.inner.fetch(request).await
+    async fn fetch(&self, request: FetchRequest) -> crate::Result<FetchResponse> {
+        self.inner.0.fetch(request).await
     }
-    async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse> {
-        self.inner.tail(request).await
+    async fn tail(&self, request: TailRequest) -> crate::Result<FetchResponse> {
+        self.inner.0.tail(request).await
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_ingest_service {
     use super::*;
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub struct MockIngestServiceWrapper {
-        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockIngestService>>,
+        pub(super) inner: tokio::sync::Mutex<MockIngestService>,
     }
     #[async_trait::async_trait]
     impl IngestService for MockIngestServiceWrapper {
         async fn ingest(
-            &mut self,
+            &self,
             request: super::IngestRequest,
         ) -> crate::Result<super::IngestResponse> {
             self.inner.lock().await.ingest(request).await
         }
         async fn fetch(
-            &mut self,
+            &self,
             request: super::FetchRequest,
         ) -> crate::Result<super::FetchResponse> {
             self.inner.lock().await.fetch(request).await
         }
         async fn tail(
-            &mut self,
+            &self,
             request: super::TailRequest,
         ) -> crate::Result<super::FetchResponse> {
             self.inner.lock().await.tail(request).await
@@ -343,7 +340,7 @@ pub mod mock_ingest_service {
 pub type BoxFuture<T, E> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
 >;
-impl tower::Service<IngestRequest> for Box<dyn IngestService> {
+impl tower::Service<IngestRequest> for InnerIngestServiceClient {
     type Response = IngestResponse;
     type Error = crate::IngestServiceError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -354,12 +351,12 @@ impl tower::Service<IngestRequest> for Box<dyn IngestService> {
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: IngestRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.ingest(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.ingest(request).await };
         Box::pin(fut)
     }
 }
-impl tower::Service<FetchRequest> for Box<dyn IngestService> {
+impl tower::Service<FetchRequest> for InnerIngestServiceClient {
     type Response = FetchResponse;
     type Error = crate::IngestServiceError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -370,12 +367,12 @@ impl tower::Service<FetchRequest> for Box<dyn IngestService> {
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: FetchRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.fetch(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.fetch(request).await };
         Box::pin(fut)
     }
 }
-impl tower::Service<TailRequest> for Box<dyn IngestService> {
+impl tower::Service<TailRequest> for InnerIngestServiceClient {
     type Response = FetchResponse;
     type Error = crate::IngestServiceError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -386,15 +383,16 @@ impl tower::Service<TailRequest> for Box<dyn IngestService> {
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: TailRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.tail(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.tail(request).await };
         Box::pin(fut)
     }
 }
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct IngestServiceTowerServiceStack {
-    inner: Box<dyn IngestService>,
+    #[allow(dead_code)]
+    inner: InnerIngestServiceClient,
     ingest_svc: quickwit_common::tower::BoxService<
         IngestRequest,
         IngestResponse,
@@ -411,26 +409,16 @@ struct IngestServiceTowerServiceStack {
         crate::IngestServiceError,
     >,
 }
-impl Clone for IngestServiceTowerServiceStack {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            ingest_svc: self.ingest_svc.clone(),
-            fetch_svc: self.fetch_svc.clone(),
-            tail_svc: self.tail_svc.clone(),
-        }
-    }
-}
 #[async_trait::async_trait]
 impl IngestService for IngestServiceTowerServiceStack {
-    async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
-        self.ingest_svc.ready().await?.call(request).await
+    async fn ingest(&self, request: IngestRequest) -> crate::Result<IngestResponse> {
+        self.ingest_svc.clone().ready().await?.call(request).await
     }
-    async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse> {
-        self.fetch_svc.ready().await?.call(request).await
+    async fn fetch(&self, request: FetchRequest) -> crate::Result<FetchResponse> {
+        self.fetch_svc.clone().ready().await?.call(request).await
     }
-    async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse> {
-        self.tail_svc.ready().await?.call(request).await
+    async fn tail(&self, request: TailRequest) -> crate::Result<FetchResponse> {
+        self.tail_svc.clone().ready().await?.call(request).await
     }
 }
 type IngestLayer = quickwit_common::tower::BoxLayer<
@@ -614,7 +602,8 @@ impl IngestServiceTowerLayerStack {
     where
         T: IngestService,
     {
-        self.build_from_boxed(Box::new(instance))
+        let inner_client = InnerIngestServiceClient(std::sync::Arc::new(instance));
+        self.build_from_inner_client(inner_client)
     }
     pub fn build_from_channel(
         self,
@@ -622,23 +611,21 @@ impl IngestServiceTowerLayerStack {
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
     ) -> IngestServiceClient {
-        self.build_from_boxed(
-            Box::new(IngestServiceClient::from_channel(addr, channel, max_message_size)),
-        )
+        let client = IngestServiceClient::from_channel(addr, channel, max_message_size);
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
     }
     pub fn build_from_balance_channel(
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
     ) -> IngestServiceClient {
-        self.build_from_boxed(
-            Box::new(
-                IngestServiceClient::from_balance_channel(
-                    balance_channel,
-                    max_message_size,
-                ),
-            ),
-        )
+        let client = IngestServiceClient::from_balance_channel(
+            balance_channel,
+            max_message_size,
+        );
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -648,22 +635,27 @@ impl IngestServiceTowerLayerStack {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         IngestServiceMailbox<A>: IngestService,
     {
-        self.build_from_boxed(Box::new(IngestServiceMailbox::new(mailbox)))
+        let inner_client = InnerIngestServiceClient(
+            std::sync::Arc::new(IngestServiceMailbox::new(mailbox)),
+        );
+        self.build_from_inner_client(inner_client)
     }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn build_from_mock(self, mock: MockIngestService) -> IngestServiceClient {
-        self.build_from_boxed(Box::new(IngestServiceClient::from_mock(mock)))
+        let client = IngestServiceClient::from_mock(mock);
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
     }
-    fn build_from_boxed(
+    fn build_from_inner_client(
         self,
-        boxed_instance: Box<dyn IngestService>,
+        inner_client: InnerIngestServiceClient,
     ) -> IngestServiceClient {
         let ingest_svc = self
             .ingest_layers
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let fetch_svc = self
@@ -671,7 +663,7 @@ impl IngestServiceTowerLayerStack {
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let tail_svc = self
@@ -679,11 +671,11 @@ impl IngestServiceTowerLayerStack {
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let tower_svc_stack = IngestServiceTowerServiceStack {
-            inner: boxed_instance.clone(),
+            inner: inner_client,
             ingest_svc,
             fetch_svc,
             tail_svc,
@@ -782,14 +774,14 @@ where
             Future = BoxFuture<FetchResponse, crate::IngestServiceError>,
         >,
 {
-    async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
-        self.call(request).await
+    async fn ingest(&self, request: IngestRequest) -> crate::Result<IngestResponse> {
+        self.clone().call(request).await
     }
-    async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse> {
-        self.call(request).await
+    async fn fetch(&self, request: FetchRequest) -> crate::Result<FetchResponse> {
+        self.clone().call(request).await
     }
-    async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse> {
-        self.call(request).await
+    async fn tail(&self, request: TailRequest) -> crate::Result<FetchResponse> {
+        self.clone().call(request).await
     }
 }
 #[derive(Debug, Clone)]
@@ -826,8 +818,9 @@ where
         + Send,
     T::Future: Send,
 {
-    async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
+    async fn ingest(&self, request: IngestRequest) -> crate::Result<IngestResponse> {
         self.inner
+            .clone()
             .ingest(request)
             .await
             .map(|response| response.into_inner())
@@ -836,8 +829,9 @@ where
                 IngestRequest::rpc_name(),
             ))
     }
-    async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse> {
+    async fn fetch(&self, request: FetchRequest) -> crate::Result<FetchResponse> {
         self.inner
+            .clone()
             .fetch(request)
             .await
             .map(|response| response.into_inner())
@@ -846,8 +840,9 @@ where
                 FetchRequest::rpc_name(),
             ))
     }
-    async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse> {
+    async fn tail(&self, request: TailRequest) -> crate::Result<FetchResponse> {
         self.inner
+            .clone()
             .tail(request)
             .await
             .map(|response| response.into_inner())
@@ -859,14 +854,16 @@ where
 }
 #[derive(Debug)]
 pub struct IngestServiceGrpcServerAdapter {
-    inner: Box<dyn IngestService>,
+    inner: InnerIngestServiceClient,
 }
 impl IngestServiceGrpcServerAdapter {
     pub fn new<T>(instance: T) -> Self
     where
         T: IngestService,
     {
-        Self { inner: Box::new(instance) }
+        Self {
+            inner: InnerIngestServiceClient(std::sync::Arc::new(instance)),
+        }
     }
 }
 #[async_trait::async_trait]
@@ -876,7 +873,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
         request: tonic::Request<IngestRequest>,
     ) -> Result<tonic::Response<IngestResponse>, tonic::Status> {
         self.inner
-            .clone()
+            .0
             .ingest(request.into_inner())
             .await
             .map(tonic::Response::new)
@@ -887,7 +884,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
         request: tonic::Request<FetchRequest>,
     ) -> Result<tonic::Response<FetchResponse>, tonic::Status> {
         self.inner
-            .clone()
+            .0
             .fetch(request.into_inner())
             .await
             .map(tonic::Response::new)
@@ -898,7 +895,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
         request: tonic::Request<TailRequest>,
     ) -> Result<tonic::Response<FetchResponse>, tonic::Status> {
         self.inner
-            .clone()
+            .0
             .tail(request.into_inner())
             .await
             .map(tonic::Response::new)

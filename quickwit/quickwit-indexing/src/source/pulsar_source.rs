@@ -493,7 +493,7 @@ mod pulsar_broker_tests {
     }
 
     async fn setup_index(
-        mut metastore: MetastoreServiceClient,
+        metastore: MetastoreServiceClient,
         index_id: &str,
         source_id: &str,
         partition_deltas: &[(&str, Position, Position)],
