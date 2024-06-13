@@ -162,6 +162,14 @@ pub(crate) fn elastic_field_capabilities_filter() -> impl Filter<
         .and(json_or_empty())
 }
 
+#[utoipa::path(get, tag = "Metadata", path = "/_resolve/index/{index}")]
+pub(crate) fn elastic_resolve_index_filter(
+) -> impl Filter<Extract = (Vec<String>,), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_resolve" / "index" / String)
+        .and_then(extract_index_id_patterns)
+        .and(warp::get())
+}
+
 #[utoipa::path(get, tag = "Count", path = "/{index}/_count")]
 pub(crate) fn elastic_index_count_filter(
 ) -> impl Filter<Extract = (Vec<String>, SearchQueryParamsCount, SearchBody), Error = Rejection> + Clone
