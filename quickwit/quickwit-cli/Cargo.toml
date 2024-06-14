@@ -88,6 +88,7 @@ tokio-console = ["console-subscriber", "quickwit-common/named_tasks"]
 release-feature-set = [
   "jemalloc",
   "openssl-support",
+  "pprof",
   "quickwit-indexing/kafka",
   "quickwit-indexing/kinesis",
   "quickwit-indexing/pulsar",
@@ -100,6 +101,7 @@ release-feature-set = [
 release-feature-vendored-set = [
   "jemalloc",
   "openssl-support",
+  "pprof",
   "quickwit-indexing/kinesis",
   "quickwit-indexing/pulsar",
   "quickwit-indexing/vrl",
