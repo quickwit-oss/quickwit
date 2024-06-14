@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use once_cell::sync::Lazy;
@@ -450,3 +451,17 @@ impl InFlightDataGauges {
 }
 
 pub static MEMORY_METRICS: Lazy<MemoryMetrics> = Lazy::new(MemoryMetrics::default);
+
+static PER_INDEX_METRICS_ENABLED: AtomicBool = AtomicBool::new(true);
+
+pub fn disable_per_index_metrics() {
+    PER_INDEX_METRICS_ENABLED.store(false, Ordering::Relaxed);
+}
+
+pub fn index_label<'a>(index_name: &'a str) -> &'a str {
+    if PER_INDEX_METRICS_ENABLED.load(Ordering::Relaxed) {
+        index_name
+    } else {
+        "<any>"
+    }
+}

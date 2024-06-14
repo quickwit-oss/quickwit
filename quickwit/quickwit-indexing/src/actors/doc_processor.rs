@@ -44,6 +44,7 @@ use tokio::runtime::Handle;
 #[cfg(feature = "vrl")]
 use super::vrl_processing::*;
 use crate::actors::Indexer;
+use crate::metrics::DocProcessorMetrics;
 use crate::models::{
     NewPublishLock, NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch,
 };
@@ -291,10 +292,23 @@ pub struct DocProcessorCounters {
     ///
     /// Includes both valid and invalid documents.
     pub num_bytes_total: AtomicU64,
+
+    #[serde(skip_serializing)]
+    pub doc_processor_metrics_bytes: DocProcessorMetrics,
+    #[serde(skip_serializing)]
+    pub doc_processor_metrics_docs: DocProcessorMetrics,
 }
 
 impl DocProcessorCounters {
     pub fn new(index_id: IndexId, source_id: SourceId) -> Self {
+        let doc_processor_metrics_bytes = DocProcessorMetrics::from_counters(
+            index_id.as_str(),
+            &crate::metrics::INDEXER_METRICS.processed_bytes,
+        );
+        let doc_processor_metrics_docs = DocProcessorMetrics::from_counters(
+            index_id.as_str(),
+            &crate::metrics::INDEXER_METRICS.processed_docs_total,
+        );
         Self {
             index_id,
             source_id,
@@ -303,6 +317,9 @@ impl DocProcessorCounters {
             num_oltp_parse_errors: Default::default(),
             num_valid_docs: Default::default(),
             num_bytes_total: Default::default(),
+
+            doc_processor_metrics_bytes,
+            doc_processor_metrics_docs,
         }
     }
 
@@ -327,47 +344,43 @@ impl DocProcessorCounters {
         self.num_valid_docs.fetch_add(1, Ordering::Relaxed);
         self.num_bytes_total.fetch_add(num_bytes, Ordering::Relaxed);
 
-        crate::metrics::INDEXER_METRICS
-            .processed_docs_total
-            .with_label_values([&self.index_id, "valid"])
-            .inc();
-        crate::metrics::INDEXER_METRICS
-            .processed_bytes
-            .with_label_values([&self.index_id, "valid"])
-            .inc_by(num_bytes);
+        self.doc_processor_metrics_docs.valid.inc();
+        self.doc_processor_metrics_bytes.valid.inc_by(num_bytes);
     }
 
     pub fn record_error(&self, error: DocProcessorError, num_bytes: u64) {
-        let label = match error {
+        self.num_bytes_total.fetch_add(num_bytes, Ordering::Relaxed);
+        match error {
             DocProcessorError::DocMapperParsing(_) => {
                 self.num_doc_parse_errors.fetch_add(1, Ordering::Relaxed);
-                "doc_mapper_error"
+                self.doc_processor_metrics_bytes
+                    .doc_mapper_error
+                    .inc_by(num_bytes);
+                self.doc_processor_metrics_docs.doc_mapper_error.inc();
             }
             DocProcessorError::JsonParsing(_) => {
                 self.num_doc_parse_errors.fetch_add(1, Ordering::Relaxed);
-                "json_parse_error"
+                self.doc_processor_metrics_bytes
+                    .json_parse_error
+                    .inc_by(num_bytes);
+                self.doc_processor_metrics_docs.json_parse_error.inc();
             }
             DocProcessorError::OltpLogsParsing(_) | DocProcessorError::OltpTracesParsing(_) => {
                 self.num_oltp_parse_errors.fetch_add(1, Ordering::Relaxed);
-                "otlp_parse_error"
+                self.doc_processor_metrics_bytes
+                    .otlp_parse_error
+                    .inc_by(num_bytes);
+                self.doc_processor_metrics_docs.otlp_parse_error.inc();
             }
             #[cfg(feature = "vrl")]
             DocProcessorError::Transform(_) => {
                 self.num_transform_errors.fetch_add(1, Ordering::Relaxed);
-                "transform_error"
+                self.doc_processor_metrics_bytes
+                    .transform_error
+                    .inc_by(num_bytes);
+                self.doc_processor_metrics_docs.transform_error.inc();
             }
         };
-        crate::metrics::INDEXER_METRICS
-            .processed_docs_total
-            .with_label_values([&self.index_id, label])
-            .inc();
-
-        self.num_bytes_total.fetch_add(num_bytes, Ordering::Relaxed);
-
-        crate::metrics::INDEXER_METRICS
-            .processed_bytes
-            .with_label_values([&self.index_id, label])
-            .inc_by(num_bytes);
     }
 }
 
@@ -395,7 +408,7 @@ impl DocProcessor {
         if cfg!(not(feature = "vrl")) && transform_config_opt.is_some() {
             bail!("VRL is not enabled: please recompile with the `vrl` feature")
         }
-        let doc_processor = Self {
+        Ok(DocProcessor {
             doc_mapper,
             indexer_mailbox,
             timestamp_field_opt,
@@ -406,8 +419,7 @@ impl DocProcessor {
                 .map(VrlProgram::try_from_transform_config)
                 .transpose()?,
             input_format,
-        };
-        Ok(doc_processor)
+        })
     }
 
     // Extract a timestamp from a tantivy document.
