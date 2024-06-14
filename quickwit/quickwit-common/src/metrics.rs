@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use once_cell::sync::Lazy;
@@ -450,18 +449,16 @@ impl InFlightDataGauges {
     }
 }
 
-pub static MEMORY_METRICS: Lazy<MemoryMetrics> = Lazy::new(MemoryMetrics::default);
-
-static PER_INDEX_METRICS_ENABLED: AtomicBool = AtomicBool::new(true);
-
-pub fn disable_per_index_metrics() {
-    PER_INDEX_METRICS_ENABLED.store(false, Ordering::Relaxed);
-}
-
-pub fn index_label<'a>(index_name: &'a str) -> &'a str {
-    if PER_INDEX_METRICS_ENABLED.load(Ordering::Relaxed) {
+/// This function return `index_name` or projects it to `<any>` if per-index metrics are disabled.
+pub fn index_label(index_name: &str) -> &str {
+    static PER_INDEX_METRICS_ENABLED: OnceLock<bool> = OnceLock::new();
+    let per_index_metrics_enabled: bool = *PER_INDEX_METRICS_ENABLED
+        .get_or_init(|| crate::get_from_env("QW_PER_INDEX_METRICS_ENABLED", true));
+    if per_index_metrics_enabled {
         index_name
     } else {
-        "<any>"
+        "__any__"
     }
 }
+
+pub static MEMORY_METRICS: Lazy<MemoryMetrics> = Lazy::new(MemoryMetrics::default);

@@ -19,30 +19,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter_vec, new_gauge, new_gauge_vec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec,
+    new_counter_vec, new_gauge, new_gauge_vec, IntCounterVec, IntGauge, IntGaugeVec,
 };
-
-#[derive(Debug)]
-pub struct DocProcessorMetrics {
-    pub valid: IntCounter,
-    pub doc_mapper_error: IntCounter,
-    pub json_parse_error: IntCounter,
-    pub otlp_parse_error: IntCounter,
-    pub transform_error: IntCounter,
-}
-
-impl DocProcessorMetrics {
-    pub fn from_counters(index_id: &str, counter_vec: &IntCounterVec<2>) -> DocProcessorMetrics {
-        let index_label = quickwit_common::metrics::index_label(index_id);
-        DocProcessorMetrics {
-            valid: counter_vec.with_label_values([index_label, "valid"]),
-            doc_mapper_error: counter_vec.with_label_values([index_label, "doc_mapper_error"]),
-            json_parse_error: counter_vec.with_label_values([index_label, "json_parse_error"]),
-            otlp_parse_error: counter_vec.with_label_values([index_label, "otlp_parse_error"]),
-            transform_error: counter_vec.with_label_values([index_label, "transform_error"]),
-        }
-    }
-}
 
 pub struct IndexerMetrics {
     pub processed_docs_total: IntCounterVec<2>,
