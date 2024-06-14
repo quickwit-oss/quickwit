@@ -436,9 +436,7 @@ impl ShardTable {
                 0
             };
         crate::metrics::CONTROL_PLANE_METRICS
-            .open_shards_total
-            .with_label_values([source_uid.index_uid.index_id.as_str()])
-            .set(num_open_shards as i64);
+            .update_open_shard(&source_uid.index_uid, num_open_shards as i64);
     }
 
     pub fn update_shards(

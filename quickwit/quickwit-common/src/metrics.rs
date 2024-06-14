@@ -59,6 +59,11 @@ impl<const N: usize> IntGaugeVec<N> {
     pub fn with_label_values(&self, label_values: [&str; N]) -> IntGauge {
         self.underlying.with_label_values(&label_values)
     }
+
+    pub fn remove_label_values(&self, label_values: [&str; N]) {
+        // we statically guarantee len of label_values is correct
+        let _ = self.underlying.remove_label_values(&label_values);
+    }
 }
 
 pub fn register_info(name: &'static str, help: &'static str, kvs: BTreeMap<&'static str, String>) {
