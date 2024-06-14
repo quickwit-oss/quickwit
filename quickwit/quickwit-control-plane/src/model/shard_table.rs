@@ -202,6 +202,7 @@ impl ShardTable {
         }
         self.table_entries
             .retain(|source_uid, _| source_uid.index_uid.index_id != index_id);
+        crate::metrics::CONTROL_PLANE_METRICS.remove_index(index_id);
         self.check_invariant();
     }
 
@@ -435,8 +436,10 @@ impl ShardTable {
             } else {
                 0
             };
-        crate::metrics::CONTROL_PLANE_METRICS
-            .update_open_shard(&source_uid.index_uid, num_open_shards as i64);
+        crate::metrics::CONTROL_PLANE_METRICS.update_open_shard(
+            source_uid.index_uid.index_id.as_str(),
+            num_open_shards as i64,
+        );
     }
 
     pub fn update_shards(

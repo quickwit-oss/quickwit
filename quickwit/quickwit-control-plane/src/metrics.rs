@@ -25,7 +25,6 @@ use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     new_counter, new_gauge, new_gauge_vec, IntCounter, IntGauge, IntGaugeVec,
 };
-use quickwit_proto::types::IndexUid;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ShardLocalityMetrics {
@@ -44,8 +43,8 @@ pub struct ControlPlaneMetrics {
     // this is always modified while index_to_group is held
     open_shards_total: IntGaugeVec<1>,
     // two phase locking with no deadlock: we always acquire locks in the order of the fields.
-    open_shards_per_index: Mutex<BTreeMap<IndexUid, i64>>,
-    index_to_group: Mutex<BTreeMap<IndexUid, String>>,
+    open_shards_per_index: Mutex<BTreeMap<String, i64>>,
+    index_to_group: Mutex<BTreeMap<String, String>>,
 }
 
 impl ControlPlaneMetrics {
@@ -56,37 +55,36 @@ impl ControlPlaneMetrics {
             .set(shard_locality_metrics.num_remote_shards as i64);
     }
 
-    pub(crate) fn update_open_shard(&self, index_uid: &IndexUid, new_value: i64) {
+    pub(crate) fn update_open_shard(&self, index_id: &str, new_value: i64) {
         let mut open_shards_per_index_lock = self.open_shards_per_index.lock().unwrap();
-        let delta = if let Some(old_value) = open_shards_per_index_lock.get_mut(index_uid) {
+        let delta = if let Some(old_value) = open_shards_per_index_lock.get_mut(index_id) {
             let old_value_kept = *old_value;
             *old_value = new_value;
             new_value - old_value_kept
         } else {
-            open_shards_per_index_lock.insert(index_uid.clone(), new_value);
+            open_shards_per_index_lock.insert(index_id.to_string(), new_value);
             new_value
         };
         let index_to_group_lock = self.index_to_group.lock().unwrap();
         drop(open_shards_per_index_lock);
-        let label = if let Some(group_name) = index_to_group_lock.get(index_uid) {
+        let label = if let Some(group_name) = index_to_group_lock.get(index_id) {
             group_name
         } else {
-            index_uid.index_id.as_str()
+            index_id
         };
         self.open_shards_total.with_label_values([label]).add(delta);
         drop(index_to_group_lock);
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn remove_index(&self, index_uid: &IndexUid) {
+    pub(crate) fn remove_index(&self, index_id: &str) {
         let mut open_shards_per_index_lock = self.open_shards_per_index.lock().unwrap();
-        let previous_value = open_shards_per_index_lock.remove(index_uid).unwrap_or(0);
+        let previous_value = open_shards_per_index_lock.remove(index_id).unwrap_or(0);
         let mut index_to_group_lock = self.index_to_group.lock().unwrap();
         drop(open_shards_per_index_lock);
-        let label = if let Some(group_name) = index_to_group_lock.remove(index_uid) {
+        let label = if let Some(group_name) = index_to_group_lock.remove(index_id) {
             Cow::Owned(group_name)
         } else {
-            Cow::Borrowed(index_uid.index_id.as_str())
+            Cow::Borrowed(index_id)
         };
         // if we used the index_id, or the group now has zero shards, we assume the group is empty
         // and can be deleted
@@ -101,9 +99,9 @@ impl ControlPlaneMetrics {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn add_index_uid_to_group(&self, index_uid: &IndexUid, group: String) {
+    pub(crate) fn add_index_id_to_group(&self, index_id: &str, group: String) {
         let open_shards_per_index_lock = self.open_shards_per_index.lock().unwrap();
-        let current_value = *open_shards_per_index_lock.get(index_uid).unwrap_or(&0);
+        let current_value = *open_shards_per_index_lock.get(index_id).unwrap_or(&0);
 
         let mut index_to_group_lock = self.index_to_group.lock().unwrap();
         drop(open_shards_per_index_lock);
@@ -115,10 +113,10 @@ impl ControlPlaneMetrics {
 
         // then substract from the previous group
         let old_label =
-            if let Some(group_name) = index_to_group_lock.insert(index_uid.clone(), group) {
+            if let Some(group_name) = index_to_group_lock.insert(index_id.to_string(), group) {
                 Cow::Owned(group_name)
             } else {
-                Cow::Borrowed(index_uid.index_id.as_str())
+                Cow::Borrowed(index_id)
             };
         if self.open_shards_total.with_label_values([&old_label]).get() <= current_value {
             self.open_shards_total.remove_label_values([&old_label]);
