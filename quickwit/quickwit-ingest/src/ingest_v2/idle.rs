@@ -63,10 +63,11 @@ impl CloseIdleShardsTask {
             let Some(state) = self.weak_state.upgrade() else {
                 return;
             };
-            let mut state_guard =
-                with_lock_metrics!(state.lock_partially(), "close_idle_shards", "write")
-                    .await
-                    .expect("ingester should be ready");
+            let Ok(mut state_guard) =
+                with_lock_metrics!(state.lock_partially(), "close_idle_shards", "write").await
+            else {
+                return;
+            };
 
             let now = Instant::now();
 
