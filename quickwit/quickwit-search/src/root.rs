@@ -1618,6 +1618,7 @@ mod tests {
             indexing_settings,
             search_settings,
             retention_policy_opt: Default::default(),
+            metrics_group: None,
         })
     }
 
@@ -1790,6 +1791,7 @@ mod tests {
             indexing_settings,
             search_settings,
             retention_policy_opt: Default::default(),
+            metrics_group: None,
         })
     }
 

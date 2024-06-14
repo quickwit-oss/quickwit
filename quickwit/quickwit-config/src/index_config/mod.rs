@@ -253,6 +253,7 @@ pub struct IndexConfig {
     pub indexing_settings: IndexingSettings,
     pub search_settings: SearchSettings,
     pub retention_policy_opt: Option<RetentionPolicy>,
+    pub metrics_group: Option<String>,
 }
 
 impl IndexConfig {
@@ -338,6 +339,7 @@ impl IndexConfig {
             indexing_settings,
             search_settings,
             retention_policy_opt: Default::default(),
+            metrics_group: None,
         }
     }
 }
@@ -433,6 +435,7 @@ impl TestableForRegression for IndexConfig {
             indexing_settings,
             retention_policy_opt: retention_policy,
             search_settings,
+            metrics_group: None,
         }
     }
 

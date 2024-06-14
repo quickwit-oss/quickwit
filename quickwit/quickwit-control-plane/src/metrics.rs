@@ -99,25 +99,37 @@ impl ControlPlaneMetrics {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn add_index_id_to_group(&self, index_id: &str, group: String) {
+    pub(crate) fn add_index_id_to_group(&self, index_id: &str, group: Option<String>) {
         let open_shards_per_index_lock = self.open_shards_per_index.lock().unwrap();
         let current_value = *open_shards_per_index_lock.get(index_id).unwrap_or(&0);
+        let new_label = group.as_deref().unwrap_or(index_id);
 
         let mut index_to_group_lock = self.index_to_group.lock().unwrap();
         drop(open_shards_per_index_lock);
 
         // set the new value before to save one clone
+        // if it happends that new_label == old_label, we will successively add and remove as much.
+        // Transiently the value is double what it should be (which is observable as one doesn't
+        // need a lock to read the metrics), but the after this function returns, the result is
+        // correct
         self.open_shards_total
-            .with_label_values([&group])
+            .with_label_values([new_label])
             .add(current_value);
 
-        // then substract from the previous group
-        let old_label =
-            if let Some(group_name) = index_to_group_lock.insert(index_id.to_string(), group) {
-                Cow::Owned(group_name)
-            } else {
-                Cow::Borrowed(index_id)
-            };
+        // replace/remove the previous group
+        let old_label_opt = if let Some(group) = group {
+            index_to_group_lock.insert(index_id.to_string(), group)
+        } else {
+            index_to_group_lock.remove(index_id)
+        };
+        // get the old label
+        let old_label = if let Some(group_name) = old_label_opt {
+            Cow::Owned(group_name)
+        } else {
+            Cow::Borrowed(index_id)
+        };
+        // remove the old metric if it looks like it became obsolet, otherwise update it
+        // accordingly
         if self.open_shards_total.with_label_values([&old_label]).get() <= current_value {
             self.open_shards_total.remove_label_values([&old_label]);
         } else {

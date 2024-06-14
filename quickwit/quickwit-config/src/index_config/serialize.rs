@@ -134,6 +134,7 @@ impl IndexConfigForSerialization {
             indexing_settings: self.indexing_settings,
             search_settings: self.search_settings,
             retention_policy_opt: self.retention_policy_opt,
+            metrics_group: self.metrics_group,
         };
         validate_index_config(
             &index_config.doc_mapping,
@@ -177,6 +178,8 @@ pub struct IndexConfigV0_8 {
     #[serde(rename = "retention")]
     #[serde(default)]
     pub retention_policy_opt: Option<RetentionPolicy>,
+    #[serde(default)]
+    pub metrics_group: Option<String>,
 }
 
 impl From<IndexConfig> for IndexConfigV0_8 {
@@ -188,6 +191,7 @@ impl From<IndexConfig> for IndexConfigV0_8 {
             indexing_settings: index_config.indexing_settings,
             search_settings: index_config.search_settings,
             retention_policy_opt: index_config.retention_policy_opt,
+            metrics_group: index_config.metrics_group,
         }
     }
 }

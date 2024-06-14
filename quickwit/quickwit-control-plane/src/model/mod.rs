@@ -183,6 +183,11 @@ impl ControlPlaneModel {
         let index_uid = index_metadata.index_uid.clone();
         let index_id = index_uid.index_id.clone();
 
+        crate::metrics::CONTROL_PLANE_METRICS.add_index_id_to_group(
+            index_id.as_str(),
+            index_metadata.index_config.metrics_group.clone(),
+        );
+
         self.index_uid_table.insert(index_id, index_uid.clone());
 
         for (source_id, source_config) in &index_metadata.sources {

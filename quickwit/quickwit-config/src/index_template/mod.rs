@@ -54,6 +54,8 @@ pub struct IndexTemplate {
     #[serde(rename = "retention")]
     #[serde(default)]
     pub retention_policy_opt: Option<RetentionPolicy>,
+    #[serde(default)]
+    pub metrics_group: Option<String>,
 }
 
 impl IndexTemplate {
@@ -75,6 +77,7 @@ impl IndexTemplate {
             indexing_settings: self.indexing_settings.clone(),
             search_settings: self.search_settings.clone(),
             retention_policy_opt: self.retention_policy_opt.clone(),
+            metrics_group: self.metrics_group.clone(),
         };
         Ok(index_config)
     }
@@ -131,6 +134,7 @@ impl IndexTemplate {
             indexing_settings: IndexingSettings::default(),
             search_settings: SearchSettings::default(),
             retention_policy_opt: None,
+            metrics_group: None,
         }
     }
 }
@@ -172,6 +176,7 @@ impl TestableForRegression for IndexTemplate {
                 retention_period: "42 days".to_string(),
                 evaluation_schedule: "daily".to_string(),
             }),
+            metrics_group: None,
         }
     }
 

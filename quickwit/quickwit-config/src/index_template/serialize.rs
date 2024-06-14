@@ -52,6 +52,8 @@ pub struct IndexTemplateV0_8 {
     pub search_settings: SearchSettings,
     #[serde(default)]
     pub retention: Option<RetentionPolicy>,
+    #[serde(default)]
+    pub metrics_group: Option<String>,
 }
 
 impl From<VersionedIndexTemplate> for IndexTemplate {
@@ -80,6 +82,7 @@ impl From<IndexTemplateV0_8> for IndexTemplate {
             indexing_settings: index_template_v0_8.indexing_settings,
             search_settings: index_template_v0_8.search_settings,
             retention_policy_opt: index_template_v0_8.retention,
+            metrics_group: index_template_v0_8.metrics_group,
         }
     }
 }
@@ -96,6 +99,7 @@ impl From<IndexTemplate> for IndexTemplateV0_8 {
             indexing_settings: index_template.indexing_settings,
             search_settings: index_template.search_settings,
             retention: index_template.retention_policy_opt,
+            metrics_group: index_template.metrics_group,
         }
     }
 }
