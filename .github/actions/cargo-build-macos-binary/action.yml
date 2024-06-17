@@ -35,6 +35,11 @@ runs:
       run: rustup target add aarch64-apple-darwin
       shell: bash
       working-directory: ./quickwit
+    - name: Add target x86_64-apple-darwin
+      if: "${{ inputs.target == 'x86_64-apple-darwin' }}"
+      run: rustup target add x86_64-apple-darwin
+      shell: bash
+      working-directory: ./quickwit
     - name: Retrieve and export commit date, hash, and tags
       run: |
           echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
