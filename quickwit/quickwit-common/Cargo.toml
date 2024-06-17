@@ -37,7 +37,7 @@ siphasher = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-metrics ={ workspace = true }
+tokio-metrics = { workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
@@ -51,3 +51,4 @@ named_tasks = ["tokio/tracing"]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 proptest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
