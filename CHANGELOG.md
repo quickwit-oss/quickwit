@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --->
 
+# [0.8.2]
+
+### Fixed
+
+- Reduce dead node grace period in order to reduce gossip state size (00b22bf)
+
 # [0.8.1]
 
 ### Added
