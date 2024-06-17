@@ -449,11 +449,11 @@ impl InFlightDataGauges {
     }
 }
 
-/// This function return `index_name` or projects it to `<any>` if per-index metrics are disabled.
+/// This function returns `index_name` or projects it to `<any>` if per-index metrics are disabled.
 pub fn index_label(index_name: &str) -> &str {
     static PER_INDEX_METRICS_ENABLED: OnceLock<bool> = OnceLock::new();
     let per_index_metrics_enabled: bool = *PER_INDEX_METRICS_ENABLED
-        .get_or_init(|| crate::get_from_env("QW_PER_INDEX_METRICS_ENABLED", true));
+        .get_or_init(|| !crate::get_bool_from_env("QW_DISABLE_PER_INDEX_METRICS", false));
     if per_index_metrics_enabled {
         index_name
     } else {
