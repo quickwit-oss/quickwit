@@ -19,6 +19,7 @@
 
 use elasticsearch_dsl::search::ErrorCause;
 use hyper::StatusCode;
+use quickwit_common::{rate_limited_debug, rate_limited_error};
 use quickwit_index_management::IndexServiceError;
 use quickwit_ingest::IngestServiceError;
 use quickwit_proto::ingest::IngestV2Error;
@@ -39,6 +40,11 @@ impl ElasticsearchError {
         reason: String,
         exception_opt: Option<ErrorCauseException>,
     ) -> Self {
+        if status.is_server_error() {
+            rate_limited_error!(limit_per_min=10, status=%status, "http request failed with internal server error: {}", reason);
+        } else if !status.is_success() {
+            rate_limited_debug!(limit_per_min=10, status=%status, "http request failed: {}", reason);
+        }
         ElasticsearchError {
             status,
             error: ErrorCause {
