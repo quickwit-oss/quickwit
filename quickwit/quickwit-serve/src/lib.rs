@@ -71,9 +71,9 @@ use quickwit_common::rate_limiter::RateLimiterSettings;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
-    BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
-    EventListenerLayer, GrpcMetricsLayer, LoadShedLayer, RateLimitLayer, RetryLayer, RetryPolicy,
-    SmaRateEstimator,
+    BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
+    ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
+    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator,
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
@@ -100,8 +100,10 @@ use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::{
     IngesterService, IngesterServiceClient, IngesterServiceTowerLayerStack, IngesterStatus,
+    PersistFailureReason, PersistResponse,
 };
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
+use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::metastore::{
     EntityKind, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
     MetastoreServiceClient,
@@ -786,6 +788,32 @@ pub async fn serve_quickwit(
     Ok(actor_exit_statuses)
 }
 
+#[derive(Clone, Copy)]
+struct PersistCircuitBreakerEvaluator;
+
+impl CircuitBreakerEvaluator for PersistCircuitBreakerEvaluator {
+    type Response = PersistResponse;
+
+    type Error = IngestV2Error;
+
+    fn is_circuit_breaker_error(&self, output: &Result<Self::Response, IngestV2Error>) -> bool {
+        let Ok(persist_response) = output.as_ref() else {
+            return false;
+        };
+        for persist_failure in &persist_response.failures {
+            // This is the error we return when the WAL is full.
+            if persist_failure.reason() == PersistFailureReason::ResourceExhausted {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn make_circuit_breaker_output(&self) -> IngestV2Error {
+        IngestV2Error::TooManyRequests
+    }
+}
+
 /// Stack of layers to use on the server side of the ingester service.
 fn ingester_service_layer_stack(
     layer_stack: IngesterServiceTowerLayerStack,
@@ -793,6 +821,10 @@ fn ingester_service_layer_stack(
     layer_stack
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
         .stack_persist_layer(quickwit_common::tower::OneTaskPerCallLayer)
+        .stack_persist_layer(
+            // "3" may seem a little bit low, but we only consider error caused by a full WAL.
+            PersistCircuitBreakerEvaluator.make_layer(3, Duration::from_millis(500)),
+        )
         .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_init_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_retain_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
