@@ -1,6 +1,7 @@
 name: Build and publish release packages
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*"
