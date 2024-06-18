@@ -137,9 +137,7 @@ export function AggregationKind(props: SearchComponentProps) {
           break;
         }
         case "rm": {
-          console.log("av", newAggregations);
           newAggregations.splice(pos, 1);
-          console.log("cesar", newAggregations);
         }
       }
       updateAggregationProp(newAggregations);
@@ -266,7 +264,7 @@ export function AggregationKind(props: SearchComponentProps) {
               variant="standard"
               label="Field"
               onChange={(e) => handleTermFieldChange(pos, e)}
-              sx={{ "margin-left": "10px" }}
+              sx={{ "marginLeft": "10px" }}
             />
           </FormControl>
           <FormControl variant="standard">
@@ -276,7 +274,7 @@ export function AggregationKind(props: SearchComponentProps) {
               type="number"
               onChange={(e) => handleTermCountChange(pos, e)}
               value={agg.term.size}
-              sx={{ "margin-left": "10px" }}
+              sx={{ "marginLeft": "10px" }}
             />
           </FormControl>
         </>)
