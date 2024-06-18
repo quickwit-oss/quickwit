@@ -153,17 +153,7 @@ export class Client {
     }
     if (request.aggregationConfig.histogram && timestamp_field) {
       const histogram = request.aggregationConfig.histogram;
-      let auto;
-      if (request.endTimestamp == null || request.startTimestamp == null) {
-        auto = "1d";
-      } else if ((request.endTimestamp - request.startTimestamp) > 7 * 24 * 60 * 60) {
-        auto = "1d";
-      } else if ((request.endTimestamp - request.startTimestamp) > 24 * 60 * 60) {
-        auto = "10m"
-      } else {
-        auto = "1m"
-      }
-      const interval = histogram.interval !== "auto" ? histogram.interval : auto;
+      const interval = histogram.interval
       let extended_bounds;
       if (request.startTimestamp && request.endTimestamp) {
         extended_bounds = {

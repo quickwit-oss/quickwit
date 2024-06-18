@@ -101,7 +101,7 @@ export function AggregationKind(props: SearchComponentProps) {
   props;
   const defaultAgg  = {
     histogram: {
-      interval: "auto",
+      interval: "1d",
     }
   };
   const [aggregations, setAggregations] = useState<({term: TermAgg} | {histogram: HistogramAgg})[]>(
@@ -122,7 +122,7 @@ export function AggregationKind(props: SearchComponentProps) {
         case "histogram": {
           newAggregations[pos] = {
             histogram: {
-              interval: "auto",
+              interval: "1d",
             }
           };
           break;
@@ -249,7 +249,6 @@ export function AggregationKind(props: SearchComponentProps) {
             onChange={(e) => handleHistogramChange(pos, e)}
             sx={{ "marginLeft": "10px", "minHeight": "44px" }}
           >
-            <MenuItem value="auto">Auto</MenuItem>
             <MenuItem value="10s">10 seconds</MenuItem>
             <MenuItem value="1m">1 minute</MenuItem>
             <MenuItem value="5m">5 minutes</MenuItem>
