@@ -171,6 +171,20 @@ impl DocMapping {
     pub fn default_max_num_partitions() -> NonZeroU32 {
         NonZeroU32::new(200).unwrap()
     }
+
+    /// Returns whether the `other` doc mapping is equal to `self` leaving their respective doc
+    /// mapping UIDs out of the comparison.
+    pub fn eq_ignore_doc_mapping_uid(&self, other: &Self) -> bool {
+        let doc_mapping_uid = DocMappingUid::default();
+
+        let mut left = self.clone();
+        left.doc_mapping_uid = doc_mapping_uid;
+
+        let mut right = other.clone();
+        right.doc_mapping_uid = doc_mapping_uid;
+
+        left == right
+    }
 }
 
 #[cfg(test)]

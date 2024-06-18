@@ -80,7 +80,7 @@ pub fn load_index_config_update(
     let current_index_parent_dir = &current_index_config
         .index_uri
         .parent()
-        .context("Unexpected `index_uri` format on current configuration")?;
+        .expect("index URI should have a parent");
     let new_index_config = load_index_config_from_user_config(
         config_format,
         index_config_bytes,
@@ -99,7 +99,9 @@ pub fn load_index_config_update(
         new_index_config.index_uri
     );
     ensure!(
-        current_index_config.doc_mapping == new_index_config.doc_mapping,
+        current_index_config
+            .doc_mapping
+            .eq_ignore_doc_mapping_uid(&new_index_config.doc_mapping),
         "`doc_mapping` cannot be updated"
     );
     Ok(new_index_config)
