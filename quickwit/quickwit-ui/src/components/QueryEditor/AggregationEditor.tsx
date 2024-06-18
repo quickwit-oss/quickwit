@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { useRef, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { SearchComponentProps } from '../../utils/SearchComponentProps';
 import { TermAgg, HistogramAgg } from '../../utils/models';
 import { Box } from '@mui/material';
@@ -107,13 +107,23 @@ export function AggregationKind(props: SearchComponentProps) {
   const [aggregations, setAggregations] = useState<({term: TermAgg} | {histogram: HistogramAgg})[]>(
           [defaultAgg]);
 
+  useEffect(() => {
+    // do the initial filling of parameters
+    const aggregationConfig = props.searchRequest.aggregationConfig;
+    if (aggregationConfig.histogram === null && aggregationConfig.term === null) {
+      const initialAggregation = Object.assign({}, ...aggregations);
+      const initialSearchRequest = {...props.searchRequest, aggregationConfig: initialAggregation};
+      props.onSearchRequestUpdate(initialSearchRequest);
+    }
+  }, []); // Empty dependency array means this runs once after mount
+
   const updateAggregationProp = (newAggregations: ({term: TermAgg} | {histogram: HistogramAgg})[]) => {
     const metric = props.searchRequest.aggregationConfig.metric;
     const updatedAggregation = Object.assign({}, {metric: metric}, ...newAggregations);
     const updatedSearchRequest = {...props.searchRequest, aggregationConfig: updatedAggregation};
     props.onSearchRequestUpdate(updatedSearchRequest);
   };
-
+  
   const handleAggregationChange = (pos: number, event: SelectChangeEvent) => {
     const value = event.target.value;
     setAggregations((agg) => {
@@ -151,6 +161,7 @@ export function AggregationKind(props: SearchComponentProps) {
       const newAggregations = [...agg];
       newAggregations[pos] = {histogram: {interval:value}};
       updateAggregationProp(newAggregations);
+      props.runSearch(props.searchRequest)
       return newAggregations;
     });
   }
@@ -227,14 +238,6 @@ export function AggregationKind(props: SearchComponentProps) {
       ))
     }
     return options;
-  }
-
-  // do the initial filling of parameters
-  const aggregationConfig = props.searchRequest.aggregationConfig;
-  if (aggregationConfig.histogram === null && aggregationConfig.term === null) {
-    const initialAggregation = Object.assign({}, ...aggregations);
-    const initialSearchRequest = {...props.searchRequest, aggregationConfig: initialAggregation};
-    props.onSearchRequestUpdate(initialSearchRequest);
   }
 
   const drawAdditional = (pos: number, aggs: ({term: TermAgg} | {histogram: HistogramAgg})[]) => {

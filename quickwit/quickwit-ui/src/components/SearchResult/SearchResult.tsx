@@ -72,10 +72,8 @@ export default function SearchResult(props: SearchResultProps) {
       if (props.searchResponse == null || props.index == null) {
         return null;
       } else if (props.searchResponse.aggregations === undefined) {
-        console.log("result table");
         return (<ResultTable searchResponse={props.searchResponse} index={props.index} />);
       } else {
-        console.log("aggregation result");
         return (<AggregationResult searchResponse={props.searchResponse} />);
       }
     },
