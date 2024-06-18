@@ -19,21 +19,9 @@
 
 import { Cluster, Index, IndexMetadata, QuickwitBuildInfo, SearchRequest, SearchResponse, SplitMetadata } from "../utils/models";
 import { serializeSortByField } from "../utils/urls";
+import { BaseApiClient } from "./base";
 
-export class Client {
-  private readonly _host: string
-
-  constructor(host?: string) {
-    if (!host) {
-      this._host = window.location.origin
-    } else {
-      this._host = host
-    }
-  }
-
-  apiRoot(): string {
-    return this._host + "/api/v1/";
-  }
+export class Client extends BaseApiClient {
 
   async search(request: SearchRequest): Promise<SearchResponse> {
     // TODO: improve validation of request.
@@ -41,20 +29,20 @@ export class Client {
       throw Error("Search request must have and index id.")
     }
     const url = this.buildSearchUrl(request);
-    return this.fetch(url.toString(), this.defaultGetRequestParams());
+    return this.fetch(url.toString(), this.getDefaultGetRequestParams());
   }
 
   async cluster(): Promise<Cluster> {
-    return await this.fetch(`${this.apiRoot()}cluster`, this.defaultGetRequestParams());
+    return await this.fetch(`./cluster`, this.getDefaultGetRequestParams());
   }
 
   async buildInfo(): Promise<QuickwitBuildInfo> {
-    return await this.fetch(`${this.apiRoot()}version`, this.defaultGetRequestParams());
+    return await this.fetch(`./version`, this.getDefaultGetRequestParams());
   }
 
   // eslint-disable-next-line
   async config(): Promise<Record<string, any>> {
-    return await this.fetch(`${this.apiRoot()}config`, this.defaultGetRequestParams());
+    return await this.fetch(`./config`, this.getDefaultGetRequestParams());
   }
   //
   // Index management API
@@ -71,43 +59,22 @@ export class Client {
   }
 
   async getIndexMetadata(indexId: string): Promise<IndexMetadata> {
-    return this.fetch(`${this.apiRoot()}indexes/${indexId}`, {});
+    return this.fetch(`./indexes/${indexId}`, {});
   }
 
   async getAllSplits(indexId: string): Promise<Array<SplitMetadata>> {
     // TODO: restrieve all the splits.
-    const results: {splits: Array<SplitMetadata>} = await this.fetch(`${this.apiRoot()}indexes/${indexId}/splits?limit=10000`, {});
+    const results: {splits: Array<SplitMetadata>} = await this.fetch(`./indexes/${indexId}/splits?limit=10000`, {});
 
     return results['splits'];
   }
 
   async listIndexes(): Promise<Array<IndexMetadata>> {
-    return this.fetch(`${this.apiRoot()}indexes`, {});
-  }
-
-  async fetch<T>(url: string, params: RequestInit): Promise<T> {
-    const response = await fetch(url, params);
-    if (response.ok) {
-      return response.json() as Promise<T>;
-    }
-    const message = await response.text();
-    return await Promise.reject({
-      message: message,
-      status: response.status
-    });
-  }
-
-  private defaultGetRequestParams(): RequestInit {
-    return {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      mode: "no-cors",
-      cache: "default",
-    }
+    return this.fetch(`./indexes`, {});
   }
 
   buildSearchUrl(request: SearchRequest): URL {
-    const url: URL = new URL(`${request.indexId}/search`, this.apiRoot());
+    const url: URL = this.getURL(`./${request.indexId}/search`);
     // TODO: the trim should be done in the backend.
     url.searchParams.append("query", request.query.trim() || "*");
     url.searchParams.append("max_hits", "20");
