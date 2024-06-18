@@ -41,12 +41,6 @@ docker-rm-postgres-volume:
 docker-rm-volumes:
 	docker volume rm quickwit_azurite_data quickwit_fake_gcs_server_data quickwit_grafana_conf quickwit_grafana_data quickwit_localstack_data quickwit_postgres_data
 
-sync-grafana-dashboards:
-	docker cp grafana:/var/lib/grafana/dashboards/indexers.json ./monitoring/grafana/dashboards/
-	docker cp grafana:/var/lib/grafana/dashboards/ingesters.json ./monitoring/grafana/dashboards/
-	docker cp grafana:/var/lib/grafana/dashboards/metastore.json ./monitoring/grafana/dashboards/
-	docker cp grafana:/var/lib/grafana/dashboards/searchers.json ./monitoring/grafana/dashboards/
-
 doc:
 	@$(MAKE) -C $(QUICKWIT_SRC) doc
 
