@@ -30,10 +30,22 @@ docker-compose-down:
 	docker compose -p quickwit down --remove-orphans
 
 docker-compose-logs:
-	docker compose logs -f -t
+	docker compose logs -f docker-compose.yml -t
 
 docker-compose-monitoring:
 	COMPOSE_PROFILES=monitoring docker compose -f docker-compose.yml up -d --remove-orphans
+
+docker-rm-postgres-volume:
+	docker volume rm quickwit_postgres_data
+
+docker-rm-volumes:
+	docker volume rm quickwit_azurite_data quickwit_fake_gcs_server_data quickwit_grafana_conf quickwit_grafana_data quickwit_localstack_data quickwit_postgres_data
+
+sync-grafana-dashboards:
+	docker cp grafana:/var/lib/grafana/dashboards/indexers.json ./monitoring/grafana/dashboards/
+	docker cp grafana:/var/lib/grafana/dashboards/ingesters.json ./monitoring/grafana/dashboards/
+	docker cp grafana:/var/lib/grafana/dashboards/metastore.json ./monitoring/grafana/dashboards/
+	docker cp grafana:/var/lib/grafana/dashboards/searchers.json ./monitoring/grafana/dashboards/
 
 doc:
 	@$(MAKE) -C $(QUICKWIT_SRC) doc
@@ -99,8 +111,3 @@ build-rustdoc:
 build-ui:
 	$(MAKE) -C $(QUICKWIT_SRC) build-ui
 
-rm-postgres:
-	docker volume rm quickwit_postgres_data
-
-rm-data:
-	docker volume rm quickwit_postgres_data quickwit_localstack_data quickwit_azurite_data
