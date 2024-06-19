@@ -38,12 +38,12 @@ impl ElasticsearchError {
     pub fn new(
         status: StatusCode,
         reason: String,
-        exception_opt: Option<ErrorCauseException>,
+        exception_opt: Option<ElasticException>,
     ) -> Self {
         if status.is_server_error() {
-            rate_limited_error!(limit_per_min=10, status=%status, "http request failed with internal server error: {}", reason);
+            rate_limited_error!(limit_per_min=10, status=%status, "http request failed with server error: {reason}");
         } else if !status.is_success() {
-            rate_limited_debug!(limit_per_min=10, status=%status, "http request failed: {}", reason);
+            rate_limited_debug!(limit_per_min=10, status=%status, "http request failed: {reason}");
         }
         ElasticsearchError {
             status,
@@ -140,24 +140,35 @@ impl From<IndexServiceError> for ElasticsearchError {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum ErrorCauseException {
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ElasticException {
     #[serde(rename = "action_request_validation_exception")]
     ActionRequestValidation,
+    #[serde(rename = "document_parsing_exception")]
+    DocumentParsing,
+    // This is an exception proper to Quickwit.
+    #[serde(rename = "internal_exception")]
+    Internal,
     #[serde(rename = "illegal_argument_exception")]
     IllegalArgument,
     #[serde(rename = "index_not_found_exception")]
     IndexNotFound,
+    // This is an exception proper to Quickwit.
+    #[serde(rename = "source_not_found_exception")]
+    SourceNotFound,
     #[serde(rename = "timeout_exception")]
     Timeout,
 }
 
-impl ErrorCauseException {
+impl ElasticException {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ActionRequestValidation => "action_request_validation_exception",
+            Self::DocumentParsing => "document_parsing_exception",
+            Self::Internal => "internal_exception",
             Self::IllegalArgument => "illegal_argument_exception",
             Self::IndexNotFound => "index_not_found_exception",
+            Self::SourceNotFound => "source_not_found_exception",
             Self::Timeout => "timeout_exception",
         }
     }

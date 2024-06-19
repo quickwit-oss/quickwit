@@ -212,6 +212,8 @@ impl IngestWorkbench {
                     source_id: persist_success.source_id,
                     shard_id: persist_success.shard_id,
                     replication_position_inclusive: persist_success.replication_position_inclusive,
+                    num_ingested_docs: persist_success.num_persisted_docs,
+                    parse_failures: persist_success.parse_failures,
                 };
                 successes.push(success);
             } else if let Some(failure) = subworkbench.last_failure_opt {
@@ -228,6 +230,16 @@ impl IngestWorkbench {
         let num_failures = failures.len();
         assert_eq!(num_successes + num_failures, num_subworkbenches);
 
+        #[cfg(test)]
+        {
+            for success in &mut successes {
+                success
+                    .parse_failures
+                    .sort_by_key(|parse_failure| parse_failure.doc_uid());
+            }
+            successes.sort_by_key(|success| success.subrequest_id);
+            failures.sort_by_key(|failure| failure.subrequest_id);
+        }
         if self.num_successes == 0
             && num_failures > 0
             && failures.iter().all(|failure| {

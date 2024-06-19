@@ -38,7 +38,7 @@ use crate::with_arg;
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(get_delete_tasks, post_delete_request),
-    components(schemas(DeleteQueryRequest, DeleteTask, DeleteQuery,))
+    components(schemas(DeleteQueryRequest, DeleteTask, DeleteQuery))
 )]
 pub struct DeleteTaskApi;
 

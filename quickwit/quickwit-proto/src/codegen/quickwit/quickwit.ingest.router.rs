@@ -47,6 +47,10 @@ pub struct IngestSuccess {
     /// Replication position inclusive.
     #[prost(message, optional, tag = "5")]
     pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
+    #[prost(uint32, tag = "6")]
+    pub num_ingested_docs: u32,
+    #[prost(message, repeated, tag = "7")]
+    pub parse_failures: ::prost::alloc::vec::Vec<super::ParseFailure>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

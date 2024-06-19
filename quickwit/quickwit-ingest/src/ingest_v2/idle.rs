@@ -105,6 +105,7 @@ mod tests {
             ShardState::Open,
             Position::Beginning,
             Position::Beginning,
+            None,
             now - idle_shard_timeout,
         );
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
@@ -114,6 +115,7 @@ mod tests {
             ShardState::Open,
             Position::Beginning,
             Position::Beginning,
+            None,
             now - idle_shard_timeout / 2,
         );
         let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));

@@ -324,7 +324,7 @@ pub struct DocProcessorCounters {
     /// - number of docs that could not be parsed.
     /// - number of docs that were not valid json.
     /// - number of docs that could not be transformed.
-    /// - number of docs for which the doc mapper returnd an error.
+    /// - number of docs for which the doc mapper returned an error.
     /// - number of valid docs.
     pub valid: DocProcessorCounter,
     pub doc_mapper_errors: DocProcessorCounter,

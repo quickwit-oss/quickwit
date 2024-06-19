@@ -17,17 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
+use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
-/// The size of a ULID in bytes.
-pub(crate) const ULID_SIZE: usize = 16;
+use super::ULID_SIZE;
 
-/// A pipeline uid identify an indexing pipeline and an indexing task.
+/// A pipeline UID identifies an indexing pipeline and an indexing task.
 #[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct PipelineUid(Ulid);
 
@@ -44,7 +45,7 @@ impl Display for PipelineUid {
 }
 
 impl PipelineUid {
-    /// Creates a new random pipeline uid.
+    /// Creates a new random pipeline UID.
     pub fn random() -> Self {
         Self(Ulid::new())
     }
@@ -73,9 +74,8 @@ impl Serialize for PipelineUid {
 
 impl<'de> Deserialize<'de> for PipelineUid {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let ulid_str = String::deserialize(deserializer)?;
-        let ulid = Ulid::from_string(&ulid_str)
-            .map_err(|error| serde::de::Error::custom(error.to_string()))?;
+        let ulid_str: Cow<'de, str> = Cow::deserialize(deserializer)?;
+        let ulid = Ulid::from_string(&ulid_str).map_err(D::Error::custom)?;
         Ok(Self(ulid))
     }
 }

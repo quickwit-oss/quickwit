@@ -11,6 +11,10 @@ json: {
       "message": {
         "type": "text",
         "store": true
+      },
+      "timestamp": {
+        "type": "integer",
+        "store": true
       }
     }
   }

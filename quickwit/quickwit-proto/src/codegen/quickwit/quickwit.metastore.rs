@@ -237,10 +237,10 @@ pub struct DeleteTask {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteQuery {
-    /// Index ID.
+    /// Index UID.
     #[prost(message, optional, tag = "1")]
-    #[serde(alias = "index_id")]
     #[schema(value_type = String)]
+    #[serde(alias = "index_id")]
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
     #[prost(int64, optional, tag = "2")]
@@ -250,7 +250,6 @@ pub struct DeleteQuery {
     #[prost(int64, optional, tag = "3")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_timestamp: ::core::option::Option<i64>,
-    /// Query text. The query language is that of tantivy.
     /// Query AST serialized in JSON
     #[prost(string, tag = "6")]
     #[serde(alias = "query")]

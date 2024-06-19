@@ -2401,7 +2401,6 @@ mod tests {
         control_plane_mailbox.ask(callback).await.unwrap();
 
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        println!("{:?}", control_plane_debug_info);
         let shard =
             &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"][0];
         assert_eq!(shard["shard_id"], "00000000000000000000");

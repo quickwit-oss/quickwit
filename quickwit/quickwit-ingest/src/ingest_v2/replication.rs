@@ -1239,18 +1239,18 @@ mod tests {
 
         state_guard
             .mrecordlog
-            .assert_records_eq(&queue_id_01, .., &[(0, "\0\0test-doc-foo")]);
+            .assert_records_eq(&queue_id_01, .., &[(0, [0, 0], "test-doc-foo")]);
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_02,
             ..,
-            &[(0, "\0\0test-doc-bar"), (1, "\0\0test-doc-baz")],
+            &[(0, [0, 0], "test-doc-bar"), (1, [0, 0], "test-doc-baz")],
         );
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_11,
             ..,
-            &[(0, "\0\0test-doc-qux"), (1, "\0\0test-doc-tux")],
+            &[(0, [0, 0], "test-doc-qux"), (1, [0, 0], "test-doc-tux")],
         );
         drop(state_guard);
 
@@ -1296,7 +1296,7 @@ mod tests {
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_01,
             ..,
-            &[(0, "\0\0test-doc-foo"), (1, "\0\0test-doc-moo")],
+            &[(0, [0, 0], "test-doc-foo"), (1, [0, 0], "test-doc-moo")],
         );
     }
 
