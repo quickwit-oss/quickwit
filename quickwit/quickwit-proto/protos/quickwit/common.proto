@@ -30,11 +30,21 @@ message DocMappingUid {
   bytes doc_mapping_uid = 1;
 }
 
+// The corresponding Rust struct [`crate::types::DocUid`] is defined manually and
+// externally provided during code generation (see `build.rs`).
+//
+// Modify at your own risk.
+message DocUid {
+  // ULID encoded as a sequence of 16 bytes (big-endian u128).
+  bytes doc_uid = 1;
+}
+
 // The corresponding Rust struct [`crate::types::IndexUid`] is defined manually and
 // externally provided during code generation (see `build.rs`).
 //
 // Modify at your own risk.
 message IndexUid {
   string index_id = 1;
+  // ULID encoded as a sequence of 16 bytes (big-endian u128).
   bytes incarnation_id = 2;
 }

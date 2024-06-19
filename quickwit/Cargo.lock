@@ -6049,6 +6049,7 @@ dependencies = [
  "quickwit-codegen",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-doc-mapper",
  "quickwit-proto",
  "rand 0.8.5",
  "rand_distr",
