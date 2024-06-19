@@ -20,6 +20,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
 
 use quickwit_proto::ingest::{Shard, ShardIds, ShardState};
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId};
@@ -115,6 +116,7 @@ impl RoutingTableEntry {
         ingester_pool: &IngesterPool,
         closed_shard_ids: &mut Vec<ShardId>,
         unavailable_leaders: &mut HashSet<NodeId>,
+        resource_exhausted_leaders: &HashMap<NodeId, Instant>,
     ) -> bool {
         let shards = self.local_shards.iter().chain(self.remote_shards.iter());
 
@@ -129,6 +131,9 @@ impl RoutingTableEntry {
                 }
                 ShardState::Open => {
                     if unavailable_leaders.contains(&shard.leader_id) {
+                        continue;
+                    }
+                    if resource_exhausted_leaders.contains_key(&shard.leader_id) {
                         continue;
                     }
                     if ingester_pool.contains_key(&shard.leader_id) {
@@ -354,14 +359,19 @@ impl RoutingTable {
         ingester_pool: &IngesterPool,
         closed_shards: &mut Vec<ShardIds>,
         unavailable_leaders: &mut HashSet<NodeId>,
+        resource_exhausted_leaders: &HashMap<NodeId, Instant>,
     ) -> bool {
         let Some(entry) = self.find_entry(index_id, source_id) else {
             return false;
         };
         let mut closed_shard_ids: Vec<ShardId> = Vec::new();
 
-        let result =
-            entry.has_open_shards(ingester_pool, &mut closed_shard_ids, unavailable_leaders);
+        let result = entry.has_open_shards(
+            ingester_pool,
+            &mut closed_shard_ids,
+            unavailable_leaders,
+            resource_exhausted_leaders,
+        );
 
         if !closed_shard_ids.is_empty() {
             closed_shards.push(ShardIds {
@@ -568,7 +578,8 @@ mod tests {
         assert!(!table_entry.has_open_shards(
             &ingester_pool,
             &mut closed_shard_ids,
-            &mut unavailable_leaders
+            &mut unavailable_leaders,
+            &HashMap::new()
         ));
         assert!(closed_shard_ids.is_empty());
         assert!(unavailable_leaders.is_empty());
@@ -602,7 +613,8 @@ mod tests {
         assert!(table_entry.has_open_shards(
             &ingester_pool,
             &mut closed_shard_ids,
-            &mut unavailable_leaders
+            &mut unavailable_leaders,
+            &HashMap::new()
         ));
         assert_eq!(closed_shard_ids.len(), 1);
         assert_eq!(closed_shard_ids[0], ShardId::from(1));
@@ -643,7 +655,8 @@ mod tests {
         assert!(table_entry.has_open_shards(
             &ingester_pool,
             &mut closed_shard_ids,
-            &mut unavailable_leaders
+            &mut unavailable_leaders,
+            &HashMap::new()
         ));
         assert_eq!(closed_shard_ids.len(), 1);
         assert_eq!(closed_shard_ids[0], ShardId::from(1));
