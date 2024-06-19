@@ -17,70 +17,66 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
 use std::fmt;
-use std::fmt::{Display, Formatter};
-use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
-use ulid::Ulid;
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+pub use ulid::Ulid;
 
-/// The size of a ULID in bytes.
-pub(crate) const ULID_SIZE: usize = 16;
+use crate::types::pipeline_uid::ULID_SIZE;
 
-/// A pipeline uid identify an indexing pipeline and an indexing task.
-#[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct PipelineUid(Ulid);
+/// Unique identifier for a document mapping.
+#[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd, utoipa::ToSchema)]
+pub struct DocMappingUid(Ulid);
 
-impl fmt::Debug for PipelineUid {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "Pipeline({})", self.0)
+impl fmt::Debug for DocMappingUid {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "DocMapping({})", self.0)
     }
 }
 
-impl Display for PipelineUid {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+impl fmt::Display for DocMappingUid {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl PipelineUid {
-    /// Creates a new random pipeline uid.
+impl From<Ulid> for DocMappingUid {
+    fn from(ulid: Ulid) -> Self {
+        Self(ulid)
+    }
+}
+
+impl DocMappingUid {
+    /// Creates a new random doc mapping UID.
     pub fn random() -> Self {
         Self(Ulid::new())
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn for_test(ulid_u128: u128) -> PipelineUid {
+    pub fn for_test(ulid_u128: u128) -> DocMappingUid {
         Self(Ulid::from(ulid_u128))
     }
 }
 
-impl FromStr for PipelineUid {
-    type Err = &'static str;
-
-    fn from_str(pipeline_uid_str: &str) -> Result<PipelineUid, Self::Err> {
-        let pipeline_ulid =
-            Ulid::from_string(pipeline_uid_str).map_err(|_| "invalid pipeline UID")?;
-        Ok(PipelineUid(pipeline_ulid))
-    }
-}
-
-impl Serialize for PipelineUid {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(&self.0)
-    }
-}
-
-impl<'de> Deserialize<'de> for PipelineUid {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let ulid_str = String::deserialize(deserializer)?;
-        let ulid = Ulid::from_string(&ulid_str)
-            .map_err(|error| serde::de::Error::custom(error.to_string()))?;
+impl<'de> Deserialize<'de> for DocMappingUid {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let ulid_str: Cow<'de, str> = Cow::deserialize(deserializer)?;
+        let ulid = Ulid::from_string(&ulid_str).map_err(D::Error::custom)?;
         Ok(Self(ulid))
     }
 }
 
-impl prost::Message for PipelineUid {
+impl Serialize for DocMappingUid {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        serializer.collect_str(&self.0)
+    }
+}
+
+impl prost::Message for DocMappingUid {
     fn encode_raw<B>(&self, buf: &mut B)
     where B: prost::bytes::BufMut {
         // TODO: when `bytes::encode` supports `&[u8]`, we can remove this allocation.
@@ -97,7 +93,7 @@ impl prost::Message for PipelineUid {
     where
         B: prost::bytes::Buf,
     {
-        const STRUCT_NAME: &str = "PipelineUid";
+        const STRUCT_NAME: &str = "DocMappingUid";
 
         match tag {
             1u32 => {
@@ -105,14 +101,14 @@ impl prost::Message for PipelineUid {
 
                 prost::encoding::bytes::merge(wire_type, &mut buffer, buf, ctx).map_err(
                     |mut error| {
-                        error.push(STRUCT_NAME, "pipeline_uid");
+                        error.push(STRUCT_NAME, "doc_mapping_uid");
                         error
                     },
                 )?;
                 let ulid_bytes: [u8; ULID_SIZE] =
                     buffer.try_into().map_err(|buffer: Vec<u8>| {
                         prost::DecodeError::new(format!(
-                            "invalid length for field `pipeline_uid`, expected 16 bytes, got {}",
+                            "invalid length for field `doc_mapping_uid`, expected 16 bytes, got {}",
                             buffer.len()
                         ))
                     })?;
@@ -131,7 +127,7 @@ impl prost::Message for PipelineUid {
     }
 
     fn clear(&mut self) {
-        self.0 = Ulid::default();
+        self.0 = Ulid::nil();
     }
 }
 
@@ -143,29 +139,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_pipeline_uid_json_serde_roundtrip() {
-        let pipeline_uid = PipelineUid::default();
-        let serialized = serde_json::to_string(&pipeline_uid).unwrap();
+    fn test_doc_mapping_uid_json_serde_roundtrip() {
+        let doc_mapping_uid = DocMappingUid::default();
+        let serialized = serde_json::to_string(&doc_mapping_uid).unwrap();
         assert_eq!(serialized, r#""00000000000000000000000000""#);
 
-        let deserialized: PipelineUid = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(deserialized, pipeline_uid);
+        let deserialized: DocMappingUid = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, doc_mapping_uid);
     }
 
     #[test]
-    fn test_pipeline_uid_prost_serde_roundtrip() {
-        let pipeline_uid = PipelineUid::random();
+    fn test_doc_mapping_uid_prost_serde_roundtrip() {
+        let doc_mapping_uid = DocMappingUid::random();
 
-        let encoded = pipeline_uid.encode_to_vec();
+        let encoded = doc_mapping_uid.encode_to_vec();
         assert_eq!(
-            PipelineUid::decode(Bytes::from(encoded)).unwrap(),
-            pipeline_uid
+            DocMappingUid::decode(Bytes::from(encoded)).unwrap(),
+            doc_mapping_uid
         );
 
-        let encoded = pipeline_uid.encode_length_delimited_to_vec();
+        let encoded = doc_mapping_uid.encode_length_delimited_to_vec();
         assert_eq!(
-            PipelineUid::decode_length_delimited(Bytes::from(encoded)).unwrap(),
-            pipeline_uid
+            DocMappingUid::decode_length_delimited(Bytes::from(encoded)).unwrap(),
+            doc_mapping_uid
         );
     }
 }

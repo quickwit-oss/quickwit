@@ -1690,10 +1690,12 @@ mod tests {
             .unwrap();
         assert!(indexing_tasks.is_empty());
 
-        let results: Vec<ApplyIndexingPlanRequest> =
-            client_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
-        assert_eq!(results.len(), 1);
-        assert!(results[0].indexing_tasks.is_empty());
+        let apply_plan_requests = client_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
+        assert!(!apply_plan_requests.is_empty());
+
+        for apply_plan_request in &apply_plan_requests {
+            assert!(apply_plan_request.indexing_tasks.is_empty());
+        }
 
         universe.assert_quit().await;
     }

@@ -26,7 +26,8 @@ use crate::{DocMapping, IndexingSettings, RetentionPolicy, SearchSettings};
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub enum VersionedIndexTemplate {
-    #[serde(rename = "0.8")]
+    #[serde(rename = "0.9")]
+    #[serde(alias = "0.8")]
     #[serde(alias = "0.7")]
     V0_8(IndexTemplateV0_8),
 }

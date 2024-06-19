@@ -5934,6 +5934,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-datetime",
  "quickwit-macros",
+ "quickwit-proto",
  "quickwit-query",
  "regex",
  "serde",
@@ -9115,6 +9116,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.59",
+ "ulid",
 ]
 
 [[package]]

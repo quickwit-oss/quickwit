@@ -28,11 +28,13 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 pub use ulid::Ulid;
 
+mod doc_mapping_uid;
 mod index_uid;
 mod pipeline_uid;
 mod position;
 mod shard_id;
 
+pub use doc_mapping_uid::DocMappingUid;
 pub use index_uid::IndexUid;
 pub use pipeline_uid::PipelineUid;
 pub use position::Position;

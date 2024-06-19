@@ -32,7 +32,8 @@ type SourceConfigForSerialization = SourceConfigV0_8;
 #[serde(deny_unknown_fields)]
 #[serde(tag = "version")]
 pub enum VersionedSourceConfig {
-    #[serde(rename = "0.8")]
+    #[serde(rename = "0.9")]
+    #[serde(alias = "0.8")]
     V0_8(SourceConfigV0_8),
     // Retro compatibility.
     #[serde(rename = "0.7")]

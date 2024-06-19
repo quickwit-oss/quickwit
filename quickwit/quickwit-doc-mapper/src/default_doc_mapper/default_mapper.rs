@@ -23,6 +23,7 @@ use std::num::NonZeroU32;
 use anyhow::{bail, Context};
 use fnv::FnvHashSet;
 use quickwit_common::PathHasher;
+use quickwit_proto::types::DocMappingUid;
 use quickwit_query::create_default_quickwit_tokenizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use quickwit_query::tokenizers::TokenizerManager;
@@ -60,6 +61,8 @@ const FIELD_PRESENCE_FIELD: Field = Field::from_field_id(0u32);
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(into = "DefaultDocMapperBuilder", try_from = "DefaultDocMapperBuilder")]
 pub struct DefaultDocMapper {
+    /// The UID of the doc mapping.
+    doc_mapping_uid: DocMappingUid,
     /// Field in which the source should be stored.
     /// This field is only valid when using the schema associated with the default
     /// doc mapper, and therefore cannot be used in the `query` method.
@@ -99,13 +102,6 @@ pub struct DefaultDocMapper {
     tokenizer_manager: TokenizerManager,
 }
 
-impl DefaultDocMapper {
-    /// Default maximum number of partitions.
-    pub fn default_max_num_partitions() -> NonZeroU32 {
-        DocMapping::default_max_num_partitions()
-    }
-}
-
 fn validate_timestamp_field(
     timestamp_field_path: &str,
     mapping_root_node: &MappingNode,
@@ -143,6 +139,7 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             None
         };
         let doc_mapping = DocMapping {
+            doc_mapping_uid: default_doc_mapper.doc_mapping_uid,
             mode: default_doc_mapper.mode,
             field_mappings: default_doc_mapper.field_mappings.into(),
             timestamp_field: default_doc_mapper.timestamp_field_name,
@@ -282,6 +279,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             }
         }
         Ok(DefaultDocMapper {
+            doc_mapping_uid: doc_mapping.doc_mapping_uid,
             schema,
             index_field_presence: doc_mapping.index_field_presence,
             source_field,
@@ -505,6 +503,10 @@ fn populate_field_presence_for_json_obj<'a, Iter: Iterator<Item = (&'a str, impl
 
 #[typetag::serde(name = "default")]
 impl DocMapper for DefaultDocMapper {
+    fn doc_mapping_uid(&self) -> DocMappingUid {
+        self.doc_mapping_uid
+    }
+
     fn doc_from_json_obj(
         &self,
         json_obj: JsonObject,

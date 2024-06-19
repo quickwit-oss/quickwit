@@ -41,6 +41,8 @@ quickwit-proto = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true }
 
+quickwit-proto = { workspace = true, features = ["testsuite"] }
+
 [features]
 testsuite = []
 vrl = ["dep:vrl"]

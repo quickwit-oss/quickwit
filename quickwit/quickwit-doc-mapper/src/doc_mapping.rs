@@ -20,6 +20,7 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
+use quickwit_proto::types::DocMappingUid;
 use serde::{Deserialize, Serialize};
 
 use crate::{FieldMappingEntry, QuickwitJsonOptions, TokenizerEntry};
@@ -99,6 +100,13 @@ impl Default for Mode {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocMapping {
+    /// Doc mapping UID.
+    ///
+    /// Splits with the same doc mapping UID share the same schema and should use the same doc
+    /// mapper during indexing and querying.
+    #[serde(default = "DocMappingUid::random")]
+    pub doc_mapping_uid: DocMappingUid,
+
     /// Defines how unmapped fields should be handled.
     #[serde_multikey(
         deserializer = Mode::from_parts,
@@ -163,6 +171,20 @@ impl DocMapping {
     pub fn default_max_num_partitions() -> NonZeroU32 {
         NonZeroU32::new(200).unwrap()
     }
+
+    /// Returns whether the `other` doc mapping is equal to `self` leaving their respective doc
+    /// mapping UIDs out of the comparison.
+    pub fn eq_ignore_doc_mapping_uid(&self, other: &Self) -> bool {
+        let doc_mapping_uid = DocMappingUid::default();
+
+        let mut left = self.clone();
+        left.doc_mapping_uid = doc_mapping_uid;
+
+        let mut right = other.clone();
+        right.doc_mapping_uid = doc_mapping_uid;
+
+        left == right
+    }
 }
 
 #[cfg(test)]
@@ -177,6 +199,7 @@ mod tests {
     #[test]
     fn test_doc_mapping_serde_roundtrip() {
         let doc_mapping = DocMapping {
+            doc_mapping_uid: DocMappingUid::random(),
             mode: Mode::Strict,
             field_mappings: vec![
                 FieldMappingEntry {
