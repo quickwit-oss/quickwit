@@ -33,8 +33,9 @@ use crate::{IndexMetadata, Split};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedFileBackedIndex {
-    #[serde(rename = "0.8")]
+    #[serde(rename = "0.9")]
     // Retro compatibility.
+    #[serde(alias = "0.8")]
     #[serde(alias = "0.7")]
     V0_8(FileBackedIndexV0_8),
 }

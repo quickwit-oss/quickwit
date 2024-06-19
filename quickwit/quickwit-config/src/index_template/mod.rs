@@ -28,7 +28,7 @@ pub use serialize::{IndexTemplateV0_8, VersionedIndexTemplate};
 use crate::index_config::validate_index_config;
 use crate::{
     validate_identifier, validate_index_id_pattern, DocMapping, IndexConfig, IndexingSettings,
-    RetentionPolicy, SearchSettings, TestableForRegression,
+    RetentionPolicy, SearchSettings,
 };
 
 pub type IndexTemplateId = String;
@@ -135,7 +135,8 @@ impl IndexTemplate {
     }
 }
 
-impl TestableForRegression for IndexTemplate {
+#[cfg(any(test, feature = "testsuite"))]
+impl crate::TestableForRegression for IndexTemplate {
     fn sample_for_regression() -> Self {
         let template_id = "test-template".to_string();
         let index_id_patterns = vec![
@@ -144,6 +145,7 @@ impl TestableForRegression for IndexTemplate {
         ];
 
         let doc_mapping_json = r#"{
+            "doc_mapping_uid": "00000000000000000000000001",
             "field_mappings": [
                 {
                     "name": "ts",

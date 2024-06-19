@@ -7,6 +7,7 @@
   "create_timestamp": 1789,
   "index_config": {
     "doc_mapping": {
+      "doc_mapping_uid": "00000000000000000000000000",
       "dynamic_mapping": {
         "expand_dots": true,
         "fast": {
@@ -108,7 +109,7 @@
         "message"
       ]
     },
-    "version": "0.8"
+    "version": "0.9"
   },
   "index_uid": "my-index:00000000000000000000000000",
   "sources": [
@@ -126,8 +127,8 @@
         "script": ".message = downcase(string!(.message))",
         "timezone": "UTC"
       },
-      "version": "0.8"
+      "version": "0.9"
     }
   ],
-  "version": "0.8"
+  "version": "0.9"
 }

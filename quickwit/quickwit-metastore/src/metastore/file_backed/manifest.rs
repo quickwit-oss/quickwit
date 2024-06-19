@@ -22,9 +22,9 @@ use std::path::Path;
 
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::{IndexTemplate, IndexTemplateId, TestableForRegression};
+use quickwit_config::{IndexTemplate, IndexTemplateId};
 use quickwit_proto::metastore::{serde_utils, MetastoreError, MetastoreResult};
-use quickwit_proto::types::IndexId;
+use quickwit_proto::types::{DocMappingUid, IndexId};
 use quickwit_storage::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -74,21 +74,32 @@ pub(crate) struct Manifest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "version")]
 enum VersionedManifest {
-    #[serde(rename = "0.8")]
+    // The two versions use the same format but for v0.8 and below, we need to set the
+    // `doc_mapping_uid` to the nil value upon deserialization.
+    #[serde(rename = "0.9")]
+    V0_9(ManifestV0_8),
+    #[serde(alias = "0.8")]
     #[serde(alias = "0.7")]
     V0_8(ManifestV0_8),
 }
 
 impl From<Manifest> for VersionedManifest {
     fn from(manifest: Manifest) -> Self {
-        VersionedManifest::V0_8(manifest.into())
+        VersionedManifest::V0_9(manifest.into())
     }
 }
 
 impl From<VersionedManifest> for Manifest {
     fn from(versioned_manifest: VersionedManifest) -> Self {
         match versioned_manifest {
-            VersionedManifest::V0_8(manifest) => manifest.into(),
+            VersionedManifest::V0_8(mut manifest) => {
+                for template in &mut manifest.templates {
+                    // Override the randomly generated doc mapping UID with the nil value.
+                    template.doc_mapping.doc_mapping_uid = DocMappingUid::default();
+                }
+                manifest.into()
+            }
+            VersionedManifest::V0_9(manifest) => manifest.into(),
         }
     }
 }
@@ -125,7 +136,8 @@ impl From<ManifestV0_8> for Manifest {
     }
 }
 
-impl TestableForRegression for Manifest {
+#[cfg(any(test, feature = "testsuite"))]
+impl quickwit_config::TestableForRegression for Manifest {
     fn sample_for_regression() -> Self {
         let mut indexes = BTreeMap::new();
         indexes.insert("test-index-1".to_string(), IndexStatus::Creating);
