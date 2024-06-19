@@ -102,8 +102,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
-        .field_attribute("DeleteQuery.index_uid", "#[serde(alias = \"index_id\")]")
         .field_attribute("DeleteQuery.index_uid", "#[schema(value_type = String)]")
+        .field_attribute("DeleteQuery.index_uid", "#[serde(alias = \"index_id\")]")
         .field_attribute("DeleteQuery.query_ast", "#[serde(alias = \"query\")]")
         .field_attribute(
             "DeleteQuery.start_timestamp",
@@ -138,6 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".quickwit.common.DocMappingUid",
             "crate::types::DocMappingUid",
         )
+        .extern_path(".quickwit.common.DocUid", "crate::types::DocUid")
         .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
         .extern_path(".quickwit.ingest.Position", "crate::types::Position")
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")

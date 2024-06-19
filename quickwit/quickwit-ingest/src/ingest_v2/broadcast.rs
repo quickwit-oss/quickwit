@@ -484,6 +484,7 @@ mod tests {
             ShardState::Open,
             Position::Beginning,
             Position::Beginning,
+            None,
             Instant::now(),
         );
         state_guard.shards.insert(queue_id_00.clone(), shard_00);
@@ -493,6 +494,7 @@ mod tests {
             ShardState::Open,
             Position::Beginning,
             Position::Beginning,
+            None,
             Instant::now(),
         );
         shard_01.is_advertisable = true;

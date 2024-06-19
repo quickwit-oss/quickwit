@@ -27,10 +27,11 @@ use std::time::{Duration, Instant};
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
+use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
-use quickwit_proto::types::{Position, QueueId};
+use quickwit_proto::types::{DocMappingUid, Position, QueueId};
 use tokio::sync::{watch, Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard};
 use tracing::{error, info};
 
@@ -57,6 +58,7 @@ pub(super) struct IngesterState {
 
 pub(super) struct InnerIngesterState {
     pub shards: HashMap<QueueId, IngesterShard>,
+    pub doc_mappers: HashMap<DocMappingUid, Weak<dyn DocMapper>>,
     pub rate_trackers: HashMap<QueueId, (RateLimiter, RateMeter)>,
     // Replication stream opened with followers.
     pub replication_streams: HashMap<FollowerId, ReplicationStreamTaskHandle>,
@@ -83,6 +85,7 @@ impl IngesterState {
         let (status_tx, status_rx) = watch::channel(status);
         let inner = InnerIngesterState {
             shards: Default::default(),
+            doc_mappers: Default::default(),
             rate_trackers: Default::default(),
             replication_streams: Default::default(),
             replication_tasks: Default::default(),
@@ -185,6 +188,7 @@ impl IngesterState {
                     ShardState::Closed,
                     replication_position_inclusive,
                     truncation_position_inclusive,
+                    None,
                     now,
                 );
                 // We want to advertise the shard as read-only right away.
@@ -342,8 +346,21 @@ impl FullyLockedIngesterState<'_> {
                 self.rate_trackers.remove(queue_id);
 
                 // Log only if the shard was actually removed.
-                if self.shards.remove(queue_id).is_some() {
+                if let Some(shard) = self.shards.remove(queue_id) {
                     info!("deleted shard `{queue_id}`");
+
+                    if let Some(doc_mapper) = shard.doc_mapper_opt {
+                        // At this point, we hold the lock so we can safely check the strong count.
+                        // The other locations where the doc mapper is cloned also require holding
+                        // the lock.
+                        if Arc::strong_count(&doc_mapper) == 1 {
+                            let doc_mapping_uid = doc_mapper.doc_mapping_uid();
+
+                            if self.doc_mappers.remove(&doc_mapping_uid).is_some() {
+                                info!("evicted doc mapper `{doc_mapping_uid}` from cache`");
+                            }
+                        }
+                    }
                 }
             }
             Err(DeleteQueueError::IoError(io_error)) => {
@@ -394,7 +411,7 @@ impl FullyLockedIngesterState<'_> {
     /// Deletes and truncates the shards as directed by the `advise_reset_shards_response` returned
     /// by the control plane.
     pub async fn reset_shards(&mut self, advise_reset_shards_response: &AdviseResetShardsResponse) {
-        info!("reset shards");
+        info!("resetting shards");
         for shard_ids in &advise_reset_shards_response.shards_to_delete {
             for queue_id in shard_ids.queue_ids() {
                 self.delete_shard(&queue_id).await;

@@ -26,7 +26,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 pub use ulid::Ulid;
 
-use crate::types::pipeline_uid::ULID_SIZE;
+use super::ULID_SIZE;
 use crate::types::IndexId;
 
 /// Index identifiers that uniquely identify not only the index, but also

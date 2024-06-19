@@ -56,6 +56,7 @@ enum CommitTypeV2 {
 message DocBatchV2 {
   bytes doc_buffer = 1;
   repeated uint32 doc_lengths = 2;
+  repeated quickwit.common.DocUid doc_uids = 3;
 }
 
 message MRecordBatch {
@@ -115,4 +116,16 @@ message ShardIdPositions {
 message ShardIdPosition {
   ShardId shard_id = 1;
   Position publish_position_inclusive = 2;
+}
+
+enum ParseFailureReason {
+  PARSE_FAILURE_REASON_UNSPECIFIED = 0;
+  PARSE_FAILURE_REASON_INVALID_JSON = 1;
+  PARSE_FAILURE_REASON_INVALID_SCHEMA = 2;
+}
+
+message ParseFailure {
+  quickwit.common.DocUid doc_uid = 1;
+  ParseFailureReason reason = 2;
+  string message = 3;
 }

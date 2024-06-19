@@ -1,0 +1,16 @@
+ndjson:
+  - index: { "_index": "test-index", "_id": "5" }
+  - message: Hello, World!
+    timestamp: timestamp
+status_code: 200
+expected:
+  errors: true
+  items:
+    - index:
+        _index: test-index
+        _id: "5"
+        status: 400
+        error:
+          type: document_parsing_exception
+          reason:
+            $expect: "'timestamp' in val"

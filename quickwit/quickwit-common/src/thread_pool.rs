@@ -83,7 +83,7 @@ impl ThreadPool {
     /// but is not running yet "cancellable".
     pub fn run_cpu_intensive<F, R>(
         &self,
-        cpu_heavy_task: F,
+        cpu_intensive_fn: F,
     ) -> impl Future<Output = Result<R, Panicked>>
     where
         F: FnOnce() -> R + Send + 'static,
@@ -103,7 +103,7 @@ impl ThreadPool {
             let _guard = span.enter();
             let mut ongoing_task_guard = GaugeGuard::from_gauge(&ongoing_tasks);
             ongoing_task_guard.add(1i64);
-            let result = cpu_heavy_task();
+            let result = cpu_intensive_fn();
             let _ = tx.send(result);
         });
         rx.map_err(|_| Panicked)
@@ -118,7 +118,7 @@ impl ThreadPool {
 ///
 /// Disclaimer: The function will no be executed if the Future is dropped.
 #[must_use = "run_cpu_intensive will not run if the future it returns is dropped"]
-pub fn run_cpu_intensive<F, R>(cpu_heavy_task: F) -> impl Future<Output = Result<R, Panicked>>
+pub fn run_cpu_intensive<F, R>(cpu_intensive_fn: F) -> impl Future<Output = Result<R, Panicked>>
 where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
@@ -129,7 +129,7 @@ where
             let num_threads: usize = (crate::num_cpus() / 3).max(2);
             ThreadPool::new("small_tasks", Some(num_threads))
         })
-        .run_cpu_intensive(cpu_heavy_task)
+        .run_cpu_intensive(cpu_intensive_fn)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

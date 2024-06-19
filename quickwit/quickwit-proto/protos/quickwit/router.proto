@@ -57,6 +57,8 @@ message IngestSuccess {
   quickwit.ingest.ShardId shard_id = 4;
   // Replication position inclusive.
   quickwit.ingest.Position replication_position_inclusive = 5;
+  uint32 num_ingested_docs = 6;
+  repeated quickwit.ingest.ParseFailure parse_failures = 7;
 }
 
 enum IngestFailureReason {
