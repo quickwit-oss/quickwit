@@ -1263,7 +1263,7 @@ mod tests {
     use quickwit_proto::ingest::{
         DocBatchV2, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey,
     };
-    use quickwit_proto::types::{queue_id, ShardId, SourceUid};
+    use quickwit_proto::types::{queue_id, DocMappingUid, ShardId, SourceUid};
     use tokio::task::yield_now;
     use tokio::time::timeout;
     use tonic::transport::{Endpoint, Server};
@@ -1585,6 +1585,7 @@ mod tests {
             shard_state: ShardState::Open as i32,
             leader_id: ingester_ctx.node_id.to_string(),
             follower_id: None,
+            doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: None,
             publish_token: None,
         };
