@@ -1618,6 +1618,7 @@ async fn open_or_fetch_shard<'e>(
         .bind(subrequest.shard_id().as_str())
         .bind(&subrequest.leader_id)
         .bind(&subrequest.follower_id)
+        .bind(subrequest.doc_mapping_uid)
         .fetch_optional(executor.clone())
         .await?;
 
@@ -1777,10 +1778,11 @@ mod tests {
                 sqlx::query(INSERT_SHARD_QUERY)
                     .bind(index_uid)
                     .bind(source_id)
-                    .bind(shard.shard_id().as_str())
+                    .bind(shard.shard_id())
                     .bind(shard.shard_state().as_json_str_name())
                     .bind(&shard.leader_id)
                     .bind(&shard.follower_id)
+                    .bind(shard.doc_mapping_uid)
                     .bind(&shard.publish_position_inclusive().to_string())
                     .bind(&shard.publish_token)
                     .execute(&self.connection_pool)
@@ -1800,7 +1802,7 @@ mod tests {
                 "#,
             )
             .bind(index_uid)
-            .bind(source_id.as_str())
+            .bind(source_id)
             .fetch_all(&self.connection_pool)
             .await
             .unwrap();

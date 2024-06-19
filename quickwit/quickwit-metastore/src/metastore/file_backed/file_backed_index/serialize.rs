@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::SourceId;
+use quickwit_proto::types::{DocMappingUid, SourceId};
 use serde::{Deserialize, Serialize};
 
 use super::shards::Shards;
@@ -34,6 +34,7 @@ use crate::{IndexMetadata, Split};
 #[serde(tag = "version")]
 pub(crate) enum VersionedFileBackedIndex {
     #[serde(rename = "0.9")]
+    V0_9(FileBackedIndexV0_8),
     // Retro compatibility.
     #[serde(alias = "0.8")]
     #[serde(alias = "0.7")]
@@ -42,14 +43,22 @@ pub(crate) enum VersionedFileBackedIndex {
 
 impl From<FileBackedIndex> for VersionedFileBackedIndex {
     fn from(index: FileBackedIndex) -> Self {
-        VersionedFileBackedIndex::V0_8(index.into())
+        VersionedFileBackedIndex::V0_9(index.into())
     }
 }
 
 impl From<VersionedFileBackedIndex> for FileBackedIndex {
     fn from(index: VersionedFileBackedIndex) -> Self {
         match index {
-            VersionedFileBackedIndex::V0_8(v0_8) => v0_8.into(),
+            VersionedFileBackedIndex::V0_8(mut v0_8) => {
+                for shards in v0_8.shards.values_mut() {
+                    for shard in shards {
+                        shard.doc_mapping_uid = Some(DocMappingUid::default());
+                    }
+                }
+                v0_8.into()
+            }
+            VersionedFileBackedIndex::V0_9(v0_8) => v0_8.into(),
         }
     }
 }

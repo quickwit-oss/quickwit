@@ -146,13 +146,14 @@
   "shards": {
     "_ingest-source": [
       {
-        "follower_id": "follower-ingester",
         "index_uid": "my-index:00000000000000000000000001",
-        "leader_id": "leader-ingester",
-        "publish_position_inclusive": "",
         "shard_id": "00000000000000000001",
+        "source_id": "_ingest-source",
         "shard_state": 1,
-        "source_id": "_ingest-source"
+        "leader_id": "leader-ingester",
+        "follower_id": "follower-ingester",
+        "doc_mapping_uid": "00000000000000000000000001",
+        "publish_position_inclusive": ""
       }
     ]
   },

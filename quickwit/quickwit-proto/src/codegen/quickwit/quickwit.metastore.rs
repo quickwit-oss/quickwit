@@ -335,6 +335,8 @@ pub struct OpenShardSubrequest {
     pub leader_id: ::prost::alloc::string::String,
     #[prost(string, optional, tag = "6")]
     pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "7")]
+    pub doc_mapping_uid: ::core::option::Option<crate::types::DocMappingUid>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

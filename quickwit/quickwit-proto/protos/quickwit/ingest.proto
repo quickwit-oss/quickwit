@@ -39,6 +39,7 @@ message ShardId {
   bytes shard_id = 1;
 }
 
+// Shard primary key.
 message ShardPKey {
   quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
@@ -93,6 +94,9 @@ message Shard {
   // A publish token that ensures only one indexer works on a given shard at a time.
   // For instance, if an indexer goes rogue, eventually the control plane will detect it and assign the shard to another indexer, which will override the publish token.
   optional string publish_token = 10;
+
+  // The UID of the index doc mapping when the shard was created.
+  quickwit.common.DocMappingUid doc_mapping_uid = 11;
 }
 
 // A group of shards belonging to the same index and source.

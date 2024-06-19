@@ -21,6 +21,15 @@ syntax = "proto3";
 
 package quickwit.common;
 
+// The corresponding Rust struct [`crate::types::DocMappingUid`] is defined manually and
+// externally provided during code generation (see `build.rs`).
+//
+// Modify at your own risk.
+message DocMappingUid {
+  // ULID encoded as a sequence of 16 bytes (big-endian u128).
+  bytes doc_mapping_uid = 1;
+}
+
 // The corresponding Rust struct [`crate::types::IndexUid`] is defined manually and
 // externally provided during code generation (see `build.rs`).
 //

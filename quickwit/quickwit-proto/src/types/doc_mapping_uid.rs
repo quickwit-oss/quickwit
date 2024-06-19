@@ -19,7 +19,9 @@
 
 use std::borrow::Cow;
 use std::fmt;
+use std::str::FromStr;
 
+use anyhow::Context;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use ulid::Ulid;
@@ -63,9 +65,8 @@ impl DocMappingUid {
 impl<'de> Deserialize<'de> for DocMappingUid {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
-        let ulid_str: Cow<'de, str> = Cow::deserialize(deserializer)?;
-        let ulid = Ulid::from_string(&ulid_str).map_err(D::Error::custom)?;
-        Ok(Self(ulid))
+        let doc_mapping_uid_str: Cow<'de, str> = Cow::deserialize(deserializer)?;
+        doc_mapping_uid_str.parse().map_err(D::Error::custom)
     }
 }
 
@@ -128,6 +129,39 @@ impl prost::Message for DocMappingUid {
 
     fn clear(&mut self) {
         self.0 = Ulid::nil();
+    }
+}
+
+impl FromStr for DocMappingUid {
+    type Err = anyhow::Error;
+
+    fn from_str(doc_mapping_uid_str: &str) -> Result<Self, Self::Err> {
+        Ulid::from_string(doc_mapping_uid_str)
+            .map(Self)
+            .with_context(|| format!("failed to parse doc mapping UID `{doc_mapping_uid_str}`"))
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl TryFrom<String> for DocMappingUid {
+    type Error = anyhow::Error;
+
+    fn try_from(doc_mapping_uid_str: String) -> Result<Self, Self::Error> {
+        doc_mapping_uid_str.parse()
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl sqlx::Type<sqlx::Postgres> for DocMappingUid {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("VARCHAR(26)")
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl sqlx::Encode<'_, sqlx::Postgres> for DocMappingUid {
+    fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
+        sqlx::Encode::<sqlx::Postgres>::encode(&self.0.to_string(), buf)
     }
 }
 
