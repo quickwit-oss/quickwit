@@ -56,6 +56,14 @@ macro_rules! generate_copy_getters {
     }
 }
 
+// [`DocMappingUid`] getters
+generate_copy_getters!(
+    impl fn doc_mapping_uid() -> DocMappingUid {} for
+
+    OpenShardSubrequest,
+    Shard
+);
+
 // [`IndexUid`] getters
 generate_getters! {
     impl fn index_uid() -> &IndexUid {} for
