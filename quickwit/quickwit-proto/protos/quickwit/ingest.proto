@@ -39,6 +39,7 @@ message ShardId {
   bytes shard_id = 1;
 }
 
+// Shard primary key.
 message ShardPKey {
   quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
@@ -55,6 +56,7 @@ enum CommitTypeV2 {
 message DocBatchV2 {
   bytes doc_buffer = 1;
   repeated uint32 doc_lengths = 2;
+  repeated quickwit.common.DocUid doc_uids = 3;
 }
 
 message MRecordBatch {
@@ -93,6 +95,9 @@ message Shard {
   // A publish token that ensures only one indexer works on a given shard at a time.
   // For instance, if an indexer goes rogue, eventually the control plane will detect it and assign the shard to another indexer, which will override the publish token.
   optional string publish_token = 10;
+
+  // The UID of the index doc mapping when the shard was created.
+  quickwit.common.DocMappingUid doc_mapping_uid = 11;
 }
 
 // A group of shards belonging to the same index and source.
@@ -111,4 +116,16 @@ message ShardIdPositions {
 message ShardIdPosition {
   ShardId shard_id = 1;
   Position publish_position_inclusive = 2;
+}
+
+enum ParseFailureReason {
+  PARSE_FAILURE_REASON_UNSPECIFIED = 0;
+  PARSE_FAILURE_REASON_INVALID_JSON = 1;
+  PARSE_FAILURE_REASON_INVALID_SCHEMA = 2;
+}
+
+message ParseFailure {
+  quickwit.common.DocUid doc_uid = 1;
+  ParseFailureReason reason = 2;
+  string message = 3;
 }

@@ -18,6 +18,7 @@
     "create_timestamp": 1789,
     "index_config": {
       "doc_mapping": {
+        "doc_mapping_uid": "00000000000000000000000000",
         "dynamic_mapping": {
           "expand_dots": true,
           "fast": {
@@ -119,7 +120,7 @@
           "message"
         ]
       },
-      "version": "0.8"
+      "version": "0.9"
     },
     "index_uid": "my-index:00000000000000000000000000",
     "sources": [
@@ -137,21 +138,22 @@
           "script": ".message = downcase(string!(.message))",
           "timezone": "UTC"
         },
-        "version": "0.8"
+        "version": "0.9"
       }
     ],
-    "version": "0.8"
+    "version": "0.9"
   },
   "shards": {
     "_ingest-source": [
       {
-        "follower_id": "follower-ingester",
         "index_uid": "my-index:00000000000000000000000000",
-        "leader_id": "leader-ingester",
-        "publish_position_inclusive": "",
         "shard_id": "00000000000000000001",
+        "source_id": "_ingest-source",
         "shard_state": 1,
-        "source_id": "_ingest-source"
+        "leader_id": "leader-ingester",
+        "follower_id": "follower-ingester",
+        "doc_mapping_uid": "00000000000000000000000000",
+        "publish_position_inclusive": ""
       }
     ]
   },
@@ -186,8 +188,8 @@
       },
       "uncompressed_docs_size_in_bytes": 234234,
       "update_timestamp": 1789,
-      "version": "0.8"
+      "version": "0.9"
     }
   ],
-  "version": "0.8"
+  "version": "0.9"
 }

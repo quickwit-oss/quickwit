@@ -131,25 +131,25 @@ impl GetOrCreateOpenShardsFailureReason {
         &self,
         subrequest: impl Into<GetOrCreateOpenShardsSubrequest>,
     ) -> GetOrCreateOpenShardsFailure {
-        let sub_request = subrequest.into();
+        let subrequest = subrequest.into();
+
         GetOrCreateOpenShardsFailure {
-            subrequest_id: sub_request.subrequest_id,
-            index_id: sub_request.index_id,
-            source_id: sub_request.source_id,
+            subrequest_id: subrequest.subrequest_id,
+            index_id: subrequest.index_id,
+            source_id: subrequest.source_id,
             reason: *self as i32,
         }
     }
 }
 
 impl From<crate::metastore::OpenShardSubrequest> for GetOrCreateOpenShardsSubrequest {
-    fn from(metastore_open_shard_sub_request: OpenShardSubrequest) -> Self {
-        GetOrCreateOpenShardsSubrequest {
-            subrequest_id: metastore_open_shard_sub_request.subrequest_id,
-            index_id: metastore_open_shard_sub_request
-                .index_uid()
-                .index_id
-                .clone(),
-            source_id: metastore_open_shard_sub_request.source_id,
+    fn from(metastore_open_shard_subrequest: OpenShardSubrequest) -> Self {
+        let index_id = metastore_open_shard_subrequest.index_uid().index_id.clone();
+
+        Self {
+            subrequest_id: metastore_open_shard_subrequest.subrequest_id,
+            index_id,
+            source_id: metastore_open_shard_subrequest.source_id,
         }
     }
 }

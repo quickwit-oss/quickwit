@@ -24,14 +24,14 @@ use hyper::StatusCode;
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::IngestRequestV2Builder;
 use quickwit_proto::ingest::router::{
-    IngestFailureReason, IngestRouterService, IngestRouterServiceClient,
+    IngestFailureReason, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
 };
 use quickwit_proto::ingest::CommitTypeV2;
-use quickwit_proto::types::IndexId;
+use quickwit_proto::types::{DocUid, IndexId};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use super::model::ErrorCauseException;
+use super::model::ElasticException;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::ingest_api::lines;
 use crate::Body;
@@ -69,8 +69,19 @@ pub(crate) struct ElasticBulkError {
     #[serde(rename = "index")]
     pub index_id: Option<IndexId>,
     #[serde(rename = "type")]
-    pub exception: ErrorCauseException,
+    pub exception: ElasticException,
     pub reason: String,
+}
+
+type ElasticDocId = String;
+
+#[derive(Debug)]
+struct DocHandle {
+    doc_uid: DocUid,
+    es_doc_id: Option<ElasticDocId>,
+    // Whether the document failed to parse. When the struct is instantiated, this value is set to
+    // `false` and then mutated if the ingest response contains a parse failure for this document.
+    is_parse_failure: bool,
 }
 
 pub(crate) async fn elastic_bulk_ingest_v2(
@@ -82,21 +93,21 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     let now = Instant::now();
     let mut ingest_request_builder = IngestRequestV2Builder::default();
     let mut lines = lines(&body.content).enumerate();
-    let mut per_subrequest_id_es_doc_ids: HashMap<u32, Vec<Option<String>>> = HashMap::new();
+    let mut per_subrequest_doc_handles: HashMap<u32, Vec<DocHandle>> = HashMap::new();
 
     while let Some((line_no, line)) = lines.next() {
         let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {
             ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 format!("Malformed action/metadata line [{}]: {error}", line_no + 1),
-                Some(ErrorCauseException::IllegalArgument),
+                Some(ElasticException::IllegalArgument),
             )
         })?;
-        let (_, source) = lines.next().ok_or_else(|| {
+        let (_, doc) = lines.next().ok_or_else(|| {
             ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 "Validation Failed: 1: no requests added;".to_string(),
-                Some(ErrorCauseException::ActionRequestValidation),
+                Some(ElasticException::ActionRequestValidation),
             )
         })?;
         let meta = action.into_meta();
@@ -111,15 +122,20 @@ pub(crate) async fn elastic_bulk_ingest_v2(
                 ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
                     "Validation Failed: 1: index is missing;".to_string(),
-                    Some(ErrorCauseException::ActionRequestValidation),
+                    Some(ElasticException::ActionRequestValidation),
                 )
             })?;
-        let subrequest_id = ingest_request_builder.add_doc(index_id, source);
+        let (subrequest_id, doc_uid) = ingest_request_builder.add_doc(index_id, doc);
 
-        per_subrequest_id_es_doc_ids
+        let doc_handle = DocHandle {
+            doc_uid,
+            es_doc_id: meta.es_doc_id,
+            is_parse_failure: false,
+        };
+        per_subrequest_doc_handles
             .entry(subrequest_id)
             .or_default()
-            .push(meta.es_doc_id);
+            .push(doc_handle);
     }
     let commit_type: CommitTypeV2 = bulk_options.refresh.into();
 
@@ -131,27 +147,74 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     let Some(ingest_request) = ingest_request_opt else {
         return Ok(ElasticBulkResponse::default());
     };
-    let ingest_response_v2 = ingest_router.ingest(ingest_request).await?;
-    let errors = !ingest_response_v2.failures.is_empty();
-    let mut actions: Vec<ElasticBulkAction> = Vec::new();
+    let ingest_response = ingest_router.ingest(ingest_request).await?;
+    make_elastic_bulk_response_v2(ingest_response, per_subrequest_doc_handles, now)
+}
 
+fn make_elastic_bulk_response_v2(
+    ingest_response_v2: IngestResponseV2,
+    mut per_subrequest_doc_handles: HashMap<u32, Vec<DocHandle>>,
+    now: Instant,
+) -> Result<ElasticBulkResponse, ElasticsearchError> {
+    let mut actions: Vec<ElasticBulkAction> = Vec::new();
+    let mut errors = false;
+
+    // Populate the items for each `IngestSuccess` subresponse. They may be partially successful and
+    // contain some parse failures.
     for success in ingest_response_v2.successes {
-        let es_doc_ids = per_subrequest_id_es_doc_ids
-            .remove(&success.subrequest_id)
-            .ok_or_else(|| {
-                ElasticsearchError::new(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!(
-                        "could not find subrequest `{}` in bulk request",
-                        success.subrequest_id
-                    ),
-                    None,
-                )
-            })?;
-        for es_doc_id in es_doc_ids {
+        let index_id = success
+            .index_uid
+            .map(|index_uid| index_uid.index_id)
+            .expect("`index_uid` should be a required field");
+
+        // Find the doc handles for the subresponse.
+        let mut doc_handles =
+            remove_doc_handles(&mut per_subrequest_doc_handles, success.subrequest_id)?;
+        doc_handles.sort_unstable_by(|left, right| left.doc_uid.cmp(&right.doc_uid));
+
+        // Populate the response items with one error per parse failure.
+        for parse_failure in success.parse_failures {
+            errors = true;
+
+            // Since the generated doc UIDs are monotonically increasing, and inserted in order, we
+            // can find doc handles using binary search.
+            let doc_handle_idx = doc_handles
+                .binary_search_by_key(&parse_failure.doc_uid(), |doc_handle| doc_handle.doc_uid)
+                .map_err(|_| {
+                    ElasticsearchError::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!(
+                            "could not find doc `{}` in bulk request",
+                            parse_failure.doc_uid()
+                        ),
+                        None,
+                    )
+                })?;
+            let doc_handle = &mut doc_handles[doc_handle_idx];
+            doc_handle.is_parse_failure = true;
+
+            let error = ElasticBulkError {
+                index_id: Some(index_id.clone()),
+                exception: ElasticException::DocumentParsing,
+                reason: parse_failure.message,
+            };
             let item = ElasticBulkItem {
-                index_id: success.index_uid().index_id.clone(),
-                es_doc_id,
+                index_id: index_id.clone(),
+                es_doc_id: doc_handle.es_doc_id.take(),
+                status: StatusCode::BAD_REQUEST,
+                error: Some(error),
+            };
+            let action = ElasticBulkAction::Index(item);
+            actions.push(action);
+        }
+        // Populate the remaining successful items.
+        for mut doc_handle in doc_handles {
+            if doc_handle.is_parse_failure {
+                continue;
+            }
+            let item = ElasticBulkItem {
+                index_id: index_id.clone(),
+                es_doc_id: doc_handle.es_doc_id.take(),
                 status: StatusCode::CREATED,
                 error: None,
             };
@@ -159,59 +222,65 @@ pub(crate) async fn elastic_bulk_ingest_v2(
             actions.push(action);
         }
     }
+    // Repeat the operation for each `IngestFailure` subresponse.
     for failure in ingest_response_v2.failures {
-        let es_doc_ids = per_subrequest_id_es_doc_ids
-            .remove(&failure.subrequest_id)
-            .ok_or_else(|| {
-                ElasticsearchError::new(
+        errors = true;
+
+        // Find the doc handles for the subrequest.
+        let doc_handles =
+            remove_doc_handles(&mut per_subrequest_doc_handles, failure.subrequest_id)?;
+
+        // Populate the response items with one error per doc handle.
+        let (exception, reason, status) = match failure.reason() {
+            IngestFailureReason::IndexNotFound => (
+                ElasticException::IndexNotFound,
+                format!("no such index [{}]", failure.index_id),
+                StatusCode::NOT_FOUND,
+            ),
+            IngestFailureReason::SourceNotFound => (
+                ElasticException::SourceNotFound,
+                format!("no such source [{}]", failure.index_id),
+                StatusCode::NOT_FOUND,
+            ),
+            IngestFailureReason::Timeout => (
+                ElasticException::Timeout,
+                format!("timeout [{}]", failure.index_id),
+                StatusCode::REQUEST_TIMEOUT,
+            ),
+            reason => {
+                let pretty_reason = reason
+                    .as_str_name()
+                    .strip_prefix("INGEST_FAILURE_REASON_")
+                    .unwrap_or("")
+                    .replace('_', " ")
+                    .to_ascii_lowercase();
+                (
+                    ElasticException::Internal,
+                    format!("{} error [{}]", pretty_reason, failure.index_id),
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    format!(
-                        "could not find subrequest `{}` in bulk request",
-                        failure.subrequest_id
-                    ),
-                    None,
                 )
-            })?;
-        match failure.reason() {
-            IngestFailureReason::IndexNotFound => {
-                for es_doc_id in es_doc_ids {
-                    let error = ElasticBulkError {
-                        index_id: Some(failure.index_id.clone()),
-                        exception: ErrorCauseException::IndexNotFound,
-                        reason: format!("no such index [{}]", failure.index_id),
-                    };
-                    let item = ElasticBulkItem {
-                        index_id: failure.index_id.clone(),
-                        es_doc_id,
-                        status: StatusCode::NOT_FOUND,
-                        error: Some(error),
-                    };
-                    let action = ElasticBulkAction::Index(item);
-                    actions.push(action);
-                }
             }
-            IngestFailureReason::Timeout => {
-                for es_doc_id in es_doc_ids {
-                    let error = ElasticBulkError {
-                        index_id: Some(failure.index_id.clone()),
-                        exception: ErrorCauseException::Timeout,
-                        reason: format!("timeout [{}]", failure.index_id),
-                    };
-                    let item = ElasticBulkItem {
-                        index_id: failure.index_id.clone(),
-                        es_doc_id,
-                        status: StatusCode::REQUEST_TIMEOUT,
-                        error: Some(error),
-                    };
-                    let action = ElasticBulkAction::Index(item);
-                    actions.push(action);
-                }
-            }
-            _ => {
-                // TODO
-            }
+        };
+        for mut doc_handle in doc_handles {
+            let error = ElasticBulkError {
+                index_id: Some(failure.index_id.clone()),
+                exception,
+                reason: reason.clone(),
+            };
+            let item = ElasticBulkItem {
+                index_id: failure.index_id.clone(),
+                es_doc_id: doc_handle.es_doc_id.take(),
+                status,
+                error: Some(error),
+            };
+            let action = ElasticBulkAction::Index(item);
+            actions.push(action);
         }
     }
+    assert!(
+        per_subrequest_doc_handles.is_empty(),
+        "doc handles should be empty"
+    );
     let took_millis = now.elapsed().as_millis() as u64;
 
     let bulk_response = ElasticBulkResponse {
@@ -222,12 +291,28 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     Ok(bulk_response)
 }
 
+fn remove_doc_handles(
+    per_subrequest_doc_handles: &mut HashMap<u32, Vec<DocHandle>>,
+    subrequest_id: u32,
+) -> Result<Vec<DocHandle>, ElasticsearchError> {
+    per_subrequest_doc_handles
+        .remove(&subrequest_id)
+        .ok_or_else(|| {
+            ElasticsearchError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not find subrequest `{subrequest_id}` in bulk request"),
+                None,
+            )
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use quickwit_proto::ingest::router::{
         IngestFailure, IngestFailureReason, IngestResponseV2, IngestSuccess,
         MockIngestRouterService,
     };
+    use quickwit_proto::ingest::{ParseFailure, ParseFailureReason};
     use quickwit_proto::types::{IndexUid, Position, ShardId};
     use warp::{Filter, Rejection, Reply};
 
@@ -238,6 +323,36 @@ mod tests {
     use crate::elasticsearch_api::model::ElasticsearchError;
     use crate::format::extract_format_from_qs;
     use crate::with_arg;
+
+    impl ElasticBulkAction {
+        fn index_id(&self) -> &IndexId {
+            match self {
+                ElasticBulkAction::Create(item) => &item.index_id,
+                ElasticBulkAction::Index(item) => &item.index_id,
+            }
+        }
+
+        fn es_doc_id(&self) -> Option<&str> {
+            match self {
+                ElasticBulkAction::Create(item) => item.es_doc_id.as_deref(),
+                ElasticBulkAction::Index(item) => item.es_doc_id.as_deref(),
+            }
+        }
+
+        fn status(&self) -> StatusCode {
+            match self {
+                ElasticBulkAction::Create(item) => item.status,
+                ElasticBulkAction::Index(item) => item.status,
+            }
+        }
+
+        fn error(&self) -> Option<&ElasticBulkError> {
+            match self {
+                ElasticBulkAction::Create(item) => item.error.as_ref(),
+                ElasticBulkAction::Index(item) => item.error.as_ref(),
+            }
+        }
+    }
 
     fn es_compat_bulk_handler_v2(
         ingest_router: IngestRouterServiceClient,
@@ -284,6 +399,8 @@ mod tests {
                             source_id: INGEST_V2_SOURCE_ID.to_string(),
                             shard_id: Some(ShardId::from(1)),
                             replication_position_inclusive: Some(Position::offset(1u64)),
+                            num_ingested_docs: 2,
+                            parse_failures: Vec::new(),
                         },
                         IngestSuccess {
                             subrequest_id: 1,
@@ -291,6 +408,8 @@ mod tests {
                             source_id: INGEST_V2_SOURCE_ID.to_string(),
                             shard_id: Some(ShardId::from(1)),
                             replication_position_inclusive: Some(Position::offset(0u64)),
+                            num_ingested_docs: 1,
+                            parse_failures: Vec::new(),
                         },
                     ],
                     failures: Vec::new(),
@@ -387,6 +506,8 @@ mod tests {
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shard_id: Some(ShardId::from(1)),
                         replication_position_inclusive: Some(Position::offset(0u64)),
+                        num_ingested_docs: 1,
+                        parse_failures: Vec::new(),
                     }],
                     failures: Vec::new(),
                 })
@@ -537,5 +658,101 @@ mod tests {
         let bulk_response: ElasticBulkResponse = serde_json::from_slice(response.body()).unwrap();
         assert!(bulk_response.errors);
         assert_eq!(bulk_response.actions.len(), 3);
+    }
+
+    #[test]
+    fn test_make_elastic_bulk_response_v2() {
+        let response = make_elastic_bulk_response_v2(
+            IngestResponseV2::default(),
+            HashMap::new(),
+            Instant::now(),
+        )
+        .unwrap();
+
+        assert!(!response.errors);
+        assert!(response.actions.is_empty());
+
+        let ingest_response_v2 = IngestResponseV2 {
+            successes: vec![IngestSuccess {
+                subrequest_id: 0,
+                index_uid: Some(IndexUid::for_test("test-index-foo", 0)),
+                source_id: "test-source".to_string(),
+                shard_id: Some(ShardId::from(0)),
+                replication_position_inclusive: Some(Position::offset(0u64)),
+                num_ingested_docs: 1,
+                parse_failures: vec![ParseFailure {
+                    doc_uid: Some(DocUid::for_test(1)),
+                    reason: ParseFailureReason::InvalidJson as i32,
+                    message: "failed to parse JSON document".to_string(),
+                }],
+            }],
+            failures: vec![IngestFailure {
+                subrequest_id: 1,
+                index_id: "test-index-bar".to_string(),
+                source_id: "test-source".to_string(),
+                reason: IngestFailureReason::IndexNotFound as i32,
+            }],
+        };
+        let per_request_doc_handles = HashMap::from_iter([
+            (
+                0,
+                vec![
+                    DocHandle {
+                        doc_uid: DocUid::for_test(0),
+                        es_doc_id: Some("0".to_string()),
+                        is_parse_failure: false,
+                    },
+                    DocHandle {
+                        doc_uid: DocUid::for_test(1),
+                        es_doc_id: Some("1".to_string()),
+                        is_parse_failure: false,
+                    },
+                ],
+            ),
+            (
+                1,
+                vec![DocHandle {
+                    doc_uid: DocUid::for_test(2),
+                    es_doc_id: Some("2".to_string()),
+                    is_parse_failure: false,
+                }],
+            ),
+        ]);
+        let mut response = make_elastic_bulk_response_v2(
+            ingest_response_v2,
+            per_request_doc_handles,
+            Instant::now(),
+        )
+        .unwrap();
+
+        assert!(response.errors);
+        assert_eq!(response.actions.len(), 3);
+
+        response
+            .actions
+            .sort_unstable_by(|left, right| left.es_doc_id().cmp(&right.es_doc_id()));
+
+        assert_eq!(response.actions[0].index_id(), "test-index-foo");
+        assert_eq!(response.actions[0].es_doc_id(), Some("0"));
+        assert_eq!(response.actions[0].status(), StatusCode::CREATED);
+        assert!(response.actions[0].error().is_none());
+
+        assert_eq!(response.actions[1].index_id(), "test-index-foo");
+        assert_eq!(response.actions[1].es_doc_id(), Some("1"));
+        assert_eq!(response.actions[1].status(), StatusCode::BAD_REQUEST);
+
+        let error = response.actions[1].error().unwrap();
+        assert_eq!(error.index_id.as_ref().unwrap(), "test-index-foo");
+        assert_eq!(error.exception, ElasticException::DocumentParsing);
+        assert_eq!(error.reason, "failed to parse JSON document");
+
+        assert_eq!(response.actions[2].index_id(), "test-index-bar");
+        assert_eq!(response.actions[2].es_doc_id(), Some("2"));
+        assert_eq!(response.actions[2].status(), StatusCode::NOT_FOUND);
+
+        let error = response.actions[2].error().unwrap();
+        assert_eq!(error.index_id.as_ref().unwrap(), "test-index-bar");
+        assert_eq!(error.exception, ElasticException::IndexNotFound);
+        assert_eq!(error.reason, "no such index [test-index-bar]");
     }
 }

@@ -71,6 +71,10 @@ pub struct PersistSuccess {
     pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "5")]
     pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
+    #[prost(uint32, tag = "6")]
+    pub num_persisted_docs: u32,
+    #[prost(message, repeated, tag = "7")]
+    pub parse_failures: ::prost::alloc::vec::Vec<super::ParseFailure>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -354,6 +358,8 @@ pub struct InitShardSubrequest {
     pub subrequest_id: u32,
     #[prost(message, optional, tag = "2")]
     pub shard: ::core::option::Option<super::Shard>,
+    #[prost(string, tag = "3")]
+    pub doc_mapping_json: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -267,7 +267,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
                 IndexingTask {
                     index_uid: Some(source.source_uid.index_uid.clone()),
                     source_id: source.source_uid.source_id.clone(),
-                    pipeline_uid: Some(PipelineUid::new()),
+                    pipeline_uid: Some(PipelineUid::random()),
                     shard_ids: Vec::new(),
                 }
             });
@@ -283,7 +283,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
                 vec![IndexingTask {
                     index_uid: Some(source.source_uid.index_uid.clone()),
                     source_id: source.source_uid.source_id.clone(),
-                    pipeline_uid: Some(PipelineUid::new()),
+                    pipeline_uid: Some(PipelineUid::random()),
                     shard_ids: Vec::new(),
                 }]
             }
@@ -551,7 +551,7 @@ fn add_shard_to_indexer(
         indexer_tasks.push(IndexingTask {
             index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.clone(),
-            pipeline_uid: Some(PipelineUid::new()),
+            pipeline_uid: Some(PipelineUid::random()),
             shard_ids: vec![missing_shard],
         });
     }
@@ -1189,13 +1189,13 @@ mod tests {
         let previous_task1 = IndexingTask {
             index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.to_string(),
-            pipeline_uid: Some(PipelineUid::new()),
+            pipeline_uid: Some(PipelineUid::random()),
             shard_ids: vec![ShardId::from(1), ShardId::from(4), ShardId::from(5)],
         };
         let previous_task2 = IndexingTask {
             index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.to_string(),
-            pipeline_uid: Some(PipelineUid::new()),
+            pipeline_uid: Some(PipelineUid::random()),
             shard_ids: vec![
                 ShardId::from(6),
                 ShardId::from(7),
@@ -1259,14 +1259,14 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("testindex"),
             source_id: "testsource".to_string(),
         };
-        let pipeline_uid1 = PipelineUid::new();
+        let pipeline_uid1 = PipelineUid::random();
         let previous_task1 = IndexingTask {
             index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.to_string(),
             pipeline_uid: Some(pipeline_uid1),
             shard_ids: Vec::new(),
         };
-        let pipeline_uid2 = PipelineUid::new();
+        let pipeline_uid2 = PipelineUid::random();
         let previous_task2 = IndexingTask {
             index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.to_string(),

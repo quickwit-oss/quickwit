@@ -348,13 +348,12 @@ message DeleteTask {
 message DeleteQuery {
   reserved 4, 5;
 
-  // Index ID.
+  // Index UID.
   quickwit.common.IndexUid index_uid = 1;
   // If set, restrict search to documents with a `timestamp >= start_timestamp`.
   optional int64 start_timestamp = 2;
   // If set, restrict search to documents with a `timestamp < end_timestamp``.
   optional int64 end_timestamp = 3;
-  // Query text. The query language is that of tantivy.
   // Query AST serialized in JSON
   string query_ast = 6;
 }
@@ -405,6 +404,7 @@ message OpenShardSubrequest {
   quickwit.ingest.ShardId shard_id = 4;
   string leader_id = 5;
   optional string follower_id = 6;
+  quickwit.common.DocMappingUid doc_mapping_uid = 7;
 }
 
 message OpenShardsResponse {

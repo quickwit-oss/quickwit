@@ -19,6 +19,7 @@
 
 mod broadcast;
 mod debouncing;
+mod doc_mapper;
 mod fetch;
 mod idle;
 mod ingester;
@@ -46,7 +47,7 @@ use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
 use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
-use quickwit_proto::types::{IndexId, NodeId};
+use quickwit_proto::types::{DocUid, DocUidGenerator, IndexId, NodeId, SubrequestId};
 use tracing::{error, info};
 
 pub use self::fetch::{FetchStreamError, MultiFetchStream};
@@ -112,23 +113,26 @@ pub(crate) fn get_ingest_router_buffer_size() -> ByteSize {
 /// Helper struct to build a [`DocBatchV2`]`.
 #[derive(Debug, Default)]
 pub struct DocBatchV2Builder {
+    doc_uids: Vec<DocUid>,
     doc_buffer: BytesMut,
     doc_lengths: Vec<u32>,
 }
 
 impl DocBatchV2Builder {
     /// Adds a document to the batch.
-    pub fn add_doc(&mut self, doc: &[u8]) {
-        self.doc_lengths.push(doc.len() as u32);
+    pub fn add_doc(&mut self, doc_uid: DocUid, doc: &[u8]) {
+        self.doc_uids.push(doc_uid);
         self.doc_buffer.put(doc);
+        self.doc_lengths.push(doc.len() as u32);
     }
 
     /// Builds the [`DocBatchV2`], returning `None` if the batch is empty.
     pub fn build(self) -> Option<DocBatchV2> {
-        if self.doc_lengths.is_empty() {
+        if self.doc_uids.is_empty() {
             return None;
         }
         let doc_batch = DocBatchV2 {
+            doc_uids: self.doc_uids,
             doc_buffer: self.doc_buffer.freeze(),
             doc_lengths: self.doc_lengths,
         };
@@ -139,26 +143,30 @@ impl DocBatchV2Builder {
 /// Helper struct to build an [`IngestRequestV2`].
 #[derive(Debug, Default)]
 pub struct IngestRequestV2Builder {
-    per_index_id_doc_batch_builders: HashMap<IndexId, (u32, DocBatchV2Builder)>,
-    subrequest_id_sequence: u32,
+    per_index_id_doc_batch_builders: HashMap<IndexId, (SubrequestId, DocBatchV2Builder)>,
+    subrequest_id_sequence: SubrequestId,
+    doc_uid_generator: DocUidGenerator,
 }
 
 impl IngestRequestV2Builder {
-    /// Adds a document to the request.
-    pub fn add_doc(&mut self, index_id: IndexId, doc: &[u8]) -> u32 {
+    /// Adds a document to the request, returning the ID of the subrequest to wich it was added and
+    /// its newly assigned [`DocUid`].
+    pub fn add_doc(&mut self, index_id: IndexId, doc: &[u8]) -> (SubrequestId, DocUid) {
         match self.per_index_id_doc_batch_builders.entry(index_id) {
             Entry::Occupied(mut entry) => {
                 let (subrequest_id, doc_batch_builder) = entry.get_mut();
-                doc_batch_builder.add_doc(doc);
-                *subrequest_id
+                let doc_uid = self.doc_uid_generator.next_doc_uid();
+                doc_batch_builder.add_doc(doc_uid, doc);
+                (*subrequest_id, doc_uid)
             }
             Entry::Vacant(entry) => {
                 let subrequest_id = self.subrequest_id_sequence;
                 self.subrequest_id_sequence += 1;
                 let mut doc_batch_builder = DocBatchV2Builder::default();
-                doc_batch_builder.add_doc(doc);
+                let doc_uid = self.doc_uid_generator.next_doc_uid();
+                doc_batch_builder.add_doc(doc_uid, doc);
                 entry.insert((subrequest_id, doc_batch_builder));
-                subrequest_id
+                (subrequest_id, doc_uid)
             }
         }
     }
@@ -240,8 +248,9 @@ mod tests {
         assert!(doc_batch_opt.is_none());
 
         let mut doc_batch_builder = DocBatchV2Builder::default();
-        doc_batch_builder.add_doc(b"Hello, ");
-        doc_batch_builder.add_doc(b"World!");
+        let mut doc_uid_generator = DocUidGenerator::default();
+        doc_batch_builder.add_doc(doc_uid_generator.next_doc_uid(), b"Hello, ");
+        doc_batch_builder.add_doc(doc_uid_generator.next_doc_uid(), b"World!");
         let doc_batch = doc_batch_builder.build().unwrap();
 
         assert_eq!(doc_batch.num_docs(), 2);
@@ -257,11 +266,26 @@ mod tests {
         assert!(ingest_request_opt.is_none());
 
         let mut ingest_request_builder = IngestRequestV2Builder::default();
-        ingest_request_builder.add_doc("test-index-foo".to_string(), b"Hello, ");
-        ingest_request_builder.add_doc("test-index-foo".to_string(), b"World!");
 
-        ingest_request_builder.add_doc("test-index-bar".to_string(), b"Hola, ");
-        ingest_request_builder.add_doc("test-index-bar".to_string(), b"Mundo!");
+        let (subrequest_id, hello_doc_uid) =
+            ingest_request_builder.add_doc("test-index-foo".to_string(), b"Hello, ");
+        assert_eq!(subrequest_id, 0);
+
+        let (subrequest_id, world_doc_uid) =
+            ingest_request_builder.add_doc("test-index-foo".to_string(), b"World!");
+        assert_eq!(subrequest_id, 0);
+        assert!(hello_doc_uid < world_doc_uid);
+
+        let (subrequest_id, hola_doc_uid) =
+            ingest_request_builder.add_doc("test-index-bar".to_string(), b"Hola, ");
+        assert_eq!(subrequest_id, 1);
+        assert!(world_doc_uid < hola_doc_uid);
+
+        let (subrequest_id, mundo_doc_uid) =
+            ingest_request_builder.add_doc("test-index-bar".to_string(), b"Mundo!");
+        assert_eq!(subrequest_id, 1);
+        assert!(hola_doc_uid < mundo_doc_uid);
+
         let mut ingest_request = ingest_request_builder
             .build("test-source", CommitTypeV2::Auto)
             .unwrap();
@@ -305,6 +329,14 @@ mod tests {
                 .doc_buffer,
             Bytes::from(&b"Hello, World!"[..])
         );
+        assert_eq!(
+            ingest_request.subrequests[0]
+                .doc_batch
+                .as_ref()
+                .unwrap()
+                .doc_uids,
+            [hello_doc_uid, world_doc_uid]
+        );
 
         assert_eq!(ingest_request.subrequests[1].index_id, "test-index-bar");
         assert_eq!(ingest_request.subrequests[1].source_id, "test-source");
@@ -340,6 +372,14 @@ mod tests {
                 .doc_buffer,
             Bytes::from(&b"Hola, Mundo!"[..])
         );
+        assert_eq!(
+            ingest_request.subrequests[1]
+                .doc_batch
+                .as_ref()
+                .unwrap()
+                .doc_uids,
+            [hola_doc_uid, mundo_doc_uid]
+        );
     }
 
     #[test]
@@ -347,12 +387,14 @@ mod tests {
         let doc_batch = DocBatchV2 {
             doc_buffer: Vec::new().into(),
             doc_lengths: Vec::new(),
+            doc_uids: Vec::new(),
         };
         assert_eq!(estimate_size(&doc_batch), ByteSize(0));
 
         let doc_batch = DocBatchV2 {
             doc_buffer: vec![0u8; 100].into(),
             doc_lengths: vec![10, 20, 30],
+            doc_uids: Vec::new(),
         };
         assert_eq!(estimate_size(&doc_batch), ByteSize(118));
     }

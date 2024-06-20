@@ -94,6 +94,8 @@ message PersistSuccess {
   string source_id = 3;
   quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.Position replication_position_inclusive = 5;
+  uint32 num_persisted_docs = 6;
+  repeated quickwit.ingest.ParseFailure parse_failures = 7;
 }
 
 enum PersistFailureReason {
@@ -256,6 +258,7 @@ message InitShardsRequest {
 message InitShardSubrequest {
   uint32 subrequest_id = 1;
   quickwit.ingest.Shard shard = 2;
+  string doc_mapping_json = 3;
 }
 
 message InitShardsResponse {
