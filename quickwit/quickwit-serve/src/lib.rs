@@ -120,7 +120,7 @@ use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
 pub use crate::build_info::{BuildInfo, RuntimeInfo};
-pub use crate::index_api::{IndexUpdates, ListSplitsQueryParams, ListSplitsResponse};
+pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
 pub use crate::metrics::SERVE_METRICS;
 use crate::rate_modulator::RateModulator;
 #[cfg(test)]
@@ -1151,7 +1151,7 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
 async fn node_readiness_reporting_task(
     cluster: Cluster,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
@@ -1199,7 +1199,7 @@ async fn node_readiness_reporting_task(
 async fn check_cluster_configuration(
     services: &HashSet<QuickwitService>,
     peer_seeds: &[String],
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> anyhow::Result<()> {
     if !services.contains(&QuickwitService::Metastore) || peer_seeds.is_empty() {
         return Ok(());
@@ -1245,8 +1245,8 @@ pub mod lambda_search_api {
         es_compat_cat_indices_handler, es_compat_index_cat_indices_handler,
         es_compat_index_count_handler, es_compat_index_field_capabilities_handler,
         es_compat_index_multi_search_handler, es_compat_index_search_handler,
-        es_compat_index_stats_handler, es_compat_scroll_handler, es_compat_search_handler,
-        es_compat_stats_handler,
+        es_compat_index_stats_handler, es_compat_resolve_index_handler, es_compat_scroll_handler,
+        es_compat_search_handler, es_compat_stats_handler,
     };
     pub use crate::index_api::get_index_metadata_handler;
     pub use crate::rest::recover_fn;

@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::iter::zip;
+
 use bytes::Bytes;
 use bytesize::ByteSize;
 use quickwit_common::tower::MakeLoadShedError;
@@ -25,7 +27,7 @@ use self::ingester::{PersistFailureReason, ReplicateFailureReason};
 use self::router::IngestFailureReason;
 use super::types::NodeId;
 use super::GrpcServiceError;
-use crate::types::{queue_id, Position, QueueId, ShardId, SourceUid};
+use crate::types::{queue_id, DocUid, Position, QueueId, ShardId, SourceUid};
 use crate::{ServiceError, ServiceErrorCode};
 
 pub mod ingester;
@@ -116,19 +118,24 @@ impl ShardPKey {
 }
 
 impl DocBatchV2 {
-    pub fn docs(self) -> impl Iterator<Item = Bytes> {
-        let DocBatchV2 {
-            doc_buffer,
-            doc_lengths,
-        } = self;
-        doc_lengths
-            .into_iter()
-            .scan(0, move |start_offset, doc_length| {
-                let start = *start_offset;
-                let end = start + doc_length as usize;
-                *start_offset = end;
-                Some(doc_buffer.slice(start..end))
-            })
+    pub fn docs(&self) -> impl Iterator<Item = (DocUid, Bytes)> + '_ {
+        zip(&self.doc_uids, &self.doc_lengths).scan(
+            self.doc_buffer.clone(),
+            |doc_buffer, (doc_uid, doc_len)| {
+                let doc = doc_buffer.split_to(*doc_len as usize);
+                Some((*doc_uid, doc))
+            },
+        )
+    }
+
+    pub fn into_docs(self) -> impl Iterator<Item = (DocUid, Bytes)> {
+        zip(self.doc_uids, self.doc_lengths).scan(
+            self.doc_buffer,
+            |doc_buffer, (doc_uid, doc_len)| {
+                let doc = doc_buffer.split_to(doc_len as usize);
+                Some((doc_uid, doc))
+            },
+        )
     }
 
     pub fn is_empty(&self) -> bool {
@@ -145,16 +152,19 @@ impl DocBatchV2 {
 
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(docs: impl IntoIterator<Item = &'static str>) -> Self {
+        let mut doc_uids = Vec::new();
         let mut doc_buffer = Vec::new();
         let mut doc_lengths = Vec::new();
 
-        for doc in docs {
+        for (doc_uid, doc) in docs.into_iter().enumerate() {
+            doc_uids.push(DocUid::for_test(doc_uid as u128));
             doc_buffer.extend(doc.as_bytes());
             doc_lengths.push(doc.len() as u32);
         }
         Self {
-            doc_lengths,
+            doc_uids,
             doc_buffer: Bytes::from(doc_buffer),
+            doc_lengths,
         }
     }
 }

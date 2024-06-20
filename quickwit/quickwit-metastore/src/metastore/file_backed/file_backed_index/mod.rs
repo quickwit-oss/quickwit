@@ -30,7 +30,9 @@ use std::ops::Bound;
 
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
-use quickwit_config::{RetentionPolicy, SearchSettings, SourceConfig, INGEST_V2_SOURCE_ID};
+use quickwit_config::{
+    IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig, INGEST_V2_SOURCE_ID,
+};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteTask, EntityKind, ListShardsSubrequest, ListShardsSubresponse,
@@ -80,7 +82,7 @@ pub(crate) struct FileBackedIndex {
 impl quickwit_config::TestableForRegression for FileBackedIndex {
     fn sample_for_regression() -> Self {
         use quickwit_proto::ingest::{Shard, ShardState};
-        use quickwit_proto::types::{Position, ShardId};
+        use quickwit_proto::types::{DocMappingUid, Position, ShardId};
 
         let index_metadata = IndexMetadata::sample_for_regression();
         let index_uid = index_metadata.index_uid.clone();
@@ -102,6 +104,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
             shard_state: ShardState::Open as i32,
             leader_id: "leader-ingester".to_string(),
             follower_id: Some("follower-ingester".to_string()),
+            doc_mapping_uid: Some(DocMappingUid::for_test(1)),
             publish_position_inclusive: Some(Position::Beginning),
             ..Default::default()
         };
@@ -221,6 +224,11 @@ impl FileBackedIndex {
     /// Replaces the search settings in the index config, returning whether a mutation occurred.
     pub fn set_search_settings(&mut self, search_settings: SearchSettings) -> bool {
         self.metadata.set_search_settings(search_settings)
+    }
+
+    /// Replaces the indexing settings in the index config, returning whether a mutation occurred.
+    pub fn set_indexing_settings(&mut self, search_settings: IndexingSettings) -> bool {
+        self.metadata.set_indexing_settings(search_settings)
     }
 
     /// Stages a single split.

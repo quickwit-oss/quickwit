@@ -266,7 +266,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
     fn sample_for_regression() -> Self {
         SplitMetadata {
             split_id: "split".to_string(),
-            index_uid: IndexUid::for_test("my-index", 0),
+            index_uid: IndexUid::for_test("my-index", 1),
             source_id: "source".to_string(),
             node_id: "node".to_string(),
             delete_opstamp: 10,

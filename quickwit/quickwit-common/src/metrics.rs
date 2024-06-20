@@ -90,6 +90,25 @@ pub fn new_counter(
     counter
 }
 
+pub fn new_counter_with_labels(
+    name: &str,
+    help: &str,
+    subsystem: &str,
+    const_labels: &[(&str, &str)],
+) -> IntCounter {
+    let owned_const_labels: HashMap<String, String> = const_labels
+        .iter()
+        .map(|(label_name, label_value)| (label_name.to_string(), label_value.to_string()))
+        .collect();
+    let counter_opts = Opts::new(name, help)
+        .namespace("quickwit")
+        .subsystem(subsystem)
+        .const_labels(owned_const_labels);
+    let counter = IntCounter::with_opts(counter_opts).expect("failed to create counter");
+    prometheus::register(Box::new(counter.clone())).expect("failed to register counter");
+    counter
+}
+
 pub fn new_counter_vec<const N: usize>(
     name: &str,
     help: &str,
@@ -427,6 +446,18 @@ impl InFlightDataGauges {
             self.in_flight_gauge_vec
                 .with_label_values(["pulsar_source"])
         })
+    }
+}
+
+/// This function returns `index_name` or projects it to `<any>` if per-index metrics are disabled.
+pub fn index_label(index_name: &str) -> &str {
+    static PER_INDEX_METRICS_ENABLED: OnceLock<bool> = OnceLock::new();
+    let per_index_metrics_enabled: bool = *PER_INDEX_METRICS_ENABLED
+        .get_or_init(|| !crate::get_bool_from_env("QW_DISABLE_PER_INDEX_METRICS", false));
+    if per_index_metrics_enabled {
+        index_name
+    } else {
+        "__any__"
     }
 }
 

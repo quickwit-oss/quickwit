@@ -69,7 +69,7 @@ impl DeveloperApiServer {
 #[async_trait]
 impl DeveloperService for DeveloperApiServer {
     async fn get_debug_info(
-        &mut self,
+        &self,
         request: GetDebugInfoRequest,
     ) -> DeveloperResult<GetDebugInfoResponse> {
         let roles: HashSet<QuickwitService> = request
@@ -144,7 +144,7 @@ mod tests {
 
         let node_config = Arc::new(NodeConfig::for_test());
 
-        let mut developer_api_server = DeveloperApiServer {
+        let developer_api_server = DeveloperApiServer {
             node_config,
             cluster,
             control_plane_mailbox_opt: None,

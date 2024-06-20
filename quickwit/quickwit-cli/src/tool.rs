@@ -472,7 +472,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .ask_for_res(SpawnPipeline {
             index_id: args.index_id.clone(),
             source_config,
-            pipeline_uid: PipelineUid::new(),
+            pipeline_uid: PipelineUid::random(),
         })
         .await?;
     let merge_pipeline_handle = indexing_server_mailbox
@@ -611,7 +611,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             },
-            pipeline_uid: PipelineUid::new(),
+            pipeline_uid: PipelineUid::random(),
         })
         .await?;
     let pipeline_handle: ActorHandle<MergePipeline> = indexing_service_mailbox
@@ -722,7 +722,7 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     let config = load_node_config(&args.config_uri).await?;
     let (storage_resolver, metastore_resolver) =
         get_resolvers(&config.storage_configs, &config.metastore_configs);
-    let mut metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
+    let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     let index_metadata = metastore
         .index_metadata(IndexMetadataRequest::for_index_id(args.index_id))
         .await?

@@ -72,14 +72,14 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.endpoints()
     }
 
-    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.metastore.check_connectivity().await
     }
 
     // Proxied metastore API calls.
 
     async fn create_index(
-        &mut self,
+        &self,
         request: CreateIndexRequest,
     ) -> MetastoreResult<CreateIndexResponse> {
         let response = self.control_plane.create_index(request).await?;
@@ -92,38 +92,29 @@ impl MetastoreService for ControlPlaneMetastore {
     // doc mapping or merge policy of an index, so we've already set up the proxy here since calling
     // `update_index` is very infrequent anyway.
     async fn update_index(
-        &mut self,
+        &self,
         request: UpdateIndexRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
         let response = self.control_plane.update_index(request).await?;
         Ok(response)
     }
 
-    async fn delete_index(
-        &mut self,
-        request: DeleteIndexRequest,
-    ) -> MetastoreResult<EmptyResponse> {
+    async fn delete_index(&self, request: DeleteIndexRequest) -> MetastoreResult<EmptyResponse> {
         let response = self.control_plane.delete_index(request).await?;
         Ok(response)
     }
 
-    async fn add_source(&mut self, request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
+    async fn add_source(&self, request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
         let response = self.control_plane.add_source(request).await?;
         Ok(response)
     }
 
-    async fn toggle_source(
-        &mut self,
-        request: ToggleSourceRequest,
-    ) -> MetastoreResult<EmptyResponse> {
+    async fn toggle_source(&self, request: ToggleSourceRequest) -> MetastoreResult<EmptyResponse> {
         let response = self.control_plane.clone().toggle_source(request).await?;
         Ok(response)
     }
 
-    async fn delete_source(
-        &mut self,
-        request: DeleteSourceRequest,
-    ) -> MetastoreResult<EmptyResponse> {
+    async fn delete_source(&self, request: DeleteSourceRequest) -> MetastoreResult<EmptyResponse> {
         let response = self.control_plane.delete_source(request).await?;
         Ok(response)
     }
@@ -131,70 +122,64 @@ impl MetastoreService for ControlPlaneMetastore {
     // Other metastore API calls.
 
     async fn index_metadata(
-        &mut self,
+        &self,
         request: IndexMetadataRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
         self.metastore.index_metadata(request).await
     }
 
     async fn indexes_metadata(
-        &mut self,
+        &self,
         request: IndexesMetadataRequest,
     ) -> MetastoreResult<IndexesMetadataResponse> {
         self.metastore.indexes_metadata(request).await
     }
 
     async fn list_indexes_metadata(
-        &mut self,
+        &self,
         request: ListIndexesMetadataRequest,
     ) -> MetastoreResult<ListIndexesMetadataResponse> {
         self.metastore.list_indexes_metadata(request).await
     }
 
-    async fn stage_splits(
-        &mut self,
-        request: StageSplitsRequest,
-    ) -> MetastoreResult<EmptyResponse> {
+    async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
         self.metastore.stage_splits(request).await
     }
 
     async fn publish_splits(
-        &mut self,
+        &self,
         request: PublishSplitsRequest,
     ) -> MetastoreResult<EmptyResponse> {
         self.metastore.publish_splits(request).await
     }
 
     async fn list_splits(
-        &mut self,
+        &self,
         request: ListSplitsRequest,
     ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         self.metastore.list_splits(request).await
     }
 
     async fn list_stale_splits(
-        &mut self,
+        &self,
         request: ListStaleSplitsRequest,
     ) -> MetastoreResult<ListSplitsResponse> {
         self.metastore.list_stale_splits(request).await
     }
 
     async fn mark_splits_for_deletion(
-        &mut self,
+        &self,
         request: MarkSplitsForDeletionRequest,
     ) -> MetastoreResult<EmptyResponse> {
         self.metastore.mark_splits_for_deletion(request).await
     }
 
-    async fn delete_splits(
-        &mut self,
-        request: DeleteSplitsRequest,
-    ) -> MetastoreResult<EmptyResponse> {
+    async fn delete_splits(&self, request: DeleteSplitsRequest) -> MetastoreResult<EmptyResponse> {
         self.metastore.delete_splits(request).await
     }
 
     async fn reset_source_checkpoint(
-        &mut self,
+        &self,
         request: ResetSourceCheckpointRequest,
     ) -> MetastoreResult<EmptyResponse> {
         self.metastore.reset_source_checkpoint(request).await
@@ -202,29 +187,26 @@ impl MetastoreService for ControlPlaneMetastore {
 
     // Delete tasks API
 
-    async fn create_delete_task(
-        &mut self,
-        delete_query: DeleteQuery,
-    ) -> MetastoreResult<DeleteTask> {
+    async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
         self.metastore.create_delete_task(delete_query).await
     }
 
     async fn last_delete_opstamp(
-        &mut self,
+        &self,
         request: LastDeleteOpstampRequest,
     ) -> MetastoreResult<LastDeleteOpstampResponse> {
         self.metastore.last_delete_opstamp(request).await
     }
 
     async fn update_splits_delete_opstamp(
-        &mut self,
+        &self,
         request: UpdateSplitsDeleteOpstampRequest,
     ) -> MetastoreResult<UpdateSplitsDeleteOpstampResponse> {
         self.metastore.update_splits_delete_opstamp(request).await
     }
 
     async fn list_delete_tasks(
-        &mut self,
+        &self,
         request: ListDeleteTasksRequest,
     ) -> MetastoreResult<ListDeleteTasksResponse> {
         self.metastore.list_delete_tasks(request).await
@@ -232,29 +214,23 @@ impl MetastoreService for ControlPlaneMetastore {
 
     // Shard API
 
-    async fn open_shards(
-        &mut self,
-        request: OpenShardsRequest,
-    ) -> MetastoreResult<OpenShardsResponse> {
+    async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse> {
         self.metastore.open_shards(request).await
     }
 
     async fn acquire_shards(
-        &mut self,
+        &self,
         request: AcquireShardsRequest,
     ) -> MetastoreResult<AcquireShardsResponse> {
         self.metastore.acquire_shards(request).await
     }
 
-    async fn list_shards(
-        &mut self,
-        request: ListShardsRequest,
-    ) -> MetastoreResult<ListShardsResponse> {
+    async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
         self.metastore.list_shards(request).await
     }
 
     async fn delete_shards(
-        &mut self,
+        &self,
         request: DeleteShardsRequest,
     ) -> MetastoreResult<DeleteShardsResponse> {
         self.metastore.delete_shards(request).await
@@ -263,35 +239,35 @@ impl MetastoreService for ControlPlaneMetastore {
     // Index Template API
 
     async fn create_index_template(
-        &mut self,
+        &self,
         request: CreateIndexTemplateRequest,
     ) -> MetastoreResult<EmptyResponse> {
         self.metastore.create_index_template(request).await
     }
 
     async fn get_index_template(
-        &mut self,
+        &self,
         request: GetIndexTemplateRequest,
     ) -> MetastoreResult<GetIndexTemplateResponse> {
         self.metastore.get_index_template(request).await
     }
 
     async fn find_index_template_matches(
-        &mut self,
+        &self,
         request: FindIndexTemplateMatchesRequest,
     ) -> MetastoreResult<FindIndexTemplateMatchesResponse> {
         self.metastore.find_index_template_matches(request).await
     }
 
     async fn list_index_templates(
-        &mut self,
+        &self,
         request: ListIndexTemplatesRequest,
     ) -> MetastoreResult<ListIndexTemplatesResponse> {
         self.metastore.list_index_templates(request).await
     }
 
     async fn delete_index_templates(
-        &mut self,
+        &self,
         request: DeleteIndexTemplatesRequest,
     ) -> MetastoreResult<EmptyResponse> {
         self.metastore.delete_index_templates(request).await

@@ -38,8 +38,8 @@ pub use rest_handler::{
     es_compat_cat_indices_handler, es_compat_cluster_info_handler, es_compat_delete_index_handler,
     es_compat_index_cat_indices_handler, es_compat_index_count_handler,
     es_compat_index_field_capabilities_handler, es_compat_index_multi_search_handler,
-    es_compat_index_search_handler, es_compat_index_stats_handler, es_compat_scroll_handler,
-    es_compat_search_handler, es_compat_stats_handler,
+    es_compat_index_search_handler, es_compat_index_stats_handler, es_compat_resolve_index_handler,
+    es_compat_scroll_handler, es_compat_search_handler, es_compat_stats_handler,
 };
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
@@ -80,6 +80,7 @@ pub fn elastic_api_handlers(
         .or(es_compat_stats_handler(metastore.clone()))
         .or(es_compat_index_cat_indices_handler(metastore.clone()))
         .or(es_compat_cat_indices_handler(metastore.clone()))
+        .or(es_compat_resolve_index_handler(metastore.clone()))
         .recover(recover_fn)
     // Register newly created handlers here.
 }

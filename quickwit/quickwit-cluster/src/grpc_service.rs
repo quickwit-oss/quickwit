@@ -60,7 +60,7 @@ pub fn cluster_grpc_server(
 #[async_trait]
 impl ClusterService for Cluster {
     async fn fetch_cluster_state(
-        &mut self,
+        &self,
         request: FetchClusterStateRequest,
     ) -> ClusterResult<FetchClusterStateResponse> {
         if request.cluster_id != self.cluster_id() {
@@ -132,7 +132,7 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_cluster_state() {
         let transport = ChannelTransport::default();
-        let mut cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
 

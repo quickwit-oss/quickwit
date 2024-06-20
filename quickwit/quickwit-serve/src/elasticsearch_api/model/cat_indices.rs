@@ -177,6 +177,29 @@ impl From<SplitMetadata> for ElasticsearchCatIndexResponse {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ElasticsearchResolveIndexResponse {
+    pub indices: Vec<ElasticsearchResolveIndexEntryResponse>,
+    // Unused for the moment.
+    pub aliases: Vec<serde_json::Value>,
+    pub data_streams: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ElasticsearchResolveIndexEntryResponse {
+    pub name: String,
+    pub attributes: Vec<Status>,
+}
+
+impl From<IndexMetadata> for ElasticsearchResolveIndexEntryResponse {
+    fn from(index_metadata: IndexMetadata) -> Self {
+        ElasticsearchResolveIndexEntryResponse {
+            name: index_metadata.index_config.index_id.to_string(),
+            attributes: vec![Status::Open],
+        }
+    }
+}
+
 fn serialize_u64_as_string<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
 where S: Serializer {
     serializer.serialize_str(&value.to_string())

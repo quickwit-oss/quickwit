@@ -1,3 +1,4 @@
+/// Shard primary key.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -17,6 +18,8 @@ pub struct DocBatchV2 {
     pub doc_buffer: ::prost::bytes::Bytes,
     #[prost(uint32, repeated, tag = "2")]
     pub doc_lengths: ::prost::alloc::vec::Vec<u32>,
+    #[prost(message, repeated, tag = "3")]
+    pub doc_uids: ::prost::alloc::vec::Vec<crate::types::DocUid>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -61,6 +64,9 @@ pub struct Shard {
     #[prost(string, optional, tag = "10")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish_token: ::core::option::Option<::prost::alloc::string::String>,
+    /// The UID of the index doc mapping when the shard was created.
+    #[prost(message, optional, tag = "11")]
+    pub doc_mapping_uid: ::core::option::Option<crate::types::DocMappingUid>,
 }
 /// A group of shards belonging to the same index and source.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -93,6 +99,17 @@ pub struct ShardIdPosition {
     pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "2")]
     pub publish_position_inclusive: ::core::option::Option<crate::types::Position>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ParseFailure {
+    #[prost(message, optional, tag = "1")]
+    pub doc_uid: ::core::option::Option<crate::types::DocUid>,
+    #[prost(enumeration = "ParseFailureReason", tag = "2")]
+    pub reason: i32,
+    #[prost(string, tag = "3")]
+    pub message: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -162,6 +179,37 @@ impl ShardState {
             "SHARD_STATE_OPEN" => Some(Self::Open),
             "SHARD_STATE_UNAVAILABLE" => Some(Self::Unavailable),
             "SHARD_STATE_CLOSED" => Some(Self::Closed),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ParseFailureReason {
+    Unspecified = 0,
+    InvalidJson = 1,
+    InvalidSchema = 2,
+}
+impl ParseFailureReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ParseFailureReason::Unspecified => "PARSE_FAILURE_REASON_UNSPECIFIED",
+            ParseFailureReason::InvalidJson => "PARSE_FAILURE_REASON_INVALID_JSON",
+            ParseFailureReason::InvalidSchema => "PARSE_FAILURE_REASON_INVALID_SCHEMA",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PARSE_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "PARSE_FAILURE_REASON_INVALID_JSON" => Some(Self::InvalidJson),
+            "PARSE_FAILURE_REASON_INVALID_SCHEMA" => Some(Self::InvalidSchema),
             _ => None,
         }
     }

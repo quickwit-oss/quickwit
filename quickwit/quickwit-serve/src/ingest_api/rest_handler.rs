@@ -27,7 +27,7 @@ use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
     IngestRouterServiceClient, IngestSubrequest,
 };
-use quickwit_proto::types::IndexId;
+use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
@@ -119,12 +119,13 @@ async fn ingest_v2(
     index_id: IndexId,
     body: Body,
     ingest_options: IngestOptions,
-    mut ingest_router: IngestRouterServiceClient,
+    ingest_router: IngestRouterServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
     let mut doc_batch_builder = DocBatchV2Builder::default();
+    let mut doc_uid_generator = DocUidGenerator::default();
 
     for doc in lines(&body.content) {
-        doc_batch_builder.add_doc(doc);
+        doc_batch_builder.add_doc(doc_uid_generator.next_doc_uid(), doc);
     }
     let doc_batch_opt = doc_batch_builder.build();
 
@@ -206,7 +207,7 @@ async fn ingest(
     index_id: IndexId,
     body: Body,
     ingest_options: IngestOptions,
-    mut ingest_service: IngestServiceClient,
+    ingest_service: IngestServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
     if disable_ingest_v1() {
         let message = "ingest v1 is disabled: environment variable `QW_DISABLE_INGEST_V1` is set";
@@ -254,7 +255,7 @@ fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone 
 /// Returns the last few ingested documents.
 async fn tail_endpoint(
     index_id: IndexId,
-    mut ingest_service: IngestServiceClient,
+    ingest_service: IngestServiceClient,
 ) -> Result<FetchResponse, IngestServiceError> {
     let fetch_response = ingest_service.tail(TailRequest { index_id }).await?;
     Ok(fetch_response)

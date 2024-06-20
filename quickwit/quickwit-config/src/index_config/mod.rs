@@ -19,8 +19,6 @@
 
 pub(crate) mod serialize;
 
-use std::collections::BTreeSet;
-use std::num::NonZeroU32;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,15 +29,14 @@ use chrono::Utc;
 use cron::Schedule;
 use humantime::parse_duration;
 use quickwit_common::uri::Uri;
-use quickwit_doc_mapper::{DefaultDocMapperBuilder, DocMapper, DocMapping, Mode};
+use quickwit_doc_mapper::{DefaultDocMapperBuilder, DocMapper, DocMapping};
 use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
-pub use serialize::load_index_config_from_user_config;
+pub use serialize::{load_index_config_from_user_config, load_index_config_update};
 use tracing::warn;
 
 use crate::index_config::serialize::VersionedIndexConfig;
-use crate::merge_policy_config::{MergePolicyConfig, StableLogMergePolicyConfig};
-use crate::TestableForRegression;
+use crate::merge_policy_config::MergePolicyConfig;
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -260,6 +257,7 @@ impl IndexConfig {
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
         let index_uri = Uri::from_str(index_uri).unwrap();
         let doc_mapping_json = r#"{
+            "doc_mapping_uid": "00000000000000000000000000",
             "mode": "lenient",
             "field_mappings": [
                 {
@@ -342,8 +340,17 @@ impl IndexConfig {
     }
 }
 
-impl TestableForRegression for IndexConfig {
+#[cfg(any(test, feature = "testsuite"))]
+impl crate::TestableForRegression for IndexConfig {
     fn sample_for_regression() -> Self {
+        use std::collections::BTreeSet;
+        use std::num::NonZeroU32;
+
+        use quickwit_doc_mapper::Mode;
+        use quickwit_proto::types::DocMappingUid;
+
+        use crate::merge_policy_config::StableLogMergePolicyConfig;
+
         let tenant_id_mapping = serde_json::from_str(
             r#"{
                 "name": "tenant_id",
@@ -386,6 +393,7 @@ impl TestableForRegression for IndexConfig {
         )
         .unwrap();
         let doc_mapping = DocMapping {
+            doc_mapping_uid: DocMappingUid::for_test(1),
             mode: Mode::default(),
             field_mappings: vec![
                 tenant_id_mapping,
@@ -550,7 +558,7 @@ mod tests {
         assert_eq!(index_config.indexing_settings.commit_timeout_secs, 61);
         assert_eq!(
             index_config.indexing_settings.merge_policy,
-            MergePolicyConfig::StableLog(StableLogMergePolicyConfig {
+            MergePolicyConfig::StableLog(crate::StableLogMergePolicyConfig {
                 merge_factor: 9,
                 max_merge_factor: 11,
                 maturation_period: Duration::from_secs(48 * 3600),

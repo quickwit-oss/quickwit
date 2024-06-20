@@ -131,62 +131,57 @@ use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
-pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+pub trait ControlPlaneService: std::fmt::Debug + Send + Sync + 'static {
     /// Creates a new index.
     async fn create_index(
-        &mut self,
+        &self,
         request: super::metastore::CreateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::CreateIndexResponse>;
     /// Updates an index.
     async fn update_index(
-        &mut self,
+        &self,
         request: super::metastore::UpdateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::IndexMetadataResponse,
     >;
     /// Deletes an index.
     async fn delete_index(
-        &mut self,
+        &self,
         request: super::metastore::DeleteIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
     /// Adds a source to an index.
     async fn add_source(
-        &mut self,
+        &self,
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
     /// Enables or disables a source.
     async fn toggle_source(
-        &mut self,
+        &self,
         request: super::metastore::ToggleSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
     /// Removes a source from an index.
     async fn delete_source(
-        &mut self,
+        &self,
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
     /// Returns the list of open shards for one or several sources. If the control plane is not able to find any
     /// for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
     async fn get_or_create_open_shards(
-        &mut self,
+        &self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse>;
     /// Asks the control plane whether the shards listed in the request should be deleted or truncated.
     async fn advise_reset_shards(
-        &mut self,
+        &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse>;
 }
-dyn_clone::clone_trait_object!(ControlPlaneService);
-#[cfg(any(test, feature = "testsuite"))]
-impl Clone for MockControlPlaneService {
-    fn clone(&self) -> Self {
-        MockControlPlaneService::new()
-    }
-}
 #[derive(Debug, Clone)]
 pub struct ControlPlaneServiceClient {
-    inner: Box<dyn ControlPlaneService>,
+    inner: InnerControlPlaneServiceClient,
 }
+#[derive(Debug, Clone)]
+struct InnerControlPlaneServiceClient(std::sync::Arc<dyn ControlPlaneService>);
 impl ControlPlaneServiceClient {
     pub fn new<T>(instance: T) -> Self
     where
@@ -198,7 +193,9 @@ impl ControlPlaneServiceClient {
             MockControlPlaneService > (),
             "`MockControlPlaneService` must be wrapped in a `MockControlPlaneServiceWrapper`: use `ControlPlaneServiceClient::from_mock(mock)` to instantiate the client"
         );
-        Self { inner: Box::new(instance) }
+        Self {
+            inner: InnerControlPlaneServiceClient(std::sync::Arc::new(instance)),
+        }
     }
     pub fn as_grpc_service(
         &self,
@@ -259,7 +256,7 @@ impl ControlPlaneServiceClient {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn from_mock(mock: MockControlPlaneService) -> Self {
         let mock_wrapper = mock_control_plane_service::MockControlPlaneServiceWrapper {
-            inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+            inner: tokio::sync::Mutex::new(mock),
         };
         Self::new(mock_wrapper)
     }
@@ -271,69 +268,69 @@ impl ControlPlaneServiceClient {
 #[async_trait::async_trait]
 impl ControlPlaneService for ControlPlaneServiceClient {
     async fn create_index(
-        &mut self,
+        &self,
         request: super::metastore::CreateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::CreateIndexResponse,
     > {
-        self.inner.create_index(request).await
+        self.inner.0.create_index(request).await
     }
     async fn update_index(
-        &mut self,
+        &self,
         request: super::metastore::UpdateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::IndexMetadataResponse,
     > {
-        self.inner.update_index(request).await
+        self.inner.0.update_index(request).await
     }
     async fn delete_index(
-        &mut self,
+        &self,
         request: super::metastore::DeleteIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.delete_index(request).await
+        self.inner.0.delete_index(request).await
     }
     async fn add_source(
-        &mut self,
+        &self,
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.add_source(request).await
+        self.inner.0.add_source(request).await
     }
     async fn toggle_source(
-        &mut self,
+        &self,
         request: super::metastore::ToggleSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.toggle_source(request).await
+        self.inner.0.toggle_source(request).await
     }
     async fn delete_source(
-        &mut self,
+        &self,
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.delete_source(request).await
+        self.inner.0.delete_source(request).await
     }
     async fn get_or_create_open_shards(
-        &mut self,
+        &self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
-        self.inner.get_or_create_open_shards(request).await
+        self.inner.0.get_or_create_open_shards(request).await
     }
     async fn advise_reset_shards(
-        &mut self,
+        &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
-        self.inner.advise_reset_shards(request).await
+        self.inner.0.advise_reset_shards(request).await
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_control_plane_service {
     use super::*;
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub struct MockControlPlaneServiceWrapper {
-        pub(super) inner: std::sync::Arc<tokio::sync::Mutex<MockControlPlaneService>>,
+        pub(super) inner: tokio::sync::Mutex<MockControlPlaneService>,
     }
     #[async_trait::async_trait]
     impl ControlPlaneService for MockControlPlaneServiceWrapper {
         async fn create_index(
-            &mut self,
+            &self,
             request: super::super::metastore::CreateIndexRequest,
         ) -> crate::control_plane::ControlPlaneResult<
             super::super::metastore::CreateIndexResponse,
@@ -341,7 +338,7 @@ pub mod mock_control_plane_service {
             self.inner.lock().await.create_index(request).await
         }
         async fn update_index(
-            &mut self,
+            &self,
             request: super::super::metastore::UpdateIndexRequest,
         ) -> crate::control_plane::ControlPlaneResult<
             super::super::metastore::IndexMetadataResponse,
@@ -349,7 +346,7 @@ pub mod mock_control_plane_service {
             self.inner.lock().await.update_index(request).await
         }
         async fn delete_index(
-            &mut self,
+            &self,
             request: super::super::metastore::DeleteIndexRequest,
         ) -> crate::control_plane::ControlPlaneResult<
             super::super::metastore::EmptyResponse,
@@ -357,7 +354,7 @@ pub mod mock_control_plane_service {
             self.inner.lock().await.delete_index(request).await
         }
         async fn add_source(
-            &mut self,
+            &self,
             request: super::super::metastore::AddSourceRequest,
         ) -> crate::control_plane::ControlPlaneResult<
             super::super::metastore::EmptyResponse,
@@ -365,7 +362,7 @@ pub mod mock_control_plane_service {
             self.inner.lock().await.add_source(request).await
         }
         async fn toggle_source(
-            &mut self,
+            &self,
             request: super::super::metastore::ToggleSourceRequest,
         ) -> crate::control_plane::ControlPlaneResult<
             super::super::metastore::EmptyResponse,
@@ -373,7 +370,7 @@ pub mod mock_control_plane_service {
             self.inner.lock().await.toggle_source(request).await
         }
         async fn delete_source(
-            &mut self,
+            &self,
             request: super::super::metastore::DeleteSourceRequest,
         ) -> crate::control_plane::ControlPlaneResult<
             super::super::metastore::EmptyResponse,
@@ -381,7 +378,7 @@ pub mod mock_control_plane_service {
             self.inner.lock().await.delete_source(request).await
         }
         async fn get_or_create_open_shards(
-            &mut self,
+            &self,
             request: super::GetOrCreateOpenShardsRequest,
         ) -> crate::control_plane::ControlPlaneResult<
             super::GetOrCreateOpenShardsResponse,
@@ -389,7 +386,7 @@ pub mod mock_control_plane_service {
             self.inner.lock().await.get_or_create_open_shards(request).await
         }
         async fn advise_reset_shards(
-            &mut self,
+            &self,
             request: super::AdviseResetShardsRequest,
         ) -> crate::control_plane::ControlPlaneResult<super::AdviseResetShardsResponse> {
             self.inner.lock().await.advise_reset_shards(request).await
@@ -400,7 +397,7 @@ pub type BoxFuture<T, E> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
 >;
 impl tower::Service<super::metastore::CreateIndexRequest>
-for Box<dyn ControlPlaneService> {
+for InnerControlPlaneServiceClient {
     type Response = super::metastore::CreateIndexResponse;
     type Error = crate::control_plane::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -411,13 +408,13 @@ for Box<dyn ControlPlaneService> {
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: super::metastore::CreateIndexRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.create_index(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.create_index(request).await };
         Box::pin(fut)
     }
 }
 impl tower::Service<super::metastore::UpdateIndexRequest>
-for Box<dyn ControlPlaneService> {
+for InnerControlPlaneServiceClient {
     type Response = super::metastore::IndexMetadataResponse;
     type Error = crate::control_plane::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -428,13 +425,13 @@ for Box<dyn ControlPlaneService> {
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: super::metastore::UpdateIndexRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.update_index(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.update_index(request).await };
         Box::pin(fut)
     }
 }
 impl tower::Service<super::metastore::DeleteIndexRequest>
-for Box<dyn ControlPlaneService> {
+for InnerControlPlaneServiceClient {
     type Response = super::metastore::EmptyResponse;
     type Error = crate::control_plane::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -445,13 +442,13 @@ for Box<dyn ControlPlaneService> {
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: super::metastore::DeleteIndexRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.delete_index(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.delete_index(request).await };
         Box::pin(fut)
     }
 }
 impl tower::Service<super::metastore::AddSourceRequest>
-for Box<dyn ControlPlaneService> {
+for InnerControlPlaneServiceClient {
     type Response = super::metastore::EmptyResponse;
     type Error = crate::control_plane::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -462,13 +459,13 @@ for Box<dyn ControlPlaneService> {
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: super::metastore::AddSourceRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.add_source(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.add_source(request).await };
         Box::pin(fut)
     }
 }
 impl tower::Service<super::metastore::ToggleSourceRequest>
-for Box<dyn ControlPlaneService> {
+for InnerControlPlaneServiceClient {
     type Response = super::metastore::EmptyResponse;
     type Error = crate::control_plane::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -479,13 +476,13 @@ for Box<dyn ControlPlaneService> {
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: super::metastore::ToggleSourceRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.toggle_source(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.toggle_source(request).await };
         Box::pin(fut)
     }
 }
 impl tower::Service<super::metastore::DeleteSourceRequest>
-for Box<dyn ControlPlaneService> {
+for InnerControlPlaneServiceClient {
     type Response = super::metastore::EmptyResponse;
     type Error = crate::control_plane::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -496,12 +493,12 @@ for Box<dyn ControlPlaneService> {
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: super::metastore::DeleteSourceRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.delete_source(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.delete_source(request).await };
         Box::pin(fut)
     }
 }
-impl tower::Service<GetOrCreateOpenShardsRequest> for Box<dyn ControlPlaneService> {
+impl tower::Service<GetOrCreateOpenShardsRequest> for InnerControlPlaneServiceClient {
     type Response = GetOrCreateOpenShardsResponse;
     type Error = crate::control_plane::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -512,12 +509,12 @@ impl tower::Service<GetOrCreateOpenShardsRequest> for Box<dyn ControlPlaneServic
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: GetOrCreateOpenShardsRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.get_or_create_open_shards(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.get_or_create_open_shards(request).await };
         Box::pin(fut)
     }
 }
-impl tower::Service<AdviseResetShardsRequest> for Box<dyn ControlPlaneService> {
+impl tower::Service<AdviseResetShardsRequest> for InnerControlPlaneServiceClient {
     type Response = AdviseResetShardsResponse;
     type Error = crate::control_plane::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -528,15 +525,16 @@ impl tower::Service<AdviseResetShardsRequest> for Box<dyn ControlPlaneService> {
         std::task::Poll::Ready(Ok(()))
     }
     fn call(&mut self, request: AdviseResetShardsRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.advise_reset_shards(request).await };
+        let svc = self.clone();
+        let fut = async move { svc.0.advise_reset_shards(request).await };
         Box::pin(fut)
     }
 }
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct ControlPlaneServiceTowerServiceStack {
-    inner: Box<dyn ControlPlaneService>,
+    #[allow(dead_code)]
+    inner: InnerControlPlaneServiceClient,
     create_index_svc: quickwit_common::tower::BoxService<
         super::metastore::CreateIndexRequest,
         super::metastore::CreateIndexResponse,
@@ -578,74 +576,59 @@ struct ControlPlaneServiceTowerServiceStack {
         crate::control_plane::ControlPlaneError,
     >,
 }
-impl Clone for ControlPlaneServiceTowerServiceStack {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            create_index_svc: self.create_index_svc.clone(),
-            update_index_svc: self.update_index_svc.clone(),
-            delete_index_svc: self.delete_index_svc.clone(),
-            add_source_svc: self.add_source_svc.clone(),
-            toggle_source_svc: self.toggle_source_svc.clone(),
-            delete_source_svc: self.delete_source_svc.clone(),
-            get_or_create_open_shards_svc: self.get_or_create_open_shards_svc.clone(),
-            advise_reset_shards_svc: self.advise_reset_shards_svc.clone(),
-        }
-    }
-}
 #[async_trait::async_trait]
 impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
     async fn create_index(
-        &mut self,
+        &self,
         request: super::metastore::CreateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::CreateIndexResponse,
     > {
-        self.create_index_svc.ready().await?.call(request).await
+        self.create_index_svc.clone().ready().await?.call(request).await
     }
     async fn update_index(
-        &mut self,
+        &self,
         request: super::metastore::UpdateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::IndexMetadataResponse,
     > {
-        self.update_index_svc.ready().await?.call(request).await
+        self.update_index_svc.clone().ready().await?.call(request).await
     }
     async fn delete_index(
-        &mut self,
+        &self,
         request: super::metastore::DeleteIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.delete_index_svc.ready().await?.call(request).await
+        self.delete_index_svc.clone().ready().await?.call(request).await
     }
     async fn add_source(
-        &mut self,
+        &self,
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.add_source_svc.ready().await?.call(request).await
+        self.add_source_svc.clone().ready().await?.call(request).await
     }
     async fn toggle_source(
-        &mut self,
+        &self,
         request: super::metastore::ToggleSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.toggle_source_svc.ready().await?.call(request).await
+        self.toggle_source_svc.clone().ready().await?.call(request).await
     }
     async fn delete_source(
-        &mut self,
+        &self,
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.delete_source_svc.ready().await?.call(request).await
+        self.delete_source_svc.clone().ready().await?.call(request).await
     }
     async fn get_or_create_open_shards(
-        &mut self,
+        &self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
-        self.get_or_create_open_shards_svc.ready().await?.call(request).await
+        self.get_or_create_open_shards_svc.clone().ready().await?.call(request).await
     }
     async fn advise_reset_shards(
-        &mut self,
+        &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
-        self.advise_reset_shards_svc.ready().await?.call(request).await
+        self.advise_reset_shards_svc.clone().ready().await?.call(request).await
     }
 }
 type CreateIndexLayer = quickwit_common::tower::BoxLayer<
@@ -1147,7 +1130,8 @@ impl ControlPlaneServiceTowerLayerStack {
     where
         T: ControlPlaneService,
     {
-        self.build_from_boxed(Box::new(instance))
+        let inner_client = InnerControlPlaneServiceClient(std::sync::Arc::new(instance));
+        self.build_from_inner_client(inner_client)
     }
     pub fn build_from_channel(
         self,
@@ -1155,25 +1139,25 @@ impl ControlPlaneServiceTowerLayerStack {
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
     ) -> ControlPlaneServiceClient {
-        self.build_from_boxed(
-            Box::new(
-                ControlPlaneServiceClient::from_channel(addr, channel, max_message_size),
-            ),
-        )
+        let client = ControlPlaneServiceClient::from_channel(
+            addr,
+            channel,
+            max_message_size,
+        );
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
     }
     pub fn build_from_balance_channel(
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
     ) -> ControlPlaneServiceClient {
-        self.build_from_boxed(
-            Box::new(
-                ControlPlaneServiceClient::from_balance_channel(
-                    balance_channel,
-                    max_message_size,
-                ),
-            ),
-        )
+        let client = ControlPlaneServiceClient::from_balance_channel(
+            balance_channel,
+            max_message_size,
+        );
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -1183,25 +1167,30 @@ impl ControlPlaneServiceTowerLayerStack {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         ControlPlaneServiceMailbox<A>: ControlPlaneService,
     {
-        self.build_from_boxed(Box::new(ControlPlaneServiceMailbox::new(mailbox)))
+        let inner_client = InnerControlPlaneServiceClient(
+            std::sync::Arc::new(ControlPlaneServiceMailbox::new(mailbox)),
+        );
+        self.build_from_inner_client(inner_client)
     }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn build_from_mock(
         self,
         mock: MockControlPlaneService,
     ) -> ControlPlaneServiceClient {
-        self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_mock(mock)))
+        let client = ControlPlaneServiceClient::from_mock(mock);
+        let inner_client = client.inner;
+        self.build_from_inner_client(inner_client)
     }
-    fn build_from_boxed(
+    fn build_from_inner_client(
         self,
-        boxed_instance: Box<dyn ControlPlaneService>,
+        inner_client: InnerControlPlaneServiceClient,
     ) -> ControlPlaneServiceClient {
         let create_index_svc = self
             .create_index_layers
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let update_index_svc = self
@@ -1209,7 +1198,7 @@ impl ControlPlaneServiceTowerLayerStack {
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let delete_index_svc = self
@@ -1217,7 +1206,7 @@ impl ControlPlaneServiceTowerLayerStack {
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let add_source_svc = self
@@ -1225,7 +1214,7 @@ impl ControlPlaneServiceTowerLayerStack {
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let toggle_source_svc = self
@@ -1233,7 +1222,7 @@ impl ControlPlaneServiceTowerLayerStack {
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let delete_source_svc = self
@@ -1241,7 +1230,7 @@ impl ControlPlaneServiceTowerLayerStack {
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let get_or_create_open_shards_svc = self
@@ -1249,7 +1238,7 @@ impl ControlPlaneServiceTowerLayerStack {
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let advise_reset_shards_svc = self
@@ -1257,11 +1246,11 @@ impl ControlPlaneServiceTowerLayerStack {
             .into_iter()
             .rev()
             .fold(
-                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
         let tower_svc_stack = ControlPlaneServiceTowerServiceStack {
-            inner: boxed_instance.clone(),
+            inner: inner_client,
             create_index_svc,
             update_index_svc,
             delete_index_svc,
@@ -1420,56 +1409,56 @@ where
         >,
 {
     async fn create_index(
-        &mut self,
+        &self,
         request: super::metastore::CreateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::CreateIndexResponse,
     > {
-        self.call(request).await
+        self.clone().call(request).await
     }
     async fn update_index(
-        &mut self,
+        &self,
         request: super::metastore::UpdateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::IndexMetadataResponse,
     > {
-        self.call(request).await
+        self.clone().call(request).await
     }
     async fn delete_index(
-        &mut self,
+        &self,
         request: super::metastore::DeleteIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.call(request).await
+        self.clone().call(request).await
     }
     async fn add_source(
-        &mut self,
+        &self,
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.call(request).await
+        self.clone().call(request).await
     }
     async fn toggle_source(
-        &mut self,
+        &self,
         request: super::metastore::ToggleSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.call(request).await
+        self.clone().call(request).await
     }
     async fn delete_source(
-        &mut self,
+        &self,
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.call(request).await
+        self.clone().call(request).await
     }
     async fn get_or_create_open_shards(
-        &mut self,
+        &self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
-        self.call(request).await
+        self.clone().call(request).await
     }
     async fn advise_reset_shards(
-        &mut self,
+        &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
-        self.call(request).await
+        self.clone().call(request).await
     }
 }
 #[derive(Debug, Clone)]
@@ -1507,12 +1496,13 @@ where
     T::Future: Send,
 {
     async fn create_index(
-        &mut self,
+        &self,
         request: super::metastore::CreateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::CreateIndexResponse,
     > {
         self.inner
+            .clone()
             .create_index(request)
             .await
             .map(|response| response.into_inner())
@@ -1522,12 +1512,13 @@ where
             ))
     }
     async fn update_index(
-        &mut self,
+        &self,
         request: super::metastore::UpdateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::IndexMetadataResponse,
     > {
         self.inner
+            .clone()
             .update_index(request)
             .await
             .map(|response| response.into_inner())
@@ -1537,10 +1528,11 @@ where
             ))
     }
     async fn delete_index(
-        &mut self,
+        &self,
         request: super::metastore::DeleteIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner
+            .clone()
             .delete_index(request)
             .await
             .map(|response| response.into_inner())
@@ -1550,10 +1542,11 @@ where
             ))
     }
     async fn add_source(
-        &mut self,
+        &self,
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner
+            .clone()
             .add_source(request)
             .await
             .map(|response| response.into_inner())
@@ -1563,10 +1556,11 @@ where
             ))
     }
     async fn toggle_source(
-        &mut self,
+        &self,
         request: super::metastore::ToggleSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner
+            .clone()
             .toggle_source(request)
             .await
             .map(|response| response.into_inner())
@@ -1576,10 +1570,11 @@ where
             ))
     }
     async fn delete_source(
-        &mut self,
+        &self,
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner
+            .clone()
             .delete_source(request)
             .await
             .map(|response| response.into_inner())
@@ -1589,10 +1584,11 @@ where
             ))
     }
     async fn get_or_create_open_shards(
-        &mut self,
+        &self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
         self.inner
+            .clone()
             .get_or_create_open_shards(request)
             .await
             .map(|response| response.into_inner())
@@ -1602,10 +1598,11 @@ where
             ))
     }
     async fn advise_reset_shards(
-        &mut self,
+        &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
         self.inner
+            .clone()
             .advise_reset_shards(request)
             .await
             .map(|response| response.into_inner())
@@ -1617,14 +1614,16 @@ where
 }
 #[derive(Debug)]
 pub struct ControlPlaneServiceGrpcServerAdapter {
-    inner: Box<dyn ControlPlaneService>,
+    inner: InnerControlPlaneServiceClient,
 }
 impl ControlPlaneServiceGrpcServerAdapter {
     pub fn new<T>(instance: T) -> Self
     where
         T: ControlPlaneService,
     {
-        Self { inner: Box::new(instance) }
+        Self {
+            inner: InnerControlPlaneServiceClient(std::sync::Arc::new(instance)),
+        }
     }
 }
 #[async_trait::async_trait]
@@ -1635,7 +1634,7 @@ for ControlPlaneServiceGrpcServerAdapter {
         request: tonic::Request<super::metastore::CreateIndexRequest>,
     ) -> Result<tonic::Response<super::metastore::CreateIndexResponse>, tonic::Status> {
         self.inner
-            .clone()
+            .0
             .create_index(request.into_inner())
             .await
             .map(tonic::Response::new)
@@ -1649,7 +1648,7 @@ for ControlPlaneServiceGrpcServerAdapter {
         tonic::Status,
     > {
         self.inner
-            .clone()
+            .0
             .update_index(request.into_inner())
             .await
             .map(tonic::Response::new)
@@ -1660,7 +1659,7 @@ for ControlPlaneServiceGrpcServerAdapter {
         request: tonic::Request<super::metastore::DeleteIndexRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
         self.inner
-            .clone()
+            .0
             .delete_index(request.into_inner())
             .await
             .map(tonic::Response::new)
@@ -1671,7 +1670,7 @@ for ControlPlaneServiceGrpcServerAdapter {
         request: tonic::Request<super::metastore::AddSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
         self.inner
-            .clone()
+            .0
             .add_source(request.into_inner())
             .await
             .map(tonic::Response::new)
@@ -1682,7 +1681,7 @@ for ControlPlaneServiceGrpcServerAdapter {
         request: tonic::Request<super::metastore::ToggleSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
         self.inner
-            .clone()
+            .0
             .toggle_source(request.into_inner())
             .await
             .map(tonic::Response::new)
@@ -1693,7 +1692,7 @@ for ControlPlaneServiceGrpcServerAdapter {
         request: tonic::Request<super::metastore::DeleteSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
         self.inner
-            .clone()
+            .0
             .delete_source(request.into_inner())
             .await
             .map(tonic::Response::new)
@@ -1704,7 +1703,7 @@ for ControlPlaneServiceGrpcServerAdapter {
         request: tonic::Request<GetOrCreateOpenShardsRequest>,
     ) -> Result<tonic::Response<GetOrCreateOpenShardsResponse>, tonic::Status> {
         self.inner
-            .clone()
+            .0
             .get_or_create_open_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
@@ -1715,7 +1714,7 @@ for ControlPlaneServiceGrpcServerAdapter {
         request: tonic::Request<AdviseResetShardsRequest>,
     ) -> Result<tonic::Response<AdviseResetShardsResponse>, tonic::Status> {
         self.inner
-            .clone()
+            .0
             .advise_reset_shards(request.into_inner())
             .await
             .map(tonic::Response::new)

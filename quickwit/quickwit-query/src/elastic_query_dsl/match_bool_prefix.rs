@@ -19,7 +19,7 @@
 
 use serde::Deserialize;
 
-use super::StringOrStructForSerialization;
+use super::{ElasticQueryDslInner, StringOrStructForSerialization};
 use crate::elastic_query_dsl::match_query::MatchQueryParams;
 use crate::elastic_query_dsl::{default_max_expansions, ConvertableToQueryAst};
 use crate::query_ast::{FullTextParams, FullTextQuery, QueryAst};
@@ -49,6 +49,12 @@ impl ConvertableToQueryAst for MatchBoolPrefixQuery {
             text: self.params.query,
             params: full_text_params,
         }))
+    }
+}
+
+impl From<MatchBoolPrefixQuery> for ElasticQueryDslInner {
+    fn from(match_bool_prefix_query: MatchBoolPrefixQuery) -> Self {
+        ElasticQueryDslInner::MatchBoolPrefix(match_bool_prefix_query)
     }
 }
 

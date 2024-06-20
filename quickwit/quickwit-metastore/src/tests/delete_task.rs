@@ -178,7 +178,7 @@ pub async fn test_metastore_last_delete_opstamp<
 pub async fn test_metastore_delete_index_with_tasks<
     MetastoreToTest: MetastoreServiceExt + DefaultForTest,
 >() {
-    let mut metastore = MetastoreToTest::default_for_test().await;
+    let metastore = MetastoreToTest::default_for_test().await;
     let index_id = append_random_suffix("delete-delete-tasks");
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
