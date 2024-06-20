@@ -116,12 +116,15 @@ export function AggregationKind(props: SearchComponentProps) {
     }
   }, []); // Empty dependency array means this runs once after mount
 
-  const updateAggregationProp = (newAggregations: ({term: TermAgg} | {histogram: HistogramAgg})[]) => {
+  useEffect(() => {
+    // Update search request whenever aggregations change
     const metric = props.searchRequest.aggregationConfig.metric;
-    const updatedAggregation = Object.assign({}, {metric: metric}, ...newAggregations);
-    const updatedSearchRequest = {...props.searchRequest, aggregationConfig: updatedAggregation};
+    const updatedAggregation = Object.assign({}, { metric: metric }, ...aggregations);
+    const updatedSearchRequest = { ...props.searchRequest, aggregationConfig: updatedAggregation };
     props.onSearchRequestUpdate(updatedSearchRequest);
-  };
+    console.log('useEffect')
+  }, [aggregations]);
+
   
   const handleAggregationChange = (pos: number, event: SelectChangeEvent) => {
     const value = event.target.value;
@@ -149,7 +152,6 @@ export function AggregationKind(props: SearchComponentProps) {
           newAggregations.splice(pos, 1);
         }
       }
-      updateAggregationProp(newAggregations);
       return newAggregations;
     });
   };
@@ -159,7 +161,6 @@ export function AggregationKind(props: SearchComponentProps) {
     setAggregations((agg) => {
       const newAggregations = [...agg];
       newAggregations[pos] = {histogram: {interval:value}};
-      updateAggregationProp(newAggregations);
       return newAggregations;
     });
   }
@@ -172,7 +173,6 @@ export function AggregationKind(props: SearchComponentProps) {
       if (isTerm(term)) {
         term.term.field = value;
       }
-      updateAggregationProp(newAggregations);
       return newAggregations;
     });
   };
@@ -185,7 +185,6 @@ export function AggregationKind(props: SearchComponentProps) {
       if (isTerm(term)) {
         term.term.size = Number(value);
       }
-      updateAggregationProp(newAggregations);
       return newAggregations;
     });
   };
