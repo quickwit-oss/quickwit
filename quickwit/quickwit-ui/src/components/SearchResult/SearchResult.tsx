@@ -17,11 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+import { useMemo } from 'react';
 import { Box, Typography } from "@mui/material";
 import NumberFormat from "react-number-format";
 import { Index, ResponseError, SearchResponse } from "../../utils/models";
 import Loader from "../Loader";
 import { ResultTable } from "./ResultTable";
+import { AggregationResult } from "./AggregationResult";
 import ErrorResponseDisplay from "../ResponseErrorDisplay";
 
 function HitCount({searchResponse}: {searchResponse: SearchResponse}) {
@@ -63,14 +65,29 @@ export default function SearchResult(props: SearchResultProps) {
   if (props.searchResponse == null || props.index == null) {
     return <></>
   }
+  // try to improve typing experience by caching the costly-to-render components
+  // in practice this doesn't seem to have much impact
+  const result = useMemo(
+    () => {
+      if (props.searchResponse == null || props.index == null) {
+        return null;
+      } else if (props.searchResponse.aggregations === undefined) {
+        return (<ResultTable searchResponse={props.searchResponse} index={props.index} />);
+      } else {
+        return (<AggregationResult searchResponse={props.searchResponse} />);
+      }
+    },
+    [props.searchResponse, props.index]
+  );
+
   return (
-    <Box sx={{ pt: 1, flexGrow: '1', flexBasis: '0%', overflow: 'hidden'}} >
+    <Box sx={{ pt: 1, flexGrow: '1', flexBasis: '0%', overflow: 'hidden'}}>
       <Box sx={{ height: '100%', flexDirection: 'column', flexGrow: 1, display: 'flex'}}>
         <Box sx={{ flexShrink: 0, display: 'flex', flexGrow: 0, flexBasis: 'auto' }}>
           <HitCount searchResponse={props.searchResponse} />
         </Box>
         <Box sx={{ pt: 2, flexGrow: 1, flexBasis: '0%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <ResultTable searchResponse={props.searchResponse} index={props.index} />
+          {result}
         </Box>
       </Box>
     </Box>

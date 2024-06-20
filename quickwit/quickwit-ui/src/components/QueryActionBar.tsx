@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Box, Button } from "@mui/material";
+import { Box, Button, Tabs, Tab } from "@mui/material";
 import { TimeRangeSelect } from './TimeRangeSelect';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { SearchComponentProps } from "../utils/SearchComponentProps";
@@ -25,9 +25,16 @@ import { SearchComponentProps } from "../utils/SearchComponentProps";
 export function QueryEditorActionBar(props: SearchComponentProps) {
   const timestamp_field_name = props.index?.metadata.index_config.doc_mapping.timestamp_field;
   const shouldDisplayTimeRangeSelect = timestamp_field_name ?? false;
+
+  const handleChange = (_event: React.SyntheticEvent, newTab: number) => {
+    const updatedSearchRequest = {...props.searchRequest, aggregation: newTab != 0};
+    props.onSearchRequestUpdate(updatedSearchRequest);
+    props.runSearch(updatedSearchRequest)
+  };
+
   return (
     <Box sx={{ display: 'flex'}}>
-      <Box sx={{ flexGrow: 1 }}>
+      <Box sx={{ flexGrow: 0, padding: '10px' }}>
         <Button
           onClick={() => props.runSearch(props.searchRequest)}
           variant="contained"
@@ -37,6 +44,16 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
           disabled={props.queryRunning || !props.searchRequest.indexId}>
           Run
         </Button>
+      </Box>
+      <Box sx={{ flexGrow: 0 }}>
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', flexGrow: 1}}>
+          <Tabs value={Number(props.searchRequest.aggregation)} onChange={handleChange}>
+            <Tab label="Search"/>
+            <Tab label="Aggregation"/>
+          </Tabs>
+        </Box>
+      </Box>
+      <Box sx={{ flexGrow: 1 }}>
       </Box>
       { shouldDisplayTimeRangeSelect && <TimeRangeSelect
           timeRange={{

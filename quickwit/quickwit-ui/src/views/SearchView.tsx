@@ -24,6 +24,7 @@ import { IndexSideBar } from '../components/IndexSideBar';
 import { ViewUnderAppBarBox, FullBoxContainer } from '../components/LayoutUtils';
 import { QueryEditorActionBar } from '../components/QueryActionBar';
 import { QueryEditor } from '../components/QueryEditor/QueryEditor';
+import { AggregationEditor } from '../components/QueryEditor/AggregationEditor';
 import SearchResult from '../components/SearchResult/SearchResult';
 import { useLocalStorage } from '../providers/LocalStorageProvider';
 import { Client } from '../services/client';
@@ -70,7 +71,8 @@ function SearchView() {
     setQueryRunning(true);
     setSearchError(null);
     navigate('/search?' + toUrlSearchRequestParams(updatedSearchRequest).toString());
-    quickwitClient.search(updatedSearchRequest).then((response) => {
+    const timestamp_field = index?.metadata.index_config.doc_mapping.timestamp_field || null;
+    quickwitClient.search(updatedSearchRequest, timestamp_field).then((response) => {
       updateLastSearchRequest(updatedSearchRequest);
       setSearchResponse(response);
       setQueryRunning(false);
@@ -87,7 +89,6 @@ function SearchView() {
     });
   }
   const onSearchRequestUpdate = (searchRequest: SearchRequest) => {
-    console.log("on search request update:", searchRequest);
     setSearchRequest(searchRequest);
   }
   useEffect(() => {
@@ -135,6 +136,12 @@ function SearchView() {
               index={index}
               queryRunning={queryRunning} />
             <QueryEditor
+              searchRequest={searchRequest}
+              onSearchRequestUpdate={onSearchRequestUpdate}
+              runSearch={runSearch}
+              index={index}
+              queryRunning={queryRunning} />
+            <AggregationEditor
               searchRequest={searchRequest}
               onSearchRequestUpdate={onSearchRequestUpdate}
               runSearch={runSearch}
