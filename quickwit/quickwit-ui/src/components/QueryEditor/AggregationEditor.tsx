@@ -122,7 +122,6 @@ export function AggregationKind(props: SearchComponentProps) {
     const updatedAggregation = Object.assign({}, { metric: metric }, ...aggregations);
     const updatedSearchRequest = { ...props.searchRequest, aggregationConfig: updatedAggregation };
     props.onSearchRequestUpdate(updatedSearchRequest);
-    console.log('useEffect')
   }, [aggregations]);
 
   
