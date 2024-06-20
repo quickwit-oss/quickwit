@@ -28,6 +28,9 @@ service IngestRouterService {
   // Ingests batches of documents for one or multiple indexes.
   // TODO: Describe error cases and how to handle them.
   rpc Ingest(IngestRequestV2) returns (IngestResponseV2);
+
+  // Opens a stream of shard observations.
+  rpc OpenShardObservationStream(quickwit.ingest.OpenShardObservationStreamRequest) returns (stream quickwit.ingest.ShardObservationMessage);
 }
 
 message IngestRequestV2 {

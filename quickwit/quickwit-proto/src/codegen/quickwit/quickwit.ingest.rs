@@ -112,6 +112,30 @@ pub struct ParseFailure {
     pub message: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OpenShardObservationStreamRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub shard_pkeys: ::prost::alloc::vec::Vec<ShardPKey>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardObservationMessage {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "3")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
+    #[prost(enumeration = "ShardState", tag = "4")]
+    pub shard_state: i32,
+    #[prost(message, optional, tag = "5")]
+    pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
+    #[prost(message, optional, tag = "6")]
+    pub truncation_position_inclusive: ::core::option::Option<crate::types::Position>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

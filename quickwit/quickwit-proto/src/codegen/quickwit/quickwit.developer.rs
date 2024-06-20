@@ -453,7 +453,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                GetDebugInfoRequest::rpc_name(),
+                <GetDebugInfoRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
 }

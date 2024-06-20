@@ -1508,7 +1508,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                super::metastore::CreateIndexRequest::rpc_name(),
+                <super::metastore::CreateIndexRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn update_index(
@@ -1524,7 +1524,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                super::metastore::UpdateIndexRequest::rpc_name(),
+                <super::metastore::UpdateIndexRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn delete_index(
@@ -1538,7 +1538,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                super::metastore::DeleteIndexRequest::rpc_name(),
+                <super::metastore::DeleteIndexRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn add_source(
@@ -1552,7 +1552,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                super::metastore::AddSourceRequest::rpc_name(),
+                <super::metastore::AddSourceRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn toggle_source(
@@ -1566,7 +1566,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                super::metastore::ToggleSourceRequest::rpc_name(),
+                <super::metastore::ToggleSourceRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn delete_source(
@@ -1580,7 +1580,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                super::metastore::DeleteSourceRequest::rpc_name(),
+                <super::metastore::DeleteSourceRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn get_or_create_open_shards(
@@ -1594,7 +1594,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                GetOrCreateOpenShardsRequest::rpc_name(),
+                <GetOrCreateOpenShardsRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn advise_reset_shards(
@@ -1608,7 +1608,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                AdviseResetShardsRequest::rpc_name(),
+                <AdviseResetShardsRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
 }

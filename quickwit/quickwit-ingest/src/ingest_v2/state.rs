@@ -394,7 +394,7 @@ impl FullyLockedIngesterState<'_> {
         {
             Ok(_) => {
                 info!("truncated shard `{queue_id}` at {truncate_up_to_position_inclusive}");
-                shard.truncation_position_inclusive = truncate_up_to_position_inclusive;
+                shard.set_truncation_position_inclusive(truncate_up_to_position_inclusive);
             }
             Err(TruncateError::MissingQueue(_)) => {
                 error!("failed to truncate shard `{queue_id}`: WAL queue not found");

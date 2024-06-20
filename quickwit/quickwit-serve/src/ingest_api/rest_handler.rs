@@ -17,16 +17,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::Duration;
+
 use bytes::{Buf, Bytes};
 use quickwit_config::{disable_ingest_v1, IngestApiConfig, INGEST_V2_SOURCE_ID};
 use quickwit_ingest::{
-    CommitType, DocBatchBuilder, DocBatchV2Builder, FetchResponse, IngestRequest, IngestResponse,
-    IngestService, IngestServiceClient, IngestServiceError, TailRequest,
+    wait_for_commit, CommitType, DocBatchBuilder, DocBatchV2Builder, FetchResponse, IngestRequest,
+    IngestResponse, IngestService, IngestServiceClient, IngestServiceError, TailRequest,
 };
 use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
     IngestRouterServiceClient, IngestSubrequest,
 };
+use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
@@ -54,6 +57,16 @@ struct IngestOptions {
     #[serde(alias = "commit")]
     #[serde(default)]
     commit_type: CommitType,
+}
+
+impl IngestOptions {
+    fn commit_type_v2(&self) -> CommitTypeV2 {
+        match self.commit_type {
+            CommitType::Auto => CommitTypeV2::Auto,
+            CommitType::Force => CommitTypeV2::Force,
+            CommitType::WaitFor => CommitTypeV2::Wait,
+        }
+    }
 }
 
 pub(crate) fn ingest_api_handlers(
@@ -141,11 +154,17 @@ async fn ingest_v2(
         source_id: INGEST_V2_SOURCE_ID.to_string(),
         doc_batch: Some(doc_batch),
     };
+    let commit_type = ingest_options.commit_type_v2();
+
     let request = IngestRequestV2 {
-        commit_type: ingest_options.commit_type as i32,
+        commit_type: commit_type as i32,
         subrequests: vec![subrequest],
     };
     let response = ingest_router.ingest(request).await?;
+
+    if matches!(commit_type, CommitTypeV2::Force | CommitTypeV2::Wait) {
+        wait_for_commit(&ingest_router, &response.successes, Duration::from_secs(30)).await?;
+    }
     convert_ingest_response_v2(response, num_docs)
 }
 

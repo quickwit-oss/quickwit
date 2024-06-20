@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
+
 use anyhow::ensure;
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
@@ -131,6 +133,8 @@ struct QuickwitServiceGenerator {
     error_type_path: String,
     generate_extra_service_methods: bool,
     generate_prom_labels_for_requests: bool,
+    /// Tracks the already generated `RpcName` trait implementations to avoid conflicts.
+    generated_rpc_name_impls: HashSet<String>,
     inner: Box<dyn ServiceGenerator>,
 }
 
@@ -150,6 +154,7 @@ impl QuickwitServiceGenerator {
             error_type_path,
             generate_extra_service_methods,
             generate_prom_labels_for_requests,
+            generated_rpc_name_impls: HashSet::new(),
             inner,
         }
     }
@@ -163,6 +168,7 @@ impl ServiceGenerator for QuickwitServiceGenerator {
             &self.error_type_path,
             self.generate_extra_service_methods,
             self.generate_prom_labels_for_requests,
+            &mut self.generated_rpc_name_impls,
         );
         let ast: syn::File = syn::parse2(tokens).expect("Tokenstream should be a valid Syn AST.");
         let pretty_code = prettyplease::unparse(&ast);
@@ -279,6 +285,7 @@ fn generate_all(
     error_type_path: &str,
     generate_extra_service_methods: bool,
     generate_prom_labels_for_requests: bool,
+    generated_rpc_name_impls: &mut HashSet<String>,
 ) -> TokenStream {
     let context = CodegenContext::from_service(
         service,
@@ -296,7 +303,7 @@ fn generate_all(
     let grpc_client_adapter = generate_grpc_client_adapter(&context);
     let grpc_server_adapter = generate_grpc_server_adapter(&context);
     let prom_labels_impl = if generate_prom_labels_for_requests {
-        generate_prom_labels_impl_for_requests(&context)
+        generate_prom_labels_impl_for_requests(&context, generated_rpc_name_impls)
     } else {
         TokenStream::new()
     };
@@ -360,9 +367,9 @@ impl SynMethod {
         let request_type = &self.request_type;
 
         if mock {
-            quote! { super::#request_type::rpc_name() }
+            quote! { <super::#request_type as quickwit_common::tower::RpcName>::rpc_name() }
         } else {
-            quote! { #request_type::rpc_name() }
+            quote! { <#request_type as quickwit_common::tower::RpcName>::rpc_name() }
         }
     }
 
@@ -406,12 +413,20 @@ impl SynMethod {
     }
 }
 
-fn generate_prom_labels_impl_for_requests(context: &CodegenContext) -> TokenStream {
+fn generate_prom_labels_impl_for_requests(
+    context: &CodegenContext,
+    generated_rpc_name_impls: &mut HashSet<String>,
+) -> TokenStream {
     let mut rpc_name_impls = Vec::new();
 
     for syn_method in &context.methods {
         let request_type = syn_method.request_type.to_token_stream();
         let rpc_name = &syn_method.name.to_string();
+
+        // Avoids generating conflicting implementations for messages used in multiple proto files.
+        if !generated_rpc_name_impls.insert(rpc_name.clone()) {
+            continue;
+        }
         let rpc_name_impl = quote! {
             impl RpcName for #request_type {
                 fn rpc_name() -> &'static str {

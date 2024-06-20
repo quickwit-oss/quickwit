@@ -18,18 +18,17 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use hyper::StatusCode;
 use quickwit_config::INGEST_V2_SOURCE_ID;
-use quickwit_ingest::IngestRequestV2Builder;
+use quickwit_ingest::{wait_for_commit, IngestRequestV2Builder};
 use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
 };
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::{DocUid, IndexId};
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 
 use super::model::ElasticException;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
@@ -138,16 +137,21 @@ pub(crate) async fn elastic_bulk_ingest_v2(
             .push(doc_handle);
     }
     let commit_type: CommitTypeV2 = bulk_options.refresh.into();
-
-    if commit_type != CommitTypeV2::Auto {
-        warn!("ingest API v2 does not support the `refresh` parameter (yet)");
-    }
     let ingest_request_opt = ingest_request_builder.build(INGEST_V2_SOURCE_ID, commit_type);
 
     let Some(ingest_request) = ingest_request_opt else {
         return Ok(ElasticBulkResponse::default());
     };
     let ingest_response = ingest_router.ingest(ingest_request).await?;
+
+    if matches!(commit_type, CommitTypeV2::Force | CommitTypeV2::Wait) {
+        wait_for_commit(
+            &ingest_router,
+            &ingest_response.successes,
+            Duration::from_secs(30),
+        )
+        .await?;
+    }
     make_elastic_bulk_response_v2(ingest_response, per_subrequest_doc_handles, now)
 }
 

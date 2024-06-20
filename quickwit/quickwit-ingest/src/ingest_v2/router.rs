@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::{Arc, OnceLock, Weak};
@@ -27,7 +28,7 @@ use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
-use quickwit_common::{rate_limited_error, rate_limited_warn};
+use quickwit_common::{rate_limited_error, rate_limited_warn, ServiceStream};
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsSubrequest,
@@ -36,11 +37,17 @@ use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
     IngesterService, PersistFailureReason, PersistRequest, PersistResponse, PersistSubrequest,
 };
-use quickwit_proto::ingest::router::{IngestRequestV2, IngestResponseV2, IngestRouterService};
-use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
+use quickwit_proto::ingest::router::{
+    IngestRequestV2, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
+    IngestRouterServiceStream, IngestSuccess,
+};
+use quickwit_proto::ingest::{
+    CommitTypeV2, IngestV2Error, IngestV2Result, OpenShardObservationStreamRequest,
+    ShardObservationMessage, ShardPKey, ShardState,
+};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
 use serde_json::{json, Value as JsonValue};
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{mpsc, Mutex, Semaphore};
 use tracing::info;
 
 use super::broadcast::LocalShardsUpdate;
@@ -478,6 +485,54 @@ impl IngestRouterService for IngestRouter {
         self.ingest_timeout(ingest_request, ingest_request_timeout())
             .await
     }
+
+    async fn open_shard_observation_stream(
+        &self,
+        request: OpenShardObservationStreamRequest,
+    ) -> IngestV2Result<IngestRouterServiceStream<ShardObservationMessage>> {
+        let mut per_leader_id_shard_pkeys: HashMap<NodeId, Vec<ShardPKey>> = HashMap::new();
+
+        let state_guard = self.state.lock().await;
+
+        for shard_pkey in request.shard_pkeys {
+            let Some(shard) = state_guard.routing_table.find_shard(
+                shard_pkey.index_uid(),
+                &shard_pkey.source_id,
+                shard_pkey.shard_id(),
+            ) else {
+                return Err(IngestV2Error::ShardNotFound {
+                    shard_id: shard_pkey.shard_id().clone(),
+                });
+            };
+            per_leader_id_shard_pkeys
+                .entry(shard.leader_id.clone())
+                .or_default()
+                .push(shard_pkey);
+        }
+        drop(state_guard);
+
+        let (shard_observation_tx, shard_observation_rx) = mpsc::unbounded_channel();
+        let shard_observation_stream = ServiceStream::from(shard_observation_rx);
+
+        for (leader_id, shard_pkeys) in per_leader_id_shard_pkeys {
+            let ingester = self.ingester_pool.get(&leader_id).expect("FIXME");
+            let request = OpenShardObservationStreamRequest { shard_pkeys };
+            let shard_observation_tx = shard_observation_tx.clone();
+            let fut = async move {
+                let mut shard_observation_stream = ingester
+                    .open_shard_observation_stream(request)
+                    .await
+                    .expect("FIXME");
+                while let Some(message_result) = shard_observation_stream.next().await {
+                    if shard_observation_tx.send(message_result).is_err() {
+                        break;
+                    }
+                }
+            };
+            tokio::spawn(fut);
+        }
+        Ok(shard_observation_stream)
+    }
 }
 
 #[derive(Clone)]
@@ -550,6 +605,46 @@ pub(super) struct PersistRequestSummary {
     pub subrequest_ids: Vec<SubrequestId>,
 }
 
+pub async fn wait_for_commit(
+    router: &IngestRouterServiceClient,
+    successes: &[IngestSuccess],
+    timeout_after: Duration,
+) -> IngestV2Result<()> {
+    let mut commit_point = HashMap::new();
+    let mut shard_pkeys = Vec::new();
+
+    for success in successes {
+        let index_uid = success.index_uid().clone();
+        let source_id = success.source_id.clone();
+        let shard_id = success.shard_id().clone();
+
+        commit_point.insert(shard_id.clone(), success.replication_position_inclusive());
+
+        let shard_pkey = ShardPKey {
+            index_uid: Some(index_uid),
+            source_id,
+            shard_id: Some(shard_id),
+        };
+        shard_pkeys.push(shard_pkey);
+    }
+    let request = OpenShardObservationStreamRequest { shard_pkeys };
+    let mut stream = router.open_shard_observation_stream(request).await?;
+
+    while let Some(observation_result) = stream.next().await {
+        let observation = observation_result?;
+
+        if let Entry::Occupied(entry) = commit_point.entry(observation.shard_id().clone()) {
+            if *entry.get() <= observation.truncation_position_inclusive() {
+                entry.remove();
+            }
+        }
+        if commit_point.is_empty() {
+            return Ok(());
+        }
+    }
+    Err(IngestV2Error::Timeout("commit timeout".to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -570,7 +665,7 @@ mod tests {
 
     use super::*;
     use crate::ingest_v2::broadcast::ShardInfo;
-    use crate::ingest_v2::routing_table::{RoutingEntry, RoutingTableEntry};
+    use crate::ingest_v2::routing_table::{ShardEntry, TableEntry};
     use crate::ingest_v2::workbench::SubworkbenchFailure;
     use crate::RateMibPerSec;
 
@@ -600,18 +695,18 @@ mod tests {
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         state_guard.routing_table.table.insert(
             ("test-index-0".into(), "test-source".into()),
-            RoutingTableEntry {
+            TableEntry {
                 index_uid: index_uid.clone(),
                 source_id: "test-source".to_string(),
                 local_shards: vec![
-                    RoutingEntry {
+                    ShardEntry {
                         index_uid: index_uid.clone(),
                         source_id: "test-source".to_string(),
                         shard_id: ShardId::from(1),
                         shard_state: ShardState::Closed,
                         leader_id: "test-ingester-0".into(),
                     },
-                    RoutingEntry {
+                    ShardEntry {
                         index_uid: index_uid.clone(),
                         source_id: "test-source".to_string(),
                         shard_id: ShardId::from(2),

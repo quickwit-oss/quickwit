@@ -54,7 +54,7 @@ pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::{wait_for_ingester_decommission, wait_for_ingester_status, Ingester};
 use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{decoded_mrecords, MRecord};
-pub use self::router::IngestRouter;
+pub use self::router::{wait_for_commit, IngestRouter};
 
 pub type IngesterPool = Pool<NodeId, IngesterServiceClient>;
 

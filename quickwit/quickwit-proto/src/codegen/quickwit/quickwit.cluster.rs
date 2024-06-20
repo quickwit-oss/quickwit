@@ -517,7 +517,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                FetchClusterStateRequest::rpc_name(),
+                <FetchClusterStateRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
 }

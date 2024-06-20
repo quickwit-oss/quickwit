@@ -4721,7 +4721,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                CreateIndexRequest::rpc_name(),
+                <CreateIndexRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn update_index(
@@ -4735,7 +4735,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                UpdateIndexRequest::rpc_name(),
+                <UpdateIndexRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn index_metadata(
@@ -4749,7 +4749,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                IndexMetadataRequest::rpc_name(),
+                <IndexMetadataRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn indexes_metadata(
@@ -4763,7 +4763,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                IndexesMetadataRequest::rpc_name(),
+                <IndexesMetadataRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn list_indexes_metadata(
@@ -4777,7 +4777,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                ListIndexesMetadataRequest::rpc_name(),
+                <ListIndexesMetadataRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn delete_index(
@@ -4791,7 +4791,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                DeleteIndexRequest::rpc_name(),
+                <DeleteIndexRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn list_splits(
@@ -4808,12 +4808,12 @@ where
                 stream
                     .map_err(|status| crate::error::grpc_status_to_service_error(
                         status,
-                        ListSplitsRequest::rpc_name(),
+                        <ListSplitsRequest as quickwit_common::tower::RpcName>::rpc_name(),
                     ))
             })
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                ListSplitsRequest::rpc_name(),
+                <ListSplitsRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn stage_splits(
@@ -4827,7 +4827,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                StageSplitsRequest::rpc_name(),
+                <StageSplitsRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn publish_splits(
@@ -4841,7 +4841,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                PublishSplitsRequest::rpc_name(),
+                <PublishSplitsRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn mark_splits_for_deletion(
@@ -4855,7 +4855,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                MarkSplitsForDeletionRequest::rpc_name(),
+                <MarkSplitsForDeletionRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn delete_splits(
@@ -4869,7 +4869,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                DeleteSplitsRequest::rpc_name(),
+                <DeleteSplitsRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn add_source(
@@ -4883,7 +4883,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                AddSourceRequest::rpc_name(),
+                <AddSourceRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn toggle_source(
@@ -4897,7 +4897,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                ToggleSourceRequest::rpc_name(),
+                <ToggleSourceRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn delete_source(
@@ -4911,7 +4911,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                DeleteSourceRequest::rpc_name(),
+                <DeleteSourceRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn reset_source_checkpoint(
@@ -4925,7 +4925,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                ResetSourceCheckpointRequest::rpc_name(),
+                <ResetSourceCheckpointRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn last_delete_opstamp(
@@ -4939,7 +4939,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                LastDeleteOpstampRequest::rpc_name(),
+                <LastDeleteOpstampRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn create_delete_task(
@@ -4953,7 +4953,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                DeleteQuery::rpc_name(),
+                <DeleteQuery as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn update_splits_delete_opstamp(
@@ -4967,7 +4967,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                UpdateSplitsDeleteOpstampRequest::rpc_name(),
+                <UpdateSplitsDeleteOpstampRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn list_delete_tasks(
@@ -4981,7 +4981,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                ListDeleteTasksRequest::rpc_name(),
+                <ListDeleteTasksRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn list_stale_splits(
@@ -4995,7 +4995,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                ListStaleSplitsRequest::rpc_name(),
+                <ListStaleSplitsRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn open_shards(
@@ -5009,7 +5009,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                OpenShardsRequest::rpc_name(),
+                <OpenShardsRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn acquire_shards(
@@ -5023,7 +5023,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                AcquireShardsRequest::rpc_name(),
+                <AcquireShardsRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn delete_shards(
@@ -5037,7 +5037,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                DeleteShardsRequest::rpc_name(),
+                <DeleteShardsRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn list_shards(
@@ -5051,7 +5051,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                ListShardsRequest::rpc_name(),
+                <ListShardsRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn create_index_template(
@@ -5065,7 +5065,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                CreateIndexTemplateRequest::rpc_name(),
+                <CreateIndexTemplateRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn get_index_template(
@@ -5079,7 +5079,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                GetIndexTemplateRequest::rpc_name(),
+                <GetIndexTemplateRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn find_index_template_matches(
@@ -5093,7 +5093,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                FindIndexTemplateMatchesRequest::rpc_name(),
+                <FindIndexTemplateMatchesRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn list_index_templates(
@@ -5107,7 +5107,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                ListIndexTemplatesRequest::rpc_name(),
+                <ListIndexTemplatesRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn delete_index_templates(
@@ -5121,7 +5121,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                DeleteIndexTemplatesRequest::rpc_name(),
+                <DeleteIndexTemplatesRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn check_connectivity(&self) -> anyhow::Result<()> {

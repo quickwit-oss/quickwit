@@ -29,7 +29,7 @@ use tracing::{info, warn};
 use crate::IngesterPool;
 
 #[derive(Debug)]
-pub(super) struct RoutingEntry {
+pub(super) struct ShardEntry {
     pub index_uid: IndexUid,
     pub source_id: SourceId,
     pub shard_id: ShardId,
@@ -37,7 +37,7 @@ pub(super) struct RoutingEntry {
     pub leader_id: NodeId,
 }
 
-impl From<Shard> for RoutingEntry {
+impl From<Shard> for ShardEntry {
     fn from(shard: Shard) -> Self {
         let shard_id = shard.shard_id().clone();
         let shard_state = shard.shard_state();
@@ -53,20 +53,20 @@ impl From<Shard> for RoutingEntry {
 
 /// The set of shards the router is aware of for the given index and source.
 #[derive(Debug, Default)]
-pub(super) struct RoutingTableEntry {
+pub(super) struct TableEntry {
     /// Index UID of the shards.
     pub index_uid: IndexUid,
     /// Source ID of the shards.
     pub source_id: SourceId,
     /// Shards located on this node.
-    pub local_shards: Vec<RoutingEntry>,
+    pub local_shards: Vec<ShardEntry>,
     pub local_round_robin_idx: AtomicUsize,
     /// Shards located on remote nodes.
-    pub remote_shards: Vec<RoutingEntry>,
+    pub remote_shards: Vec<ShardEntry>,
     pub remote_round_robin_idx: AtomicUsize,
 }
 
-impl RoutingTableEntry {
+impl TableEntry {
     /// Creates a new entry and ensures that the shards are open, unique, and sorted by shard ID.
     fn new(
         self_node_id: &NodeId,
@@ -82,7 +82,7 @@ impl RoutingTableEntry {
         let (local_shards, remote_shards): (Vec<_>, Vec<_>) = shards
             .into_iter()
             .filter(|shard| shard.is_open())
-            .map(RoutingEntry::from)
+            .map(ShardEntry::from)
             .partition(|shard| *self_node_id == shard.leader_id);
 
         if num_shards > local_shards.len() + remote_shards.len() {
@@ -144,10 +144,7 @@ impl RoutingTableEntry {
     }
 
     /// Returns the next open and available shard in the table entry in a round-robin fashion.
-    pub fn next_open_shard_round_robin(
-        &self,
-        ingester_pool: &IngesterPool,
-    ) -> Option<&RoutingEntry> {
+    pub fn next_open_shard_round_robin(&self, ingester_pool: &IngesterPool) -> Option<&ShardEntry> {
         for (shards, round_robin_idx) in [
             (&self.local_shards, &self.local_round_robin_idx),
             (&self.remote_shards, &self.remote_round_robin_idx),
@@ -198,7 +195,7 @@ impl RoutingTableEntry {
 
         if num_target_shards == 0 {
             target_shards.reserve(num_target_shards);
-            target_shards.extend(shard_ids.iter().map(|shard_id| RoutingEntry {
+            target_shards.extend(shard_ids.iter().map(|shard_id| ShardEntry {
                 index_uid: self.index_uid.clone(),
                 source_id: self.source_id.clone(),
                 shard_id: shard_id.clone(),
@@ -219,7 +216,7 @@ impl RoutingTableEntry {
                     .binary_search_by(|shard| shard.shard_id.cmp(shard_id))
                     .is_err()
                 {
-                    target_shards.push(RoutingEntry {
+                    target_shards.push(ShardEntry {
                         index_uid: self.index_uid.clone(),
                         source_id: self.source_id.clone(),
                         shard_id: shard_id.clone(),
@@ -309,13 +306,23 @@ impl RoutingTableEntry {
         }
     }
 
+    /// Attempts to find a shard by its shard ID in the table entry.
+    pub fn find_shard(&self, shard_id: &ShardId) -> Option<&ShardEntry> {
+        for shards in [&self.local_shards, &self.remote_shards] {
+            if let Ok(shard_idx) = shards.binary_search_by(|shard| shard.shard_id.cmp(shard_id)) {
+                return Some(&shards[shard_idx]);
+            }
+        }
+        None
+    }
+
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.local_shards.len() + self.remote_shards.len()
     }
 
     #[cfg(test)]
-    pub fn all_shards(&self) -> Vec<&RoutingEntry> {
+    pub fn all_shards(&self) -> Vec<&ShardEntry> {
         let mut shards = Vec::with_capacity(self.len());
         shards.extend(&self.local_shards);
         shards.extend(&self.remote_shards);
@@ -328,7 +335,7 @@ impl RoutingTableEntry {
 #[derive(Debug)]
 pub(super) struct RoutingTable {
     pub self_node_id: NodeId,
-    pub table: HashMap<(IndexId, SourceId), RoutingTableEntry>,
+    pub table: HashMap<(IndexId, SourceId), TableEntry>,
 }
 
 impl RoutingTable {
@@ -336,7 +343,7 @@ impl RoutingTable {
         &self,
         index_id: impl Into<IndexId>,
         source_id: impl Into<SourceId>,
-    ) -> Option<&RoutingTableEntry> {
+    ) -> Option<&TableEntry> {
         let key = (index_id.into(), source_id.into());
         self.table.get(&key)
     }
@@ -386,7 +393,7 @@ impl RoutingTable {
 
         match self.table.entry(key) {
             Entry::Vacant(entry) => {
-                entry.insert(RoutingTableEntry::new(
+                entry.insert(TableEntry::new(
                     &self.self_node_id,
                     index_uid,
                     source_id,
@@ -399,7 +406,7 @@ impl RoutingTable {
                     "new index incarnation should be greater or equal"
                 );
 
-                entry.insert(RoutingTableEntry::new(
+                entry.insert(TableEntry::new(
                     &self.self_node_id,
                     index_uid,
                     source_id,
@@ -423,7 +430,7 @@ impl RoutingTable {
 
         self.table
             .entry(key.clone())
-            .or_insert_with(|| RoutingTableEntry::empty(index_uid.clone(), source_id))
+            .or_insert_with(|| TableEntry::empty(index_uid.clone(), source_id))
             .insert_open_shards(&self.self_node_id, leader_id, &index_uid, shard_ids);
     }
 
@@ -451,6 +458,17 @@ impl RoutingTable {
         if let Some(entry) = self.table.get_mut(&key) {
             entry.delete_shards(index_uid, shard_ids);
         }
+    }
+
+    pub fn find_shard(
+        &self,
+        index_uid: &IndexUid,
+        source_id: &SourceId,
+        shard_id: &ShardId,
+    ) -> Option<&ShardEntry> {
+        self.find_entry(&index_uid.index_id, source_id)
+            .filter(|entry| entry.index_uid.incarnation_id == index_uid.incarnation_id)?
+            .find_shard(shard_id)
     }
 
     pub fn debug_info(&self) -> HashMap<IndexId, Vec<JsonValue>> {
@@ -495,7 +513,7 @@ mod tests {
         let self_node_id: NodeId = "test-node-0".into();
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
-        let table_entry = RoutingTableEntry::new(
+        let table_entry = TableEntry::new(
             &self_node_id,
             index_uid.clone(),
             source_id.clone(),
@@ -546,7 +564,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let table_entry = RoutingTableEntry::new(&self_node_id, index_uid, source_id, shards);
+        let table_entry = TableEntry::new(&self_node_id, index_uid, source_id, shards);
         assert_eq!(table_entry.local_shards.len(), 2);
         assert_eq!(table_entry.local_shards[0].shard_id, ShardId::from(1));
         assert_eq!(table_entry.local_shards[1].shard_id, ShardId::from(3));
@@ -559,7 +577,7 @@ mod tests {
     fn test_routing_table_entry_has_open_shards() {
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
-        let table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
+        let table_entry = TableEntry::empty(index_uid.clone(), source_id.clone());
 
         let mut closed_shard_ids = Vec::new();
         let ingester_pool = IngesterPool::default();
@@ -576,18 +594,18 @@ mod tests {
         ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
         ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
 
-        let table_entry = RoutingTableEntry {
+        let table_entry = TableEntry {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
             local_shards: vec![
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-0".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
@@ -610,27 +628,27 @@ mod tests {
 
         closed_shard_ids.clear();
 
-        let table_entry = RoutingTableEntry {
+        let table_entry = TableEntry {
             index_uid: index_uid.clone(),
             source_id,
             local_shards: Vec::new(),
             local_round_robin_idx: AtomicUsize::default(),
             remote_shards: vec![
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-1".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-2".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
@@ -655,7 +673,7 @@ mod tests {
     fn test_routing_table_entry_next_open_shard_round_robin() {
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
-        let table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
+        let table_entry = TableEntry::empty(index_uid.clone(), source_id.clone());
         let ingester_pool = IngesterPool::default();
 
         let shard_opt = table_entry.next_open_shard_round_robin(&ingester_pool);
@@ -664,25 +682,25 @@ mod tests {
         ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
         ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
 
-        let table_entry = RoutingTableEntry {
+        let table_entry = TableEntry {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
             local_shards: vec![
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-0".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
@@ -709,10 +727,10 @@ mod tests {
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(2));
 
-        let table_entry = RoutingTableEntry {
+        let table_entry = TableEntry {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
-            local_shards: vec![RoutingEntry {
+            local_shards: vec![ShardEntry {
                 index_uid: index_uid.clone(),
                 source_id: "test-source".to_string(),
                 shard_id: ShardId::from(1),
@@ -721,28 +739,28 @@ mod tests {
             }],
             local_round_robin_idx: AtomicUsize::default(),
             remote_shards: vec![
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Closed,
                     leader_id: "test-ingester-1".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(4),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-2".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(5),
@@ -772,7 +790,7 @@ mod tests {
     fn test_routing_table_entry_insert_open_shards() {
         let index_uid_0 = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
-        let mut table_entry = RoutingTableEntry::empty(index_uid_0.clone(), source_id.clone());
+        let mut table_entry = TableEntry::empty(index_uid_0.clone(), source_id.clone());
 
         let local_node_id: NodeId = "test-ingester-0".into();
         let remote_node_id: NodeId = "test-ingester-1".into();
@@ -882,31 +900,31 @@ mod tests {
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
 
-        let mut table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
+        let mut table_entry = TableEntry::empty(index_uid.clone(), source_id.clone());
         table_entry.close_shards(&index_uid, &[]);
         table_entry.close_shards(&index_uid, &[ShardId::from(1)]);
         assert!(table_entry.local_shards.is_empty());
         assert!(table_entry.remote_shards.is_empty());
 
-        let mut table_entry = RoutingTableEntry {
+        let mut table_entry = TableEntry {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
             local_shards: vec![
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
@@ -916,21 +934,21 @@ mod tests {
             ],
             local_round_robin_idx: AtomicUsize::default(),
             remote_shards: vec![
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(6),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(7),
@@ -963,31 +981,31 @@ mod tests {
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
 
-        let mut table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
+        let mut table_entry = TableEntry::empty(index_uid.clone(), source_id.clone());
         table_entry.delete_shards(&index_uid, &[]);
         table_entry.delete_shards(&index_uid, &[ShardId::from(1)]);
         assert!(table_entry.local_shards.is_empty());
         assert!(table_entry.remote_shards.is_empty());
 
-        let mut table_entry = RoutingTableEntry {
+        let mut table_entry = TableEntry {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
             local_shards: vec![
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-0".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
@@ -997,21 +1015,21 @@ mod tests {
             ],
             local_round_robin_idx: AtomicUsize::default(),
             remote_shards: vec![
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(6),
                     shard_state: ShardState::Open,
                     leader_id: "test-ingester-1".into(),
                 },
-                RoutingEntry {
+                ShardEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(7),

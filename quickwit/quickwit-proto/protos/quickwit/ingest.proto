@@ -129,3 +129,16 @@ message ParseFailure {
   ParseFailureReason reason = 2;
   string message = 3;
 }
+
+message OpenShardObservationStreamRequest {
+  repeated quickwit.ingest.ShardPKey shard_pkeys = 1;
+}
+
+message ShardObservationMessage {
+  quickwit.common.IndexUid index_uid = 1;
+  string source_id = 2;
+  quickwit.ingest.ShardId shard_id = 3;
+  quickwit.ingest.ShardState shard_state = 4;
+  quickwit.ingest.Position replication_position_inclusive = 5;
+  quickwit.ingest.Position truncation_position_inclusive = 6;
+}

@@ -162,10 +162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Codegen::builder()
         .with_prost_config(prost_config)
-        .with_protos(&[
-            "protos/quickwit/ingester.proto",
-            "protos/quickwit/router.proto",
-        ])
+        .with_protos(&["protos/quickwit/ingester.proto"])
         .with_includes(&["protos"])
         .with_output_dir("src/codegen/quickwit")
         .with_result_type_path("crate::ingest::IngestV2Result")

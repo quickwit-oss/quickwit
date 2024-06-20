@@ -826,7 +826,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                IngestRequest::rpc_name(),
+                <IngestRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn fetch(&self, request: FetchRequest) -> crate::Result<FetchResponse> {
@@ -837,7 +837,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                FetchRequest::rpc_name(),
+                <FetchRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
     async fn tail(&self, request: TailRequest) -> crate::Result<FetchResponse> {
@@ -848,7 +848,7 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                TailRequest::rpc_name(),
+                <TailRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
 }

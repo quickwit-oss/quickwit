@@ -180,13 +180,21 @@ generate_clone_getters! {
 generate_clone_getters! {
     impl fn replication_position_inclusive() -> Position {} for
 
-    ReplicateSuccess
+    IngestSuccess,
+    ReplicateSuccess,
+    ShardObservationMessage
 }
 
 generate_clone_getters! {
     impl fn truncate_up_to_position_inclusive() -> Position {} for
 
     TruncateShardsSubrequest
+}
+
+generate_clone_getters! {
+    impl fn truncation_position_inclusive() -> Position {} for
+
+    ShardObservationMessage
 }
 
 // [`Shard`] getters
@@ -209,6 +217,7 @@ generate_getters! {
 
     FetchEof,
     FetchPayload,
+    IngestSuccess,
     InitShardFailure,
     OpenFetchStreamRequest,
     OpenShardSubrequest,
@@ -220,6 +229,7 @@ generate_getters! {
     ReplicateSuccess,
     Shard,
     ShardIdPosition,
+    ShardObservationMessage,
     ShardPKey,
     TruncateShardsSubrequest
 }

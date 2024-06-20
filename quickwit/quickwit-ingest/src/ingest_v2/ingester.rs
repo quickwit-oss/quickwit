@@ -53,15 +53,16 @@ use quickwit_proto::ingest::ingester::{
     SynReplicationMessage, TruncateShardsRequest, TruncateShardsResponse,
 };
 use quickwit_proto::ingest::{
-    CommitTypeV2, DocBatchV2, IngestV2Error, IngestV2Result, ParseFailure, Shard, ShardIds,
-    ShardState,
+    CommitTypeV2, DocBatchV2, IngestV2Error, IngestV2Result, OpenShardObservationStreamRequest,
+    ParseFailure, Shard, ShardIds, ShardObservationMessage, ShardState,
 };
 use quickwit_proto::types::{
     queue_id, split_queue_id, IndexUid, NodeId, Position, QueueId, ShardId, SourceId, SubrequestId,
 };
 use serde_json::{json, Value as JsonValue};
-use tokio::sync::Semaphore;
+use tokio::sync::{mpsc, Semaphore};
 use tokio::time::{sleep, timeout};
+use tokio_stream::wrappers::WatchStream;
 use tracing::{debug, error, info, warn};
 
 use super::broadcast::BroadcastLocalShardsTask;
@@ -919,6 +920,54 @@ impl Ingester {
         Ok(observation_stream)
     }
 
+    async fn open_shard_observation_stream_inner(
+        &self,
+        request: OpenShardObservationStreamRequest,
+    ) -> IngestV2Result<IngesterServiceStream<ShardObservationMessage>> {
+        let (shard_observation_tx, shard_observation_rx) = mpsc::unbounded_channel();
+
+        let state_guard = self.state.lock_partially().await?;
+
+        for shard_pkey in request.shard_pkeys {
+            let queue_id = shard_pkey.queue_id();
+            let shard =
+                state_guard
+                    .shards
+                    .get(&queue_id)
+                    .ok_or_else(|| IngestV2Error::ShardNotFound {
+                        shard_id: shard_pkey.shard_id().clone(),
+                    })?;
+            let shard_observation_tx = shard_observation_tx.clone();
+            let shard_status_rx = shard.shard_status_rx.clone();
+            let mut shard_status_stream = WatchStream::new(shard_status_rx);
+
+            let fut = async move {
+                while let Some(shard_status) = shard_status_stream.next().await {
+                    let message = ShardObservationMessage {
+                        index_uid: shard_pkey.index_uid.clone(),
+                        source_id: shard_pkey.source_id.clone(),
+                        shard_id: shard_pkey.shard_id.clone(),
+                        shard_state: shard_status.shard_state as i32,
+                        replication_position_inclusive: Some(
+                            shard_status.replication_position_inclusive,
+                        ),
+                        truncation_position_inclusive: Some(
+                            shard_status.truncation_position_inclusive,
+                        ),
+                    };
+                    if shard_observation_tx.send(Ok(message)).is_err() {
+                        break;
+                    }
+                }
+            };
+            tokio::spawn(fut);
+        }
+        drop(state_guard);
+
+        let shard_observation_stream = ServiceStream::from(shard_observation_rx);
+        Ok(shard_observation_stream)
+    }
+
     async fn init_shards_inner(
         &self,
         init_shards_request: InitShardsRequest,
@@ -1132,6 +1181,14 @@ impl IngesterService for Ingester {
         open_observation_stream_request: OpenObservationStreamRequest,
     ) -> IngestV2Result<IngesterServiceStream<ObservationMessage>> {
         self.open_observation_stream_inner(open_observation_stream_request)
+            .await
+    }
+
+    async fn open_shard_observation_stream(
+        &self,
+        open_shard_observation_stream_request: OpenShardObservationStreamRequest,
+    ) -> IngestV2Result<IngesterServiceStream<ShardObservationMessage>> {
+        self.open_shard_observation_stream_inner(open_shard_observation_stream_request)
             .await
     }
 

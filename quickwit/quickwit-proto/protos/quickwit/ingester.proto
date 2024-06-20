@@ -23,6 +23,7 @@ package quickwit.ingest.ingester;
 
 import "quickwit/common.proto";
 import "quickwit/ingest.proto";
+import "quickwit/router.proto";
 
 service IngesterService {
   // Persists batches of documents to primary shards hosted on a leader.
@@ -37,6 +38,9 @@ service IngesterService {
 
   // Streams status updates, called "observations", from an ingester.
   rpc OpenObservationStream(OpenObservationStreamRequest) returns (stream ObservationMessage);
+
+  // Opens a stream of shard observations.
+  rpc OpenShardObservationStream(quickwit.ingest.OpenShardObservationStreamRequest) returns (stream quickwit.ingest.ShardObservationMessage);
 
   // Creates and initializes a set of newly opened shards. This RPC is called by the control plane on leaders.
   rpc InitShards(InitShardsRequest) returns (InitShardsResponse);

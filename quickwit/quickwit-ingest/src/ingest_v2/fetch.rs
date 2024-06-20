@@ -54,7 +54,7 @@ pub(super) struct FetchStreamTask {
     shard_id: ShardId,
     queue_id: QueueId,
     /// The position of the next record fetched.
-    from_position_inclusive: u64,
+    next_position_inclusive: u64,
     mrecordlog: Arc<RwLock<Option<MultiRecordLogAsync>>>,
     fetch_message_tx: TrackedSender<IngestV2Result<FetchMessage>>,
     /// This channel notifies the fetch task when new records are available. This way the fetch
@@ -81,7 +81,7 @@ impl FetchStreamTask {
         shard_status_rx: watch::Receiver<ShardStatus>,
         batch_num_bytes: usize,
     ) -> (ServiceStream<IngestV2Result<FetchMessage>>, JoinHandle<()>) {
-        let from_position_inclusive = open_fetch_stream_request
+        let next_position_inclusive = open_fetch_stream_request
             .from_position_exclusive()
             .as_u64()
             .map(|offset| offset + 1)
@@ -94,7 +94,7 @@ impl FetchStreamTask {
             index_uid: open_fetch_stream_request.index_uid().clone(),
             client_id: open_fetch_stream_request.client_id,
             source_id: open_fetch_stream_request.source_id,
-            from_position_inclusive,
+            next_position_inclusive,
             mrecordlog,
             fetch_message_tx,
             shard_status_rx,
@@ -105,6 +105,12 @@ impl FetchStreamTask {
         (fetch_stream, fetch_task_handle)
     }
 
+    fn has_reached_eof(&self, current_position_inclusive: &Position) -> bool {
+        let shard_status = self.shard_status_rx.borrow();
+        *current_position_inclusive >= shard_status.replication_position_inclusive
+            && shard_status.shard_state.is_closed()
+    }
+
     /// Runs the fetch task. It waits for new records in the log and pushes them into the fetch
     /// response channel until it reaches the end of the shard marked by an EOF record.
     async fn run(&mut self) {
@@ -113,14 +119,14 @@ impl FetchStreamTask {
             index_uid=%self.index_uid,
             source_id=%self.source_id,
             shard_id=%self.shard_id,
-            from_position_inclusive=%self.from_position_inclusive,
+            from_position_inclusive=%self.next_position_inclusive,
             "spawning fetch task"
         );
         let mut has_drained_queue = false;
-        let mut to_position_inclusive = if self.from_position_inclusive == 0 {
+        let mut current_position_inclusive = if self.next_position_inclusive == 0 {
             Position::Beginning
         } else {
-            Position::offset(self.from_position_inclusive - 1)
+            Position::offset(self.next_position_inclusive - 1)
         };
 
         loop {
@@ -139,7 +145,7 @@ impl FetchStreamTask {
             let Ok(mrecords) = mrecordlog_guard
                 .as_ref()
                 .expect("mrecordlog should be initialized")
-                .range(&self.queue_id, self.from_position_inclusive..)
+                .range(&self.queue_id, self.next_position_inclusive..)
             else {
                 // The queue was dropped.
                 break;
@@ -156,14 +162,14 @@ impl FetchStreamTask {
             drop(mrecordlog_guard);
 
             if !mrecord_lengths.is_empty() {
-                let from_position_exclusive = if self.from_position_inclusive == 0 {
+                let from_position_exclusive = if self.next_position_inclusive == 0 {
                     Position::Beginning
                 } else {
-                    Position::offset(self.from_position_inclusive - 1)
+                    Position::offset(self.next_position_inclusive - 1)
                 };
-                self.from_position_inclusive += mrecord_lengths.len() as u64;
+                self.next_position_inclusive += mrecord_lengths.len() as u64;
 
-                to_position_inclusive = Position::offset(self.from_position_inclusive - 1);
+                current_position_inclusive = Position::offset(self.next_position_inclusive - 1);
 
                 let mrecord_batch = MRecordBatch {
                     mrecord_buffer: mrecord_buffer.freeze(),
@@ -176,7 +182,7 @@ impl FetchStreamTask {
                     shard_id: Some(self.shard_id.clone()),
                     mrecord_batch: Some(mrecord_batch),
                     from_position_exclusive: Some(from_position_exclusive),
-                    to_position_inclusive: Some(to_position_inclusive.clone()),
+                    to_position_inclusive: Some(current_position_inclusive.clone()),
                 };
                 let fetch_message = FetchMessage::new_payload(fetch_payload);
 
@@ -190,40 +196,32 @@ impl FetchStreamTask {
                     return;
                 }
             }
-            if has_drained_queue {
-                let has_reached_eof = {
-                    let shard_status = self.shard_status_rx.borrow();
-                    let shard_state = &shard_status.0;
-                    let replication_position = &shard_status.1;
-                    shard_state.is_closed() && to_position_inclusive >= *replication_position
-                };
-                if has_reached_eof {
-                    debug!(
-                        client_id=%self.client_id,
-                        index_uid=%self.index_uid,
-                        source_id=%self.source_id,
-                        shard_id=%self.shard_id,
-                        to_position_inclusive=%self.from_position_inclusive - 1,
-                        "fetch stream reached end of shard"
-                    );
-                    let eof_position = to_position_inclusive.as_eof();
+            if has_drained_queue && self.has_reached_eof(&current_position_inclusive) {
+                debug!(
+                    client_id=%self.client_id,
+                    index_uid=%self.index_uid,
+                    source_id=%self.source_id,
+                    shard_id=%self.shard_id,
+                    eof_position_inclusive=%self.next_position_inclusive - 1,
+                    "fetch stream reached end of shard"
+                );
+                let eof_position = current_position_inclusive.as_eof();
 
-                    let fetch_eof = FetchEof {
-                        index_uid: Some(self.index_uid.clone()),
-                        source_id: self.source_id.clone(),
-                        shard_id: Some(self.shard_id.clone()),
-                        eof_position: Some(eof_position),
-                    };
-                    let fetch_message = FetchMessage::new_eof(fetch_eof);
-                    let _ = self
-                        .fetch_message_tx
-                        .send(Ok(fetch_message), ByteSize(0))
-                        .await;
-                    return;
-                }
+                let fetch_eof = FetchEof {
+                    index_uid: Some(self.index_uid.clone()),
+                    source_id: self.source_id.clone(),
+                    shard_id: Some(self.shard_id.clone()),
+                    eof_position: Some(eof_position),
+                };
+                let fetch_message = FetchMessage::new_eof(fetch_eof);
+                let _ = self
+                    .fetch_message_tx
+                    .send(Ok(fetch_message), ByteSize(0))
+                    .await;
+                return;
             }
         }
-        if !to_position_inclusive.is_eof() {
+        if !current_position_inclusive.is_eof() {
             // This can happen if we delete the associated source or index.
             warn!(
                 client_id=%self.client_id,
@@ -725,7 +723,11 @@ pub(super) mod tests {
             .unwrap_err();
 
         // Trigger a spurious notification.
-        let shard_status = (ShardState::Open, Position::offset(0u64));
+        let shard_status = ShardStatus {
+            shard_state: ShardState::Open,
+            replication_position_inclusive: Position::offset(0u64),
+            ..Default::default()
+        };
         shard_status_tx.send(shard_status).unwrap();
 
         timeout(Duration::from_millis(100), fetch_stream.next())
@@ -746,7 +748,11 @@ pub(super) mod tests {
             .unwrap();
         drop(mrecordlog_guard);
 
-        let shard_status = (ShardState::Open, Position::offset(1u64));
+        let shard_status = ShardStatus {
+            shard_state: ShardState::Open,
+            replication_position_inclusive: Position::offset(1u64),
+            ..Default::default()
+        };
         shard_status_tx.send(shard_status.clone()).unwrap();
 
         let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
@@ -793,7 +799,11 @@ pub(super) mod tests {
             .unwrap();
         drop(mrecordlog_guard);
 
-        let shard_status = (ShardState::Open, Position::offset(3u64));
+        let shard_status = ShardStatus {
+            shard_state: ShardState::Open,
+            replication_position_inclusive: Position::offset(3u64),
+            ..Default::default()
+        };
         shard_status_tx.send(shard_status).unwrap();
 
         let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
@@ -824,7 +834,11 @@ pub(super) mod tests {
             "\0\0test-doc-baz\0\0test-doc-qux"
         );
 
-        let shard_status = (ShardState::Closed, Position::offset(3u64));
+        let shard_status = ShardStatus {
+            shard_state: ShardState::Closed,
+            replication_position_inclusive: Position::offset(3u64),
+            ..Default::default()
+        };
         shard_status_tx.send(shard_status).unwrap();
 
         let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
@@ -882,7 +896,11 @@ pub(super) mod tests {
             shard_id: Some(shard_id.clone()),
             from_position_exclusive: Some(Position::offset(0u64)),
         };
-        let shard_status = (ShardState::Closed, Position::offset(0u64));
+        let shard_status = ShardStatus {
+            shard_state: ShardState::Closed,
+            replication_position_inclusive: Position::offset(0u64),
+            ..Default::default()
+        };
         let (_shard_status_tx, shard_status_rx) = watch::channel(shard_status);
 
         let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
@@ -942,7 +960,11 @@ pub(super) mod tests {
             .unwrap();
         drop(mrecordlog_guard);
 
-        let shard_status = (ShardState::Closed, Position::Beginning);
+        let shard_status = ShardStatus {
+            shard_state: ShardState::Closed,
+            replication_position_inclusive: Position::Beginning,
+            ..Default::default()
+        };
         shard_status_tx.send(shard_status).unwrap();
 
         let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
@@ -1014,7 +1036,11 @@ pub(super) mod tests {
             .unwrap();
         drop(mrecordlog_guard);
 
-        let shard_status = (ShardState::Open, Position::offset(0u64));
+        let shard_status = ShardStatus {
+            shard_state: ShardState::Open,
+            replication_position_inclusive: Position::offset(0u64),
+            ..Default::default()
+        };
         shard_status_tx.send(shard_status).unwrap();
 
         timeout(Duration::from_millis(100), fetch_stream.next())
@@ -1035,7 +1061,11 @@ pub(super) mod tests {
             .unwrap();
         drop(mrecordlog_guard);
 
-        let shard_status = (ShardState::Open, Position::offset(1u64));
+        let shard_status = ShardStatus {
+            shard_state: ShardState::Open,
+            replication_position_inclusive: Position::offset(1u64),
+            ..Default::default()
+        };
         shard_status_tx.send(shard_status).unwrap();
 
         let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
@@ -1155,7 +1185,11 @@ pub(super) mod tests {
             .unwrap();
         drop(mrecordlog_guard);
 
-        let shard_status = (ShardState::Open, Position::offset(2u64));
+        let shard_status = ShardStatus {
+            shard_state: ShardState::Open,
+            replication_position_inclusive: Position::offset(2u64),
+            ..Default::default()
+        };
         shard_status_tx.send(shard_status).unwrap();
 
         let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())

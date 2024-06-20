@@ -127,6 +127,14 @@ impl RpcName for IngestRequestV2 {
         "ingest"
     }
 }
+impl RpcName for super::OpenShardObservationStreamRequest {
+    fn rpc_name() -> &'static str {
+        "open_shard_observation_stream"
+    }
+}
+pub type IngestRouterServiceStream<T> = quickwit_common::ServiceStream<
+    crate::ingest::IngestV2Result<T>,
+>;
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait IngestRouterService: std::fmt::Debug + Send + Sync + 'static {
@@ -136,6 +144,13 @@ pub trait IngestRouterService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: IngestRequestV2,
     ) -> crate::ingest::IngestV2Result<IngestResponseV2>;
+    /// Opens a stream of shard observations.
+    async fn open_shard_observation_stream(
+        &self,
+        request: super::OpenShardObservationStreamRequest,
+    ) -> crate::ingest::IngestV2Result<
+        IngestRouterServiceStream<super::ShardObservationMessage>,
+    >;
 }
 #[derive(Debug, Clone)]
 pub struct IngestRouterServiceClient {
@@ -234,6 +249,14 @@ impl IngestRouterService for IngestRouterServiceClient {
     ) -> crate::ingest::IngestV2Result<IngestResponseV2> {
         self.inner.0.ingest(request).await
     }
+    async fn open_shard_observation_stream(
+        &self,
+        request: super::OpenShardObservationStreamRequest,
+    ) -> crate::ingest::IngestV2Result<
+        IngestRouterServiceStream<super::ShardObservationMessage>,
+    > {
+        self.inner.0.open_shard_observation_stream(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_ingest_router_service {
@@ -249,6 +272,14 @@ pub mod mock_ingest_router_service {
             request: super::IngestRequestV2,
         ) -> crate::ingest::IngestV2Result<super::IngestResponseV2> {
             self.inner.lock().await.ingest(request).await
+        }
+        async fn open_shard_observation_stream(
+            &self,
+            request: super::super::OpenShardObservationStreamRequest,
+        ) -> crate::ingest::IngestV2Result<
+            IngestRouterServiceStream<super::super::ShardObservationMessage>,
+        > {
+            self.inner.lock().await.open_shard_observation_stream(request).await
         }
     }
 }
@@ -271,6 +302,26 @@ impl tower::Service<IngestRequestV2> for InnerIngestRouterServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<super::OpenShardObservationStreamRequest>
+for InnerIngestRouterServiceClient {
+    type Response = IngestRouterServiceStream<super::ShardObservationMessage>;
+    type Error = crate::ingest::IngestV2Error;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(
+        &mut self,
+        request: super::OpenShardObservationStreamRequest,
+    ) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.open_shard_observation_stream(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct IngestRouterServiceTowerServiceStack {
@@ -281,6 +332,11 @@ struct IngestRouterServiceTowerServiceStack {
         IngestResponseV2,
         crate::ingest::IngestV2Error,
     >,
+    open_shard_observation_stream_svc: quickwit_common::tower::BoxService<
+        super::OpenShardObservationStreamRequest,
+        IngestRouterServiceStream<super::ShardObservationMessage>,
+        crate::ingest::IngestV2Error,
+    >,
 }
 #[async_trait::async_trait]
 impl IngestRouterService for IngestRouterServiceTowerServiceStack {
@@ -289,6 +345,14 @@ impl IngestRouterService for IngestRouterServiceTowerServiceStack {
         request: IngestRequestV2,
     ) -> crate::ingest::IngestV2Result<IngestResponseV2> {
         self.ingest_svc.clone().ready().await?.call(request).await
+    }
+    async fn open_shard_observation_stream(
+        &self,
+        request: super::OpenShardObservationStreamRequest,
+    ) -> crate::ingest::IngestV2Result<
+        IngestRouterServiceStream<super::ShardObservationMessage>,
+    > {
+        self.open_shard_observation_stream_svc.clone().ready().await?.call(request).await
     }
 }
 type IngestLayer = quickwit_common::tower::BoxLayer<
@@ -301,9 +365,20 @@ type IngestLayer = quickwit_common::tower::BoxLayer<
     IngestResponseV2,
     crate::ingest::IngestV2Error,
 >;
+type OpenShardObservationStreamLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        super::OpenShardObservationStreamRequest,
+        IngestRouterServiceStream<super::ShardObservationMessage>,
+        crate::ingest::IngestV2Error,
+    >,
+    super::OpenShardObservationStreamRequest,
+    IngestRouterServiceStream<super::ShardObservationMessage>,
+    crate::ingest::IngestV2Error,
+>;
 #[derive(Debug, Default)]
 pub struct IngestRouterServiceTowerLayerStack {
     ingest_layers: Vec<IngestLayer>,
+    open_shard_observation_stream_layers: Vec<OpenShardObservationStreamLayer>,
 }
 impl IngestRouterServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -333,8 +408,37 @@ impl IngestRouterServiceTowerLayerStack {
                 crate::ingest::IngestV2Error,
             >,
         >>::Service as tower::Service<IngestRequestV2>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::OpenShardObservationStreamRequest,
+                    IngestRouterServiceStream<super::ShardObservationMessage>,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::OpenShardObservationStreamRequest,
+                IngestRouterServiceStream<super::ShardObservationMessage>,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
+                super::OpenShardObservationStreamRequest,
+                Response = IngestRouterServiceStream<super::ShardObservationMessage>,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::OpenShardObservationStreamRequest,
+                IngestRouterServiceStream<super::ShardObservationMessage>,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<
+            super::OpenShardObservationStreamRequest,
+        >>::Future: Send + 'static,
     {
         self.ingest_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.open_shard_observation_stream_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
     pub fn stack_ingest_layer<L>(mut self, layer: L) -> Self
@@ -354,6 +458,28 @@ impl IngestRouterServiceTowerLayerStack {
         <L::Service as tower::Service<IngestRequestV2>>::Future: Send + 'static,
     {
         self.ingest_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_open_shard_observation_stream_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::OpenShardObservationStreamRequest,
+                    IngestRouterServiceStream<super::ShardObservationMessage>,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                super::OpenShardObservationStreamRequest,
+                Response = IngestRouterServiceStream<super::ShardObservationMessage>,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::OpenShardObservationStreamRequest,
+        >>::Future: Send + 'static,
+    {
+        self.open_shard_observation_stream_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> IngestRouterServiceClient
@@ -423,9 +549,18 @@ impl IngestRouterServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let open_shard_observation_stream_svc = self
+            .open_shard_observation_stream_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = IngestRouterServiceTowerServiceStack {
             inner: inner_client,
             ingest_svc,
+            open_shard_observation_stream_svc,
         };
         IngestRouterServiceClient::new(tower_svc_stack)
     }
@@ -503,16 +638,33 @@ where
     IngestRouterServiceMailbox<
         A,
     >: tower::Service<
-        IngestRequestV2,
-        Response = IngestResponseV2,
-        Error = crate::ingest::IngestV2Error,
-        Future = BoxFuture<IngestResponseV2, crate::ingest::IngestV2Error>,
-    >,
+            IngestRequestV2,
+            Response = IngestResponseV2,
+            Error = crate::ingest::IngestV2Error,
+            Future = BoxFuture<IngestResponseV2, crate::ingest::IngestV2Error>,
+        >
+        + tower::Service<
+            super::OpenShardObservationStreamRequest,
+            Response = IngestRouterServiceStream<super::ShardObservationMessage>,
+            Error = crate::ingest::IngestV2Error,
+            Future = BoxFuture<
+                IngestRouterServiceStream<super::ShardObservationMessage>,
+                crate::ingest::IngestV2Error,
+            >,
+        >,
 {
     async fn ingest(
         &self,
         request: IngestRequestV2,
     ) -> crate::ingest::IngestV2Result<IngestResponseV2> {
+        self.clone().call(request).await
+    }
+    async fn open_shard_observation_stream(
+        &self,
+        request: super::OpenShardObservationStreamRequest,
+    ) -> crate::ingest::IngestV2Result<
+        IngestRouterServiceStream<super::ShardObservationMessage>,
+    > {
         self.clone().call(request).await
     }
 }
@@ -561,7 +713,31 @@ where
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                IngestRequestV2::rpc_name(),
+                <IngestRequestV2 as quickwit_common::tower::RpcName>::rpc_name(),
+            ))
+    }
+    async fn open_shard_observation_stream(
+        &self,
+        request: super::OpenShardObservationStreamRequest,
+    ) -> crate::ingest::IngestV2Result<
+        IngestRouterServiceStream<super::ShardObservationMessage>,
+    > {
+        self.inner
+            .clone()
+            .open_shard_observation_stream(request)
+            .await
+            .map(|response| {
+                let streaming: tonic::Streaming<_> = response.into_inner();
+                let stream = quickwit_common::ServiceStream::from(streaming);
+                stream
+                    .map_err(|status| crate::error::grpc_status_to_service_error(
+                        status,
+                        <super::OpenShardObservationStreamRequest as quickwit_common::tower::RpcName>::rpc_name(),
+                    ))
+            })
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                <super::OpenShardObservationStreamRequest as quickwit_common::tower::RpcName>::rpc_name(),
             ))
     }
 }
@@ -591,6 +767,22 @@ for IngestRouterServiceGrpcServerAdapter {
             .ingest(request.into_inner())
             .await
             .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    type OpenShardObservationStreamStream = quickwit_common::ServiceStream<
+        tonic::Result<super::ShardObservationMessage>,
+    >;
+    async fn open_shard_observation_stream(
+        &self,
+        request: tonic::Request<super::OpenShardObservationStreamRequest>,
+    ) -> Result<tonic::Response<Self::OpenShardObservationStreamStream>, tonic::Status> {
+        self.inner
+            .0
+            .open_shard_observation_stream(request.into_inner())
+            .await
+            .map(|stream| tonic::Response::new(
+                stream.map_err(crate::error::grpc_error_to_grpc_status),
+            ))
             .map_err(crate::error::grpc_error_to_grpc_status)
     }
 }
@@ -713,6 +905,41 @@ pub mod ingest_router_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Opens a stream of shard observations.
+        pub async fn open_shard_observation_stream(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::OpenShardObservationStreamRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<
+                tonic::codec::Streaming<super::super::ShardObservationMessage>,
+            >,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.ingest.router.IngestRouterService/OpenShardObservationStream",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.ingest.router.IngestRouterService",
+                        "OpenShardObservationStream",
+                    ),
+                );
+            self.inner.server_streaming(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -729,6 +956,23 @@ pub mod ingest_router_service_grpc_server {
             request: tonic::Request<super::IngestRequestV2>,
         ) -> std::result::Result<
             tonic::Response<super::IngestResponseV2>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the OpenShardObservationStream method.
+        type OpenShardObservationStreamStream: futures_core::Stream<
+                Item = std::result::Result<
+                    super::super::ShardObservationMessage,
+                    tonic::Status,
+                >,
+            >
+            + Send
+            + 'static;
+        /// Opens a stream of shard observations.
+        async fn open_shard_observation_stream(
+            &self,
+            request: tonic::Request<super::super::OpenShardObservationStreamRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::OpenShardObservationStreamStream>,
             tonic::Status,
         >;
     }
@@ -852,6 +1096,58 @@ pub mod ingest_router_service_grpc_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.ingest.router.IngestRouterService/OpenShardObservationStream" => {
+                    #[allow(non_camel_case_types)]
+                    struct OpenShardObservationStreamSvc<T: IngestRouterServiceGrpc>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: IngestRouterServiceGrpc,
+                    > tonic::server::ServerStreamingService<
+                        super::super::OpenShardObservationStreamRequest,
+                    > for OpenShardObservationStreamSvc<T> {
+                        type Response = super::super::ShardObservationMessage;
+                        type ResponseStream = T::OpenShardObservationStreamStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::OpenShardObservationStreamRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).open_shard_observation_stream(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = OpenShardObservationStreamSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

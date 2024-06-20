@@ -36,7 +36,23 @@ pub(super) enum IngesterShardType {
 }
 
 /// Status of a shard: state + position of the last record written.
-pub(super) type ShardStatus = (ShardState, Position);
+#[derive(Debug, Clone)]
+pub(super) struct ShardStatus {
+    pub shard_state: ShardState,
+    pub replication_position_inclusive: Position,
+    pub truncation_position_inclusive: Position,
+}
+
+#[cfg(test)]
+impl Default for ShardStatus {
+    fn default() -> Self {
+        Self {
+            shard_state: ShardState::Open,
+            replication_position_inclusive: Position::Beginning,
+            truncation_position_inclusive: Position::Beginning,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub(super) struct IngesterShard {
@@ -70,7 +86,11 @@ impl IngesterShard {
         doc_mapper: Arc<dyn DocMapper>,
         now: Instant,
     ) -> Self {
-        let shard_status = (shard_state, replication_position_inclusive.clone());
+        let shard_status = ShardStatus {
+            shard_state,
+            replication_position_inclusive: replication_position_inclusive.clone(),
+            truncation_position_inclusive: truncation_position_inclusive.clone(),
+        };
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
         Self {
             shard_type: IngesterShardType::Primary { follower_id },
@@ -92,7 +112,11 @@ impl IngesterShard {
         truncation_position_inclusive: Position,
         now: Instant,
     ) -> Self {
-        let shard_status = (shard_state, replication_position_inclusive.clone());
+        let shard_status = ShardStatus {
+            shard_state,
+            replication_position_inclusive: replication_position_inclusive.clone(),
+            truncation_position_inclusive: truncation_position_inclusive.clone(),
+        };
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
         Self {
             shard_type: IngesterShardType::Replica { leader_id },
@@ -116,7 +140,11 @@ impl IngesterShard {
         doc_mapper_opt: Option<Arc<dyn DocMapper>>,
         now: Instant,
     ) -> Self {
-        let shard_status = (shard_state, replication_position_inclusive.clone());
+        let shard_status = ShardStatus {
+            shard_state,
+            replication_position_inclusive: replication_position_inclusive.clone(),
+            truncation_position_inclusive: truncation_position_inclusive.clone(),
+        };
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
         Self {
             shard_type: IngesterShardType::Solo,
@@ -165,10 +193,11 @@ impl IngesterShard {
     }
 
     pub fn notify_shard_status(&self) {
-        let shard_status = (
-            self.shard_state,
-            self.replication_position_inclusive.clone(),
-        );
+        let shard_status = ShardStatus {
+            shard_state: self.shard_state,
+            replication_position_inclusive: self.replication_position_inclusive.clone(),
+            truncation_position_inclusive: self.truncation_position_inclusive.clone(),
+        };
         // `shard_status_tx` is guaranteed to be open because `self` also holds a receiver.
         self.shard_status_tx
             .send(shard_status)
@@ -180,12 +209,18 @@ impl IngesterShard {
         replication_position_inclusive: Position,
         now: Instant,
     ) {
-        if self.replication_position_inclusive == replication_position_inclusive {
-            return;
+        if self.replication_position_inclusive != replication_position_inclusive {
+            self.replication_position_inclusive = replication_position_inclusive;
+            self.last_write_instant = now;
+            self.notify_shard_status();
         }
-        self.replication_position_inclusive = replication_position_inclusive;
-        self.last_write_instant = now;
-        self.notify_shard_status();
+    }
+
+    pub fn set_truncation_position_inclusive(&mut self, truncation_position_inclusive: Position) {
+        if self.truncation_position_inclusive != truncation_position_inclusive {
+            self.truncation_position_inclusive = truncation_position_inclusive;
+            self.notify_shard_status();
+        }
     }
 }
 
