@@ -98,7 +98,6 @@ export function MetricKind(props: SearchComponentProps) {
 }
 
 export function AggregationKind(props: SearchComponentProps) {
-  props;
   const defaultAgg  = {
     histogram: {
       interval: "1d",
