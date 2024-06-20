@@ -161,7 +161,6 @@ export function AggregationKind(props: SearchComponentProps) {
       const newAggregations = [...agg];
       newAggregations[pos] = {histogram: {interval:value}};
       updateAggregationProp(newAggregations);
-      props.runSearch(props.searchRequest)
       return newAggregations;
     });
   }
