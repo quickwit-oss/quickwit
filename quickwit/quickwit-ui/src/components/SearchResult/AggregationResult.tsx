@@ -47,7 +47,6 @@ export function AggregationResult({searchResponse}: {searchResponse: SearchRespo
           data: line.value,
        };
     });
-    series;
     // we don't customize colors because we would need a full palette.
     return (
     <LineChart

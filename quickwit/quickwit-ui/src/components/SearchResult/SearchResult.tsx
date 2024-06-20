@@ -56,29 +56,27 @@ interface SearchResultProps {
 }
 
 export default function SearchResult(props: SearchResultProps) {
+  const result = useMemo(() => {
+    if (props.searchResponse == null || props.index == null) {
+      return null;
+    } else if (props.searchResponse.aggregations === undefined) {
+      return <ResultTable searchResponse={props.searchResponse} index={props.index} />;
+    } else {
+      return <AggregationResult searchResponse={props.searchResponse} />;
+    }
+  }, [props.searchResponse, props.index]);
+
   if (props.queryRunning) {
-    return <Loader />
+    return <Loader />;
   }
+  
   if (props.searchError !== null) {
     return ErrorResponseDisplay(props.searchError);
   }
+
   if (props.searchResponse == null || props.index == null) {
-    return <></>
+    return <></>;
   }
-  // try to improve typing experience by caching the costly-to-render components
-  // in practice this doesn't seem to have much impact
-  const result = useMemo(
-    () => {
-      if (props.searchResponse == null || props.index == null) {
-        return null;
-      } else if (props.searchResponse.aggregations === undefined) {
-        return (<ResultTable searchResponse={props.searchResponse} index={props.index} />);
-      } else {
-        return (<AggregationResult searchResponse={props.searchResponse} />);
-      }
-    },
-    [props.searchResponse, props.index]
-  );
 
   return (
     <Box sx={{ pt: 1, flexGrow: '1', flexBasis: '0%', overflow: 'hidden'}}>
