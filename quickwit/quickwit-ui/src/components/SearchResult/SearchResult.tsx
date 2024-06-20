@@ -56,13 +56,6 @@ interface SearchResultProps {
 }
 
 export default function SearchResult(props: SearchResultProps) {
-  if (props.queryRunning) {
-    return <Loader />;
-  }
-  if (props.searchError !== null) {
-    return ErrorResponseDisplay(props.searchError);
-  }
-
   const result = useMemo(() => {
     if (props.searchResponse == null || props.index == null) {
       return null;
@@ -72,6 +65,14 @@ export default function SearchResult(props: SearchResultProps) {
       return <AggregationResult searchResponse={props.searchResponse} />;
     }
   }, [props.searchResponse, props.index]);
+
+  if (props.queryRunning) {
+    return <Loader />;
+  }
+  
+  if (props.searchError !== null) {
+    return ErrorResponseDisplay(props.searchError);
+  }
 
   if (props.searchResponse == null || props.index == null) {
     return <></>;
