@@ -17,6 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use hyper::StatusCode;
+use tracing::error;
+use warp::reply::with_status;
+
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(metrics_handler))]
 /// Endpoints which are weirdly tied to another crate with no
@@ -32,11 +36,18 @@ pub struct MetricsApi;
     path = "/",
     responses(
         (status = 200, description = "Successfully fetched metrics.", body = String),
+        (status = 500, description = "Metrics not available.", body = String),
     ),
 )]
 /// Get Node Metrics
 ///
 /// These are in the form of prometheus metrics.
 pub fn metrics_handler() -> impl warp::Reply {
-    quickwit_common::metrics::metrics_text_payload()
+    match quickwit_common::metrics::metrics_text_payload() {
+        Ok(metrics) => with_status(metrics, StatusCode::OK),
+        Err(e) => {
+            error!("failed to encode prometheus metrics: {e}");
+            with_status(String::new(), StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
