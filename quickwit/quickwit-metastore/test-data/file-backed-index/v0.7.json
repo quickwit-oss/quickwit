@@ -146,8 +146,8 @@
     "_ingest-source": [
       {
         "index_uid": "my-index:00000000000000000000000000",
-        "source_id": "_ingest-source",
         "shard_id": "00000000000000000001",
+        "source_id": "_ingest-source",
         "shard_state": 1,
         "leader_id": "leader-ingester",
         "follower_id": "follower-ingester",

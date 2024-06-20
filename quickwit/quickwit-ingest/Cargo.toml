@@ -38,6 +38,7 @@ quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
+quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]

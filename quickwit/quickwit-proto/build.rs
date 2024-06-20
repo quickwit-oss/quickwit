@@ -38,7 +38,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Control plane.
     let mut prost_config = prost_build::Config::default();
-    prost_config.extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid");
+    prost_config
+        .extern_path(
+            ".quickwit.common.DocMappingUid",
+            "crate::types::DocMappingUid",
+        )
+        .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid");
 
     Codegen::builder()
         .with_prost_config(prost_config)
@@ -91,10 +96,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "IndexesMetadataResponse.indexes_metadata_json_zstd",
             "ListIndexesMetadataResponse.indexes_metadata_json_zstd",
         ])
-        .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
+        .extern_path(
+            ".quickwit.common.DocMappingUid",
+            "crate::types::DocMappingUid",
+        )
         .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
-        .field_attribute("DeleteQuery.index_uid", "#[serde(alias = \"index_id\")]")
+        .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
         .field_attribute("DeleteQuery.index_uid", "#[schema(value_type = String)]")
+        .field_attribute("DeleteQuery.index_uid", "#[serde(alias = \"index_id\")]")
         .field_attribute("DeleteQuery.query_ast", "#[serde(alias = \"query\")]")
         .field_attribute(
             "DeleteQuery.start_timestamp",
@@ -125,9 +134,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "MRecordBatch.mrecord_buffer",
             "Position.position",
         ])
+        .extern_path(
+            ".quickwit.common.DocMappingUid",
+            "crate::types::DocMappingUid",
+        )
+        .extern_path(".quickwit.common.DocUid", "crate::types::DocUid")
+        .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
         .extern_path(".quickwit.ingest.Position", "crate::types::Position")
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
-        .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
         .type_attribute("Shard", "#[derive(Eq)]")
         .field_attribute(
             "Shard.follower_id",

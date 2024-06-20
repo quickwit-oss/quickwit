@@ -82,7 +82,7 @@ pub(crate) struct FileBackedIndex {
 impl quickwit_config::TestableForRegression for FileBackedIndex {
     fn sample_for_regression() -> Self {
         use quickwit_proto::ingest::{Shard, ShardState};
-        use quickwit_proto::types::{Position, ShardId};
+        use quickwit_proto::types::{DocMappingUid, Position, ShardId};
 
         let index_metadata = IndexMetadata::sample_for_regression();
         let index_uid = index_metadata.index_uid.clone();
@@ -104,6 +104,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
             shard_state: ShardState::Open as i32,
             leader_id: "leader-ingester".to_string(),
             follower_id: Some("follower-ingester".to_string()),
+            doc_mapping_uid: Some(DocMappingUid::for_test(1)),
             publish_position_inclusive: Some(Position::Beginning),
             ..Default::default()
         };

@@ -1,4 +1,11 @@
 method: PUT
 ndjson:
-  - index: { "_index": "test-index", "_id": "1" }
+  - index: { "_index": "test-index" }
   - message: Hello, World!
+status_code: 200
+expected:
+  errors: false
+  items:
+    - index:
+        _index: test-index
+        status: 201

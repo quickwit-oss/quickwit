@@ -27,7 +27,7 @@ use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
     IngestRouterServiceClient, IngestSubrequest,
 };
-use quickwit_proto::types::IndexId;
+use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
@@ -122,9 +122,10 @@ async fn ingest_v2(
     ingest_router: IngestRouterServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
     let mut doc_batch_builder = DocBatchV2Builder::default();
+    let mut doc_uid_generator = DocUidGenerator::default();
 
     for doc in lines(&body.content) {
-        doc_batch_builder.add_doc(doc);
+        doc_batch_builder.add_doc(doc_uid_generator.next_doc_uid(), doc);
     }
     let doc_batch_opt = doc_batch_builder.build();
 

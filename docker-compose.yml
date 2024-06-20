@@ -173,6 +173,8 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
     volumes:
+      - grafana_conf:/etc/grafana
+      - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
 
@@ -232,7 +234,9 @@ services:
       - gcp-pubsub
 
 volumes:
-  localstack_data:
-  postgres_data:
   azurite_data:
   fake_gcs_server_data:
+  grafana_conf:
+  grafana_data:
+  localstack_data:
+  postgres_data:

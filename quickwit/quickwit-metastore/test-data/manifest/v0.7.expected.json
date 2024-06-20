@@ -8,6 +8,7 @@
     {
       "description": "Test description.",
       "doc_mapping": {
+        "doc_mapping_uid": "00000000000000000000000000",
         "dynamic_mapping": {
           "expand_dots": true,
           "fast": {
@@ -82,8 +83,8 @@
         "default_search_fields": []
       },
       "template_id": "test-template",
-      "version": "0.8"
+      "version": "0.9"
     }
   ],
-  "version": "0.8"
+  "version": "0.9"
 }

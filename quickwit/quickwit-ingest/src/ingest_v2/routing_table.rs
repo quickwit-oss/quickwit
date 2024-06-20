@@ -234,7 +234,7 @@ impl RoutingTableEntry {
             target_shards.sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
 
             info!(
-                index_id=%self.index_uid.index_id,
+                index_uid=%self.index_uid,
                 source_id=%self.source_id,
                 "inserted {num_inserted_shards} shards into routing table"
             );

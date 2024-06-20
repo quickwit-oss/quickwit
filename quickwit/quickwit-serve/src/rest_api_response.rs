@@ -84,11 +84,17 @@ impl Reply for RestApiResponse {
                 *response.status_mut() = self.status_code;
                 response
             }
-            Err(()) => warp::reply::json(&RestApiError {
-                status_code: StatusCode::INTERNAL_SERVER_ERROR,
-                message: JSON_SERIALIZATION_ERROR.to_string(),
-            })
-            .into_response(),
+            Err(()) => {
+                quickwit_common::rate_limited_error!(
+                    limit_per_min = 10,
+                    "REST body json serialization error."
+                );
+                warp::reply::json(&RestApiError {
+                    status_code: StatusCode::INTERNAL_SERVER_ERROR,
+                    message: JSON_SERIALIZATION_ERROR.to_string(),
+                })
+                .into_response()
+            }
         }
     }
 }

@@ -435,9 +435,11 @@ impl ShardTable {
             } else {
                 0
             };
+        let index_label =
+            quickwit_common::metrics::index_label(source_uid.index_uid.index_id.as_str());
         crate::metrics::CONTROL_PLANE_METRICS
             .open_shards_total
-            .with_label_values([source_uid.index_uid.index_id.as_str()])
+            .with_label_values([index_label])
             .set(num_open_shards as i64);
     }
 

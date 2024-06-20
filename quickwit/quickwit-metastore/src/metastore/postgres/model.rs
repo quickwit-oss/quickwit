@@ -24,7 +24,7 @@ use std::str::FromStr;
 
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreError, MetastoreResult};
-use quickwit_proto::types::{IndexId, IndexUid, ShardId, SourceId, SplitId};
+use quickwit_proto::types::{DocMappingUid, IndexId, IndexUid, ShardId, SourceId, SplitId};
 use sea_query::{Iden, Write};
 use tracing::error;
 
@@ -259,6 +259,8 @@ pub(super) struct PgShard {
     pub leader_id: String,
     pub follower_id: Option<String>,
     pub shard_state: PgShardState,
+    #[sqlx(try_from = "String")]
+    pub doc_mapping_uid: DocMappingUid,
     pub publish_position_inclusive: String,
     pub publish_token: Option<String>,
 }
@@ -272,6 +274,7 @@ impl From<PgShard> for Shard {
             shard_state: ShardState::from(pg_shard.shard_state) as i32,
             leader_id: pg_shard.leader_id,
             follower_id: pg_shard.follower_id,
+            doc_mapping_uid: Some(pg_shard.doc_mapping_uid),
             publish_position_inclusive: Some(pg_shard.publish_position_inclusive.into()),
             publish_token: pg_shard.publish_token,
         }
