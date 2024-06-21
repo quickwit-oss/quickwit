@@ -565,10 +565,26 @@ fn inflate_node_capacities_if_necessary(problem: &mut SchedulingProblem) {
     else {
         return;
     };
+
+    // We first artificially scale down the node capacities.
+    //
+    // The node capacity is an estimate of the amount of CPU available on a given indexer node.
+    // It has two purpose,
+    // - under a lot of load, indexer will receive work proportional to their relative capacity.
+    // - under low load, the absolute magnitude will be used by the scheduler, to decide whether
+    // to prefer having a balanced workload over other criteria (all pipeline from a same index on the
+    // same node, indexing local shards, etc.).
+    //
+    // The default CPU capacity is detected from the OS. Using these values directly leads
+    // a non uniform distribution of the load which is very confusing for users. We artificially
+    // scale down the indexer capacities.
+    problem.scale_node_capacities(0.3f32);
+
     let min_indexer_capacity = (0..problem.num_indexers())
         .map(|indexer_ord| problem.indexer_cpu_capacity(indexer_ord))
         .min()
         .expect("At least one indexer is required");
+
     assert_ne!(min_indexer_capacity.cpu_millis(), 0);
     if min_indexer_capacity.cpu_millis() < largest_shard_load.get() {
         let scaling_factor =
