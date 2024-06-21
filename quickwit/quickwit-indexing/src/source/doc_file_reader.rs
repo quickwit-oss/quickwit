@@ -48,8 +48,8 @@ impl SkipReader {
     }
 
     async fn skip(&mut self) -> io::Result<()> {
-        // Allocating 64KB once on the stack should be fine (<1% of the Linux stack size)
-        let mut buf = [0u8; 64000];
+        // allocate on the heap to avoid stack overflows
+        let mut buf = vec![0u8; 64000];
         while self.num_bytes_to_skip > 0 {
             let num_bytes_to_read = self.num_bytes_to_skip.min(buf.len());
             let num_bytes_read = self

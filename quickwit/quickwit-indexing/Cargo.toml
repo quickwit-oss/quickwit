@@ -11,12 +11,12 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-aws-sdk-kinesis = { workspace = true, optional = true }
-
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-compression = { workspace = true }
 async-trait = { workspace = true }
+aws-sdk-kinesis = { workspace = true, optional = true }
+aws-sdk-sqs = { workspace = true, optional = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 fail = { workspace = true }
@@ -34,6 +34,7 @@ oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
 pulsar = { workspace = true, optional = true }
 quickwit-query = { workspace = true }
+regex = { workspace = true }
 rdkafka = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -77,6 +78,8 @@ kinesis = [
 kinesis-localstack-tests = []
 pulsar = ["dep:pulsar"]
 pulsar-broker-tests = []
+sqs = ["aws-sdk-sqs"]
+sqs-localstack-tests = []
 vendored-kafka = [
   "kafka",
   "libz-sys/static",
