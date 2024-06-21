@@ -230,7 +230,7 @@ thiserror = "1"
 thousands = "0.2.0"
 tikv-jemalloc-ctl = "0.5"
 tikv-jemallocator = "0.5"
-time = { version = "0.3", features = ["std", "formatting", "macros"] }
+time = { version = "0.3", features = ["formatting", "local-offset", "macros", "std"] }
 tokio = { version = "1.38", features = ["full"] }
 tokio-metrics = { version = "0.3.1", features = ["rt"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -336,9 +336,6 @@ encoding_rs = "=0.8.32"
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }
-
-[patch."https://github.com/fulmicoton/oneshot.git"]
-oneshot = "0.1.7"
 
 ## this patched version of tracing helps better understand what happens inside futures (when are
 ## they polled, how long does poll take...)

@@ -12,10 +12,14 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+chrono = { workspace = true }
 itertools = { workspace = true }
+once_cell = { workspace = true }
 ouroboros = "0.18.0"
+regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tantivy = { workspace = true }
 time = { workspace = true }
 time-fmt = "0.3.8"
+tracing = { workspace = true }

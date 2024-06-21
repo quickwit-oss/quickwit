@@ -19,9 +19,13 @@
 
 mod date_time_format;
 mod date_time_parsing;
+mod strptime_format;
+mod strptime_parser;
+mod time_zone;
 
-pub use date_time_format::{DateTimeInputFormat, DateTimeOutputFormat, StrptimeParser};
+pub use date_time_format::{DateTimeInputFormat, DateTimeOutputFormat};
 pub use date_time_parsing::{
     parse_date_time_str, parse_timestamp, parse_timestamp_float, parse_timestamp_int,
 };
+pub use strptime_parser::StrptimeParser;
 pub use tantivy::DateTime as TantivyDateTime;
