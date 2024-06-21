@@ -163,7 +163,7 @@ fn assert_remove_extraneous_shards_post_condition(
 // Releave sources from the node that are exceeding their maximum load.
 
 fn enforce_indexers_cpu_capacity(problem: &SchedulingProblem, solution: &mut SchedulingSolution) {
-    for indexer_assignment in solution.indexer_assignments.iter_mut() {
+    for indexer_assignment in &mut solution.indexer_assignments {
         let indexer_cpu_capacity: CpuCapacity =
             problem.indexer_cpu_capacity(indexer_assignment.indexer_ord);
         enforce_indexer_cpu_capacity(problem, indexer_cpu_capacity, indexer_assignment);
@@ -751,6 +751,32 @@ mod tests {
         previous_solution.indexer_assignments[0].add_shards(0, 0);
         let solution = solve(problem, previous_solution);
         assert_eq!(solution.indexer_assignments[0].num_shards(0), 1);
+    }
+
+    #[test]
+    fn test_problem_unbalanced_simple() {
+        let mut problem = SchedulingProblem::with_indexer_cpu_capacities(vec![
+            CpuCapacity::from_cpu_millis(1),
+            CpuCapacity::from_cpu_millis(1),
+        ]);
+        problem.add_source(1, NonZeroU32::new(1).unwrap());
+        for _ in 0..10 {
+            problem.add_source(1, NonZeroU32::new(1).unwrap());
+        }
+        for i in [5] {
+            let mut problem = SchedulingProblem::with_indexer_cpu_capacities(vec![
+                CpuCapacity::from_cpu_millis(1),
+                CpuCapacity::from_cpu_millis(1),
+            ]);
+            problem.add_source(i, NonZeroU32::new(1).unwrap());
+            for _ in 0..10 {
+                problem.add_source(1, NonZeroU32::new(1).unwrap());
+            }
+            dbg!(&solution);
+            solution = solve(problem, solution);
+        }
+        dbg!(&solution);
+        // assert_eq!(solution.indexer_assignments[0].num_shards(0), 1);
     }
 
     proptest! {
