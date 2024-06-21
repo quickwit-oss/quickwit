@@ -29,6 +29,7 @@ use quickwit_proto::metastore::SourceType;
 use quickwit_storage::StorageResolver;
 use serde_json::{json, Value as JsonValue};
 use tracing::debug;
+use ulid::Ulid;
 
 use super::local_state::QueueLocalState;
 use super::message::CheckpointedMessage;
@@ -36,7 +37,7 @@ use super::shared_state::{QueueSharedState, QueueSharedStateImpl};
 use super::visibility::{spawn_visibility_task, VisibilityTaskHandle};
 use super::{acknowledge, Queue};
 use crate::actors::DocProcessor;
-use crate::models::{NewPublishLock, PublishLock};
+use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 use crate::source::{SourceContext, SourceRuntime};
 
 #[derive(Default)]
@@ -61,6 +62,7 @@ pub struct QueueProcessor {
     publish_lock: PublishLock,
     shared_state: Box<dyn QueueSharedState>,
     local_state: QueueLocalState,
+    publish_token: String,
 }
 
 impl fmt::Debug for QueueProcessor {
@@ -82,6 +84,8 @@ impl QueueProcessor {
         Self {
             shared_state: Box::new(QueueSharedStateImpl {
                 metastore: source_runtime.metastore,
+                source_id: source_runtime.pipeline_id.source_id.clone(),
+                index_uid: source_runtime.pipeline_id.index_uid.clone(),
             }),
             local_state: QueueLocalState::default(),
             pipeline_id: source_runtime.pipeline_id,
@@ -91,6 +95,7 @@ impl QueueProcessor {
             observable_state: QueueProcessorObservableState::default(),
             queue_params,
             publish_lock: PublishLock::default(),
+            publish_token: Ulid::new().to_string(),
         }
     }
 
@@ -102,6 +107,11 @@ impl QueueProcessor {
         let publish_lock = self.publish_lock.clone();
         ctx.send_message(doc_processor_mailbox, NewPublishLock(publish_lock))
             .await?;
+        ctx.send_message(
+            doc_processor_mailbox,
+            NewPublishToken(self.publish_token.clone()),
+        )
+        .await?;
         Ok(())
     }
 
@@ -147,7 +157,10 @@ impl QueueProcessor {
 
         let categorized_using_shared_state = self
             .shared_state
-            .checkpoint_messages(&self.pipeline_id, categorized_using_local_state.processable)
+            .checkpoint_messages(
+                &self.publish_token,
+                categorized_using_local_state.processable,
+            )
             .await?;
 
         // Drop visibility tasks for messages that have been processed by another pipeline
@@ -230,6 +243,7 @@ mod tests {
     use quickwit_config::QueueMessageType;
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
     use tokio::sync::watch;
+    use ulid::Ulid;
 
     use super::*;
     use crate::models::RawDocBatch;
@@ -266,6 +280,7 @@ mod tests {
             queue_params,
             source_type: SourceType::Unspecified,
             storage_resolver: StorageResolver::for_test(),
+            publish_token: Ulid::new().to_string(),
         }
     }
 
@@ -334,7 +349,7 @@ mod tests {
         assert_eq!(batches[0].docs.len(), 10);
         assert_eq!(
             shared_state.get(&partition_id),
-            SharedStateForPartition::InProgress(processor.pipeline_id.pipeline_uid)
+            SharedStateForPartition::InProgress(processor.publish_token)
         );
         assert_eq!(
             processor.local_state.state(&partition_id),

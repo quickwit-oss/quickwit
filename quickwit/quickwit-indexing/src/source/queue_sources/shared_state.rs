@@ -22,11 +22,10 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_metastore::checkpoint::PartitionId;
-use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
     MetastoreService, MetastoreServiceClient, OpenShardSubrequest, OpenShardsRequest,
 };
-use quickwit_proto::types::{Position, ShardId};
+use quickwit_proto::types::{IndexUid, Position, ShardId};
 
 use super::message::{CheckpointedMessage, PreProcessedMessage};
 use super::Categorized;
@@ -37,13 +36,15 @@ pub trait QueueSharedState: Send {
     /// (with position) and already processed messages.
     async fn checkpoint_messages(
         &mut self,
-        pipeline_id: &IndexingPipelineId,
+        publish_token: &str,
         messages: Vec<PreProcessedMessage>,
     ) -> anyhow::Result<Categorized<CheckpointedMessage, PreProcessedMessage>>;
 }
 
 pub struct QueueSharedStateImpl {
     pub metastore: MetastoreServiceClient,
+    pub index_uid: IndexUid,
+    pub source_id: String,
 }
 
 impl QueueSharedStateImpl {
@@ -52,22 +53,21 @@ impl QueueSharedStateImpl {
     /// pipeline are filtered out.
     async fn acquire_shards(
         &mut self,
-        pipeline_id: &IndexingPipelineId,
+        publish_token: &str,
         partitions: Vec<PartitionId>,
     ) -> anyhow::Result<Categorized<(PartitionId, Position), PartitionId>> {
-        let local_publish_token = pipeline_id.pipeline_uid.to_string();
         let open_shard_subrequests = partitions
             .iter()
             .enumerate()
             .map(|(idx, partition_id)| OpenShardSubrequest {
                 subrequest_id: idx as u32,
-                index_uid: Some(pipeline_id.index_uid.clone()),
-                source_id: pipeline_id.source_id.clone(),
+                index_uid: Some(self.index_uid.clone()),
+                source_id: self.source_id.clone(),
                 // TODO: make this optional?
                 leader_id: String::new(),
                 follower_id: None,
                 shard_id: Some(ShardId::from(partition_id.as_str())),
-                publish_token: Some(local_publish_token.clone()),
+                publish_token: Some(publish_token.to_string()),
             })
             .collect();
 
@@ -86,7 +86,7 @@ impl QueueSharedStateImpl {
             let position = sub.open_shard().publish_position_inclusive();
             if position.is_eof() {
                 completed_shards.push(partition_id);
-            } else if sub.open_shard().publish_token.as_ref() == Some(&local_publish_token) {
+            } else if sub.open_shard().publish_token.as_deref() == Some(publish_token) {
                 new_shards.push((partition_id, position));
             }
         }
@@ -105,7 +105,7 @@ impl QueueSharedStateImpl {
 impl QueueSharedState for QueueSharedStateImpl {
     async fn checkpoint_messages(
         &mut self,
-        pipeline_id: &IndexingPipelineId,
+        publish_token: &str,
         messages: Vec<PreProcessedMessage>,
     ) -> anyhow::Result<Categorized<CheckpointedMessage, PreProcessedMessage>> {
         let mut message_map =
@@ -115,7 +115,7 @@ impl QueueSharedState for QueueSharedStateImpl {
         let Categorized {
             processable,
             already_processed,
-        } = self.acquire_shards(pipeline_id, partition_ids).await?;
+        } = self.acquire_shards(publish_token, partition_ids).await?;
 
         let processable_messages = processable
             .into_iter()
@@ -147,14 +147,13 @@ pub mod shared_state_for_tests {
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 
-    use quickwit_proto::types::PipelineUid;
-
     use super::*;
 
     #[derive(Debug, Clone, Eq, PartialEq)]
     pub enum SharedStateForPartition {
         AvailableForProcessing(Position),
-        InProgress(PipelineUid),
+        // contains the publish token
+        InProgress(String),
         Completed,
     }
 
@@ -184,7 +183,7 @@ pub mod shared_state_for_tests {
     impl QueueSharedState for InMemoryQueueSharedState {
         async fn checkpoint_messages(
             &mut self,
-            pipeline_id: &IndexingPipelineId,
+            publish_token: &str,
             messages: Vec<PreProcessedMessage>,
         ) -> anyhow::Result<Categorized<CheckpointedMessage, PreProcessedMessage>> {
             let mut state = self.state.lock().unwrap();
@@ -202,16 +201,16 @@ pub mod shared_state_for_tests {
                     SharedStateForPartition::AvailableForProcessing(position) => {
                         state.insert(
                             partition_id,
-                            SharedStateForPartition::InProgress(pipeline_id.pipeline_uid),
+                            SharedStateForPartition::InProgress(publish_token.to_string()),
                         );
                         processable_messages.push(CheckpointedMessage {
                             position,
                             content: message,
                         });
                     }
-                    SharedStateForPartition::InProgress(pipeline_uid) => {
+                    SharedStateForPartition::InProgress(in_progress_token) => {
                         assert_ne!(
-                            pipeline_uid, pipeline_id.pipeline_uid,
+                            in_progress_token, publish_token,
                             "Shared state should not be accessed when it could be tracked locally"
                         );
                         // TODO: Add logic to re-acquire shards that have a token that is not

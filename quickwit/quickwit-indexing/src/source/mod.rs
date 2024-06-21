@@ -701,7 +701,7 @@ mod tests {
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let mut source_delta = SourceCheckpointDelta::default();
-        for (partition_id, from_position, to_position) in partition_deltas.into_iter().cloned() {
+        for (partition_id, from_position, to_position) in partition_deltas.iter().cloned() {
             source_delta
                 .record_partition_delta(partition_id, from_position, to_position)
                 .unwrap();
