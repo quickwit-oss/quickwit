@@ -643,8 +643,14 @@ pub fn build_physical_indexing_plan(
         convert_physical_plan_to_solution(previous_plan, &id_to_ord_map, &mut previous_solution);
     }
 
+    println!("------------------------");
+    println!("problem={:?}", problem);
+    println!("previous_solution={:?}", previous_solution);
+
     // Compute the new scheduling solution using a heuristic.
     let new_solution = scheduling_logic::solve(problem, previous_solution);
+
+    println!("solution={:?}", new_solution);
 
     // Convert the new scheduling solution back to a physical plan.
     let new_physical_plan = convert_scheduling_solution_to_physical_plan(
