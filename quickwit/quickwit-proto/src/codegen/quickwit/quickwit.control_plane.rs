@@ -75,6 +75,29 @@ pub struct AdviseResetShardsResponse {
     #[prost(message, repeated, tag = "2")]
     pub shards_to_truncate: ::prost::alloc::vec::Vec<super::ingest::ShardIdPositions>,
 }
+/// / Careful here! The Default implementation is used in different place of the code.
+/// / If you modify this struct make sure, its default's value aligns with the previous
+/// / behavior.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RebuildPlanRequest {
+    #[prost(bool, tag = "1")]
+    pub reset: bool,
+    #[prost(bool, tag = "2")]
+    pub debug: bool,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RebuildPlanResponse {
+    #[prost(string, tag = "1")]
+    pub previous_solution_json: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub problem_json: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub new_solution_json: ::prost::alloc::string::String,
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -175,6 +198,11 @@ pub trait ControlPlaneService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse>;
+    #[doc = "/ Compute the indexing plan from scratch, without taking into account the current state of the indexers."]
+    async fn rebuild_plan(
+        &self,
+        request: RebuildPlanRequest,
+    ) -> crate::control_plane::ControlPlaneResult<RebuildPlanResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct ControlPlaneServiceClient {
@@ -319,6 +347,12 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
         self.inner.0.advise_reset_shards(request).await
     }
+    async fn rebuild_plan(
+        &self,
+        request: RebuildPlanRequest,
+    ) -> crate::control_plane::ControlPlaneResult<RebuildPlanResponse> {
+        self.inner.0.rebuild_plan(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_control_plane_service {
@@ -390,6 +424,12 @@ pub mod mock_control_plane_service {
             request: super::AdviseResetShardsRequest,
         ) -> crate::control_plane::ControlPlaneResult<super::AdviseResetShardsResponse> {
             self.inner.lock().await.advise_reset_shards(request).await
+        }
+        async fn rebuild_plan(
+            &self,
+            request: super::RebuildPlanRequest,
+        ) -> crate::control_plane::ControlPlaneResult<super::RebuildPlanResponse> {
+            self.inner.lock().await.rebuild_plan(request).await
         }
     }
 }
@@ -530,6 +570,22 @@ impl tower::Service<AdviseResetShardsRequest> for InnerControlPlaneServiceClient
         Box::pin(fut)
     }
 }
+impl tower::Service<RebuildPlanRequest> for InnerControlPlaneServiceClient {
+    type Response = RebuildPlanResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: RebuildPlanRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.rebuild_plan(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct ControlPlaneServiceTowerServiceStack {
@@ -573,6 +629,11 @@ struct ControlPlaneServiceTowerServiceStack {
     advise_reset_shards_svc: quickwit_common::tower::BoxService<
         AdviseResetShardsRequest,
         AdviseResetShardsResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    rebuild_plan_svc: quickwit_common::tower::BoxService<
+        RebuildPlanRequest,
+        RebuildPlanResponse,
         crate::control_plane::ControlPlaneError,
     >,
 }
@@ -629,6 +690,12 @@ impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
         self.advise_reset_shards_svc.clone().ready().await?.call(request).await
+    }
+    async fn rebuild_plan(
+        &self,
+        request: RebuildPlanRequest,
+    ) -> crate::control_plane::ControlPlaneResult<RebuildPlanResponse> {
+        self.rebuild_plan_svc.clone().ready().await?.call(request).await
     }
 }
 type CreateIndexLayer = quickwit_common::tower::BoxLayer<
@@ -711,6 +778,16 @@ type AdviseResetShardsLayer = quickwit_common::tower::BoxLayer<
     AdviseResetShardsResponse,
     crate::control_plane::ControlPlaneError,
 >;
+type RebuildPlanLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        RebuildPlanRequest,
+        RebuildPlanResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    RebuildPlanRequest,
+    RebuildPlanResponse,
+    crate::control_plane::ControlPlaneError,
+>;
 #[derive(Debug, Default)]
 pub struct ControlPlaneServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
@@ -721,6 +798,7 @@ pub struct ControlPlaneServiceTowerLayerStack {
     delete_source_layers: Vec<DeleteSourceLayer>,
     get_or_create_open_shards_layers: Vec<GetOrCreateOpenShardsLayer>,
     advise_reset_shards_layers: Vec<AdviseResetShardsLayer>,
+    rebuild_plan_layers: Vec<RebuildPlanLayer>,
 }
 impl ControlPlaneServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -939,6 +1017,31 @@ impl ControlPlaneServiceTowerLayerStack {
                 crate::control_plane::ControlPlaneError,
             >,
         >>::Service as tower::Service<AdviseResetShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    RebuildPlanRequest,
+                    RebuildPlanResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                RebuildPlanRequest,
+                RebuildPlanResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                RebuildPlanRequest,
+                Response = RebuildPlanResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                RebuildPlanRequest,
+                RebuildPlanResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<RebuildPlanRequest>>::Future: Send + 'static,
     {
         self.create_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -955,6 +1058,8 @@ impl ControlPlaneServiceTowerLayerStack {
         self.get_or_create_open_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.advise_reset_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.rebuild_plan_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -1126,6 +1231,25 @@ impl ControlPlaneServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_rebuild_plan_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    RebuildPlanRequest,
+                    RebuildPlanResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                RebuildPlanRequest,
+                Response = RebuildPlanResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<RebuildPlanRequest>>::Future: Send + 'static,
+    {
+        self.rebuild_plan_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn build<T>(self, instance: T) -> ControlPlaneServiceClient
     where
         T: ControlPlaneService,
@@ -1249,6 +1373,14 @@ impl ControlPlaneServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let rebuild_plan_svc = self
+            .rebuild_plan_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = ControlPlaneServiceTowerServiceStack {
             inner: inner_client,
             create_index_svc,
@@ -1259,6 +1391,7 @@ impl ControlPlaneServiceTowerLayerStack {
             delete_source_svc,
             get_or_create_open_shards_svc,
             advise_reset_shards_svc,
+            rebuild_plan_svc,
         };
         ControlPlaneServiceClient::new(tower_svc_stack)
     }
@@ -1406,6 +1539,15 @@ where
                 AdviseResetShardsResponse,
                 crate::control_plane::ControlPlaneError,
             >,
+        >
+        + tower::Service<
+            RebuildPlanRequest,
+            Response = RebuildPlanResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                RebuildPlanResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
         >,
 {
     async fn create_index(
@@ -1458,6 +1600,12 @@ where
         &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
+        self.clone().call(request).await
+    }
+    async fn rebuild_plan(
+        &self,
+        request: RebuildPlanRequest,
+    ) -> crate::control_plane::ControlPlaneResult<RebuildPlanResponse> {
         self.clone().call(request).await
     }
 }
@@ -1611,6 +1759,20 @@ where
                 AdviseResetShardsRequest::rpc_name(),
             ))
     }
+    async fn rebuild_plan(
+        &self,
+        request: RebuildPlanRequest,
+    ) -> crate::control_plane::ControlPlaneResult<RebuildPlanResponse> {
+        self.inner
+            .clone()
+            .rebuild_plan(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                RebuildPlanRequest::rpc_name(),
+            ))
+    }
 }
 #[derive(Debug)]
 pub struct ControlPlaneServiceGrpcServerAdapter {
@@ -1716,6 +1878,17 @@ for ControlPlaneServiceGrpcServerAdapter {
         self.inner
             .0
             .advise_reset_shards(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn rebuild_plan(
+        &self,
+        request: tonic::Request<RebuildPlanRequest>,
+    ) -> Result<tonic::Response<RebuildPlanResponse>, tonic::Status> {
+        self.inner
+            .0
+            .rebuild_plan(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2061,6 +2234,37 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// / Compute the indexing plan from scratch, without taking into account the current state of the indexers.
+        pub async fn rebuild_plan(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RebuildPlanRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RebuildPlanResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/RebuildPlan",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "RebuildPlan",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2133,6 +2337,14 @@ pub mod control_plane_service_grpc_server {
             request: tonic::Request<super::AdviseResetShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::AdviseResetShardsResponse>,
+            tonic::Status,
+        >;
+        /// / Compute the indexing plan from scratch, without taking into account the current state of the indexers.
+        async fn rebuild_plan(
+            &self,
+            request: tonic::Request<super::RebuildPlanRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RebuildPlanResponse>,
             tonic::Status,
         >;
     }
@@ -2587,6 +2799,52 @@ pub mod control_plane_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = AdviseResetShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/RebuildPlan" => {
+                    #[allow(non_camel_case_types)]
+                    struct RebuildPlanSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<super::RebuildPlanRequest>
+                    for RebuildPlanSvc<T> {
+                        type Response = super::RebuildPlanResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RebuildPlanRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).rebuild_plan(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RebuildPlanSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
