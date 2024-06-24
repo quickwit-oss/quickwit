@@ -352,7 +352,7 @@ pub enum QueueMessageType {
     RawUri,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct QueueParams {
     pub message_type: QueueMessageType,
     // pub deduplication_window_duration_sec: usize,

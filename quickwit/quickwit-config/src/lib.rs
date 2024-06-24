@@ -114,6 +114,8 @@ pub fn disable_ingest_v1() -> bool {
     SourceInputFormat,
     SourceParams,
     FileSourceParams,
+    QueueParams,
+    QueueMessageType,
     SqsSourceParams,
     PubSubSourceParams,
     KafkaSourceParams,

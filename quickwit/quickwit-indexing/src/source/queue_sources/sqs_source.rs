@@ -133,7 +133,8 @@ mod localstack_tests {
     use crate::source::queue_sources::sqs_queue::test_helpers::{
         create_queue, get_localstack_sqs_client, send_message,
     };
-    use crate::source::tests::{setup_index, SourceRuntimeBuilder};
+    use crate::source::test_setup_helper::setup_index;
+    use crate::source::tests::SourceRuntimeBuilder;
 
     #[tokio::test]
     async fn test_check_connectivity() {
