@@ -33,7 +33,7 @@ use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
 };
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::{NodeId, ShardId};
+use quickwit_proto::types::NodeId;
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
 use tracing::{debug, info, warn};
@@ -42,7 +42,7 @@ use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
 use crate::metrics::ShardLocalityMetrics;
-use crate::model::{ControlPlaneModel, ShardLocations};
+use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
 use crate::{IndexerNodeInfo, IndexerPool};
 
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
@@ -121,6 +121,28 @@ impl fmt::Debug for IndexingScheduler {
     }
 }
 
+/// Computes the CPU load associated to a single shard of a given index.
+///
+/// The array passed contains all of data we have about the shard of the index.
+/// This function averages their statistics.
+///
+/// For the moment, this function only takes in account the measured throughput,
+/// and assumes a constant CPU usage of 4 vCPU = 30mb/s.
+///
+/// It does not take in account the variation that could raise from the different
+/// doc mapping / nature of the data, etc.
+fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
+    let num_shards = shard_entries.len().max(1) as u32;
+    let average_throughput_per_shard: u32 = shard_entries
+        .iter()
+        .map(|shard_entry| u32::from(shard_entry.ingestion_rate.0))
+        .sum::<u32>()
+        .div_ceil(num_shards);
+    let num_cpu_millis = (PIPELINE_FULL_CAPACITY.cpu_millis() * average_throughput_per_shard) / 20;
+    const MIN_CPU_LOAD_PER_SHARD: u32 = 50u32;
+    NonZeroU32::new(num_cpu_millis.max(MIN_CPU_LOAD_PER_SHARD)).unwrap()
+}
+
 fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
     let mut sources = Vec::new();
 
@@ -147,22 +169,24 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                 // Expect: the source should exist since we just read it from `get_source_configs`.
                 // Note that we keep all shards, including Closed shards:
                 // A closed shards still needs to be indexed.
-                let shard_ids: Vec<ShardId> = model
+                let shard_entries: Vec<&ShardEntry> = model
                     .get_shards_for_source(&source_uid)
                     .expect("source should exist")
-                    .keys()
-                    .cloned()
+                    .values()
                     .collect();
-                if shard_ids.is_empty() {
+                if shard_entries.is_empty() {
                     continue;
                 }
+                let shard_ids = shard_entries
+                    .iter()
+                    .map(|shard_entry| shard_entry.shard_id().clone())
+                    .collect();
+                let load_per_shard = compute_load_per_shard(&shard_entries[..]);
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::Sharded {
                         shard_ids,
-                        // FIXME
-                        load_per_shard: NonZeroU32::new(PIPELINE_FULL_CAPACITY.cpu_millis() / 4)
-                            .unwrap(),
+                        load_per_shard,
                     },
                 });
             }
@@ -562,7 +586,7 @@ mod tests {
     use proptest::{prop_compose, proptest};
     use quickwit_config::{IndexConfig, KafkaSourceParams, SourceConfig, SourceParams};
     use quickwit_metastore::IndexMetadata;
-    use quickwit_proto::types::{IndexUid, PipelineUid, SourceUid};
+    use quickwit_proto::types::{IndexUid, PipelineUid, ShardId, SourceUid};
 
     use super::*;
     use crate::model::ShardLocations;
