@@ -262,7 +262,7 @@ typetag = "0.2"
 ulid = "1.1"
 username = "0.2"
 utoipa = { version = "4.2", features = ["time", "ulid"] }
-uuid = { version = "1.8", features = ["v4", "serde"] }
+uuid = { version = "1.9", features = ["v4", "serde"] }
 vrl = { version = "0.8.1", default-features = false, features = [
   "compiler",
   "diagnostic",
