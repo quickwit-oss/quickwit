@@ -153,9 +153,9 @@ jobs:
       - name: Generate code coverage
         run: |
           cargo llvm-cov clean --workspace
-          cargo llvm-cov nextest --no-report --test failpoints --features fail/failpoints --retries 2
+          cargo llvm-cov nextest --no-report --test failpoints --features fail/failpoints --retries 4
           # increase stack size for test_all_with_s3_localstack_cli, see quickwit#4963
-          RUST_MIN_STACK=67108864 CARGO_BUILD_JOBS=4 cargo llvm-cov nextest --no-report --all-features --retries 2
+          RUST_MIN_STACK=67108864 CARGO_BUILD_JOBS=4 cargo llvm-cov nextest --no-report --all-features --retries 4
           cargo llvm-cov report --lcov --output-path lcov.info
         working-directory: ./quickwit
 

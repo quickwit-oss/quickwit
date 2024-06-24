@@ -30,14 +30,21 @@ use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use tracing::{error, info, warn};
 
-/// Limits the number of shards that can be opened for scaling up a source to 5 per minute.
+/// Limits the number of shards that can be opened for scaling up a source to 12 per minute.
 const SCALING_UP_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
-    burst_limit: 5,
-    rate_limit: ConstantRate::new(5, Duration::from_secs(60)),
-    refill_period: Duration::from_secs(12),
+    burst_limit: 12,
+    rate_limit: ConstantRate::new(12, Duration::from_secs(60)),
+    refill_period: Duration::from_secs(5),
 };
 
-/// Limits the number of shards that can be closed for scaling down a source to 1 per minute.
+/// Limits the number of shards that can be closed for scaling down a source to 2 per minute.
+#[cfg(not(test))]
+const SCALING_DOWN_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
+    burst_limit: 2,
+    rate_limit: ConstantRate::new(2, Duration::from_secs(60)),
+    refill_period: Duration::from_secs(30),
+};
+#[cfg(test)]
 const SCALING_DOWN_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
     burst_limit: 1,
     rate_limit: ConstantRate::new(1, Duration::from_secs(60)),

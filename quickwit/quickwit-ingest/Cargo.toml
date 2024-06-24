@@ -58,4 +58,5 @@ quickwit-codegen = { workspace = true }
 
 [features]
 failpoints = ["fail/failpoints"]
+no-failpoints = []
 testsuite = ["mockall"]

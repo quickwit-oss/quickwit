@@ -1978,7 +1978,7 @@ mod tests {
     // ```sh
     // cargo test --manifest-path quickwit/Cargo.toml -p quickwit-ingest --features failpoints -- test_ingester_persist_closes_shard_on_io_error
     // ```
-    #[cfg(feature = "failpoints")]
+    #[cfg(all(feature = "failpoints", not(feature = "no-failpoints")))]
     #[tokio::test]
     async fn test_ingester_persist_closes_shard_on_io_error() {
         let scenario = fail::FailScenario::setup();

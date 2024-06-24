@@ -26,7 +26,7 @@ pub use prometheus::{
     IntCounter, IntCounterVec as PrometheusIntCounterVec, IntGauge,
     IntGaugeVec as PrometheusIntGaugeVec,
 };
-use prometheus::{Encoder, Gauge, HistogramOpts, Opts, TextEncoder};
+use prometheus::{Gauge, HistogramOpts, Opts, TextEncoder};
 
 #[derive(Clone)]
 pub struct HistogramVec<const N: usize> {
@@ -305,12 +305,16 @@ impl Drop for OwnedGaugeGuard {
     }
 }
 
-pub fn metrics_text_payload() -> String {
+pub fn metrics_text_payload() -> Result<String, String> {
     let metric_families = prometheus::gather();
-    let mut buffer = Vec::new();
+    // Arbitrary non-zero size in order to skip a bunch of
+    // buffer growth-reallocations when encoding metrics.
+    let mut buffer = String::with_capacity(1024);
     let encoder = TextEncoder::new();
-    let _ = encoder.encode(&metric_families, &mut buffer); // TODO avoid ignoring the error.
-    String::from_utf8_lossy(&buffer).to_string()
+    match encoder.encode_utf8(&metric_families, &mut buffer) {
+        Ok(()) => Ok(buffer),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[derive(Clone)]
