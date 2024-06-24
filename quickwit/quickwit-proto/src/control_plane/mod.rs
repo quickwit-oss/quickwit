@@ -126,6 +126,12 @@ impl RpcName for AdviseResetShardsRequest {
     }
 }
 
+impl RpcName for RebuildPlanRequest {
+    fn rpc_name() -> &'static str {
+        "rebuild_plan_request"
+    }
+}
+
 impl GetOrCreateOpenShardsFailureReason {
     pub fn create_failure(
         &self,

@@ -68,6 +68,9 @@ service ControlPlaneService {
 
   // Asks the control plane whether the shards listed in the request should be deleted or truncated.
   rpc AdviseResetShards(AdviseResetShardsRequest) returns (AdviseResetShardsResponse);
+
+  /// Compute the indexing plan from scratch, without taking into account the current state of the indexers.
+  rpc RebuildPlan(RebuildPlanRequest) returns (RebuildPlanResponse);
 }
 
 // Shard API
@@ -121,4 +124,18 @@ message AdviseResetShardsRequest {
 message AdviseResetShardsResponse {
   repeated quickwit.ingest.ShardIds shards_to_delete = 1;
   repeated quickwit.ingest.ShardIdPositions shards_to_truncate = 2;
+}
+
+/// Careful here! The Default implementation is used in different place of the code.
+/// If you modify this struct make sure, its default's value aligns with the previous
+/// behavior.
+message RebuildPlanRequest {
+  bool reset = 1;
+  bool debug = 2;
+}
+
+message RebuildPlanResponse {
+    string previous_solution_json = 1;
+    string problem_json = 2;
+    string new_solution_json = 3;
 }

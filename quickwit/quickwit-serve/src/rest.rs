@@ -159,6 +159,7 @@ pub(crate) async fn start_rest_server(
 
     // `/api/developer/*` route.
     let developer_routes = developer_api_routes(
+        quickwit_services.control_plane_client.clone(),
         quickwit_services.cluster.clone(),
         quickwit_services.env_filter_reload_fn.clone(),
     );
