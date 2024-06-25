@@ -32,9 +32,9 @@ use tracing::{error, info, warn};
 
 /// Limits the number of shards that can be opened for scaling up a source to 12 per minute.
 const SCALING_UP_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
-    burst_limit: 12,
-    rate_limit: ConstantRate::new(12, Duration::from_secs(60)),
-    refill_period: Duration::from_secs(5),
+    burst_limit: 30,
+    rate_limit: ConstantRate::new(30, Duration::from_secs(60)),
+    refill_period: Duration::from_secs(2),
 };
 
 /// Limits the number of shards that can be closed for scaling down a source to 2 per minute.
