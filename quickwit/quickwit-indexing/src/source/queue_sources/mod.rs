@@ -33,7 +33,7 @@ use std::fmt;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use message::RawMessage;
+use message::{PreProcessedMessage, RawMessage};
 
 /// The queue abstraction is based on the AWS SQS and Google Pubsub APIs. The
 /// only requirement of the underlying implementation is that messages exposed
@@ -75,15 +75,14 @@ pub struct Categorized<U, V> {
     pub already_processed: Vec<V>,
 }
 
-pub trait HasAckId {
-    fn ack_id(&self) -> &str;
-}
-
-/// Acknowledges a list of objects that have an ack_id
-pub async fn acknowledge<T: HasAckId>(queue: &dyn Queue, messages: Vec<T>) -> anyhow::Result<()> {
+/// Acknowledges a list of messages
+pub async fn acknowledge(
+    queue: &dyn Queue,
+    messages: Vec<PreProcessedMessage>,
+) -> anyhow::Result<()> {
     let ack_ids = messages
         .iter()
-        .map(|message| message.ack_id())
+        .map(|message| message.metadata.ack_id.as_str())
         .collect::<Vec<_>>();
     queue.acknowledge(&ack_ids).await
 }
