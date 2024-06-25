@@ -76,8 +76,8 @@ impl Queue for SqsQueue {
         res.messages
             .unwrap_or_default()
             .into_iter()
-            .map(|m| {
-                let delivery_attempts: usize = m
+            .map(|msg| {
+                let delivery_attempts: usize = msg
                     .attributes
                     .as_ref()
                     .and_then(|attrs| {
@@ -85,10 +85,10 @@ impl Queue for SqsQueue {
                     })
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0);
-                let ack_id = m
+                let ack_id = msg
                     .receipt_handle
                     .context("missing receipt_handle in received message")?;
-                let message_id = m
+                let message_id = msg
                     .message_id
                     .context("missing message_id in received message")?;
                 Ok(RawMessage {
@@ -98,7 +98,7 @@ impl Queue for SqsQueue {
                         initial_deadline,
                         delivery_attempts,
                     },
-                    payload: OwnedBytes::new(m.body.unwrap_or_default().into_bytes()),
+                    payload: OwnedBytes::new(msg.body.unwrap_or_default().into_bytes()),
                 })
             })
             .collect()

@@ -41,7 +41,7 @@ pub fn spawn_visibility_task(
     initial_deadline: Instant,
     publish_lock: PublishLock,
 ) -> VisibilityTaskHandle {
-    let task_handle = tokio::spawn(handle_visibility(
+    let task_handle = tokio::spawn(extend_visibility_loop(
         queue,
         ack_id.clone(),
         initial_deadline,
@@ -58,7 +58,7 @@ pub fn spawn_visibility_task(
 /// - we don't want to fail the pipeline if we fail to extend the visibility of a message that is
 ///   still waiting for processing
 /// - the Processor must also be notified that it shouldn't process this message anymore
-async fn handle_visibility(
+async fn extend_visibility_loop(
     queue: Arc<dyn Queue>,
     ack_id: String,
     initial_deadline: Instant,

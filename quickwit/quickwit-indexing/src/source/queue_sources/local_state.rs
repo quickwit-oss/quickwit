@@ -35,9 +35,14 @@ use super::Categorized;
 /// dropped and the partition is marked as `completed``.
 #[derive(Default)]
 pub struct QueueLocalState {
+    /// Visibility handles for all messages from the moment they are marked
+    /// `ready` until they are committed (`completed`)
     in_flight: BTreeMap<PartitionId, VisibilityTaskHandle>,
+    /// Messages that were received from the queue and are ready to be read
     ready: VecDeque<CheckpointedMessage>,
+    /// Message that is currently being read and sent to the `DocProcessor`
     in_progress: Option<InProgressMessage>,
+    /// Partitions that were indexed and committed
     completed: BTreeSet<PartitionId>,
 }
 
@@ -119,11 +124,14 @@ pub mod test_helpers {
             let is_read_in_progress = self
                 .in_progress
                 .as_ref()
-                .map(|m| m.partition_id() == partition_id)
+                .map(|msg| msg.partition_id() == partition_id)
                 .unwrap_or(false);
             let is_wait_for_commit =
                 self.in_flight.contains_key(partition_id) && !is_read_in_progress;
-            let is_ready = self.ready.iter().any(|m| m.partition_id() == *partition_id);
+            let is_ready = self
+                .ready
+                .iter()
+                .any(|msg| msg.partition_id() == *partition_id);
 
             let states = [
                 is_completed,
