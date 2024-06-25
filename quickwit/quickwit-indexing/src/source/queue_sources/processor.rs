@@ -32,10 +32,10 @@ use tracing::debug;
 use ulid::Ulid;
 
 use super::local_state::QueueLocalState;
-use super::message::CheckpointedMessage;
+use super::message::ReadyMessage;
 use super::shared_state::{QueueSharedState, QueueSharedStateImpl};
-use super::visibility::{acknowledge_and_abort, spawn_visibility_task, VisibilityTaskHandle};
-use super::{acknowledge, Queue};
+use super::visibility::spawn_visibility_task;
+use super::Queue;
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 use crate::source::{SourceContext, SourceRuntime};
@@ -115,26 +115,6 @@ impl QueueProcessor {
         Ok(())
     }
 
-    /// Starts background tasks that extend the visibility deadline of the
-    /// messages until they are dropped.
-    fn spawn_visibility_tasks(
-        &mut self,
-        messages: Vec<CheckpointedMessage>,
-    ) -> Vec<(CheckpointedMessage, VisibilityTaskHandle)> {
-        messages
-            .into_iter()
-            .map(|message| {
-                let handle = spawn_visibility_task(
-                    self.queue.clone(),
-                    message.content.metadata.ack_id.clone(),
-                    message.content.metadata.initial_deadline,
-                    self.publish_lock.clone(),
-                );
-                (message, handle)
-            })
-            .collect()
-    }
-
     /// Polls messages from the queue and prepares them for processing
     async fn poll_messages(&mut self, ctx: &SourceContext) -> anyhow::Result<()> {
         // receive() typically uses long polling so it can be long to respond
@@ -152,36 +132,48 @@ impl QueueProcessor {
             .map(|msg| msg.pre_process(self.queue_params.message_type))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
-        let categorized_using_local_state =
-            self.local_state.filter_completed(preprocessed_messages);
-
-        let categorized_using_shared_state = self
-            .shared_state
-            .checkpoint_messages(
-                &self.publish_token,
-                categorized_using_local_state.processable,
-            )
-            .await?;
-
-        // Drop visibility tasks for messages that have been processed by another pipeline
-        let mut completed_visibility_tasks = Vec::new();
-        for preproc_msg in &categorized_using_shared_state.already_processed {
-            let handle_opt = self.local_state.mark_completed(preproc_msg.partition_id());
-            if let Some(handle) = handle_opt {
-                completed_visibility_tasks.push(handle);
+        let mut untracked_locally = Vec::new();
+        let mut already_completed = Vec::new();
+        for message in preprocessed_messages {
+            let partition_id = message.partition_id();
+            if self.local_state.is_completed(&partition_id) {
+                already_completed.push(message);
+            } else if !self.local_state.is_tracked(&partition_id) {
+                untracked_locally.push(message);
             }
         }
-        acknowledge_and_abort(&*self.queue, completed_visibility_tasks).await?;
 
-        // Acknowledge messages that have been processed by another pipeline
-        let mut already_processed = categorized_using_local_state.already_processed;
-        already_processed.extend(categorized_using_shared_state.already_processed);
-        acknowledge(&*self.queue, already_processed).await?;
+        let checkpointed_messages = self
+            .shared_state
+            .checkpoint_messages(&self.publish_token, untracked_locally)
+            .await?;
 
-        let ready_messages =
-            self.spawn_visibility_tasks(categorized_using_shared_state.processable);
+        let mut ready_messages = Vec::new();
+        for (message, position) in checkpointed_messages {
+            if position.is_eof() {
+                self.local_state.mark_completed(message.partition_id());
+                already_completed.push(message);
+            } else {
+                ready_messages.push(ReadyMessage {
+                    visibility_handle: spawn_visibility_task(
+                        self.queue.clone(),
+                        message.metadata.ack_id.clone(),
+                        message.metadata.initial_deadline,
+                    ),
+                    content: message,
+                    position: position,
+                })
+            }
+        }
 
-        self.local_state.set_ready_messages(ready_messages);
+        self.local_state.set_ready_for_read(ready_messages);
+
+        // Acknowledge messages that already have been processed
+        let ack_ids = already_completed
+            .iter()
+            .map(|msg| msg.metadata.ack_id.clone())
+            .collect();
+        self.queue.acknowledge(&ack_ids).await?;
 
         Ok(())
     }
@@ -191,18 +183,19 @@ impl QueueProcessor {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        if let Some(msg) = self.local_state.in_progress_mut() {
+        if let Some(msg) = self.local_state.read_in_progress_mut() {
             debug!("process_batch");
+            // TODO: should we kill the publish lock if the message visibility extension fails?
             msg.process_batch(doc_processor_mailbox, ctx).await?;
             if msg.is_eof() {
-                self.local_state.set_in_progress(None);
+                self.local_state.replace_currently_read(None);
             }
-        } else if let Some(ready_message) = self.local_state.get_ready_message() {
+        } else if let Some(ready_message) = self.local_state.get_ready_for_read() {
             debug!("start_processing");
             let new_in_progress = ready_message
                 .start_processing(&self.storage_resolver, self.source_type)
                 .await?;
-            self.local_state.set_in_progress(new_in_progress);
+            self.local_state.replace_currently_read(new_in_progress);
         } else {
             debug!("poll_messages");
             self.poll_messages(ctx).await?;
@@ -216,12 +209,18 @@ impl QueueProcessor {
         checkpoint: SourceCheckpoint,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
-        let completed_visibility_handles = checkpoint
+        let committed_partition_ids = checkpoint
             .iter()
             .filter(|(_, pos)| pos.is_eof())
-            .filter_map(|(pid, _)| self.local_state.mark_completed(pid))
-            .collect();
-        acknowledge_and_abort(&*self.queue, completed_visibility_handles).await
+            .map(|(pid, _)| pid);
+        let mut completed = Vec::new();
+        for partition_id in committed_partition_ids {
+            let ack_id_opt = self.local_state.mark_completed(partition_id);
+            if let Some(ack_id) = ack_id_opt {
+                completed.push(ack_id);
+            }
+        }
+        self.queue.acknowledge(&completed).await
     }
 
     pub fn observable_state(&self) -> JsonValue {
@@ -250,7 +249,6 @@ mod tests {
     use super::*;
     use crate::models::RawDocBatch;
     use crate::source::doc_file_reader::file_test_helpers::{generate_dummy_doc_file, DUMMY_DOC};
-    use crate::source::queue_sources::local_state::test_helpers::LocalStateForPartition;
     use crate::source::queue_sources::memory_queue::MemoryQueue;
     use crate::source::queue_sources::message::PreProcessedPayload;
     use crate::source::queue_sources::shared_state::shared_state_for_tests::{
@@ -353,10 +351,7 @@ mod tests {
             shared_state.get(&partition_id),
             SharedStateForPartition::InProgress(processor.publish_token)
         );
-        assert_eq!(
-            processor.local_state.state(&partition_id),
-            LocalStateForPartition::WaitForCommit
-        );
+        assert!(processor.local_state.is_awating_commit(&partition_id));
     }
 
     #[tokio::test]
@@ -419,16 +414,10 @@ mod tests {
 
         shared_state.set(partition_id.clone(), SharedStateForPartition::Completed);
 
-        assert_eq!(
-            processor.local_state.state(&partition_id),
-            LocalStateForPartition::Unknown
-        );
+        assert!(!processor.local_state.is_tracked(&partition_id));
         let batches = process_messages(&mut processor, queue, &[(&test_uri, "ack-id-1")]).await;
         assert_eq!(batches.len(), 0);
-        assert_eq!(
-            processor.local_state.state(&partition_id),
-            LocalStateForPartition::Completed
-        );
+        assert!(processor.local_state.is_completed(&partition_id));
     }
 
     #[tokio::test]
@@ -447,17 +436,11 @@ mod tests {
         assert_eq!(batches_1.len(), 1);
         assert_eq!(batches_2.len(), 0);
         assert_eq!(batches_1[0].docs.len(), 10);
-        assert_eq!(
-            proc_1.local_state.state(&partition_id),
-            LocalStateForPartition::WaitForCommit
-        );
+        assert!(proc_1.local_state.is_awating_commit(&partition_id));
         // proc_2 doesn't know for sure what is happening with the message
         // (proc_1 might have crashed), so it just forgets about it until it
         // will be received again
-        assert_eq!(
-            proc_2.local_state.state(&partition_id),
-            LocalStateForPartition::Unknown
-        );
+        assert!(!proc_2.local_state.is_tracked(&partition_id));
         assert!(matches!(
             shared_state.get(&partition_id),
             SharedStateForPartition::InProgress(_)

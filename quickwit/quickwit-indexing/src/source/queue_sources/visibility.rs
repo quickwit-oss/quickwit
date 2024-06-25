@@ -17,40 +17,60 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use tokio::task::JoinHandle;
 use tracing::error;
 
 use super::Queue;
-use crate::models::PublishLock;
 
 const REQUESTED_VISIBILITY_EXTENSION: Duration = Duration::from_secs(60);
 const VISIBILITY_REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
 const LOCK_KILL_TIMEOUT: Duration = Duration::from_secs(1);
 
+struct Inner {
+    queue: Arc<dyn Queue>,
+    ack_id: String,
+    extension_failed: AtomicBool,
+}
+
+/// A shareable reference to a visibility extension task
+///
+/// To safely manage their lifecycle, tasks are stopped when their last handle
+/// is dropped. This guaranties for instance that all running visibility tasks
+/// are aborted when the indexing pipeline is restarted.
 pub struct VisibilityTaskHandle {
-    _task_handle: JoinHandle<()>,
-    pub ack_id: String,
+    inner: Arc<Inner>,
+}
+
+impl VisibilityTaskHandle {
+    pub fn ack_id(&self) -> &str {
+        &self.inner.ack_id
+    }
+
+    pub fn extension_failed(&self) -> bool {
+        self.inner
+            .extension_failed
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 pub fn spawn_visibility_task(
     queue: Arc<dyn Queue>,
     ack_id: String,
     initial_deadline: Instant,
-    publish_lock: PublishLock,
 ) -> VisibilityTaskHandle {
-    let task_handle = tokio::spawn(extend_visibility_loop(
+    let inner = Arc::new(Inner {
         queue,
-        ack_id.clone(),
+        ack_id: ack_id.clone(),
+        extension_failed: AtomicBool::new(false),
+    });
+    tokio::spawn(extend_visibility_loop(
         initial_deadline,
-        publish_lock,
+        Arc::downgrade(&inner),
     ));
-    VisibilityTaskHandle {
-        _task_handle: task_handle,
-        ack_id,
-    }
+    VisibilityTaskHandle { inner }
 }
 
 /// This is still work in progress. Using the `PublishLock` isn't enough to
@@ -58,24 +78,24 @@ pub fn spawn_visibility_task(
 /// - we don't want to fail the pipeline if we fail to extend the visibility of a message that is
 ///   still waiting for processing
 /// - the Processor must also be notified that it shouldn't process this message anymore
-async fn extend_visibility_loop(
-    queue: Arc<dyn Queue>,
-    ack_id: String,
-    initial_deadline: Instant,
-    publish_lock: PublishLock,
-) {
+async fn extend_visibility_loop(initial_deadline: Instant, inner_weak: Weak<Inner>) {
     let mut next_deadline: tokio::time::Instant = initial_deadline.into();
     loop {
         tokio::time::sleep_until(next_deadline - VISIBILITY_REQUEST_TIMEOUT - LOCK_KILL_TIMEOUT)
             .await;
 
-        if publish_lock.is_dead() {
-            break;
-        }
+        let inner = match inner_weak.upgrade() {
+            Some(inner) => inner,
+            None => {
+                break;
+            }
+        };
 
         let res = tokio::time::timeout(
             VISIBILITY_REQUEST_TIMEOUT,
-            queue.modify_deadlines(&ack_id, REQUESTED_VISIBILITY_EXTENSION),
+            inner
+                .queue
+                .modify_deadlines(&inner.ack_id, REQUESTED_VISIBILITY_EXTENSION),
         )
         .await;
         match res {
@@ -84,31 +104,18 @@ async fn extend_visibility_loop(
             }
             Ok(Err(err)) => {
                 error!(err=%err, "failed to modify message deadline");
-                publish_lock.kill().await;
+                inner
+                    .extension_failed
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 break;
             }
             Err(_) => {
                 error!("failed to modify message deadline on time");
-                publish_lock.kill().await;
+                inner
+                    .extension_failed
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 break;
             }
         }
     }
-}
-
-/// Acknowledges the messages of a list of visibility handles and stops the
-/// associated tasks.
-pub async fn acknowledge_and_abort(
-    queue: &dyn Queue,
-    handles: Vec<VisibilityTaskHandle>,
-) -> anyhow::Result<()> {
-    let ack_ids = handles
-        .iter()
-        .map(|handle| handle.ack_id.as_str())
-        .collect::<Vec<_>>();
-    queue.acknowledge(&ack_ids).await?;
-    for handle in handles {
-        handle._task_handle.abort();
-    }
-    Ok(())
 }

@@ -33,7 +33,7 @@ use std::fmt;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use message::{PreProcessedMessage, RawMessage};
+use message::RawMessage;
 
 /// The queue abstraction is based on the AWS SQS and Google Pubsub APIs. The
 /// only requirement of the underlying implementation is that messages exposed
@@ -56,7 +56,7 @@ pub trait Queue: fmt::Debug + Send + Sync + 'static {
     /// The call returns `Ok(())` if:
     /// - the acknowledgement of some of the messages failed due to a transient failure
     /// - the message was already acknowledged
-    async fn acknowledge(&self, ack_ids: &[&str]) -> anyhow::Result<()>;
+    async fn acknowledge(&self, ack_ids: &Vec<String>) -> anyhow::Result<()>;
 
     /// Modify the visibility deadline of the messages.
     ///
@@ -70,21 +70,4 @@ pub trait Queue: fmt::Debug + Send + Sync + 'static {
         ack_id: &str,
         suggested_deadline: Duration,
     ) -> anyhow::Result<Instant>;
-}
-
-pub struct Categorized<U, V> {
-    pub processable: Vec<U>,
-    pub already_processed: Vec<V>,
-}
-
-/// Acknowledges a list of messages
-pub async fn acknowledge(
-    queue: &dyn Queue,
-    messages: Vec<PreProcessedMessage>,
-) -> anyhow::Result<()> {
-    let ack_ids = messages
-        .iter()
-        .map(|message| message.metadata.ack_id.as_str())
-        .collect::<Vec<_>>();
-    queue.acknowledge(&ack_ids).await
 }

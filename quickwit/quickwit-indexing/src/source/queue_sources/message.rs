@@ -31,6 +31,7 @@ use quickwit_proto::types::Position;
 use quickwit_storage::{OwnedBytes, StorageResolver};
 use serde_json::Value;
 
+use super::visibility::VisibilityTaskHandle;
 use crate::actors::DocProcessor;
 use crate::source::doc_file_reader::DocFileReader;
 use crate::source::{BatchBuilder, SourceContext, BATCH_NUM_BYTES_LIMIT};
@@ -118,12 +119,13 @@ fn uri_from_s3_notification(message: &OwnedBytes) -> anyhow::Result<Uri> {
 
 /// A message for which we know as much of the global processing status as
 /// possible and that is now ready to be processed.
-pub struct CheckpointedMessage {
+pub struct ReadyMessage {
     pub position: Position,
     pub content: PreProcessedMessage,
+    pub visibility_handle: VisibilityTaskHandle,
 }
 
-impl CheckpointedMessage {
+impl ReadyMessage {
     pub async fn start_processing(
         self,
         storage_resolver: &StorageResolver,
@@ -141,13 +143,17 @@ impl CheckpointedMessage {
                 };
                 let reader =
                     DocFileReader::from_uri(storage_resolver, &uri, current_offset).await?;
-                Ok(Some(InProgressMessage::ObjectUri(ObjectUriInProgress {
-                    reader,
-                    current_offset,
+                Ok(Some(InProgressMessage {
+                    progress_tracker: ProgressTracker::ObjectUri(ObjectUriInProgress {
+                        reader,
+                        current_offset,
+
+                        source_type,
+                        is_eof: false,
+                    }),
                     partition_id,
-                    source_type,
-                    is_eof: false,
-                })))
+                    visibility_handle: self.visibility_handle,
+                }))
             }
         }
     }
@@ -157,8 +163,14 @@ impl CheckpointedMessage {
     }
 }
 
-// A message that is actively being read
-pub enum InProgressMessage {
+/// A message that is actively being read
+pub struct InProgressMessage {
+    partition_id: PartitionId,
+    visibility_handle: VisibilityTaskHandle,
+    progress_tracker: ProgressTracker,
+}
+
+pub enum ProgressTracker {
     ObjectUri(ObjectUriInProgress),
 }
 
@@ -168,31 +180,31 @@ impl InProgressMessage {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         source_ctx: &SourceContext,
     ) -> anyhow::Result<()> {
-        match self {
-            Self::ObjectUri(in_progress) => {
+        match &mut self.progress_tracker {
+            ProgressTracker::ObjectUri(in_progress) => {
                 in_progress
-                    .process_uri_batch(doc_processor_mailbox, source_ctx)
+                    .process_uri_batch(doc_processor_mailbox, source_ctx, self.partition_id.clone())
                     .await
             }
         }
     }
 
     pub fn is_eof(&self) -> bool {
-        match self {
-            Self::ObjectUri(in_progress) => in_progress.is_eof,
+        match &self.progress_tracker {
+            ProgressTracker::ObjectUri(in_progress) => in_progress.is_eof,
         }
     }
 
-    #[cfg(test)]
     pub fn partition_id(&self) -> &PartitionId {
-        match self {
-            Self::ObjectUri(in_progress) => &in_progress.partition_id,
-        }
+        &self.partition_id
+    }
+
+    pub fn ack_id(&self) -> &str {
+        self.visibility_handle.ack_id()
     }
 }
 
 pub struct ObjectUriInProgress {
-    partition_id: PartitionId,
     reader: DocFileReader,
     current_offset: usize,
     source_type: SourceType,
@@ -204,6 +216,7 @@ impl ObjectUriInProgress {
         &mut self,
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         source_ctx: &SourceContext,
+        partition_id: PartitionId,
     ) -> anyhow::Result<()> {
         let limit_num_bytes = self.current_offset + BATCH_NUM_BYTES_LIMIT as usize;
         let mut new_offset = self.current_offset;
@@ -226,7 +239,7 @@ impl ObjectUriInProgress {
             batch_builder
                 .checkpoint_delta
                 .record_partition_delta(
-                    self.partition_id.clone(),
+                    partition_id,
                     Position::offset(self.current_offset),
                     to_position,
                 )
