@@ -280,7 +280,7 @@ aws-sdk-kinesis = "1.21"
 # updating aws-sdk-s3 breaks test_s3_compatible_storage_bulk_delete_multi
 aws-sdk-s3 = "=1.25"
 aws-smithy-async = "1.2"
-aws-smithy-runtime = "1.5"
+aws-smithy-runtime = "1.6"
 aws-smithy-types = { version = "1.2", features = ["byte-stream-poll-next"] }
 aws-types = "1.3"
 
