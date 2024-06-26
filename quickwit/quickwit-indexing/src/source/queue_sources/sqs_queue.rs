@@ -104,7 +104,7 @@ impl Queue for SqsQueue {
             .collect()
     }
 
-    async fn acknowledge(&self, ack_ids: &Vec<String>) -> anyhow::Result<()> {
+    async fn acknowledge(&self, ack_ids: &[String]) -> anyhow::Result<()> {
         let entry_batches: Vec<_> = ack_ids
             .iter()
             .enumerate()
@@ -305,7 +305,7 @@ mod localstack_tests {
             .await
             .unwrap();
         queue
-            .acknowledge(&vec![messages[0].metadata.ack_id.clone()])
+            .acknowledge(&[messages[0].metadata.ack_id.clone()])
             .await
             .unwrap();
     }

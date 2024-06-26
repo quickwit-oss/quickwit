@@ -161,7 +161,7 @@ impl QueueProcessor {
                         message.metadata.initial_deadline,
                     ),
                     content: message,
-                    position: position,
+                    position,
                 })
             }
         }
@@ -172,7 +172,7 @@ impl QueueProcessor {
         let ack_ids = already_completed
             .iter()
             .map(|msg| msg.metadata.ack_id.clone())
-            .collect();
+            .collect::<Vec<_>>();
         self.queue.acknowledge(&ack_ids).await?;
 
         Ok(())
@@ -264,7 +264,7 @@ mod tests {
             node_id: NodeId::from_str("test-node").unwrap(),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
-            pipeline_uid: PipelineUid::new(),
+            pipeline_uid: PipelineUid::random(),
         };
         let queue_params = QueueParams {
             message_type: QueueMessageType::RawUri,

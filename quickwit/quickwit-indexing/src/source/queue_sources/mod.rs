@@ -56,7 +56,7 @@ pub trait Queue: fmt::Debug + Send + Sync + 'static {
     /// The call returns `Ok(())` if:
     /// - the acknowledgement of some of the messages failed due to a transient failure
     /// - the message was already acknowledged
-    async fn acknowledge(&self, ack_ids: &Vec<String>) -> anyhow::Result<()>;
+    async fn acknowledge(&self, ack_ids: &[String]) -> anyhow::Result<()>;
 
     /// Modify the visibility deadline of the messages.
     ///

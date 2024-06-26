@@ -192,6 +192,7 @@ pub async fn test_metastore_open_shards<
             shard_id: Some(ShardId::from(2)),
             leader_id: "test-ingester-foo".to_string(),
             follower_id: None,
+            doc_mapping_uid: Some(DocMappingUid::default()),
             publish_token: Some("publish-token-open".to_string()),
         }],
     };

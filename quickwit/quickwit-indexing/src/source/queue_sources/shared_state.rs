@@ -25,7 +25,7 @@ use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::metastore::{
     MetastoreService, MetastoreServiceClient, OpenShardSubrequest, OpenShardsRequest,
 };
-use quickwit_proto::types::{IndexUid, Position, ShardId};
+use quickwit_proto::types::{DocMappingUid, IndexUid, Position, ShardId};
 
 use super::message::PreProcessedMessage;
 
@@ -68,6 +68,7 @@ impl QueueSharedStateImpl {
                 leader_id: String::new(),
                 follower_id: None,
                 shard_id: Some(ShardId::from(partition_id.as_str())),
+                doc_mapping_uid: Some(DocMappingUid::default()),
                 publish_token: Some(publish_token.to_string()),
             })
             .collect();
