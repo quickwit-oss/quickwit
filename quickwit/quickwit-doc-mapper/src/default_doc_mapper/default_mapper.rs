@@ -47,9 +47,9 @@ use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
-    Cardinality, DocMapper, DocMapping, DocParsingError, Mode, QueryParserError, TokenizerEntry,
-    WarmupInfo, DOCUMENT_SIZE_FIELD_NAME, DYNAMIC_FIELD_NAME, FIELD_PRESENCE_FIELD_NAME,
-    SOURCE_FIELD_NAME,
+    Cardinality, DocMapper, DocMapping, DocParsingError, Mode, ModeType, QueryParserError,
+    TokenizerEntry, WarmupInfo, DOCUMENT_SIZE_FIELD_NAME, DYNAMIC_FIELD_NAME,
+    FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
 };
 
 const FIELD_PRESENCE_FIELD: Field = Field::from_field_id(0u32);
@@ -505,6 +505,14 @@ fn populate_field_presence_for_json_obj<'a, Iter: Iterator<Item = (&'a str, impl
 impl DocMapper for DefaultDocMapper {
     fn doc_mapping_uid(&self) -> DocMappingUid {
         self.doc_mapping_uid
+    }
+
+    fn validate_json_obj(&self, json_obj: &JsonObject) -> Result<(), DocParsingError> {
+        let is_strict = self.mode.mode_type() == ModeType::Strict;
+        let mut field_path = Vec::new();
+        self.field_mappings
+            .validate_from_json(json_obj, is_strict, &mut field_path)?;
+        Ok(())
     }
 
     fn doc_from_json_obj(
