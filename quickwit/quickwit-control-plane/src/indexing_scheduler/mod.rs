@@ -28,6 +28,7 @@ use std::time::{Duration, Instant};
 
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
+use once_cell::sync::OnceCell;
 use quickwit_proto::control_plane::{RebuildPlanRequest, RebuildPlanResponse};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
@@ -121,6 +122,14 @@ impl fmt::Debug for IndexingScheduler {
     }
 }
 
+
+fn enable_variable_shard_load() -> bool {
+    static ENABLE_SHARD_LOAD_CP: OnceCell<bool> = OnceCell::new();
+    *ENABLE_SHARD_LOAD_CP
+        .get_or_init(|| !quickwit_common::get_from_env("QW_DISABLE_VARIABLE_SHARD_LOAD", false))
+}
+
+
 /// Computes the CPU load associated to a single shard of a given index.
 ///
 /// The array passed contains all of data we have about the shard of the index.
@@ -132,15 +141,19 @@ impl fmt::Debug for IndexingScheduler {
 /// It does not take in account the variation that could raise from the different
 /// doc mapping / nature of the data, etc.
 fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
-    let num_shards = shard_entries.len().max(1) as u32;
-    let average_throughput_per_shard: u32 = shard_entries
+    if enable_variable_shard_load() {
+        let num_shards = shard_entries.len().max(1) as u32;
+        let average_throughput_per_shard: u32 = shard_entries
         .iter()
         .map(|shard_entry| u32::from(shard_entry.ingestion_rate.0))
         .sum::<u32>()
         .div_ceil(num_shards);
-    let num_cpu_millis = (PIPELINE_FULL_CAPACITY.cpu_millis() * average_throughput_per_shard) / 20;
-    const MIN_CPU_LOAD_PER_SHARD: u32 = 50u32;
-    NonZeroU32::new(num_cpu_millis.max(MIN_CPU_LOAD_PER_SHARD)).unwrap()
+        let num_cpu_millis = (PIPELINE_FULL_CAPACITY.cpu_millis() * average_throughput_per_shard) / 20;
+        const MIN_CPU_LOAD_PER_SHARD: u32 = 50u32;
+        NonZeroU32::new(num_cpu_millis.max(MIN_CPU_LOAD_PER_SHARD)).unwrap()
+    } else {
+        NonZeroU32::new(PIPELINE_FULL_CAPACITY.cpu_millis() / 4).unwrap()
+    }
 }
 
 fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
