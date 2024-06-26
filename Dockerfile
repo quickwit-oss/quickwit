@@ -59,7 +59,6 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
-                          curl \
                           libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
