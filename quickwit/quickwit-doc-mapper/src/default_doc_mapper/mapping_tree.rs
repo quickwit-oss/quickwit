@@ -158,6 +158,55 @@ pub(crate) fn map_primitive_json_to_tantivy(value: JsonValue) -> Option<TantivyV
 }
 
 impl LeafType {
+    fn validate_from_json(&self, json_val: &JsonValue) -> Result<(), String> {
+        match self {
+            LeafType::Text(_) => {
+                if let JsonValue::String(_) = json_val {
+                    Ok(())
+                } else {
+                    Err(format!("expected string, got `{json_val}`"))
+                }
+            }
+            LeafType::I64(numeric_options) => {
+                i64::from_json_to_self(json_val, numeric_options.coerce).map(|_| ())
+            }
+            LeafType::U64(numeric_options) => {
+                u64::from_json_to_self(json_val, numeric_options.coerce).map(|_| ())
+            }
+            LeafType::F64(numeric_options) => {
+                f64::from_json_to_self(json_val, numeric_options.coerce).map(|_| ())
+            }
+            LeafType::Bool(_) => {
+                if let JsonValue::Bool(_) = json_val {
+                    Ok(())
+                } else {
+                    Err(format!("expected boolean, got `{json_val}`"))
+                }
+            }
+            LeafType::IpAddr(_) => {
+                let JsonValue::String(ip_address) = json_val else {
+                    return Err(format!("expected string, got `{json_val}`"));
+                };
+                IpAddr::from_str(ip_address.as_str())
+                    .map_err(|err| format!("failed to parse IP address `{ip_address}`: {err}"))?;
+                Ok(())
+            }
+            LeafType::DateTime(date_time_options) => {
+                date_time_options.parse_json(json_val).map(|_| ())
+            }
+            LeafType::Bytes(binary_options) => {
+                binary_options.input_format.parse_json(json_val).map(|_| ())
+            }
+            LeafType::Json(_) => {
+                if let JsonValue::Object(_) = json_val {
+                    Ok(())
+                } else {
+                    Err(format!("expected object, got `{json_val}`"))
+                }
+            }
+        }
+    }
+
     fn value_from_json(&self, json_val: JsonValue) -> Result<TantivyValue, String> {
         match self {
             LeafType::Text(_) => {
@@ -187,8 +236,8 @@ impl LeafType {
                     Err(format!("expected string, got `{json_val}`"))
                 }
             }
-            LeafType::DateTime(date_time_options) => date_time_options.parse_json(json_val),
-            LeafType::Bytes(binary_options) => binary_options.input_format.parse_json(json_val),
+            LeafType::DateTime(date_time_options) => date_time_options.parse_json(&json_val),
+            LeafType::Bytes(binary_options) => binary_options.input_format.parse_json(&json_val),
             LeafType::Json(_) => {
                 if let JsonValue::Object(json_obj) = json_val {
                     Ok(TantivyValue::Object(
@@ -217,11 +266,11 @@ impl LeafType {
                 }
             }
             LeafType::I64(numeric_options) => {
-                let val = i64::from_json_to_self(json_val, numeric_options.coerce)?;
+                let val = i64::from_json_to_self(&json_val, numeric_options.coerce)?;
                 Ok(OneOrIter::one((val).into()))
             }
             LeafType::U64(numeric_options) => {
-                let val = u64::from_json_to_self(json_val, numeric_options.coerce)?;
+                let val = u64::from_json_to_self(&json_val, numeric_options.coerce)?;
                 Ok(OneOrIter::one((val).into()))
             }
             LeafType::F64(_) => Err("unsuported concat type: f64".to_string()),
@@ -276,6 +325,38 @@ pub(crate) struct MappingLeaf {
 }
 
 impl MappingLeaf {
+    fn validate_from_json(
+        &self,
+        json_value: &JsonValue,
+        path: &[&str],
+    ) -> Result<(), DocParsingError> {
+        if json_value.is_null() {
+            // We just ignore `null`.
+            return Ok(());
+        }
+        if let JsonValue::Array(els) = json_value {
+            if self.cardinality == Cardinality::SingleValued {
+                return Err(DocParsingError::MultiValuesNotSupported(path.join(".")));
+            }
+            for el_json_val in els {
+                if el_json_val.is_null() {
+                    // We just ignore `null`.
+                    continue;
+                }
+                self.typ
+                    .validate_from_json(el_json_val)
+                    .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
+            }
+            return Ok(());
+        }
+
+        self.typ
+            .validate_from_json(json_value)
+            .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
+
+        Ok(())
+    }
+
     pub fn doc_from_json(
         &self,
         json_val: JsonValue,
@@ -610,9 +691,9 @@ fn insert_json_val(
 trait NumVal: Sized + FromStr + ToString + Into<TantivyValue> {
     fn from_json_number(num: &serde_json::Number) -> Option<Self>;
 
-    fn from_json_to_self(json_val: JsonValue, coerce: bool) -> Result<Self, String> {
+    fn from_json_to_self(json_val: &JsonValue, coerce: bool) -> Result<Self, String> {
         match json_val {
-            JsonValue::Number(num_val) => Self::from_json_number(&num_val).ok_or_else(|| {
+            JsonValue::Number(num_val) => Self::from_json_number(num_val).ok_or_else(|| {
                 format!(
                     "expected {}, got inconvertible JSON number `{}`",
                     type_name::<Self>(),
@@ -647,7 +728,7 @@ trait NumVal: Sized + FromStr + ToString + Into<TantivyValue> {
     }
 
     fn from_json(json_val: JsonValue, coerce: bool) -> Result<TantivyValue, String> {
-        Self::from_json_to_self(json_val, coerce).map(Self::into)
+        Self::from_json_to_self(&json_val, coerce).map(Self::into)
     }
 
     fn to_json(&self, output_format: NumericOutputFormat) -> Option<JsonValue>;
@@ -790,6 +871,26 @@ impl MappingNode {
         field_mapping_entries
     }
 
+    pub fn validate_from_json<'a>(
+        &self,
+        json_obj: &'a serde_json::Map<String, JsonValue>,
+        strict_mode: bool,
+        path: &mut Vec<&'a str>,
+    ) -> Result<(), DocParsingError> {
+        for (field_name, json_val) in json_obj {
+            if let Some(child_tree) = self.branches.get(field_name) {
+                path.push(field_name.as_str());
+                child_tree.validate_from_json(json_val, path, strict_mode)?;
+                path.pop();
+            } else if strict_mode {
+                path.push(field_name);
+                let field_path = path.join(".");
+                return Err(DocParsingError::NoSuchFieldInSchema(field_path));
+            }
+        }
+        Ok(())
+    }
+
     pub fn doc_from_json(
         &self,
         json_obj: serde_json::Map<String, JsonValue>,
@@ -878,6 +979,29 @@ pub(crate) enum MappingTree {
 }
 
 impl MappingTree {
+    fn validate_from_json<'a>(
+        &self,
+        json_value: &'a JsonValue,
+        field_path: &mut Vec<&'a str>,
+        strict_mode: bool,
+    ) -> Result<(), DocParsingError> {
+        match self {
+            MappingTree::Leaf(mapping_leaf) => {
+                mapping_leaf.validate_from_json(json_value, field_path)
+            }
+            MappingTree::Node(mapping_node) => {
+                if let JsonValue::Object(json_obj) = json_value {
+                    mapping_node.validate_from_json(json_obj, strict_mode, field_path)
+                } else {
+                    Err(DocParsingError::ValueError(
+                        field_path.join("."),
+                        format!("expected an JSON object, got {json_value}"),
+                    ))
+                }
+            }
+        }
+    }
+
     fn doc_from_json(
         &self,
         json_value: JsonValue,

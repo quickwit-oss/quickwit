@@ -51,6 +51,9 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the unique identifier of the doc mapping.
     fn doc_mapping_uid(&self) -> DocMappingUid;
 
+    /// Validate a JSON object according to the doc mapper.
+    fn validate_json_obj(&self, json_obj: &JsonObject) -> Result<(), DocParsingError>;
+
     /// Transforms a JSON object into a tantivy [`Document`] according to the rules
     /// defined for the `DocMapper`.
     fn doc_from_json_obj(

@@ -71,46 +71,49 @@ pub(super) fn try_build_doc_mapper(doc_mapping_json: &str) -> IngestV2Result<Arc
     Ok(doc_mapper)
 }
 
+fn validate_doc_batch_impl(
+    doc_batch: DocBatchV2,
+    doc_mapper: Arc<dyn DocMapper>,
+) -> (DocBatchV2, Vec<ParseFailure>) {
+    let mut parse_failures: Vec<ParseFailure> = Vec::new();
+    for (doc_uid, doc) in doc_batch.docs() {
+        let Ok(json_doc) = serde_json::from_slice::<JsonValue>(&doc) else {
+            let parse_failure = ParseFailure {
+                doc_uid: Some(doc_uid),
+                reason: ParseFailureReason::InvalidJson as i32,
+                message: "failed to parse JSON document".to_string(),
+            };
+            parse_failures.push(parse_failure);
+            continue;
+        };
+        let JsonValue::Object(json_obj) = json_doc else {
+            let parse_failure = ParseFailure {
+                doc_uid: Some(doc_uid),
+                reason: ParseFailureReason::InvalidJson as i32,
+                message: "JSON document is not an object".to_string(),
+            };
+            parse_failures.push(parse_failure);
+            continue;
+        };
+        if let Err(error) = doc_mapper.doc_from_json_obj(json_obj, doc.len() as u64) {
+            let parse_failure = ParseFailure {
+                doc_uid: Some(doc_uid),
+                reason: ParseFailureReason::InvalidSchema as i32,
+                message: error.to_string(),
+            };
+            parse_failures.push(parse_failure);
+        }
+    }
+    (doc_batch, parse_failures)
+}
+
 /// Parses the JSON documents contained in the batch and applies the doc mapper. Returns the
 /// original batch and a list of parse failures.
 pub(super) async fn validate_doc_batch(
     doc_batch: DocBatchV2,
     doc_mapper: Arc<dyn DocMapper>,
 ) -> IngestV2Result<(DocBatchV2, Vec<ParseFailure>)> {
-    let validate_doc_batch_fn = move || {
-        let mut parse_failures: Vec<ParseFailure> = Vec::new();
-
-        for (doc_uid, doc) in doc_batch.docs() {
-            let Ok(json_doc) = serde_json::from_slice::<JsonValue>(&doc) else {
-                let parse_failure = ParseFailure {
-                    doc_uid: Some(doc_uid),
-                    reason: ParseFailureReason::InvalidJson as i32,
-                    message: "failed to parse JSON document".to_string(),
-                };
-                parse_failures.push(parse_failure);
-                continue;
-            };
-            let JsonValue::Object(json_obj) = json_doc else {
-                let parse_failure = ParseFailure {
-                    doc_uid: Some(doc_uid),
-                    reason: ParseFailureReason::InvalidJson as i32,
-                    message: "JSON document is not an object".to_string(),
-                };
-                parse_failures.push(parse_failure);
-                continue;
-            };
-            if let Err(error) = doc_mapper.doc_from_json_obj(json_obj, doc.len() as u64) {
-                let parse_failure = ParseFailure {
-                    doc_uid: Some(doc_uid),
-                    reason: ParseFailureReason::InvalidSchema as i32,
-                    message: error.to_string(),
-                };
-                parse_failures.push(parse_failure);
-            }
-        }
-        (doc_batch, parse_failures)
-    };
-    run_cpu_intensive(validate_doc_batch_fn)
+    run_cpu_intensive(move || validate_doc_batch_impl(doc_batch, doc_mapper))
         .await
         .map_err(|error| {
             let message = format!("failed to validate documents: {error}");
