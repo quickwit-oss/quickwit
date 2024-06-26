@@ -3507,9 +3507,9 @@ dependencies = [
 
 [[package]]
 name = "lambda_runtime"
-version = "0.11.3"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9be8f0e7a5db270feb93a7a3593c22a4c5fb8e8f260f5f490e0c3a5ffeb009db"
+checksum = "a7a3eecde134218c7388f13079ab133552a251c319683a99495c048d30363927"
 dependencies = [
  "async-stream",
  "base64 0.22.1",
@@ -6125,7 +6125,7 @@ dependencies = [
  "flate2",
  "http 0.2.12",
  "lambda_http",
- "lambda_runtime 0.11.3",
+ "lambda_runtime 0.12.0",
  "mime_guess",
  "once_cell",
  "opentelemetry",
