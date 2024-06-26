@@ -389,6 +389,7 @@ impl FileBackedIndex {
                     .checkpoint
                     .try_apply_delta(checkpoint_delta)
                     .map_err(|error| {
+                        quickwit_common::rate_limited_error!(limit_per_min=6, index=self.index_id(), "failed to apply checkpoint delta");
                         let entity = EntityKind::CheckpointDelta {
                             index_id: self.index_id().to_string(),
                             source_id,
