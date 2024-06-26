@@ -21,6 +21,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
+use once_cell::sync::OnceCell;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_config::{build_doc_mapper, DocMapping, SearchSettings};
 use quickwit_doc_mapper::DocMapper;
@@ -107,18 +108,28 @@ fn validate_doc_batch_impl(
     (doc_batch, parse_failures)
 }
 
+fn document_validation_enabled() -> bool {
+    const ENABLE_DOCUMENT_VALIDATION: OnceCell<bool> = OnceCell::new();
+    *ENABLE_DOCUMENT_VALIDATION
+        .get_or_init(|| !quickwit_common::get_from_env("QW_DISABLE_DOCUMENT_VALIDATION", false))
+}
+
 /// Parses the JSON documents contained in the batch and applies the doc mapper. Returns the
 /// original batch and a list of parse failures.
 pub(super) async fn validate_doc_batch(
     doc_batch: DocBatchV2,
     doc_mapper: Arc<dyn DocMapper>,
 ) -> IngestV2Result<(DocBatchV2, Vec<ParseFailure>)> {
-    run_cpu_intensive(move || validate_doc_batch_impl(doc_batch, doc_mapper))
-        .await
-        .map_err(|error| {
-            let message = format!("failed to validate documents: {error}");
-            IngestV2Error::Internal(message)
-        })
+    if document_validation_enabled() {
+        run_cpu_intensive(move || validate_doc_batch_impl(doc_batch, doc_mapper))
+            .await
+            .map_err(|error| {
+                let message = format!("failed to validate documents: {error}");
+                IngestV2Error::Internal(message)
+            })
+    } else {
+        Ok((doc_batch, Vec::new()))
+    }
 }
 
 #[cfg(test)]
