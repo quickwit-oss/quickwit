@@ -134,7 +134,7 @@ macro_rules! return_if_err {
 impl ConsumerContext for RdKafkaContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
         crate::metrics::INDEXER_METRICS.kafka_rebalance_total.inc();
-        quickwit_common::rate_limited_info!(limit_per_min=3, topic=self.topic, "rebalance");
+        quickwit_common::rate_limited_info!(limit_per_min = 3, topic = self.topic, "rebalance");
         if let Rebalance::Revoke(tpl) = rebalance {
             let partitions = collect_partitions(tpl, &self.topic);
             debug!(partitions=?partitions, "revoke partitions");
