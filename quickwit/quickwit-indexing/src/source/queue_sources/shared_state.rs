@@ -215,10 +215,18 @@ mod tests {
 
     // #[tokio::test]
     // async fn test_queue_shared_state_impl() {
+    //     let sqs_params = SqsSourceParams {
+    //         queue_url,
+    //         wait_time_seconds: 1,
+    //         queue_params: QueueParams {
+    //             message_type: QueueMessageType::RawUri,
+    //         },
+    //     };
+    //     let source_params = SourceParams::Sqs(sqs_params.clone());
+    //     let source_config = SourceConfig::for_test("test-sqs-source", source_params);
     //     let metastore = metastore_for_test();
+    //     let index_id = append_random_suffix("test-sqs-index");
+    //     let index_uid = setup_index(metastore.clone(), &index_id, &source_config, &[]).await;
 
-    //     // let index_uid = setup_index(metastore.clone()).await;
-
-    //     // TODO
     // }
 }

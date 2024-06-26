@@ -34,7 +34,7 @@ use quickwit_storage::OwnedBytes;
 use regex::Regex;
 
 use super::message::MessageMetadata;
-use super::{Queue, RawMessage};
+use super::{Queue, RawMessage, Received};
 
 #[derive(Debug)]
 pub struct SqsQueue {
@@ -56,7 +56,7 @@ impl SqsQueue {
 
 #[async_trait]
 impl Queue for SqsQueue {
-    async fn receive(&self) -> anyhow::Result<Vec<RawMessage>> {
+    async fn receive(&self) -> anyhow::Result<Received> {
         let visibility_timeout_sec = 120;
         // TODO: We estimate the message deadline using the start of the
         // ReceiveMessage request. This might be overly pessimistic: the docs
@@ -73,7 +73,8 @@ impl Queue for SqsQueue {
             .send()
             .await?;
 
-        res.messages
+        let messages = res
+            .messages
             .unwrap_or_default()
             .into_iter()
             .map(|msg| {
@@ -101,7 +102,8 @@ impl Queue for SqsQueue {
                     payload: OwnedBytes::new(msg.body.unwrap_or_default().into_bytes()),
                 })
             })
-            .collect()
+            .collect::<anyhow::Result<_>>()?;
+        Ok(Received::Messages(messages))
     }
 
     async fn acknowledge(&self, ack_ids: &[String]) -> anyhow::Result<()> {
@@ -205,6 +207,19 @@ pub async fn get_sqs_client(queue_url: &str) -> anyhow::Result<Client> {
     Ok(Client::from_conf(sqs_config.build()))
 }
 
+/// Checks whether we can establish a connection to the SQS service and we can
+/// access the provided queue_url
+pub(crate) async fn check_connectivity(queue_url: &str) -> anyhow::Result<()> {
+    let client = get_sqs_client(queue_url).await?;
+    client
+        .get_queue_attributes()
+        .queue_url(queue_url)
+        .send()
+        .await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 pub mod test_helpers {
     use ulid::Ulid;
@@ -283,6 +298,16 @@ mod tests {
 #[cfg(all(test, feature = "sqs-localstack-tests"))]
 mod localstack_tests {
     use super::*;
+    use crate::source::queue_sources::sqs_queue::test_helpers::{
+        create_queue, get_localstack_sqs_client,
+    };
+
+    #[tokio::test]
+    async fn test_check_connectivity() {
+        let sqs_client = get_localstack_sqs_client().await.unwrap();
+        let queue_url = create_queue(&sqs_client, "check-connectivity").await;
+        check_connectivity(&queue_url).await.unwrap();
+    }
 
     #[tokio::test]
     async fn test_receive_existing_msg_quickly() {
@@ -294,6 +319,7 @@ mod localstack_tests {
         let queue = SqsQueue::try_new(queue_url, 20).await.unwrap();
         let messages = tokio::time::timeout(Duration::from_millis(500), queue.receive())
             .await
+            .unwrap()
             .unwrap()
             .unwrap();
         assert_eq!(messages.len(), 1);

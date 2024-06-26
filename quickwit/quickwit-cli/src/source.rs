@@ -754,10 +754,16 @@ mod tests {
             enabled: "true".to_string(),
         }];
         let expected_uri = Uri::from_str("path/to/file").unwrap();
-        let expected_params = vec![ParamsRow {
-            key: "filepath".to_string(),
-            value: JsonValue::String(expected_uri.to_string()),
-        }];
+        let expected_params = vec![
+            ParamsRow {
+                key: "filepath".to_string(),
+                value: JsonValue::String(expected_uri.to_string()),
+            },
+            ParamsRow {
+                key: "mode".to_string(),
+                value: JsonValue::String("file_uri".to_string()),
+            },
+        ];
         let expected_checkpoint = vec![
             CheckpointRow {
                 partition_id: "shard-000".to_string(),

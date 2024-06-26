@@ -22,9 +22,7 @@ use std::str::FromStr;
 use std::time::Instant;
 
 use anyhow::Context;
-use quickwit_actors::Mailbox;
 use quickwit_common::uri::Uri;
-use quickwit_config::QueueMessageType;
 use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
@@ -32,9 +30,16 @@ use quickwit_storage::{OwnedBytes, StorageResolver};
 use serde_json::Value;
 
 use super::visibility::VisibilityTaskHandle;
-use crate::actors::DocProcessor;
 use crate::source::doc_file_reader::DocFileReader;
 use crate::source::{BatchBuilder, SourceContext, BATCH_NUM_BYTES_LIMIT};
+
+#[derive(Debug, Clone, Copy)]
+pub enum MessageType {
+    S3Notification,
+    // GcsNotification,
+    RawUri,
+    RawData,
+}
 
 #[derive(Debug, Clone)]
 pub struct MessageMetadata {
@@ -60,17 +65,15 @@ pub struct RawMessage {
 }
 
 impl RawMessage {
-    pub fn pre_process(
-        self,
-        message_type: QueueMessageType,
-    ) -> anyhow::Result<PreProcessedMessage> {
+    pub fn pre_process(self, message_type: MessageType) -> anyhow::Result<PreProcessedMessage> {
         let payload = match message_type {
-            QueueMessageType::S3Notification => {
+            MessageType::S3Notification => {
                 PreProcessedPayload::ObjectUri(uri_from_s3_notification(&self.payload)?)
             }
-            QueueMessageType::RawUri => {
+            MessageType::RawUri => {
                 PreProcessedPayload::ObjectUri(Uri::from_str(&read_to_string(self.payload)?)?)
             }
+            MessageType::RawData => unimplemented!(),
         };
         Ok(PreProcessedMessage {
             metadata: self.metadata,
@@ -129,7 +132,6 @@ impl ReadyMessage {
     pub async fn start_processing(
         self,
         storage_resolver: &StorageResolver,
-        source_type: SourceType,
     ) -> anyhow::Result<Option<InProgressMessage>> {
         let partition_id = self.partition_id();
         match self.content.payload {
@@ -147,12 +149,10 @@ impl ReadyMessage {
                     progress_tracker: ProgressTracker::ObjectUri(ObjectUriInProgress {
                         reader,
                         current_offset,
-
-                        source_type,
                         is_eof: false,
                     }),
                     partition_id,
-                    visibility_handle: self.visibility_handle,
+                    visibility_handle: Some(self.visibility_handle),
                 }))
             }
         }
@@ -166,25 +166,42 @@ impl ReadyMessage {
 /// A message that is actively being read
 pub struct InProgressMessage {
     partition_id: PartitionId,
-    visibility_handle: VisibilityTaskHandle,
+    visibility_handle: Option<VisibilityTaskHandle>,
     progress_tracker: ProgressTracker,
+}
+
+impl InProgressMessage {
+    pub fn stdin() -> Self {
+        InProgressMessage {
+            partition_id: PartitionId::default(),
+            visibility_handle: None,
+            progress_tracker: ProgressTracker::StdIn(StdInInProgress {
+                reader: DocFileReader::from_stdin(),
+                is_eof: false,
+            }),
+        }
+    }
 }
 
 pub enum ProgressTracker {
     ObjectUri(ObjectUriInProgress),
+    StdIn(StdInInProgress),
 }
 
 impl InProgressMessage {
-    pub async fn process_batch(
+    pub async fn read_batch(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
         source_ctx: &SourceContext,
-    ) -> anyhow::Result<()> {
+        source_type: SourceType,
+    ) -> anyhow::Result<BatchBuilder> {
         match &mut self.progress_tracker {
             ProgressTracker::ObjectUri(in_progress) => {
                 in_progress
-                    .process_uri_batch(doc_processor_mailbox, source_ctx, self.partition_id.clone())
+                    .read_batch(source_ctx, self.partition_id.clone(), source_type)
                     .await
+            }
+            ProgressTracker::StdIn(in_progress) => {
+                in_progress.read_batch(source_ctx, source_type).await
             }
         }
     }
@@ -192,6 +209,7 @@ impl InProgressMessage {
     pub fn is_eof(&self) -> bool {
         match &self.progress_tracker {
             ProgressTracker::ObjectUri(in_progress) => in_progress.is_eof,
+            ProgressTracker::StdIn(in_progress) => in_progress.is_eof,
         }
     }
 
@@ -200,27 +218,29 @@ impl InProgressMessage {
     }
 
     pub fn ack_id(&self) -> &str {
-        self.visibility_handle.ack_id()
+        self.visibility_handle
+            .as_ref()
+            .map(|h| h.ack_id())
+            .unwrap_or_default()
     }
 }
 
 pub struct ObjectUriInProgress {
     reader: DocFileReader,
     current_offset: usize,
-    source_type: SourceType,
     is_eof: bool,
 }
 
 impl ObjectUriInProgress {
-    async fn process_uri_batch(
+    async fn read_batch(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
         source_ctx: &SourceContext,
         partition_id: PartitionId,
-    ) -> anyhow::Result<()> {
+        source_type: SourceType,
+    ) -> anyhow::Result<BatchBuilder> {
         let limit_num_bytes = self.current_offset + BATCH_NUM_BYTES_LIMIT as usize;
         let mut new_offset = self.current_offset;
-        let mut batch_builder = BatchBuilder::new(self.source_type);
+        let mut batch_builder = BatchBuilder::new(source_type);
         while new_offset < limit_num_bytes {
             if let Some(record) = source_ctx.protect_future(self.reader.next_record()).await? {
                 new_offset = record.next_offset as usize;
@@ -244,13 +264,35 @@ impl ObjectUriInProgress {
                     to_position,
                 )
                 .unwrap();
-            doc_processor_mailbox
-                .send_message(batch_builder.build())
-                .await?;
             self.current_offset = new_offset;
         }
 
-        Ok(())
+        Ok(batch_builder)
+    }
+}
+
+pub struct StdInInProgress {
+    reader: DocFileReader,
+    is_eof: bool,
+}
+
+impl StdInInProgress {
+    async fn read_batch(
+        &mut self,
+        source_ctx: &SourceContext,
+        source_type: SourceType,
+    ) -> anyhow::Result<BatchBuilder> {
+        let mut batch_builder = BatchBuilder::new(source_type);
+        while batch_builder.num_bytes < BATCH_NUM_BYTES_LIMIT {
+            if let Some(record) = source_ctx.protect_future(self.reader.next_record()).await? {
+                batch_builder.add_doc(record.doc);
+            } else {
+                self.is_eof = true;
+                break;
+            }
+        }
+
+        Ok(batch_builder)
     }
 }
 

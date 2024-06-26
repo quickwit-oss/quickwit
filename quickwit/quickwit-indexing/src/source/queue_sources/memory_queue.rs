@@ -27,11 +27,11 @@ use quickwit_storage::OwnedBytes;
 use ulid::Ulid;
 
 use super::message::{MessageMetadata, RawMessage};
-use super::Queue;
+use super::{Queue, Received};
 
 #[derive(Default)]
 struct InnerState {
-    in_queue: VecDeque<RawMessage>,
+    in_queue: VecDeque<Received>,
     in_flight: BTreeMap<String, RawMessage>,
     acked: Vec<RawMessage>,
 }
@@ -62,27 +62,43 @@ impl MemoryQueue {
                 message_id: Ulid::new().to_string(),
             },
         };
-        self.inner_state.lock().unwrap().in_queue.push_back(message);
+        self.inner_state
+            .lock()
+            .unwrap()
+            .in_queue
+            .push_back(Received::Messages(vec![message]));
+    }
+
+    pub fn send_end_of_queue(&self) {
+        self.inner_state
+            .lock()
+            .unwrap()
+            .in_queue
+            .push_back(Received::EndOfQueue);
     }
 }
 
 #[async_trait]
 impl Queue for MemoryQueue {
-    async fn receive(&self) -> anyhow::Result<Vec<RawMessage>> {
+    async fn receive(&self) -> anyhow::Result<Received> {
         let start = Instant::now();
         while start.elapsed() < Duration::from_millis(100) {
             {
                 let mut inner_state = self.inner_state.lock().unwrap();
-                if let Some(msg) = inner_state.in_queue.pop_back() {
-                    inner_state
-                        .in_flight
-                        .insert(msg.metadata.ack_id.clone(), msg.clone());
-                    return Ok(vec![msg]);
+                if let Some(rx) = inner_state.in_queue.pop_back() {
+                    if let Received::Messages(messages) = &rx {
+                        for msg in messages {
+                            inner_state
+                                .in_flight
+                                .insert(msg.metadata.ack_id.clone(), msg.clone());
+                        }
+                    }
+                    return Ok(rx);
                 }
             }
             tokio::time::sleep(Duration::from_millis(40)).await;
         }
-        Ok(vec![])
+        Ok(Received::Messages(vec![]))
     }
 
     async fn acknowledge(&self, ack_ids: &[String]) -> anyhow::Result<()> {
