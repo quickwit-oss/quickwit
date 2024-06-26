@@ -489,6 +489,32 @@ impl Ingester {
             for subrequest in persist_request.subrequests {
                 let queue_id = subrequest.queue_id();
 
+                if let Some(doc_batch) = &subrequest.doc_batch {
+                    let requested_capacity = estimate_size(&doc_batch);
+
+                    if let Err(error) = check_enough_capacity(
+                        &state_guard.mrecordlog,
+                        self.disk_capacity,
+                        self.memory_capacity,
+                        requested_capacity + total_requested_capacity,
+                    ) {
+                        rate_limited_warn!(
+                            limit_per_min = 10,
+                            "failed to persist records to ingester `{}`: {error}",
+                            self.self_node_id
+                        );
+                        let persist_failure = PersistFailure {
+                            subrequest_id: subrequest.subrequest_id,
+                            index_uid: subrequest.index_uid,
+                            source_id: subrequest.source_id,
+                            shard_id: subrequest.shard_id,
+                            reason: PersistFailureReason::ResourceExhausted as i32,
+                        };
+                        persist_failures.push(persist_failure);
+                        continue;
+                    };
+                }
+
                 let Some(shard) = state_guard.shards.get_mut(&queue_id) else {
                     let persist_failure = PersistFailure {
                         subrequest_id: subrequest.subrequest_id,
