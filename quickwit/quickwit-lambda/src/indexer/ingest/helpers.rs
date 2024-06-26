@@ -19,7 +19,7 @@
 
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{bail, Context};
 use chitchat::transport::ChannelTransport;
@@ -138,12 +138,12 @@ pub(super) async fn send_telemetry() {
 
 /// Convert the incomming file path to a source config
 pub(super) async fn configure_source(
-    input_path: PathBuf,
+    input_uri: Uri,
     input_format: SourceInputFormat,
     vrl_script: Option<String>,
 ) -> anyhow::Result<SourceConfig> {
     let transform_config = vrl_script.map(|vrl_script| TransformConfig::new(vrl_script, None));
-    let source_params = SourceParams::file(input_path.clone());
+    let source_params = SourceParams::file_from_uri(input_uri);
     Ok(SourceConfig {
         source_id: LAMBDA_SOURCE_ID.to_owned(),
         num_pipelines: NonZeroUsize::new(1).expect("1 is always non-zero."),

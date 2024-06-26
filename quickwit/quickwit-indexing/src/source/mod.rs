@@ -677,7 +677,7 @@ mod tests {
                 source_id: "file".to_string(),
                 num_pipelines: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
-                source_params: SourceParams::file("file-does-not-exist.json"),
+                source_params: SourceParams::file_from_str("file-does-not-exist.json").unwrap(),
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             };
@@ -692,7 +692,7 @@ mod tests {
                 source_id: "file".to_string(),
                 num_pipelines: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
-                source_params: SourceParams::file("data/test_corpus.json"),
+                source_params: SourceParams::file_from_str("data/test_corpus.json").unwrap(),
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             };

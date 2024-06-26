@@ -17,9 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::borrow::Borrow;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -114,8 +113,8 @@ pub struct TestResourceFiles {
     pub index_config: Uri,
     pub index_config_without_uri: Uri,
     pub index_config_with_retention: Uri,
-    pub log_docs: PathBuf,
-    pub wikipedia_docs: PathBuf,
+    pub log_docs: Uri,
+    pub wikipedia_docs: Uri,
 }
 
 /// A struct to hold few info about the test environment.
@@ -192,8 +191,8 @@ pub enum TestStorageType {
     LocalFileSystem,
 }
 
-fn uri_from_path(path: PathBuf) -> Uri {
-    Uri::from_str(&format!("file://{}", path.display())).unwrap()
+pub fn uri_from_path(path: &Path) -> Uri {
+    Uri::from_str(path.to_str().unwrap()).unwrap()
 }
 
 /// Creates all necessary artifacts in a test environment.
@@ -265,12 +264,12 @@ pub async fn create_test_env(
         .context("failed to parse cluster endpoint")?;
 
     let resource_files = TestResourceFiles {
-        config: uri_from_path(node_config_path),
-        index_config: uri_from_path(index_config_path),
-        index_config_without_uri: uri_from_path(index_config_without_uri_path),
-        index_config_with_retention: uri_from_path(index_config_with_retention_path),
-        log_docs: log_docs_path,
-        wikipedia_docs: wikipedia_docs_path,
+        config: uri_from_path(&node_config_path),
+        index_config: uri_from_path(&index_config_path),
+        index_config_without_uri: uri_from_path(&index_config_without_uri_path),
+        index_config_with_retention: uri_from_path(&index_config_with_retention_path),
+        log_docs: uri_from_path(&log_docs_path),
+        wikipedia_docs: uri_from_path(&wikipedia_docs_path),
     };
 
     Ok(TestEnv {
@@ -297,15 +296,14 @@ pub async fn upload_test_file(
     bucket: &str,
     prefix: &str,
     filename: &str,
-) -> PathBuf {
+) -> Uri {
     let test_data = tokio::fs::read(local_src_path).await.unwrap();
-    let mut src_location: PathBuf = [r"s3://", bucket, prefix].iter().collect();
-    let storage_uri = Uri::from_str(src_location.to_string_lossy().borrow()).unwrap();
+    let src_location = format!("s3://{}/{}", bucket, prefix);
+    let storage_uri = Uri::from_str(&src_location).unwrap();
     let storage = storage_resolver.resolve(&storage_uri).await.unwrap();
     storage
         .put(&PathBuf::from(filename), Box::new(test_data))
         .await
         .unwrap();
-    src_location.push(filename);
-    src_location
+    storage_uri.join(filename).unwrap()
 }

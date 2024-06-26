@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
 
@@ -76,18 +75,18 @@ pub struct DocFileReader {
 }
 
 impl DocFileReader {
-    pub async fn from_path(
+    pub async fn from_uri(
         storage_resolver: &StorageResolver,
-        filepath: &Path,
+        uri: &Uri,
         offset: usize,
     ) -> anyhow::Result<Self> {
-        let (dir_uri, file_name) = dir_and_filename(filepath)?;
+        let (dir_uri, file_name) = dir_and_filename(uri)?;
         let storage = storage_resolver.resolve(&dir_uri).await?;
         let file_size = storage.file_num_bytes(file_name).await?.try_into().unwrap();
         // If it's a gzip file, we can't seek to a specific offset. `SkipReader`
         // starts from the beginning of the file, decompresses and skips the
         // first `offset` bytes.
-        let reader = if filepath.extension() == Some(OsStr::new("gz")) {
+        let reader = if uri.extension() == Some("gz") {
             let stream = storage.get_slice_stream(file_name, 0..file_size).await?;
             let decompressed_stream = Box::new(GzipDecoder::new(BufReader::new(stream)));
             DocFileReader {
@@ -130,17 +129,14 @@ impl DocFileReader {
     }
 }
 
-pub(crate) fn dir_and_filename(filepath: &Path) -> anyhow::Result<(Uri, &Path)> {
+pub(crate) fn dir_and_filename(filepath: &Uri) -> anyhow::Result<(Uri, &Path)> {
     let dir_uri: Uri = filepath
         .parent()
-        .context("Parent directory could not be resolved")?
-        .to_str()
-        .context("Path cannot be turned to string")?
-        .parse()?;
+        .context("Parent directory could not be resolved")?;
     let file_name = filepath
         .file_name()
         .context("Path does not appear to be a file")?;
-    Ok((dir_uri, file_name.as_ref()))
+    Ok((dir_uri, file_name))
 }
 
 #[cfg(test)]
@@ -205,7 +201,7 @@ pub mod file_test_helpers {
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
-    use std::path::PathBuf;
+    use std::str::FromStr;
 
     use file_test_helpers::generate_index_doc_file;
 
@@ -259,10 +255,10 @@ mod tests {
         }
     }
 
-    async fn aux_test_full_read(file: impl Into<PathBuf>, expected_lines: usize) {
+    async fn aux_test_full_read(file: impl AsRef<str>, expected_lines: usize) {
         let storage_resolver = StorageResolver::for_test();
-        let file_path = file.into();
-        let mut doc_reader = DocFileReader::from_path(&storage_resolver, &file_path, 0)
+        let uri = Uri::from_str(file.as_ref()).unwrap();
+        let mut doc_reader = DocFileReader::from_uri(&storage_resolver, &uri, 0)
             .await
             .unwrap();
         let mut parsed_lines = 0;
@@ -283,14 +279,14 @@ mod tests {
     }
 
     async fn aux_test_resumed_read(
-        file: impl Into<PathBuf>,
+        file: impl AsRef<str>,
         expected_lines: usize,
         stop_at_line: usize,
     ) {
         let storage_resolver = StorageResolver::for_test();
-        let file_path = file.into();
+        let uri = Uri::from_str(file.as_ref()).unwrap();
         // read the first part of the file
-        let mut first_part_reader = DocFileReader::from_path(&storage_resolver, &file_path, 0)
+        let mut first_part_reader = DocFileReader::from_uri(&storage_resolver, &uri, 0)
             .await
             .unwrap();
         let mut resume_offset = 0;
@@ -307,7 +303,7 @@ mod tests {
         }
         // read the second part of the file
         let mut second_part_reader =
-            DocFileReader::from_path(&storage_resolver, &file_path, resume_offset)
+            DocFileReader::from_uri(&storage_resolver, &uri, resume_offset)
                 .await
                 .unwrap();
         while let Some(rec) = second_part_reader.next_record().await.unwrap() {
@@ -320,18 +316,20 @@ mod tests {
     #[tokio::test]
     async fn test_resume_read() {
         let dummy_doc_file = generate_index_doc_file(false, 1000).await;
-        aux_test_resumed_read(dummy_doc_file.path(), 1000, 1).await;
-        aux_test_resumed_read(dummy_doc_file.path(), 1000, 40).await;
-        aux_test_resumed_read(dummy_doc_file.path(), 1000, 999).await;
-        aux_test_resumed_read(dummy_doc_file.path(), 1000, 1000).await;
+        let dummy_doc_file_uri = dummy_doc_file.path().to_str().unwrap();
+        aux_test_resumed_read(dummy_doc_file_uri, 1000, 1).await;
+        aux_test_resumed_read(dummy_doc_file_uri, 1000, 40).await;
+        aux_test_resumed_read(dummy_doc_file_uri, 1000, 999).await;
+        aux_test_resumed_read(dummy_doc_file_uri, 1000, 1000).await;
     }
 
     #[tokio::test]
     async fn test_resume_read_gz() {
         let dummy_doc_file = generate_index_doc_file(true, 1000).await;
-        aux_test_resumed_read(dummy_doc_file.path(), 1000, 1).await;
-        aux_test_resumed_read(dummy_doc_file.path(), 1000, 40).await;
-        aux_test_resumed_read(dummy_doc_file.path(), 1000, 999).await;
-        aux_test_resumed_read(dummy_doc_file.path(), 1000, 1000).await;
+        let dummy_doc_file_uri = dummy_doc_file.path().to_str().unwrap();
+        aux_test_resumed_read(dummy_doc_file_uri, 1000, 1).await;
+        aux_test_resumed_read(dummy_doc_file_uri, 1000, 40).await;
+        aux_test_resumed_read(dummy_doc_file_uri, 1000, 999).await;
+        aux_test_resumed_read(dummy_doc_file_uri, 1000, 1000).await;
     }
 }
