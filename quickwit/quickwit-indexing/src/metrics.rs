@@ -97,7 +97,6 @@ impl Default for IndexerMetrics {
                 "kafka_rebalance_total",
                 "Number of kafka rebalances",
                 "indexing",
-                &[]
             )),
         }
     }
