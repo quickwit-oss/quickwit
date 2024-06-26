@@ -224,7 +224,10 @@ impl GrpcServiceError for MetastoreError {
     }
 
     fn new_too_many_requests() -> Self {
-        quickwit_common::rate_limited_error!(limit_per_min=6, "metastore error: too many requests");
+        quickwit_common::rate_limited_error!(
+            limit_per_min = 6,
+            "metastore error: too many requests"
+        );
         Self::TooManyRequests
     }
 

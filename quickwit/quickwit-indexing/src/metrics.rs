@@ -19,7 +19,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    new_counter, new_counter_vec, new_gauge, new_gauge_vec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec
+    new_counter, new_counter_vec, new_gauge, new_gauge_vec, IntCounter, IntCounterVec, IntGauge,
+    IntGaugeVec,
 };
 
 pub struct IndexerMetrics {
@@ -93,11 +94,14 @@ impl Default for IndexerMetrics {
                 "indexing",
                 &[],
             ),
-            kafka_rebalance_total: Lazy::new(|| new_counter(
-                "kafka_rebalance_total",
-                "Number of kafka rebalances",
-                "indexing",
-            )),
+            kafka_rebalance_total: Lazy::new(|| {
+                new_counter(
+                    "kafka_rebalance_total",
+                    "Number of kafka rebalances",
+                    "indexing",
+                    &[],
+                )
+            }),
         }
     }
 }
