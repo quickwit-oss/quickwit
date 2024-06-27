@@ -20,6 +20,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
 
 use quickwit_proto::ingest::{Shard, ShardIds, ShardState};
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId};
@@ -115,6 +116,7 @@ impl RoutingTableEntry {
         ingester_pool: &IngesterPool,
         closed_shard_ids: &mut Vec<ShardId>,
         unavailable_leaders: &mut HashSet<NodeId>,
+        resource_exhausted_leaders: &HashMap<NodeId, Instant>,
     ) -> bool {
         let shards = self.local_shards.iter().chain(self.remote_shards.iter());
 
@@ -129,6 +131,9 @@ impl RoutingTableEntry {
                 }
                 ShardState::Open => {
                     if unavailable_leaders.contains(&shard.leader_id) {
+                        continue;
+                    }
+                    if resource_exhausted_leaders.contains_key(&shard.leader_id) {
                         continue;
                     }
                     if ingester_pool.contains_key(&shard.leader_id) {
@@ -147,6 +152,7 @@ impl RoutingTableEntry {
     pub fn next_open_shard_round_robin(
         &self,
         ingester_pool: &IngesterPool,
+        resource_exhausted_leaders: &HashMap<NodeId, Instant>,
     ) -> Option<&RoutingEntry> {
         for (shards, round_robin_idx) in [
             (&self.local_shards, &self.local_round_robin_idx),
@@ -159,7 +165,10 @@ impl RoutingTableEntry {
                 let shard_idx = round_robin_idx.fetch_add(1, Ordering::Relaxed);
                 let shard = &shards[shard_idx % shards.len()];
 
-                if shard.shard_state.is_open() && ingester_pool.contains_key(&shard.leader_id) {
+                if shard.shard_state.is_open()
+                    && ingester_pool.contains_key(&shard.leader_id)
+                    && !resource_exhausted_leaders.contains_key(&shard.leader_id)
+                {
                     return Some(shard);
                 }
             }
@@ -354,14 +363,19 @@ impl RoutingTable {
         ingester_pool: &IngesterPool,
         closed_shards: &mut Vec<ShardIds>,
         unavailable_leaders: &mut HashSet<NodeId>,
+        resource_exhausted_leaders: &HashMap<NodeId, Instant>,
     ) -> bool {
         let Some(entry) = self.find_entry(index_id, source_id) else {
             return false;
         };
         let mut closed_shard_ids: Vec<ShardId> = Vec::new();
 
-        let result =
-            entry.has_open_shards(ingester_pool, &mut closed_shard_ids, unavailable_leaders);
+        let result = entry.has_open_shards(
+            ingester_pool,
+            &mut closed_shard_ids,
+            unavailable_leaders,
+            resource_exhausted_leaders,
+        );
 
         if !closed_shard_ids.is_empty() {
             closed_shards.push(ShardIds {
@@ -558,17 +572,19 @@ mod tests {
     #[test]
     fn test_routing_table_entry_has_open_shards() {
         let index_uid = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".into();
+        let source_id = SourceId::from("test-source");
         let table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
 
         let mut closed_shard_ids = Vec::new();
         let ingester_pool = IngesterPool::default();
         let mut unavailable_leaders = HashSet::new();
+        let mut resource_exhausted_leaders = HashMap::new();
 
         assert!(!table_entry.has_open_shards(
             &ingester_pool,
             &mut closed_shard_ids,
-            &mut unavailable_leaders
+            &mut unavailable_leaders,
+            &resource_exhausted_leaders
         ));
         assert!(closed_shard_ids.is_empty());
         assert!(unavailable_leaders.is_empty());
@@ -602,7 +618,8 @@ mod tests {
         assert!(table_entry.has_open_shards(
             &ingester_pool,
             &mut closed_shard_ids,
-            &mut unavailable_leaders
+            &mut unavailable_leaders,
+            &resource_exhausted_leaders
         ));
         assert_eq!(closed_shard_ids.len(), 1);
         assert_eq!(closed_shard_ids[0], ShardId::from(1));
@@ -643,12 +660,22 @@ mod tests {
         assert!(table_entry.has_open_shards(
             &ingester_pool,
             &mut closed_shard_ids,
-            &mut unavailable_leaders
+            &mut unavailable_leaders,
+            &resource_exhausted_leaders
         ));
         assert_eq!(closed_shard_ids.len(), 1);
         assert_eq!(closed_shard_ids[0], ShardId::from(1));
         assert_eq!(unavailable_leaders.len(), 1);
         assert!(unavailable_leaders.contains("test-ingester-2"));
+
+        resource_exhausted_leaders.insert(NodeId::from("test-ingester-1"), Instant::now());
+
+        assert!(!table_entry.has_open_shards(
+            &ingester_pool,
+            &mut closed_shard_ids,
+            &mut unavailable_leaders,
+            &resource_exhausted_leaders
+        ));
     }
 
     #[test]
@@ -657,8 +684,10 @@ mod tests {
         let source_id: SourceId = "test-source".into();
         let table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
         let ingester_pool = IngesterPool::default();
+        let mut resource_exhausted_leaders = HashMap::new();
 
-        let shard_opt = table_entry.next_open_shard_round_robin(&ingester_pool);
+        let shard_opt =
+            table_entry.next_open_shard_round_robin(&ingester_pool, &resource_exhausted_leaders);
         assert!(shard_opt.is_none());
 
         ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
@@ -687,7 +716,7 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
+                    leader_id: "test-ingester-1".into(),
                 },
             ],
             local_round_robin_idx: AtomicUsize::default(),
@@ -695,19 +724,28 @@ mod tests {
             remote_round_robin_idx: AtomicUsize::default(),
         };
         let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool)
+            .next_open_shard_round_robin(&ingester_pool, &resource_exhausted_leaders)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(2));
 
         let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool)
+            .next_open_shard_round_robin(&ingester_pool, &resource_exhausted_leaders)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(3));
 
         let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool)
+            .next_open_shard_round_robin(&ingester_pool, &resource_exhausted_leaders)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(2));
+
+        resource_exhausted_leaders.insert(NodeId::from("test-ingester-1"), Instant::now());
+
+        let shard = table_entry
+            .next_open_shard_round_robin(&ingester_pool, &resource_exhausted_leaders)
+            .unwrap();
+        assert_eq!(shard.shard_id, ShardId::from(2));
+
+        resource_exhausted_leaders.clear();
 
         let table_entry = RoutingTableEntry {
             index_uid: index_uid.clone(),
@@ -753,17 +791,17 @@ mod tests {
             remote_round_robin_idx: AtomicUsize::default(),
         };
         let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool)
+            .next_open_shard_round_robin(&ingester_pool, &resource_exhausted_leaders)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(2));
 
         let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool)
+            .next_open_shard_round_robin(&ingester_pool, &resource_exhausted_leaders)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(5));
 
         let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool)
+            .next_open_shard_round_robin(&ingester_pool, &resource_exhausted_leaders)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(2));
     }
