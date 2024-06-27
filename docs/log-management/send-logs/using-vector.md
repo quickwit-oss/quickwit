@@ -43,83 +43,9 @@ docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 7280:7280 quickwit/quickwit
 
 ## Taking advantage of Quickwit's native support for logs
 
-Let's embrace the OpenTelemetry standard and take advantage of Quickwit features. With the native support for OpenTelemetry standards, Quickwit already comes with an index called `otel-logs_v0_6` that is compatible with the OpenTelemetry [logs data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md). This means we can start pushing log data without any prior usual index setup. 
+Let's embrace the OpenTelemetry standard and take advantage of Quickwit features. With the native support for OpenTelemetry standards, Quickwit already comes with an index called `otel-logs_v0_7` that is compatible with the OpenTelemetry [logs data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md). This means we can start pushing log data without any prior usual index setup.
 
-Here is the OpenTelemetry index configuration for reference.
-
-```yaml title="otel-logs_v0_6"
-version: 0.7
-
-index_id: otel-logs-v0_6
-
-doc_mapping:
-  mode: strict
-  field_mappings:
-    - name: timestamp_nanos
-      type: datetime
-      input_formats: [unix_timestamp]
-      output_format: unix_timestamp_nanos
-      indexed: false
-      fast: true
-      fast_precision: milliseconds
-    - name: observed_timestamp_nanos
-      type: datetime
-      input_formats: [unix_timestamp]
-      output_format: unix_timestamp_nanos
-    - name: service_name
-      type: text
-      tokenizer: raw
-    - name: severity_text
-      type: text
-      tokenizer: raw
-      fast: true
-    - name: severity_number
-      type: u64
-      fast: true
-    - name: body
-      type: json
-    - name: attributes
-      type: json
-      tokenizer: raw
-      fast: true
-    - name: dropped_attributes_count
-      type: u64
-      indexed: false
-    - name: trace_id
-      type: bytes
-    - name: span_id
-      type: bytes
-    - name: trace_flags
-      type: u64
-      indexed: false
-    - name: resource_attributes
-      type: json
-      tokenizer: raw
-      fast: true
-    - name: resource_dropped_attributes_count
-      type: u64
-      indexed: false
-    - name: scope_name
-      type: text
-      indexed: false
-    - name: scope_version
-      type: text
-      indexed: false
-    - name: scope_attributes
-      type: json
-      indexed: false
-    - name: scope_dropped_attributes_count
-      type: u64
-      indexed: false
-
-  timestamp_field: timestamp_nanos
-
-indexing_settings:
-  commit_timeout_secs: 10
-
-search_settings:
-  default_search_fields: [body.message]
-```
+The OpenTelemetry index configuration can be found in the [quickwit-opentelemetry/src/otlp/logs.rs](https://github.com/quickwit-oss/quickwit/blob/main/quickwit/quickwit-opentelemetry/src/otlp/logs.rs) source file.
 
 ## Setup Vector
 
@@ -140,7 +66,7 @@ inputs = [ "generate_syslog"]
 type = "remap"
 source = '''
   structured = parse_syslog!(.message)
-  .timestamp_nanos, err = to_unix_timestamp(structured.timestamp, unit: "nanoseconds")
+  .timestamp_nanos = to_unix_timestamp!(structured.timestamp, unit: "nanoseconds")
   .body = structured
   .service_name = structured.appname
   .resource_attributes.source_type = .source_type
@@ -163,6 +89,7 @@ source = '''
   .scope_name = structured.msgid
   del(.message)
   del(.timestamp)
+  del(.service)
   del(.source_type)
 '''
 
