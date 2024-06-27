@@ -204,8 +204,8 @@ mod tests {
         assert!(contains_message_field);
     }
 
-    #[tokio::test]
-    async fn test_validate_doc_batch() {
+    #[test]
+    fn test_validate_doc_batch() {
         let doc_mapping_json = r#"{
             "mode": "strict",
             "field_mappings": [
@@ -218,14 +218,12 @@ mod tests {
         let doc_mapper = try_build_doc_mapper(doc_mapping_json).unwrap();
         let doc_batch = DocBatchV2::default();
 
-        let (_, parse_failures) = validate_doc_batch(doc_batch, doc_mapper.clone())
-            .await
-            .unwrap();
+        let (_, parse_failures) = validate_doc_batch_impl(doc_batch, doc_mapper.clone());
         assert_eq!(parse_failures.len(), 0);
 
         let doc_batch =
             DocBatchV2::for_test(["", "[]", r#"{"foo": "bar"}"#, r#"{"doc": "test-doc-000"}"#]);
-        let (_, parse_failures) = validate_doc_batch(doc_batch, doc_mapper).await.unwrap();
+        let (_, parse_failures) = validate_doc_batch_impl(doc_batch, doc_mapper);
         assert_eq!(parse_failures.len(), 3);
 
         let parse_failure_0 = &parse_failures[0];

@@ -256,8 +256,8 @@ mod tests {
 
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
     use crate::{
-        Cardinality, DefaultDocMapperBuilder, DocMapper, DocParsingError, FieldMappingEntry,
-        TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
+        Cardinality, DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, DocParsingError,
+        FieldMappingEntry, TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -394,6 +394,130 @@ mod tests {
             format!("{query:?}"),
             r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=1, type=Json, path=toto, type=I64, 5))), (Should, TermQuery(Term(field=1, type=Json, path=toto, type=Str, "5")))] }"#
         );
+    }
+
+    #[test]
+    fn test_validate_doc() {
+        const JSON_CONFIG_VALUE: &str = r#"{
+            "timestamp_field": "timestamp",
+            "field_mappings": [
+            {
+                "name": "timestamp",
+                "type": "datetime",
+                "fast": true
+            },
+            {
+                "name": "body",
+                "type": "text"
+            },
+            {
+                "name": "response_date",
+                "type": "datetime",
+                "input_formats": ["rfc3339", "unix_timestamp"]
+            },
+            {
+                "name": "response_time",
+                "type": "f64"
+            },
+            {
+                "name": "response_time_no_coercion",
+                "type": "f64",
+                "coerce": false
+            },
+            {
+                "name": "response_payload",
+                "type": "bytes"
+            },
+            {
+                "name": "is_important",
+                "type": "bool"
+            },
+            {
+                "name": "properties",
+                "type": "json"
+            },
+            {
+                "name": "attributes",
+                "type": "object",
+                "field_mappings": [
+                    {
+                        "name": "numbers",
+                        "type": "array<i64>"
+                    }
+                ]
+            }]
+        }"#;
+        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
+        {
+            let valid_doc_value = serde_json::json!({ "body": "toto" });
+            let valid_doc_json = valid_doc_value.as_object().unwrap();
+            assert!(doc_mapper.validate_json_obj(valid_doc_json).is_ok());
+        }
+        {
+            let valid_doc_value = serde_json::json!({ "response_time": "toto" });
+            let valid_doc_json = valid_doc_value.as_object().unwrap();
+            assert!(matches!(
+                doc_mapper.validate_json_obj(valid_doc_json).unwrap_err(),
+                DocParsingError::ValueError(_, _)
+            ));
+        }
+        {
+            // coercion is supported
+            let valid_doc_value = serde_json::json!({ "response_time": "2.3" });
+            let valid_doc_json = valid_doc_value.as_object().unwrap();
+            assert!(doc_mapper.validate_json_obj(valid_doc_json).is_ok());
+        }
+        {
+            // coercion disabled
+            let valid_doc_value = serde_json::json!({ "response_time_no_coercion": "2.3" });
+            let valid_doc_json = valid_doc_value.as_object().unwrap();
+            assert!(matches!(
+                doc_mapper.validate_json_obj(valid_doc_json).unwrap_err(),
+                DocParsingError::ValueError(_, _)
+            ));
+        }
+        {
+            // coercion disabled
+            let valid_doc_value = serde_json::json!({ "response_time": [2.3] });
+            let valid_doc_json = valid_doc_value.as_object().unwrap();
+            assert!(matches!(
+                doc_mapper.validate_json_obj(valid_doc_json).unwrap_err(),
+                DocParsingError::MultiValuesNotSupported(_)
+            ));
+        }
+        {
+            let valid_doc_value = serde_json::json!({ "attributes": { "numbers": [-2] }});
+            let valid_doc_json = valid_doc_value.as_object().unwrap();
+            assert!(doc_mapper.validate_json_obj(valid_doc_json).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_validate_doc_mode() {
+        {
+            const JSON_CONFIG_VALUE: &str = r#"{ "mode": "strict", "field_mappings": [] }"#;
+            let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
+            let valid_doc_value = serde_json::json!({ "response_time": "toto" });
+            let valid_doc_json = valid_doc_value.as_object().unwrap();
+            assert!(matches!(
+                doc_mapper.validate_json_obj(valid_doc_json).unwrap_err(),
+                DocParsingError::NoSuchFieldInSchema(_)
+            ));
+        }
+        {
+            const JSON_CONFIG_VALUE: &str = r#"{ "mode": "lenient", "field_mappings": [] }"#;
+            let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
+            let valid_doc_value = serde_json::json!({ "response_time": "toto" });
+            let valid_doc_json = valid_doc_value.as_object().unwrap();
+            assert!(doc_mapper.validate_json_obj(valid_doc_json).is_ok());
+        }
+        {
+            const JSON_CONFIG_VALUE: &str = r#"{ "mode": "dynamic", "field_mappings": [] }"#;
+            let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
+            let valid_doc_value = serde_json::json!({ "response_time": "toto" });
+            let valid_doc_json = valid_doc_value.as_object().unwrap();
+            assert!(doc_mapper.validate_json_obj(valid_doc_json).is_ok());
+        }
     }
 
     fn hashset(elements: &[&str]) -> HashSet<String> {
