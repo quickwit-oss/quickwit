@@ -95,7 +95,7 @@ fn validate_doc_batch_impl(
             parse_failures.push(parse_failure);
             continue;
         };
-        if let Err(error) = doc_mapper.doc_from_json_obj(json_obj, doc.len() as u64) {
+        if let Err(error) = doc_mapper.validate_json_obj(&json_obj) {
             let parse_failure = ParseFailure {
                 doc_uid: Some(doc_uid),
                 reason: ParseFailureReason::InvalidSchema as i32,
