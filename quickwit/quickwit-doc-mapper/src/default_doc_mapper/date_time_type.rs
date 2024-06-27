@@ -71,7 +71,7 @@ impl Default for QuickwitDateTimeOptions {
 }
 
 impl QuickwitDateTimeOptions {
-    pub(crate) fn parse_json(&self, json_value: JsonValue) -> Result<TantivyValue, String> {
+    pub(crate) fn parse_json(&self, json_value: &JsonValue) -> Result<TantivyValue, String> {
         let date_time = match json_value {
             JsonValue::Number(timestamp) => {
                 // `.as_f64()` actually converts floats to integers, so we must check for integers
@@ -87,7 +87,7 @@ impl QuickwitDateTimeOptions {
                 }
             }
             JsonValue::String(date_time_str) => {
-                quickwit_datetime::parse_date_time_str(&date_time_str, &self.input_formats.0)?
+                quickwit_datetime::parse_date_time_str(date_time_str, &self.input_formats.0)?
             }
             _ => {
                 return Err(format!(
@@ -383,7 +383,7 @@ mod tests {
         let expected_timestamp = datetime!(2012-05-21 12:09:14 UTC).unix_timestamp();
         {
             let json_value = serde_json::json!("2012-05-21T12:09:14-00:00");
-            let tantivy_value = date_time_options.parse_json(json_value).unwrap();
+            let tantivy_value = date_time_options.parse_json(&json_value).unwrap();
             let date_time = match tantivy_value {
                 TantivyValue::Date(date_time) => date_time,
                 other => panic!("Expected a tantivy date time, got `{other:?}`."),
@@ -392,7 +392,7 @@ mod tests {
         }
         {
             let json_value = serde_json::json!(expected_timestamp);
-            let tantivy_value = date_time_options.parse_json(json_value).unwrap();
+            let tantivy_value = date_time_options.parse_json(&json_value).unwrap();
             let date_time = match tantivy_value {
                 TantivyValue::Date(date_time) => date_time,
                 other => panic!("Expected a tantivy date time, got `{other:?}`."),
@@ -401,7 +401,7 @@ mod tests {
         }
         {
             let json_value = serde_json::json!(expected_timestamp as f64);
-            let tantivy_value = date_time_options.parse_json(json_value).unwrap();
+            let tantivy_value = date_time_options.parse_json(&json_value).unwrap();
             let date_time = match tantivy_value {
                 TantivyValue::Date(date_time) => date_time,
                 other => panic!("Expected a tantivy date time, got `{other:?}`."),
