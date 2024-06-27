@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+import copy
 import glob
 import gzip
 import http
 import json
 import os
 import requests
+import random
 import shutil
 import subprocess
 import sys
@@ -97,6 +99,16 @@ def run_request_step(method, step, previous_result):
         kvargs["data"] = open(body_from_file, 'rb').read()
 
     kvargs = resolve_previous_result(kvargs, previous_result)
+    shuffle_ndjson = step.get("shuffle_ndjson", None)
+    if shuffle_ndjson is not None:
+        docs_per_split = distribute_items(shuffle_ndjson, step.get("min_splits", 1), step.get("max_splits", 5), step.get("seed", None))
+
+        for i, bucket in enumerate(docs_per_split):
+            new_step = copy.deepcopy(step)
+            del new_step["shuffle_ndjson"]
+            new_step["ndjson"] = bucket
+            run_request_step(method, new_step, previous_result)
+        return;
     ndjson = step.get("ndjson", None)
     if ndjson is not None:
         # Add a newline at the end to please elasticsearch -> "The bulk request must be terminated by a newline [\\n]".
@@ -119,6 +131,27 @@ def run_request_step(method, step, previous_result):
             print(json.dumps(json_resp, indent=2))
             raise e
     return json_resp
+
+def distribute_items(items, min_buckets, max_buckets, seed=None):
+    if seed is None:
+        seed = random.randint(0, 10000)
+    random.seed(seed)
+    
+    # Determine the number of buckets
+    num_buckets = random.randint(min_buckets, max_buckets)
+    
+    # Initialize empty buckets
+    buckets = [[] for _ in range(num_buckets)]
+    
+    # Distribute items randomly into buckets
+    for item in items:
+        random_bucket = random.randint(0, num_buckets - 1)
+        buckets[random_bucket].append(item)
+    
+    # Print the seed for reproducibility
+    print(f"Seed: {seed}")
+    
+    return buckets
 
 def check_result(result, expected, context_path = ""):
     if type(expected) == dict and "$expect" in expected:
