@@ -84,7 +84,13 @@ impl QueueSharedStateImpl {
         let mut shards = Vec::new();
         for sub in open_shard_resp.subresponses {
             let partition_id = partitions[sub.subrequest_id as usize].clone();
-            let position = sub.open_shard().publish_position_inclusive();
+            sub.open_shard().follower_id();
+            // TODO: inclusive??? a +1 will likely be required here
+            let position = sub
+                .open_shard()
+                .publish_position_inclusive
+                .clone()
+                .unwrap_or_default();
             let is_owned = sub.open_shard().publish_token.as_deref() == Some(publish_token);
             if position.is_eof() || (is_owned && position.is_beginning()) {
                 shards.push((partition_id, position));

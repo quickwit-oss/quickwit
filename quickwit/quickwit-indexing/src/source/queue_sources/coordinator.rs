@@ -31,11 +31,10 @@ use tracing::debug;
 use ulid::Ulid;
 
 use super::local_state::QueueLocalState;
-use super::memory_queue::MemoryQueue;
-use super::message::{InProgressMessage, MessageType, ReadyMessage};
+use super::message::{MessageType, ReadyMessage};
 use super::shared_state::{QueueSharedState, QueueSharedStateImpl};
 use super::visibility::spawn_visibility_task;
-use super::{Queue, Received};
+use super::Queue;
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 use crate::source::{SourceContext, SourceRuntime};
@@ -47,9 +46,9 @@ pub struct QueueCoordinatorObservableState {
     /// Number of lines processed by the source.
     pub num_lines_processed: u64,
     /// Number of messages processed by the source.
-    pub nnum_messages_processed: u64,
+    pub num_messages_processed: u64,
     // Number of invalid messages, i.e., that were empty or could not be parsed.
-    pub num_invalid_messages: u64,
+    // pub num_invalid_messages: u64,
     /// Number of time we looped without getting a single message
     pub num_consecutive_empty_batches: u64,
 }
@@ -101,29 +100,6 @@ impl QueueCoordinator {
         }
     }
 
-    pub fn for_stdin(source_runtime: SourceRuntime) -> Self {
-        let queue = MemoryQueue::default();
-        queue.send_end_of_queue();
-        let mut local_state = QueueLocalState::default();
-        local_state.replace_currently_read(Some(InProgressMessage::stdin()));
-        Self {
-            shared_state: Box::new(QueueSharedStateImpl {
-                metastore: source_runtime.metastore,
-                source_id: source_runtime.pipeline_id.source_id.clone(),
-                index_uid: source_runtime.pipeline_id.index_uid.clone(),
-            }),
-            local_state: QueueLocalState::default(),
-            pipeline_id: source_runtime.pipeline_id,
-            source_type: source_runtime.source_config.source_type(),
-            storage_resolver: source_runtime.storage_resolver,
-            queue: Arc::new(queue),
-            observable_state: QueueCoordinatorObservableState::default(),
-            message_type: MessageType::RawUri,
-            publish_lock: PublishLock::default(),
-            publish_token: Ulid::new().to_string(),
-        }
-    }
-
     pub async fn initialize(
         &mut self,
         doc_processor_mailbox: &Mailbox<DocProcessor>,
@@ -143,15 +119,7 @@ impl QueueCoordinator {
     /// Polls messages from the queue and prepares them for processing
     async fn poll_messages(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         // receive() typically uses long polling so it can be long to respond
-        let received = ctx.protect_future(self.queue.receive()).await?;
-
-        let raw_messages = if let Received::Messages(msg) = received {
-            msg
-        } else {
-            // TODO: send exit with success
-            // ctx.send_exit_with_success(doc_processor_mailbox).await?;
-            return Err(ActorExitStatus::Success);
-        };
+        let raw_messages = ctx.protect_future(self.queue.receive()).await?;
 
         if raw_messages.is_empty() {
             self.observable_state.num_consecutive_empty_batches += 1;
@@ -222,6 +190,7 @@ impl QueueCoordinator {
             debug!("process_batch");
             // TODO: should we kill the publish lock if the message visibility extension fails?
             let batch_builder = msg.read_batch(ctx, self.source_type).await?;
+            println!("batch_builder.num_bytes={}", batch_builder.num_bytes);
             if batch_builder.num_bytes > 0 {
                 self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
                 self.observable_state.num_bytes_processed += batch_builder.num_bytes;
@@ -229,7 +198,8 @@ impl QueueCoordinator {
                     .send_message(batch_builder.build())
                     .await?;
             }
-            if msg.is_eof() {
+            if msg.progress_tracker.is_eof() {
+                self.observable_state.num_messages_processed += 1;
                 self.local_state.replace_currently_read(None);
             }
         } else if let Some(ready_message) = self.local_state.get_ready_for_read() {

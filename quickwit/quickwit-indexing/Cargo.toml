@@ -98,6 +98,7 @@ testsuite = [
 vrl = ["dep:vrl", "quickwit-config/vrl"]
 
 [dev-dependencies]
+assert-json-diff = { workspace = true }
 bytes = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 mockall = { workspace = true }

@@ -24,8 +24,13 @@ use anyhow::Context;
 use async_compression::tokio::bufread::GzipDecoder;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
+use quickwit_metastore::checkpoint::PartitionId;
+use quickwit_proto::metastore::SourceType;
+use quickwit_proto::types::Position;
 use quickwit_storage::StorageResolver;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
+
+use super::{BatchBuilder, SourceContext, BATCH_NUM_BYTES_LIMIT};
 
 pub struct FileRecord {
     pub next_offset: u64,
@@ -75,6 +80,13 @@ pub struct DocFileReader {
 }
 
 impl DocFileReader {
+    pub fn empty() -> Self {
+        DocFileReader {
+            reader: SkipReader::new(Box::new(tokio::io::empty()), 0),
+            next_offset: 0,
+        }
+    }
+
     pub async fn from_uri(
         storage_resolver: &StorageResolver,
         uri: &Uri,
@@ -126,6 +138,118 @@ impl DocFileReader {
                 doc: Bytes::from(buf),
             }))
         }
+    }
+}
+
+pub struct ObjectUriBatchReader {
+    reader: DocFileReader,
+    current_offset: usize,
+    is_eof: bool,
+}
+
+impl ObjectUriBatchReader {
+    pub async fn try_new(
+        storage_resolver: &StorageResolver,
+        uri: &Uri,
+        position: Position,
+    ) -> anyhow::Result<Self> {
+        let current_offset = match position {
+            Position::Beginning => 0,
+            Position::Offset(offset) => offset
+                .as_usize()
+                .context("file offset should be stored as usize")?,
+            Position::Eof(_) => {
+                return Ok(ObjectUriBatchReader {
+                    reader: DocFileReader::empty(),
+                    current_offset: 0,
+                    is_eof: true,
+                })
+            }
+        };
+        let reader = DocFileReader::from_uri(storage_resolver, uri, current_offset).await?;
+        Ok(ObjectUriBatchReader {
+            reader,
+            current_offset,
+            is_eof: false,
+        })
+    }
+
+    pub async fn read_batch(
+        &mut self,
+        source_ctx: &SourceContext,
+        partition_id: PartitionId,
+        source_type: SourceType,
+    ) -> anyhow::Result<BatchBuilder> {
+        let limit_num_bytes = self.current_offset + BATCH_NUM_BYTES_LIMIT as usize;
+        let mut new_offset = self.current_offset;
+        let mut batch_builder = BatchBuilder::new(source_type);
+        while new_offset < limit_num_bytes {
+            if let Some(record) = source_ctx.protect_future(self.reader.next_record()).await? {
+                new_offset = record.next_offset as usize;
+                batch_builder.add_doc(record.doc);
+            } else {
+                self.is_eof = true;
+                break;
+            }
+        }
+        if new_offset > self.current_offset {
+            let to_position = if self.is_eof {
+                Position::eof(new_offset)
+            } else {
+                Position::offset(new_offset)
+            };
+            batch_builder
+                .checkpoint_delta
+                .record_partition_delta(
+                    partition_id,
+                    Position::offset(self.current_offset),
+                    to_position,
+                )
+                .unwrap();
+            self.current_offset = new_offset;
+        }
+
+        Ok(batch_builder)
+    }
+
+    pub fn is_eof(&self) -> bool {
+        self.is_eof
+    }
+}
+
+pub struct StdinBatchReader {
+    reader: DocFileReader,
+    is_eof: bool,
+}
+
+impl StdinBatchReader {
+    pub fn new() -> Self {
+        Self {
+            reader: DocFileReader::from_stdin(),
+            is_eof: false,
+        }
+    }
+
+    pub async fn read_batch(
+        &mut self,
+        source_ctx: &SourceContext,
+        source_type: SourceType,
+    ) -> anyhow::Result<BatchBuilder> {
+        let mut batch_builder = BatchBuilder::new(source_type);
+        while batch_builder.num_bytes < BATCH_NUM_BYTES_LIMIT {
+            if let Some(record) = source_ctx.protect_future(self.reader.next_record()).await? {
+                batch_builder.add_doc(record.doc);
+            } else {
+                self.is_eof = true;
+                break;
+            }
+        }
+
+        Ok(batch_builder)
+    }
+
+    pub fn is_eof(&self) -> bool {
+        self.is_eof
     }
 }
 

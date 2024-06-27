@@ -54,7 +54,7 @@ impl QueueLocalState {
     pub fn is_read_in_progress(&self, partition_id: &PartitionId) -> bool {
         self.read_in_progress
             .as_ref()
-            .map_or(false, |msg| msg.partition_id() == partition_id)
+            .map_or(false, |msg| &msg.partition_id == partition_id)
     }
 
     pub fn is_awating_commit(&self, partition_id: &PartitionId) -> bool {
@@ -96,7 +96,7 @@ impl QueueLocalState {
     pub fn replace_currently_read(&mut self, in_progress: Option<InProgressMessage>) {
         if let Some(just_finished) = self.read_in_progress.take() {
             self.awaiting_commit.insert(
-                just_finished.partition_id().clone(),
+                just_finished.partition_id.clone(),
                 just_finished.ack_id().to_string(),
             );
         }
