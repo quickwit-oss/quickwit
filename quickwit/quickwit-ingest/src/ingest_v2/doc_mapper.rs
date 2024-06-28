@@ -28,7 +28,7 @@ use quickwit_proto::ingest::{
     DocBatchV2, IngestV2Error, IngestV2Result, ParseFailure, ParseFailureReason,
 };
 use quickwit_proto::types::DocMappingUid;
-use serde_json::Value as JsonValue;
+use serde_json_borrow::Value as JsonValue;
 use tracing::info;
 
 /// Attempts to get the doc mapper identified by the given doc mapping UID `doc_mapping_uid` from
@@ -77,7 +77,7 @@ fn validate_doc_batch_impl(
 ) -> (DocBatchV2, Vec<ParseFailure>) {
     let mut parse_failures: Vec<ParseFailure> = Vec::new();
     for (doc_uid, doc) in doc_batch.docs() {
-        let Ok(json_doc) = serde_json::from_slice::<JsonValue>(&doc) else {
+        let Ok(json_doc) = serde_json::from_slice::<serde_json_borrow::Value>(&doc) else {
             let parse_failure = ParseFailure {
                 doc_uid: Some(doc_uid),
                 reason: ParseFailureReason::InvalidJson as i32,
