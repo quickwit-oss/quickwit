@@ -48,8 +48,9 @@ pub trait Queue: fmt::Debug + Send + Sync + 'static {
     /// The implementation is in charge of choosing the wait strategy when there
     /// are no messages in the queue. It will typically use long polling to do
     /// this efficiently. On the other hand, when there is a message in the
-    /// queue, it should be returned as quickly as possible.
-    async fn receive(&self) -> anyhow::Result<Vec<RawMessage>>;
+    /// queue, it should be returned as quickly as possible, regardless of the
+    /// `max_messages` parameter.
+    async fn receive(&self, max_messages: usize) -> anyhow::Result<Vec<RawMessage>>;
 
     /// Try to acknowledge the messages, effectively deleting them from the
     /// queue.

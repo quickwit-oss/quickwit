@@ -56,7 +56,7 @@ impl SqsQueue {
 
 #[async_trait]
 impl Queue for SqsQueue {
-    async fn receive(&self) -> anyhow::Result<Vec<RawMessage>> {
+    async fn receive(&self, max_messages: usize) -> anyhow::Result<Vec<RawMessage>> {
         let visibility_timeout_sec = 120;
         // TODO: We estimate the message deadline using the start of the
         // ReceiveMessage request. This might be overly pessimistic: the docs
@@ -68,7 +68,7 @@ impl Queue for SqsQueue {
             .queue_url(&self.queue_url)
             .message_system_attribute_names(MessageSystemAttributeName::ApproximateReceiveCount)
             .wait_time_seconds(self.wait_time_seconds as i32)
-            .set_max_number_of_messages(Some(1))
+            .set_max_number_of_messages(Some(max_messages as i32))
             .visibility_timeout(visibility_timeout_sec)
             .send()
             .await?;
@@ -315,7 +315,7 @@ mod localstack_tests {
         test_helpers::send_message(&client, &queue_url, message).await;
 
         let queue = SqsQueue::try_new(queue_url, 20).await.unwrap();
-        let messages = tokio::time::timeout(Duration::from_millis(500), queue.receive())
+        let messages = tokio::time::timeout(Duration::from_millis(500), queue.receive(5))
             .await
             .unwrap()
             .unwrap();

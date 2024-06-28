@@ -69,15 +69,26 @@ impl MemoryQueue {
 
 #[async_trait]
 impl Queue for MemoryQueue {
-    async fn receive(&self) -> anyhow::Result<Vec<RawMessage>> {
+    async fn receive(&self, max_messages: usize) -> anyhow::Result<Vec<RawMessage>> {
         for _ in 0..3 {
             {
                 let mut inner_state = self.inner_state.lock().unwrap();
-                if let Some(msg) = inner_state.in_queue.pop_front() {
+                let mut response = Vec::new();
+                while let Some(msg) = inner_state.in_queue.pop_front() {
+                    let msg_cloned = RawMessage {
+                        payload: msg.payload.clone(),
+                        metadata: msg.metadata.clone(),
+                    };
                     inner_state
                         .in_flight
-                        .insert(msg.metadata.ack_id.clone(), msg.clone());
-                    return Ok(vec![msg]);
+                        .insert(msg.metadata.ack_id.clone(), msg_cloned);
+                    response.push(msg);
+                    if response.len() >= max_messages {
+                        break;
+                    }
+                }
+                if !response.is_empty() {
+                    return Ok(response);
                 }
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -110,16 +121,21 @@ impl Queue for MemoryQueue {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_send_messages() {
+    fn prefilled_queue(nb_message: usize) -> MemoryQueue {
         let memory_queue = MemoryQueue::default();
-        for i in 0..2 {
+        for i in 0..nb_message {
             let payload = format!("Test message {}", i);
             let ack_id = i.to_string();
             memory_queue.send_message(payload.clone(), &ack_id);
         }
+        memory_queue
+    }
+
+    #[tokio::test]
+    async fn test_receive_1_by_1() {
+        let memory_queue = prefilled_queue(2);
         for i in 0..2 {
-            let messages = memory_queue.receive().await.unwrap();
+            let messages = memory_queue.receive(1).await.unwrap();
             assert_eq!(messages.len(), 1);
             let message = &messages[0];
             let exp_payload = format!("Test message {}", i);
@@ -127,5 +143,30 @@ mod tests {
             assert_eq!(message.payload.as_ref(), exp_payload.as_bytes());
             assert_eq!(message.metadata.ack_id, exp_ack_id);
         }
+    }
+
+    #[tokio::test]
+    async fn test_receive_2_by_2() {
+        let memory_queue = prefilled_queue(2);
+        let messages = memory_queue.receive(2).await.unwrap();
+        assert_eq!(messages.len(), 2);
+        for (i, message) in messages.iter().enumerate() {
+            let exp_payload = format!("Test message {}", i);
+            let exp_ack_id = i.to_string();
+            assert_eq!(message.payload.as_ref(), exp_payload.as_bytes());
+            assert_eq!(message.metadata.ack_id, exp_ack_id);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_receive_early_if_only_1() {
+        let memory_queue = prefilled_queue(1);
+        let messages = memory_queue.receive(2).await.unwrap();
+        assert_eq!(messages.len(), 1);
+        let message = &messages[0];
+        let exp_payload = "Test message 0".to_string();
+        let exp_ack_id = "0";
+        assert_eq!(message.payload.as_ref(), exp_payload.as_bytes());
+        assert_eq!(message.metadata.ack_id, exp_ack_id);
     }
 }
