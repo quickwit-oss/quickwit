@@ -247,25 +247,6 @@ impl SourceParams {
     pub fn void() -> Self {
         Self::Void(VoidSourceParams)
     }
-
-    /// Checkpoints can be stored either in the index metadata (false) or the shard table (true).
-    pub fn use_shard_api(&self) -> bool {
-        match self {
-            SourceParams::File(FileSourceParams::FileUri(_)) => false,
-            SourceParams::File(FileSourceParams::Sqs(_)) => true,
-            SourceParams::File(FileSourceParams::Stdin) => panic!("stdin cannot be checkpointed"),
-            SourceParams::Ingest => true,
-            SourceParams::IngestApi => false,
-            SourceParams::IngestCli => false,
-            SourceParams::Kafka(_) => false,
-            SourceParams::Kinesis(_) => false,
-            SourceParams::PubSub(_) => false,
-            SourceParams::Pulsar(_) => false,
-            SourceParams::Sqs(_) => true,
-            SourceParams::Vec(_) => false,
-            SourceParams::Void(_) => false,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
