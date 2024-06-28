@@ -28,6 +28,7 @@ use quickwit_proto::types::DocMappingUid;
 use quickwit_query::query_ast::QueryAst;
 use quickwit_query::tokenizers::TokenizerManager;
 use serde_json::Value as JsonValue;
+use serde_json_borrow::Map as BorrowedJsonMap;
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, OwnedValue as Value, Schema};
 use tantivy::{TantivyDocument as Document, Term};
@@ -52,7 +53,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     fn doc_mapping_uid(&self) -> DocMappingUid;
 
     /// Validates a JSON object according to the doc mapper.
-    fn validate_json_obj(&self, json_obj: &JsonObject) -> Result<(), DocParsingError>;
+    fn validate_json_obj(&self, json_obj: &BorrowedJsonMap) -> Result<(), DocParsingError>;
 
     /// Transforms a JSON object into a tantivy [`Document`] according to the rules
     /// defined for the `DocMapper`.
@@ -396,6 +397,16 @@ mod tests {
         );
     }
 
+    #[track_caller]
+    fn test_validate_doc_aux(
+        doc_mapper: &dyn DocMapper,
+        doc_json: &str,
+    ) -> Result<(), DocParsingError> {
+        let json_val: serde_json_borrow::Value = serde_json::from_str(doc_json).unwrap();
+        let json_obj = json_val.as_object().unwrap();
+        doc_mapper.validate_json_obj(json_obj)
+    }
+
     #[test]
     fn test_validate_doc() {
         const JSON_CONFIG_VALUE: &str = r#"{
@@ -449,74 +460,58 @@ mod tests {
         }"#;
         let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
         {
-            let valid_doc_value = serde_json::json!({ "body": "toto" });
-            let valid_doc_json = valid_doc_value.as_object().unwrap();
-            assert!(doc_mapper.validate_json_obj(valid_doc_json).is_ok());
+            assert!(test_validate_doc_aux(&doc_mapper, r#"{ "body": "toto"}"#).is_ok());
         }
         {
-            let valid_doc_value = serde_json::json!({ "response_time": "toto" });
-            let valid_doc_json = valid_doc_value.as_object().unwrap();
             assert!(matches!(
-                doc_mapper.validate_json_obj(valid_doc_json).unwrap_err(),
+                test_validate_doc_aux(&doc_mapper, r#"{ "response_time": "toto"}"#).unwrap_err(),
                 DocParsingError::ValueError(_, _)
             ));
         }
         {
-            // coercion is supported
-            let valid_doc_value = serde_json::json!({ "response_time": "2.3" });
-            let valid_doc_json = valid_doc_value.as_object().unwrap();
-            assert!(doc_mapper.validate_json_obj(valid_doc_json).is_ok());
+            assert!(test_validate_doc_aux(&doc_mapper, r#"{ "response_time": "2.3"}"#).is_ok(),);
         }
         {
             // coercion disabled
-            let valid_doc_value = serde_json::json!({ "response_time_no_coercion": "2.3" });
-            let valid_doc_json = valid_doc_value.as_object().unwrap();
             assert!(matches!(
-                doc_mapper.validate_json_obj(valid_doc_json).unwrap_err(),
+                test_validate_doc_aux(&doc_mapper, r#"{"response_time_no_coercion": "2.3"}"#)
+                    .unwrap_err(),
                 DocParsingError::ValueError(_, _)
             ));
         }
         {
-            // coercion disabled
-            let valid_doc_value = serde_json::json!({ "response_time": [2.3] });
-            let valid_doc_json = valid_doc_value.as_object().unwrap();
             assert!(matches!(
-                doc_mapper.validate_json_obj(valid_doc_json).unwrap_err(),
+                test_validate_doc_aux(&doc_mapper, r#"{"response_time": [2.3]}"#).unwrap_err(),
                 DocParsingError::MultiValuesNotSupported(_)
             ));
         }
         {
-            let valid_doc_value = serde_json::json!({ "attributes": { "numbers": [-2] }});
-            let valid_doc_json = valid_doc_value.as_object().unwrap();
-            assert!(doc_mapper.validate_json_obj(valid_doc_json).is_ok());
+            assert!(
+                test_validate_doc_aux(&doc_mapper, r#"{"attributes": {"numbers": [-2]}}"#).is_ok()
+            );
         }
     }
 
     #[test]
     fn test_validate_doc_mode() {
+        const DOC: &str = r#"{ "whatever": "blop" }"#;
         {
             const JSON_CONFIG_VALUE: &str = r#"{ "mode": "strict", "field_mappings": [] }"#;
             let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
-            let valid_doc_value = serde_json::json!({ "response_time": "toto" });
-            let valid_doc_json = valid_doc_value.as_object().unwrap();
             assert!(matches!(
-                doc_mapper.validate_json_obj(valid_doc_json).unwrap_err(),
+                test_validate_doc_aux(&doc_mapper, DOC).unwrap_err(),
                 DocParsingError::NoSuchFieldInSchema(_)
             ));
         }
         {
             const JSON_CONFIG_VALUE: &str = r#"{ "mode": "lenient", "field_mappings": [] }"#;
             let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
-            let valid_doc_value = serde_json::json!({ "response_time": "toto" });
-            let valid_doc_json = valid_doc_value.as_object().unwrap();
-            assert!(doc_mapper.validate_json_obj(valid_doc_json).is_ok());
+            assert!(test_validate_doc_aux(&doc_mapper, DOC).is_ok());
         }
         {
             const JSON_CONFIG_VALUE: &str = r#"{ "mode": "dynamic", "field_mappings": [] }"#;
             let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
-            let valid_doc_value = serde_json::json!({ "response_time": "toto" });
-            let valid_doc_json = valid_doc_value.as_object().unwrap();
-            assert!(doc_mapper.validate_json_obj(valid_doc_json).is_ok());
+            assert!(test_validate_doc_aux(&doc_mapper, DOC).is_ok());
         }
     }
 
