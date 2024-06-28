@@ -689,7 +689,7 @@ mod tests {
                     && publish_splits_request.staged_split_ids.len() == 1
                     && publish_splits_request.replaced_split_ids.is_empty()
                     && format!("{:?}", checkpoint_delta.source_delta)
-                        .ends_with(":(00000000000000000000..00000000000000001030])")
+                        .ends_with(":(00000000000000000000..~00000000000000001030])")
             })
             .returning(|_| Ok(EmptyResponse {}));
 
@@ -801,7 +801,7 @@ mod tests {
                     && publish_splits_request.replaced_split_ids.is_empty()
                     && checkpoint_delta.source_id == "test-source"
                     && format!("{:?}", checkpoint_delta.source_delta)
-                        .ends_with(":(00000000000000000000..00000000000000001030])")
+                        .ends_with(":(00000000000000000000..~00000000000000001030])")
             })
             .returning(|_| Ok(EmptyResponse {}));
 
@@ -1008,7 +1008,7 @@ mod tests {
                     && publish_splits_request.replaced_split_ids.is_empty()
                     && checkpoint_delta.source_id == "test-source"
                     && format!("{:?}", checkpoint_delta.source_delta)
-                        .ends_with(":(00000000000000000000..00000000000000001030])")
+                        .ends_with(":(00000000000000000000..~00000000000000001030])")
             })
             .returning(|_| Ok(EmptyResponse {}));
         let universe = Universe::new();

@@ -24,14 +24,12 @@ use std::time::Instant;
 use anyhow::Context;
 use quickwit_common::uri::Uri;
 use quickwit_metastore::checkpoint::PartitionId;
-use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
 use quickwit_storage::{OwnedBytes, StorageResolver};
 use serde_json::Value;
 
 use super::visibility::VisibilityTaskHandle;
-use crate::source::doc_file_reader::{ObjectUriBatchReader, StdinBatchReader};
-use crate::source::{BatchBuilder, SourceContext};
+use crate::source::doc_file_reader::{BatchReader, ObjectUriBatchReader};
 
 #[derive(Debug, Clone, Copy)]
 pub enum MessageType {
@@ -136,17 +134,20 @@ impl ReadyMessage {
         let partition_id = self.partition_id();
         match self.content.payload {
             PreProcessedPayload::ObjectUri(uri) => {
-                let batch_reader =
-                    ObjectUriBatchReader::try_new(storage_resolver, &uri, self.position).await?;
-                let progress_tracker = ProgressTracker::ObjectUri(batch_reader);
-                if progress_tracker.is_eof() {
+                let batch_reader = ObjectUriBatchReader::try_new(
+                    storage_resolver,
+                    partition_id.clone(),
+                    &uri,
+                    self.position,
+                )
+                .await?;
+                if batch_reader.is_eof() {
                     Ok(None)
                 } else {
                     Ok(Some(InProgressMessage {
-                        progress_tracker,
+                        reader: Box::new(batch_reader),
                         partition_id,
-                        visibility_handle: Some(self.visibility_handle),
-                        observable_state: InProgressMessageObservableState::default(),
+                        visibility_handle: self.visibility_handle,
                     }))
                 }
             }
@@ -158,61 +159,11 @@ impl ReadyMessage {
     }
 }
 
-pub enum ProgressTracker {
-    ObjectUri(ObjectUriBatchReader),
-    StdIn(StdinBatchReader),
-}
-
-impl ProgressTracker {
-    pub fn is_eof(&self) -> bool {
-        match &self {
-            ProgressTracker::ObjectUri(in_progress) => in_progress.is_eof(),
-            ProgressTracker::StdIn(in_progress) => in_progress.is_eof(),
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct InProgressMessageObservableState {
-    pub num_bytes_processed: u64,
-    pub num_lines_processed: u64,
-}
-
 /// A message that is actively being read
 pub struct InProgressMessage {
     pub partition_id: PartitionId,
-    pub visibility_handle: Option<VisibilityTaskHandle>,
-    pub progress_tracker: ProgressTracker,
-    pub observable_state: InProgressMessageObservableState,
-}
-
-impl InProgressMessage {
-    pub async fn read_batch(
-        &mut self,
-        source_ctx: &SourceContext,
-        source_type: SourceType,
-    ) -> anyhow::Result<BatchBuilder> {
-        let batch_builder = match &mut self.progress_tracker {
-            ProgressTracker::ObjectUri(in_progress) => {
-                in_progress
-                    .read_batch(source_ctx, self.partition_id.clone(), source_type)
-                    .await?
-            }
-            ProgressTracker::StdIn(in_progress) => {
-                in_progress.read_batch(source_ctx, source_type).await?
-            }
-        };
-        self.observable_state.num_bytes_processed += batch_builder.num_bytes as u64;
-        self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
-        Ok(batch_builder)
-    }
-
-    pub fn ack_id(&self) -> &str {
-        self.visibility_handle
-            .as_ref()
-            .map(|h| h.ack_id())
-            .unwrap_or_default()
-    }
+    pub visibility_handle: VisibilityTaskHandle,
+    pub reader: Box<dyn BatchReader>,
 }
 
 #[cfg(test)]
