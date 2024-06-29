@@ -17,22 +17,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::sync::OnceLock;
+
+use regex::Regex;
 use warp::Filter;
 
-/// pprof/start disabled
-/// pprof/flamegraph disabled
-#[cfg(not(feature = "pprof"))]
-pub fn pprof_handlers() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
-{
-    let not_implemented_handler = || {
-        warp::reply::with_status(
-            "Quickwit was compiled without the `pprof` feature",
-            warp::http::StatusCode::NOT_IMPLEMENTED,
-        )
-    };
-    let start_profiler = { warp::path!("pprof" / "start").map(not_implemented_handler) };
-    let stop_profiler = { warp::path!("pprof" / "flamegraph").map(not_implemented_handler) };
-    start_profiler.or(stop_profiler)
+fn remove_trailing_numbers(thread_name: &mut String) {
+    static REMOVE_TRAILING_NUMBER_PTN: OnceLock<Regex> = OnceLock::new();
+    let captures_opt = REMOVE_TRAILING_NUMBER_PTN
+        .get_or_init(|| Regex::new(r"^(.*?)[-\d]+$").unwrap())
+        .captures(thread_name);
+    if let Some(captures) = captures_opt {
+        *thread_name = captures[1].to_string();
+    }
+}
+
+fn frames_post_processor(frames: &mut pprof::Frames) {
+    remove_trailing_numbers(&mut frames.thread_name);
 }
 
 /// pprof/start to start cpu profiling.
@@ -43,7 +44,6 @@ pub fn pprof_handlers() -> impl Filter<Extract = impl warp::Reply, Error = warp:
 /// Query parameters:
 /// - duration: duration of the profiling in seconds, default is 30 seconds. max value is 300
 /// - sampling: the sampling rate, default is 100, max value is 1000
-#[cfg(feature = "pprof")]
 pub fn pprof_handlers() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone
 {
     use std::sync::{Arc, Mutex};
@@ -133,7 +133,11 @@ pub fn pprof_handlers() -> impl Filter<Extract = impl warp::Reply, Error = warp:
         let handle = quickwit_common::thread_pool::run_cpu_intensive(move || {
             let mut state = profiler_state.lock().unwrap();
             if let Some(profiler) = state.profiler_guard.take() {
-                if let Ok(report) = profiler.report().build() {
+                if let Ok(report) = profiler
+                    .report()
+                    .frames_post_processor(frames_post_processor)
+                    .build()
+                {
                     let mut buffer = Vec::new();
                     if report.flamegraph(&mut buffer).is_ok() {
                         state.flamegraph_data = Some(buffer);
@@ -145,4 +149,26 @@ pub fn pprof_handlers() -> impl Filter<Extract = impl warp::Reply, Error = warp:
     }
 
     start_profiler.or(stop_profiler)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remove_trailing_numbers;
+
+    #[track_caller]
+    fn test_remove_trailing_numbers_aux(thread_name: &str, expected: &str) {
+        let mut thread_name = thread_name.to_string();
+        remove_trailing_numbers(&mut thread_name);
+        assert_eq!(&thread_name, expected);
+    }
+
+    #[test]
+    fn test_remove_trailing_numbers() {
+        test_remove_trailing_numbers_aux("thread-12", "thread");
+        test_remove_trailing_numbers_aux("thread12", "thread");
+        test_remove_trailing_numbers_aux("thread-", "thread");
+        test_remove_trailing_numbers_aux("thread-1-2", "thread");
+        test_remove_trailing_numbers_aux("thread-1-2", "thread");
+        test_remove_trailing_numbers_aux("12-aa", "12-aa");
+    }
 }

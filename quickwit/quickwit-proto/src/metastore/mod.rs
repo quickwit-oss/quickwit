@@ -211,6 +211,7 @@ impl ServiceError for MetastoreError {
 
 impl GrpcServiceError for MetastoreError {
     fn new_internal(message: String) -> Self {
+        quickwit_common::rate_limited_error!(limit_per_min=6, message=%message.as_str(), "metastore error: internal");
         Self::Internal {
             message,
             cause: "".to_string(),
@@ -218,14 +219,20 @@ impl GrpcServiceError for MetastoreError {
     }
 
     fn new_timeout(message: String) -> Self {
+        quickwit_common::rate_limited_error!(limit_per_min=6, message=%message.as_str(), "metastore error: timeout");
         Self::Timeout(message)
     }
 
     fn new_too_many_requests() -> Self {
+        quickwit_common::rate_limited_error!(
+            limit_per_min = 6,
+            "metastore error: too many requests"
+        );
         Self::TooManyRequests
     }
 
     fn new_unavailable(message: String) -> Self {
+        quickwit_common::rate_limited_error!(limit_per_min=6, message=%message.as_str(), "metastore error: unavailable metastore");
         Self::Unavailable(message)
     }
 }

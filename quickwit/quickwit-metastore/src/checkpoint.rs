@@ -334,7 +334,6 @@ impl SourceCheckpoint {
     ) -> Result<(), IncompatibleCheckpointDelta> {
         self.check_compatibility(&delta)?;
         debug!(delta=?delta, checkpoint=?self, "applying delta to checkpoint");
-
         for (partition_id, partition_position) in delta.per_partition {
             self.per_partition
                 .insert(partition_id, partition_position.to);

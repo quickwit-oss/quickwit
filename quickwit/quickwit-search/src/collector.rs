@@ -845,14 +845,12 @@ impl Collector for QuickwitCollector {
         // ... and drop the first [..start_offsets) hits.
         // note that self.start_offset is 0 when merging from leaf_search, and is only set when
         // merging from root_search, so as to remove the firsts elements only once.
-        merged_leaf_response
-            .partial_hits
-            .drain(
-                0..self
-                    .start_offset
-                    .min(merged_leaf_response.partial_hits.len()),
-            )
-            .count(); //< we just use count as a way to consume the entire iterator.
+        merged_leaf_response.partial_hits.drain(
+            0..self
+                .start_offset
+                .min(merged_leaf_response.partial_hits.len()),
+        );
+        merged_leaf_response.partial_hits.truncate(self.max_hits);
         Ok(merged_leaf_response)
     }
 }
@@ -1339,6 +1337,13 @@ mod tests {
 
     #[typetag::serde(name = "mock")]
     impl quickwit_doc_mapper::DocMapper for MockDocMapper {
+        fn validate_json_obj(
+            &self,
+            _: &quickwit_doc_mapper::JsonObject,
+        ) -> Result<(), quickwit_doc_mapper::DocParsingError> {
+            unimplemented!()
+        }
+
         fn doc_mapping_uid(&self) -> DocMappingUid {
             DocMappingUid::default()
         }

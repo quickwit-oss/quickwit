@@ -206,7 +206,7 @@ impl BinaryFormat {
     }
 
     /// Parses the `serde_json::Value` into `tantivy::schema::Value`.
-    pub fn parse_json(&self, json_val: JsonValue) -> Result<TantivyValue, String> {
+    pub fn parse_json(&self, json_val: &JsonValue) -> Result<TantivyValue, String> {
         let byte_str = if let JsonValue::String(byte_str) = json_val {
             byte_str
         } else {
@@ -217,11 +217,11 @@ impl BinaryFormat {
         };
         let payload = match self {
             Self::Base64 => BASE64_STANDARD
-                .decode(&byte_str)
+                .decode(byte_str)
                 .map_err(|base64_decode_err| {
                     format!("expected base64 string, got `{byte_str}`: {base64_decode_err}")
                 })?,
-            Self::Hex => hex::decode(&byte_str).map_err(|hex_decode_err| {
+            Self::Hex => hex::decode(byte_str).map_err(|hex_decode_err| {
                 format!("expected hex string, got `{byte_str}`: {hex_decode_err}")
             })?,
         };

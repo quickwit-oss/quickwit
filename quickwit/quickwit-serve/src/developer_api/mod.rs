@@ -19,7 +19,10 @@
 
 mod debug;
 mod log_level;
+
+#[cfg_attr(not(feature = "pprof"), path = "pprof_disabled.rs")]
 mod pprof;
+
 mod rebuild_plan;
 mod server;
 
