@@ -1,13 +1,12 @@
 ---
-title: Kubernetes
+title: Install Quickwit with Helm
+sidebar_label: Helm
 sidebar_position: 1
 ---
 
 [Helm](https://helm.sh) is a package manager for Kubernetes that allows you to configure, install, and upgrade containerized applications in a Kubernetes cluster in a version-controlled and reproducible way.
 
-## Install Quickwit using Helm
-
-Install Quickwit on Kubernetes with the official Quickwit Helm chart. If you encounter any problem with the chart, please, open an issue in our [GitHub repository](https://github.com/quickwit-oss/helm-charts).
+You can install Quickwit on Kubernetes with the official Quickwit Helm chart. If you encounter any problem with the chart, please, open an issue in our [GitHub repository](https://github.com/quickwit-oss/helm-charts).
 
 ## Requirements
 

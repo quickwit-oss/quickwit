@@ -1,5 +1,6 @@
 ---
-title: Google GKE
+title: Install Quickwit on Google GKE
+sidebar_label: Google GKE
 sidebar_position: 2
 ---
 
