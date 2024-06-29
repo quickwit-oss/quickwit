@@ -1,6 +1,6 @@
 ---
 title: Cluster sizing
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 In this guide, we discuss how to size your Quickwit cluster and nodes. As shown

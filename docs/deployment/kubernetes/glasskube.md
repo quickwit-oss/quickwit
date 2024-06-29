@@ -1,6 +1,6 @@
 ---
 title: Glasskube
-sidebar_position: 1
+sidebar_position: 3
 ---
 
 [Glasskube](https://glasskube.dev) is a package manager for Kubernetes that empowers you to effortlessly install, upgrade, configure, and manage your Kubernetes cluster packages, all while streamlining repetitive and cumbersome maintenance tasks.
@@ -43,9 +43,9 @@ You'll be able to access to the GUI of Glasskube here: http://localhost:8580
 
 ## Install Quickwit using Glasskube
 
-You can perform the Quickwit installation directly with the GUI:
+`glasskube` will install Quickwit in the `quickwit` namespace. You can perform the Quickwit installation directly with the GUI:
 
-![screenshot-glasskube-ui.png](../../assets/screenshot-glasskube-ui.png)
+![screenshot-glasskube-ui.png](../../assets/images/screenshot-glasskube-ui.png)
 
 Or use the CLI instead:
 
@@ -55,13 +55,13 @@ glasskube install quickwit
 
 In both, you'll have to set the value of thoses parameters:
 
+* `defaultIndexRootUri`: the default index URI is a S3 compliant bucket which usually looks like this: `s3://<bucket-name>/<optional-base-path>`
+* `metastoreUri`: if you're not using PostgreSQL and object storage, you can pick the same bucket and value you used for the `defaultIndexRootUri` parameter
 * `s3Endpoint`: the http(s) URL of your object storage service which should looks like `https://s3.{region}.{your object storage domain}`
 * `s3Flavor`: which can be one of the following: `do`, `garage`, `gcp`, `minio`. You can leave it empty if your object storage is compliant with AWS S3
 * `s3Region`
 * `s3AccessKeyId`
 * `s3SecretAccessKey`
-* `defaultIndexRootUri`: the default index URI is a S3 compliant bucket which usually looks like this: `s3://<bucket-name>/<optional-base-path>`
-* `metastoreUri`: if you're not using PostgreSQL and object storage, you can pick the same bucket and value you used for the `defaultIndexRootUri` parameter
 
 ## Uninstall quickwit
 
