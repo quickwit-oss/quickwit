@@ -436,6 +436,7 @@ impl IndexingPipeline {
             queues_dir_path: self.params.queues_dir_path.clone(),
             storage_resolver: self.params.source_storage_resolver.clone(),
             event_broker: self.params.event_broker.clone(),
+            indexing_setting: self.params.indexing_settings.clone(),
         };
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))

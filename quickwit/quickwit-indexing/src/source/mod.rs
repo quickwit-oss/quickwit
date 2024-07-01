@@ -98,7 +98,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
-use quickwit_config::{FileSourceParams, SourceConfig, SourceParams};
+use quickwit_config::{FileSourceParams, IndexingSettings, SourceConfig, SourceParams};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_metastore::IndexMetadataResponseExt;
@@ -148,6 +148,7 @@ pub struct SourceRuntime {
     pub queues_dir_path: PathBuf,
     pub storage_resolver: StorageResolver,
     pub event_broker: EventBroker,
+    pub indexing_setting: IndexingSettings,
 }
 
 impl SourceRuntime {
@@ -618,6 +619,7 @@ mod tests {
                 source_config: self.source_config,
                 storage_resolver: StorageResolver::for_test(),
                 event_broker: EventBroker::default(),
+                indexing_setting: IndexingSettings::default(),
             }
         }
 

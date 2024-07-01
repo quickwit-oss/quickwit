@@ -50,7 +50,11 @@ pub trait Queue: fmt::Debug + Send + Sync + 'static {
     /// this efficiently. On the other hand, when there is a message in the
     /// queue, it should be returned as quickly as possible, regardless of the
     /// `max_messages` parameter.
-    async fn receive(&self, max_messages: usize) -> anyhow::Result<Vec<RawMessage>>;
+    async fn receive(
+        &self,
+        max_messages: usize,
+        suggested_deadline: Duration,
+    ) -> anyhow::Result<Vec<RawMessage>>;
 
     /// Try to acknowledge the messages, effectively deleting them from the
     /// queue.

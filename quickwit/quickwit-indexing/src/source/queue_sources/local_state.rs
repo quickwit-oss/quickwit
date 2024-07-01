@@ -93,14 +93,19 @@ impl QueueLocalState {
         self.read_in_progress.as_mut()
     }
 
-    pub fn replace_currently_read(&mut self, in_progress: Option<InProgressMessage>) {
-        if let Some(just_finished) = self.read_in_progress.take() {
+    pub fn replace_currently_read(
+        &mut self,
+        in_progress: Option<InProgressMessage>,
+    ) -> Option<InProgressMessage> {
+        let replaced_opt = self.read_in_progress.take();
+        if let Some(replaced) = &replaced_opt {
             self.awaiting_commit.insert(
-                just_finished.partition_id.clone(),
-                just_finished.visibility_handle.ack_id().to_string(),
+                replaced.partition_id.clone(),
+                replaced.visibility_handle.ack_id().to_string(),
             );
         }
         self.read_in_progress = in_progress;
+        replaced_opt
     }
 
     /// Returns the ack_id if that message was awaiting_commit

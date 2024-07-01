@@ -17,103 +17,210 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tracing::error;
+use anyhow::{anyhow, Context};
+use async_trait::async_trait;
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Mailbox,
+};
+use serde_json::{json, Value as JsonValue};
 
 use super::Queue;
+use crate::source::SourceContext;
 
-const REQUESTED_VISIBILITY_EXTENSION: Duration = Duration::from_secs(60);
-const VISIBILITY_REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
-const LOCK_KILL_TIMEOUT: Duration = Duration::from_secs(1);
-
-struct Inner {
-    queue: Arc<dyn Queue>,
-    ack_id: String,
-    extension_failed: AtomicBool,
+#[derive(Debug, Clone)]
+pub(super) struct VisibilitySettings {
+    /// The original deadline asked from the queue when polling the messages
+    pub deadline_for_receive: Duration,
+    /// The last deadline extension when the message reading is completed
+    pub deadline_for_last_extension: Duration,
+    /// The extension applied why the VisibilityTask to maintain the message visibility
+    pub deadline_for_default_extension: Duration,
+    /// Rhe timeout for the visibility extension request
+    pub request_timeout: Duration,
+    /// an extra margin that is substracted from the expected deadline when
+    /// asserting whether we are still in time to extend the visibility
+    pub request_margin: Duration,
 }
 
-/// A handle to a visibility extension task
-///
-/// To safely manage their lifecycle, tasks are stopped when their handle is
-/// dropped. This ensures for instance that all running visibility tasks are
-/// aborted when the indexing pipeline is restarted.
-///
-/// This struct is not `Clone` on purpose. A single owned reference to the task
-/// should be enough.
-pub struct VisibilityTaskHandle {
-    inner: Arc<Inner>,
+impl VisibilitySettings {
+    /// The commit timeout gives us a first estimate on how long the processing
+    /// will take for the messages. We could include other factors such as the
+    /// message size.
+    pub(super) fn from_commit_timeout(commit_timeout_secs: usize) -> Self {
+        let commit_timeout = Duration::from_secs(commit_timeout_secs as u64);
+        Self {
+            deadline_for_receive: Duration::from_secs(120) + commit_timeout,
+            deadline_for_last_extension: 2 * commit_timeout,
+            deadline_for_default_extension: Duration::from_secs(60),
+            request_timeout: Duration::from_secs(3),
+            request_margin: Duration::from_secs(1),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct VisibilityTask {
+    queue: Arc<dyn Queue>,
+    ack_id: String,
+    extension_count: u64,
+    current_deadline: Instant,
+    stop_extension_loop: bool,
+    visibility_settings: VisibilitySettings,
+}
+
+// A handle to the visibility actor. When dropped, the actor exits and the
+// visibility isn't maintained anymore.
+pub(super) struct VisibilityTaskHandle {
+    mailbox: Mailbox<VisibilityTask>,
+    actor_handle: ActorHandle<VisibilityTask>,
+    ack_id: String,
+}
+
+/// Spawns actor that ensures that the visibility of a given message
+/// (represented by its ack_id) is extended when required. We prefer applying
+/// ample margins in the extension process to avoid missing deadlines while also
+/// keeping the number of extension requests (and associated cost) small.
+pub(super) fn spawn_visibility_task(
+    ctx: &SourceContext,
+    queue: Arc<dyn Queue>,
+    ack_id: String,
+    current_deadline: Instant,
+    visibility_settings: VisibilitySettings,
+) -> VisibilityTaskHandle {
+    let task = VisibilityTask {
+        queue,
+        ack_id: ack_id.clone(),
+        extension_count: 0,
+        current_deadline,
+        stop_extension_loop: false,
+        visibility_settings,
+    };
+    let (_mailbox, _actor_handle) = ctx.spawn_actor().spawn(task);
+    VisibilityTaskHandle {
+        mailbox: _mailbox,
+        actor_handle: _actor_handle,
+        ack_id,
+    }
+}
+
+impl VisibilityTask {
+    async fn extend_visibility(
+        &mut self,
+        ctx: &ActorContext<Self>,
+        extension: Duration,
+    ) -> anyhow::Result<()> {
+        let _zone = ctx.protect_zone();
+        self.current_deadline = tokio::time::timeout(
+            self.visibility_settings.request_timeout,
+            self.queue.modify_deadlines(&self.ack_id, extension),
+        )
+        .await
+        .context("deadline extension timed out")??;
+        self.extension_count += 1;
+        Ok(())
+    }
+
+    fn next_extension(&self) -> Duration {
+        (self.current_deadline - Instant::now())
+            - self.visibility_settings.request_timeout
+            - self.visibility_settings.request_margin
+    }
 }
 
 impl VisibilityTaskHandle {
-    pub fn ack_id(&self) -> &str {
-        &self.inner.ack_id
-    }
-
     pub fn extension_failed(&self) -> bool {
-        self.inner
-            .extension_failed
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.actor_handle.state() == ActorState::Failure
+    }
+
+    pub fn ack_id(&self) -> &str {
+        &self.ack_id
+    }
+
+    pub async fn last_extension(self, extension: Duration) -> anyhow::Result<()> {
+        self.mailbox
+            .ask_for_res(RequestLastExtension { extension })
+            .await
+            .map_err(|e| anyhow!(e))?;
+        Ok(())
     }
 }
 
-pub fn spawn_visibility_task(
-    queue: Arc<dyn Queue>,
-    ack_id: String,
-    initial_deadline: Instant,
-) -> VisibilityTaskHandle {
-    let inner = Arc::new(Inner {
-        queue,
-        ack_id: ack_id.clone(),
-        extension_failed: AtomicBool::new(false),
-    });
-    tokio::spawn(extend_visibility_loop(
-        initial_deadline,
-        Arc::downgrade(&inner),
-    ));
-    VisibilityTaskHandle { inner }
+#[async_trait]
+impl Actor for VisibilityTask {
+    type ObservableState = JsonValue;
+
+    fn name(&self) -> String {
+        "QueueVisibilityTask".to_string()
+    }
+
+    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        let first_extension = self.next_extension();
+        if first_extension.is_zero() {
+            return Err(anyhow!("initial visibility deadline insufficient").into());
+        }
+        ctx.schedule_self_msg(first_extension, Loop);
+        Ok(())
+    }
+
+    fn yield_after_each_message(&self) -> bool {
+        false
+    }
+
+    fn observable_state(&self) -> Self::ObservableState {
+        json!({
+            "ack_id": self.ack_id,
+            "extension_count": self.extension_count,
+        })
+    }
 }
 
-async fn extend_visibility_loop(initial_deadline: Instant, inner_weak: Weak<Inner>) {
-    let mut next_deadline: tokio::time::Instant = initial_deadline.into();
-    loop {
-        tokio::time::sleep_until(next_deadline - VISIBILITY_REQUEST_TIMEOUT - LOCK_KILL_TIMEOUT)
-            .await;
+#[derive(Debug)]
+pub(super) struct Loop;
 
-        let inner = match inner_weak.upgrade() {
-            Some(inner) => inner,
-            None => {
-                break;
-            }
-        };
+#[async_trait]
+impl Handler<Loop> for VisibilityTask {
+    type Reply = ();
 
-        let res = tokio::time::timeout(
-            VISIBILITY_REQUEST_TIMEOUT,
-            inner
-                .queue
-                .modify_deadlines(&inner.ack_id, REQUESTED_VISIBILITY_EXTENSION),
-        )
-        .await;
-        match res {
-            Ok(Ok(new_deadline)) => {
-                next_deadline = new_deadline.into();
-            }
-            Ok(Err(err)) => {
-                error!(err=%err, "failed to modify message deadline");
-                inner
-                    .extension_failed
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
-                break;
-            }
-            Err(_) => {
-                error!("failed to modify message deadline on time");
-                inner
-                    .extension_failed
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
-                break;
-            }
+    async fn handle(
+        &mut self,
+        _message: Loop,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if self.stop_extension_loop {
+            return Ok(());
+        }
+        self.extend_visibility(ctx, self.visibility_settings.deadline_for_default_extension)
+            .await?;
+        ctx.schedule_self_msg(self.next_extension(), Loop);
+        Ok(())
+    }
+}
+
+/// Ensures that the visibility of the message is extended until the given
+/// deadline and then stops the extension loop.
+#[derive(Debug)]
+pub(super) struct RequestLastExtension {
+    extension: Duration,
+}
+
+#[async_trait]
+impl Handler<RequestLastExtension> for VisibilityTask {
+    type Reply = anyhow::Result<()>;
+
+    async fn handle(
+        &mut self,
+        message: RequestLastExtension,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let last_deadline = Instant::now() + message.extension;
+        self.stop_extension_loop = true;
+        if last_deadline > self.current_deadline {
+            Ok(self.extend_visibility(ctx, message.extension).await)
+        } else {
+            Ok(Ok(()))
         }
     }
 }

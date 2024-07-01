@@ -36,7 +36,7 @@ use super::local_state::QueueLocalState;
 use super::message::{MessageType, ReadyMessage};
 use super::shared_state::{checkpoint_messages, QueueSharedState, QueueSharedStateImpl};
 use super::sqs_queue::SqsQueue;
-use super::visibility::spawn_visibility_task;
+use super::visibility::{spawn_visibility_task, VisibilitySettings};
 use super::Queue;
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
@@ -67,6 +67,7 @@ pub struct QueueCoordinator {
     shared_state: Box<dyn QueueSharedState + Sync>,
     local_state: QueueLocalState,
     publish_token: String,
+    visible_settings: VisibilitySettings,
 }
 
 impl fmt::Debug for QueueCoordinator {
@@ -100,6 +101,9 @@ impl QueueCoordinator {
             message_type,
             publish_lock: PublishLock::default(),
             publish_token: Ulid::new().to_string(),
+            visible_settings: VisibilitySettings::from_commit_timeout(
+                source_runtime.indexing_setting.commit_timeout_secs,
+            ),
         }
     }
 
@@ -139,7 +143,12 @@ impl QueueCoordinator {
     async fn poll_messages(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         // TODO increase `max_messages` when previous messages were small
         // receive() typically uses long polling so it can be long to respond
-        let raw_messages = ctx.protect_future(self.queue.receive(1)).await?;
+        let raw_messages = ctx
+            .protect_future(
+                self.queue
+                    .receive(1, self.visible_settings.deadline_for_receive),
+            )
+            .await?;
 
         if raw_messages.is_empty() {
             self.observable_state.num_consecutive_empty_batches += 1;
@@ -184,9 +193,11 @@ impl QueueCoordinator {
             } else {
                 ready_messages.push(ReadyMessage {
                     visibility_handle: spawn_visibility_task(
+                        ctx,
                         self.queue.clone(),
                         message.metadata.ack_id.clone(),
                         message.metadata.initial_deadline,
+                        self.visible_settings.clone(),
                     ),
                     content: message,
                     position,
@@ -211,11 +222,13 @@ impl QueueCoordinator {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        if let Some(msg) = self.local_state.read_in_progress_mut() {
+        if let Some(in_progress_ref) = self.local_state.read_in_progress_mut() {
             debug!("process_batch");
             // TODO: should we kill the publish lock if the message visibility extension fails?
-            let batch_builder = msg.reader.read_batch(ctx, self.source_type).await?;
-            println!("batch_builder.num_bytes={}", batch_builder.num_bytes);
+            let batch_builder = in_progress_ref
+                .reader
+                .read_batch(ctx, self.source_type)
+                .await?;
             if batch_builder.num_bytes > 0 {
                 self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
                 self.observable_state.num_bytes_processed += batch_builder.num_bytes;
@@ -223,9 +236,14 @@ impl QueueCoordinator {
                     .send_message(batch_builder.build())
                     .await?;
             }
-            if msg.reader.is_eof() {
+            if in_progress_ref.reader.is_eof() {
+                self.local_state
+                    .replace_currently_read(None)
+                    .unwrap()
+                    .visibility_handle
+                    .last_extension(self.visible_settings.deadline_for_last_extension)
+                    .await?;
                 self.observable_state.num_messages_processed += 1;
-                self.local_state.replace_currently_read(None);
             }
         } else if let Some(ready_message) = self.local_state.get_ready_for_read() {
             debug!("start_processing");
@@ -307,6 +325,7 @@ mod tests {
             source_type: SourceType::Unspecified,
             storage_resolver: StorageResolver::for_test(),
             publish_token: Ulid::new().to_string(),
+            visible_settings: VisibilitySettings::from_commit_timeout(5),
         }
     }
 
@@ -345,12 +364,14 @@ mod tests {
                 .unwrap();
         }
 
-        doc_processor_inbox
+        let batches = doc_processor_inbox
             .drain_for_test()
             .into_iter()
             .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
             .map(|box_raw_doc_batch| *box_raw_doc_batch)
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        universe.assert_quit().await;
+        batches
     }
 
     #[tokio::test]
