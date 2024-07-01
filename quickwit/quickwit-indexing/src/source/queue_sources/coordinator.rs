@@ -21,6 +21,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::{FileSourceMessageType, FileSourceSqs};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
@@ -152,11 +153,14 @@ impl QueueCoordinator {
             .map(|msg| msg.pre_process(self.message_type))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
-        // TODO deduplicate the batch itself
+        // in rare situations, the same partition might be duplicted within batch
+        let deduplicated_messages = preprocessed_messages
+            .into_iter()
+            .dedup_by(|x, y| x.partition_id() == y.partition_id());
 
         let mut untracked_locally = Vec::new();
         let mut already_completed = Vec::new();
-        for message in preprocessed_messages {
+        for message in deduplicated_messages {
             let partition_id = message.partition_id();
             if self.local_state.is_completed(&partition_id) {
                 already_completed.push(message);
