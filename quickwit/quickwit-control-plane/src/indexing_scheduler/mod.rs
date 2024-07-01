@@ -31,6 +31,7 @@ use itertools::Itertools;
 use quickwit_proto::control_plane::{RebuildPlanRequest, RebuildPlanResponse};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
+    PIPELINE_THROUGHTPUT,
 };
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::NodeId;
@@ -127,20 +128,24 @@ impl fmt::Debug for IndexingScheduler {
 /// This function averages their statistics.
 ///
 /// For the moment, this function only takes in account the measured throughput,
-/// and assumes a constant CPU usage of 4 vCPU = 30mb/s.
+/// and assumes a constant CPU usage of 4 vCPU = 20mb/s.
 ///
 /// It does not take in account the variation that could raise from the different
 /// doc mapping / nature of the data, etc.
 fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
-    let num_shards = shard_entries.len().max(1) as u32;
-    let average_throughput_per_shard: u32 = shard_entries
+    let num_shards = shard_entries.len().max(1) as u64;
+    let average_throughput_per_shard_bytes: u64 = shard_entries
         .iter()
-        .map(|shard_entry| u32::from(shard_entry.ingestion_rate.0))
-        .sum::<u32>()
-        .div_ceil(num_shards);
-    let num_cpu_millis = (PIPELINE_FULL_CAPACITY.cpu_millis() * average_throughput_per_shard) / 20;
+        .map(|shard_entry| shard_entry.ingestion_rate.0 as u64 * bytesize::MIB)
+        .sum::<u64>()
+        .div_ceil(num_shards)
+        // A shard throughput cannot exceed PIPELINE_THROUGHPUT in the long term (this is enforced
+        // by the configuration).
+        .min(PIPELINE_THROUGHTPUT.as_u64());
+    let num_cpu_millis = (PIPELINE_FULL_CAPACITY.cpu_millis() as u64 * average_throughput_per_shard_bytes)
+        / PIPELINE_THROUGHTPUT.as_u64();
     const MIN_CPU_LOAD_PER_SHARD: u32 = 50u32;
-    NonZeroU32::new(num_cpu_millis.max(MIN_CPU_LOAD_PER_SHARD)).unwrap()
+    NonZeroU32::new((num_cpu_millis as u32).max(MIN_CPU_LOAD_PER_SHARD)).unwrap()
 }
 
 fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
