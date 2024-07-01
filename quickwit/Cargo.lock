@@ -5860,6 +5860,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bytesize",
  "fnv",
  "futures",
  "itertools 0.13.0",

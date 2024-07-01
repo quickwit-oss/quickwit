@@ -22,6 +22,7 @@ use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::{Add, Mul, Sub};
 
+use bytesize::ByteSize;
 use quickwit_actors::AskError;
 use quickwit_common::pubsub::Event;
 use quickwit_common::tower::{MakeLoadShedError, RpcName};
@@ -176,8 +177,16 @@ impl Display for PipelineMetrics {
 }
 
 /// One full pipeline (including merging) is assumed to consume 4 CPU threads.
-/// The actual number somewhere between 3 and 4.
+/// The actual number somewhere between 3 and 4. Quickwit is not super sensitive to this number.
+///
+/// It simply impacts the point where we prefer to work on balancing the load over the different
+/// indexers and the point where we prefer improving other feature of the system (shard locality,
+/// grouping pipelines associated to a given index on the same node, etc.).
 pub const PIPELINE_FULL_CAPACITY: CpuCapacity = CpuCapacity::from_cpu_millis(4_000u32);
+
+/// One full pipeline (including merging) is supposed to have the capacity to index at least 20mb/s.
+/// This is a defensive value: In reality, this is typically above 30mb/s.
+pub const PIPELINE_THROUGHTPUT: ByteSize = ByteSize::mb(20);
 
 /// The CpuCapacity represents an amount of CPU resource available.
 ///
