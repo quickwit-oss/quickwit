@@ -835,9 +835,14 @@ async fn setup_ingest_v2(
     // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
     // line length is prefixed.
     let burst_limit = (content_length_limit.as_u64() * 3 / 2).clamp(10_000_000, 200_000_000);
+
+    let rate_limit =
+        ConstantRate::bytes_per_sec(node_config.ingest_api_config.shard_throughput_limit);
     let rate_limiter_settings = RateLimiterSettings {
         burst_limit,
-        ..Default::default()
+        rate_limit,
+        // Refill every 100ms.
+        refill_period: Duration::from_millis(100),
     };
 
     // Instantiate ingester.

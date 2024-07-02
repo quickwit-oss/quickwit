@@ -34,7 +34,6 @@ pub mod ingester;
 pub mod router;
 
 include!("../codegen/quickwit/quickwit.ingest.rs");
-
 pub type IngestV2Result<T> = std::result::Result<T, IngestV2Error>;
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]

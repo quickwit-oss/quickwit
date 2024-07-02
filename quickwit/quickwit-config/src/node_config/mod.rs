@@ -272,15 +272,17 @@ pub struct IngestApiConfig {
     pub max_queue_disk_usage: ByteSize,
     pub replication_factor: usize,
     pub content_length_limit: ByteSize,
+    pub shard_throughput_limit: ByteSize,
 }
 
 impl Default for IngestApiConfig {
     fn default() -> Self {
         Self {
-            max_queue_memory_usage: ByteSize::gib(2), // TODO maybe we want more?
-            max_queue_disk_usage: ByteSize::gib(4),   // TODO maybe we want more?
+            max_queue_memory_usage: ByteSize::gib(2),
+            max_queue_disk_usage: ByteSize::gib(4),
             replication_factor: 1,
             content_length_limit: ByteSize::mib(10),
+            shard_throughput_limit: ByteSize::mib(5),
         }
     }
 }
@@ -319,6 +321,12 @@ impl IngestApiConfig {
             "max_queue_disk_usage ({}) must be at least max_queue_memory_usage ({})",
             self.max_queue_disk_usage,
             self.max_queue_memory_usage
+        );
+        ensure!(
+            self.shard_throughput_limit >= ByteSize::mib(1)
+                && self.shard_throughput_limit <= ByteSize::mib(20),
+            "shard_throughput_limit ({:?}) must be within 1mb and 20mb",
+            self.shard_throughput_limit
         );
         Ok(())
     }
@@ -538,22 +546,30 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_validate_ingest_api_default() {
+        let ingest_api_config: IngestApiConfig = serde_yaml::from_str("").unwrap();
+        assert!(ingest_api_config.validate().is_ok());
+        assert_eq!(ingest_api_config, IngestApiConfig::default());
+    }
+
     #[test]
     fn test_validate_ingest_api_config() {
         {
-            let indexer_config: IngestApiConfig = serde_yaml::from_str(
+            let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
                 r#"
                     max_queue_disk_usage: 100M
                 "#,
             )
             .unwrap();
             assert_eq!(
-                indexer_config.validate().unwrap_err().to_string(),
+                ingest_api_config.validate().unwrap_err().to_string(),
                 "max_queue_disk_usage must be at least 256 MiB, got `100.0 MB`"
             );
         }
         {
-            let indexer_config: IngestApiConfig = serde_yaml::from_str(
+            let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
                 r#"
                     max_queue_memory_usage: 600M
                     max_queue_disk_usage: 500M
@@ -561,9 +577,21 @@ mod tests {
             )
             .unwrap();
             assert_eq!(
-                indexer_config.validate().unwrap_err().to_string(),
+                ingest_api_config.validate().unwrap_err().to_string(),
                 "max_queue_disk_usage (500.0 MB) must be at least max_queue_memory_usage (600.0 \
                  MB)"
+            );
+        }
+        {
+            let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+                r#"
+                    shard_throughput_limit: 21M
+                "#,
+            )
+            .unwrap();
+            assert_eq!(
+                ingest_api_config.validate().unwrap_err().to_string(),
+                "shard_throughput_limit (21.0 MB) must be within 1mb and 20mb"
             );
         }
     }
