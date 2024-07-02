@@ -30,9 +30,7 @@ use std::ops::Bound;
 
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
-use quickwit_config::{
-    IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig, INGEST_V2_SOURCE_ID,
-};
+use quickwit_config::{IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteTask, EntityKind, ListShardsSubrequest, ListShardsSubresponse,
@@ -47,6 +45,7 @@ use tracing::{info, warn};
 
 use super::MutationOccurred;
 use crate::checkpoint::IndexCheckpointDelta;
+use crate::metastore::use_shard_api;
 use crate::{split_tag_filter, IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState};
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -81,6 +80,7 @@ pub(crate) struct FileBackedIndex {
 #[cfg(any(test, feature = "testsuite"))]
 impl quickwit_config::TestableForRegression for FileBackedIndex {
     fn sample_for_regression() -> Self {
+        use quickwit_config::INGEST_V2_SOURCE_ID;
         use quickwit_proto::ingest::{Shard, ShardState};
         use quickwit_proto::types::{DocMappingUid, Position, ShardId};
 
@@ -375,8 +375,14 @@ impl FileBackedIndex {
     ) -> MetastoreResult<()> {
         if let Some(checkpoint_delta) = checkpoint_delta_opt {
             let source_id = checkpoint_delta.source_id.clone();
+            let source = self.metadata.sources.get(&source_id).ok_or_else(|| {
+                MetastoreError::NotFound(EntityKind::Source {
+                    index_id: self.index_id().to_string(),
+                    source_id: source_id.clone(),
+                })
+            })?;
 
-            if source_id == INGEST_V2_SOURCE_ID {
+            if use_shard_api(&source.source_params) {
                 let publish_token = publish_token_opt.ok_or_else(|| {
                     let message = format!(
                         "publish token is required for publishing splits for source `{source_id}`"

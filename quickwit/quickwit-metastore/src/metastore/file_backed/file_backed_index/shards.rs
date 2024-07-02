@@ -131,7 +131,7 @@ impl Shards {
                     follower_id: subrequest.follower_id,
                     doc_mapping_uid: subrequest.doc_mapping_uid,
                     publish_position_inclusive: Some(Position::Beginning),
-                    publish_token: None,
+                    publish_token: subrequest.publish_token.clone(),
                 };
                 mutation_occurred = true;
                 entry.insert(shard.clone());
@@ -335,6 +335,7 @@ mod tests {
             leader_id: "leader_id".to_string(),
             follower_id: None,
             doc_mapping_uid: Some(DocMappingUid::default()),
+            publish_token: None,
         };
         let MutationOccurred::Yes(subresponse) = shards.open_shard(subrequest.clone()).unwrap()
         else {
@@ -349,6 +350,7 @@ mod tests {
         assert_eq!(shard.shard_state(), ShardState::Open);
         assert_eq!(shard.leader_id, "leader_id");
         assert_eq!(shard.follower_id, None);
+        assert_eq!(shard.publish_token, None);
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
 
         let MutationOccurred::No(subresponse) = shards.open_shard(subrequest).unwrap() else {
@@ -367,6 +369,7 @@ mod tests {
             leader_id: "leader_id".to_string(),
             follower_id: Some("follower_id".to_string()),
             doc_mapping_uid: Some(DocMappingUid::default()),
+            publish_token: Some("publish_token".to_string()),
         };
         let MutationOccurred::Yes(subresponse) = shards.open_shard(subrequest).unwrap() else {
             panic!("Expected `MutationOccured::No`");

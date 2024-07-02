@@ -22,10 +22,16 @@ use std::path::Path;
 
 use anyhow::Context;
 use async_compression::tokio::bufread::GzipDecoder;
+use async_trait::async_trait;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
+use quickwit_metastore::checkpoint::PartitionId;
+use quickwit_proto::metastore::SourceType;
+use quickwit_proto::types::Position;
 use quickwit_storage::StorageResolver;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
+
+use super::{BatchBuilder, SourceContext, BATCH_NUM_BYTES_LIMIT};
 
 pub struct FileRecord {
     pub next_offset: u64,
@@ -48,8 +54,8 @@ impl SkipReader {
     }
 
     async fn skip(&mut self) -> io::Result<()> {
-        // Allocating 64KB once on the stack should be fine (<1% of the Linux stack size)
-        let mut buf = [0u8; 64000];
+        // allocate on the heap to avoid stack overflows
+        let mut buf = vec![0u8; 64000];
         while self.num_bytes_to_skip > 0 {
             let num_bytes_to_read = self.num_bytes_to_skip.min(buf.len());
             let num_bytes_read = self
@@ -75,6 +81,13 @@ pub struct DocFileReader {
 }
 
 impl DocFileReader {
+    pub fn empty() -> Self {
+        DocFileReader {
+            reader: SkipReader::new(Box::new(tokio::io::empty()), 0),
+            next_offset: 0,
+        }
+    }
+
     pub async fn from_uri(
         storage_resolver: &StorageResolver,
         uri: &Uri,
@@ -105,13 +118,6 @@ impl DocFileReader {
         Ok(reader)
     }
 
-    pub fn from_stdin() -> Self {
-        DocFileReader {
-            reader: SkipReader::new(Box::new(tokio::io::stdin()), 0),
-            next_offset: 0,
-        }
-    }
-
     /// Reads the next record from the underlying file. Returns `None` when EOF
     /// is reached.
     pub async fn next_record(&mut self) -> anyhow::Result<Option<FileRecord>> {
@@ -126,6 +132,139 @@ impl DocFileReader {
                 doc: Bytes::from(buf),
             }))
         }
+    }
+}
+
+#[async_trait]
+pub trait BatchReader: Send {
+    async fn read_batch(
+        &mut self,
+        source_ctx: &SourceContext,
+        source_type: SourceType,
+    ) -> anyhow::Result<BatchBuilder>;
+
+    fn is_eof(&self) -> bool;
+}
+
+pub struct ObjectUriBatchReader {
+    partition_id: PartitionId,
+    reader: DocFileReader,
+    current_offset: usize,
+    is_eof: bool,
+}
+
+impl ObjectUriBatchReader {
+    pub async fn try_new(
+        storage_resolver: &StorageResolver,
+        partition_id: PartitionId,
+        uri: &Uri,
+        position: Position,
+    ) -> anyhow::Result<Self> {
+        let current_offset = match position {
+            Position::Beginning => 0,
+            Position::Offset(offset) => offset
+                .as_usize()
+                .context("file offset should be stored as usize")?,
+            Position::Eof(_) => {
+                return Ok(ObjectUriBatchReader {
+                    partition_id,
+                    reader: DocFileReader::empty(),
+                    current_offset: 0,
+                    is_eof: true,
+                })
+            }
+        };
+        let reader = DocFileReader::from_uri(storage_resolver, uri, current_offset).await?;
+        Ok(ObjectUriBatchReader {
+            partition_id,
+            reader,
+            current_offset,
+            is_eof: false,
+        })
+    }
+}
+
+#[async_trait]
+impl BatchReader for ObjectUriBatchReader {
+    async fn read_batch(
+        &mut self,
+        source_ctx: &SourceContext,
+        source_type: SourceType,
+    ) -> anyhow::Result<BatchBuilder> {
+        let limit_num_bytes = self.current_offset + BATCH_NUM_BYTES_LIMIT as usize;
+        let mut new_offset = self.current_offset;
+        let mut batch_builder = BatchBuilder::new(source_type);
+        while new_offset < limit_num_bytes {
+            if let Some(record) = source_ctx.protect_future(self.reader.next_record()).await? {
+                new_offset = record.next_offset as usize;
+                batch_builder.add_doc(record.doc);
+            } else {
+                self.is_eof = true;
+                break;
+            }
+        }
+        if new_offset > self.current_offset {
+            let to_position = if self.is_eof {
+                Position::eof(new_offset)
+            } else {
+                Position::offset(new_offset)
+            };
+            batch_builder.checkpoint_delta.record_partition_delta(
+                self.partition_id.clone(),
+                Position::offset(self.current_offset),
+                to_position,
+            )?;
+            self.current_offset = new_offset;
+        }
+
+        Ok(batch_builder)
+    }
+
+    fn is_eof(&self) -> bool {
+        self.is_eof
+    }
+}
+
+pub struct StdinBatchReader {
+    reader: BufReader<tokio::io::Stdin>,
+    is_eof: bool,
+}
+
+impl StdinBatchReader {
+    pub fn new() -> Self {
+        Self {
+            reader: BufReader::new(tokio::io::stdin()),
+            is_eof: false,
+        }
+    }
+}
+
+#[async_trait]
+impl BatchReader for StdinBatchReader {
+    async fn read_batch(
+        &mut self,
+        source_ctx: &SourceContext,
+        source_type: SourceType,
+    ) -> anyhow::Result<BatchBuilder> {
+        let mut batch_builder = BatchBuilder::new(source_type);
+        while batch_builder.num_bytes < BATCH_NUM_BYTES_LIMIT {
+            let mut buf = String::new();
+            let bytes_read = source_ctx
+                .protect_future(self.reader.read_line(&mut buf))
+                .await?;
+            if bytes_read > 0 {
+                batch_builder.add_doc(buf.into());
+            } else {
+                self.is_eof = true;
+                break;
+            }
+        }
+
+        Ok(batch_builder)
+    }
+
+    fn is_eof(&self) -> bool {
+        self.is_eof
     }
 }
 
@@ -178,13 +317,15 @@ pub mod file_test_helpers {
         temp_file
     }
 
-    pub async fn generate_dummy_doc_file(gzip: bool, lines: usize) -> NamedTempFile {
+    pub async fn generate_dummy_doc_file(gzip: bool, lines: usize) -> (NamedTempFile, usize) {
         let mut documents_bytes = Vec::with_capacity(DUMMY_DOC.len() * lines);
         for _ in 0..lines {
             documents_bytes.write_all(DUMMY_DOC).unwrap();
             documents_bytes.write_all("\n".as_bytes()).unwrap();
         }
-        write_to_tmp(documents_bytes, gzip).await
+        let size = documents_bytes.len();
+        let file = write_to_tmp(documents_bytes, gzip).await;
+        (file, size)
     }
 
     pub async fn generate_index_doc_file(gzip: bool, lines: usize) -> NamedTempFile {

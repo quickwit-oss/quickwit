@@ -56,10 +56,11 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 pub use source_config::{
-    load_source_config_from_user_config, FileSourceParams, KafkaSourceParams, KinesisSourceParams,
-    PubSubSourceParams, PulsarSourceAuth, PulsarSourceParams, RegionOrEndpoint, SourceConfig,
-    SourceInputFormat, SourceParams, TransformConfig, VecSourceParams, VoidSourceParams,
-    CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
+    load_source_config_from_user_config, FileSourceMessageType, FileSourceParams, FileSourceSqs,
+    FileSourceUri, KafkaSourceParams, KinesisSourceParams, PubSubSourceParams, PulsarSourceAuth,
+    PulsarSourceParams, RegionOrEndpoint, SourceConfig, SourceInputFormat, SourceParams,
+    SqsSourceParams, TransformConfig, VecSourceParams, VoidSourceParams, CLI_SOURCE_ID,
+    INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
 };
 use tracing::warn;
 
@@ -112,7 +113,11 @@ pub fn disable_ingest_v1() -> bool {
     IndexTemplateV0_8,
     SourceInputFormat,
     SourceParams,
+    FileSourceMessageType,
+    FileSourceSqs,
     FileSourceParams,
+    FileSourceUri,
+    SqsSourceParams,
     PubSubSourceParams,
     KafkaSourceParams,
     KinesisSourceParams,

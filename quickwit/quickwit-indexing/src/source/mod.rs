@@ -69,6 +69,8 @@ mod kafka_source;
 mod kinesis;
 #[cfg(feature = "pulsar")]
 mod pulsar_source;
+#[cfg(feature = "sqs")]
+mod queue_sources;
 mod source_factory;
 mod vec_source;
 mod void_source;
@@ -90,11 +92,13 @@ pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
 use once_cell::sync::OnceCell;
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
+#[cfg(feature = "sqs")]
+pub use queue_sources::sqs_source::{SqsSource, SqsSourceFactory};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
-use quickwit_config::{SourceConfig, SourceParams};
+use quickwit_config::{FileSourceParams, IndexingSettings, SourceConfig, SourceParams};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_metastore::IndexMetadataResponseExt;
@@ -144,6 +148,7 @@ pub struct SourceRuntime {
     pub queues_dir_path: PathBuf,
     pub storage_resolver: StorageResolver,
     pub event_broker: EventBroker,
+    pub indexing_setting: IndexingSettings,
 }
 
 impl SourceRuntime {
@@ -400,6 +405,8 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source(SourceType::Kinesis, KinesisSourceFactory);
         #[cfg(feature = "pulsar")]
         source_factory.add_source(SourceType::Pulsar, PulsarSourceFactory);
+        #[cfg(feature = "sqs")]
+        source_factory.add_source(SourceType::Sqs, SqsSourceFactory);
         source_factory.add_source(SourceType::Vec, VecSourceFactory);
         source_factory.add_source(SourceType::Void, VoidSourceFactory);
         source_factory
@@ -411,13 +418,22 @@ pub async fn check_source_connectivity(
     source_config: &SourceConfig,
 ) -> anyhow::Result<()> {
     match &source_config.source_params {
-        SourceParams::File(params) => {
-            if let Some(filepath) = &params.filepath {
-                let (dir_uri, file_name) = dir_and_filename(filepath)?;
-                let storage = storage_resolver.resolve(&dir_uri).await?;
-                storage.file_num_bytes(file_name).await?;
-            }
+        SourceParams::File(FileSourceParams::FileUri(file_uri)) => {
+            let (dir_uri, file_name) = dir_and_filename(&file_uri.filepath)?;
+            let storage = storage_resolver.resolve(&dir_uri).await?;
+            storage.file_num_bytes(file_name).await?;
             Ok(())
+        }
+        #[allow(unused_variables)]
+        SourceParams::File(FileSourceParams::Sqs(sqs_config)) => {
+            #[cfg(not(feature = "sqs"))]
+            anyhow::bail!("Quickwit was compiled without the `sqs` feature");
+
+            #[cfg(feature = "sqs")]
+            {
+                queue_sources::sqs_queue::check_connectivity(&sqs_config.queue_url).await?;
+                Ok(())
+            }
         }
         #[allow(unused_variables)]
         SourceParams::Kafka(params) => {
@@ -449,6 +465,17 @@ pub async fn check_source_connectivity(
             #[cfg(feature = "pulsar")]
             {
                 pulsar_source::check_connectivity(params).await?;
+                Ok(())
+            }
+        }
+        #[allow(unused_variables)]
+        SourceParams::Sqs(params) => {
+            #[cfg(not(feature = "sqs"))]
+            anyhow::bail!("Quickwit was compiled without the `sqs` feature");
+
+            #[cfg(feature = "sqs")]
+            {
+                queue_sources::sqs_queue::check_connectivity(&params.queue_url).await?;
                 Ok(())
             }
         }
@@ -592,10 +619,11 @@ mod tests {
                 source_config: self.source_config,
                 storage_resolver: StorageResolver::for_test(),
                 event_broker: EventBroker::default(),
+                indexing_setting: IndexingSettings::default(),
             }
         }
 
-        #[cfg(feature = "kafka")]
+        #[cfg(any(feature = "kafka", feature = "sqs"))]
         pub fn with_metastore(mut self, metastore: MetastoreServiceClient) -> Self {
             self.metastore_opt = Some(metastore);
             self
@@ -703,5 +731,76 @@ mod tests {
             );
         }
         Ok(())
+    }
+}
+
+#[cfg(all(
+    test,
+    any(feature = "sqs-localstack-tests", feature = "kafka-broker-tests")
+))]
+mod test_setup_helper {
+
+    use quickwit_config::IndexConfig;
+    use quickwit_metastore::checkpoint::{IndexCheckpointDelta, PartitionId};
+    use quickwit_metastore::{CreateIndexRequestExt, SplitMetadata, StageSplitsRequestExt};
+    use quickwit_proto::metastore::{CreateIndexRequest, PublishSplitsRequest, StageSplitsRequest};
+    use quickwit_proto::types::Position;
+
+    use super::*;
+    use crate::new_split_id;
+
+    pub async fn setup_index(
+        metastore: MetastoreServiceClient,
+        index_id: &str,
+        source_config: &SourceConfig,
+        partition_deltas: &[(PartitionId, Position, Position)],
+    ) -> IndexUid {
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
+            &index_config,
+            &[source_config.clone()],
+        )
+        .unwrap();
+        let index_uid: IndexUid = metastore
+            .create_index(create_index_request)
+            .await
+            .unwrap()
+            .index_uid()
+            .clone();
+
+        if partition_deltas.is_empty() {
+            return index_uid;
+        }
+        let split_id = new_split_id();
+        let split_metadata = SplitMetadata::for_test(split_id.clone());
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
+                .unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
+
+        let mut source_delta = SourceCheckpointDelta::default();
+        for (partition_id, from_position, to_position) in partition_deltas.iter().cloned() {
+            source_delta
+                .record_partition_delta(partition_id, from_position, to_position)
+                .unwrap();
+        }
+        let checkpoint_delta = IndexCheckpointDelta {
+            source_id: source_config.source_id.to_string(),
+            source_delta,
+        };
+        let checkpoint_delta_json = serde_json::to_string(&checkpoint_delta).unwrap();
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: Some(index_uid.clone()),
+            index_checkpoint_delta_json_opt: Some(checkpoint_delta_json),
+            staged_split_ids: vec![split_id.clone()],
+            replaced_split_ids: Vec::new(),
+            publish_token_opt: None,
+        };
+        metastore
+            .publish_splits(publish_splits_request)
+            .await
+            .unwrap();
+        index_uid
     }
 }
