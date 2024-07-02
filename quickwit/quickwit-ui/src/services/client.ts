@@ -40,7 +40,7 @@ export class Client {
     if (request.indexId === null || request.indexId === undefined) {
       throw Error("Search request must have and index id.")
     }
-    const url = `${this.apiRoot()}/${request.indexId}/search`;
+    const url = `${this.apiRoot()}${request.indexId}/search`;
     const body = this.buildSearchBody(request, timestamp_field);
     return this.fetch(url, this.defaultGetRequestParams(), body);
   }
