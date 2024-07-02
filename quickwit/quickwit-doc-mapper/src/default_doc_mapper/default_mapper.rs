@@ -29,6 +29,7 @@ use quickwit_query::query_ast::QueryAst;
 use quickwit_query::tokenizers::TokenizerManager;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
+use serde_json_borrow::Map as BorrowedJsonMap;
 use tantivy::query::Query;
 use tantivy::schema::document::{ReferenceValue, ReferenceValueLeaf};
 use tantivy::schema::{
@@ -507,7 +508,7 @@ impl DocMapper for DefaultDocMapper {
         self.doc_mapping_uid
     }
 
-    fn validate_json_obj(&self, json_obj: &JsonObject) -> Result<(), DocParsingError> {
+    fn validate_json_obj(&self, json_obj: &BorrowedJsonMap) -> Result<(), DocParsingError> {
         let is_strict = self.mode.mode_type() == ModeType::Strict;
         let mut field_path = Vec::new();
         self.field_mappings
