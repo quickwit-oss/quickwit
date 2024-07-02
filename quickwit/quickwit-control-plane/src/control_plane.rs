@@ -43,7 +43,6 @@ use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMet
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
-    RebuildPlanRequest, RebuildPlanResponse,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
@@ -77,6 +76,9 @@ const REBUILD_PLAN_COOLDOWN_PERIOD: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
 struct ControlPlanLoop;
+
+#[derive(Debug, Default)]
+struct RebuildPlan;
 
 pub struct ControlPlane {
     cluster_config: ClusterConfig,
@@ -382,24 +384,22 @@ impl ControlPlane {
             .next_rebuild_tracker
             .next_rebuild_waiter();
         self.rebuild_plan_debouncer
-            .self_send_with_cooldown::<RebuildPlanRequest>(ctx);
+            .self_send_with_cooldown::<RebuildPlan>(ctx);
         next_rebuild_waiter
     }
 }
 
 #[async_trait]
-impl Handler<RebuildPlanRequest> for ControlPlane {
-    type Reply = ControlPlaneResult<RebuildPlanResponse>;
+impl Handler<RebuildPlan> for ControlPlane {
+    type Reply = ();
 
     async fn handle(
         &mut self,
-        rebuild_plan_request: RebuildPlanRequest,
+        _message: RebuildPlan,
         _ctx: &ActorContext<Self>,
-    ) -> Result<ControlPlaneResult<RebuildPlanResponse>, ActorExitStatus> {
-        let rebuild_plan_response = self
-            .indexing_scheduler
-            .rebuild_plan(&self.model, rebuild_plan_request);
-        Ok(Ok(rebuild_plan_response))
+    ) -> Result<(), ActorExitStatus> {
+        self.indexing_scheduler.rebuild_plan(&self.model);
+        Ok(())
     }
 }
 
@@ -925,8 +925,7 @@ impl Handler<IndexerJoined> for ControlPlane {
         {
             return convert_metastore_error::<()>(metastore_error).map(|_| ());
         }
-        self.indexing_scheduler
-            .rebuild_plan(&self.model, RebuildPlanRequest::default());
+        self.indexing_scheduler.rebuild_plan(&self.model);
         Ok(())
     }
 }
@@ -956,8 +955,7 @@ impl Handler<IndexerLeft> for ControlPlane {
         {
             return convert_metastore_error::<()>(metastore_error).map(|_| ());
         }
-        self.indexing_scheduler
-            .rebuild_plan(&self.model, RebuildPlanRequest::default());
+        self.indexing_scheduler.rebuild_plan(&self.model);
         Ok(())
     }
 }

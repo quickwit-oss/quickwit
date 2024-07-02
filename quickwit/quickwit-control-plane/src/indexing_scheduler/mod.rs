@@ -29,7 +29,6 @@ use std::time::{Duration, Instant};
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
-use quickwit_proto::control_plane::{RebuildPlanRequest, RebuildPlanResponse};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
 };
@@ -242,12 +241,7 @@ impl IndexingScheduler {
     //
     // Prefer not calling this method directly, and instead call
     // `ControlPlane::rebuild_indexing_plan_debounced`.
-    pub(crate) fn rebuild_plan(
-        &mut self,
-        model: &ControlPlaneModel,
-        rebuild_plan_request: RebuildPlanRequest,
-    ) -> RebuildPlanResponse {
-        let RebuildPlanRequest { reset, debug } = rebuild_plan_request;
+    pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
         crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
 
         let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
@@ -255,8 +249,6 @@ impl IndexingScheduler {
         let sources = get_sources_to_schedule(model);
 
         let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
-
-        let mut rebuild_plan_response = RebuildPlanResponse::default();
 
         let indexer_id_to_cpu_capacities: FnvHashMap<String, CpuCapacity> = indexers
             .iter()
@@ -273,28 +265,15 @@ impl IndexingScheduler {
             if !sources.is_empty() {
                 warn!("no indexing capacity available, cannot schedule an indexing plan");
             }
-            return rebuild_plan_response;
+            return;
         };
 
         let shard_locations = model.shard_locations();
-        let previous_applied_plan = if reset {
-            None
-        } else {
-            self.state.last_applied_physical_plan.as_ref()
-        };
-
-        let debug_output: Option<&mut RebuildPlanResponse> = if debug {
-            Some(&mut rebuild_plan_response)
-        } else {
-            None
-        };
-
         let new_physical_plan = build_physical_indexing_plan(
             &sources,
             &indexer_id_to_cpu_capacities,
-            previous_applied_plan,
+            self.state.last_applied_physical_plan.as_ref(),
             &shard_locations,
-            debug_output,
         );
         let shard_locality_metrics =
             get_shard_locality_metrics(&new_physical_plan, &shard_locations);
@@ -306,12 +285,11 @@ impl IndexingScheduler {
             );
             // No need to apply the new plan as it is the same as the old one.
             if plans_diff.is_empty() {
-                return rebuild_plan_response;
+                return;
             }
         }
         self.apply_physical_indexing_plan(&indexers, new_physical_plan, Some(notify_on_drop));
         self.state.num_schedule_indexing_plan += 1;
-        rebuild_plan_response
     }
 
     /// Checks if the last applied plan corresponds to the running indexing tasks present in the
@@ -326,7 +304,7 @@ impl IndexingScheduler {
                 // If there is no plan, the node is probably starting and the scheduler did not find
                 // indexers yet. In this case, we want to schedule as soon as possible to find new
                 // indexers.
-                self.rebuild_plan(model, RebuildPlanRequest::default());
+                self.rebuild_plan(model);
                 return;
             };
         if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp {
@@ -348,7 +326,7 @@ impl IndexingScheduler {
         );
         if !indexing_plans_diff.has_same_nodes() {
             info!(plans_diff=?indexing_plans_diff, "running plan and last applied plan node IDs differ: schedule an indexing plan");
-            let _ = self.rebuild_plan(model, RebuildPlanRequest::default());
+            self.rebuild_plan(model);
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
@@ -891,13 +869,8 @@ mod tests {
         indexer_max_loads.insert("indexer1".to_string(), mcpu(3_000));
         indexer_max_loads.insert("indexer2".to_string(), mcpu(3_000));
         let shard_locations = ShardLocations::default();
-        let physical_plan = build_physical_indexing_plan(
-            &sources[..],
-            &indexer_max_loads,
-            None,
-            &shard_locations,
-            None,
-        );
+        let physical_plan =
+            build_physical_indexing_plan(&sources[..], &indexer_max_loads, None, &shard_locations);
         assert_eq!(physical_plan.indexing_tasks_per_indexer().len(), 2);
         let indexing_tasks_1 = physical_plan.indexer("indexer1").unwrap();
         assert_eq!(indexing_tasks_1.len(), 2);
@@ -928,7 +901,7 @@ mod tests {
                 indexer_max_loads.insert(indexer_id, mcpu(4_000));
             }
             let shard_locations = ShardLocations::default();
-            let _physical_indexing_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None, &shard_locations, None);
+            let _physical_indexing_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None, &shard_locations);
         }
     }
 

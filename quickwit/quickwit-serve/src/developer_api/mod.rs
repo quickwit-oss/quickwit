@@ -22,16 +22,12 @@ mod log_level;
 
 #[cfg_attr(not(feature = "pprof"), path = "pprof_disabled.rs")]
 mod pprof;
-
-mod rebuild_plan;
 mod server;
 
 use debug::debug_handler;
 use log_level::log_level_handler;
 use pprof::pprof_handlers;
 use quickwit_cluster::Cluster;
-use quickwit_proto::control_plane::ControlPlaneServiceClient;
-use rebuild_plan::rebuild_plan_handler;
 pub(crate) use server::DeveloperApiServer;
 use warp::{Filter, Rejection};
 
@@ -43,7 +39,6 @@ use crate::EnvFilterReloadFn;
 pub struct DeveloperApi;
 
 pub(crate) fn developer_api_routes(
-    control_plane_client: ControlPlaneServiceClient,
     cluster: Cluster,
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -51,8 +46,7 @@ pub(crate) fn developer_api_routes(
         .and(
             debug_handler(cluster.clone())
                 .or(log_level_handler(env_filter_reload_fn.clone()))
-                .or(pprof_handlers())
-                .or(rebuild_plan_handler(control_plane_client)),
+                .or(pprof_handlers()),
         )
         .recover(recover_fn)
 }
