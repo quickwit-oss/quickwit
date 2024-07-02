@@ -209,14 +209,11 @@ impl BatchReader for ObjectUriBatchReader {
             } else {
                 Position::offset(new_offset)
             };
-            batch_builder
-                .checkpoint_delta
-                .record_partition_delta(
-                    self.partition_id.clone(),
-                    Position::offset(self.current_offset),
-                    to_position,
-                )
-                .unwrap();
+            batch_builder.checkpoint_delta.record_partition_delta(
+                self.partition_id.clone(),
+                Position::offset(self.current_offset),
+                to_position,
+            )?;
             self.current_offset = new_offset;
         }
 

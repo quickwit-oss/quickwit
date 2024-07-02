@@ -192,7 +192,7 @@ impl TypedSourceFactory for FileSourceFactory {
             #[cfg(feature = "sqs")]
             FileSourceParams::Sqs(sqs_config) => {
                 let coordinator =
-                    QueueCoordinator::try_from_config(sqs_config, source_runtime).await?;
+                    QueueCoordinator::try_from_sqs_config(sqs_config, source_runtime).await?;
                 FileSourceInner::Queue(coordinator)
             }
             #[cfg(not(feature = "sqs"))]

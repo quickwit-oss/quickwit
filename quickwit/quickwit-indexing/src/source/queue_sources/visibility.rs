@@ -139,7 +139,7 @@ impl VisibilityTaskHandle {
         &self.ack_id
     }
 
-    pub async fn last_extension(self, extension: Duration) -> anyhow::Result<()> {
+    pub async fn request_last_extension(self, extension: Duration) -> anyhow::Result<()> {
         self.mailbox
             .ask_for_res(RequestLastExtension { extension })
             .await
@@ -178,7 +178,7 @@ impl Actor for VisibilityTask {
 }
 
 #[derive(Debug)]
-pub(super) struct Loop;
+struct Loop;
 
 #[async_trait]
 impl Handler<Loop> for VisibilityTask {
@@ -202,7 +202,7 @@ impl Handler<Loop> for VisibilityTask {
 /// Ensures that the visibility of the message is extended until the given
 /// deadline and then stops the extension loop.
 #[derive(Debug)]
-pub(super) struct RequestLastExtension {
+struct RequestLastExtension {
     extension: Duration,
 }
 
