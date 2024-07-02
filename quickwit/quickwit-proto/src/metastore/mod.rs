@@ -241,7 +241,12 @@ impl Retryable for MetastoreError {
     fn is_retryable(&self) -> bool {
         matches!(
             self,
-            Self::Connection { .. } | Self::Db { .. } | Self::Io { .. } | Self::Internal { .. }
+            Self::Connection { .. }
+                | Self::Db { .. }
+                | Self::Internal { .. }
+                | Self::Io { .. }
+                | Self::Timeout(_)
+                | Self::Unavailable(_)
         )
     }
 }
