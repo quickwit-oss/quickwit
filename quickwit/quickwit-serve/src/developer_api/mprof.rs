@@ -21,7 +21,7 @@ use warp::{Filter, Rejection};
 
 pub(crate) fn mprof_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("mprof" / "flamegraph").then(get_memory_map)
+    warp::path!("mprof" / "raw").then(get_memory_map)
 }
 
 #[cfg(feature = "pprof")]
