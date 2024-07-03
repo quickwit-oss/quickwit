@@ -554,7 +554,6 @@ impl Indexer {
             docstore_blocksize: indexing_settings.docstore_blocksize,
             docstore_compression,
             docstore_compress_dedicated_thread: true,
-            ..Default::default()
         };
         let cooperative_indexing_opt: Option<CooperativeIndexingCycle> =
             cooperative_indexing_permits_opt.map(|cooperative_indexing_permits| {
@@ -881,8 +880,7 @@ mod tests {
             index_checkpoint.source_delta,
             SourceCheckpointDelta::from_range(4..8)
         );
-        let first_split = batch.splits.into_iter().next().unwrap().finalize()?;
-        assert!(first_split.index.settings().sort_by_field.is_none());
+        batch.splits.into_iter().next().unwrap().finalize()?;
         universe.assert_quit().await;
         Ok(())
     }
