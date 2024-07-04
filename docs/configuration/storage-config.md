@@ -5,10 +5,11 @@ sidebar_position: 2
 
 ## Supported Storage Providers
 
-Quickwit currently supports three types of storage providers:
+Quickwit currently supports four types of storage providers:
 - Amazon S3 and S3-compatible (Garage, MinIO, ...)
 - Azure Blob Storage
 - Local file storage*
+- Google Cloud Storage (native API)
 
 ## Storage URIs
 

@@ -34,12 +34,12 @@ pub enum StorageBackend {
     Azure,
     /// Local file system
     File,
+    /// Google Cloud Storage
+    Google,
     /// In-memory storage, for testing purposes
     Ram,
     /// Amazon S3 or S3-compatible storage
     S3,
-    /// Google Cloud Storage
-    Google,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
