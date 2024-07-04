@@ -16,6 +16,7 @@ Storage URIs refer to different storage providers identified by a URI "protocol"
 - `s3://` for Amazon S3 and S3-compatible
 - `azure://` for Azure Blob Storage
 - `file://` for local file systems
+- `gs://` for Google Cloud Storage
 
 In general, you can use a storage URI or a file path anywhere you would intuitively expect a file path. For instance:
 - when setting the `index_uri` of an index to specify the storage provider and location;
