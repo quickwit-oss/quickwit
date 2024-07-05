@@ -30,6 +30,7 @@ use anyhow::{bail, ensure};
 use bytesize::ByteSize;
 use http::HeaderMap;
 use quickwit_common::net::HostAddr;
+use quickwit_common::shared_consts::DEFAULT_SHARD_THROUGHPUT_LIMIT;
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::types::NodeId;
@@ -270,7 +271,7 @@ impl SearcherConfig {
 pub struct IngestApiConfig {
     pub max_queue_memory_usage: ByteSize,
     pub max_queue_disk_usage: ByteSize,
-    pub replication_factor: usize,
+    replication_factor: usize,
     pub content_length_limit: ByteSize,
     pub shard_throughput_limit: ByteSize,
 }
@@ -282,12 +283,14 @@ impl Default for IngestApiConfig {
             max_queue_disk_usage: ByteSize::gib(4),
             replication_factor: 1,
             content_length_limit: ByteSize::mib(10),
-            shard_throughput_limit: ByteSize::mib(5),
+            shard_throughput_limit: DEFAULT_SHARD_THROUGHPUT_LIMIT,
         }
     }
 }
 
 impl IngestApiConfig {
+    /// Returns the replication factor, as defined in environment variable or in the configuration
+    /// in that order (the environment variable can overrrides the configuration).
     pub fn replication_factor(&self) -> anyhow::Result<NonZeroUsize> {
         if let Ok(replication_factor_str) = env::var("QW_INGEST_REPLICATION_FACTOR") {
             let replication_factor = match replication_factor_str.trim() {

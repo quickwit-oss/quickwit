@@ -19,6 +19,8 @@
 
 use std::time::Duration;
 
+use bytesize::ByteSize;
+
 /// Field name reserved for storing the dynamically indexed fields.
 pub const FIELD_PRESENCE_FIELD_NAME: &str = "_field_presence";
 
@@ -41,3 +43,8 @@ pub const INGESTER_PRIMARY_SHARDS_PREFIX: &str = "ingester.primary_shards:";
 
 /// File name for the encoded list of fields in the split
 pub const SPLIT_FIELDS_FILE_NAME: &str = "split_fields";
+
+pub const DEFAULT_SHARD_THROUGHPUT_LIMIT: ByteSize = ByteSize::mib(5);
+
+// (Just a reexport).
+pub use bytesize::MIB;

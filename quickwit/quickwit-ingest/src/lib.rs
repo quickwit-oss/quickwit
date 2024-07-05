@@ -154,7 +154,6 @@ macro_rules! with_lock_metrics {
 #[cfg(test)]
 mod tests {
 
-    use bytesize::ByteSize;
     use quickwit_actors::AskError;
 
     use super::*;
@@ -244,11 +243,13 @@ mod tests {
         let queues_dir_path = temp_dir.path().join("queues-0");
         get_ingest_api_service(&queues_dir_path).await.unwrap_err();
 
-        let ingest_api_config = IngestApiConfig {
-            max_queue_memory_usage: ByteSize(1200),
-            max_queue_disk_usage: ByteSize::mib(256),
-            ..Default::default()
-        };
+        let ingest_api_config = serde_json::from_str(
+            r#"{
+            "max_queue_memory_usage": "1200b",
+            "max_queue_disk_usage": "256mb"
+        }"#,
+        )
+        .unwrap();
         init_ingest_api(&universe, &queues_dir_path, &ingest_api_config)
             .await
             .unwrap();
