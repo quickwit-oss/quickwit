@@ -22,12 +22,11 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use quickwit_proto::indexing::CpuCapacity;
-use serde::Serialize;
 
 pub type SourceOrd = u32;
 pub type IndexerOrd = usize;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Source {
     pub source_ord: SourceOrd,
     pub load_per_shard: NonZeroU32,
@@ -80,7 +79,7 @@ impl Source {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct SchedulingProblem {
     sources: Vec<Source>,
     indexer_cpu_capacities: Vec<CpuCapacity>,
@@ -175,7 +174,7 @@ impl SchedulingProblem {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IndexerAssignment {
     pub indexer_ord: IndexerOrd,
     pub num_shards_per_source: BTreeMap<SourceOrd, u32>,
@@ -233,7 +232,7 @@ impl IndexerAssignment {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SchedulingSolution {
     pub indexer_assignments: Vec<IndexerAssignment>,
 }
