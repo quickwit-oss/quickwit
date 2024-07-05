@@ -81,6 +81,15 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
             .build(),
         true,
     );
+    tokenizer_manager.register(
+        "code_hex",
+        TextAnalyzer::builder(CodeTokenizer::with_hex_support())
+            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+            .filter(LowerCaser)
+            .filter(AsciiFoldingFilter)
+            .build(),
+        true,
+    );
     #[cfg(feature = "multilang")]
     tokenizer_manager.register(
         "multilang_default",
