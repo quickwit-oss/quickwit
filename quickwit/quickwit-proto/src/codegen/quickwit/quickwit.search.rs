@@ -303,6 +303,9 @@ pub struct SplitIdAndFooterOffsets {
     /// The highest timestamp appearing in the split, in seconds since epoch
     #[prost(int64, optional, tag = "5")]
     pub timestamp_end: ::core::option::Option<i64>,
+    /// The number of docs in the split
+    #[prost(uint64, tag = "6")]
+    pub num_docs: u64,
 }
 /// Hits returned by a FetchDocRequest.
 ///
