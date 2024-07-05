@@ -78,7 +78,7 @@ use quickwit_common::tower::{
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ClusterConfig, NodeConfig};
+use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -313,11 +313,6 @@ async fn start_control_plane_if_needed(
         .await?;
 
         let self_node_id: NodeId = cluster.self_node_id().into();
-        let replication_factor = node_config
-            .ingest_api_config
-            .replication_factor()
-            .expect("replication factor should have been validated")
-            .get();
 
         let control_plane_mailbox = setup_control_plane(
             universe,
@@ -328,7 +323,7 @@ async fn start_control_plane_if_needed(
             ingester_pool.clone(),
             metastore_client.clone(),
             node_config.default_index_root_uri.clone(),
-            replication_factor,
+            &node_config.ingest_api_config,
         )
         .await?;
 
@@ -1041,14 +1036,19 @@ async fn setup_control_plane(
     ingester_pool: IngesterPool,
     metastore: MetastoreServiceClient,
     default_index_root_uri: Uri,
-    replication_factor: usize,
+    ingest_api_config: &IngestApiConfig,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
     let cluster_id = cluster.cluster_id().to_string();
+    let replication_factor = ingest_api_config
+        .replication_factor()
+        .expect("replication factor should have been validated")
+        .get();
     let cluster_config = ClusterConfig {
         cluster_id,
         auto_create_indexes: true,
         default_index_root_uri,
         replication_factor,
+        shard_throughput_limit: ingest_api_config.shard_throughput_limit,
     };
     let (control_plane_mailbox, _control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
         universe,

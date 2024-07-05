@@ -277,7 +277,6 @@ pub(crate) mod tests {
     use std::time::Duration;
 
     use bytes::Bytes;
-    use bytesize::ByteSize;
     use quickwit_actors::{Mailbox, Universe};
     use quickwit_config::IngestApiConfig;
     use quickwit_ingest::{
@@ -398,10 +397,8 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_return_429_if_above_limits() {
-        let config = IngestApiConfig {
-            max_queue_memory_usage: ByteSize(1),
-            ..Default::default()
-        };
+        let config: IngestApiConfig =
+            serde_json::from_str(r#"{ "max_queue_memory_usage": "1" }"#).unwrap();
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &config).await;
         let ingest_router = IngestRouterServiceClient::mocked();
@@ -420,10 +417,8 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_return_413_if_above_content_limit() {
-        let config = IngestApiConfig {
-            content_length_limit: ByteSize(1),
-            ..Default::default()
-        };
+        let config: IngestApiConfig =
+            serde_json::from_str(r#"{ "content_length_limit": "1" }"#).unwrap();
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();

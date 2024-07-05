@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use bytesize::ByteSize;
 use quickwit_common::uri::Uri;
 
 /// An embryo of a cluster config.
@@ -27,6 +28,7 @@ pub struct ClusterConfig {
     pub auto_create_indexes: bool,
     pub default_index_root_uri: Uri,
     pub replication_factor: usize,
+    pub shard_throughput_limit: ByteSize,
 }
 
 impl ClusterConfig {
@@ -37,6 +39,7 @@ impl ClusterConfig {
             auto_create_indexes: false,
             default_index_root_uri: Uri::for_test("ram:///indexes"),
             replication_factor: 1,
+            shard_throughput_limit: quickwit_common::shared_consts::DEFAULT_SHARD_THROUGHPUT_LIMIT,
         }
     }
 }

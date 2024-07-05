@@ -35,7 +35,7 @@ use quickwit_cluster::{
 };
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::uri::Uri;
-use quickwit_common::Progress;
+use quickwit_common::{shared_consts, Progress};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
@@ -121,7 +121,6 @@ impl ControlPlane {
         watch::Receiver<bool>,
     ) {
         let disable_control_loop = false;
-
         Self::spawn_inner(
             universe,
             cluster_config,
@@ -156,12 +155,16 @@ impl ControlPlane {
             universe.spawn_builder().supervise_fn(move || {
                 let cluster_id = cluster_config.cluster_id.clone();
                 let replication_factor = cluster_config.replication_factor;
+                let shard_throughput_limit_mib: f32 = cluster_config.shard_throughput_limit.as_u64()
+                    as f32
+                    / shared_consts::MIB as f32;
                 let indexing_scheduler =
                     IndexingScheduler::new(cluster_id, self_node_id.clone(), indexer_pool.clone());
                 let ingest_controller = IngestController::new(
                     metastore.clone(),
                     ingester_pool.clone(),
                     replication_factor,
+                    shard_throughput_limit_mib,
                 );
 
                 let readiness_tx = readiness_tx.clone();

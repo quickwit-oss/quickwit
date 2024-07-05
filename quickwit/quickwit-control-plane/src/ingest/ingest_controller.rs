@@ -59,16 +59,6 @@ use crate::control_plane::ControlPlane;
 use crate::ingest::wait_handle::WaitHandle;
 use crate::model::{ControlPlaneModel, ScalingMode, ShardEntry, ShardStats};
 
-const MAX_SHARD_INGESTION_THROUGHPUT_MIB_PER_SEC: f32 = 5.;
-
-/// Threshold in MiB/s above which we increase the number of shards.
-const SCALE_UP_SHARDS_THRESHOLD_MIB_PER_SEC: f32 =
-    MAX_SHARD_INGESTION_THROUGHPUT_MIB_PER_SEC * 8. / 10.;
-
-/// Threshold in MiB/s below which we decrease the number of shards.
-const SCALE_DOWN_SHARDS_THRESHOLD_MIB_PER_SEC: f32 =
-    MAX_SHARD_INGESTION_THROUGHPUT_MIB_PER_SEC * 2. / 10.;
-
 const CLOSE_SHARDS_REQUEST_TIMEOUT: Duration = if cfg!(test) {
     Duration::from_millis(50)
 } else {
@@ -112,6 +102,10 @@ pub struct IngestController {
     // This lock ensures that only one rebalance operation is performed at a time.
     rebalance_lock: Arc<Mutex<()>>,
     pub stats: IngestControllerStats,
+    // Threshold in MiB/s below which we decrease the number of shards.
+    scale_down_shards_threshold_mib_per_sec: f32,
+    // Threshold in MiB/s above which we increase the number of shards.
+    scale_up_shards_threshold_mib_per_sec: f32,
 }
 
 impl fmt::Debug for IngestController {
@@ -190,6 +184,7 @@ impl IngestController {
         metastore: MetastoreServiceClient,
         ingester_pool: IngesterPool,
         replication_factor: usize,
+        max_shard_ingestion_throughput_mib_per_sec: f32,
     ) -> Self {
         IngestController {
             metastore,
@@ -197,6 +192,9 @@ impl IngestController {
             replication_factor,
             rebalance_lock: Arc::new(Mutex::new(())),
             stats: IngestControllerStats::default(),
+            scale_up_shards_threshold_mib_per_sec: max_shard_ingestion_throughput_mib_per_sec * 0.8,
+            scale_down_shards_threshold_mib_per_sec: max_shard_ingestion_throughput_mib_per_sec
+                * 0.2,
         }
     }
 
@@ -293,10 +291,10 @@ impl IngestController {
             &local_shards_update.source_uid,
             &local_shards_update.shard_infos,
         );
-        if shard_stats.avg_ingestion_rate >= SCALE_UP_SHARDS_THRESHOLD_MIB_PER_SEC {
+        if shard_stats.avg_ingestion_rate >= self.scale_up_shards_threshold_mib_per_sec {
             self.try_scale_up_shards(local_shards_update.source_uid, shard_stats, model, progress)
                 .await?;
-        } else if shard_stats.avg_ingestion_rate <= SCALE_DOWN_SHARDS_THRESHOLD_MIB_PER_SEC
+        } else if shard_stats.avg_ingestion_rate <= self.scale_down_shards_threshold_mib_per_sec
             && shard_stats.num_open_shards > 1
         {
             self.try_scale_down_shards(
@@ -1142,6 +1140,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::setup_logging_for_tests;
+    use quickwit_common::shared_consts::DEFAULT_SHARD_THROUGHPUT_LIMIT;
     use quickwit_common::tower::DelayLayer;
     use quickwit_config::{DocMapping, SourceConfig, INGEST_V2_SOURCE_ID};
     use quickwit_ingest::{RateMibPerSec, ShardInfo};
@@ -1158,6 +1157,9 @@ mod tests {
     use quickwit_proto::types::{DocMappingUid, Position, SourceId};
 
     use super::*;
+
+    const TEST_SHARD_THROUGHPUT_LIMIT_MIB: f32 =
+        DEFAULT_SHARD_THROUGHPUT_LIMIT.as_u64() as f32 / quickwit_common::shared_consts::MIB as f32;
 
     #[tokio::test]
     async fn test_ingest_controller_get_or_create_open_shards() {
@@ -1244,8 +1246,12 @@ mod tests {
         ingester_pool.insert(NodeId::from("test-ingester-2"), ingester.clone());
 
         let replication_factor = 2;
-        let mut controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool.clone(),
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
 
         let mut model = ControlPlaneModel::default();
         model.add_index(index_metadata_0.clone());
@@ -1425,7 +1431,12 @@ mod tests {
         ingester_pool.insert(NodeId::from("test-ingester-1"), ingester.clone());
 
         let replication_factor = 1;
-        let mut controller = IngestController::new(metastore, ingester_pool, replication_factor);
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool,
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
 
         let mut model = ControlPlaneModel::default();
         model.add_index(index_metadata_0.clone());
@@ -1462,7 +1473,12 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let replication_factor = 2;
 
-        let mut controller = IngestController::new(metastore, ingester_pool, replication_factor);
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool,
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
         let mut model = ControlPlaneModel::default();
 
         let index_uid = IndexUid::for_test("test-index-0", 0);
@@ -1507,8 +1523,12 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let replication_factor = 2;
 
-        let controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let controller = IngestController::new(
+            metastore,
+            ingester_pool.clone(),
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
 
         let mut model = ControlPlaneModel::default();
 
@@ -1681,8 +1701,12 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
 
-        let controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let controller = IngestController::new(
+            metastore,
+            ingester_pool.clone(),
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
 
         let ingester_id_0 = NodeId::from("test-ingester-0");
         let mut mock_ingester_0 = MockIngesterService::new();
@@ -1895,8 +1919,12 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
 
-        let mut controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool.clone(),
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
@@ -2023,8 +2051,12 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
 
-        let mut controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool.clone(),
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let index_metadata = IndexMetadata::for_test("test-index", "ram://indexes/test-index");
@@ -2223,8 +2255,12 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
 
-        let mut controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool.clone(),
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = INGEST_V2_SOURCE_ID.to_string();
@@ -2330,8 +2366,12 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
 
-        let controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let controller = IngestController::new(
+            metastore,
+            ingester_pool.clone(),
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".to_string();
@@ -2545,8 +2585,12 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let replication_factor = 2;
 
-        let controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let controller = IngestController::new(
+            metastore,
+            ingester_pool.clone(),
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".to_string();
@@ -2624,7 +2668,12 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let replication_factor = 2;
 
-        let controller = IngestController::new(metastore, ingester_pool, replication_factor);
+        let controller = IngestController::new(
+            metastore,
+            ingester_pool,
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
 
         let mut model = ControlPlaneModel::default();
 
@@ -2694,8 +2743,12 @@ mod tests {
         let metastore = MetastoreServiceClient::mocked();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
-        let controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let controller = IngestController::new(
+            metastore,
+            ingester_pool.clone(),
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
 
         let closed_shards = controller.close_shards(Vec::new()).await;
         assert_eq!(closed_shards.len(), 0);
@@ -2846,8 +2899,12 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
-        let mut controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool.clone(),
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
 
         let mut model = ControlPlaneModel::default();
 
