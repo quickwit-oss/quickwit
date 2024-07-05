@@ -11,10 +11,10 @@ expected:
   health: green
   index: gharchive
   pri: '1'
-  pri.store.size: 271.8kb
+  pri.store.size: 272.4kb
   rep: '1'
   status: open
-  store.size: 271.8kb
+  store.size: 272.4kb
   #uuid: gharchive:01HN2SDANHDN6WFAFNH7BBMQ8C
 - index: otel-logs-v0_7
   docs.count: '0'
@@ -32,10 +32,10 @@ expected:
   health: green
   index: gharchive
   pri: '1'
-  pri.store.size: 271.8kb
+  pri.store.size: 272.4kb
   rep: '1'
   status: open
-  store.size: 271.8kb
+  store.size: 272.4kb
   #uuid: gharchive:01HN2SDANHDN6WFAFNH7BBMQ8C
 ---
 method: [GET]

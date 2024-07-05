@@ -3140,6 +3140,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyperloglogplus"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "621debdf94dcac33e50475fdd76d34d5ea9c0362a834b9db08c3024696c1fbe3"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "iana-time-zone"
 version = "0.1.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4706,7 +4715,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=08b9fc0#08b9fc0b3114640ad06c2358c404c474a9eea3c1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=13e9885#13e9885dfda8cebf4bfef72f53bf811da8549445"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -8124,7 +8133,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.23.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=08b9fc0#08b9fc0b3114640ad06c2358c404c474a9eea3c1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=13e9885#13e9885dfda8cebf4bfef72f53bf811da8549445"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -8140,6 +8149,7 @@ dependencies = [
  "fs4",
  "futures-util",
  "htmlescape",
+ "hyperloglogplus",
  "itertools 0.13.0",
  "levenshtein_automata",
  "log",
@@ -8176,7 +8186,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=08b9fc0#08b9fc0b3114640ad06c2358c404c474a9eea3c1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=13e9885#13e9885dfda8cebf4bfef72f53bf811da8549445"
 dependencies = [
  "bitpacking",
 ]
@@ -8184,7 +8194,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=08b9fc0#08b9fc0b3114640ad06c2358c404c474a9eea3c1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=13e9885#13e9885dfda8cebf4bfef72f53bf811da8549445"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -8199,7 +8209,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=08b9fc0#08b9fc0b3114640ad06c2358c404c474a9eea3c1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=13e9885#13e9885dfda8cebf4bfef72f53bf811da8549445"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -8222,7 +8232,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.22.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=08b9fc0#08b9fc0b3114640ad06c2358c404c474a9eea3c1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=13e9885#13e9885dfda8cebf4bfef72f53bf811da8549445"
 dependencies = [
  "nom",
 ]
@@ -8230,7 +8240,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=08b9fc0#08b9fc0b3114640ad06c2358c404c474a9eea3c1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=13e9885#13e9885dfda8cebf4bfef72f53bf811da8549445"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -8241,7 +8251,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=08b9fc0#08b9fc0b3114640ad06c2358c404c474a9eea3c1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=13e9885#13e9885dfda8cebf4bfef72f53bf811da8549445"
 dependencies = [
  "murmurhash32",
  "rand_distr",
@@ -8251,7 +8261,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=08b9fc0#08b9fc0b3114640ad06c2358c404c474a9eea3c1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=13e9885#13e9885dfda8cebf4bfef72f53bf811da8549445"
 dependencies = [
  "serde",
 ]
