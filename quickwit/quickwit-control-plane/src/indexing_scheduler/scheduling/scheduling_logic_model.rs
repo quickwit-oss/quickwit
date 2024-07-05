@@ -79,7 +79,7 @@ impl Source {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SchedulingProblem {
     sources: Vec<Source>,
     indexer_cpu_capacities: Vec<CpuCapacity>,
