@@ -87,7 +87,7 @@ impl QuickwitDateTimeOptions {
                     Ok(())
                 } else {
                     Err(format!(
-                        "failed to parse datetime `{:?}`: value is larger than i64::MAX",
+                        "failed to convert timestamp to f64 ({:?}). this should never happen",
                         serde_json::Number::from(*timestamp)
                     ))
                 }
