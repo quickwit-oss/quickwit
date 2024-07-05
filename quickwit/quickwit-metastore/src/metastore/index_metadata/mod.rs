@@ -20,20 +20,19 @@
 pub(crate) mod serialize;
 
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    IndexConfig, RetentionPolicy, SearchSettings, SourceConfig, TestableForRegression,
+    IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
 };
 use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
-use quickwit_proto::types::{IndexUid, Position, SourceId};
+use quickwit_proto::types::{IndexUid, SourceId};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedIndexMetadata;
 use time::OffsetDateTime;
-use ulid::Ulid;
 
-use crate::checkpoint::{IndexCheckpoint, PartitionId, SourceCheckpoint, SourceCheckpointDelta};
+use crate::checkpoint::IndexCheckpoint;
 
 /// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -75,7 +74,7 @@ impl IndexMetadata {
     /// An incarnation id of `0` will be used to complete the index id into a index uuid.
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
-        let index_uid = IndexUid::from_parts(index_id, 0);
+        let index_uid = IndexUid::for_test(index_id, 0);
         let mut index_metadata = IndexMetadata::new(IndexConfig::for_test(index_id, index_uri));
         index_metadata.index_uid = index_uid;
         index_metadata
@@ -111,10 +110,20 @@ impl IndexMetadata {
         }
     }
 
-    /// Replaces or removes the current search settings, returning whether a mutation occurred.
+    /// Replaces the current search settings, returning whether a mutation occurred.
     pub fn set_search_settings(&mut self, search_settings: SearchSettings) -> bool {
         if self.index_config.search_settings != search_settings {
             self.index_config.search_settings = search_settings;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Replaces the current indexing settings, returning whether a mutation occurred.
+    pub fn set_indexing_settings(&mut self, indexing_settings: IndexingSettings) -> bool {
+        if self.index_config.indexing_settings != indexing_settings {
+            self.index_config.indexing_settings = indexing_settings;
             true
         } else {
             false
@@ -161,8 +170,17 @@ impl IndexMetadata {
     }
 }
 
-impl TestableForRegression for IndexMetadata {
+#[cfg(any(test, feature = "testsuite"))]
+impl quickwit_config::TestableForRegression for IndexMetadata {
     fn sample_for_regression() -> IndexMetadata {
+        use std::collections::BTreeMap;
+
+        use quickwit_proto::types::Position;
+
+        use crate::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
+
+        let index_config = IndexConfig::sample_for_regression();
+
         let mut source_checkpoint = SourceCheckpoint::default();
         let delta = SourceCheckpointDelta::from_partition_delta(
             PartitionId::from(0i64),
@@ -171,12 +189,13 @@ impl TestableForRegression for IndexMetadata {
         )
         .unwrap();
         source_checkpoint.try_apply_delta(delta).unwrap();
-        let mut per_source_checkpoint: BTreeMap<String, SourceCheckpoint> = BTreeMap::default();
-        per_source_checkpoint.insert("kafka-source".to_string(), source_checkpoint);
+
+        let per_source_checkpoint: BTreeMap<String, SourceCheckpoint> =
+            BTreeMap::from_iter([("kafka-source".to_string(), source_checkpoint)]);
         let checkpoint = IndexCheckpoint::from(per_source_checkpoint);
-        let index_config = IndexConfig::sample_for_regression();
+
         let mut index_metadata = IndexMetadata {
-            index_uid: IndexUid::from_parts(&index_config.index_id, Ulid::nil()),
+            index_uid: IndexUid::for_test(&index_config.index_id, 1),
             index_config,
             checkpoint,
             create_timestamp: 1789,

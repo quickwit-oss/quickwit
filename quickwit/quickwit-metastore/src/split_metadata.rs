@@ -264,11 +264,9 @@ pub struct SplitInfo {
 #[cfg(any(test, feature = "testsuite"))]
 impl quickwit_config::TestableForRegression for SplitMetadata {
     fn sample_for_regression() -> Self {
-        use ulid::Ulid;
-
         SplitMetadata {
             split_id: "split".to_string(),
-            index_uid: IndexUid::from_parts("my-index", Ulid::nil()),
+            index_uid: IndexUid::for_test("my-index", 1),
             source_id: "source".to_string(),
             node_id: "node".to_string(),
             delete_opstamp: 10,
@@ -401,10 +399,7 @@ mod tests {
     fn test_split_metadata_debug() {
         let split_metadata = SplitMetadata {
             split_id: "split-1".to_string(),
-            index_uid: IndexUid::from_parts(
-                "00000000-0000-0000-0000-000000000000",
-                ulid::Ulid::nil(),
-            ),
+            index_uid: IndexUid::for_test("00000000-0000-0000-0000-000000000000", 0),
             partition_id: 0,
             source_id: "source-1".to_string(),
             node_id: "node-1".to_string(),

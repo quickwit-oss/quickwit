@@ -15,7 +15,6 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
-dyn-clone = { workspace = true }
 fail = { workspace = true, optional = true }
 futures = { workspace = true }
 http = { workspace = true }
@@ -27,6 +26,7 @@ prost = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_json_borrow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
@@ -37,8 +37,9 @@ utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true }
+quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
@@ -58,4 +59,5 @@ quickwit-codegen = { workspace = true }
 
 [features]
 failpoints = ["fail/failpoints"]
+no-failpoints = []
 testsuite = ["mockall"]

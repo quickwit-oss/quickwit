@@ -3,7 +3,7 @@
     {
       "create_timestamp": 0,
       "delete_query": {
-        "index_uid": "my-index:00000000000000000000000000",
+        "index_uid": "my-index:00000000000000000000000001",
         "query_ast": "{\"type\":\"bool\",\"must\":[{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Harry\",\"params\":{\"mode\":{\"type\":\"phrase_fallback_to_intersection\"}}},{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Potter\",\"params\":{\"mode\":{\"type\":\"phrase_fallback_to_intersection\"}}}]}"
       },
       "opstamp": 10
@@ -18,7 +18,7 @@
     "create_timestamp": 1789,
     "index_config": {
       "doc_mapping": {
-        "document_length": false,
+        "doc_mapping_uid": "00000000000000000000000001",
         "dynamic_mapping": {
           "expand_dots": true,
           "fast": {
@@ -77,6 +77,7 @@
         "max_num_partitions": 100,
         "mode": "dynamic",
         "partition_key": "tenant_id",
+        "store_document_size": false,
         "store_source": true,
         "tag_fields": [
           "log_level",
@@ -119,9 +120,9 @@
           "message"
         ]
       },
-      "version": "0.8"
+      "version": "0.9"
     },
-    "index_uid": "my-index:00000000000000000000000000",
+    "index_uid": "my-index:00000000000000000000000001",
     "sources": [
       {
         "enabled": true,
@@ -137,10 +138,24 @@
           "script": ".message = downcase(string!(.message))",
           "timezone": "UTC"
         },
-        "version": "0.8"
+        "version": "0.9"
       }
     ],
-    "version": "0.8"
+    "version": "0.9"
+  },
+  "shards": {
+    "_ingest-source": [
+      {
+        "index_uid": "my-index:00000000000000000000000001",
+        "shard_id": "00000000000000000001",
+        "source_id": "_ingest-source",
+        "shard_state": 1,
+        "leader_id": "leader-ingester",
+        "follower_id": "follower-ingester",
+        "doc_mapping_uid": "00000000000000000000000001",
+        "publish_position_inclusive": ""
+      }
+    ]
   },
   "splits": [
     {
@@ -150,7 +165,7 @@
         "end": 2000,
         "start": 1000
       },
-      "index_uid": "my-index:00000000000000000000000000",
+      "index_uid": "my-index:00000000000000000000000001",
       "maturity": {
         "maturation_period_millis": 4000,
         "type": "immature"
@@ -173,8 +188,8 @@
       },
       "uncompressed_docs_size_in_bytes": 234234,
       "update_timestamp": 1789,
-      "version": "0.8"
+      "version": "0.9"
     }
   ],
-  "version": "0.8"
+  "version": "0.9"
 }

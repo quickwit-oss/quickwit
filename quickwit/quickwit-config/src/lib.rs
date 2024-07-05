@@ -19,12 +19,12 @@
 
 #![deny(clippy::disallowed_methods)]
 
-use std::env;
 use std::str::FromStr;
 
 use anyhow::{bail, ensure, Context};
 use json_comments::StripComments;
 use once_cell::sync::Lazy;
+use quickwit_common::get_bool_from_env;
 use quickwit_common::net::is_valid_hostname;
 use quickwit_common::uri::Uri;
 use quickwit_proto::types::NodeIdRef;
@@ -48,9 +48,10 @@ pub use cluster_config::ClusterConfig;
 // See #2048
 use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
 pub use index_config::{
-    build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig,
+    build_doc_mapper, load_index_config_from_user_config, load_index_config_update, IndexConfig,
     IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
 };
+pub use quickwit_doc_mapper::DocMapping;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -82,14 +83,16 @@ pub use crate::storage_config::{
 
 /// Returns true if the ingest API v2 is enabled.
 pub fn enable_ingest_v2() -> bool {
-    static ENABLE_INGEST_V2: Lazy<bool> = Lazy::new(|| env::var("QW_ENABLE_INGEST_V2").is_ok());
+    static ENABLE_INGEST_V2: Lazy<bool> =
+        Lazy::new(|| get_bool_from_env("QW_ENABLE_INGEST_V2", false));
     *ENABLE_INGEST_V2
 }
 
 /// Returns true if the ingest API v1 is disabled.
 pub fn disable_ingest_v1() -> bool {
-    static ENABLE_INGEST_V2: Lazy<bool> = Lazy::new(|| env::var("QW_DISABLE_INGEST_V1").is_ok());
-    *ENABLE_INGEST_V2
+    static DISABLE_INGEST_V1: Lazy<bool> =
+        Lazy::new(|| get_bool_from_env("QW_DISABLE_INGEST_V1", false));
+    *DISABLE_INGEST_V1
 }
 
 #[derive(utoipa::OpenApi)]
@@ -225,7 +228,7 @@ impl ConfigFormat {
                     serde_json::from_reader(StripComments::new(payload))?;
                 let version_value = json_value.get_mut("version").context("missing version")?;
                 if let Some(version_number) = version_value.as_u64() {
-                    warn!(version_value=?version_value, "`version` is supposed to be a string");
+                    warn!(version_value=?version_value, "`version` should be a string");
                     *version_value = JsonValue::String(version_number.to_string());
                 }
                 serde_json::from_value(json_value).context("failed to parse JSON file")
@@ -237,7 +240,7 @@ impl ConfigFormat {
                     toml::from_str(payload_str).context("failed to parse TOML file")?;
                 let version_value = toml_value.get_mut("version").context("missing version")?;
                 if let Some(version_number) = version_value.as_integer() {
-                    warn!(version_value=?version_value, "`version` is supposed to be a string");
+                    warn!(version_value=?version_value, "`version` should be a string");
                     *version_value = toml::Value::String(version_number.to_string());
                     let reserialized = toml::to_string(version_value)
                         .context("failed to reserialize toml config")?;

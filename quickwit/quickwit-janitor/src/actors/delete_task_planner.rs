@@ -209,9 +209,11 @@ impl DeleteTaskPlanner {
                     self.merge_split_downloader_mailbox.clone(),
                 )
                 .await?;
+                let index_label =
+                    quickwit_common::metrics::index_label(self.index_uid.index_id.as_str());
                 JANITOR_METRICS
                     .ongoing_num_delete_operations_total
-                    .with_label_values([&self.index_uid.index_id])
+                    .with_label_values([index_label])
                     .set(self.ongoing_delete_operations_inventory.list().len() as i64);
             }
         }
@@ -467,7 +469,7 @@ mod tests {
         for doc in docs {
             test_sandbox.add_documents(vec![doc]).await?;
         }
-        let mut metastore = test_sandbox.metastore();
+        let metastore = test_sandbox.metastore();
         let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
         let index_metadata = metastore
             .index_metadata(index_metadata_request)

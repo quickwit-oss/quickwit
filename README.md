@@ -94,24 +94,15 @@ Cloud-native search engine for observability (logs, traces, and soon metrics!). 
 
 # 🔮 Roadmap
 
-- Quickwit 0.9 (June 2024)
+- Quickwit 0.9 (July 2024)
   - Indexing and search performance improvements
   - Index configuration updates (retention policy, indexing and search settings)
   - Concatenated field
 
-- Quickwit 0.10 (September 2024)
+- Quickwit 0.10 (October 2024)
   - Schema (doc mapping) updates
   - Native distributed ingestion
   - Index templates
-
-- [Long-term roadmap](ROADMAP.md)
-  - Live tail
-  - SQL
-  - Security (TLS, authentication, RBAC)
-  - Alerting
-  - [and more...](ROADMAP.md)
-
-details are also available on the [GitHub projects](https://github.com/orgs/quickwit-oss/projects?query=is%3Aopen)
 
 # 🙋 FAQ
 

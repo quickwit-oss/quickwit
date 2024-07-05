@@ -350,7 +350,7 @@ impl IngestSource {
                 .push(truncate_shards_subrequest);
         }
         for (ingester_id, truncate_subrequests) in per_ingester_truncate_subrequests {
-            let Some(mut ingester) = self.ingester_pool.get(ingester_id) else {
+            let Some(ingester) = self.ingester_pool.get(ingester_id) else {
                 warn!("failed to truncate shard(s): ingester `{ingester_id}` is unavailable");
                 continue;
             };
@@ -684,7 +684,7 @@ mod tests {
     };
     use quickwit_proto::ingest::{IngestV2Error, MRecordBatch, Shard, ShardState};
     use quickwit_proto::metastore::{AcquireShardsResponse, MockMetastoreService};
-    use quickwit_proto::types::{IndexUid, PipelineUid};
+    use quickwit_proto::types::{DocMappingUid, IndexUid, PipelineUid};
     use quickwit_storage::StorageResolver;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::watch;
@@ -726,6 +726,7 @@ mod tests {
                         follower_id: None,
                         shard_id: Some(ShardId::from(0)),
                         shard_state: ShardState::Open as i32,
+                        doc_mapping_uid: Some(DocMappingUid::default()),
                         publish_position_inclusive: Some(Position::offset(10u64)),
                         publish_token: Some(publish_token.to_string()),
                     }],
@@ -748,6 +749,7 @@ mod tests {
                         source_id: "test-source".to_string(),
                         shard_id: Some(ShardId::from(1)),
                         shard_state: ShardState::Open as i32,
+                        doc_mapping_uid: Some(DocMappingUid::default()),
                         publish_position_inclusive: Some(Position::offset(11u64)),
                         publish_token: Some(publish_token.to_string()),
                     }],
@@ -771,6 +773,7 @@ mod tests {
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(1)),
                             shard_state: ShardState::Open as i32,
+                            doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: Some(Position::offset(11u64)),
                             publish_token: Some(publish_token.to_string()),
                         },
@@ -781,6 +784,7 @@ mod tests {
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(2)),
                             shard_state: ShardState::Open as i32,
+                            doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: Some(Position::offset(12u64)),
                             publish_token: Some(publish_token.to_string()),
                         },
@@ -1070,6 +1074,7 @@ mod tests {
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(1)),
                             shard_state: ShardState::Open as i32,
+                            doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: Some(Position::eof(11u64)),
                             publish_token: Some(publish_token.to_string()),
                         },
@@ -1080,6 +1085,7 @@ mod tests {
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(2)),
                             shard_state: ShardState::Open as i32,
+                            doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: Some(Position::Beginning.as_eof()),
                             publish_token: Some(publish_token.to_string()),
                         },
@@ -1210,6 +1216,7 @@ mod tests {
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(1)),
                             shard_state: ShardState::Open as i32,
+                            doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: Some(Position::offset(11u64)),
                             publish_token: Some(publish_token.to_string()),
                         },
@@ -1220,6 +1227,7 @@ mod tests {
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(2)),
                             shard_state: ShardState::Closed as i32,
+                            doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: Some(Position::eof(22u64)),
                             publish_token: Some(publish_token.to_string()),
                         },
@@ -1560,6 +1568,7 @@ mod tests {
                         source_id: "test-source".to_string(),
                         shard_id: Some(ShardId::from(1)),
                         shard_state: ShardState::Open as i32,
+                        doc_mapping_uid: Some(DocMappingUid::default()),
                         publish_position_inclusive: Some(Position::Beginning),
                         publish_token: Some(publish_token.to_string()),
                     }],

@@ -26,7 +26,7 @@ pub use prometheus::{
     IntCounter, IntCounterVec as PrometheusIntCounterVec, IntGauge,
     IntGaugeVec as PrometheusIntGaugeVec,
 };
-use prometheus::{Encoder, Gauge, HistogramOpts, Opts, TextEncoder};
+use prometheus::{Gauge, HistogramOpts, Opts, TextEncoder};
 
 #[derive(Clone)]
 pub struct HistogramVec<const N: usize> {
@@ -72,6 +72,25 @@ pub fn register_info(name: &'static str, help: &'static str, kvs: BTreeMap<&'sta
 }
 
 pub fn new_counter(
+    name: &str,
+    help: &str,
+    subsystem: &str,
+    const_labels: &[(&str, &str)],
+) -> IntCounter {
+    let owned_const_labels: HashMap<String, String> = const_labels
+        .iter()
+        .map(|(label_name, label_value)| (label_name.to_string(), label_value.to_string()))
+        .collect();
+    let counter_opts = Opts::new(name, help)
+        .namespace("quickwit")
+        .subsystem(subsystem)
+        .const_labels(owned_const_labels);
+    let counter = IntCounter::with_opts(counter_opts).expect("failed to create counter");
+    prometheus::register(Box::new(counter.clone())).expect("failed to register counter");
+    counter
+}
+
+pub fn new_counter_with_labels(
     name: &str,
     help: &str,
     subsystem: &str,
@@ -286,12 +305,16 @@ impl Drop for OwnedGaugeGuard {
     }
 }
 
-pub fn metrics_text_payload() -> String {
+pub fn metrics_text_payload() -> Result<String, String> {
     let metric_families = prometheus::gather();
-    let mut buffer = Vec::new();
+    // Arbitrary non-zero size in order to skip a bunch of
+    // buffer growth-reallocations when encoding metrics.
+    let mut buffer = String::with_capacity(1024);
     let encoder = TextEncoder::new();
-    let _ = encoder.encode(&metric_families, &mut buffer); // TODO avoid ignoring the error.
-    String::from_utf8_lossy(&buffer).to_string()
+    match encoder.encode_utf8(&metric_families, &mut buffer) {
+        Ok(()) => Ok(buffer),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[derive(Clone)]
@@ -427,6 +450,18 @@ impl InFlightDataGauges {
             self.in_flight_gauge_vec
                 .with_label_values(["pulsar_source"])
         })
+    }
+}
+
+/// This function returns `index_name` or projects it to `<any>` if per-index metrics are disabled.
+pub fn index_label(index_name: &str) -> &str {
+    static PER_INDEX_METRICS_ENABLED: OnceLock<bool> = OnceLock::new();
+    let per_index_metrics_enabled: bool = *PER_INDEX_METRICS_ENABLED
+        .get_or_init(|| !crate::get_bool_from_env("QW_DISABLE_PER_INDEX_METRICS", false));
+    if per_index_metrics_enabled {
+        index_name
+    } else {
+        "__any__"
     }
 }
 

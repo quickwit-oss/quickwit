@@ -18,7 +18,6 @@
     "create_timestamp": 1789,
     "index_config": {
       "doc_mapping": {
-        "document_length": false,
         "dynamic_mapping": {
           "expand_dots": true,
           "fast": {
@@ -77,6 +76,7 @@
         "max_num_partitions": 100,
         "mode": "dynamic",
         "partition_key": "tenant_id",
+        "store_document_size": false,
         "store_source": true,
         "tag_fields": [
           "log_level",
@@ -145,13 +145,13 @@
   "shards": {
     "_ingest-source": [
       {
-        "follower_id": "follower-ingester",
         "index_uid": "my-index:00000000000000000000000000",
-        "leader_id": "leader-ingester",
-        "publish_position_inclusive": "",
         "shard_id": "00000000000000000001",
+        "source_id": "_ingest-source",
         "shard_state": 1,
-        "source_id": "_ingest-source"
+        "leader_id": "leader-ingester",
+        "follower_id": "follower-ingester",
+        "publish_position_inclusive": ""
       }
     ]
   },

@@ -155,12 +155,10 @@ impl From<SplitMetadata> for SplitMetadataV0_8 {
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedSplitMetadata {
-    #[serde(rename = "0.8")]
+    #[serde(rename = "0.9")]
     // Retro compatibility.
+    #[serde(alias = "0.8")]
     #[serde(alias = "0.7")]
-    #[serde(alias = "0.6")]
-    #[serde(alias = "0.5")]
-    #[serde(alias = "0.4")]
     V0_8(SplitMetadataV0_8),
 }
 

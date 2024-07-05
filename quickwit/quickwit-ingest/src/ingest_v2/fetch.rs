@@ -457,7 +457,7 @@ async fn fault_tolerant_fetch_stream(
     'outer: for (ingester_idx, ingester_id) in ingester_ids.iter().enumerate() {
         let failover_ingester_id_opt = ingester_ids.get(ingester_idx + 1);
 
-        let Some(mut ingester) = ingester_pool.get(ingester_id) else {
+        let Some(ingester) = ingester_pool.get(ingester_id) else {
             if let Some(failover_ingester_id) = failover_ingester_id_opt {
                 warn!(
                     client_id=%client_id,

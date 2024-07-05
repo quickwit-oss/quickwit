@@ -167,7 +167,7 @@ pub async fn test_metastore_list_all_splits<
 }
 
 pub async fn test_metastore_stream_splits<MetastoreToTest: MetastoreServiceExt + DefaultForTest>() {
-    let mut metastore = MetastoreToTest::default_for_test().await;
+    let metastore = MetastoreToTest::default_for_test().await;
 
     let index_id = append_random_suffix("test-stream-splits");
     let index_uri = format!("ram:///indexes/{index_id}");
@@ -901,7 +901,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
 pub async fn test_metastore_list_splits_by_node_id<
     MetastoreToTest: MetastoreServiceExt + DefaultForTest,
 >() {
-    let mut metastore = MetastoreToTest::default_for_test().await;
+    let metastore = MetastoreToTest::default_for_test().await;
 
     let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
     let index_id = append_random_suffix("test-list-splits-by-node-id");

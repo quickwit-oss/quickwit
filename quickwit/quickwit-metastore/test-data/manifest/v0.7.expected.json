@@ -8,7 +8,7 @@
     {
       "description": "Test description.",
       "doc_mapping": {
-        "document_length": false,
+        "doc_mapping_uid": "00000000000000000000000000",
         "dynamic_mapping": {
           "expand_dots": true,
           "fast": {
@@ -47,6 +47,7 @@
         "index_field_presence": false,
         "max_num_partitions": 200,
         "mode": "dynamic",
+        "store_document_size": false,
         "store_source": false,
         "tag_fields": [],
         "timestamp_field": "ts",
@@ -82,8 +83,8 @@
         "default_search_fields": []
       },
       "template_id": "test-template",
-      "version": "0.8"
+      "version": "0.9"
     }
   ],
-  "version": "0.8"
+  "version": "0.9"
 }

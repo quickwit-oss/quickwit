@@ -38,6 +38,7 @@ pub struct RateLimiterSettings {
     pub refill_period: Duration,
 }
 
+#[cfg(any(test, feature = "testsuite"))]
 impl Default for RateLimiterSettings {
     fn default() -> Self {
         // 10 MB burst limit.

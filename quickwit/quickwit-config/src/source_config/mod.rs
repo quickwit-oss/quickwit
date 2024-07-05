@@ -35,7 +35,7 @@ pub use serialize::load_source_config_from_user_config;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
 
-use crate::{disable_ingest_v1, enable_ingest_v2, TestableForRegression};
+use crate::{disable_ingest_v1, enable_ingest_v2};
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
 pub const CLI_SOURCE_ID: &str = "_ingest-cli-source";
@@ -153,7 +153,8 @@ impl SourceConfig {
     }
 }
 
-impl TestableForRegression for SourceConfig {
+#[cfg(any(test, feature = "testsuite"))]
+impl crate::TestableForRegression for SourceConfig {
     fn sample_for_regression() -> Self {
         SourceConfig {
             source_id: "kafka-source".to_string(),

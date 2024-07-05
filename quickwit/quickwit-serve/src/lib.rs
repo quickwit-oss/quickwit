@@ -70,13 +70,13 @@ use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
-use quickwit_common::spawn_named_task;
 use quickwit_common::tower::{
-    BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
-    EventListenerLayer, GrpcMetricsLayer, LoadShedLayer, RateLimitLayer, RetryLayer, RetryPolicy,
-    SmaRateEstimator,
+    BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
+    ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
+    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator,
 };
 use quickwit_common::uri::Uri;
+use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
@@ -100,8 +100,10 @@ use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::{
     IngesterService, IngesterServiceClient, IngesterServiceTowerLayerStack, IngesterStatus,
+    PersistFailureReason, PersistResponse,
 };
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
+use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::metastore::{
     EntityKind, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
     MetastoreServiceClient,
@@ -120,7 +122,7 @@ use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
 pub use crate::build_info::{BuildInfo, RuntimeInfo};
-pub use crate::index_api::{IndexUpdates, ListSplitsQueryParams, ListSplitsResponse};
+pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
 pub use crate::metrics::SERVE_METRICS;
 use crate::rate_modulator::RateModulator;
 #[cfg(test)]
@@ -634,7 +636,7 @@ pub async fn serve_quickwit(
             search_job_placer,
             storage_resolver.clone(),
             event_broker.clone(),
-            std::env::var(DISABLE_DELETE_TASK_SERVICE_ENV_KEY).is_err(),
+            !get_bool_from_env(DISABLE_DELETE_TASK_SERVICE_ENV_KEY, false),
         )
         .await
         .context("failed to start janitor service")?;
@@ -786,6 +788,32 @@ pub async fn serve_quickwit(
     Ok(actor_exit_statuses)
 }
 
+#[derive(Clone, Copy)]
+struct PersistCircuitBreakerEvaluator;
+
+impl CircuitBreakerEvaluator for PersistCircuitBreakerEvaluator {
+    type Response = PersistResponse;
+
+    type Error = IngestV2Error;
+
+    fn is_circuit_breaker_error(&self, output: &Result<Self::Response, IngestV2Error>) -> bool {
+        let Ok(persist_response) = output.as_ref() else {
+            return false;
+        };
+        for persist_failure in &persist_response.failures {
+            // This is the error we return when the WAL is full.
+            if persist_failure.reason() == PersistFailureReason::ResourceExhausted {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn make_circuit_breaker_output(&self) -> IngestV2Error {
+        IngestV2Error::TooManyRequests
+    }
+}
+
 /// Stack of layers to use on the server side of the ingester service.
 fn ingester_service_layer_stack(
     layer_stack: IngesterServiceTowerLayerStack,
@@ -793,6 +821,14 @@ fn ingester_service_layer_stack(
     layer_stack
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
         .stack_persist_layer(quickwit_common::tower::OneTaskPerCallLayer)
+        .stack_persist_layer(
+            // "3" may seem a little bit low, but we only consider error caused by a full WAL.
+            PersistCircuitBreakerEvaluator.make_layer(
+                3,
+                Duration::from_millis(500),
+                crate::metrics::SERVE_METRICS.circuit_break_total.clone(),
+            ),
+        )
         .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_init_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_retain_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
@@ -835,9 +871,14 @@ async fn setup_ingest_v2(
     // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
     // line length is prefixed.
     let burst_limit = (content_length_limit.as_u64() * 3 / 2).clamp(10_000_000, 200_000_000);
+
+    let rate_limit =
+        ConstantRate::bytes_per_sec(node_config.ingest_api_config.shard_throughput_limit);
     let rate_limiter_settings = RateLimiterSettings {
         burst_limit,
-        ..Default::default()
+        rate_limit,
+        // Refill every 100ms.
+        refill_period: Duration::from_millis(100),
     };
 
     // Instantiate ingester.
@@ -1151,7 +1192,7 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
 async fn node_readiness_reporting_task(
     cluster: Cluster,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
@@ -1199,7 +1240,7 @@ async fn node_readiness_reporting_task(
 async fn check_cluster_configuration(
     services: &HashSet<QuickwitService>,
     peer_seeds: &[String],
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> anyhow::Result<()> {
     if !services.contains(&QuickwitService::Metastore) || peer_seeds.is_empty() {
         return Ok(());
@@ -1245,9 +1286,10 @@ pub mod lambda_search_api {
         es_compat_cat_indices_handler, es_compat_index_cat_indices_handler,
         es_compat_index_count_handler, es_compat_index_field_capabilities_handler,
         es_compat_index_multi_search_handler, es_compat_index_search_handler,
-        es_compat_index_stats_handler, es_compat_scroll_handler, es_compat_search_handler,
-        es_compat_stats_handler,
+        es_compat_index_stats_handler, es_compat_resolve_index_handler, es_compat_scroll_handler,
+        es_compat_search_handler, es_compat_stats_handler,
     };
+    pub use crate::index_api::get_index_metadata_handler;
     pub use crate::rest::recover_fn;
     pub use crate::search_api::{search_get_handler, search_post_handler};
 }

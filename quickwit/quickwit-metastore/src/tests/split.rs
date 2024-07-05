@@ -695,7 +695,7 @@ pub async fn test_metastore_publish_splits_concurrency<
     let mut join_handles = Vec::with_capacity(10);
 
     for partition_id in 0..10 {
-        let mut metastore_clone = metastore.clone();
+        let metastore_clone = metastore.clone();
         let index_id = index_id.clone();
         let source_id = source_id.clone();
 

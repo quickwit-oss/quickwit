@@ -37,6 +37,7 @@ export default function ApiUrlFooter(url: string) {
   const origin = process.env.NODE_ENV === 'development' ? 'http://localhost:7280' : window.location.origin;
   const completeUrl = `${origin}/${url}`;
   const isTooLong = completeUrl.length > urlMaxLength;
+  // TODO show generated aggregation
   return <Footer>
     <Typography sx={{ padding: '4px 5px', fontSize: '0.95em'}}>
       API URL:

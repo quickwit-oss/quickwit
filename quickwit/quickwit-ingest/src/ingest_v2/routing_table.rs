@@ -234,7 +234,7 @@ impl RoutingTableEntry {
             target_shards.sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
 
             info!(
-                index_id=%self.index_uid.index_id,
+                index_uid=%self.index_uid,
                 source_id=%self.source_id,
                 "inserted {num_inserted_shards} shards into routing table"
             );
@@ -493,7 +493,7 @@ mod tests {
     #[test]
     fn test_routing_table_entry_new() {
         let self_node_id: NodeId = "test-node-0".into();
-        let index_uid: IndexUid = IndexUid::from_parts("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let table_entry = RoutingTableEntry::new(
             &self_node_id,
@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_routing_table_entry_has_open_shards() {
-        let index_uid: IndexUid = IndexUid::from_parts("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
 
@@ -653,7 +653,7 @@ mod tests {
 
     #[test]
     fn test_routing_table_entry_next_open_shard_round_robin() {
-        let index_uid: IndexUid = IndexUid::from_parts("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
         let ingester_pool = IngesterPool::default();
@@ -770,7 +770,7 @@ mod tests {
 
     #[test]
     fn test_routing_table_entry_insert_open_shards() {
-        let index_uid_0: IndexUid = IndexUid::from_parts("test-index", 0);
+        let index_uid_0 = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let mut table_entry = RoutingTableEntry::empty(index_uid_0.clone(), source_id.clone());
 
@@ -847,7 +847,7 @@ mod tests {
         assert_eq!(table_entry.remote_shards[1].shard_state, ShardState::Closed);
 
         // Update index incarnation.
-        let index_uid_1: IndexUid = IndexUid::from_parts("test-index", 1);
+        let index_uid_1 = IndexUid::for_test("test-index", 1);
         table_entry.insert_open_shards(
             &local_node_id,
             &local_node_id,
@@ -879,7 +879,7 @@ mod tests {
 
     #[test]
     fn test_routing_table_entry_close_shards() {
-        let index_uid: IndexUid = IndexUid::from_parts("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
 
         let mut table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
@@ -960,7 +960,7 @@ mod tests {
 
     #[test]
     fn test_routing_table_entry_delete_shards() {
-        let index_uid: IndexUid = IndexUid::from_parts("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
 
         let mut table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());

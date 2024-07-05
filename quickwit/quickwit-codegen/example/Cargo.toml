@@ -14,7 +14,6 @@ license.workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytesize = { workspace = true }
-dyn-clone = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 prost = { workspace = true }
@@ -28,7 +27,7 @@ utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
-quickwit-proto ={ workspace = true }
+quickwit-proto = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

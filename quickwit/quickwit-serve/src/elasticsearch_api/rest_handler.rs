@@ -50,11 +50,13 @@ use super::filter::{
     elastic_field_capabilities_filter, elastic_index_cat_indices_filter,
     elastic_index_count_filter, elastic_index_field_capabilities_filter,
     elastic_index_search_filter, elastic_index_stats_filter, elastic_multi_search_filter,
-    elastic_scroll_filter, elastic_stats_filter, elasticsearch_filter,
+    elastic_resolve_index_filter, elastic_scroll_filter, elastic_stats_filter,
+    elasticsearch_filter,
 };
 use super::model::{
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
     CatIndexQueryParams, DeleteQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
+    ElasticsearchResolveIndexEntryResponse, ElasticsearchResolveIndexResponse,
     ElasticsearchStatsResponse, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
     FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
     MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
@@ -62,6 +64,7 @@ use super::model::{
 };
 use super::{make_elastic_api_response, TrackTotalHits};
 use crate::format::BodyFormat;
+use crate::rest::recover_fn;
 use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::{with_arg, BuildInfo};
 
@@ -93,20 +96,22 @@ pub fn es_compat_cluster_info_handler(
 pub fn es_compat_search_handler(
     _search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elasticsearch_filter().then(|_params: SearchQueryParams| async move {
-        // TODO
-        let api_error = RestApiError {
-            status_code: StatusCode::NOT_IMPLEMENTED,
-            message: "_elastic/_search is not supported yet. Please try the index search endpoint \
-                      (_elastic/{index}/search)"
-                .to_string(),
-        };
-        RestApiResponse::new::<(), _>(
-            &Err(api_error),
-            StatusCode::NOT_IMPLEMENTED,
-            BodyFormat::default(),
-        )
-    })
+    elasticsearch_filter()
+        .then(|_params: SearchQueryParams| async move {
+            // TODO
+            let api_error = RestApiError {
+                status_code: StatusCode::NOT_IMPLEMENTED,
+                message: "_elastic/_search is not supported yet. Please try the index search \
+                          endpoint (_elastic/{index}/search)"
+                    .to_string(),
+            };
+            RestApiResponse::new::<(), _>(
+                &Err(api_error),
+                StatusCode::NOT_IMPLEMENTED,
+                BodyFormat::default(),
+            )
+        })
+        .recover(recover_fn)
 }
 
 /// GET or POST _elastic/{index}/_field_caps
@@ -119,6 +124,7 @@ pub fn es_compat_index_field_capabilities_handler(
         .and(with_arg(search_service))
         .then(es_compat_index_field_capabilities)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 /// DELETE _elastic/{index}
@@ -133,41 +139,55 @@ pub fn es_compat_delete_index_handler(
 
 /// GET _elastic/_stats
 pub fn es_compat_stats_handler(
-    search_service: MetastoreServiceClient,
+    metastore_service: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_stats_filter()
-        .and(with_arg(search_service))
+        .and(with_arg(metastore_service))
         .then(es_compat_stats)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 /// GET _elastic/{index}/_stats
 pub fn es_compat_index_stats_handler(
-    search_service: MetastoreServiceClient,
+    metastore_service: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_index_stats_filter()
-        .and(with_arg(search_service))
+        .and(with_arg(metastore_service))
         .then(es_compat_index_stats)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 /// GET _elastic/_cat/indices
 pub fn es_compat_cat_indices_handler(
-    search_service: MetastoreServiceClient,
+    metastore_service: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_cat_indices_filter()
-        .and(with_arg(search_service))
+        .and(with_arg(metastore_service))
         .then(es_compat_cat_indices)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 /// GET _elastic/_cat/indices/{index}
 pub fn es_compat_index_cat_indices_handler(
-    search_service: MetastoreServiceClient,
+    metastore_service: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_index_cat_indices_filter()
-        .and(with_arg(search_service))
+        .and(with_arg(metastore_service))
         .then(es_compat_index_cat_indices)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
+}
+
+/// GET  _elastic/_resolve/index/{index}
+pub fn es_compat_resolve_index_handler(
+    metastore_service: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_resolve_index_filter()
+        .and(with_arg(metastore_service))
+        .then(es_compat_resolve_index)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
@@ -179,6 +199,7 @@ pub fn es_compat_index_search_handler(
         .and(with_arg(search_service))
         .then(es_compat_index_search)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 /// GET or POST _elastic/{index}/_count
@@ -189,9 +210,10 @@ pub fn es_compat_index_count_handler(
         .and(with_arg(search_service))
         .then(es_compat_index_count)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
-/// POST _elastic/_search
+/// POST _elastic/_msearch
 pub fn es_compat_index_multi_search_handler(
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -205,6 +227,7 @@ pub fn es_compat_index_multi_search_handler(
             };
             RestApiResponse::new(&result, status_code, BodyFormat::default())
         })
+        .recover(recover_fn)
 }
 
 /// GET or POST _elastic/_search/scroll
@@ -215,6 +238,7 @@ pub fn es_compat_scroll_handler(
         .and(with_arg(search_service))
         .then(es_scroll)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
 }
 
 fn build_request_for_es_api(
@@ -540,6 +564,24 @@ async fn es_compat_index_cat_indices(
         })?;
 
     Ok(search_response_rest)
+}
+
+async fn es_compat_resolve_index(
+    index_id_patterns: Vec<String>,
+    mut metastore: MetastoreServiceClient,
+) -> Result<ElasticsearchResolveIndexResponse, ElasticsearchError> {
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
+    let mut indices: Vec<ElasticsearchResolveIndexEntryResponse> = indexes_metadata
+        .into_iter()
+        .map(|metadata| metadata.into())
+        .collect();
+
+    indices.sort_by(|left, right| left.name.cmp(&right.name));
+
+    Ok(ElasticsearchResolveIndexResponse {
+        indices,
+        ..Default::default()
+    })
 }
 
 async fn es_compat_index_field_capabilities(

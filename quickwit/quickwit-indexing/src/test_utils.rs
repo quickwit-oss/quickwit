@@ -96,7 +96,7 @@ impl TestSandbox {
         let storage_resolver = StorageResolver::for_test();
         let metastore_resolver =
             MetastoreResolver::configured(storage_resolver.clone(), &MetastoreConfigs::default());
-        let mut metastore = metastore_resolver
+        let metastore = metastore_resolver
             .resolve(&Uri::for_test(METASTORE_URI))
             .await?;
         let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
@@ -256,7 +256,7 @@ pub struct MockSplitBuilder {
 impl MockSplitBuilder {
     pub fn new(split_id: &str) -> Self {
         Self {
-            split_metadata: mock_split_meta(split_id, &IndexUid::from_parts("test-index", 0)),
+            split_metadata: mock_split_meta(split_id, &IndexUid::for_test("test-index", 0)),
         }
     }
 
@@ -286,7 +286,7 @@ pub fn mock_split_meta(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
         index_uid: index_uid.clone(),
         split_id: split_id.to_string(),
         partition_id: 13u64,
-        num_docs: 10,
+        num_docs: if split_id == "split1" { 1_000_000 } else { 10 },
         uncompressed_docs_size_in_bytes: 256,
         time_range: Some(121000..=130198),
         create_timestamp: 0,
@@ -321,7 +321,7 @@ mod tests {
             serde_json::json!({"title": "Ganimede", "body": "...", "url": "http://ganimede"}),
         ]).await?;
         assert_eq!(statistics.num_uploaded_splits, 1);
-        let mut metastore = test_sandbox.metastore();
+        let metastore = test_sandbox.metastore();
         {
             let splits = metastore
                 .list_splits(

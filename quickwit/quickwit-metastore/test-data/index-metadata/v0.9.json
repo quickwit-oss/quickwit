@@ -7,7 +7,7 @@
   "create_timestamp": 1789,
   "index_config": {
     "doc_mapping": {
-      "document_length": false,
+      "doc_mapping_uid": "00000000000000000000000001",
       "dynamic_mapping": {
         "expand_dots": true,
         "fast": {
@@ -62,17 +62,25 @@
           "type": "text"
         }
       ],
-      "index_field_presence": false,
+      "index_field_presence": true,
       "max_num_partitions": 100,
       "mode": "dynamic",
-      "partition_key": "tenant",
+      "partition_key": "tenant_id",
+      "store_document_size": false,
       "store_source": true,
       "tag_fields": [
         "log_level",
         "tenant_id"
       ],
       "timestamp_field": "timestamp",
-      "tokenizers": []
+      "tokenizers": [
+        {
+          "filters": [],
+          "name": "custom_tokenizer",
+          "pattern": "[^\\p{L}\\p{N}]+",
+          "type": "regex"
+        }
+      ]
     },
     "index_id": "my-index",
     "index_uri": "s3://quickwit-indexes/my-index",
@@ -101,9 +109,9 @@
         "message"
       ]
     },
-    "version": "0.8"
+    "version": "0.9"
   },
-  "index_uid": "my-index:00000000000000000000000000",
+  "index_uid": "my-index:00000000000000000000000001",
   "sources": [
     {
       "enabled": true,
@@ -119,8 +127,8 @@
         "script": ".message = downcase(string!(.message))",
         "timezone": "UTC"
       },
-      "version": "0.8"
+      "version": "0.9"
     }
   ],
-  "version": "0.8"
+  "version": "0.9"
 }

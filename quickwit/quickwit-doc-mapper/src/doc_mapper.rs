@@ -24,9 +24,11 @@ use std::ops::Bound;
 
 use anyhow::Context;
 use dyn_clone::{clone_trait_object, DynClone};
+use quickwit_proto::types::DocMappingUid;
 use quickwit_query::query_ast::QueryAst;
 use quickwit_query::tokenizers::TokenizerManager;
 use serde_json::Value as JsonValue;
+use serde_json_borrow::Map as BorrowedJsonMap;
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, OwnedValue as Value, Schema};
 use tantivy::{TantivyDocument as Document, Term};
@@ -47,6 +49,14 @@ use crate::{DocParsingError, QueryParserError};
 /// - supplying a tantivy [`Schema`]
 #[typetag::serde(tag = "type")]
 pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
+    /// Returns the unique identifier of the doc mapping.
+    fn doc_mapping_uid(&self) -> DocMappingUid;
+
+    /// Validates a JSON object according to the doc mapper.
+    fn validate_json_obj(&self, _json_obj: &BorrowedJsonMap) -> Result<(), DocParsingError> {
+        Ok(())
+    }
+
     /// Transforms a JSON object into a tantivy [`Document`] according to the rules
     /// defined for the `DocMapper`.
     fn doc_from_json_obj(
@@ -250,7 +260,7 @@ mod tests {
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
     use crate::{
         Cardinality, DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, DocParsingError,
-        FieldMappingEntry, Mode, TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
+        FieldMappingEntry, TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -333,35 +343,18 @@ mod tests {
     }
 
     #[test]
-    fn test_serdeserialize_doc_mapper() -> anyhow::Result<()> {
-        let deserialized_default_doc_mapper =
-            serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
-        let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build()?;
-        assert_eq!(
-            format!("{deserialized_default_doc_mapper:?}"),
-            format!("{expected_default_doc_mapper:?}"),
-        );
-
-        let serialized_doc_mapper = serde_json::to_string(&deserialized_default_doc_mapper)?;
-        let deserialized_default_doc_mapper =
-            serde_json::from_str::<Box<dyn DocMapper>>(&serialized_doc_mapper)?;
-        let serialized_doc_mapper_2 = serde_json::to_string(&deserialized_default_doc_mapper)?;
-
-        assert_eq!(serialized_doc_mapper, serialized_doc_mapper_2);
-
-        Ok(())
-    }
-
-    #[test]
     fn test_doc_mapper_query_with_json_field() {
         let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
-        doc_mapper_builder.field_mappings.push(FieldMappingEntry {
-            name: "json_field".to_string(),
-            mapping_type: FieldMappingType::Json(
-                QuickwitJsonOptions::default(),
-                Cardinality::SingleValue,
-            ),
-        });
+        doc_mapper_builder
+            .doc_mapping
+            .field_mappings
+            .push(FieldMappingEntry {
+                name: "json_field".to_string(),
+                mapping_type: FieldMappingType::Json(
+                    QuickwitJsonOptions::default(),
+                    Cardinality::SingleValued,
+                ),
+            });
         let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();
         let query_ast = UserInputQuery {
@@ -380,12 +373,7 @@ mod tests {
 
     #[test]
     fn test_doc_mapper_query_with_json_field_default_search_fields() {
-        let doc_mapper: DefaultDocMapper = DefaultDocMapperBuilder {
-            mode: Mode::default(),
-            ..Default::default()
-        }
-        .try_build()
-        .unwrap();
+        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
         let schema = doc_mapper.schema();
         let query_ast = query_ast_from_user_text("toto.titi:hello", None)
             .parse_user_query(doc_mapper.default_search_fields())
@@ -399,12 +387,7 @@ mod tests {
 
     #[test]
     fn test_doc_mapper_query_with_json_field_ambiguous_term() {
-        let doc_mapper: DefaultDocMapper = DefaultDocMapperBuilder {
-            mode: Mode::default(),
-            ..Default::default()
-        }
-        .try_build()
-        .unwrap();
+        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
         let schema = doc_mapper.schema();
         let query_ast = query_ast_from_user_text("toto:5", None)
             .parse_user_query(&[])
@@ -412,8 +395,126 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=1, type=Json, path=toto, type=I64, 5))), (Should, TermQuery(Term(field=1, type=Json, path=toto, type=Str, "5")))] }"#
+            r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=1, type=Json, path=toto, type=I64, 5))), (Should, TermQuery(Term(field=1, type=Json, path=toto, type=Str, "5")))], minimum_number_should_match: 1 }"#
         );
+    }
+
+    #[track_caller]
+    fn test_validate_doc_aux(
+        doc_mapper: &dyn DocMapper,
+        doc_json: &str,
+    ) -> Result<(), DocParsingError> {
+        let json_val: serde_json_borrow::Value = serde_json::from_str(doc_json).unwrap();
+        let json_obj = json_val.as_object().unwrap();
+        doc_mapper.validate_json_obj(json_obj)
+    }
+
+    #[test]
+    fn test_validate_doc() {
+        const JSON_CONFIG_VALUE: &str = r#"{
+            "timestamp_field": "timestamp",
+            "field_mappings": [
+            {
+                "name": "timestamp",
+                "type": "datetime",
+                "fast": true
+            },
+            {
+                "name": "body",
+                "type": "text"
+            },
+            {
+                "name": "response_date",
+                "type": "datetime",
+                "input_formats": ["rfc3339", "unix_timestamp"]
+            },
+            {
+                "name": "response_time",
+                "type": "f64"
+            },
+            {
+                "name": "response_time_no_coercion",
+                "type": "f64",
+                "coerce": false
+            },
+            {
+                "name": "response_payload",
+                "type": "bytes"
+            },
+            {
+                "name": "is_important",
+                "type": "bool"
+            },
+            {
+                "name": "properties",
+                "type": "json"
+            },
+            {
+                "name": "attributes",
+                "type": "object",
+                "field_mappings": [
+                    {
+                        "name": "numbers",
+                        "type": "array<i64>"
+                    }
+                ]
+            }]
+        }"#;
+        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
+        {
+            assert!(test_validate_doc_aux(&doc_mapper, r#"{ "body": "toto"}"#).is_ok());
+        }
+        {
+            assert!(matches!(
+                test_validate_doc_aux(&doc_mapper, r#"{ "response_time": "toto"}"#).unwrap_err(),
+                DocParsingError::ValueError(_, _)
+            ));
+        }
+        {
+            assert!(test_validate_doc_aux(&doc_mapper, r#"{ "response_time": "2.3"}"#).is_ok(),);
+        }
+        {
+            // coercion disabled
+            assert!(matches!(
+                test_validate_doc_aux(&doc_mapper, r#"{"response_time_no_coercion": "2.3"}"#)
+                    .unwrap_err(),
+                DocParsingError::ValueError(_, _)
+            ));
+        }
+        {
+            assert!(matches!(
+                test_validate_doc_aux(&doc_mapper, r#"{"response_time": [2.3]}"#).unwrap_err(),
+                DocParsingError::MultiValuesNotSupported(_)
+            ));
+        }
+        {
+            assert!(
+                test_validate_doc_aux(&doc_mapper, r#"{"attributes": {"numbers": [-2]}}"#).is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_doc_mode() {
+        const DOC: &str = r#"{ "whatever": "blop" }"#;
+        {
+            const JSON_CONFIG_VALUE: &str = r#"{ "mode": "strict", "field_mappings": [] }"#;
+            let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
+            assert!(matches!(
+                test_validate_doc_aux(&doc_mapper, DOC).unwrap_err(),
+                DocParsingError::NoSuchFieldInSchema(_)
+            ));
+        }
+        {
+            const JSON_CONFIG_VALUE: &str = r#"{ "mode": "lenient", "field_mappings": [] }"#;
+            let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
+            assert!(test_validate_doc_aux(&doc_mapper, DOC).is_ok());
+        }
+        {
+            const JSON_CONFIG_VALUE: &str = r#"{ "mode": "dynamic", "field_mappings": [] }"#;
+            let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap();
+            assert!(test_validate_doc_aux(&doc_mapper, DOC).is_ok());
+        }
     }
 
     fn hashset(elements: &[&str]) -> HashSet<String> {
@@ -582,27 +683,33 @@ mod tests {
         };
         use crate::{TokenizerConfig, TokenizerEntry};
         let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
-        doc_mapper_builder.field_mappings.push(FieldMappingEntry {
-            name: "multilang".to_string(),
-            mapping_type: FieldMappingType::Text(
-                QuickwitTextOptions {
-                    indexing_options: Some(TextIndexingOptions {
-                        tokenizer: QuickwitTextTokenizer::from_static("multilang"),
-                        record: IndexRecordOption::Basic,
-                        fieldnorms: false,
-                    }),
-                    ..Default::default()
+        doc_mapper_builder
+            .doc_mapping
+            .field_mappings
+            .push(FieldMappingEntry {
+                name: "multilang".to_string(),
+                mapping_type: FieldMappingType::Text(
+                    QuickwitTextOptions {
+                        indexing_options: Some(TextIndexingOptions {
+                            tokenizer: QuickwitTextTokenizer::from_static("multilang"),
+                            record: IndexRecordOption::Basic,
+                            fieldnorms: false,
+                        }),
+                        ..Default::default()
+                    },
+                    Cardinality::SingleValued,
+                ),
+            });
+        doc_mapper_builder
+            .doc_mapping
+            .tokenizers
+            .push(TokenizerEntry {
+                name: "multilang".to_string(),
+                config: TokenizerConfig {
+                    tokenizer_type: TokenizerType::Multilang,
+                    filters: Vec::new(),
                 },
-                Cardinality::SingleValue,
-            ),
-        });
-        doc_mapper_builder.tokenizers.push(TokenizerEntry {
-            name: "multilang".to_string(),
-            config: TokenizerConfig {
-                tokenizer_type: TokenizerType::Multilang,
-                filters: Vec::new(),
-            },
-        });
+            });
         let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();
         let query_ast = quickwit_query::query_ast::QueryAst::Term(TermQuery {

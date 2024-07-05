@@ -38,6 +38,7 @@ use crate::ingest_api::{IngestApi, IngestApiSchemas};
 use crate::jaeger_api::JaegerApi;
 use crate::metrics_api::MetricsApi;
 use crate::node_info_handler::NodeInfoApi;
+use crate::otlp_api::OtlpApi;
 use crate::search_api::SearchApi;
 use crate::template_api::IndexTemplateApi;
 
@@ -78,7 +79,8 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
         Tag::new("Indexing"),
         Tag::new("Splits"),
         Tag::new("Jaeger"),
-        Tag::new("Debugging"),
+        Tag::new("Open Telemetry"),
+        Tag::new("Debug"),
     ];
     docs_base.tags = Some(tags);
 
@@ -89,6 +91,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
         .merge_components_and_paths(DeveloperApi::openapi().with_path_prefix("/api/developer"));
     docs_base
         .merge_components_and_paths(ElasticCompatibleApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(OtlpApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(HealthCheckApi::openapi().with_path_prefix("/health"));
     docs_base.merge_components_and_paths(IndexApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(IndexingApi::openapi().with_path_prefix("/api/v1"));

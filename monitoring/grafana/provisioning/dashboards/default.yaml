@@ -3,6 +3,7 @@ apiVersion: 1
 providers:
   - name: Default
     folder: Quickwit
+    allowUiUpdates: true
     options:
       path: /var/lib/grafana/dashboards
       foldersFromFilesStructure: true

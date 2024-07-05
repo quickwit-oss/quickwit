@@ -126,13 +126,21 @@ impl MultiRecordLogAsync {
 
     #[track_caller]
     #[cfg(test)]
-    pub fn assert_records_eq<R>(&self, queue_id: &str, range: R, expected_records: &[(u64, &str)])
-    where R: RangeBounds<u64> + 'static {
+    pub fn assert_records_eq<R>(
+        &self,
+        queue_id: &str,
+        range: R,
+        expected_records: &[(u64, [u8; 2], &str)],
+    ) where
+        R: RangeBounds<u64> + 'static,
+    {
         let records = self
             .range(queue_id, range)
             .unwrap()
             .map(|Record { position, payload }| {
-                (position, String::from_utf8(payload.into_owned()).unwrap())
+                let header: [u8; 2] = payload[..2].try_into().unwrap();
+                let payload = String::from_utf8(payload[2..].to_vec()).unwrap();
+                (position, header, payload)
             })
             .collect::<Vec<_>>();
         assert_eq!(
@@ -142,7 +150,7 @@ impl MultiRecordLogAsync {
             expected_records.len(),
             records.len()
         );
-        for ((position, record), (expected_position, expected_record)) in
+        for ((position, header, payload), (expected_position, expected_header, expected_payload)) in
             records.iter().zip(expected_records.iter())
         {
             assert_eq!(
@@ -150,8 +158,12 @@ impl MultiRecordLogAsync {
                 "expected record at position `{expected_position}`, got `{position}`",
             );
             assert_eq!(
-                record, expected_record,
-                "expected record `{expected_record}`, got `{record}`",
+                header, expected_header,
+                "expected record header, `{expected_header:?}`, got `{header:?}`",
+            );
+            assert_eq!(
+                payload, expected_payload,
+                "expected record payload, `{expected_payload}`, got `{payload}`",
             );
         }
     }

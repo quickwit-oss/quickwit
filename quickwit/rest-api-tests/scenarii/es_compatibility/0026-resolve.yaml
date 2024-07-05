@@ -1,0 +1,9 @@
+method: GET
+endpoint: /_resolve/index/gh*
+expected:
+  indices:
+    - name: gharchive
+      attributes:
+        - open
+  aliases: []
+  data_streams: []

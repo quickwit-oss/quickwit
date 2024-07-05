@@ -34,11 +34,21 @@ use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::BuildInfo;
 use tracing::error;
 
+/// The main tokio runtime takes num_cores / 3 threads by default, and can be overridden by the
+/// QW_RUNTIME_NUM_THREADS environment variable.
+fn get_main_runtime_num_threads() -> usize {
+    let default_num_runtime_threads: usize = quickwit_common::num_cpus().div_ceil(3);
+    quickwit_common::get_from_env("QW_TOKIO_RUNTIME_NUM_THREADS", default_num_runtime_threads)
+}
+
 fn main() -> anyhow::Result<()> {
+    let main_runtime_num_threads: usize = get_main_runtime_num_threads();
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .on_thread_unpark(busy_detector::thread_unpark)
         .on_thread_park(busy_detector::thread_park)
+        .thread_name("main_runtime_thread")
+        .worker_threads(main_runtime_num_threads)
         .build()
         .context("failed to start main Tokio runtime")?;
 

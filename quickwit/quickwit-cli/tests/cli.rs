@@ -22,25 +22,21 @@
 mod helpers;
 
 use std::path::Path;
-use std::str::FromStr;
 
 use anyhow::Result;
 use clap::error::ErrorKind;
 use helpers::{TestEnv, TestStorageType};
 use quickwit_cli::checklist::ChecklistError;
 use quickwit_cli::cli::build_cli;
-use quickwit_cli::index::update::{update_retention_policy_cli, RetentionPolicyArgs};
 use quickwit_cli::index::{
-    create_index_cli, delete_index_cli, search_index, CreateIndexArgs, DeleteIndexArgs,
-    SearchIndexArgs,
+    create_index_cli, delete_index_cli, search_index, update_index_cli, CreateIndexArgs,
+    DeleteIndexArgs, SearchIndexArgs, UpdateIndexArgs,
 };
 use quickwit_cli::tool::{
     garbage_collect_index_cli, local_ingest_docs_cli, GarbageCollectIndexArgs, LocalIngestDocsArgs,
 };
-use quickwit_cli::ClientArgs;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
-use quickwit_common::uri::Uri;
 use quickwit_config::{RetentionPolicy, SourceInputFormat, CLI_SOURCE_ID};
 use quickwit_metastore::{
     ListSplitsRequestExt, MetastoreResolver, MetastoreServiceExt, MetastoreServiceStreamSplitsExt,
@@ -57,11 +53,8 @@ use crate::helpers::{create_test_env, upload_test_file, PACKAGE_BIN_NAME};
 
 async fn create_logs_index(test_env: &TestEnv) -> anyhow::Result<()> {
     let args = CreateIndexArgs {
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
-        index_config_uri: test_env.index_config_uri.clone(),
+        client_args: test_env.default_client_args(),
+        index_config_uri: test_env.resource_files.index_config.clone(),
         overwrite: false,
         assume_yes: true,
     };
@@ -70,7 +63,7 @@ async fn create_logs_index(test_env: &TestEnv) -> anyhow::Result<()> {
 
 async fn local_ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Result<()> {
     let args = LocalIngestDocsArgs {
-        config_uri: test_env.config_uri.clone(),
+        config_uri: test_env.resource_files.config.clone(),
         index_id: test_env.index_id.clone(),
         input_path_opt: Some(input_path.to_path_buf()),
         input_format: SourceInputFormat::Json,
@@ -118,12 +111,9 @@ async fn test_cmd_create_no_index_uri() {
         .unwrap();
     test_env.start_server().await.unwrap();
 
-    let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
+    let index_config_without_uri = test_env.resource_files.index_config_without_uri.clone();
     let args = CreateIndexArgs {
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
+        client_args: test_env.default_client_args(),
         index_config_uri: index_config_without_uri,
         overwrite: false,
         assume_yes: true,
@@ -146,12 +136,9 @@ async fn test_cmd_create_overwrite() {
         .unwrap();
     test_env.start_server().await.unwrap();
 
-    let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
+    let index_config_without_uri = test_env.resource_files.index_config_without_uri.clone();
     let args = CreateIndexArgs {
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
+        client_args: test_env.default_client_args(),
         index_config_uri: index_config_without_uri,
         overwrite: true,
         assume_yes: true,
@@ -182,9 +169,9 @@ async fn test_cmd_ingest_on_non_existing_index() {
         .unwrap();
 
     let args = LocalIngestDocsArgs {
-        config_uri: test_env.config_uri,
+        config_uri: test_env.resource_files.config,
         index_id: "index-does-not-exist".to_string(),
-        input_path_opt: Some(test_env.resource_files["logs"].clone()),
+        input_path_opt: Some(test_env.resource_files.log_docs.clone()),
         input_format: SourceInputFormat::Json,
         overwrite: false,
         clear_cache: true,
@@ -212,9 +199,9 @@ async fn test_ingest_docs_cli_keep_cache() {
     create_logs_index(&test_env).await.unwrap();
 
     let args = LocalIngestDocsArgs {
-        config_uri: test_env.config_uri,
+        config_uri: test_env.resource_files.config,
         index_id,
-        input_path_opt: Some(test_env.resource_files["logs"].clone()),
+        input_path_opt: Some(test_env.resource_files.log_docs.clone()),
         input_format: SourceInputFormat::Json,
         overwrite: false,
         clear_cache: false,
@@ -239,9 +226,9 @@ async fn test_ingest_docs_cli() {
     let index_uid = test_env.index_metadata().await.unwrap().index_uid;
 
     let args = LocalIngestDocsArgs {
-        config_uri: test_env.config_uri.clone(),
+        config_uri: test_env.resource_files.config.clone(),
         index_id: index_id.clone(),
-        input_path_opt: Some(test_env.resource_files["logs"].clone()),
+        input_path_opt: Some(test_env.resource_files.log_docs.clone()),
         input_format: SourceInputFormat::Json,
         overwrite: false,
         clear_cache: true,
@@ -270,7 +257,7 @@ async fn test_ingest_docs_cli() {
 
     // Ingest a non-existing file should fail.
     let args = LocalIngestDocsArgs {
-        config_uri: test_env.config_uri,
+        config_uri: test_env.resource_files.config,
         index_id: test_env.index_id,
         input_path_opt: Some(test_env.data_dir_path.join("file-does-not-exist.json")),
         input_format: SourceInputFormat::Json,
@@ -345,7 +332,7 @@ async fn test_cmd_search_aggregation() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
         .await
         .unwrap();
 
@@ -371,7 +358,7 @@ async fn test_cmd_search_aggregation() {
 
     // search with aggregation
     let args = SearchIndexArgs {
-        index_id: test_env.index_id,
+        index_id: test_env.index_id.clone(),
         query: "paris OR tokio OR london".to_string(),
         aggregation: Some(serde_json::to_string(&aggregation).unwrap()),
         max_hits: 10,
@@ -380,10 +367,7 @@ async fn test_cmd_search_aggregation() {
         snippet_fields: None,
         start_timestamp: None,
         end_timestamp: None,
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint,
-            ..Default::default()
-        },
+        client_args: test_env.default_client_args(),
         sort_by_score: false,
     };
     let search_response = search_index(args).await.unwrap();
@@ -448,13 +432,13 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
         .await
         .unwrap();
 
     // search with snippets
     let args = SearchIndexArgs {
-        index_id: test_env.index_id,
+        index_id: test_env.index_id.clone(),
         query: "event:baz".to_string(),
         aggregation: None,
         max_hits: 10,
@@ -463,10 +447,7 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
         snippet_fields: Some(vec!["event".to_string()]),
         start_timestamp: None,
         end_timestamp: None,
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint,
-            ..Default::default()
-        },
+        client_args: test_env.default_client_args(),
         sort_by_score: false,
     };
     let search_response = search_index(args).await.unwrap();
@@ -493,10 +474,7 @@ async fn test_search_index_cli() {
     create_logs_index(&test_env).await.unwrap();
 
     let create_search_args = |query: &str| SearchIndexArgs {
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
+        client_args: test_env.default_client_args(),
         index_id: index_id.clone(),
         query: query.to_string(),
         aggregation: None,
@@ -509,7 +487,7 @@ async fn test_search_index_cli() {
         sort_by_score: false,
     };
 
-    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
         .await
         .unwrap();
 
@@ -544,20 +522,16 @@ async fn test_cmd_update_index() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    // add a policy
-    update_retention_policy_cli(RetentionPolicyArgs {
+    // add retention policy
+    let args = UpdateIndexArgs {
+        client_args: test_env.default_client_args(),
         index_id: index_id.clone(),
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
-        disable: false,
-        period: Some(String::from("1 week")),
-        schedule: Some(String::from("daily")),
-    })
-    .await
-    .unwrap();
+        index_config_uri: test_env.resource_files.index_config_with_retention.clone(),
+        assume_yes: true,
+    };
+    update_index_cli(args).await.unwrap();
     let index_metadata = test_env.index_metadata().await.unwrap();
+    assert_eq!(index_metadata.index_id(), test_env.index_id);
     assert_eq!(
         index_metadata.index_config.retention_policy_opt,
         Some(RetentionPolicy {
@@ -566,34 +540,16 @@ async fn test_cmd_update_index() {
         })
     );
 
-    // invalid args
-    update_retention_policy_cli(RetentionPolicyArgs {
-        index_id: index_id.clone(),
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
-        disable: true,
-        period: Some(String::from("a week")),
-        schedule: Some(String::from("daily")),
-    })
-    .await
-    .unwrap_err();
-
-    // remove the policy
-    update_retention_policy_cli(RetentionPolicyArgs {
+    // remove retention policy
+    let args = UpdateIndexArgs {
+        client_args: test_env.default_client_args(),
         index_id,
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
-        disable: true,
-        period: None,
-        schedule: None,
-    })
-    .await
-    .unwrap();
+        index_config_uri: test_env.resource_files.index_config.clone(),
+        assume_yes: true,
+    };
+    update_index_cli(args).await.unwrap();
     let index_metadata = test_env.index_metadata().await.unwrap();
+    assert_eq!(index_metadata.index_id(), test_env.index_id);
     assert_eq!(index_metadata.index_config.retention_policy_opt, None);
 }
 
@@ -620,10 +576,7 @@ async fn test_delete_index_cli_dry_run() {
     };
 
     let create_delete_args = |dry_run| DeleteIndexArgs {
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
+        client_args: test_env.default_client_args(),
         index_id: index_id.clone(),
         dry_run,
         assume_yes: true,
@@ -647,7 +600,7 @@ async fn test_delete_index_cli_dry_run() {
         .unwrap();
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
-    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
         .await
         .unwrap();
 
@@ -673,15 +626,12 @@ async fn test_delete_index_cli() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
         .await
         .unwrap();
 
     let args = DeleteIndexArgs {
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
+        client_args: test_env.default_client_args(),
         index_id: index_id.clone(),
         assume_yes: true,
         dry_run: false,
@@ -702,11 +652,11 @@ async fn test_garbage_collect_cli_no_grace() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
     let index_uid = test_env.index_metadata().await.unwrap().index_uid;
-    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
         .await
         .unwrap();
 
-    let mut metastore = MetastoreResolver::unconfigured()
+    let metastore = MetastoreResolver::unconfigured()
         .resolve(&test_env.metastore_uri)
         .await
         .unwrap();
@@ -724,7 +674,7 @@ async fn test_garbage_collect_cli_no_grace() {
     };
 
     let create_gc_args = |dry_run| GarbageCollectIndexArgs {
-        config_uri: test_env.config_uri.clone(),
+        config_uri: test_env.resource_files.config.clone(),
         index_id: index_id.clone(),
         grace_period: Duration::from_secs(3600),
         dry_run,
@@ -748,7 +698,7 @@ async fn test_garbage_collect_cli_no_grace() {
     assert_eq!(index_path.try_exists().unwrap(), true);
 
     let split_ids = vec![splits_metadata[0].split_id().to_string()];
-    let mut metastore = refresh_metastore(metastore).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
     let mark_for_deletion_request =
         MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids.clone());
     metastore
@@ -778,7 +728,7 @@ async fn test_garbage_collect_cli_no_grace() {
         assert_eq!(split_filepath.try_exists().unwrap(), false);
     }
 
-    let mut metastore = refresh_metastore(metastore).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
     assert_eq!(
         metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
@@ -792,10 +742,7 @@ async fn test_garbage_collect_cli_no_grace() {
     );
 
     let args = DeleteIndexArgs {
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
+        client_args: test_env.default_client_args(),
         index_id,
         dry_run: false,
         assume_yes: true,
@@ -815,7 +762,7 @@ async fn test_garbage_collect_index_cli() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
     let index_uid = test_env.index_metadata().await.unwrap().index_uid;
-    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
         .await
         .unwrap();
 
@@ -832,13 +779,13 @@ async fn test_garbage_collect_index_cli() {
     };
 
     let create_gc_args = |grace_period_secs| GarbageCollectIndexArgs {
-        config_uri: test_env.config_uri.clone(),
+        config_uri: test_env.resource_files.config.clone(),
         index_id: index_id.clone(),
         grace_period: Duration::from_secs(grace_period_secs),
         dry_run: false,
     };
 
-    let mut metastore = MetastoreResolver::unconfigured()
+    let metastore = MetastoreResolver::unconfigured()
         .resolve(&test_env.metastore_uri)
         .await
         .unwrap();
@@ -862,7 +809,7 @@ async fn test_garbage_collect_index_cli() {
     garbage_collect_index_cli(args).await.unwrap();
 
     // Split should still exists within grace period.
-    let mut metastore = refresh_metastore(metastore).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
     let splits_metadata = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
@@ -901,7 +848,7 @@ async fn test_garbage_collect_index_cli() {
         .unwrap();
     assert_eq!(split_path.try_exists().unwrap(), true);
 
-    let mut metastore = refresh_metastore(metastore).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
     let splits = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
@@ -917,7 +864,7 @@ async fn test_garbage_collect_index_cli() {
 
     assert_eq!(split_path.try_exists().unwrap(), true);
     // Staged splits should still exist within grace period.
-    let mut metastore = refresh_metastore(metastore).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
     let splits = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
@@ -936,7 +883,7 @@ async fn test_garbage_collect_index_cli() {
 
     garbage_collect_index_cli(args).await.unwrap();
 
-    let mut metastore = refresh_metastore(metastore).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
     let splits = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
         .await
@@ -967,7 +914,7 @@ async fn test_all_local_index() {
         .unwrap();
     assert!(metadata_file_exists);
 
-    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
         .await
         .unwrap();
 
@@ -997,10 +944,7 @@ async fn test_all_local_index() {
     assert_eq!(search_stream_response, "72057597000000\n72057608000000\n");
 
     let args = DeleteIndexArgs {
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
+        client_args: test_env.default_client_args(),
         index_id,
         dry_run: false,
         assume_yes: true,
@@ -1028,7 +972,7 @@ async fn test_all_with_s3_localstack_cli() {
 
     let s3_path = upload_test_file(
         test_env.storage_resolver.clone(),
-        test_env.resource_files["logs"].clone(),
+        test_env.resource_files.log_docs.clone(),
         "quickwit-integration-tests",
         "sources/",
         &append_random_suffix("test-all--cli-s3-localstack"),
@@ -1039,10 +983,7 @@ async fn test_all_with_s3_localstack_cli() {
 
     // Cli search
     let args = SearchIndexArgs {
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
+        client_args: test_env.default_client_args(),
         index_id: index_id.clone(),
         query: "level:info".to_string(),
         aggregation: None,
@@ -1072,10 +1013,7 @@ async fn test_all_with_s3_localstack_cli() {
     assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
     let args = DeleteIndexArgs {
-        client_args: ClientArgs {
-            cluster_endpoint: test_env.cluster_endpoint.clone(),
-            ..Default::default()
-        },
+        client_args: test_env.default_client_args(),
         index_id: index_id.clone(),
         dry_run: false,
         assume_yes: true,

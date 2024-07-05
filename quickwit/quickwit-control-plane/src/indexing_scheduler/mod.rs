@@ -501,13 +501,13 @@ fn get_indexing_tasks_diff<'a>(
     let mut unplanned_tasks: Vec<&IndexingTask> = Vec::new();
     let grouped_running_tasks: FnvHashMap<&IndexingTask, usize> = running_tasks
         .iter()
-        .group_by(|&task| task)
+        .chunk_by(|&task| task)
         .into_iter()
         .map(|(key, group)| (key, group.count()))
         .collect();
     let grouped_last_applied_tasks: FnvHashMap<&IndexingTask, usize> = last_applied_tasks
         .iter()
-        .group_by(|&task| task)
+        .chunk_by(|&task| task)
         .into_iter()
         .map(|(key, group)| (key, group.count()))
         .collect();
@@ -806,11 +806,11 @@ mod tests {
     #[test]
     fn test_build_physical_indexing_plan_simple() {
         let source_1 = SourceUid {
-            index_uid: IndexUid::from_parts("index-1", 0),
+            index_uid: IndexUid::for_test("index-1", 0),
             source_id: "source1".to_string(),
         };
         let source_2 = SourceUid {
-            index_uid: IndexUid::from_parts("index-2", 0),
+            index_uid: IndexUid::for_test("index-2", 0),
             source_id: "source2".to_string(),
         };
         let sources = vec![
@@ -887,7 +887,7 @@ mod tests {
     prop_compose! {
       fn gen_kafka_source()
         (index_idx in 0usize..100usize, num_pipelines in 1usize..51usize) -> (IndexUid, SourceConfig) {
-          let index_uid = IndexUid::from_parts(&format!("index-id-{index_idx}"), 0 /* this is the index uid */);
+          let index_uid = IndexUid::for_test(&format!("index-id-{index_idx}"), 0 /* this is the index uid */);
           let source_id = quickwit_common::rand::append_random_suffix("kafka-source");
           (index_uid, SourceConfig {
               source_id,

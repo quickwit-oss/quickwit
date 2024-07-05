@@ -171,7 +171,7 @@ impl BroadcastLocalShardsTask {
             .shards
             .iter()
             .filter_map(|(queue_id, shard)| {
-                if !shard.is_replica() {
+                if shard.is_advertisable && !shard.is_replica() {
                     Some((queue_id.clone(), shard.shard_state))
                 } else {
                     None
@@ -479,22 +479,46 @@ mod tests {
         let mut state_guard = state.lock_partially().await.unwrap();
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let queue_id_00 = queue_id(&index_uid, "test-source", &ShardId::from(0));
+        let shard_00 = IngesterShard::new_solo(
+            ShardState::Open,
+            Position::Beginning,
+            Position::Beginning,
+            None,
+            Instant::now(),
+        );
+        state_guard.shards.insert(queue_id_00.clone(), shard_00);
+
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
-        let shard = IngesterShard::new_solo(
+        let mut shard_01 = IngesterShard::new_solo(
+            ShardState::Open,
+            Position::Beginning,
+            Position::Beginning,
+            None,
+            Instant::now(),
+        );
+        shard_01.is_advertisable = true;
+        state_guard.shards.insert(queue_id_01.clone(), shard_01);
+
+        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
+        let mut shard_02 = IngesterShard::new_replica(
+            NodeId::from("test-leader"),
             ShardState::Open,
             Position::Beginning,
             Position::Beginning,
             Instant::now(),
         );
-        state_guard.shards.insert(queue_id_01.clone(), shard);
+        shard_02.is_advertisable = true;
+        state_guard.shards.insert(queue_id_02.clone(), shard_02);
 
-        let rate_limiter = RateLimiter::from_settings(RateLimiterSettings::default());
-        let rate_meter = RateMeter::default();
+        for queue_id in [queue_id_00, queue_id_01, queue_id_02] {
+            let rate_limiter = RateLimiter::from_settings(RateLimiterSettings::default());
+            let rate_meter = RateMeter::default();
 
-        state_guard
-            .rate_trackers
-            .insert(queue_id_01.clone(), (rate_limiter, rate_meter));
-
+            state_guard
+                .rate_trackers
+                .insert(queue_id, (rate_limiter, rate_meter));
+        }
         drop(state_guard);
 
         let new_snapshot = task.snapshot_local_shards().await.unwrap();

@@ -31,6 +31,7 @@ use warp::reject::Rejection;
 use warp::{Filter, Reply};
 
 use crate::format::{extract_config_format, extract_format_from_qs};
+use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
 use crate::with_arg;
 
@@ -55,6 +56,7 @@ pub(crate) fn index_template_api_handlers(
         .or(update_index_template_handler(metastore.clone()))
         .or(delete_index_template_handler(metastore.clone()))
         .or(list_index_templates_handler(metastore.clone()))
+        .recover(recover_fn)
 }
 
 fn create_index_template_handler(
@@ -83,7 +85,7 @@ fn create_index_template_handler(
 async fn create_index_template(
     body: Bytes,
     config_format: ConfigFormat,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<IndexTemplate> {
     let index_template: IndexTemplate =
         config_format
@@ -130,7 +132,7 @@ fn get_index_template_handler(
 /// Retrieves the index template identified by `template_id`.
 async fn get_index_template(
     template_id: IndexTemplateId,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<IndexTemplate> {
     let get_index_template_request = GetIndexTemplateRequest { template_id };
     let get_index_template_response = metastore
@@ -168,7 +170,7 @@ async fn update_index_template(
     template_id: IndexTemplateId,
     body: Bytes,
     config_format: ConfigFormat,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<IndexTemplate> {
     let mut json_value: JsonValue =
         config_format
@@ -221,7 +223,7 @@ fn delete_index_template_handler(
 /// Deletes the index template identified by the provided `template_id`.
 async fn delete_index_template(
     template_id: IndexTemplateId,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<()> {
     let template_ids = vec![template_id];
     let delete_index_templates_request = DeleteIndexTemplatesRequest { template_ids };
@@ -252,7 +254,7 @@ fn list_index_templates_handler(
 )]
 /// Retrieves all the index templates stored in the metastore.
 async fn list_index_templates(
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<Vec<IndexTemplate>> {
     let list_index_templates_request = ListIndexTemplatesRequest {};
     let list_index_templates_response = metastore

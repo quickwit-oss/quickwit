@@ -115,11 +115,15 @@ def run_request_step(method, step, previous_result):
         kvargs["data"] = "\n".join([json.dumps(doc) for doc in ndjson]) + "\n"
         kvargs.setdefault("headers")["Content-Type"] = "application/json"
     expected_status_code = step.get("status_code", 200)
+    debug = step.get("debug", False)
     num_retries = step.get("num_retries", 0)
     run_req = lambda : method_req(url, **kvargs)
     r = run_request_with_retry(run_req, expected_status_code, num_retries)
     expected_resp = step.get("expected", None)
     json_resp = r.json()
+    if debug:
+        print(expected_status_code)
+        print(json_resp)
     if expected_resp is not None:
         try:
             check_result(json_resp, expected_resp, context_path="")
@@ -386,4 +390,3 @@ if __name__ == "__main__":
         sys.exit(0)
     else:
         sys.exit(1)
-

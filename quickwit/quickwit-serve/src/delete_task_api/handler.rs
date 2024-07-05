@@ -31,13 +31,14 @@ use serde::Deserialize;
 use warp::{Filter, Rejection};
 
 use crate::format::extract_format_from_qs;
+use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(get_delete_tasks, post_delete_request),
-    components(schemas(DeleteQueryRequest, DeleteTask, DeleteQuery,))
+    components(schemas(DeleteQueryRequest, DeleteTask, DeleteQuery))
 )]
 pub struct DeleteTaskApi;
 
@@ -61,7 +62,9 @@ pub struct DeleteQueryRequest {
 pub fn delete_task_api_handlers(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    get_delete_tasks_handler(metastore.clone()).or(post_delete_tasks_handler(metastore.clone()))
+    get_delete_tasks_handler(metastore.clone())
+        .or(post_delete_tasks_handler(metastore.clone()))
+        .recover(recover_fn)
 }
 
 pub fn get_delete_tasks_handler(
@@ -95,7 +98,7 @@ pub fn get_delete_tasks_handler(
 // `get_delete_tasks_handler` and consequently we get the mailbox in `get_delete_tasks` signature.
 pub async fn get_delete_tasks(
     index_id: IndexId,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> MetastoreResult<Vec<DeleteTask>> {
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
@@ -142,7 +145,7 @@ pub fn post_delete_tasks_handler(
 pub async fn post_delete_request(
     index_id: IndexId,
     delete_request: DeleteQueryRequest,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> Result<DeleteTask, JanitorError> {
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let metadata = metastore

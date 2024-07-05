@@ -30,14 +30,21 @@ use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use tracing::{error, info, warn};
 
-/// Limits the number of shards that can be opened for scaling up a source to 5 per minute.
+/// Limits the number of shards that can be opened for scaling up a source to 12 per minute.
 const SCALING_UP_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
-    burst_limit: 5,
+    burst_limit: 12,
     rate_limit: ConstantRate::new(5, Duration::from_secs(60)),
-    refill_period: Duration::from_secs(12),
+    refill_period: Duration::from_secs(5),
 };
 
-/// Limits the number of shards that can be closed for scaling down a source to 1 per minute.
+/// Limits the number of shards that can be closed for scaling down a source to 2 per minute.
+#[cfg(not(test))]
+const SCALING_DOWN_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
+    burst_limit: 2,
+    rate_limit: ConstantRate::new(2, Duration::from_secs(60)),
+    refill_period: Duration::from_secs(30),
+};
+#[cfg(test)]
 const SCALING_DOWN_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
     burst_limit: 1,
     rate_limit: ConstantRate::new(1, Duration::from_secs(60)),
@@ -435,9 +442,11 @@ impl ShardTable {
             } else {
                 0
             };
+        let index_label =
+            quickwit_common::metrics::index_label(source_uid.index_uid.index_id.as_str());
         crate::metrics::CONTROL_PLANE_METRICS
             .open_shards_total
-            .with_label_values([source_uid.index_uid.index_id.as_str()])
+            .with_label_values([index_label])
             .set(num_open_shards as i64);
     }
 

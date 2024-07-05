@@ -206,7 +206,22 @@ impl BinaryFormat {
     }
 
     /// Parses the `serde_json::Value` into `tantivy::schema::Value`.
-    pub fn parse_json(&self, json_val: JsonValue) -> Result<TantivyValue, String> {
+    pub fn parse_str(&self, byte_str: &str) -> Result<Vec<u8>, String> {
+        let payload = match self {
+            Self::Base64 => BASE64_STANDARD
+                .decode(byte_str)
+                .map_err(|base64_decode_err| {
+                    format!("expected base64 string, got `{byte_str}`: {base64_decode_err}")
+                })?,
+            Self::Hex => hex::decode(byte_str).map_err(|hex_decode_err| {
+                format!("expected hex string, got `{byte_str}`: {hex_decode_err}")
+            })?,
+        };
+        Ok(payload)
+    }
+
+    /// Parses the `serde_json::Value` into `tantivy::schema::Value`.
+    pub fn parse_json(&self, json_val: &JsonValue) -> Result<TantivyValue, String> {
         let byte_str = if let JsonValue::String(byte_str) = json_val {
             byte_str
         } else {
@@ -215,16 +230,7 @@ impl BinaryFormat {
                 self.as_str()
             ));
         };
-        let payload = match self {
-            Self::Base64 => BASE64_STANDARD
-                .decode(&byte_str)
-                .map_err(|base64_decode_err| {
-                    format!("expected base64 string, got `{byte_str}`: {base64_decode_err}")
-                })?,
-            Self::Hex => hex::decode(&byte_str).map_err(|hex_decode_err| {
-                format!("expected hex string, got `{byte_str}`: {hex_decode_err}")
-            })?,
-        };
+        let payload = self.parse_str(byte_str)?;
         Ok(TantivyValue::Bytes(payload))
     }
 }
@@ -702,9 +708,9 @@ impl Default for QuickwitConcatenateOptions {
     }
 }
 
-impl From<QuickwitConcatenateOptions> for TextOptions {
+impl From<QuickwitConcatenateOptions> for JsonObjectOptions {
     fn from(quickwit_text_options: QuickwitConcatenateOptions) -> Self {
-        let mut text_options = TextOptions::default();
+        let mut text_options = JsonObjectOptions::default();
         let text_field_indexing = TextFieldIndexing::default()
             .set_index_option(quickwit_text_options.indexing_options.record)
             .set_fieldnorms(quickwit_text_options.indexing_options.fieldnorms)
@@ -720,8 +726,8 @@ fn deserialize_mapping_type(
     json: JsonValue,
 ) -> anyhow::Result<FieldMappingType> {
     let (typ, cardinality) = match quickwit_field_type {
-        QuickwitFieldType::Simple(typ) => (typ, Cardinality::SingleValue),
-        QuickwitFieldType::Array(typ) => (typ, Cardinality::MultiValues),
+        QuickwitFieldType::Simple(typ) => (typ, Cardinality::SingleValued),
+        QuickwitFieldType::Array(typ) => (typ, Cardinality::MultiValued),
         QuickwitFieldType::Object => {
             let object_options: QuickwitObjectOptions = serde_json::from_value(json)?;
             if object_options.field_mappings.is_empty() {
@@ -771,7 +777,7 @@ fn deserialize_mapping_type(
         Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),
         Type::Bytes => {
             let numeric_options: QuickwitBytesOptions = serde_json::from_value(json)?;
-            if numeric_options.fast && cardinality == Cardinality::MultiValues {
+            if numeric_options.fast && cardinality == Cardinality::MultiValued {
                 bail!("fast field is not allowed for array<bytes>");
             }
             Ok(FieldMappingType::Bytes(numeric_options, cardinality))
@@ -1238,7 +1244,7 @@ mod tests {
                 assert_eq!(options.indexed, true); // default
                 assert_eq!(options.fast, false); // default
                 assert_eq!(options.stored, true); // default
-                assert_eq!(cardinality, Cardinality::MultiValues);
+                assert_eq!(cardinality, Cardinality::MultiValued);
             }
             _ => bail!("Wrong type"),
         }
@@ -1262,7 +1268,7 @@ mod tests {
                 assert_eq!(options.indexed, true); // default
                 assert_eq!(options.fast, false); // default
                 assert_eq!(options.stored, true); // default
-                assert_eq!(cardinality, Cardinality::SingleValue);
+                assert_eq!(cardinality, Cardinality::SingleValued);
             }
             _ => bail!("Wrong type"),
         }
@@ -1330,7 +1336,7 @@ mod tests {
             assert_eq!(options.indexed, true); // default
             assert_eq!(options.fast, false); // default
             assert_eq!(options.stored, true); // default
-            assert_eq!(cardinality, Cardinality::MultiValues);
+            assert_eq!(cardinality, Cardinality::MultiValued);
         } else {
             panic!("Wrong type");
         }
@@ -1351,7 +1357,7 @@ mod tests {
             assert_eq!(options.indexed, true); // default
             assert_eq!(options.fast, false); // default
             assert_eq!(options.stored, true); // default
-            assert_eq!(cardinality, Cardinality::SingleValue);
+            assert_eq!(cardinality, Cardinality::SingleValued);
         } else {
             panic!("Wrong type");
         }
@@ -1691,7 +1697,7 @@ mod tests {
         assert_eq!(&field_mapping_entry.name, "my_json_field");
         assert!(
             matches!(field_mapping_entry.mapping_type, FieldMappingType::Json(json_config,
-            Cardinality::SingleValue) if json_config == expected_json_options)
+            Cardinality::SingleValued) if json_config == expected_json_options)
         );
     }
 
@@ -1738,7 +1744,7 @@ mod tests {
         assert_eq!(&field_mapping_entry.name, "my_json_field_multi");
         assert!(
             matches!(field_mapping_entry.mapping_type, FieldMappingType::Json(json_config,
-    Cardinality::MultiValues) if json_config == expected_json_options)
+    Cardinality::MultiValued) if json_config == expected_json_options)
         );
     }
 

@@ -26,25 +26,27 @@ mod mapping_tree;
 mod tokenizer_entry;
 
 use anyhow::bail;
-use once_cell::sync::Lazy;
-use regex::Regex;
-
-pub use self::default_mapper::DefaultDocMapper;
-pub use self::default_mapper_builder::{DefaultDocMapperBuilder, Mode, ModeType};
-pub use self::field_mapping_entry::{
+pub use default_mapper::DefaultDocMapper;
+pub use default_mapper_builder::DefaultDocMapperBuilder;
+#[cfg(all(test, feature = "multilang"))]
+pub(crate) use field_mapping_entry::TextIndexingOptions;
+pub use field_mapping_entry::{
     BinaryFormat, FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions, QuickwitJsonOptions,
     QuickwitTextNormalizer,
 };
-pub(crate) use self::field_mapping_entry::{
+pub(crate) use field_mapping_entry::{
     FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
 };
-#[cfg(all(test, feature = "multilang"))]
-pub(crate) use self::field_mapping_entry::{QuickwitTextOptions, TextIndexingOptions};
-pub use self::field_mapping_type::FieldMappingType;
-pub use self::tokenizer_entry::{analyze_text, TokenizerConfig, TokenizerEntry};
-pub(crate) use self::tokenizer_entry::{
+#[cfg(test)]
+pub(crate) use field_mapping_entry::{QuickwitNumericOptions, QuickwitTextOptions};
+pub use field_mapping_type::FieldMappingType;
+use once_cell::sync::Lazy;
+use regex::Regex;
+pub use tokenizer_entry::{analyze_text, TokenizerConfig, TokenizerEntry};
+pub(crate) use tokenizer_entry::{
     NgramTokenizerOption, RegexTokenizerOption, TokenFilterType, TokenizerType,
 };
+
 use crate::QW_RESERVED_FIELD_NAMES;
 
 /// Regular expression validating a field mapping name.

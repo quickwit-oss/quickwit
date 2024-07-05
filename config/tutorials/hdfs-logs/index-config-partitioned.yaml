@@ -43,5 +43,3 @@ indexing_settings:
     merge_factor: 10
     max_merge_ops: 3
     maturation_period: 48 hours
-  resources:
-    max_merge_write_throughput: 100mb
