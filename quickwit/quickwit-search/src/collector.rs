@@ -1337,13 +1337,6 @@ mod tests {
 
     #[typetag::serde(name = "mock")]
     impl quickwit_doc_mapper::DocMapper for MockDocMapper {
-        fn validate_json_obj(
-            &self,
-            _: &quickwit_doc_mapper::JsonObject,
-        ) -> Result<(), quickwit_doc_mapper::DocParsingError> {
-            unimplemented!()
-        }
-
         fn doc_mapping_uid(&self) -> DocMappingUid {
             DocMappingUid::default()
         }

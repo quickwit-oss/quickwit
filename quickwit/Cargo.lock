@@ -5900,6 +5900,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "serde_json_borrow",
  "serde_yaml",
  "siphasher",
  "tantivy",
@@ -6016,6 +6017,7 @@ dependencies = [
  "rand_distr",
  "serde",
  "serde_json",
+ "serde_json_borrow",
  "tempfile",
  "thiserror",
  "tokio",
@@ -7334,6 +7336,16 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_json_borrow"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a256097ff1654ce1975402cb5a2bfa2cad3cc3199e1d704bf303b386fc971f3c"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
