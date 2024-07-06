@@ -23,7 +23,8 @@ use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     load_index_config_update, load_source_config_from_user_config, validate_index_id_pattern,
-    ConfigFormat, NodeConfig, SourceConfig, SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
+    ConfigFormat, FileSourceParams, NodeConfig, SourceConfig, SourceParams, CLI_SOURCE_ID,
+    INGEST_API_SOURCE_ID,
 };
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
@@ -707,12 +708,18 @@ async fn create_source(
     let source_config: SourceConfig =
         load_source_config_from_user_config(config_format, &source_config_bytes)
             .map_err(IndexServiceError::InvalidConfig)?;
-    if let SourceParams::File(_) = &source_config.source_params {
-        return Err(IndexServiceError::OperationNotAllowed(
-            "file sources are limited to a local usage. please use the CLI command `quickwit tool \
-             local-ingest` to ingest data from a file"
-                .to_string(),
-        ));
+    if let SourceParams::File(file_source_params) = &source_config.source_params {
+        match file_source_params {
+            FileSourceParams::FileUri(_) | FileSourceParams::Stdin => {
+                return Err(IndexServiceError::OperationNotAllowed(
+                    "Ad-hoc file ingestions are limited to a local usage. Please use the CLI \
+                     command `quickwit tool local-ingest` to ingest data from a specific file \
+                     file or use notifications (e.g SQS)."
+                        .to_string(),
+                ));
+            }
+            FileSourceParams::Sqs(_) => (),
+        };
     }
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = index_service

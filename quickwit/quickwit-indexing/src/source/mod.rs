@@ -93,6 +93,8 @@ use once_cell::sync::OnceCell;
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
+pub use queue_sources::sqs_queue;
+#[cfg(feature = "sqs")]
 pub use queue_sources::sqs_source::{SqsSource, SqsSourceFactory};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
