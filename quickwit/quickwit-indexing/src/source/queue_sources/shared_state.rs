@@ -292,10 +292,7 @@ mod tests {
     async fn test_acquire_shards_with_completed() {
         let index_id = "test-sqs-index";
         let index_uid = IndexUid::new_with_random_ulid(index_id);
-        let init_state = &[(
-            "p1".into(),
-            ("token2".to_string(), Position::Eof(Some(100usize.into()))),
-        )];
+        let init_state = &[("p1".into(), ("token2".to_string(), Position::eof(100usize)))];
         let metastore = mock_metastore(init_state, Some(1), Some(0));
 
         let shared_state = QueueSharedState {
@@ -308,7 +305,7 @@ mod tests {
             .acquire_partitions("token1", vec!["p1".into(), "p2".into()])
             .await
             .unwrap();
-        assert!(aquired.contains(&("p1".into(), Position::Eof(Some(100usize.into())))));
+        assert!(aquired.contains(&("p1".into(), Position::eof(100usize))));
         assert!(aquired.contains(&("p2".into(), Position::Beginning)));
     }
 
@@ -318,7 +315,7 @@ mod tests {
         let index_uid = IndexUid::new_with_random_ulid(index_id);
         let init_state = &[(
             "p1".into(),
-            ("token2".to_string(), Position::Offset(100usize.into())),
+            ("token2".to_string(), Position::offset(100usize)),
         )];
         let metastore = mock_metastore(init_state, Some(1), Some(1));
 
@@ -334,7 +331,7 @@ mod tests {
             .unwrap();
         // TODO: this test should fail once we implement the grace
         // period before a partition can be re-acquired
-        assert!(aquired.contains(&("p1".into(), Position::Offset(100usize.into()))));
+        assert!(aquired.contains(&("p1".into(), Position::offset(100usize))));
         assert!(aquired.contains(&("p2".into(), Position::Beginning)));
     }
 
@@ -349,7 +346,7 @@ mod tests {
 
         let init_state = &[(
             completed_partition_id.clone(),
-            ("token2".to_string(), Position::Eof(Some(100usize.into()))),
+            ("token2".to_string(), Position::eof(100usize)),
         )];
         let metastore = mock_metastore(init_state, Some(1), Some(0));
         let shared_state = QueueSharedState {
@@ -366,7 +363,7 @@ mod tests {
             .iter()
             .find(|(msg, _)| msg.partition_id() == completed_partition_id)
             .unwrap();
-        assert_eq!(completed_msg.1, Position::Eof(Some(100usize.into())));
+        assert_eq!(completed_msg.1, Position::eof(100usize));
         let new_msg = checkpointed_msg
             .iter()
             .find(|(msg, _)| msg.partition_id() == new_partition_id)
