@@ -753,9 +753,10 @@ mod tests {
             source_type: "file".to_string(),
             enabled: "true".to_string(),
         }];
+        let expected_uri = Uri::from_str("path/to/file").unwrap();
         let expected_params = vec![ParamsRow {
             key: "filepath".to_string(),
-            value: JsonValue::String("path/to/file".to_string()),
+            value: JsonValue::String(expected_uri.to_string()),
         }];
         let expected_checkpoint = vec![
             CheckpointRow {
