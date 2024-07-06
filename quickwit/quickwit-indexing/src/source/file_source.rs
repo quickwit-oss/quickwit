@@ -443,6 +443,7 @@ mod localstack_tests {
         // source setup
         let source_params = FileSourceParams::Sqs(FileSourceSqs {
             queue_url,
+            // decrease poll duration to avoid hanging actor shutdown
             wait_time_seconds: 1,
             message_type: FileSourceMessageType::RawUri,
         });
