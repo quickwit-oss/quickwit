@@ -168,7 +168,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_queue_receiver() {
+    async fn test_queue_receiver_slow_receive() {
         let queue = Arc::new(SleepyQueue {
             receive_sleep: Duration::from_millis(100),
         });
@@ -178,5 +178,14 @@ mod tests {
             iterations += 1;
         }
         assert!(iterations >= 4);
+    }
+
+    #[tokio::test]
+    async fn test_queue_receiver_fast_receive() {
+        let queue = Arc::new(SleepyQueue {
+            receive_sleep: Duration::from_millis(10),
+        });
+        let mut receiver = QueueReceiver::new(queue, Duration::from_millis(50));
+        assert!(receiver.receive(1, Duration::from_secs(1)).await.is_err());
     }
 }

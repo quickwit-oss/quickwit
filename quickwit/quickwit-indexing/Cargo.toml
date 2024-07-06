@@ -78,7 +78,10 @@ kinesis = [
 kinesis-localstack-tests = []
 pulsar = ["dep:pulsar"]
 pulsar-broker-tests = []
-sqs = ["aws-sdk-sqs"]
+sqs = [
+  "aws-sdk-sqs",
+  "quickwit-aws/sqs",
+]
 sqs-localstack-tests = []
 vendored-kafka = [
   "kafka",
