@@ -34,7 +34,7 @@ use ulid::Ulid;
 use super::local_state::QueueLocalState;
 use super::message::CheckpointedMessage;
 use super::shared_state::{QueueSharedState, QueueSharedStateImpl};
-use super::visibility::{spawn_visibility_task, VisibilityTaskHandle};
+use super::visibility::{acknowledge_and_abort, spawn_visibility_task, VisibilityTaskHandle};
 use super::{acknowledge, Queue};
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
@@ -169,7 +169,7 @@ impl QueueProcessor {
             .iter()
             .filter_map(|m| self.local_state.mark_completed(m.partition_id()))
             .collect();
-        acknowledge(&*self.queue, completed_visibility_tasks).await?;
+        acknowledge_and_abort(&*self.queue, completed_visibility_tasks).await?;
 
         // Acknowledge messages that have been processed by another pipeline
         let mut already_processed = categorized_using_local_state.already_processed;
@@ -219,7 +219,7 @@ impl QueueProcessor {
             .filter(|(_, pos)| pos.is_eof())
             .filter_map(|(pid, _)| self.local_state.mark_completed(pid))
             .collect();
-        acknowledge(&*self.queue, completed_visibility_handles).await
+        acknowledge_and_abort(&*self.queue, completed_visibility_handles).await
     }
 
     pub fn observable_state(&self) -> JsonValue {

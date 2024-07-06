@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 use tokio::task::JoinHandle;
 use tracing::error;
 
-use super::{HasAckId, Queue};
+use super::Queue;
 use crate::models::PublishLock;
 
 const REQUESTED_VISIBILITY_EXTENSION: Duration = Duration::from_secs(60);
@@ -33,12 +33,6 @@ const LOCK_KILL_TIMEOUT: Duration = Duration::from_secs(1);
 pub struct VisibilityTaskHandle {
     _task_handle: JoinHandle<()>,
     pub ack_id: String,
-}
-
-impl HasAckId for VisibilityTaskHandle {
-    fn ack_id(&self) -> &str {
-        self.ack_id.as_str()
-    }
 }
 
 pub fn spawn_visibility_task(
@@ -100,4 +94,21 @@ async fn handle_visibility(
             }
         }
     }
+}
+
+/// Acknowledges the messages of a list of visibility handles and stops the
+/// associated tasks.
+pub async fn acknowledge_and_abort(
+    queue: &dyn Queue,
+    handles: Vec<VisibilityTaskHandle>,
+) -> anyhow::Result<()> {
+    let ack_ids = handles
+        .iter()
+        .map(|handle| handle.ack_id.as_str())
+        .collect::<Vec<_>>();
+    queue.acknowledge(&ack_ids).await?;
+    for handle in handles {
+        handle._task_handle.abort();
+    }
+    Ok(())
 }
