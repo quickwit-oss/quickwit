@@ -57,6 +57,7 @@
 //!   that file.
 //! - the kafka source: the partition id is a kafka topic partition id, and the position is a kafka
 //!   offset.
+mod doc_file_reader;
 mod file_source;
 #[cfg(feature = "gcp-pubsub")]
 mod gcp_pubsub_source;
@@ -111,7 +112,7 @@ use tracing::error;
 pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
-use self::file_source::dir_and_filename;
+use self::doc_file_reader::dir_and_filename;
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::ingest::IngestSourceFactory;
@@ -232,7 +233,7 @@ pub trait Source: Send + 'static {
     /// In that case, `batch_sink` will block.
     ///
     /// It returns an optional duration specifying how long the batch requester
-    /// should wait before pooling gain.
+    /// should wait before polling again.
     async fn emit_batches(
         &mut self,
         doc_processor_mailbox: &Mailbox<DocProcessor>,
