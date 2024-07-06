@@ -17,9 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
+use std::str::FromStr;
 
 use aws_lambda_events::event::s3::S3Event;
+use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -31,17 +32,17 @@ pub enum IndexerEvent {
 }
 
 impl IndexerEvent {
-    pub fn uri(&self) -> PathBuf {
-        match &self {
-            IndexerEvent::Custom { source_uri } => PathBuf::from(source_uri),
+    pub fn uri(&self) -> anyhow::Result<Uri> {
+        let path = match self {
+            IndexerEvent::Custom { source_uri } => source_uri.clone(),
             IndexerEvent::S3(event) => [
                 "s3://",
                 event.records[0].s3.bucket.name.as_ref().unwrap(),
                 event.records[0].s3.object.key.as_ref().unwrap(),
             ]
-            .iter()
-            .collect(),
-        }
+            .join(""),
+        };
+        Uri::from_str(&path)
     }
 }
 
@@ -58,14 +59,14 @@ mod tests {
         });
         let parsed_cust_event: IndexerEvent = serde_json::from_value(cust_event).unwrap();
         assert_eq!(
-            parsed_cust_event.uri(),
-            PathBuf::from("s3://quickwit-test/test.json"),
+            parsed_cust_event.uri().unwrap(),
+            Uri::from_str("s3://quickwit-test/test.json").unwrap(),
         );
     }
 
     #[test]
     fn test_s3_event_uri() {
-        let cust_event = json!({
+        let s3_event = json!({
           "Records": [
             {
               "eventVersion": "2.0",
@@ -103,10 +104,10 @@ mod tests {
             }
           ]
         });
-        let parsed_cust_event: IndexerEvent = serde_json::from_value(cust_event).unwrap();
+        let s3_event: IndexerEvent = serde_json::from_value(s3_event).unwrap();
         assert_eq!(
-            parsed_cust_event.uri(),
-            PathBuf::from("s3://quickwit-test/test.json"),
+            s3_event.uri().unwrap(),
+            Uri::from_str("s3://quickwit-test/test.json").unwrap(),
         );
     }
 }

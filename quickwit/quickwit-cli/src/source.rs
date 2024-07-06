@@ -744,7 +744,7 @@ mod tests {
             source_id: "foo-source".to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
-            source_params: SourceParams::file("path/to/file"),
+            source_params: SourceParams::file_from_str("path/to/file").unwrap(),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         }];

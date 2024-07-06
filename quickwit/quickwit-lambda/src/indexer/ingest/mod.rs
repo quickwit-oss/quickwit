@@ -20,7 +20,6 @@
 mod helpers;
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 
 use anyhow::bail;
 use helpers::{
@@ -31,6 +30,7 @@ use quickwit_actors::Universe;
 use quickwit_cli::start_actor_runtimes;
 use quickwit_cli::tool::start_statistics_reporting_loop;
 use quickwit_common::runtimes::RuntimesConfig;
+use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::SourceInputFormat;
 use quickwit_index_management::clear_cache_directory;
@@ -43,7 +43,7 @@ use crate::utils::load_node_config;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IngestArgs {
-    pub input_path: PathBuf,
+    pub input_path: Uri,
     pub input_format: SourceInputFormat,
     pub overwrite: bool,
     pub vrl_script: Option<String>,

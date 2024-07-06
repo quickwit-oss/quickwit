@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::borrow::Borrow;
 use std::fmt;
 use std::time::Duration;
 
@@ -122,7 +121,7 @@ impl TypedSourceFactory for FileSourceFactory {
         source_runtime: SourceRuntime,
         params: FileSourceParams,
     ) -> anyhow::Result<FileSource> {
-        let Some(filepath) = &params.filepath else {
+        let Some(uri) = &params.filepath else {
             return Ok(FileSource {
                 source_id: source_runtime.source_id().to_string(),
                 reader: DocFileReader::from_stdin(),
@@ -131,7 +130,7 @@ impl TypedSourceFactory for FileSourceFactory {
             });
         };
 
-        let partition_id = PartitionId::from(filepath.to_string_lossy().borrow());
+        let partition_id = PartitionId::from(uri.as_str());
         let checkpoint = source_runtime.fetch_checkpoint().await?;
         let offset = checkpoint
             .position_for_partition(&partition_id)
@@ -142,10 +141,7 @@ impl TypedSourceFactory for FileSourceFactory {
             })
             .transpose()?
             .unwrap_or(0);
-
-        let reader =
-            DocFileReader::from_path(&source_runtime.storage_resolver, filepath, offset).await?;
-
+        let reader = DocFileReader::from_uri(&source_runtime.storage_resolver, uri, offset).await?;
         Ok(FileSource {
             source_id: source_runtime.source_id().to_string(),
             reader,
@@ -160,10 +156,11 @@ impl TypedSourceFactory for FileSourceFactory {
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Borrow;
     use std::num::NonZeroUsize;
+    use std::str::FromStr;
 
     use quickwit_actors::{Command, Universe};
+    use quickwit_common::uri::Uri;
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpointDelta};
     use quickwit_proto::types::{IndexUid, Position};
@@ -186,9 +183,9 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let params = if gzip {
-            FileSourceParams::file("data/test_corpus.json.gz")
+            FileSourceParams::from_str("data/test_corpus.json.gz").unwrap()
         } else {
-            FileSourceParams::file("data/test_corpus.json")
+            FileSourceParams::from_str("data/test_corpus.json").unwrap()
         };
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
@@ -237,13 +234,8 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let temp_file = generate_dummy_doc_file(gzip, 20_000).await;
-        let params = FileSourceParams::file(temp_file.path());
-        let filepath = params
-            .filepath
-            .as_ref()
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
+        let filepath = temp_file.path().to_str().unwrap();
+        let params = FileSourceParams::from_str(filepath).unwrap();
 
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
@@ -278,11 +270,12 @@ mod tests {
         let batch1 = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
         let batch2 = indexer_msgs[1].downcast_ref::<RawDocBatch>().unwrap();
         let command = indexer_msgs[2].downcast_ref::<Command>().unwrap();
+        let uri = Uri::from_str(filepath).unwrap();
         assert_eq!(
             format!("{:?}", &batch1.checkpoint_delta),
             format!(
                 "∆({}:{})",
-                filepath, "(00000000000000000000..00000000000000500010]"
+                uri, "(00000000000000000000..00000000000000500010]"
             )
         );
         assert_eq!(
@@ -314,8 +307,8 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let temp_file = generate_index_doc_file(gzip, 100).await;
-        let temp_file_path = temp_file.path();
-        let params = FileSourceParams::file(temp_file_path);
+        let temp_file_path = temp_file.path().to_str().unwrap();
+        let params = FileSourceParams::from_str(temp_file_path).unwrap();
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
@@ -324,7 +317,7 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        let partition_id = PartitionId::from(temp_file_path.to_string_lossy().borrow());
+        let partition_id = PartitionId::from(temp_file_path);
         let source_checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             partition_id,
             Position::Beginning,
