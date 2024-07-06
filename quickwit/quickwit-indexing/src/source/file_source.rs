@@ -17,22 +17,38 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Borrow;
 use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::FileSourceParams;
-use quickwit_proto::types::SourceId;
+use quickwit_metastore::checkpoint::PartitionId;
+use quickwit_proto::metastore::SourceType;
+use quickwit_proto::types::{Position, SourceId};
+use serde::Serialize;
 use tracing::info;
 
-use super::doc_file_reader::{DocFileReader, ReadBatchResponse};
+use super::doc_file_reader::DocFileReader;
+use super::BatchBuilder;
 use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
+
+/// Number of bytes after which a new batch is cut.
+pub(crate) const BATCH_NUM_BYTES_LIMIT: u64 = 500_000;
+
+#[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FileSourceCounters {
+    pub offset: u64,
+    pub num_lines_processed: usize,
+}
 
 pub struct FileSource {
     source_id: SourceId,
     reader: DocFileReader,
+    partition_id: Option<PartitionId>,
+    counters: FileSourceCounters,
 }
 
 impl fmt::Debug for FileSource {
@@ -48,9 +64,35 @@ impl Source for FileSource {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        let ReadBatchResponse { batch_opt, is_eof } = self.reader.read_batch(ctx).await?;
-        if let Some(batch) = batch_opt {
-            ctx.send_message(doc_processor_mailbox, batch).await?;
+        let limit_num_bytes = self.counters.offset + BATCH_NUM_BYTES_LIMIT;
+        let mut new_offset = self.counters.offset;
+        let mut batch_builder = BatchBuilder::new(SourceType::File);
+        let is_eof = loop {
+            if new_offset >= limit_num_bytes {
+                break false;
+            }
+            if let Some(record) = ctx.protect_future(self.reader.next_record()).await? {
+                new_offset = record.next_offset;
+                self.counters.num_lines_processed += 1;
+                batch_builder.add_doc(record.doc);
+            } else {
+                break true;
+            }
+        };
+        if new_offset > self.counters.offset {
+            if let Some(partition_id) = &self.partition_id {
+                batch_builder
+                    .checkpoint_delta
+                    .record_partition_delta(
+                        partition_id.clone(),
+                        Position::offset(self.counters.offset),
+                        Position::offset(new_offset),
+                    )
+                    .unwrap();
+            }
+            ctx.send_message(doc_processor_mailbox, batch_builder.build())
+                .await?;
+            self.counters.offset = new_offset;
         }
         if is_eof {
             info!("reached end of file");
@@ -65,7 +107,7 @@ impl Source for FileSource {
     }
 
     fn observable_state(&self) -> serde_json::Value {
-        serde_json::to_value(self.reader.counters()).unwrap()
+        serde_json::to_value(&self.counters).unwrap()
     }
 }
 
@@ -80,17 +122,39 @@ impl TypedSourceFactory for FileSourceFactory {
         source_runtime: SourceRuntime,
         params: FileSourceParams,
     ) -> anyhow::Result<FileSource> {
-        let reader: DocFileReader = if let Some(filepath) = &params.filepath {
+        let file_source = if let Some(filepath) = &params.filepath {
+            let partition_id = PartitionId::from(filepath.to_string_lossy().borrow());
             let checkpoint = source_runtime.fetch_checkpoint().await?;
-            DocFileReader::from_path(&checkpoint, filepath, &source_runtime.storage_resolver)
-                .await?
+            let offset = checkpoint
+                .position_for_partition(&partition_id)
+                .map(|position| {
+                    position
+                        .as_usize()
+                        .expect("file offset should be stored as usize")
+                })
+                .unwrap_or(0);
+
+            let reader =
+                DocFileReader::from_path(&source_runtime.storage_resolver, filepath, offset)
+                    .await?;
+
+            FileSource {
+                source_id: source_runtime.source_id().to_string(),
+                reader,
+                partition_id: Some(partition_id),
+                counters: FileSourceCounters {
+                    offset: offset as u64,
+                    ..Default::default()
+                },
+            }
         } else {
             // We cannot use the checkpoint.
-            DocFileReader::from_stdin()
-        };
-        let file_source = FileSource {
-            source_id: source_runtime.source_id().to_string(),
-            reader,
+            FileSource {
+                source_id: source_runtime.source_id().to_string(),
+                reader: DocFileReader::from_stdin(),
+                partition_id: None,
+                counters: FileSourceCounters::default(),
+            }
         };
         Ok(file_source)
     }
@@ -152,8 +216,7 @@ mod tests {
         assert_eq!(
             counters,
             serde_json::json!({
-                "previous_offset": 1030u64,
-                "current_offset": 1030u64,
+                "offset": 1030u64,
                 "num_lines_processed": 4u32
             })
         );
@@ -208,8 +271,7 @@ mod tests {
         assert_eq!(
             counters,
             serde_json::json!({
-                "previous_offset": 700_000u64,
-                "current_offset": 700_000u64,
+                "offset": 700_000u64,
                 "num_lines_processed": 20_000u64
             })
         );
@@ -292,8 +354,7 @@ mod tests {
         assert_eq!(
             counters,
             serde_json::json!({
-                "previous_offset": 290u64,
-                "current_offset": 290u64,
+                "offset": 290u64,
                 "num_lines_processed": 98u64
             })
         );
