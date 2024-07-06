@@ -138,20 +138,14 @@ async fn test_sqs_single_node_cluster() {
 
     wait_until_predicate(
         || async {
-            let queue_attributes = sqs_client
-                .get_queue_attributes()
-                .queue_url(&queue_url)
-                .attribute_names(QueueAttributeName::All)
-                .send()
-                .await
-                .unwrap();
-            let in_flight_count: usize = queue_attributes
-                .attributes
-                .unwrap()
-                .get(&QueueAttributeName::ApproximateNumberOfMessagesNotVisible)
-                .unwrap()
-                .parse()
-                .unwrap();
+            let in_flight_count: usize = sqs_test_helpers::get_queue_attribute(
+                &sqs_client,
+                &queue_url,
+                QueueAttributeName::ApproximateNumberOfMessagesNotVisible,
+            )
+            .await
+            .parse()
+            .unwrap();
             in_flight_count == 2
         },
         Duration::from_secs(5),

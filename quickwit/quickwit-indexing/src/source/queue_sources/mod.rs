@@ -67,12 +67,12 @@ pub trait Queue: fmt::Debug + Send + Sync + 'static {
         suggested_deadline: Duration,
     ) -> ReceiveResult;
 
-    /// Tries to acknowledge the messages, effectively deleting them from the
-    /// queue.
+    /// Tries to acknowledge (delete) the messages.
     ///
-    /// The call returns `Ok(())` if:
-    /// - the acknowledgement of some of the messages failed due to a transient failure
+    /// The call returns `Ok(())` if at the message level:
+    /// - the acknowledgement failed due to a transient failure
     /// - the message was already acknowledged
+    /// - the message was not acknowledged in time and is back to the queue
     async fn acknowledge(&self, ack_ids: &[String]) -> anyhow::Result<()>;
 
     /// Modifies the visibility deadline of the messages.

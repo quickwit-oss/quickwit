@@ -36,6 +36,11 @@ use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
+#[cfg(feature = "sqs")]
+use aws_sdk_sqs::operation::{
+    change_message_visibility::ChangeMessageVisibilityError,
+    delete_message_batch::DeleteMessageBatchError, receive_message::ReceiveMessageError,
+};
 
 use crate::retry::AwsRetryable;
 
@@ -193,5 +198,26 @@ impl AwsRetryable for SplitShardError {
             self,
             SplitShardError::ResourceInUseException(_) | SplitShardError::LimitExceededException(_)
         )
+    }
+}
+
+#[cfg(feature = "sqs")]
+impl AwsRetryable for ReceiveMessageError {
+    fn is_retryable(&self) -> bool {
+        false
+    }
+}
+
+#[cfg(feature = "sqs")]
+impl AwsRetryable for DeleteMessageBatchError {
+    fn is_retryable(&self) -> bool {
+        false
+    }
+}
+
+#[cfg(feature = "sqs")]
+impl AwsRetryable for ChangeMessageVisibilityError {
+    fn is_retryable(&self) -> bool {
+        false
     }
 }

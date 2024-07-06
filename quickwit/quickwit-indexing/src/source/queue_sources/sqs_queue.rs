@@ -20,13 +20,16 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use async_trait::async_trait;
 use aws_sdk_sqs::config::{BehaviorVersion, Builder, Region, SharedAsyncSleep};
 use aws_sdk_sqs::types::{DeleteMessageBatchRequestEntry, MessageSystemAttributeName};
 use aws_sdk_sqs::{Client, Config};
 use itertools::Itertools;
+use quickwit_aws::retry::{aws_retry, AwsRetryable};
 use quickwit_aws::{get_aws_config, DEFAULT_AWS_REGION};
+use quickwit_common::rate_limited_error;
+use quickwit_common::retry::RetryParams;
 use quickwit_storage::OwnedBytes;
 use regex::Regex;
 
@@ -37,6 +40,9 @@ use super::{Queue, RawMessage};
 pub struct SqsQueue {
     sqs_client: Client,
     queue_url: String,
+    receive_retries: RetryParams,
+    acknowledge_retries: RetryParams,
+    modify_deadline_retries: RetryParams,
 }
 
 impl SqsQueue {
@@ -45,6 +51,11 @@ impl SqsQueue {
         Ok(SqsQueue {
             sqs_client,
             queue_url,
+            receive_retries: RetryParams::standard(),
+            // Acknowledgment is retried when the message is received again
+            acknowledge_retries: RetryParams::no_retries(),
+            // Retry aggressively to avoid loosing the ownership of the message
+            modify_deadline_retries: RetryParams::aggressive(),
         })
     }
 }
@@ -60,18 +71,34 @@ impl Queue for SqsQueue {
         // ReceiveMessage request. This might be overly pessimistic: the docs
         // state that it starts when the message is returned.
         let initial_deadline = Instant::now() + suggested_deadline;
-        let res = self
-            .sqs_client
-            .receive_message()
-            .queue_url(&self.queue_url)
-            .message_system_attribute_names(MessageSystemAttributeName::ApproximateReceiveCount)
-            .wait_time_seconds(20)
-            .set_max_number_of_messages(Some(max_messages as i32))
-            .visibility_timeout(suggested_deadline.as_secs() as i32)
-            .send()
-            .await?;
+        let clamped_max_messages = std::cmp::min(max_messages, 10) as i32;
+        let receive_res = aws_retry(&self.receive_retries, || async {
+            self.sqs_client
+                .receive_message()
+                .queue_url(&self.queue_url)
+                .message_system_attribute_names(MessageSystemAttributeName::ApproximateReceiveCount)
+                .wait_time_seconds(20)
+                .set_max_number_of_messages(Some(clamped_max_messages))
+                .visibility_timeout(suggested_deadline.as_secs() as i32)
+                .send()
+                .await
+        })
+        .await;
 
-        res.messages
+        let receive_output = match receive_res {
+            Ok(output) => output,
+            Err(err) => {
+                rate_limited_error!(
+                    limit_per_min = 10,
+                    first_err = ?err,
+                    "failed to receive messages from SQS",
+                );
+                return Ok(Vec::new());
+            }
+        };
+
+        receive_output
+            .messages
             .unwrap_or_default()
             .into_iter()
             .map(|msg| {
@@ -103,8 +130,12 @@ impl Queue for SqsQueue {
     }
 
     async fn acknowledge(&self, ack_ids: &[String]) -> anyhow::Result<()> {
-        let entry_batches: Vec<_> = ack_ids
+        if ack_ids.is_empty() {
+            return Ok(());
+        }
+        let entry_batches: Vec<Vec<_>> = ack_ids
             .iter()
+            .dedup()
             .enumerate()
             .map(|(i, id)| {
                 DeleteMessageBatchRequestEntry::builder()
@@ -118,26 +149,54 @@ impl Queue for SqsQueue {
             .map(|chunk| chunk.collect())
             .collect();
 
-        // TODO: retries, partial success and parallelization
-        let mut errors = 0;
-        let num_batches = entry_batches.len();
+        // TODO: parallelization
+        let mut batch_errors = Vec::new();
+        let mut message_errors = Vec::new();
         for batch in entry_batches {
-            let res = self
-                .sqs_client
-                .delete_message_batch()
-                .queue_url(&self.queue_url)
-                .set_entries(Some(batch))
-                .send()
-                .await;
-            if res.is_err() {
-                errors += 1;
-                if errors == num_batches {
-                    // fail when all batches fail and return last err
-                    res?;
+            let res = aws_retry(&self.acknowledge_retries, || {
+                self.sqs_client
+                    .delete_message_batch()
+                    .queue_url(&self.queue_url)
+                    .set_entries(Some(batch.clone()))
+                    .send()
+            })
+            .await;
+            match res {
+                Ok(res) => {
+                    message_errors.extend(res.failed.into_iter());
+                }
+                Err(err) => {
+                    batch_errors.push(err);
                 }
             }
         }
-
+        if batch_errors.iter().any(|err| !err.is_retryable()) {
+            let fatal_error = batch_errors
+                .into_iter()
+                .find(|err| !err.is_retryable())
+                .unwrap();
+            bail!(fatal_error);
+        } else if !batch_errors.is_empty() {
+            rate_limited_error!(
+                limit_per_min = 10,
+                count = batch_errors.len(),
+                first_err = ?batch_errors.into_iter().next().unwrap(),
+                "failed to acknowledge some message batches",
+            );
+        }
+        // The documentation is unclear about these partial failures. We assume
+        // it is either:
+        // - a transient failure
+        // - the message is already acknowledged
+        // - the message is expired
+        if !message_errors.is_empty() {
+            rate_limited_error!(
+                limit_per_min = 10,
+                count = message_errors.len(),
+                first_err = ?message_errors.into_iter().next().unwrap(),
+                "failed to acknowledge individual messages",
+            );
+        }
         Ok(())
     }
 
@@ -148,14 +207,15 @@ impl Queue for SqsQueue {
     ) -> anyhow::Result<Instant> {
         let visibility_timeout = std::cmp::min(suggested_deadline.as_secs() as i32, 43200);
         let new_deadline = Instant::now() + suggested_deadline;
-        // TODO: retry if transient
-        self.sqs_client
-            .change_message_visibility()
-            .queue_url(&self.queue_url)
-            .visibility_timeout(visibility_timeout)
-            .receipt_handle(ack_id)
-            .send()
-            .await?;
+        aws_retry(&self.modify_deadline_retries, || {
+            self.sqs_client
+                .change_message_visibility()
+                .queue_url(&self.queue_url)
+                .visibility_timeout(visibility_timeout)
+                .receipt_handle(ack_id)
+                .send()
+        })
+        .await?;
         Ok(new_deadline)
     }
 }
@@ -218,6 +278,7 @@ pub(crate) async fn check_connectivity(queue_url: &str) -> anyhow::Result<()> {
 
 #[cfg(feature = "sqs-localstack-tests")]
 pub mod test_helpers {
+    use aws_sdk_sqs::types::QueueAttributeName;
     use ulid::Ulid;
 
     use super::*;
@@ -249,6 +310,26 @@ pub mod test_helpers {
             .send()
             .await
             .unwrap();
+    }
+
+    pub async fn get_queue_attribute(
+        sqs_client: &Client,
+        queue_url: &str,
+        attribute: QueueAttributeName,
+    ) -> String {
+        let queue_attributes = sqs_client
+            .get_queue_attributes()
+            .queue_url(queue_url)
+            .attribute_names(attribute.clone())
+            .send()
+            .await
+            .unwrap();
+        queue_attributes
+            .attributes
+            .unwrap()
+            .get(&attribute)
+            .unwrap()
+            .to_string()
     }
 }
 
@@ -293,10 +374,13 @@ mod tests {
 
 #[cfg(all(test, feature = "sqs-localstack-tests"))]
 mod localstack_tests {
+    use aws_sdk_sqs::types::QueueAttributeName;
+
     use super::*;
     use crate::source::queue_sources::sqs_queue::test_helpers::{
         create_queue, get_localstack_sqs_client,
     };
+    use crate::source::queue_sources::QueueReceiver;
 
     #[tokio::test]
     async fn test_check_connectivity() {
@@ -332,5 +416,53 @@ mod localstack_tests {
             .acknowledge(&[messages[0].metadata.ack_id.clone()])
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_acknowledge_larger_batch() {
+        let client = test_helpers::get_localstack_sqs_client().await.unwrap();
+        let queue_url = test_helpers::create_queue(&client, "test-receive-existing-msg").await;
+        let message = "hello world";
+        for _ in 0..20 {
+            test_helpers::send_message(&client, &queue_url, message).await;
+        }
+
+        let queue: Arc<SqsQueue> = Arc::new(SqsQueue::try_new(queue_url.clone()).await.unwrap());
+        let mut queue_receiver = QueueReceiver::new(queue.clone(), Duration::from_millis(200));
+        let mut messages = Vec::new();
+        for _ in 0..5 {
+            let new_messages = queue_receiver
+                .receive(20, Duration::from_secs(60))
+                .await
+                .unwrap();
+            messages.extend(new_messages.into_iter());
+        }
+        assert_eq!(messages.len(), 20);
+        let in_flight_count: usize = test_helpers::get_queue_attribute(
+            &client,
+            &queue_url,
+            QueueAttributeName::ApproximateNumberOfMessagesNotVisible,
+        )
+        .await
+        .parse()
+        .unwrap();
+        assert_eq!(in_flight_count, 20);
+
+        let ack_ids = messages
+            .iter()
+            .map(|msg| msg.metadata.ack_id.clone())
+            .collect::<Vec<_>>();
+
+        queue.acknowledge(&ack_ids).await.unwrap();
+
+        let in_flight_count: usize = test_helpers::get_queue_attribute(
+            &client,
+            &queue_url,
+            QueueAttributeName::ApproximateNumberOfMessagesNotVisible,
+        )
+        .await
+        .parse()
+        .unwrap();
+        assert_eq!(in_flight_count, 0);
     }
 }

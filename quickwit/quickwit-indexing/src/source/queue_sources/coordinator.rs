@@ -23,13 +23,13 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_common::rate_limited_warn;
 use quickwit_config::{FileSourceMessageType, FileSourceSqs};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::SourceType;
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
-use tracing::debug;
 use ulid::Ulid;
 
 use super::local_state::QueueLocalState;
@@ -55,10 +55,10 @@ pub struct QueueCoordinatorObservableState {
     pub num_lines_processed: u64,
     /// Number of messages processed by the source.
     pub num_messages_processed: u64,
-    // Number of invalid messages, i.e., that were empty or could not be parsed.
-    // pub num_invalid_messages: u64,
-    /// Number of time we looped without getting a single message
-    pub num_consecutive_empty_batches: u64,
+    /// Number of messages that could not be pre-processed.
+    pub num_messages_failed_preprocessing: u64,
+    /// Number of messages that could not be moved to in-progress.
+    pub num_messages_failed_opening: u64,
 }
 
 pub struct QueueCoordinator {
@@ -156,19 +156,27 @@ impl QueueCoordinator {
             .receive(1, self.visible_settings.deadline_for_receive)
             .await?;
 
-        if raw_messages.is_empty() {
-            self.observable_state.num_consecutive_empty_batches += 1;
-            return Ok(());
-        } else {
-            self.observable_state.num_consecutive_empty_batches = 0;
-        }
-
+        let mut invalid_messages = Vec::new();
         let preprocessed_messages = raw_messages
             .into_iter()
             .map(|msg| msg.pre_process(self.message_type))
-            .collect::<anyhow::Result<Vec<_>>>()?;
+            .filter_map(|res| res.map_err(|err| invalid_messages.push(err)).ok())
+            .collect::<Vec<_>>();
+        if !invalid_messages.is_empty() {
+            self.observable_state.num_messages_failed_preprocessing +=
+                invalid_messages.len() as u64;
+            rate_limited_warn!(
+                limit_per_min = 10,
+                count = invalid_messages.len(),
+                last_err = ?invalid_messages.last().unwrap(),
+                "invalid messages skipped, use a dead letter queue to limit retries"
+            );
+        }
+        if preprocessed_messages.is_empty() {
+            return Ok(());
+        }
 
-        // in rare situations, the same partition might be duplicted within batch
+        // in rare situations, there might be duplicates within a batch
         let deduplicated_messages = preprocessed_messages
             .into_iter()
             .dedup_by(|x, y| x.partition_id() == y.partition_id());
@@ -225,8 +233,7 @@ impl QueueCoordinator {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         if let Some(in_progress_ref) = self.local_state.read_in_progress_mut() {
-            debug!("process_batch");
-            // TODO: should we kill the publish lock if the message visibility extension fails?
+            // TODO: should we kill the publish lock if the message visibility extension failed?
             let batch_builder = in_progress_ref
                 .reader
                 .read_batch(ctx.progress(), self.source_type)
@@ -240,21 +247,25 @@ impl QueueCoordinator {
             }
             if in_progress_ref.reader.is_eof() {
                 self.local_state
-                    .replace_currently_read(None)
-                    .unwrap()
-                    .visibility_handle
-                    .request_last_extension(self.visible_settings.deadline_for_last_extension)
+                    .drop_currently_read(self.visible_settings.deadline_for_last_extension)
                     .await?;
                 self.observable_state.num_messages_processed += 1;
             }
         } else if let Some(ready_message) = self.local_state.get_ready_for_read() {
-            debug!("start_processing");
-            let new_in_progress = ready_message
-                .start_processing(&self.storage_resolver)
-                .await?;
-            self.local_state.replace_currently_read(new_in_progress);
+            match ready_message.start_processing(&self.storage_resolver).await {
+                Ok(new_in_progress) => {
+                    self.local_state.set_currently_read(new_in_progress)?;
+                }
+                Err(err) => {
+                    self.observable_state.num_messages_failed_opening += 1;
+                    rate_limited_warn!(
+                        limit_per_min = 5,
+                        err = ?err,
+                        "failed to start processing message"
+                    );
+                }
+            }
         } else {
-            debug!("poll_messages");
             self.poll_messages(ctx).await?;
         }
 
@@ -271,7 +282,6 @@ impl QueueCoordinator {
             .filter(|(_, pos)| pos.is_eof())
             .map(|(pid, _)| pid)
             .collect::<Vec<_>>();
-        tracing::info!(pids=?committed_partition_ids, "coordinator::suggest_truncate()");
         let mut completed = Vec::new();
         for partition_id in committed_partition_ids {
             let ack_id_opt = self.local_state.mark_completed(partition_id);
@@ -279,7 +289,6 @@ impl QueueCoordinator {
                 completed.push(ack_id);
             }
         }
-        tracing::info!(ackids=?completed, "coordinator::suggest_truncate()");
         self.queue.acknowledge(&completed).await
     }
 
