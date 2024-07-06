@@ -211,7 +211,8 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             | SourceType::Kinesis
             | SourceType::PubSub
             | SourceType::Nats
-            | SourceType::Pulsar => {
+            | SourceType::Pulsar
+            | SourceType::Sqs => {
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::NonSharded {

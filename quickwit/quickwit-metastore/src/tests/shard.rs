@@ -134,6 +134,7 @@ pub async fn test_metastore_open_shards<
             leader_id: "test-ingester-foo".to_string(),
             follower_id: Some("test-ingester-bar".to_string()),
             doc_mapping_uid: Some(DocMappingUid::default()),
+            publish_token: None,
         }],
     };
     let open_shards_response = metastore.open_shards(open_shards_request).await.unwrap();
@@ -163,6 +164,7 @@ pub async fn test_metastore_open_shards<
             leader_id: "test-ingester-foo".to_string(),
             follower_id: Some("test-ingester-bar".to_string()),
             doc_mapping_uid: Some(DocMappingUid::default()),
+            publish_token: Some("publish-token-baz".to_string()),
         }],
     };
     let open_shards_response = metastore.open_shards(open_shards_request).await.unwrap();
@@ -180,6 +182,34 @@ pub async fn test_metastore_open_shards<
     assert_eq!(shard.follower_id(), "test-ingester-bar");
     assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
     assert!(shard.publish_token.is_none());
+
+    // Test open shard #2.
+    let open_shards_request = OpenShardsRequest {
+        subrequests: vec![OpenShardSubrequest {
+            subrequest_id: 0,
+            index_uid: Some(test_index.index_uid.clone()),
+            source_id: test_index.source_id.clone(),
+            shard_id: Some(ShardId::from(2)),
+            leader_id: "test-ingester-foo".to_string(),
+            follower_id: None,
+            publish_token: Some("publish-token-open".to_string()),
+        }],
+    };
+    let open_shards_response = metastore.open_shards(open_shards_request).await.unwrap();
+    assert_eq!(open_shards_response.subresponses.len(), 1);
+
+    let subresponse = &open_shards_response.subresponses[0];
+    assert_eq!(subresponse.subrequest_id, 0);
+
+    let shard = subresponse.open_shard();
+    assert_eq!(shard.index_uid(), &test_index.index_uid);
+    assert_eq!(shard.source_id, test_index.source_id);
+    assert_eq!(shard.shard_id(), ShardId::from(2));
+    assert_eq!(shard.shard_state(), ShardState::Open);
+    assert_eq!(shard.leader_id, "test-ingester-foo");
+    assert!(shard.follower_id.is_none());
+    assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
+    assert_eq!(shard.publish_token(), "publish-token-open");
 
     cleanup_index(&mut metastore, test_index.index_uid).await;
 }
