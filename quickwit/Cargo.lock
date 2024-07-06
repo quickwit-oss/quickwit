@@ -5969,7 +5969,6 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "arc-swap",
- "assert-json-diff 2.0.2",
  "async-compression",
  "async-trait",
  "aws-sdk-kinesis",

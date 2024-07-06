@@ -35,9 +35,6 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 pub use coordinator::QueueCoordinator;
 use message::RawMessage;
-pub use message::{
-    InProgressMessage, InProgressMessageObservableState, MessageType, ProgressTracker,
-};
 
 /// The queue abstraction is based on the AWS SQS and Google Pubsub APIs. The
 /// only requirement of the underlying implementation is that messages exposed
