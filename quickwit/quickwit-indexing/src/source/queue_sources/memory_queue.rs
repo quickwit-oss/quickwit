@@ -22,6 +22,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use anyhow::bail;
 use async_trait::async_trait;
 use quickwit_storage::OwnedBytes;
 use ulid::Ulid;
@@ -47,23 +48,60 @@ impl fmt::Debug for InnerState {
 }
 
 /// A simple in-memory queue
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct MemoryQueueForTests {
     inner_state: Arc<Mutex<InnerState>>,
 }
 
 impl MemoryQueueForTests {
+    pub fn new() -> Self {
+        let inner_state = Arc::new(Mutex::new(InnerState::default()));
+        let inner_weak = Arc::downgrade(&inner_state);
+        tokio::spawn(async move {
+            loop {
+                if let Some(inner_state) = inner_weak.upgrade() {
+                    let mut inner_state = inner_state.lock().unwrap();
+                    let mut expired = Vec::new();
+                    for (ack_id, msg) in inner_state.in_flight.iter() {
+                        if msg.metadata.initial_deadline < Instant::now() {
+                            expired.push(ack_id.clone());
+                        }
+                    }
+                    for ack_id in expired {
+                        let msg = inner_state.in_flight.remove(&ack_id).unwrap();
+                        inner_state.in_queue.push_back(msg);
+                    }
+                } else {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        });
+        MemoryQueueForTests {
+            inner_state: Arc::new(Mutex::new(InnerState::default())),
+        }
+    }
+
     pub fn send_message(&self, payload: String, ack_id: &str) {
         let message = RawMessage {
             payload: OwnedBytes::new(payload.into_bytes()),
             metadata: MessageMetadata {
                 ack_id: ack_id.to_string(),
                 delivery_attempts: 0,
-                initial_deadline: Instant::now() + Duration::from_secs(30),
+                initial_deadline: Instant::now(),
                 message_id: Ulid::new().to_string(),
             },
         };
         self.inner_state.lock().unwrap().in_queue.push_back(message);
+    }
+
+    /// Returns the next visibility deadline for the message if it is in flight
+    pub fn next_visibility_deadline(&self, ack_id: &str) -> Option<Instant> {
+        let inner_state = self.inner_state.lock().unwrap();
+        inner_state
+            .in_flight
+            .get(ack_id)
+            .map(|msg| msg.metadata.initial_deadline)
     }
 }
 
@@ -72,31 +110,33 @@ impl Queue for MemoryQueueForTests {
     async fn receive(
         &self,
         max_messages: usize,
-        _suggested_deadline: Duration,
+        suggested_deadline: Duration,
     ) -> anyhow::Result<Vec<RawMessage>> {
-        for _ in 0..3 {
-            {
-                let mut inner_state = self.inner_state.lock().unwrap();
-                let mut response = Vec::new();
-                while let Some(msg) = inner_state.in_queue.pop_front() {
-                    let msg_cloned = RawMessage {
-                        payload: msg.payload.clone(),
-                        metadata: msg.metadata.clone(),
-                    };
-                    inner_state
-                        .in_flight
-                        .insert(msg.metadata.ack_id.clone(), msg_cloned);
-                    response.push(msg);
-                    if response.len() >= max_messages {
-                        break;
-                    }
-                }
-                if !response.is_empty() {
-                    return Ok(response);
+        {
+            let mut inner_state = self.inner_state.lock().unwrap();
+            let mut response = Vec::new();
+            while let Some(mut msg) = inner_state.in_queue.pop_front() {
+                msg.metadata.delivery_attempts += 1;
+                msg.metadata.initial_deadline = Instant::now() + suggested_deadline;
+                let msg_cloned = RawMessage {
+                    payload: msg.payload.clone(),
+                    metadata: msg.metadata.clone(),
+                };
+                inner_state
+                    .in_flight
+                    .insert(msg.metadata.ack_id.clone(), msg_cloned);
+                response.push(msg);
+                if response.len() >= max_messages {
+                    break;
                 }
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            if !response.is_empty() {
+                return Ok(response);
+            }
         }
+        // `sleep` to avoid using all the CPU when called in a loop
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
         Ok(vec![])
     }
 
@@ -107,16 +147,21 @@ impl Queue for MemoryQueueForTests {
                 inner_state.acked.push(msg);
             }
         }
-
         Ok(())
     }
 
     async fn modify_deadlines(
         &self,
-        _ack_id: &str,
+        ack_id: &str,
         suggested_deadline: Duration,
     ) -> anyhow::Result<Instant> {
-        // TODO implement deadlines
+        let mut inner_state = self.inner_state.lock().unwrap();
+        let in_flight = inner_state.in_flight.get_mut(ack_id);
+        if let Some(msg) = in_flight {
+            msg.metadata.initial_deadline = Instant::now() + suggested_deadline;
+        } else {
+            bail!("ack_id {} not found in in-flight", ack_id);
+        }
         return Ok(Instant::now() + suggested_deadline);
     }
 }
@@ -126,7 +171,7 @@ mod tests {
     use super::*;
 
     fn prefilled_queue(nb_message: usize) -> MemoryQueueForTests {
-        let memory_queue = MemoryQueueForTests::default();
+        let memory_queue = MemoryQueueForTests::new();
         for i in 0..nb_message {
             let payload = format!("Test message {}", i);
             let ack_id = i.to_string();

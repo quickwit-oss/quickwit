@@ -224,3 +224,96 @@ impl Handler<RequestLastExtension> for VisibilityTask {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use quickwit_actors::Universe;
+    use tokio::sync::watch;
+
+    use super::*;
+    use crate::source::queue_sources::memory_queue::MemoryQueueForTests;
+
+    #[tokio::test]
+    async fn test_visibility_task_request_last_extension() {
+        // actor context
+        let universe = Universe::with_accelerated_time();
+        let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
+        let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
+        let ctx: SourceContext =
+            ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+        // queue with test message
+        let ack_id = "ack_id".to_string();
+        let queue = MemoryQueueForTests::new();
+        queue.send_message("test message".to_string(), &ack_id);
+        let initial_deadline = queue.receive(1, Duration::from_secs(1)).await.unwrap()[0]
+            .metadata
+            .initial_deadline;
+        // spawn task
+        let visibility_settings = VisibilitySettings {
+            deadline_for_default_extension: Duration::from_secs(1),
+            deadline_for_last_extension: Duration::from_secs(20),
+            deadline_for_receive: Duration::from_secs(1),
+            request_timeout: Duration::from_millis(100),
+            request_margin: Duration::from_millis(100),
+        };
+        let handle = spawn_visibility_task(
+            &ctx,
+            Arc::new(queue.clone()),
+            ack_id.clone(),
+            initial_deadline,
+            visibility_settings.clone(),
+        );
+        // assert that the background task performs extensions
+        assert!(!handle.extension_failed());
+        tokio::time::sleep_until(initial_deadline.into()).await;
+        assert!(initial_deadline < queue.next_visibility_deadline(&ack_id).unwrap());
+        assert!(!handle.extension_failed());
+        // request last extension
+        handle
+            .request_last_extension(Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert!(
+            Instant::now() + Duration::from_secs(4)
+                < queue.next_visibility_deadline(&ack_id).unwrap()
+        );
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_visibility_task_stop_on_drop() {
+        // actor context
+        let universe = Universe::with_accelerated_time();
+        let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
+        let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
+        let ctx: SourceContext =
+            ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+        // queue with test message
+        let ack_id = "ack_id".to_string();
+        let queue = MemoryQueueForTests::new();
+        queue.send_message("test message".to_string(), &ack_id);
+        let initial_deadline = queue.receive(1, Duration::from_secs(1)).await.unwrap()[0]
+            .metadata
+            .initial_deadline;
+        // spawn task
+        let visibility_settings = VisibilitySettings {
+            deadline_for_default_extension: Duration::from_secs(1),
+            deadline_for_last_extension: Duration::from_secs(20),
+            deadline_for_receive: Duration::from_secs(1),
+            request_timeout: Duration::from_millis(100),
+            request_margin: Duration::from_millis(100),
+        };
+        let handle = spawn_visibility_task(
+            &ctx,
+            Arc::new(queue.clone()),
+            ack_id.clone(),
+            initial_deadline,
+            visibility_settings.clone(),
+        );
+        // assert that visibility is not extended after drop
+        drop(handle);
+        tokio::time::sleep_until(initial_deadline.into()).await;
+        assert_eq!(queue.next_visibility_deadline(&ack_id), None);
+        universe.assert_quit().await;
+    }
+}
