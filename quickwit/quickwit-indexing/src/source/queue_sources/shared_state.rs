@@ -109,7 +109,7 @@ impl QueueSharedState for QueueSharedStateImpl {
         messages: Vec<PreProcessedMessage>,
     ) -> anyhow::Result<Categorized<CheckpointedMessage, PreProcessedMessage>> {
         let mut message_map =
-            BTreeMap::from_iter(messages.into_iter().map(|m| (m.partition_id(), m)));
+            BTreeMap::from_iter(messages.into_iter().map(|msg| (msg.partition_id(), msg)));
         let partition_ids = message_map.keys().cloned().collect();
 
         let Categorized {
