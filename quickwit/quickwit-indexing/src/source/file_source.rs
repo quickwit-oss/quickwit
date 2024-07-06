@@ -29,7 +29,7 @@ use quickwit_proto::types::SourceId;
 
 use super::doc_file_reader::{BatchReader, ObjectUriBatchReader, StdinBatchReader};
 #[cfg(feature = "sqs")]
-use super::queue_sources::QueueCoordinator;
+use super::queue_sources::coordinator::QueueCoordinator;
 use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
@@ -443,8 +443,6 @@ mod localstack_tests {
         // source setup
         let source_params = FileSourceParams::Sqs(FileSourceSqs {
             queue_url,
-            // decrease poll duration to avoid hanging actor shutdown
-            wait_time_seconds: 1,
             message_type: FileSourceMessageType::RawUri,
         });
         let source_config = SourceConfig::for_test(

@@ -147,7 +147,7 @@ impl Handler<SplitsUpdate> for Publisher {
             );
             return Ok(());
         }
-        info!(new_splits=?split_ids, checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
+        info!("publish-new-splits");
         if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
             if let Some(checkpoint) = checkpoint_delta_opt {
                 // We voluntarily do not log anything here.

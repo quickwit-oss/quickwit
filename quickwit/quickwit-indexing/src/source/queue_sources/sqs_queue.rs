@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -36,16 +37,14 @@ use super::{Queue, RawMessage};
 pub struct SqsQueue {
     sqs_client: Client,
     queue_url: String,
-    wait_time_seconds: u8,
 }
 
 impl SqsQueue {
-    pub async fn try_new(queue_url: String, wait_time_seconds: u8) -> anyhow::Result<Self> {
+    pub async fn try_new(queue_url: String) -> anyhow::Result<Self> {
         let sqs_client = get_sqs_client(&queue_url).await?;
         Ok(SqsQueue {
             sqs_client,
             queue_url,
-            wait_time_seconds,
         })
     }
 }
@@ -53,7 +52,7 @@ impl SqsQueue {
 #[async_trait]
 impl Queue for SqsQueue {
     async fn receive(
-        &self,
+        self: Arc<Self>,
         max_messages: usize,
         suggested_deadline: Duration,
     ) -> anyhow::Result<Vec<RawMessage>> {
@@ -66,7 +65,7 @@ impl Queue for SqsQueue {
             .receive_message()
             .queue_url(&self.queue_url)
             .message_system_attribute_names(MessageSystemAttributeName::ApproximateReceiveCount)
-            .wait_time_seconds(self.wait_time_seconds as i32)
+            .wait_time_seconds(20)
             .set_max_number_of_messages(Some(max_messages as i32))
             .visibility_timeout(suggested_deadline.as_secs() as i32)
             .send()
@@ -313,10 +312,10 @@ mod localstack_tests {
         let message = "hello world";
         test_helpers::send_message(&client, &queue_url, message).await;
 
-        let queue = SqsQueue::try_new(queue_url, 20).await.unwrap();
+        let queue = Arc::new(SqsQueue::try_new(queue_url).await.unwrap());
         let messages = tokio::time::timeout(
             Duration::from_millis(500),
-            queue.receive(5, Duration::from_secs(60)),
+            queue.clone().receive(5, Duration::from_secs(60)),
         )
         .await
         .unwrap()

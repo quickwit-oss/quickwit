@@ -36,10 +36,16 @@ use super::local_state::QueueLocalState;
 use super::message::{MessageType, ReadyMessage};
 use super::shared_state::{checkpoint_messages, QueueSharedState};
 use super::visibility::{spawn_visibility_task, VisibilitySettings};
-use super::Queue;
+use super::{Queue, QueueReceiver};
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 use crate::source::{SourceContext, SourceRuntime};
+
+/// Maximum duration that the `emit_batches()` callback can wait for
+/// `queue.receive()` calls. If too small, the actor loop will spin
+/// un-necessarily. If too large, the actor loop will be slow to react to new
+/// messages (or shutdown).
+pub const RECEIVE_POLL_TIMEOUT: Duration = Duration::from_millis(500);
 
 #[derive(Default, Serialize)]
 pub struct QueueCoordinatorObservableState {
@@ -60,6 +66,7 @@ pub struct QueueCoordinator {
     pipeline_id: IndexingPipelineId,
     source_type: SourceType,
     queue: Arc<dyn Queue>,
+    queue_receiver: QueueReceiver,
     observable_state: QueueCoordinatorObservableState,
     message_type: MessageType,
     publish_lock: PublishLock,
@@ -95,6 +102,7 @@ impl QueueCoordinator {
             pipeline_id: source_runtime.pipeline_id,
             source_type: source_runtime.source_config.source_type(),
             storage_resolver: source_runtime.storage_resolver,
+            queue_receiver: QueueReceiver::new(queue.clone(), RECEIVE_POLL_TIMEOUT),
             queue,
             observable_state: QueueCoordinatorObservableState::default(),
             message_type,
@@ -112,7 +120,7 @@ impl QueueCoordinator {
         source_runtime: SourceRuntime,
     ) -> anyhow::Result<Self> {
         use super::sqs_queue::SqsQueue;
-        let queue = SqsQueue::try_new(config.queue_url, config.wait_time_seconds).await?;
+        let queue = SqsQueue::try_new(config.queue_url).await?;
         let message_type = match config.message_type {
             FileSourceMessageType::S3Notification => MessageType::S3Notification,
             FileSourceMessageType::RawUri => MessageType::RawUri,
@@ -142,14 +150,10 @@ impl QueueCoordinator {
 
     /// Polls messages from the queue and prepares them for processing
     async fn poll_messages(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        // receive() typically uses long polling so it can be long to respond
         // TODO increase `max_messages` when previous messages were small
-        // TODO avoid blocking actor teardown with the long polling future
-        let raw_messages = ctx
-            .protect_future(
-                self.queue
-                    .receive(1, self.visible_settings.deadline_for_receive),
-            )
+        let raw_messages = self
+            .queue_receiver
+            .receive(1, self.visible_settings.deadline_for_receive)
             .await?;
 
         if raw_messages.is_empty() {
@@ -265,7 +269,9 @@ impl QueueCoordinator {
         let committed_partition_ids = checkpoint
             .iter()
             .filter(|(_, pos)| pos.is_eof())
-            .map(|(pid, _)| pid);
+            .map(|(pid, _)| pid)
+            .collect::<Vec<_>>();
+        tracing::info!(pids=?committed_partition_ids, "coordinator::suggest_truncate()");
         let mut completed = Vec::new();
         for partition_id in committed_partition_ids {
             let ack_id_opt = self.local_state.mark_completed(partition_id);
@@ -273,6 +279,7 @@ impl QueueCoordinator {
                 completed.push(ack_id);
             }
         }
+        tracing::info!(ackids=?completed, "coordinator::suggest_truncate()");
         self.queue.acknowledge(&completed).await
     }
 
@@ -316,6 +323,7 @@ mod tests {
             pipeline_id,
             observable_state: QueueCoordinatorObservableState::default(),
             publish_lock: PublishLock::default(),
+            queue_receiver: QueueReceiver::new(queue.clone(), Duration::from_millis(50)),
             queue,
             message_type: MessageType::RawUri,
             source_type: SourceType::Unspecified,
