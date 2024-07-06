@@ -739,7 +739,7 @@ mod test_setup_helper {
     use crate::new_split_id;
 
     pub async fn setup_index(
-        mut metastore: MetastoreServiceClient,
+        metastore: MetastoreServiceClient,
         index_id: &str,
         source_config: &SourceConfig,
         partition_deltas: &[(PartitionId, Position, Position)],
