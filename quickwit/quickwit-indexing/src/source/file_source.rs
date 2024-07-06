@@ -26,7 +26,7 @@ use quickwit_config::FileSourceParams;
 use quickwit_proto::types::SourceId;
 use tracing::info;
 
-use super::doc_file_reader::DocFileReader;
+use super::doc_file_reader::{DocFileReader, ReadBatchResponse};
 use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
@@ -48,11 +48,11 @@ impl Source for FileSource {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        let (batch_opt, reached_eof) = self.reader.read_batch(ctx).await?;
+        let ReadBatchResponse { batch_opt, is_eof } = self.reader.read_batch(ctx).await?;
         if let Some(batch) = batch_opt {
             ctx.send_message(doc_processor_mailbox, batch).await?;
         }
-        if reached_eof {
+        if is_eof {
             info!("reached end of file");
             ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
