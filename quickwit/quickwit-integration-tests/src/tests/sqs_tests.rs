@@ -87,9 +87,10 @@ async fn test_sqs_single_node_cluster() {
             max_num_pipelines_per_indexer: 1
             source_type: file
             params:
-                mode: sqs
-                queue_url: {}
-                message_type: raw_uri
+                notifications:
+                  - type: sqs
+                    queue_url: {}
+                    message_type: raw_uri
             input_format: plain_text
         "#,
         source_id, queue_url

@@ -821,12 +821,12 @@ mod tests {
         let expected_sources = [
             SourceRow {
                 source_id: "bar-source".to_string(),
-                source_type: "file".to_string(),
+                source_type: "stdin".to_string(),
                 enabled: "true".to_string(),
             },
             SourceRow {
                 source_id: "foo-source".to_string(),
-                source_type: "file".to_string(),
+                source_type: "stdin".to_string(),
                 enabled: "true".to_string(),
             },
         ];

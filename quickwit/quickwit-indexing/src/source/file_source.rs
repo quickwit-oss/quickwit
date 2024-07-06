@@ -27,7 +27,7 @@ use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::SourceId;
 
-use super::doc_file_reader::{BatchReader, ObjectUriBatchReader, StdinBatchReader};
+use super::doc_file_reader::ObjectUriBatchReader;
 #[cfg(feature = "sqs")]
 use super::queue_sources::coordinator::QueueCoordinator;
 use crate::actors::DocProcessor;
@@ -35,9 +35,9 @@ use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 enum FileSourceInner {
     #[cfg(feature = "sqs")]
-    Queue(QueueCoordinator),
-    Stream {
-        reader: Box<dyn BatchReader>,
+    Notification(QueueCoordinator),
+    Filepath {
+        batch_reader: ObjectUriBatchReader,
         num_bytes_processed: u64,
         num_lines_processed: u64,
     },
@@ -65,10 +65,10 @@ impl Source for FileSource {
     ) -> Result<(), ActorExitStatus> {
         match &mut self.inner {
             #[cfg(feature = "sqs")]
-            FileSourceInner::Queue(coordinator) => {
+            FileSourceInner::Notification(coordinator) => {
                 coordinator.initialize(doc_processor_mailbox, ctx).await
             }
-            FileSourceInner::Stream { .. } => Ok(()),
+            FileSourceInner::Filepath { .. } => Ok(()),
         }
     }
 
@@ -80,15 +80,17 @@ impl Source for FileSource {
     ) -> Result<Duration, ActorExitStatus> {
         match &mut self.inner {
             #[cfg(feature = "sqs")]
-            FileSourceInner::Queue(coordinator) => {
+            FileSourceInner::Notification(coordinator) => {
                 coordinator.emit_batches(doc_processor_mailbox, ctx).await?;
             }
-            FileSourceInner::Stream {
-                reader,
+            FileSourceInner::Filepath {
+                batch_reader,
                 num_bytes_processed,
                 num_lines_processed,
             } => {
-                let batch_builder = reader.read_batch(ctx.progress(), self.source_type).await?;
+                let batch_builder = batch_reader
+                    .read_batch(ctx.progress(), self.source_type)
+                    .await?;
                 if batch_builder.num_bytes > 0 {
                     *num_bytes_processed += batch_builder.num_bytes;
                     *num_lines_processed += batch_builder.docs.len() as u64;
@@ -96,7 +98,7 @@ impl Source for FileSource {
                         .send_message(batch_builder.build())
                         .await?;
                 }
-                if reader.is_eof() {
+                if batch_reader.is_eof() {
                     ctx.send_exit_with_success(doc_processor_mailbox).await?;
                     return Err(ActorExitStatus::Success);
                 }
@@ -117,20 +119,20 @@ impl Source for FileSource {
     ) -> anyhow::Result<()> {
         match &mut self.inner {
             #[cfg(feature = "sqs")]
-            FileSourceInner::Queue(coordinator) => {
+            FileSourceInner::Notification(coordinator) => {
                 coordinator.suggest_truncate(checkpoint, ctx).await
             }
-            FileSourceInner::Stream { .. } => Ok(()),
+            FileSourceInner::Filepath { .. } => Ok(()),
         }
     }
 
     fn observable_state(&self) -> serde_json::Value {
         match &self.inner {
             #[cfg(feature = "sqs")]
-            FileSourceInner::Queue(coordinator) => {
+            FileSourceInner::Notification(coordinator) => {
                 serde_json::to_value(coordinator.observable_state()).unwrap()
             }
-            FileSourceInner::Stream {
+            FileSourceInner::Filepath {
                 num_bytes_processed,
                 num_lines_processed,
                 ..
@@ -158,8 +160,8 @@ impl TypedSourceFactory for FileSourceFactory {
         let source_id = source_runtime.source_config.source_id.clone();
         let source_type = source_runtime.source_config.source_type();
         let inner = match params {
-            FileSourceParams::FileUri(file_uri) => {
-                let partition_id = PartitionId::from(file_uri.filepath.as_str());
+            FileSourceParams::Filepath(file_uri) => {
+                let partition_id = PartitionId::from(file_uri.as_str());
                 let position = source_runtime
                     .fetch_checkpoint()
                     .await?
@@ -169,29 +171,26 @@ impl TypedSourceFactory for FileSourceFactory {
                 let batch_reader = ObjectUriBatchReader::try_new(
                     &source_runtime.storage_resolver,
                     partition_id,
-                    &file_uri.filepath,
+                    &file_uri,
                     position,
                 )
                 .await?;
-                FileSourceInner::Stream {
-                    reader: Box::new(batch_reader),
+                FileSourceInner::Filepath {
+                    batch_reader,
                     num_bytes_processed: 0,
                     num_lines_processed: 0,
                 }
             }
-            FileSourceParams::Stdin => FileSourceInner::Stream {
-                reader: Box::new(StdinBatchReader::new()),
-                num_bytes_processed: 0,
-                num_lines_processed: 0,
-            },
             #[cfg(feature = "sqs")]
-            FileSourceParams::Sqs(sqs_config) => {
+            FileSourceParams::Notifications(quickwit_config::FileSourceNotification::Sqs(
+                sqs_config,
+            )) => {
                 let coordinator =
                     QueueCoordinator::try_from_sqs_config(sqs_config, source_runtime).await?;
-                FileSourceInner::Queue(coordinator)
+                FileSourceInner::Notification(coordinator)
             }
             #[cfg(not(feature = "sqs"))]
-            FileSourceParams::Sqs(_) => {
+            FileSourceParams::Notifications(quickwit_config::FileSourceNotification::Sqs(_)) => {
                 anyhow::bail!("Quickwit was compiled without the `sqs` feature")
             }
         };
@@ -212,7 +211,7 @@ mod tests {
     use bytes::Bytes;
     use quickwit_actors::{Command, Universe};
     use quickwit_common::uri::Uri;
-    use quickwit_config::{FileSourceUri, SourceConfig, SourceInputFormat, SourceParams};
+    use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpointDelta};
     use quickwit_proto::types::{IndexUid, Position};
 
@@ -289,9 +288,7 @@ mod tests {
         let (temp_file, temp_file_size) = generate_dummy_doc_file(gzip, lines).await;
         let filepath = temp_file.path().to_str().unwrap();
         let uri = Uri::from_str(filepath).unwrap();
-        let params = FileSourceParams::FileUri(FileSourceUri {
-            filepath: uri.clone(),
-        });
+        let params = FileSourceParams::Filepath(uri.clone());
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
@@ -355,9 +352,7 @@ mod tests {
         let temp_file = generate_index_doc_file(gzip, 100).await;
         let temp_file_path = temp_file.path().to_str().unwrap();
         let uri = Uri::from_str(temp_file_path).unwrap();
-        let params = FileSourceParams::FileUri(FileSourceUri {
-            filepath: uri.clone(),
-        });
+        let params = FileSourceParams::Filepath(uri.clone());
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
@@ -413,7 +408,9 @@ mod localstack_tests {
     use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{FileSourceMessageType, FileSourceSqs, SourceConfig, SourceParams};
+    use quickwit_config::{
+        FileSourceMessageType, FileSourceNotification, FileSourceSqs, SourceConfig, SourceParams,
+    };
     use quickwit_metastore::metastore_for_test;
 
     use super::*;
@@ -430,16 +427,17 @@ mod localstack_tests {
     async fn test_file_source_sqs_notifications() {
         // queue setup
         let sqs_client = get_localstack_sqs_client().await.unwrap();
-        let queue_url = create_queue(&sqs_client, "check-connectivity").await;
+        let queue_url = create_queue(&sqs_client, "file-source-sqs-notifications").await;
         let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         send_message(&sqs_client, &queue_url, test_uri.as_str()).await;
 
         // source setup
-        let source_params = FileSourceParams::Sqs(FileSourceSqs {
-            queue_url,
-            message_type: FileSourceMessageType::RawUri,
-        });
+        let source_params =
+            FileSourceParams::Notifications(FileSourceNotification::Sqs(FileSourceSqs {
+                queue_url,
+                message_type: FileSourceMessageType::RawUri,
+            }));
         let source_config = SourceConfig::for_test(
             "test-file-source-sqs-notifications",
             SourceParams::File(source_params.clone()),

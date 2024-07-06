@@ -72,6 +72,7 @@ mod pulsar_source;
 #[cfg(feature = "sqs")]
 mod queue_sources;
 mod source_factory;
+mod stdin_source;
 mod vec_source;
 mod void_source;
 
@@ -101,7 +102,9 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
-use quickwit_config::{FileSourceParams, IndexingSettings, SourceConfig, SourceParams};
+use quickwit_config::{
+    FileSourceNotification, FileSourceParams, IndexingSettings, SourceConfig, SourceParams,
+};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_metastore::IndexMetadataResponseExt;
@@ -421,14 +424,16 @@ pub async fn check_source_connectivity(
     source_config: &SourceConfig,
 ) -> anyhow::Result<()> {
     match &source_config.source_params {
-        SourceParams::File(FileSourceParams::FileUri(file_uri)) => {
-            let (dir_uri, file_name) = dir_and_filename(&file_uri.filepath)?;
+        SourceParams::File(FileSourceParams::Filepath(file_uri)) => {
+            let (dir_uri, file_name) = dir_and_filename(file_uri)?;
             let storage = storage_resolver.resolve(&dir_uri).await?;
             storage.file_num_bytes(file_name).await?;
             Ok(())
         }
         #[allow(unused_variables)]
-        SourceParams::File(FileSourceParams::Sqs(sqs_config)) => {
+        SourceParams::File(FileSourceParams::Notifications(FileSourceNotification::Sqs(
+            sqs_config,
+        ))) => {
             #[cfg(not(feature = "sqs"))]
             anyhow::bail!("Quickwit was compiled without the `sqs` feature");
 
