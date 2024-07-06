@@ -17,14 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod coordinator;
 mod local_state;
-#[cfg(test)]
 mod memory_queue;
 mod message;
-mod processor;
 mod shared_state;
 #[cfg(feature = "sqs")]
-mod sqs_queue;
+pub mod sqs_queue;
 #[cfg(feature = "sqs")]
 pub mod sqs_source;
 mod visibility;
@@ -33,7 +32,25 @@ use std::fmt;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+pub use coordinator::QueueCoordinator;
+pub use memory_queue::MemoryQueue;
+pub use message::MessageType;
 use message::RawMessage;
+
+pub enum Received {
+    Messages(Vec<RawMessage>),
+    EndOfQueue,
+}
+
+#[cfg(test)]
+impl Received {
+    pub fn unwrap(self) -> Vec<RawMessage> {
+        match self {
+            Received::Messages(messages) => messages,
+            Received::EndOfQueue => panic!("unwrap called on EndOfQueue"),
+        }
+    }
+}
 
 /// The queue abstraction is based on the AWS SQS and Google Pubsub APIs. The
 /// only requirement of the underlying implementation is that messages exposed
@@ -48,7 +65,7 @@ pub trait Queue: fmt::Debug + Send + Sync + 'static {
     /// are no messages in the queue. It will typically use long polling to do
     /// this efficiently. On the other hand, when there is a message in the
     /// queue, it should be returned as quickly as possible.
-    async fn receive(&self) -> anyhow::Result<Vec<RawMessage>>;
+    async fn receive(&self) -> anyhow::Result<Received>;
 
     /// Try to acknowledge the messages, effectively deleting them from the
     /// queue.
