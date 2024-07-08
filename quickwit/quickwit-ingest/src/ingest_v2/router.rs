@@ -1665,12 +1665,14 @@ mod tests {
                 ShardInfo {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
-                    ingestion_rate: RateMibPerSec(0),
+                    short_term_ingestion_rate: RateMibPerSec(0),
+                    long_term_ingestion_rate: RateMibPerSec(0),
                 },
                 ShardInfo {
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
-                    ingestion_rate: RateMibPerSec(0),
+                    short_term_ingestion_rate: RateMibPerSec(0),
+                    long_term_ingestion_rate: RateMibPerSec(0),
                 },
             ]),
         };

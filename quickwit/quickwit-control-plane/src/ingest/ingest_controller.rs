@@ -55,6 +55,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, enabled, error, info, warn, Level};
 use ulid::Ulid;
 
+use super::scaling_arbiter::ScalingArbiter;
 use crate::control_plane::ControlPlane;
 use crate::ingest::wait_handle::WaitHandle;
 use crate::model::{ControlPlaneModel, ScalingMode, ShardEntry, ShardStats};
@@ -102,10 +103,7 @@ pub struct IngestController {
     // This lock ensures that only one rebalance operation is performed at a time.
     rebalance_lock: Arc<Mutex<()>>,
     pub stats: IngestControllerStats,
-    // Threshold in MiB/s below which we decrease the number of shards.
-    scale_down_shards_threshold_mib_per_sec: f32,
-    // Threshold in MiB/s above which we increase the number of shards.
-    scale_up_shards_threshold_mib_per_sec: f32,
+    scaling_arbiter: ScalingArbiter,
 }
 
 impl fmt::Debug for IngestController {
@@ -192,9 +190,9 @@ impl IngestController {
             replication_factor,
             rebalance_lock: Arc::new(Mutex::new(())),
             stats: IngestControllerStats::default(),
-            scale_up_shards_threshold_mib_per_sec: max_shard_ingestion_throughput_mib_per_sec * 0.8,
-            scale_down_shards_threshold_mib_per_sec: max_shard_ingestion_throughput_mib_per_sec
-                * 0.2,
+            scaling_arbiter: ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(
+                max_shard_ingestion_throughput_mib_per_sec,
+            ),
         }
     }
 
@@ -291,20 +289,31 @@ impl IngestController {
             &local_shards_update.source_uid,
             &local_shards_update.shard_infos,
         );
-        if shard_stats.avg_ingestion_rate >= self.scale_up_shards_threshold_mib_per_sec {
-            self.try_scale_up_shards(local_shards_update.source_uid, shard_stats, model, progress)
+        let Some(scaling_mode) = self.scaling_arbiter.should_scale(shard_stats) else {
+            return Ok(());
+        };
+
+        match scaling_mode {
+            ScalingMode::Up => {
+                self.try_scale_up_shards(
+                    local_shards_update.source_uid,
+                    shard_stats,
+                    model,
+                    progress,
+                )
                 .await?;
-        } else if shard_stats.avg_ingestion_rate <= self.scale_down_shards_threshold_mib_per_sec
-            && shard_stats.num_open_shards > 1
-        {
-            self.try_scale_down_shards(
-                local_shards_update.source_uid,
-                shard_stats,
-                model,
-                progress,
-            )
-            .await?;
+            }
+            ScalingMode::Down => {
+                self.try_scale_down_shards(
+                    local_shards_update.source_uid,
+                    shard_stats,
+                    model,
+                    progress,
+                )
+                .await?;
+            }
         }
+
         Ok(())
     }
 
@@ -1111,8 +1120,8 @@ fn find_scale_down_candidate(
                     *num_shards += 1;
 
                     if shard
-                        .ingestion_rate
-                        .cmp(&candidate.ingestion_rate)
+                        .long_term_ingestion_rate
+                        .cmp(&candidate.long_term_ingestion_rate)
                         .then_with(|| shard.shard_id.cmp(&candidate.shard_id))
                         .is_gt()
                     {
@@ -2082,13 +2091,14 @@ mod tests {
         let shard_entries: Vec<ShardEntry> = model.all_shards().cloned().collect();
 
         assert_eq!(shard_entries.len(), 1);
-        assert_eq!(shard_entries[0].ingestion_rate, 0);
+        assert_eq!(shard_entries[0].short_term_ingestion_rate, 0);
 
         // Test update shard ingestion rate but no scale down because num open shards is 1.
         let shard_infos = BTreeSet::from_iter([ShardInfo {
             shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
-            ingestion_rate: RateMibPerSec(1),
+            short_term_ingestion_rate: RateMibPerSec(1),
+            long_term_ingestion_rate: RateMibPerSec(1),
         }]);
         let local_shards_update = LocalShardsUpdate {
             leader_id: "test-ingester".into(),
@@ -2103,7 +2113,7 @@ mod tests {
 
         let shard_entries: Vec<ShardEntry> = model.all_shards().cloned().collect();
         assert_eq!(shard_entries.len(), 1);
-        assert_eq!(shard_entries[0].ingestion_rate, 1);
+        assert_eq!(shard_entries[0].short_term_ingestion_rate, 1);
 
         // Test update shard ingestion rate with failing scale down.
         let shards = vec![Shard {
@@ -2155,12 +2165,14 @@ mod tests {
             ShardInfo {
                 shard_id: ShardId::from(1),
                 shard_state: ShardState::Open,
-                ingestion_rate: RateMibPerSec(1),
+                short_term_ingestion_rate: RateMibPerSec(1),
+                long_term_ingestion_rate: RateMibPerSec(1),
             },
             ShardInfo {
                 shard_id: ShardId::from(2),
                 shard_state: ShardState::Open,
-                ingestion_rate: RateMibPerSec(1),
+                short_term_ingestion_rate: RateMibPerSec(1),
+                long_term_ingestion_rate: RateMibPerSec(1),
             },
         ]);
         let local_shards_update = LocalShardsUpdate {
@@ -2178,12 +2190,14 @@ mod tests {
             ShardInfo {
                 shard_id: ShardId::from(1),
                 shard_state: ShardState::Open,
-                ingestion_rate: RateMibPerSec(4),
+                short_term_ingestion_rate: RateMibPerSec(4),
+                long_term_ingestion_rate: RateMibPerSec(4),
             },
             ShardInfo {
                 shard_id: ShardId::from(2),
                 shard_state: ShardState::Open,
-                ingestion_rate: RateMibPerSec(4),
+                short_term_ingestion_rate: RateMibPerSec(4),
+                long_term_ingestion_rate: RateMibPerSec(4),
             },
         ]);
         let local_shards_update = LocalShardsUpdate {
@@ -2544,32 +2558,38 @@ mod tests {
             ShardInfo {
                 shard_id: ShardId::from(1),
                 shard_state: ShardState::Open,
-                ingestion_rate: quickwit_ingest::RateMibPerSec(1),
+                short_term_ingestion_rate: quickwit_ingest::RateMibPerSec(1),
+                long_term_ingestion_rate: quickwit_ingest::RateMibPerSec(1),
             },
             ShardInfo {
                 shard_id: ShardId::from(2),
                 shard_state: ShardState::Open,
-                ingestion_rate: quickwit_ingest::RateMibPerSec(2),
+                short_term_ingestion_rate: quickwit_ingest::RateMibPerSec(2),
+                long_term_ingestion_rate: quickwit_ingest::RateMibPerSec(2),
             },
             ShardInfo {
                 shard_id: ShardId::from(3),
                 shard_state: ShardState::Open,
-                ingestion_rate: quickwit_ingest::RateMibPerSec(3),
+                short_term_ingestion_rate: quickwit_ingest::RateMibPerSec(3),
+                long_term_ingestion_rate: quickwit_ingest::RateMibPerSec(3),
             },
             ShardInfo {
                 shard_id: ShardId::from(4),
                 shard_state: ShardState::Open,
-                ingestion_rate: quickwit_ingest::RateMibPerSec(4),
+                short_term_ingestion_rate: quickwit_ingest::RateMibPerSec(4),
+                long_term_ingestion_rate: quickwit_ingest::RateMibPerSec(4),
             },
             ShardInfo {
                 shard_id: ShardId::from(5),
                 shard_state: ShardState::Open,
-                ingestion_rate: quickwit_ingest::RateMibPerSec(5),
+                short_term_ingestion_rate: quickwit_ingest::RateMibPerSec(5),
+                long_term_ingestion_rate: quickwit_ingest::RateMibPerSec(5),
             },
             ShardInfo {
                 shard_id: ShardId::from(6),
                 shard_state: ShardState::Open,
-                ingestion_rate: quickwit_ingest::RateMibPerSec(6),
+                short_term_ingestion_rate: quickwit_ingest::RateMibPerSec(6),
+                long_term_ingestion_rate: quickwit_ingest::RateMibPerSec(6),
             },
         ]);
         model.update_shards(&source_uid, &shard_infos);
