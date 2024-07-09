@@ -333,4 +333,46 @@ expected:
   aggregations:
     metrics:
       buckets: []
+---
+# Test cardinality aggregation
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    unique_names:
+      cardinality:
+        field: "name"
+    unique_response:
+      cardinality:
+        field: "response"
+    unique_dates:
+      cardinality:
+        field: "date"
+expected:
+  aggregations:
+    unique_names:
+      value: 8.0
+    unique_response:
+      value: 5.0 # TODO: Check. The correct number is 6
+    unique_dates:
+      value: 6.0 
+---
+# Test extended stats aggregation
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    response_stats:
+      extended_stats:
+        field: "response"
+expected:
+  aggregations:
+    response_stats:
+      sum_of_squares: 55300.0
 

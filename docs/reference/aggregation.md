@@ -108,6 +108,7 @@ Response
     - [Stats](#stats)
     - [Sum](#sum)
     - [Percentiles](#percentiles)
+    - [Cardinality](#cardinality)
 
 
 ## Bucket Aggregations
@@ -790,6 +791,55 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
 }
 ```
 
+### Extended Stats
+
+Extended stats is the same as `stats`, but with following additional metrics: `sum_of_squares`, `variance`, `std_deviation`, and `std_deviation_bounds`.
+Supported field types are `u64`, `f64`, `i64`, and `datetime`.
+
+**Request**
+```json
+{
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "response_extended_stats": {
+            "extended_stats": { "field": "response" }
+        }
+    }
+}
+```
+
+**Response**
+```json
+{
+    ..
+    "aggregations": {
+        "response_extended_stats": {
+            "avg": 65.55555555555556,
+            "count": 9,
+            "max": 130.0,
+            "min": 20.0,
+            "std_deviation": 42.97573245736381,
+            "std_deviation_bounds": {
+                "lower": -20.395909359172062,
+                "lower_population": -20.395909359172062,
+                "lower_sampling": -25.60973998562673,
+                "upper": 151.50702047028318,
+                "upper_population": 151.50702047028318,
+                "upper_sampling": 156.72085109673785
+            },
+            "std_deviation_population": 42.97573245736381,
+            "std_deviation_sampling": 45.582647770591144,
+            "sum": 590.0,
+            "sum_of_squares": 55300.0,
+            "variance": 1846.9135802469136,
+            "variance_population": 1846.9135802469136,
+            "variance_sampling": 2077.777777777778
+        }
+    }
+}
+```
+
 ### Sum
 
 A single-value metric aggregation that that sums up numeric values that are that are extracted from the aggregated documents.
@@ -878,6 +928,55 @@ In the case of website load times, this would typically be a field containing th
 While percentiles provide valuable insights into the distribution of data, it's important to understand that they are often estimates.
 This is because calculating exact percentiles for large data sets can be computationally expensive and time-consuming.
 
+### Cardinality
+The cardinality aggregation is used to approximate the count of distinct values in a field. 
+Cardinality aggregations are essential when working with large datasets where computing the exact count of distinct values would be computationally expensive. 
 
+The cardinality aggregation can be useful to e.g. to count the number of unique users visiting a website or to determine the number of unique IP addresses that have logged into a server over a certain period.
 
+The algorithm behind the cardinality aggregation is based on HyperLogLog++, which provides an approximate count over the hashed values.
+
+To use the cardinality aggregation, you need to specify the field on which to perform the aggregation.
+
+**Request**
+```json
+{
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "unique_users": {
+            "cardinality": {
+                "field": "user_id"
+            }
+        }
+    }
+}
+```
+
+**Response**
+```json
+{
+    "num_hits": 9582098,
+    "hits": [],
+    "elapsed_time_micros": 101142,
+    "errors": [],
+    "aggregations": {
+        "unique_users": {
+            "value": 345672
+        }
+    }
+}
+```
+
+#### Performance
+
+The cardinality aggregation on text fields is computationally expensive for datasets with a large amount of unique values. 
+This is because the aggregation computes the hash for each unique term in the field. 
+In order to do this, Quickwit will for each split first collect the term ids and then fetch the compressed terms for those term ids from the dictionary.
+Decompressing the terms is comparatively expensive and keeping the term ids increases the memory usage.
+
+For numeric fields, the cardinality aggregation is much more efficient as it directly computes the hash of the numeric values and adds them to HLL++.
+
+##### Limitations
+The parameter `precision_threshold` is ignored currently. Normally it allows to set the threshold until the aggregation is exact.
 
