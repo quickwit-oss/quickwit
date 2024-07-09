@@ -151,6 +151,7 @@ fn convert_user_input_ast_to_query_ast(
                     field,
                     lower_bound: convert_bound(lower),
                     upper_bound: convert_bound(upper),
+                    format: None,
                 };
                 Ok(range_query.into())
             }

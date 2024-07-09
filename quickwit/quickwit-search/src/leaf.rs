@@ -652,6 +652,7 @@ fn remove_redundant_timestamp_range(
             upper_bound: map_bound(final_end_timestamp, |bound| {
                 bound.into_timestamp_nanos().into()
             }),
+            format: None,
         };
         new_ast = if let QueryAst::Bool(mut bool_query) = new_ast {
             if bool_query.must.is_empty()

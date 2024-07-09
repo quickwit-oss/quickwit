@@ -38,6 +38,8 @@ pub struct RangeQuery {
     pub field: String,
     pub lower_bound: Bound<JsonLiteral>,
     pub upper_bound: Bound<JsonLiteral>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
 }
 
 struct NumericalBoundaries {
@@ -235,7 +237,7 @@ impl BuildTantivyAst for RangeQuery {
                 "range queries are only supported for fast fields. (`{}` is not a fast field)",
                 field_entry.name()
             )));
-        }
+        }        
         Ok(match field_entry.field_type() {
             tantivy::schema::FieldType::Str(_) => {
                 return Err(InvalidQuery::RangeQueryNotSupportedForField {

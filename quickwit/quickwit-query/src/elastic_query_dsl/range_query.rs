@@ -40,7 +40,6 @@ pub struct RangeQueryParams {
     lte: Option<JsonLiteral>,
     #[serde(default)]
     boost: Option<NotNaNf32>,
-    // Currently NO-OP (see #5109)
     #[serde(default)]
     format: Option<JsonLiteral>,
 }
@@ -56,7 +55,7 @@ impl ConvertableToQueryAst for RangeQuery {
             lt,
             lte,
             boost,
-            format: _,
+            format,
         } = self.value;
         let range_query_ast = crate::query_ast::RangeQuery {
             field,
@@ -75,6 +74,15 @@ impl ConvertableToQueryAst for RangeQuery {
                 (Some(lt), None) => Bound::Excluded(lt),
                 (None, Some(lte)) => Bound::Included(lte),
                 (None, None) => Bound::Unbounded,
+            },
+            format: match format {
+                None => None,
+                Some(v) => {
+                    match v {
+                        JsonLiteral::String(s) => Some(s),
+                        _ => None
+                    }
+                }
             },
         };
         let ast: QueryAst = range_query_ast.into();
