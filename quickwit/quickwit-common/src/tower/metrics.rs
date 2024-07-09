@@ -44,6 +44,7 @@ pub struct GrpcMetrics<S> {
 impl<S, R> Service<R> for GrpcMetrics<S>
 where
     S: Service<R>,
+    S::Error: std::fmt::Debug,
     R: RpcName,
 {
     type Response = S::Response;
@@ -150,7 +151,7 @@ impl<F> PinnedDrop for ResponseFuture<F> {
     }
 }
 
-impl<F, T, E> Future for ResponseFuture<F>
+impl<F, T, E: std::fmt::Debug> Future for ResponseFuture<F>
 where F: Future<Output = Result<T, E>>
 {
     type Output = Result<T, E>;
@@ -158,7 +159,17 @@ where F: Future<Output = Result<T, E>>
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let response = ready!(this.inner.poll(cx));
-        *this.status = if response.is_ok() { "success" } else { "error" };
+        *this.status = match &response {
+            Ok(_) => "success",
+            Err(e) => {
+                crate::rate_limited_warn!(
+                    limit_per_min = 10,
+                    "error on '{}': {e:?}",
+                    this.rpc_name
+                );
+                "error"
+            }
+        };
         Poll::Ready(Ok(response?))
     }
 }
