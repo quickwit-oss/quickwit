@@ -18,8 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::ops::Bound;
+use std::str::FromStr;
 
 use serde::Deserialize;
+use quickwit_datetime::{DateTimeInputFormat, parse_date_time_str, StrptimeParser};
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::ConvertableToQueryAst;
@@ -40,7 +42,6 @@ pub struct RangeQueryParams {
     lte: Option<JsonLiteral>,
     #[serde(default)]
     boost: Option<NotNaNf32>,
-    // Currently NO-OP (see #5109)
     #[serde(default)]
     format: Option<JsonLiteral>,
 }
@@ -56,8 +57,20 @@ impl ConvertableToQueryAst for RangeQuery {
             lt,
             lte,
             boost,
-            format: _,
+            format,
         } = self.value;
+        let (gt, gte, lt, lte) =
+            if let Some(JsonLiteral::String(fmt)) = format {
+            (
+                gt.map(|v| parse_and_convert(v, &fmt)).transpose()?,
+                gte.map(|v| parse_and_convert(v, &fmt)).transpose()?,
+                lt.map(|v| parse_and_convert(v, &fmt)).transpose()?,
+                lte.map(|v| parse_and_convert(v, &fmt)).transpose()?,
+            )
+        } else {
+            (gt, gte, lt, lte)
+        };
+
         let range_query_ast = crate::query_ast::RangeQuery {
             field,
             lower_bound: match (gt, gte) {
@@ -79,5 +92,17 @@ impl ConvertableToQueryAst for RangeQuery {
         };
         let ast: QueryAst = range_query_ast.into();
         Ok(ast.boost(boost))
+    }
+}
+
+
+fn parse_and_convert(value: JsonLiteral, fmt: &str) -> anyhow::Result<JsonLiteral> {
+    if let JsonLiteral::String(s) = value {
+        let date_format = DateTimeInputFormat::from_str(fmt).unwrap();
+        let date_time = parse_date_time_str(&s, &[date_format]).unwrap();
+        Ok(JsonLiteral::String(date_time.to_string())) // TODO no `to_string` method
+    } else {
+        dbg!(value.clone());
+        Ok(value)
     }
 }
