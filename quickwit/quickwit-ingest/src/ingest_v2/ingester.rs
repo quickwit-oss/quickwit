@@ -83,7 +83,6 @@ use super::IngesterPool;
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
 use crate::ingest_v2::metrics::report_wal_usage;
 use crate::ingest_v2::models::IngesterShardType;
-use crate::metrics::INGEST_METRICS;
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{estimate_size, with_lock_metrics, FollowerId};
 
@@ -568,24 +567,48 @@ impl Ingester {
                     persist_failures.push(persist_failure);
                     continue;
                 }
-                let (doc_batch, parse_failures) = validate_doc_batch(doc_batch, doc_mapper).await?;
-                let num_persisted_docs = (doc_batch.num_docs() - parse_failures.len()) as u32;
 
-                if num_persisted_docs == 0 {
+                // Total number of bytes (valid and invalid documents)
+                let original_batch_num_bytes = doc_batch.num_bytes() as u64;
+                let (valid_doc_batch, parse_failures) =
+                    validate_doc_batch(doc_batch, doc_mapper).await?;
+
+                if valid_doc_batch.is_empty() {
+                    crate::metrics::INGEST_METRICS
+                        .ingested_docs_invalid
+                        .inc_by(parse_failures.len() as u64);
+                    crate::metrics::INGEST_METRICS
+                        .ingested_docs_bytes_invalid
+                        .inc_by(original_batch_num_bytes);
                     let persist_success = PersistSuccess {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
                         shard_id: subrequest.shard_id,
                         replication_position_inclusive: Some(from_position_exclusive),
-                        num_persisted_docs,
+                        num_persisted_docs: 0,
                         parse_failures,
                     };
                     persist_successes.push(persist_success);
                     continue;
+                };
+
+                crate::metrics::INGEST_METRICS
+                    .ingested_docs_valid
+                    .inc_by(valid_doc_batch.num_docs() as u64);
+                crate::metrics::INGEST_METRICS
+                    .ingested_docs_bytes_valid
+                    .inc_by(valid_doc_batch.num_bytes() as u64);
+                if !parse_failures.is_empty() {
+                    crate::metrics::INGEST_METRICS
+                        .ingested_docs_invalid
+                        .inc_by(parse_failures.len() as u64);
+                    crate::metrics::INGEST_METRICS
+                        .ingested_docs_bytes_invalid
+                        .inc_by(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);
                 }
-                let batch_num_bytes = doc_batch.num_bytes() as u64;
-                rate_meter.update(batch_num_bytes);
+                let valid_batch_num_bytes = valid_doc_batch.num_bytes() as u64;
+                rate_meter.update(valid_batch_num_bytes);
                 total_requested_capacity += requested_capacity;
 
                 let mut successfully_replicated = true;
@@ -599,7 +622,7 @@ impl Ingester {
                         source_id: subrequest.source_id.clone(),
                         shard_id: subrequest.shard_id.clone(),
                         from_position_exclusive: Some(from_position_exclusive),
-                        doc_batch: Some(doc_batch.clone()),
+                        doc_batch: Some(valid_doc_batch.clone()),
                     };
                     per_follower_replicate_subrequests
                         .entry(follower_id)
@@ -612,8 +635,7 @@ impl Ingester {
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
                     shard_id: subrequest.shard_id,
-                    doc_batch,
-                    num_persisted_docs,
+                    doc_batch: valid_doc_batch,
                     parse_failures,
                     expected_position_inclusive: None,
                     successfully_replicated,
@@ -697,7 +719,6 @@ impl Ingester {
                 }
                 let queue_id = subrequest.queue_id;
 
-                let batch_num_bytes = subrequest.doc_batch.num_bytes() as u64;
                 let batch_num_docs = subrequest.doc_batch.num_docs() as u64;
 
                 let append_result = append_non_empty_doc_batch(
@@ -754,16 +775,13 @@ impl Ingester {
                     .expect("primary shard should exist")
                     .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
-                INGEST_METRICS.ingested_num_bytes.inc_by(batch_num_bytes);
-                INGEST_METRICS.ingested_num_docs.inc_by(batch_num_docs);
-
                 let persist_success = PersistSuccess {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
                     shard_id: subrequest.shard_id,
                     replication_position_inclusive: Some(current_position_inclusive),
-                    num_persisted_docs: subrequest.num_persisted_docs,
+                    num_persisted_docs: batch_num_docs as u32,
                     parse_failures: subrequest.parse_failures,
                 };
                 persist_successes.push(persist_success);
@@ -1259,7 +1277,6 @@ struct PendingPersistSubrequest {
     source_id: SourceId,
     shard_id: Option<ShardId>,
     doc_batch: DocBatchV2,
-    num_persisted_docs: u32,
     parse_failures: Vec<ParseFailure>,
     expected_position_inclusive: Option<Position>,
     successfully_replicated: bool,
@@ -1937,10 +1954,10 @@ mod tests {
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test([
-                    "",
-                    "[]",
-                    r#"{"foo": "bar"}"#,
-                    r#"{"doc": "test-doc-000"}"#,
+                    "",                           // invalid
+                    "[]",                         // invalid
+                    r#"{"foo": "bar"}"#,          // invalid
+                    r#"{"doc": "test-doc-000"}"#, // valid
                 ])),
             }],
         };
