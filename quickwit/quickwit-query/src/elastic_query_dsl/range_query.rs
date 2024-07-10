@@ -20,8 +20,8 @@
 use std::ops::Bound;
 use std::str::FromStr;
 
+use quickwit_datetime::StrptimeParser;
 use serde::Deserialize;
-use quickwit_datetime::{DateTimeInputFormat, parse_date_time_str, StrptimeParser};
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::ConvertableToQueryAst;
@@ -59,13 +59,15 @@ impl ConvertableToQueryAst for RangeQuery {
             boost,
             format,
         } = self.value;
-        let (gt, gte, lt, lte) =
-            if let Some(JsonLiteral::String(fmt)) = format {
+        let (gt, gte, lt, lte) = if let Some(JsonLiteral::String(fmt)) = format {
+            let parser = StrptimeParser::from_str(&fmt).map_err(|reason| {
+                anyhow::anyhow!("failed to create parser from : {}; reason: {}", fmt, reason)
+            })?;
             (
-                gt.map(|v| parse_and_convert(v, &fmt)).transpose()?,
-                gte.map(|v| parse_and_convert(v, &fmt)).transpose()?,
-                lt.map(|v| parse_and_convert(v, &fmt)).transpose()?,
-                lte.map(|v| parse_and_convert(v, &fmt)).transpose()?,
+                gt.map(|v| parse_and_convert(v, &parser)).transpose()?,
+                gte.map(|v| parse_and_convert(v, &parser)).transpose()?,
+                lt.map(|v| parse_and_convert(v, &parser)).transpose()?,
+                lte.map(|v| parse_and_convert(v, &parser)).transpose()?,
             )
         } else {
             (gt, gte, lt, lte)
@@ -95,14 +97,13 @@ impl ConvertableToQueryAst for RangeQuery {
     }
 }
 
-
-fn parse_and_convert(value: JsonLiteral, fmt: &str) -> anyhow::Result<JsonLiteral> {
-    if let JsonLiteral::String(s) = value {
-        let date_format = DateTimeInputFormat::from_str(fmt).unwrap();
-        let date_time = parse_date_time_str(&s, &[date_format]).unwrap();
-        Ok(JsonLiteral::String(date_time.to_string())) // TODO no `to_string` method
+fn parse_and_convert(literal: JsonLiteral, parser: &StrptimeParser) -> anyhow::Result<JsonLiteral> {
+    if let JsonLiteral::String(date_time_str) = literal {
+        let parsed_date_time = parser
+            .parse_date_time(&date_time_str)
+            .map_err(|reason| anyhow::anyhow!("Failed to parse date time: {}", reason))?;
+        Ok(JsonLiteral::String(parsed_date_time.to_string()))
     } else {
-        dbg!(value.clone());
-        Ok(value)
+        Ok(literal)
     }
 }
