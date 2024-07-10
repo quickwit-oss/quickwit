@@ -3871,6 +3871,92 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn test_search_plan_multiple_splits() -> anyhow::Result<()> {
+        use quickwit_query::query_ast::{FullTextMode, FullTextParams, FullTextQuery};
+        use quickwit_query::MatchAllOrNone;
+
+        let search_request = quickwit_proto::search::SearchRequest {
+            index_id_patterns: vec!["test-index".to_string()],
+            query_ast: qast_json_helper("test-query", &["body"]),
+            max_hits: 10,
+            ..Default::default()
+        };
+        let mut mock_metastore = MockMetastoreService::new();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .returning(move |_index_ids_query| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata.clone()
+                ]))
+            });
+        mock_metastore
+            .expect_list_splits()
+            .returning(move |_filter| {
+                let splits = vec![
+                    MockSplitBuilder::new("split1")
+                        .with_index_uid(&index_uid)
+                        .build(),
+                    MockSplitBuilder::new("split2")
+                        .with_index_uid(&index_uid)
+                        .build(),
+                ];
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
+            });
+        let search_response = search_plan(
+            search_request,
+            MetastoreServiceClient::from_mock(mock_metastore),
+        )
+        .await
+        .unwrap();
+        let response: SearchPlanResponseRest =
+            serde_json::from_str(&search_response.result).unwrap();
+        assert_eq!(
+            response,
+            SearchPlanResponseRest {
+                quickwit_ast: QueryAst::FullText(FullTextQuery {
+                    field: "body".to_string(),
+                    text: "test-query".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::PhraseFallbackToIntersection,
+                        zero_terms_query: MatchAllOrNone::MatchNone,
+                    },
+                },),
+                tantivy_ast: r#"BooleanQuery {
+    subqueries: [
+        (
+            Must,
+            TermQuery(Term(field=3, type=Str, "test")),
+        ),
+        (
+            Must,
+            TermQuery(Term(field=3, type=Str, "query")),
+        ),
+    ],
+    minimum_number_should_match: 0,
+}"#
+                .to_string(),
+                searched_splits: vec![
+                    "test-index/split1".to_string(),
+                    "test-index/split2".to_string()
+                ],
+                storage_requests: StorageRequestCount {
+                    footer: 1,
+                    fastfield: 0,
+                    fieldnorm: 0,
+                    sstable: 2,
+                    posting: 2,
+                    position: 0,
+                },
+            }
+        );
+        Ok(())
+    }
+
     #[test]
     fn test_extract_timestamp_range_from_ast() {
         use std::ops::Bound;
