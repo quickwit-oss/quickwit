@@ -35,8 +35,8 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafRequestRef, LeafSearchRequest,
-    LeafSearchResponse, PartialHit, SearchRequest, SearchResponse, SnippetRequest,
-    SortDatetimeFormat, SortField, SortValue, SplitIdAndFooterOffsets,
+    LeafSearchResponse, PartialHit, SearchPlanResponse, SearchRequest, SearchResponse,
+    SnippetRequest, SortDatetimeFormat, SortField, SortValue, SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
@@ -55,10 +55,11 @@ use crate::collector::{make_merge_collector, QuickwitAggregations};
 use crate::find_trace_ids_collector::Span;
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{group_by, group_jobs_by_index_id, Job};
+use crate::search_response_rest::StorageRequestCount;
 use crate::service::SearcherContext;
 use crate::{
     extract_split_and_footer_offsets, list_relevant_splits, SearchError, SearchJobPlacer,
-    SearchServiceClient,
+    SearchPlanResponseRest, SearchServiceClient,
 };
 
 /// Maximum accepted scroll TTL.
@@ -1014,6 +1015,47 @@ pub fn check_all_index_metadata_found(
     Ok(())
 }
 
+async fn refine_and_list_matches(
+    metastore: &mut MetastoreServiceClient,
+    search_request: &mut SearchRequest,
+    indexes_metadata: Vec<IndexMetadata>,
+    query_ast_resolved: QueryAst,
+    sort_fields_is_datetime: HashMap<String, bool>,
+    timestamp_field_opt: Option<String>,
+) -> crate::Result<Vec<SplitMetadata>> {
+    let index_uids = indexes_metadata
+        .iter()
+        .map(|index_metadata| index_metadata.index_uid.clone())
+        .collect_vec();
+    search_request.query_ast = serde_json::to_string(&query_ast_resolved)?;
+
+    // convert search_after datetime values from input datetime format to nanos.
+    convert_search_after_datetime_values(search_request, &sort_fields_is_datetime)?;
+
+    // update_search_after_datetime_in_nanos(&mut search_request)?;
+    if let Some(timestamp_field) = &timestamp_field_opt {
+        refine_start_end_timestamp_from_ast(
+            &query_ast_resolved,
+            timestamp_field,
+            &mut search_request.start_timestamp,
+            &mut search_request.end_timestamp,
+        );
+    }
+    let tag_filter_ast = extract_tags_from_query(query_ast_resolved);
+
+    // TODO if search after is set, we sort by timestamp and we don't want to count all results,
+    // we can refine more here. Same if we sort by _shard_doc
+    let split_metadatas: Vec<SplitMetadata> = list_relevant_splits(
+        index_uids,
+        search_request.start_timestamp,
+        search_request.end_timestamp,
+        tag_filter_ast,
+        metastore,
+    )
+    .await?;
+    Ok(split_metadatas)
+}
+
 /// Performs a distributed search.
 /// 1. Sends leaf request over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
@@ -1055,38 +1097,14 @@ pub async fn root_search(
         return Ok(search_response);
     }
 
-    let index_uids = indexes_metadata
-        .iter()
-        .map(|index_metadata| index_metadata.index_uid.clone())
-        .collect_vec();
     let request_metadata = validate_request_and_build_metadata(&indexes_metadata, &search_request)?;
-    search_request.query_ast = serde_json::to_string(&request_metadata.query_ast_resolved)?;
-
-    // convert search_after datetime values from input datetime format to nanos.
-    convert_search_after_datetime_values(
-        &mut search_request,
-        &request_metadata.sort_fields_is_datetime,
-    )?;
-
-    // update_search_after_datetime_in_nanos(&mut search_request)?;
-    if let Some(timestamp_field) = &request_metadata.timestamp_field_opt {
-        refine_start_end_timestamp_from_ast(
-            &request_metadata.query_ast_resolved,
-            timestamp_field,
-            &mut search_request.start_timestamp,
-            &mut search_request.end_timestamp,
-        );
-    }
-    let tag_filter_ast = extract_tags_from_query(request_metadata.query_ast_resolved);
-
-    // TODO if search after is set, we sort by timestamp and we don't want to count all results,
-    // we can refine more here. Same if we sort by _shard_doc
-    let split_metadatas: Vec<SplitMetadata> = list_relevant_splits(
-        index_uids,
-        search_request.start_timestamp,
-        search_request.end_timestamp,
-        tag_filter_ast,
+    let split_metadatas = refine_and_list_matches(
         &mut metastore,
+        &mut search_request,
+        indexes_metadata,
+        request_metadata.query_ast_resolved,
+        request_metadata.sort_fields_is_datetime,
+        request_metadata.timestamp_field_opt,
     )
     .await?;
 
@@ -1101,6 +1119,104 @@ pub async fn root_search(
 
     search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
     Ok(search_response)
+}
+
+/// Returns details on how a query would be executed
+pub async fn search_plan(
+    mut search_request: SearchRequest,
+    mut metastore: MetastoreServiceClient,
+) -> crate::Result<SearchPlanResponse> {
+    let list_indexes_metadatas_request = ListIndexesMetadataRequest {
+        index_id_patterns: search_request.index_id_patterns.clone(),
+    };
+    let indexes_metadata: Vec<IndexMetadata> = metastore
+        .list_indexes_metadata(list_indexes_metadatas_request)
+        .await?
+        .deserialize_indexes_metadata()
+        .await?;
+
+    check_all_index_metadata_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
+    if indexes_metadata.is_empty() {
+        return Ok(SearchPlanResponse {
+            result: serde_json::to_string(&SearchPlanResponseRest {
+                quickwit_ast: QueryAst::MatchAll,
+                tantivy_ast: String::new(),
+                searched_splits: Vec::new(),
+                storage_requests: StorageRequestCount::default(),
+            })?,
+        });
+    }
+    let doc_mapper = build_doc_mapper(
+        &indexes_metadata[0].index_config.doc_mapping,
+        &indexes_metadata[0].index_config.search_settings,
+    )
+    .map_err(|err| SearchError::Internal(format!("failed to build doc mapper. cause: {err}")))?;
+
+    let request_metadata = validate_request_and_build_metadata(&indexes_metadata, &search_request)?;
+    let split_metadatas = refine_and_list_matches(
+        &mut metastore,
+        &mut search_request,
+        indexes_metadata,
+        request_metadata.query_ast_resolved.clone(),
+        request_metadata.sort_fields_is_datetime,
+        request_metadata.timestamp_field_opt,
+    )
+    .await?;
+
+    let (query, mut warmup_info) = doc_mapper.query(
+        doc_mapper.schema(),
+        &request_metadata.query_ast_resolved,
+        true,
+    )?;
+    let merge_collector = make_merge_collector(&search_request, &Default::default())?;
+    warmup_info.merge(merge_collector.warmup_info());
+    warmup_info.simplify();
+
+    let split_ids = split_metadatas
+        .into_iter()
+        .map(|split| format!("{}/{}", split.index_uid.index_id, split.split_id))
+        .collect();
+    // this is an upper bound, we'd need access to a hotdir for more precise results
+    let fieldnorm_query_count = if warmup_info.field_norms {
+        doc_mapper
+            .schema()
+            .fields()
+            .filter(|(_, entry)| entry.has_fieldnorms())
+            .count()
+    } else {
+        0
+    };
+    let sstable_query_count = warmup_info.term_dict_fields.len()
+        + warmup_info
+            .terms_grouped_by_field
+            .values()
+            .map(|terms| terms.len())
+            .sum::<usize>();
+    let position_query_count = warmup_info
+        .terms_grouped_by_field
+        .values()
+        .map(|terms| {
+            terms
+                .values()
+                .filter(|load_position| **load_position)
+                .count()
+        })
+        .sum();
+    Ok(SearchPlanResponse {
+        result: serde_json::to_string(&SearchPlanResponseRest {
+            quickwit_ast: request_metadata.query_ast_resolved,
+            tantivy_ast: format!("{query:#?}"),
+            searched_splits: split_ids,
+            storage_requests: StorageRequestCount {
+                footer: 1,
+                fastfield: warmup_info.fast_field_names.len(),
+                fieldnorm: fieldnorm_query_count,
+                sstable: sstable_query_count,
+                posting: sstable_query_count,
+                position: position_query_count,
+            },
+        })?,
+    })
 }
 
 /// Converts search after with datetime format to nanoseconds (representation in tantivy).

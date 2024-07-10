@@ -21,6 +21,7 @@ use std::convert::TryFrom;
 
 use quickwit_common::truncate_str;
 use quickwit_proto::search::SearchResponse;
+use quickwit_query::query_ast::QueryAst;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -99,4 +100,38 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
             aggregations: aggregations_opt,
         })
     }
+}
+
+/// Details on how a query would be executed.
+#[derive(Serialize, Deserialize, PartialEq, Debug, utoipa::ToSchema)]
+pub struct SearchPlanResponseRest {
+    /// Quickwit AST of the query.
+    #[schema(value_type = Object)]
+    pub quickwit_ast: QueryAst,
+    /// Resolved Tantivy AST of the query, according to the latest docmapping.
+    ///
+    /// It's possible older splits actually resolve to a different ast.
+    pub tantivy_ast: String,
+    /// List of splits that would be searched by this query
+    pub searched_splits: Vec<String>,
+    /// Requests expected for each split
+    #[schema(value_type = Object)]
+    pub storage_requests: StorageRequestCount,
+}
+
+/// Number of expected storage requests, per request kind
+#[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
+pub struct StorageRequestCount {
+    /// Number of split footer downloaded, always 1
+    pub footer: usize,
+    /// Number of fastfields downloaded
+    pub fastfield: usize,
+    /// Number of fieldnorm downloaded
+    pub fieldnorm: usize,
+    /// Number of sstable dowloaded
+    pub sstable: usize,
+    /// Number of posting list downloaded
+    pub posting: usize,
+    /// Number of position list downloaded
+    pub position: usize,
 }

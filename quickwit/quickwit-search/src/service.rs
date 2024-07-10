@@ -33,7 +33,8 @@ use quickwit_proto::search::{
     LeafListTermsRequest, LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse,
     LeafSearchStreamRequest, LeafSearchStreamResponse, ListFieldsRequest, ListFieldsResponse,
     ListTermsRequest, ListTermsResponse, PutKvRequest, ReportSplitsRequest, ReportSplitsResponse,
-    ScrollRequest, SearchRequest, SearchResponse, SearchStreamRequest, SnippetRequest,
+    ScrollRequest, SearchPlanResponse, SearchRequest, SearchResponse, SearchStreamRequest,
+    SnippetRequest,
 };
 use quickwit_storage::{
     MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
@@ -50,7 +51,7 @@ use crate::list_terms::{leaf_list_terms, root_list_terms};
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_stream::{leaf_search_stream, root_search_stream};
-use crate::{fetch_docs, root_search, ClusterClient, SearchError};
+use crate::{fetch_docs, root_search, search_plan, ClusterClient, SearchError};
 
 #[derive(Clone)]
 /// The search service implementation.
@@ -149,6 +150,9 @@ pub trait SearchService: 'static + Send + Sync {
         &self,
         list_fields: LeafListFieldsRequest,
     ) -> crate::Result<ListFieldsResponse>;
+
+    /// Describe how a search would be processed.
+    async fn search_plan(&self, reqiest: SearchRequest) -> crate::Result<SearchPlanResponse>;
 }
 
 impl SearchServiceImpl {
@@ -351,6 +355,14 @@ impl SearchService for SearchServiceImpl {
             &list_fields_req.fields,
         )
         .await
+    }
+
+    async fn search_plan(
+        &self,
+        search_request: SearchRequest,
+    ) -> crate::Result<SearchPlanResponse> {
+        let search_plan = search_plan(search_request, self.metastore.clone()).await?;
+        Ok(search_plan)
     }
 }
 

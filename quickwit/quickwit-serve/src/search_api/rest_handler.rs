@@ -29,7 +29,7 @@ use quickwit_proto::search::{CountHits, OutputFormat, SortField, SortOrder};
 use quickwit_proto::types::IndexId;
 use quickwit_proto::ServiceError;
 use quickwit_query::query_ast::query_ast_from_user_text;
-use quickwit_search::{SearchError, SearchResponseRest, SearchService};
+use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use tracing::info;
@@ -43,12 +43,19 @@ use crate::{with_arg, BodyFormat};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(search_get_handler, search_post_handler, search_stream_handler,),
+    paths(
+        search_get_handler,
+        search_post_handler,
+        search_stream_handler,
+        search_plan_get_handler,
+        search_plan_post_handler,
+    ),
     components(schemas(
         BodyFormat,
         OutputFormat,
         SearchRequestQueryString,
         SearchResponseRest,
+        SearchPlanResponseRest,
         SortBy,
         SortField,
         SortOrder,
@@ -318,6 +325,23 @@ fn search_post_filter(
         .and(warp::body::json())
 }
 
+fn search_plan_get_filter(
+) -> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
+    warp::path!(String / "search-plan")
+        .and_then(extract_index_id_patterns)
+        .and(warp::get())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+}
+
+fn search_plan_post_filter(
+) -> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
+    warp::path!(String / "search-plan")
+        .and_then(extract_index_id_patterns)
+        .and(warp::post())
+        .and(warp::body::content_length_limit(1024 * 1024))
+        .and(warp::body::json())
+}
+
 async fn search(
     index_id_patterns: Vec<String>,
     search_request: SearchRequestQueryString,
@@ -326,6 +350,22 @@ async fn search(
     info!(request =? search_request, "search");
     let body_format = search_request.format;
     let result = search_endpoint(index_id_patterns, search_request, &*search_service).await;
+    into_rest_api_response(result, body_format)
+}
+
+async fn search_plan(
+    index_id_patterns: Vec<String>,
+    search_request: SearchRequestQueryString,
+    search_service: Arc<dyn SearchService>,
+) -> impl warp::Reply {
+    let body_format = search_request.format;
+    let result: Result<SearchPlanResponseRest, SearchError> = async {
+        let plan_request = search_request_from_api_request(index_id_patterns, search_request)?;
+        let plan_response = search_service.search_plan(plan_request).await?;
+        let response = serde_json::from_str(&plan_response.result)?;
+        Ok(response)
+    }
+    .await;
     into_rest_api_response(result, body_format)
 }
 
@@ -396,6 +436,52 @@ pub fn search_stream_handler(
     search_stream_filter()
         .and(with_arg(search_service))
         .then(search_stream)
+}
+
+#[utoipa::path(
+    get,
+    tag = "Search",
+    path = "/{index_id}/search-plan",
+    responses(
+        (status = 200, description = "Metadata about how a request would be executed.", body = SearchPlanResponseRest)
+    ),
+    params(
+        SearchRequestQueryString,
+        ("index_id" = String, Path, description = "The index ID to search."),
+    )
+)]
+/// Plan Query (GET Variant)
+///
+/// Parses the search request from the request query string.
+pub fn search_plan_get_handler(
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    search_plan_get_filter()
+        .and(with_arg(search_service))
+        .then(search_plan)
+}
+
+#[utoipa::path(
+    post,
+    tag = "Search",
+    path = "/{index_id}/search-plan",
+    request_body = SearchRequestQueryString,
+    responses(
+        (status = 200, description = "Metadata about how a request would be executed.", body = SearchPlanResponseRest)
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to search."),
+    )
+)]
+/// Plan Query (POST Variant)
+///
+/// Parses the search request from the request body.
+pub fn search_plan_post_handler(
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    search_plan_post_filter()
+        .and(with_arg(search_service))
+        .then(search_plan)
 }
 
 /// This struct represents the search stream query passed to
@@ -537,7 +623,9 @@ mod tests {
         let mock_search_service_in_arc = Arc::new(mock_search_service);
         search_get_handler(mock_search_service_in_arc.clone())
             .or(search_post_handler(mock_search_service_in_arc.clone()))
-            .or(search_stream_handler(mock_search_service_in_arc))
+            .or(search_stream_handler(mock_search_service_in_arc.clone()))
+            .or(search_plan_get_handler(mock_search_service_in_arc.clone()))
+            .or(search_plan_post_handler(mock_search_service_in_arc.clone()))
             .recover(recover_fn)
     }
 
