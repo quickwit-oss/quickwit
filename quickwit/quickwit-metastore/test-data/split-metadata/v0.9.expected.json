@@ -1,29 +1,30 @@
 {
-  "create_timestamp": 3,
-  "delete_opstamp": 10,
-  "footer_offsets": {
-    "end": 2000,
-    "start": 1000
-  },
+  "version": "0.9",
+  "split_id": "split",
   "index_uid": "my-index:00000000000000000000000001",
-  "maturity": {
-    "maturation_period_millis": 4000,
-    "type": "immature"
-  },
-  "node_id": "node",
-  "num_docs": 12303,
-  "num_merge_ops": 3,
   "partition_id": 7,
   "source_id": "source",
-  "split_id": "split",
+  "node_id": "node",
+  "num_docs": 12303,
+  "uncompressed_docs_size_in_bytes": 234234,
+  "time_range": {
+    "start": 121000,
+    "end": 130198
+  },
+  "create_timestamp": 3,
+  "maturity": {
+    "type": "immature",
+    "maturation_period_millis": 4000
+  },
   "tags": [
     "234",
     "aaa"
   ],
-  "time_range": {
-    "end": 130198,
-    "start": 121000
+  "footer_offsets": {
+    "start": 1000,
+    "end": 2000
   },
-  "uncompressed_docs_size_in_bytes": 234234,
-  "version": "0.9"
+  "delete_opstamp": 10,
+  "num_merge_ops": 3,
+  "doc_mapping_uid": "00000000000000000000000000"
 }

@@ -492,7 +492,7 @@ mod tests {
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
-    use quickwit_proto::types::NodeId;
+    use quickwit_proto::types::{DocMappingUid, NodeId};
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
     use tokio::sync::oneshot;
@@ -552,6 +552,7 @@ mod tests {
                         node_id,
                         index_uid,
                         source_id,
+                        doc_mapping_uid: DocMappingUid::default(),
                         partition_id: 3u64,
                         time_range: Some(
                             DateTime::from_timestamp_secs(1_628_203_589)
@@ -661,6 +662,7 @@ mod tests {
                 node_id: node_id.clone(),
                 index_uid: index_uid.clone(),
                 source_id: source_id.clone(),
+                doc_mapping_uid: DocMappingUid::default(),
                 split_id: "test-split-1".to_string(),
                 partition_id: 3u64,
                 num_docs: 10,
@@ -687,6 +689,7 @@ mod tests {
                 node_id,
                 index_uid,
                 source_id,
+                doc_mapping_uid: DocMappingUid::default(),
                 split_id: "test-split-2".to_string(),
                 partition_id: 3u64,
                 num_docs: 10,
@@ -811,6 +814,7 @@ mod tests {
                         node_id,
                         index_uid,
                         source_id,
+                        doc_mapping_uid: DocMappingUid::default(),
                         split_id: "test-split".to_string(),
                         partition_id: 3u64,
                         time_range: None,
@@ -987,6 +991,7 @@ mod tests {
                         node_id,
                         index_uid,
                         source_id,
+                        doc_mapping_uid: DocMappingUid::default(),
                         partition_id: 3u64,
                         time_range: Some(
                             DateTime::from_timestamp_secs(1_628_203_589)
