@@ -72,7 +72,7 @@ impl Queue for SqsQueue {
         // state that it starts when the message is returned.
         let initial_deadline = Instant::now() + suggested_deadline;
         let clamped_max_messages = std::cmp::min(max_messages, 10) as i32;
-        let receive_res = aws_retry(&self.receive_retries, || async {
+        let receive_output = aws_retry(&self.receive_retries, || async {
             self.sqs_client
                 .receive_message()
                 .queue_url(&self.queue_url)
@@ -83,19 +83,7 @@ impl Queue for SqsQueue {
                 .send()
                 .await
         })
-        .await;
-
-        let receive_output = match receive_res {
-            Ok(output) => output,
-            Err(err) => {
-                rate_limited_error!(
-                    limit_per_min = 10,
-                    first_err = ?err,
-                    "failed to receive messages from SQS",
-                );
-                return Ok(Vec::new());
-            }
-        };
+        .await?;
 
         receive_output
             .messages
@@ -464,5 +452,20 @@ mod localstack_tests {
         .parse()
         .unwrap();
         assert_eq!(in_flight_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_receive_wrong_queue() {
+        let client = test_helpers::get_localstack_sqs_client().await.unwrap();
+        let queue_url = test_helpers::create_queue(&client, "test-receive-existing-msg").await;
+        let bad_queue_url = format!("{}wrong", queue_url);
+        let queue = Arc::new(SqsQueue::try_new(bad_queue_url).await.unwrap());
+        tokio::time::timeout(
+            Duration::from_millis(500),
+            queue.clone().receive(5, Duration::from_secs(60)),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
     }
 }
