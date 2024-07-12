@@ -118,7 +118,7 @@ mod tests {
     use crate::JsonLiteral;
 
     #[test]
-    fn test_parse_and_convert() {
+    fn test_parse_and_convert() -> anyhow::Result<()> {
         let parser = StrptimeParser::from_str("%Y-%m-%d %H:%M:%S").unwrap();
 
         // valid datetime
@@ -142,5 +142,7 @@ mod tests {
         let input = JsonLiteral::Number(27.into());
         let result = parse_and_convert(input.clone(), &parser)?;
         assert_eq!(result, input);
+
+        Ok(())
     }
 }
