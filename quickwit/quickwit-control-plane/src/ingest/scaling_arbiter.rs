@@ -22,7 +22,16 @@ use crate::model::{ScalingMode, ShardStats};
 pub(crate) struct ScalingArbiter {
     // Threshold in MiB/s below which we decrease the number of shards.
     scale_down_shards_threshold_mib_per_sec: f32,
+
     // Threshold in MiB/s above which we increase the number of shards.
+    // In order to make scaling up reactive, the decision is mostly taken by inspecting the short
+    // term threshold.
+    //
+    // However, this threshold is based on a very short window of time: 5s.
+    //
+    // In order to avoid having back and forth scaling up and down in response to temporary
+    // punctual spikes of a few MB, we also compute what would be the long term ingestion rate
+    // after scaling up, and double check that it is above the long term threshold.
     scale_up_shards_short_term_threshold_mib_per_sec: f32,
     scale_up_shards_long_term_threshold_mib_per_sec: f32,
 }

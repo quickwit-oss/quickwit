@@ -160,17 +160,17 @@ impl LocalShardsSnapshot {
 pub(super) struct BroadcastLocalShardsTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
-    shard_throughput_time_series: ShardThroughputTimeSeries,
+    shard_throughput_time_series_map: ShardThroughputTimeSeriesMap,
 }
 
 const SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN: usize = 12;
 
 #[derive(Default)]
-struct ShardThroughputTimeSeries {
+struct ShardThroughputTimeSeriesMap {
     shard_time_series: HashMap<(SourceUid, ShardId), ShardThroughputTimeSerie>,
 }
 
-impl ShardThroughputTimeSeries {
+impl ShardThroughputTimeSeriesMap {
     // Records a list of shard throughputs.
     //
     // A new time series is created for each new shard_ids.
@@ -262,7 +262,7 @@ impl BroadcastLocalShardsTask {
         let mut broadcaster = Self {
             cluster,
             weak_state,
-            shard_throughput_time_series: Default::default(),
+            shard_throughput_time_series_map: Default::default(),
         };
         tokio::spawn(async move { broadcaster.run().await })
     }
@@ -311,11 +311,11 @@ impl BroadcastLocalShardsTask {
             })
             .collect();
 
-        self.shard_throughput_time_series
+        self.shard_throughput_time_series_map
             .record_shard_throughputs(ingestion_rates);
 
         let per_source_shard_infos = self
-            .shard_throughput_time_series
+            .shard_throughput_time_series_map
             .get_per_source_shard_infos();
 
         for shard_infos in per_source_shard_infos.values() {
@@ -581,7 +581,7 @@ mod tests {
         let mut task = BroadcastLocalShardsTask {
             cluster,
             weak_state,
-            shard_throughput_time_series: Default::default(),
+            shard_throughput_time_series_map: Default::default(),
         };
         let previous_snapshot = task.snapshot_local_shards().await.unwrap();
         assert!(previous_snapshot.per_source_shard_infos.is_empty());
