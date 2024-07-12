@@ -20,28 +20,36 @@
 use std::fmt;
 use std::time::Duration;
 
-pub struct PrettySample<'a, T>(&'a [T], usize);
+pub struct PrettySample<I>(I, usize);
 
-impl<'a, T> PrettySample<'a, T> {
-    pub fn new(slice: &'a [T], sample_size: usize) -> Self {
+impl<I> PrettySample<I> {
+    pub fn new(slice: I, sample_size: usize) -> Self {
         Self(slice, sample_size)
     }
 }
 
-impl<T> fmt::Debug for PrettySample<'_, T>
-where T: fmt::Debug
+impl<I, T> fmt::Debug for PrettySample<I>
+where
+    I: IntoIterator<Item = T> + Clone,
+    T: fmt::Debug,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "[")?;
-        for (i, item) in self.0.iter().enumerate() {
-            if i == self.1 {
-                write!(formatter, ", and {} more", self.0.len() - i)?;
-                break;
-            }
+        // in general we will get passed a reference (&[...], &HashMap...) or a Map<_> of them.
+        // So we either perform a Copy, or a cheap Clone of a simple struct
+        let mut iter = self.0.clone().into_iter().enumerate();
+        for (i, item) in &mut iter {
             if i > 0 {
                 write!(formatter, ", ")?;
             }
             write!(formatter, "{item:?}")?;
+            if i == self.1 - 1 {
+                break;
+            }
+        }
+        let left = iter.count();
+        if left > 0 {
+            write!(formatter, ", and {left} more")?;
         }
         write!(formatter, "]")?;
         Ok(())
@@ -83,7 +91,7 @@ mod tests {
 
     #[test]
     fn test_pretty_sample() {
-        let pretty_sample = PrettySample::<'_, usize>::new(&[], 2);
+        let pretty_sample = PrettySample::<&[usize]>::new(&[], 2);
         assert_eq!(format!("{pretty_sample:?}"), "[]");
 
         let pretty_sample = PrettySample::new(&[1], 2);
