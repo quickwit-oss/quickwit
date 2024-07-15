@@ -365,10 +365,10 @@ mod localstack_tests {
     use aws_sdk_sqs::types::QueueAttributeName;
 
     use super::*;
+    use crate::source::queue_sources::helpers::QueueReceiver;
     use crate::source::queue_sources::sqs_queue::test_helpers::{
         create_queue, get_localstack_sqs_client,
     };
-    use crate::source::queue_sources::QueueReceiver;
 
     #[tokio::test]
     async fn test_check_connectivity() {

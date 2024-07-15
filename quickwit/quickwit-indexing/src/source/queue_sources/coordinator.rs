@@ -33,11 +33,12 @@ use serde::Serialize;
 use tracing::info;
 use ulid::Ulid;
 
+use super::helpers::{MessageCountOptimizer, QueueReceiver};
 use super::local_state::QueueLocalState;
 use super::message::{MessageType, PreProcessingError, ReadyMessage};
 use super::shared_state::{checkpoint_messages, QueueSharedState};
 use super::visibility::{spawn_visibility_task, VisibilitySettings};
-use super::{Queue, QueueReceiver};
+use super::Queue;
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 use crate::source::{SourceContext, SourceRuntime};
@@ -75,6 +76,7 @@ pub struct QueueCoordinator {
     local_state: QueueLocalState,
     publish_token: String,
     visible_settings: VisibilitySettings,
+    message_count_optimizer: MessageCountOptimizer,
 }
 
 impl fmt::Debug for QueueCoordinator {
@@ -112,6 +114,7 @@ impl QueueCoordinator {
             visible_settings: VisibilitySettings::from_commit_timeout(
                 source_runtime.indexing_setting.commit_timeout_secs,
             ),
+            message_count_optimizer: MessageCountOptimizer::new(),
         }
     }
 
@@ -151,10 +154,12 @@ impl QueueCoordinator {
 
     /// Polls messages from the queue and prepares them for processing
     async fn poll_messages(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        // TODO increase `max_messages` when previous messages were small
         let raw_messages = self
             .queue_receiver
-            .receive(1, self.visible_settings.deadline_for_receive)
+            .receive(
+                self.message_count_optimizer.optimal_count(),
+                self.visible_settings.deadline_for_receive,
+            )
             .await?;
 
         let mut format_errors = Vec::new();
@@ -224,6 +229,7 @@ impl QueueCoordinator {
         }
 
         self.local_state.set_ready_for_read(ready_messages);
+        self.message_count_optimizer.new_ready_messages_enqueued();
 
         // Acknowledge messages that already have been processed
         let mut ack_ids = already_completed
@@ -258,6 +264,7 @@ impl QueueCoordinator {
                 self.local_state
                     .drop_currently_read(self.visible_settings.deadline_for_last_extension)
                     .await?;
+                self.message_count_optimizer.message_processed();
                 self.observable_state.num_messages_processed += 1;
             }
         } else if let Some(ready_message) = self.local_state.get_ready_for_read() {
@@ -350,6 +357,7 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             publish_token: Ulid::new().to_string(),
             visible_settings: VisibilitySettings::from_commit_timeout(5),
+            message_count_optimizer: MessageCountOptimizer::new(),
         }
     }
 
