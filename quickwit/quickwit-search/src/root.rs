@@ -1190,12 +1190,12 @@ pub async fn search_plan(
         + warmup_info
             .terms_grouped_by_field
             .values()
-            .map(|terms| terms.len())
+            .map(|terms: &HashMap<tantivy::Term, bool>| terms.len())
             .sum::<usize>();
     let position_query_count = warmup_info
         .terms_grouped_by_field
         .values()
-        .map(|terms| {
+        .map(|terms: &HashMap<tantivy::Term, bool>| {
             terms
                 .values()
                 .filter(|load_position| **load_position)

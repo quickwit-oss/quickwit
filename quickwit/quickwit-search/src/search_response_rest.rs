@@ -119,7 +119,9 @@ pub struct SearchPlanResponseRest {
     pub storage_requests: StorageRequestCount,
 }
 
-/// Number of expected storage requests, per request kind
+/// Number of expected storage requests, per request kind.
+///
+/// These figures do not take in account whether the data is already cached or not.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
 pub struct StorageRequestCount {
     /// Number of split footer downloaded, always 1
