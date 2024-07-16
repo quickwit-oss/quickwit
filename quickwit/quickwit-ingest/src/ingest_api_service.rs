@@ -206,10 +206,10 @@ impl IngestApiService {
 
             num_docs += batch_num_docs;
             INGEST_METRICS
-                .ingested_num_bytes
+                .ingested_docs_bytes_valid
                 .inc_by(batch_num_bytes as u64);
             INGEST_METRICS
-                .ingested_num_docs
+                .ingested_docs_valid
                 .inc_by(batch_num_docs as u64);
         }
         // TODO we could fsync here and disable autosync to have better i/o perfs.
