@@ -260,7 +260,7 @@ impl CodeTokenStreamState {
                     }
                 }
             }
-            CodeTokenStreamState::ProcessingHex(state) => {
+            Self::ProcessingHex(state) => {
                 match state.consume_char(next_char_offset, next_char) {
                     HexResult::None => AdvanceResult::None,
                     HexResult::Emit(offsets) => {

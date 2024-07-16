@@ -82,7 +82,7 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
         true,
     );
     tokenizer_manager.register(
-        "code_hex",
+        "source_code_with_hex",
         TextAnalyzer::builder(CodeTokenizer::with_hex_support())
             .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
             .filter(LowerCaser)
