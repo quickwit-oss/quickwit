@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 pub(crate) mod ingest_controller;
+mod scaling_arbiter;
 mod wait_handle;
 
 pub use ingest_controller::IngestController;

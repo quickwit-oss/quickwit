@@ -1574,7 +1574,7 @@ mod tests {
         let shard_info = shard_infos.iter().next().unwrap();
         assert_eq!(shard_info.shard_id, ShardId::from(1));
         assert_eq!(shard_info.shard_state, ShardState::Open);
-        assert_eq!(shard_info.ingestion_rate, 0);
+        assert_eq!(shard_info.short_term_ingestion_rate, 0);
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         state_guard
