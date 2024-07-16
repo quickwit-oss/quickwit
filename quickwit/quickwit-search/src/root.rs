@@ -18,13 +18,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
-use quickwit_common::shared_consts::{DELETION_GRACE_PERIOD, SCROLL_BATCH_LEN};
+use quickwit_common::shared_consts;
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
@@ -63,7 +64,23 @@ use crate::{
 };
 
 /// Maximum accepted scroll TTL.
-const MAX_SCROLL_TTL: Duration = Duration::from_secs(DELETION_GRACE_PERIOD.as_secs() - 60 * 2);
+fn max_scroll_ttl() -> Duration {
+    static MAX_SCROLL_TTL_LOCK: OnceLock<Duration> = OnceLock::new();
+    *MAX_SCROLL_TTL_LOCK.get_or_init(|| {
+        let split_deletion_grace_period_secs =
+            shared_consts::split_deletion_grace_period().as_secs();
+        assert!(
+            split_deletion_grace_period_secs
+                >= shared_consts::MINIMUM_DELETION_GRACE_PERIOD.as_secs(),
+            "The split deletion grace period is too short ({}s). This should not happen.",
+            split_deletion_grace_period_secs
+        );
+        // We remove an extra margin of 2minutes from the split deletion grace period.
+        Duration::from_secs(
+            quickwit_common::shared_consts::split_deletion_grace_period().as_secs() - 60 * 2,
+        )
+    })
+}
 
 const SORT_DOC_FIELD_NAMES: &[&str] = &["_shard_doc", "_doc"];
 
@@ -506,10 +523,11 @@ fn get_scroll_ttl_duration(search_request: &SearchRequest) -> crate::Result<Opti
         return Ok(None);
     };
     let scroll_ttl: Duration = Duration::from_secs(scroll_ttl_secs as u64);
-    if scroll_ttl > MAX_SCROLL_TTL {
+    let max_scroll_ttl = max_scroll_ttl();
+    if scroll_ttl > max_scroll_ttl {
         return Err(SearchError::InvalidArgument(format!(
             "Quickwit only supports scroll TTL period up to {} secs",
-            MAX_SCROLL_TTL.as_secs()
+            max_scroll_ttl.as_secs()
         )));
     }
     Ok(Some(scroll_ttl))
@@ -530,7 +548,9 @@ async fn search_partial_hits_phase_with_scroll(
         // This is a scroll request.
         //
         // We increase max hits to add populate the scroll cache.
-        search_request.max_hits = search_request.max_hits.max(SCROLL_BATCH_LEN as u64);
+        search_request.max_hits = search_request
+            .max_hits
+            .max(shared_consts::SCROLL_BATCH_LEN as u64);
         search_request.scroll_ttl_secs = None;
         let mut leaf_search_resp = search_partial_hits_phase(
             searcher_context,
