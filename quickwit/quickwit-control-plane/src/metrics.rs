@@ -32,6 +32,7 @@ pub struct ControlPlaneMetrics {
     pub indexes_total: IntGauge,
     pub restart_total: IntCounter,
     pub schedule_total: IntCounter,
+    pub apply_total: IntCounter,
     pub metastore_error_aborted: IntCounter,
     pub metastore_error_maybe_executed: IntCounter,
     pub open_shards_total: IntGaugeVec<1>,
@@ -70,6 +71,12 @@ impl Default for ControlPlaneMetrics {
             schedule_total: new_counter(
                 "schedule_total",
                 "Number of control plane `schedule` operations.",
+                "control_plane",
+                &[],
+            ),
+            apply_total: new_counter(
+                "apply_total",
+                "Number of control plane `apply plan` operations.",
                 "control_plane",
                 &[],
             ),
