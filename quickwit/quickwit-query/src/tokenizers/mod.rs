@@ -46,6 +46,12 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
         .build();
     tokenizer_manager.register("raw", raw_tokenizer, false);
 
+    let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
+        .filter(LowerCaser)
+        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+        .build();
+    tokenizer_manager.register("raw_lowercase", raw_tokenizer, false);
+
     let lower_case_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
         .filter(LowerCaser)
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
@@ -75,6 +81,15 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
     tokenizer_manager.register(
         "source_code_default",
         TextAnalyzer::builder(CodeTokenizer::default())
+            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+            .filter(LowerCaser)
+            .filter(AsciiFoldingFilter)
+            .build(),
+        true,
+    );
+    tokenizer_manager.register(
+        "source_code_with_hex",
+        TextAnalyzer::builder(CodeTokenizer::with_hex_support())
             .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
             .filter(LowerCaser)
             .filter(AsciiFoldingFilter)
@@ -159,5 +174,21 @@ mod tests {
             tokens.push(token.text.to_string());
         }
         assert_eq!(tokens, vec!["pig", "cafe", "factory", "2"])
+    }
+
+    #[test]
+    fn test_raw_lowercase_tokenizer() {
+        let tokenizer_manager = super::create_default_quickwit_tokenizer_manager();
+        let my_long_text = "a text, that is just too long, no one will type it, no one will like \
+                            it, no one shall find it. I just need some more chars, now you may \
+                            not pass.";
+
+        let mut tokenizer = tokenizer_manager.get_tokenizer("raw_lowercase").unwrap();
+        let mut stream = tokenizer.token_stream(my_long_text);
+        assert!(stream.advance());
+        assert_eq!(stream.token().text.len(), my_long_text.len());
+        // there are non letter, so we can't check for all lowercase directly
+        assert!(stream.token().text.chars().all(|c| !c.is_uppercase()));
+        assert!(!stream.advance());
     }
 }

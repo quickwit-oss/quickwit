@@ -46,10 +46,9 @@ impl ConstantRate {
     ///
     /// # Panics
     ///
-    /// This function panics if `period` is 0.
+    /// This function panics if `period` is 0 while work is != 0.
     pub const fn new(work: u64, period: Duration) -> Self {
-        assert!(!period.is_zero());
-
+        assert!(!period.is_zero() || work == 0u64);
         Self { work, period }
     }
 
@@ -69,8 +68,10 @@ impl ConstantRate {
     ///
     /// This function panics if `new_period` is 0.
     pub fn rescale(&self, new_period: Duration) -> Self {
+        if self.work == 0u64 {
+            return Self::new(0u64, new_period);
+        }
         assert!(!new_period.is_zero());
-
         let new_work = self.work() as u128 * new_period.as_nanos() / self.period().as_nanos();
         Self::new(new_work as u64, new_period)
     }
@@ -89,6 +90,20 @@ impl Rate for ConstantRate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[should_panic]
+    fn test_rescale_zero_duration_panics() {
+        ConstantRate::bytes_per_period(ByteSize::b(1), Duration::default());
+    }
+
+    #[test]
+    fn test_rescale_zero_duration_accepted_if_no_work() {
+        let rate = ConstantRate::bytes_per_period(ByteSize::b(0), Duration::default());
+        let rescaled_rate = rate.rescale(Duration::from_secs(1));
+        assert_eq!(rescaled_rate.work_bytes(), ByteSize::b(0));
+        assert_eq!(rescaled_rate.period(), Duration::from_secs(1));
+    }
 
     #[test]
     fn test_rescale() {

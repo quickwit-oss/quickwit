@@ -76,6 +76,9 @@ service SearchService {
   rpc ListFields(ListFieldsRequest) returns (ListFieldsResponse);
 
   rpc LeafListFields(LeafListFieldsRequest) returns (ListFieldsResponse);
+
+  // Describe how a search would be processed.
+  rpc SearchPlan(SearchRequest) returns (SearchPlanResponse);
 }
 
 /// Scroll Request
@@ -296,6 +299,10 @@ message SearchResponse {
 
   // Scroll Id (only set if scroll_secs was set in the request)
   optional string scroll_id = 6;
+}
+
+message SearchPlanResponse {
+  string result = 1;
 }
 
 message SplitSearchError {

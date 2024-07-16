@@ -84,11 +84,11 @@ pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
 pub use crate::root::{
-    check_all_index_metadata_found, jobs_to_leaf_request, root_search, IndexMetasForLeafSearch,
-    SearchJob,
+    check_all_index_metadata_found, jobs_to_leaf_request, root_search, search_plan,
+    IndexMetasForLeafSearch, SearchJob,
 };
 pub use crate::search_job_placer::{Job, SearchJobPlacer};
-pub use crate::search_response_rest::SearchResponseRest;
+pub use crate::search_response_rest::{SearchPlanResponseRest, SearchResponseRest};
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 

@@ -17,9 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::time::Instant;
-
 use quickwit_common::tower::ConstantRate;
+use tokio::time::Instant;
 
 /// A naive rate meter that tracks how much work was performed during a period of time defined by
 /// two successive calls to `harvest`.
@@ -47,10 +46,7 @@ impl RateMeter {
     /// Returns the average work rate since the last call to this method and resets the internal
     /// state.
     pub fn harvest(&mut self) -> ConstantRate {
-        self.harvest_inner(Instant::now())
-    }
-
-    fn harvest_inner(&mut self, now: Instant) -> ConstantRate {
+        let now = Instant::now();
         let elapsed = now.duration_since(self.harvested_at);
         let rate = ConstantRate::new(self.total_work, elapsed);
         self.total_work = 0;
@@ -67,20 +63,25 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_rate_meter() {
+    #[tokio::test]
+    async fn test_rate_meter() {
+        tokio::time::pause();
         let mut rate_meter = RateMeter::default();
-        assert_eq!(rate_meter.total_work, 0);
 
-        let now = Instant::now();
-        rate_meter.harvested_at = now;
+        let rate = rate_meter.harvest();
+        assert_eq!(rate.work(), 0);
+        assert!(rate.period().is_zero());
 
-        let rate = rate_meter.harvest_inner(now + Duration::from_millis(100));
+        tokio::time::advance(Duration::from_millis(100)).await;
+
+        let rate = rate_meter.harvest();
         assert_eq!(rate.work(), 0);
         assert_eq!(rate.period(), Duration::from_millis(100));
 
         rate_meter.update(1);
-        let rate = rate_meter.harvest_inner(now + Duration::from_millis(200));
+        tokio::time::advance(Duration::from_millis(100)).await;
+
+        let rate = rate_meter.harvest();
         assert_eq!(rate.work(), 1);
         assert_eq!(rate.period(), Duration::from_millis(100));
     }
