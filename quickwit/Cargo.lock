@@ -783,7 +783,7 @@ dependencies = [
  "serde",
  "serde_dynamo",
  "serde_json",
- "serde_with 3.8.1",
+ "serde_with 3.9.0",
 ]
 
 [[package]]
@@ -5815,7 +5815,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "serde_with 3.8.1",
+ "serde_with 3.9.0",
  "serde_yaml",
  "tokio",
  "toml",
@@ -6207,7 +6207,7 @@ dependencies = [
  "sea-query-binder",
  "serde",
  "serde_json",
- "serde_with 3.8.1",
+ "serde_with 3.9.0",
  "serial_test",
  "sqlx",
  "tempfile",
@@ -6298,7 +6298,7 @@ dependencies = [
  "quickwit-datetime",
  "serde",
  "serde_json",
- "serde_with 3.8.1",
+ "serde_with 3.9.0",
  "tantivy",
  "thiserror",
  "time",
@@ -6422,7 +6422,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_qs 0.12.0",
- "serde_with 3.8.1",
+ "serde_with 3.9.0",
  "tempfile",
  "thiserror",
  "time",
@@ -7435,9 +7435,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.8.1"
+version = "3.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ad483d2ab0149d5a5ebcd9972a3852711e0153d863bf5a5d0391d28883c4a20"
+checksum = "69cecfa94848272156ea67b2b1a53f20fc7bc638c4a46d2f8abde08f05f4b857"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -7447,7 +7447,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "serde_with_macros 3.8.1",
+ "serde_with_macros 3.9.0",
  "time",
 ]
 
@@ -7465,9 +7465,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.8.1"
+version = "3.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65569b702f41443e8bc8bbb1c5779bd0450bbe723b56198980e80ec45780bce2"
+checksum = "a8fee4991ef4f274617a51ad4af30519438dacb2f56ac773b08a1922ff743350"
 dependencies = [
  "darling 0.20.9",
  "proc-macro2",
