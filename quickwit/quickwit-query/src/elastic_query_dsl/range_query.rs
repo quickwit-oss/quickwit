@@ -18,7 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::ops::Bound;
+use std::str::FromStr;
 
+use quickwit_datetime::StrptimeParser;
 use serde::Deserialize;
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
@@ -40,7 +42,6 @@ pub struct RangeQueryParams {
     lte: Option<JsonLiteral>,
     #[serde(default)]
     boost: Option<NotNaNf32>,
-    // Currently NO-OP (see #5109)
     #[serde(default)]
     format: Option<JsonLiteral>,
 }
@@ -56,8 +57,22 @@ impl ConvertableToQueryAst for RangeQuery {
             lt,
             lte,
             boost,
-            format: _,
+            format,
         } = self.value;
+        let (gt, gte, lt, lte) = if let Some(JsonLiteral::String(fmt)) = format {
+            let parser = StrptimeParser::from_str(&fmt).map_err(|reason| {
+                anyhow::anyhow!("failed to create parser from : {}; reason: {}", fmt, reason)
+            })?;
+            (
+                gt.map(|v| parse_and_convert(v, &parser)).transpose()?,
+                gte.map(|v| parse_and_convert(v, &parser)).transpose()?,
+                lt.map(|v| parse_and_convert(v, &parser)).transpose()?,
+                lte.map(|v| parse_and_convert(v, &parser)).transpose()?,
+            )
+        } else {
+            (gt, gte, lt, lte)
+        };
+
         let range_query_ast = crate::query_ast::RangeQuery {
             field,
             lower_bound: match (gt, gte) {
@@ -79,5 +94,55 @@ impl ConvertableToQueryAst for RangeQuery {
         };
         let ast: QueryAst = range_query_ast.into();
         Ok(ast.boost(boost))
+    }
+}
+
+fn parse_and_convert(literal: JsonLiteral, parser: &StrptimeParser) -> anyhow::Result<JsonLiteral> {
+    if let JsonLiteral::String(date_time_str) = literal {
+        let parsed_date_time = parser
+            .parse_date_time(&date_time_str)
+            .map_err(|reason| anyhow::anyhow!("Failed to parse date time: {}", reason))?;
+        Ok(JsonLiteral::String(parsed_date_time.to_string()))
+    } else {
+        Ok(literal)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use quickwit_datetime::StrptimeParser;
+
+    use crate::elastic_query_dsl::range_query::parse_and_convert;
+    use crate::JsonLiteral;
+
+    #[test]
+    fn test_parse_and_convert() -> anyhow::Result<()> {
+        let parser = StrptimeParser::from_str("%Y-%m-%d %H:%M:%S").unwrap();
+
+        // valid datetime
+        let input = JsonLiteral::String("2022-12-30 05:45:00".to_string());
+        let result = parse_and_convert(input, &parser)?;
+        assert_eq!(
+            result,
+            JsonLiteral::String("2022-12-30 5:45:00.0 +00:00:00".to_string())
+        );
+
+        // invalid datetime
+        let input = JsonLiteral::String("invalid datetime".to_string());
+        let result = parse_and_convert(input, &parser);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to parse date time"));
+
+        // non_string(number) input
+        let input = JsonLiteral::Number(27.into());
+        let result = parse_and_convert(input.clone(), &parser)?;
+        assert_eq!(result, input);
+
+        Ok(())
     }
 }
