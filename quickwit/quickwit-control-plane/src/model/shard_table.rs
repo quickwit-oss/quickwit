@@ -159,7 +159,7 @@ fn remove_shard_from_ingesters_internal(
 ) {
     for node in shard.ingesters() {
         let ingester_shards = ingester_shards
-            .get_mut(&node)
+            .get_mut(node)
             .expect("shard table reached inconsistent state");
         let shard_ids = ingester_shards.get_mut(source_uid).unwrap();
         let shard_was_removed = shard_ids.remove(shard.shard_id());
@@ -231,11 +231,7 @@ impl ShardTable {
                 for shard_id in shard_ids {
                     let shard_table_entry = self.table_entries.get(source_uid).unwrap();
                     debug_assert!(shard_table_entry.shard_entries.contains_key(shard_id));
-                    debug_assert!(shard_sets_in_shard_table.remove(&(
-                        node.clone(),
-                        source_uid,
-                        shard_id
-                    )));
+                    debug_assert!(shard_sets_in_shard_table.remove(&(node, source_uid, shard_id)));
                 }
             }
         }
@@ -365,7 +361,7 @@ impl ShardTable {
         }
         for shard in &opened_shards {
             for node in shard.ingesters() {
-                let ingester_shards = self.ingester_shards.entry(node).or_default();
+                let ingester_shards = self.ingester_shards.entry(node.to_owned()).or_default();
                 let shard_ids = ingester_shards.entry(source_uid.clone()).or_default();
                 shard_ids.insert(shard.shard_id().clone());
             }
