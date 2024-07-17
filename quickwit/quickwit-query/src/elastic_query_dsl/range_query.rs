@@ -34,8 +34,8 @@ use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::QueryAst;
 use crate::JsonLiteral;
 
-/// Elasticsearch/OpenSearch uses a set of preconfigured formats, more information could be found here
-/// https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping-date-format.html
+// Elasticsearch/OpenSearch uses a set of preconfigured formats, more information could be found
+// here https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping-date-format.html
 
 lazy_static! {
     static ref ELASTICSEARCH_FORMAT_TO_STRFTIME: HashMap<&'static str, &'static str> = {
@@ -44,6 +44,7 @@ lazy_static! {
         m.insert(r"^date_optional_time$", "%Y-%m-%dT%H:%M:%S.%3f%:z");
         m.insert(r"^strict_date_optional_time$", "%Y-%m-%dT%H:%M:%S.%3f%:z");
         m.insert(r"^yyyy-MM-dd$", "%Y-%m-%d");
+        m.insert(r"^basic_date$", "%Y%m%d");
         m.insert(r"^yyyyMMdd$", "%Y%m%d");
         m
     };
@@ -83,7 +84,7 @@ impl ConvertableToQueryAst for RangeQuery {
             format,
         } = self.value;
         let (gt, gte, lt, lte) = if let Some(JsonLiteral::String(fmt)) = format {
-            let parser = create_strptime_parser(&fmt)?;
+            let parser = create_strptime_parser(fmt)?;
             (
                 gt.map(|v| parse_and_convert(v, &parser)).transpose()?,
                 gte.map(|v| parse_and_convert(v, &parser)).transpose()?,
@@ -129,7 +130,7 @@ fn parse_and_convert(literal: JsonLiteral, parser: &StrptimeParser) -> anyhow::R
     }
 }
 
-fn create_strptime_parser(fmt: &String) -> Result<StrptimeParser, Error> {
+fn create_strptime_parser(fmt: String) -> Result<StrptimeParser, Error> {
     let strptime_format = convert_format_to_strpformat(&fmt)?;
     StrptimeParser::from_str(&strptime_format).map_err(|reason| {
         anyhow::anyhow!("failed to create parser from : {}; reason: {}", fmt, reason)
