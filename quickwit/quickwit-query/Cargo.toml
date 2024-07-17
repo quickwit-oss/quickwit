@@ -18,6 +18,7 @@ lindera-core = { workspace = true, optional = true }
 lindera-dictionary = { workspace = true, optional = true }
 lindera-tokenizer = { workspace = true, optional = true }
 once_cell = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
@@ -27,6 +28,7 @@ whichlang = { workspace = true, optional = true }
 
 quickwit-common = { workspace = true }
 quickwit-datetime = { workspace = true }
+lazy_static = "1.5.0"
 
 [dev-dependencies]
 criterion = { workspace = true }
