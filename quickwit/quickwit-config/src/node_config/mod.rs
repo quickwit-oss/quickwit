@@ -35,7 +35,7 @@ use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::node_config::serialize::load_node_config_with_env;
 use crate::service::QuickwitService;
@@ -324,6 +324,10 @@ impl IngestApiConfig {
             "max_queue_disk_usage ({}) must be at least max_queue_memory_usage ({})",
             self.max_queue_disk_usage,
             self.max_queue_memory_usage
+        );
+        info!(
+            "ingestion shard throughput limit: {:?}",
+            self.shard_throughput_limit
         );
         ensure!(
             self.shard_throughput_limit >= ByteSize::mib(1)

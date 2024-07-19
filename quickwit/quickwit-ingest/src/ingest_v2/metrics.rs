@@ -20,14 +20,16 @@
 use mrecordlog::ResourceUsage;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    exponential_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram_vec,
-    HistogramVec, IntCounterVec, IntGauge, IntGaugeVec,
+    exponential_buckets, linear_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram,
+    new_histogram_vec, Histogram, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec,
 };
 
 pub(super) struct IngestV2Metrics {
     pub reset_shards_operations_total: IntCounterVec<1>,
     pub open_shards: IntGauge,
     pub closed_shards: IntGauge,
+    pub shard_lt_throughput_mib: Histogram,
+    pub shard_st_throughput_mib: Histogram,
     pub wal_acquire_lock_requests_in_flight: IntGaugeVec<2>,
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
     pub wal_disk_used_bytes: IntGauge,
@@ -55,6 +57,18 @@ impl Default for IngestV2Metrics {
                 "Number of shards hosted by the ingester.",
                 "ingest",
                 &[("state", "closed")],
+            ),
+            shard_lt_throughput_mib: new_histogram(
+                "shard_lt_throughput_mib",
+                "Shard long term throughput as reported through chitchat",
+                "ingest",
+                linear_buckets(0.0f64, 1.0f64, 15).unwrap(),
+            ),
+            shard_st_throughput_mib: new_histogram(
+                "shard_st_throughput_mib",
+                "Shard short term throughput as reported through chitchat",
+                "ingest",
+                linear_buckets(0.0f64, 1.0f64, 15).unwrap(),
             ),
             wal_acquire_lock_requests_in_flight: new_gauge_vec(
                 "wal_acquire_lock_requests_in_flight",

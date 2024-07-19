@@ -198,12 +198,21 @@ impl ShardThroughputTimeSeriesMap {
         let mut per_source_shard_infos: BTreeMap<SourceUid, ShardInfos> = BTreeMap::new();
         for ((source_uid, shard_id), shard_time_series) in self.shard_time_series.iter() {
             let shard_state = shard_time_series.shard_state;
-            let short_term_ingestion_rate_mib_per_sec_u64 =
-                shard_time_series.last().as_u64() / ONE_MIB.as_u64();
+            let short_term_ingestion_rate_mib_per_sec_u64: u64 =
+                shard_time_series.last().as_u64().div_ceil(ONE_MIB.as_u64());
+            let long_term_ingestion_rate_mib_per_sec_u64: u64 = shard_time_series
+                .average()
+                .as_u64()
+                .div_ceil(ONE_MIB.as_u64());
+            INGEST_V2_METRICS
+                .shard_st_throughput_mib
+                .observe(short_term_ingestion_rate_mib_per_sec_u64 as f64);
+            INGEST_V2_METRICS
+                .shard_lt_throughput_mib
+                .observe(long_term_ingestion_rate_mib_per_sec_u64 as f64);
+
             let short_term_ingestion_rate =
                 RateMibPerSec(short_term_ingestion_rate_mib_per_sec_u64 as u16);
-            let long_term_ingestion_rate_mib_per_sec_u64 =
-                shard_time_series.average().as_u64() / ONE_MIB.as_u64();
             let long_term_ingestion_rate =
                 RateMibPerSec(long_term_ingestion_rate_mib_per_sec_u64 as u16);
             let shard_info = ShardInfo {
@@ -212,6 +221,7 @@ impl ShardThroughputTimeSeriesMap {
                 short_term_ingestion_rate,
                 long_term_ingestion_rate,
             };
+
             per_source_shard_infos
                 .entry(source_uid.clone())
                 .or_default()
