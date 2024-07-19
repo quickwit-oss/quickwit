@@ -67,18 +67,14 @@ use crate::{
 fn max_scroll_ttl() -> Duration {
     static MAX_SCROLL_TTL_LOCK: OnceLock<Duration> = OnceLock::new();
     *MAX_SCROLL_TTL_LOCK.get_or_init(|| {
-        let split_deletion_grace_period_secs =
-            shared_consts::split_deletion_grace_period().as_secs();
+        let split_deletion_grace_period = shared_consts::split_deletion_grace_period();
         assert!(
-            split_deletion_grace_period_secs
-                >= shared_consts::MINIMUM_DELETION_GRACE_PERIOD.as_secs(),
-            "The split deletion grace period is too short ({}s). This should not happen.",
-            split_deletion_grace_period_secs
+            split_deletion_grace_period
+                >= shared_consts::MINIMUM_DELETION_GRACE_PERIOD,
+            "The split deletion grace period is too short ({split_deletion_grace_period:?}). This should not happen."
         );
         // We remove an extra margin of 2minutes from the split deletion grace period.
-        Duration::from_secs(
-            quickwit_common::shared_consts::split_deletion_grace_period().as_secs() - 60 * 2,
-        )
+        split_deletion_grace_period - Duration::from_secs(60 * 2)
     })
 }
 
