@@ -17,15 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
 use std::ops::Bound;
-use std::str::FromStr;
 
-use anyhow::Error;
-use lazy_static::lazy_static;
-use once_cell::sync::Lazy;
 use quickwit_datetime::StrptimeParser;
-use regex::RegexSet;
 use serde::Deserialize;
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
@@ -33,25 +27,6 @@ use crate::elastic_query_dsl::ConvertableToQueryAst;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::QueryAst;
 use crate::JsonLiteral;
-
-// Elasticsearch/OpenSearch uses a set of preconfigured formats, more information could be found
-// here https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping-date-format.html
-
-lazy_static! {
-    static ref ELASTICSEARCH_FORMAT_TO_STRFTIME: HashMap<&'static str, &'static str> = {
-        let mut m = HashMap::new();
-        m.insert(r"^yyyy-MM-dd'T'HH:mm:ss\.SSSZ$", "%Y-%m-%dT%H:%M:%S.%3f%:z");
-        m.insert(r"^date_optional_time$", "%Y-%m-%dT%H:%M:%S.%3f%:z");
-        m.insert(r"^strict_date_optional_time$", "%Y-%m-%dT%H:%M:%S.%3f%:z");
-        m.insert(r"^yyyy-MM-dd$", "%Y-%m-%d");
-        m.insert(r"^basic_date$", "%Y%m%d");
-        m.insert(r"^yyyyMMdd$", "%Y%m%d");
-        m
-    };
-}
-
-static ELASTICSEARCH_FORMAT_REGEX_SET: Lazy<RegexSet> =
-    Lazy::new(|| RegexSet::new(ELASTICSEARCH_FORMAT_TO_STRFTIME.keys()).unwrap());
 
 #[derive(Deserialize, Debug, Default, Eq, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
@@ -83,8 +58,9 @@ impl ConvertableToQueryAst for RangeQuery {
             boost,
             format,
         } = self.value;
-        let (gt, gte, lt, lte) = if let Some(JsonLiteral::String(fmt)) = format {
-            let parser = create_strptime_parser(fmt)?;
+        let (gt, gte, lt, lte) = if let Some(JsonLiteral::String(java_date_format)) = format {
+            let parser = StrptimeParser::from_java_datetime_format(&java_date_format)
+                .map_err(|err| anyhow::anyhow!("failed to parse range query date format. {err}"))?;
             (
                 gt.map(|v| parse_and_convert(v, &parser)).transpose()?,
                 gte.map(|v| parse_and_convert(v, &parser)).transpose()?,
@@ -127,67 +103,5 @@ fn parse_and_convert(literal: JsonLiteral, parser: &StrptimeParser) -> anyhow::R
         Ok(JsonLiteral::String(parsed_date_time.to_string()))
     } else {
         Ok(literal)
-    }
-}
-
-fn create_strptime_parser(fmt: String) -> Result<StrptimeParser, Error> {
-    let strptime_format = convert_format_to_strpformat(&fmt)?;
-    StrptimeParser::from_str(&strptime_format).map_err(|reason| {
-        anyhow::anyhow!("failed to create parser from : {}; reason: {}", fmt, reason)
-    })
-}
-
-fn convert_format_to_strpformat(format: &str) -> Result<String, Error> {
-    let matches: Vec<_> = ELASTICSEARCH_FORMAT_REGEX_SET
-        .matches(format)
-        .into_iter()
-        .collect();
-    if matches.is_empty() {
-        return Err(anyhow::anyhow!("unsupported format {}", format));
-    }
-    let matching_pattern = &ELASTICSEARCH_FORMAT_REGEX_SET.patterns()[matches[0]];
-
-    match ELASTICSEARCH_FORMAT_TO_STRFTIME.get(matching_pattern.as_str()) {
-        Some(strftime_fmt) => Ok(strftime_fmt.to_string()),
-        None => Err(anyhow::anyhow!("no mapping provided for {}", format)),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-
-    use quickwit_datetime::StrptimeParser;
-
-    use crate::elastic_query_dsl::range_query::parse_and_convert;
-    use crate::JsonLiteral;
-
-    #[test]
-    fn test_parse_and_convert() -> anyhow::Result<()> {
-        let parser = StrptimeParser::from_str("%Y-%m-%d %H:%M:%S").unwrap();
-
-        // valid datetime
-        let input = JsonLiteral::String("2022-12-30 05:45:00".to_string());
-        let result = parse_and_convert(input, &parser)?;
-        assert_eq!(
-            result,
-            JsonLiteral::String("2022-12-30 5:45:00.0 +00:00:00".to_string())
-        );
-
-        // invalid datetime
-        let input = JsonLiteral::String("invalid datetime".to_string());
-        let result = parse_and_convert(input, &parser);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to parse date time"));
-
-        // non_string(number) input
-        let input = JsonLiteral::Number(27.into());
-        let result = parse_and_convert(input.clone(), &parser)?;
-        assert_eq!(result, input);
-
-        Ok(())
     }
 }

@@ -25,10 +25,10 @@ serde_with = { workspace = true }
 tantivy = { workspace = true }
 thiserror = { workspace = true }
 whichlang = { workspace = true, optional = true }
+time = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-datetime = { workspace = true }
-lazy_static = "1.5.0"
 
 [dev-dependencies]
 criterion = { workspace = true }
