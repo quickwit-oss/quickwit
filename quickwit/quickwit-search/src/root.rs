@@ -69,9 +69,9 @@ fn max_scroll_ttl() -> Duration {
     *MAX_SCROLL_TTL_LOCK.get_or_init(|| {
         let split_deletion_grace_period = shared_consts::split_deletion_grace_period();
         assert!(
-            split_deletion_grace_period
-                >= shared_consts::MINIMUM_DELETION_GRACE_PERIOD,
-            "The split deletion grace period is too short ({split_deletion_grace_period:?}). This should not happen."
+            split_deletion_grace_period >= shared_consts::MINIMUM_DELETION_GRACE_PERIOD,
+            "The split deletion grace period is too short ({split_deletion_grace_period:?}). This \
+             should not happen."
         );
         // We remove an extra margin of 2minutes from the split deletion grace period.
         split_deletion_grace_period - Duration::from_secs(60 * 2)
