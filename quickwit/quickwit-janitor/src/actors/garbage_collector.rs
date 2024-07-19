@@ -24,7 +24,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::{stream, StreamExt};
 use quickwit_actors::{Actor, ActorContext, Handler};
-use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
+use quickwit_common::shared_consts::split_deletion_grace_period;
 use quickwit_index_management::run_garbage_collect;
 use quickwit_metastore::ListIndexesMetadataResponseExt;
 use quickwit_proto::metastore::{
@@ -124,7 +124,7 @@ impl GarbageCollector {
                 storage,
                 metastore,
                 STAGED_GRACE_PERIOD,
-                DELETION_GRACE_PERIOD,
+                split_deletion_grace_period(),
                 false,
                 Some(ctx.progress()),
             ).await;
@@ -216,7 +216,7 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::Universe;
-    use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
+    use quickwit_common::shared_consts::split_deletion_grace_period;
     use quickwit_common::ServiceStream;
     use quickwit_metastore::{
         IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata,
@@ -281,7 +281,7 @@ mod tests {
                     SplitState::MarkedForDeletion => {
                         let expected_deletion_timestamp = OffsetDateTime::now_utc()
                             .unix_timestamp()
-                            - DELETION_GRACE_PERIOD.as_secs() as i64;
+                            - split_deletion_grace_period().as_secs() as i64;
                         assert_eq!(
                             query.update_timestamp.end,
                             Bound::Included(expected_deletion_timestamp),
@@ -336,7 +336,7 @@ mod tests {
             Arc::new(mock_storage),
             MetastoreServiceClient::from_mock(mock_metastore),
             STAGED_GRACE_PERIOD,
-            DELETION_GRACE_PERIOD,
+            split_deletion_grace_period(),
             false,
             None,
         )
