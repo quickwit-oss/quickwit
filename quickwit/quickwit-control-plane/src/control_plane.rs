@@ -626,6 +626,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
             .model
             .list_shards_for_index(&index_uid)
             .flat_map(|shard_entry| shard_entry.ingesters())
+            .map(|node_id_ref| node_id_ref.to_owned())
             .collect();
 
         self.model.delete_index(&index_uid);
@@ -750,6 +751,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
                 shard_entries
                     .values()
                     .flat_map(|shard_entry| shard_entry.ingesters())
+                    .map(|node_id_ref| node_id_ref.to_owned())
                     .collect()
             } else {
                 BTreeSet::new()
