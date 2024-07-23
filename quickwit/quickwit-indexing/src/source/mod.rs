@@ -571,13 +571,10 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use quickwit_config::{SourceInputFormat, VecSourceParams};
-    use quickwit_metastore::checkpoint::{IndexCheckpointDelta, PartitionId};
+    use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_metastore::IndexMetadata;
-    use quickwit_proto::ingest::{Shard, ShardState};
-    use quickwit_proto::metastore::{
-        IndexMetadataResponse, MockMetastoreService, OpenShardSubresponse, OpenShardsResponse,
-    };
-    use quickwit_proto::types::{NodeId, Position};
+    use quickwit_proto::metastore::{IndexMetadataResponse, MockMetastoreService};
+    use quickwit_proto::types::NodeId;
 
     use super::*;
 
@@ -649,7 +646,6 @@ mod tests {
         ) -> MetastoreServiceClient {
             let index_uid = self.index_uid.clone();
             let source_config = self.source_config.clone();
-            let source_checkpoint_delta_opt_clone = source_checkpoint_delta_opt.clone();
 
             let mut mock_metastore = MockMetastoreService::new();
             mock_metastore
@@ -663,7 +659,7 @@ mod tests {
                     let source_id = source_config.source_id.clone();
                     index_metadata.add_source(source_config.clone()).unwrap();
 
-                    if let Some(source_delta) = source_checkpoint_delta_opt_clone.clone() {
+                    if let Some(source_delta) = source_checkpoint_delta_opt.clone() {
                         let delta = IndexCheckpointDelta {
                             source_id,
                             source_delta,
@@ -673,47 +669,6 @@ mod tests {
                     let response =
                         IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap();
                     Ok(response)
-                });
-
-            let index_uid = self.index_uid.clone();
-            mock_metastore
-                .expect_open_shards()
-                .returning(move |request| {
-                    let subresponses = request
-                        .subrequests
-                        .iter()
-                        .map(|sub_req| {
-                            let partition_id: PartitionId = sub_req.shard_id().to_string().into();
-                            let position =
-                                if let Some(source_delta) = source_checkpoint_delta_opt.clone() {
-                                    let src_checkpoint = source_delta.get_source_checkpoint();
-                                    src_checkpoint
-                                        .position_for_partition(&partition_id)
-                                        .cloned()
-                                        .unwrap_or_default()
-                                } else {
-                                    Position::default()
-                                };
-
-                            OpenShardSubresponse {
-                                subrequest_id: sub_req.subrequest_id,
-                                open_shard: Some(Shard {
-                                    shard_id: sub_req.shard_id.clone(),
-                                    source_id: sub_req.source_id.clone(),
-                                    publish_token: sub_req.publish_token.clone(),
-                                    index_uid: Some(index_uid.clone()),
-                                    follower_id: sub_req.follower_id.clone(),
-                                    leader_id: sub_req.leader_id.clone(),
-                                    doc_mapping_uid: sub_req.doc_mapping_uid,
-                                    publish_position_inclusive: Some(position),
-                                    shard_state: ShardState::Open as i32,
-                                }),
-                            }
-                        })
-                        .collect();
-
-                    println!("subresponses: {:?}", subresponses);
-                    Ok(OpenShardsResponse { subresponses })
                 });
             MetastoreServiceClient::from_mock(mock_metastore)
         }
