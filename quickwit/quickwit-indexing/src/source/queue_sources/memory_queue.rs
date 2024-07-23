@@ -48,11 +48,11 @@ impl fmt::Debug for InnerState {
 
 /// A simple in-memory queue
 #[derive(Clone, Default, Debug)]
-pub struct MemoryQueue {
+pub struct MemoryQueueForTests {
     inner_state: Arc<Mutex<InnerState>>,
 }
 
-impl MemoryQueue {
+impl MemoryQueueForTests {
     pub fn send_message(&self, payload: String, ack_id: &str) {
         let message = RawMessage {
             payload: OwnedBytes::new(payload.into_bytes()),
@@ -68,7 +68,7 @@ impl MemoryQueue {
 }
 
 #[async_trait]
-impl Queue for MemoryQueue {
+impl Queue for MemoryQueueForTests {
     async fn receive(
         &self,
         max_messages: usize,
@@ -125,8 +125,8 @@ impl Queue for MemoryQueue {
 mod tests {
     use super::*;
 
-    fn prefilled_queue(nb_message: usize) -> MemoryQueue {
-        let memory_queue = MemoryQueue::default();
+    fn prefilled_queue(nb_message: usize) -> MemoryQueueForTests {
+        let memory_queue = MemoryQueueForTests::default();
         for i in 0..nb_message {
             let payload = format!("Test message {}", i);
             let ack_id = i.to_string();

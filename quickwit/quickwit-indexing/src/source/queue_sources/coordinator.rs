@@ -107,7 +107,8 @@ impl QueueCoordinator {
         }
     }
 
-    pub async fn try_from_config(
+    #[cfg(feature = "sqs")]
+    pub async fn try_from_sqs_config(
         config: FileSourceSqs,
         source_runtime: SourceRuntime,
     ) -> anyhow::Result<Self> {
@@ -237,7 +238,7 @@ impl QueueCoordinator {
                     .replace_currently_read(None)
                     .unwrap()
                     .visibility_handle
-                    .last_extension(self.visible_settings.deadline_for_last_extension)
+                    .request_last_extension(self.visible_settings.deadline_for_last_extension)
                     .await?;
                 self.observable_state.num_messages_processed += 1;
             }
@@ -292,13 +293,13 @@ mod tests {
     use super::*;
     use crate::models::RawDocBatch;
     use crate::source::doc_file_reader::file_test_helpers::{generate_dummy_doc_file, DUMMY_DOC};
-    use crate::source::queue_sources::memory_queue::MemoryQueue;
+    use crate::source::queue_sources::memory_queue::MemoryQueueForTests;
     use crate::source::queue_sources::message::PreProcessedPayload;
     use crate::source::queue_sources::shared_state::shared_state_for_tests::shared_state_for_tests;
     use crate::source::{SourceActor, BATCH_NUM_BYTES_LIMIT};
 
     fn setup_coordinator(
-        queue: Arc<MemoryQueue>,
+        queue: Arc<MemoryQueueForTests>,
         shared_state: QueueSharedState,
     ) -> QueueCoordinator {
         let pipeline_id = IndexingPipelineId {
@@ -325,7 +326,7 @@ mod tests {
 
     async fn process_messages(
         tracker: &mut QueueCoordinator,
-        queue: Arc<MemoryQueue>,
+        queue: Arc<MemoryQueueForTests>,
         messages: &[(&Uri, &str)],
     ) -> Vec<RawDocBatch> {
         let universe = Universe::with_accelerated_time();
@@ -370,7 +371,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_empty_queue() {
-        let queue = Arc::new(MemoryQueue::default());
+        let queue = Arc::new(MemoryQueueForTests::default());
         let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let batches = process_messages(&mut coordinator, queue, &[]).await;
@@ -379,7 +380,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_one_small_message() {
-        let queue = Arc::new(MemoryQueue::default());
+        let queue = Arc::new(MemoryQueueForTests::default());
         let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state.clone());
         let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
@@ -388,12 +389,12 @@ mod tests {
         let batches = process_messages(&mut coordinator, queue, &[(&test_uri, "ack-id")]).await;
         assert_eq!(batches.len(), 1);
         assert_eq!(batches[0].docs.len(), 10);
-        assert!(coordinator.local_state.is_awating_commit(&partition_id));
+        assert!(coordinator.local_state.is_awaiting_commit(&partition_id));
     }
 
     #[tokio::test]
     async fn test_process_one_big_message() {
-        let queue = Arc::new(MemoryQueue::default());
+        let queue = Arc::new(MemoryQueueForTests::default());
         let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let lines = BATCH_NUM_BYTES_LIMIT as usize / DUMMY_DOC.len() + 1;
@@ -406,7 +407,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_two_messages_different_compression() {
-        let queue = Arc::new(MemoryQueue::default());
+        let queue = Arc::new(MemoryQueueForTests::default());
         let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let (dummy_doc_file_1, _) = generate_dummy_doc_file(false, 10).await;
@@ -425,7 +426,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_local_duplicate_message() {
-        let queue = Arc::new(MemoryQueue::default());
+        let queue = Arc::new(MemoryQueueForTests::default());
         let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
@@ -446,7 +447,7 @@ mod tests {
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let partition_id = PreProcessedPayload::ObjectUri(test_uri.clone()).partition_id();
 
-        let queue = Arc::new(MemoryQueue::default());
+        let queue = Arc::new(MemoryQueueForTests::default());
         let shared_state = shared_state_for_tests(
             "test-index",
             &[(
@@ -467,7 +468,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_multiple_coordinator() {
-        let queue = Arc::new(MemoryQueue::default());
+        let queue = Arc::new(MemoryQueueForTests::default());
         let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut proc_1 = setup_coordinator(queue.clone(), shared_state.clone());
         let mut proc_2 = setup_coordinator(queue.clone(), shared_state.clone());
@@ -480,7 +481,7 @@ mod tests {
 
         assert_eq!(batches_1.len(), 1);
         assert_eq!(batches_1[0].docs.len(), 10);
-        assert!(proc_1.local_state.is_awating_commit(&partition_id));
+        assert!(proc_1.local_state.is_awaiting_commit(&partition_id));
         // proc_2 doesn't know for sure what is happening with the message
         // (proc_1 might have crashed), so it just acquires it and takes over
         // processing
@@ -489,6 +490,6 @@ mod tests {
         // period before a partition can be re-acquired
         assert_eq!(batches_2.len(), 1);
         assert_eq!(batches_2[0].docs.len(), 10);
-        assert!(proc_2.local_state.is_awating_commit(&partition_id));
+        assert!(proc_2.local_state.is_awaiting_commit(&partition_id));
     }
 }
