@@ -29,6 +29,7 @@ use crate::DEFAULT_REMOVE_TOKEN_LENGTH;
 
 const RAW_TOKENIZER_NAME: &str = "raw";
 const LOWERCASE_TOKENIZER_NAME: &str = "lowercase";
+const RAW_LOWERCASE_TOKENIZER_NAME: &str = "raw_lowercase";
 
 #[derive(Clone)]
 pub struct TokenizerManager {
@@ -50,6 +51,11 @@ impl TokenizerManager {
             .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
             .build();
         this.register(RAW_TOKENIZER_NAME, raw_tokenizer, false);
+        let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
+            .filter(LowerCaser)
+            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+            .build();
+        this.register(RAW_LOWERCASE_TOKENIZER_NAME, raw_tokenizer, true);
         let lower_case_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
             .filter(LowerCaser)
             .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
@@ -83,7 +89,7 @@ impl TokenizerManager {
             .get(tokenizer_name)
             .copied()?;
         let analyzer = if use_lowercaser {
-            LOWERCASE_TOKENIZER_NAME
+            RAW_LOWERCASE_TOKENIZER_NAME
         } else {
             RAW_TOKENIZER_NAME
         };

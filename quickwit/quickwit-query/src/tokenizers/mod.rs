@@ -50,7 +50,7 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
         .filter(LowerCaser)
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .build();
-    tokenizer_manager.register("raw_lowercase", raw_tokenizer, false);
+    tokenizer_manager.register("raw_lowercase", raw_tokenizer, true);
 
     let lower_case_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
         .filter(LowerCaser)
