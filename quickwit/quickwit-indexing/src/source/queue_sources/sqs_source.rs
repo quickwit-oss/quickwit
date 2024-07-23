@@ -59,8 +59,7 @@ impl SqsSource {
         source_runtime: SourceRuntime,
         source_params: SqsSourceParams,
     ) -> anyhow::Result<Self> {
-        let queue =
-            SqsQueue::try_new(source_params.queue_url, source_params.wait_time_seconds).await?;
+        let queue = SqsQueue::try_new(source_params.queue_url).await?;
         let _processor =
             QueueCoordinator::new(source_runtime, Arc::new(queue), MessageType::RawData);
         // TODO: implement the `MessageType::RawData` processing for the SQS source to work

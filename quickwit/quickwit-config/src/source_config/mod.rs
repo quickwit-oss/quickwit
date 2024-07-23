@@ -261,14 +261,7 @@ pub enum FileSourceMessageType {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct FileSourceSqs {
     pub queue_url: String,
-    /// Polling wait time in seconds for receiving messages. Leave default value.
-    #[serde(default = "default_wait_time_seconds")]
-    pub wait_time_seconds: u8,
     pub message_type: FileSourceMessageType,
-}
-
-fn default_wait_time_seconds() -> u8 {
-    20
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -337,9 +330,6 @@ pub struct PubSubSourceParams {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SqsSourceParams {
     pub queue_url: String,
-    /// Polling wait time in seconds for receiving messages. Leave default value.
-    #[serde(default = "default_wait_time_seconds")]
-    pub wait_time_seconds: u8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -864,7 +854,6 @@ mod tests {
                 FileSourceParams::Sqs(FileSourceSqs {
                     queue_url: "https://sqs.us-east-1.amazonaws.com/123456789012/queue-name"
                         .to_string(),
-                    wait_time_seconds: default_wait_time_seconds(),
                     message_type: FileSourceMessageType::S3Notification,
                 })
             );

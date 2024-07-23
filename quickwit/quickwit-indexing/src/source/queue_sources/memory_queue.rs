@@ -51,6 +51,7 @@ impl fmt::Debug for InnerState {
 #[derive(Clone, Debug)]
 pub struct MemoryQueueForTests {
     inner_state: Arc<Mutex<InnerState>>,
+    receive_sleep: Duration,
 }
 
 impl MemoryQueueForTests {
@@ -79,6 +80,7 @@ impl MemoryQueueForTests {
         });
         MemoryQueueForTests {
             inner_state: Arc::new(Mutex::new(InnerState::default())),
+            receive_sleep: Duration::from_millis(50),
         }
     }
 
@@ -108,7 +110,7 @@ impl MemoryQueueForTests {
 #[async_trait]
 impl Queue for MemoryQueueForTests {
     async fn receive(
-        &self,
+        self: Arc<Self>,
         max_messages: usize,
         suggested_deadline: Duration,
     ) -> anyhow::Result<Vec<RawMessage>> {
@@ -135,7 +137,7 @@ impl Queue for MemoryQueueForTests {
             }
         }
         // `sleep` to avoid using all the CPU when called in a loop
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(self.receive_sleep).await;
 
         Ok(vec![])
     }
@@ -170,14 +172,14 @@ impl Queue for MemoryQueueForTests {
 mod tests {
     use super::*;
 
-    fn prefilled_queue(nb_message: usize) -> MemoryQueueForTests {
+    fn prefilled_queue(nb_message: usize) -> Arc<MemoryQueueForTests> {
         let memory_queue = MemoryQueueForTests::new();
         for i in 0..nb_message {
             let payload = format!("Test message {}", i);
             let ack_id = i.to_string();
             memory_queue.send_message(payload.clone(), &ack_id);
         }
-        memory_queue
+        Arc::new(memory_queue)
     }
 
     #[tokio::test]
@@ -185,6 +187,7 @@ mod tests {
         let memory_queue = prefilled_queue(2);
         for i in 0..2 {
             let messages = memory_queue
+                .clone()
                 .receive(1, Duration::from_secs(5))
                 .await
                 .unwrap();
