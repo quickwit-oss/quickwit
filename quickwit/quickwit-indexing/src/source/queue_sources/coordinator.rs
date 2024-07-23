@@ -33,11 +33,12 @@ use serde::Serialize;
 use tracing::info;
 use ulid::Ulid;
 
+use super::helpers::QueueReceiver;
 use super::local_state::QueueLocalState;
 use super::message::{MessageType, PreProcessingError, ReadyMessage};
 use super::shared_state::{checkpoint_messages, QueueSharedState};
 use super::visibility::{spawn_visibility_task, VisibilitySettings};
-use super::{Queue, QueueReceiver};
+use super::Queue;
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 use crate::source::{SourceContext, SourceRuntime};
@@ -151,7 +152,6 @@ impl QueueCoordinator {
 
     /// Polls messages from the queue and prepares them for processing
     async fn poll_messages(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        // TODO increase `max_messages` when previous messages were small
         let raw_messages = self
             .queue_receiver
             .receive(1, self.visible_settings.deadline_for_receive)
