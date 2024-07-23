@@ -87,7 +87,10 @@ impl SourceConfigForSerialization {
                     )
                 }
             }
-            SourceParams::Kafka(_) | SourceParams::Kinesis(_) | SourceParams::Pulsar(_) => {
+            SourceParams::Kafka(_)
+            | SourceParams::Kinesis(_)
+            | SourceParams::Pulsar(_)
+            | SourceParams::Sqs(_) => {
                 // TODO consider any validation opportunity
             }
             SourceParams::PubSub(_)
