@@ -19,7 +19,7 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use async_trait::async_trait;
 use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::metastore::{
@@ -27,18 +27,19 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexUid, Position, ShardId};
 
-use super::message::{CheckpointedMessage, PreProcessedMessage};
-use super::Categorized;
+use super::message::PreProcessedMessage;
 
 #[async_trait]
 pub trait QueueSharedState: Send {
-    /// Fetches the status of the given messages and split them into processable
-    /// (with position) and already processed messages.
+    /// Tries to acquire the ownership for the provided messages from the global
+    /// shared context. For each message, if the ownership was successfully
+    /// acquired or the message was already successfully indexed, the position
+    /// is returned along with the message, otherwise the message is dropped.
     async fn checkpoint_messages(
         &mut self,
         publish_token: &str,
         messages: Vec<PreProcessedMessage>,
-    ) -> anyhow::Result<Categorized<CheckpointedMessage, PreProcessedMessage>>;
+    ) -> anyhow::Result<Vec<(PreProcessedMessage, Position)>>;
 }
 
 pub struct QueueSharedStateImpl {
@@ -55,7 +56,7 @@ impl QueueSharedStateImpl {
         &mut self,
         publish_token: &str,
         partitions: Vec<PartitionId>,
-    ) -> anyhow::Result<Categorized<(PartitionId, Position), PartitionId>> {
+    ) -> anyhow::Result<Vec<(PartitionId, Position)>> {
         let open_shard_subrequests = partitions
             .iter()
             .enumerate()
@@ -79,25 +80,22 @@ impl QueueSharedStateImpl {
             .await
             .unwrap();
 
-        let mut completed_shards = Vec::new();
-        let mut new_shards = Vec::new();
+        let mut shards = Vec::new();
         for sub in open_shard_resp.subresponses {
             let partition_id = partitions[sub.subrequest_id as usize].clone();
             let position = sub.open_shard().publish_position_inclusive();
-            if position.is_eof() {
-                completed_shards.push(partition_id);
-            } else if sub.open_shard().publish_token.as_deref() == Some(publish_token) {
-                new_shards.push((partition_id, position));
+            let is_owned = sub.open_shard().publish_token.as_deref() == Some(publish_token);
+            if position.is_eof() || (is_owned && position.is_beginning()) {
+                shards.push((partition_id, position));
+            } else if is_owned && !position.is_beginning() {
+                bail!("Partition is owned by this indexing pipeline but is not at the beginning. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
             }
         }
 
         // TODO: Add logic to re-acquire shards that have a token that is not
         // the local token but haven't been updated recently
 
-        Ok(Categorized {
-            processable: new_shards,
-            already_processed: completed_shards,
-        })
+        Ok(shards)
     }
 }
 
@@ -107,38 +105,23 @@ impl QueueSharedState for QueueSharedStateImpl {
         &mut self,
         publish_token: &str,
         messages: Vec<PreProcessedMessage>,
-    ) -> anyhow::Result<Categorized<CheckpointedMessage, PreProcessedMessage>> {
+    ) -> anyhow::Result<Vec<(PreProcessedMessage, Position)>> {
         let mut message_map =
             BTreeMap::from_iter(messages.into_iter().map(|msg| (msg.partition_id(), msg)));
         let partition_ids = message_map.keys().cloned().collect();
 
-        let Categorized {
-            processable,
-            already_processed,
-        } = self.acquire_shards(publish_token, partition_ids).await?;
+        let shards = self.acquire_shards(publish_token, partition_ids).await?;
 
-        let processable_messages = processable
+        shards
             .into_iter()
             .map(|(partition_id, position)| {
                 let content = message_map.remove(&partition_id).context("Unexpected partition ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")?;
-                Ok(CheckpointedMessage {
-                    position,
+                Ok((
                     content,
-                })
+                    position,
+                ))
             })
-            .collect::<anyhow::Result<_>>()?;
-
-        let already_processed_messages = already_processed
-            .into_iter()
-            .map(|partition_id| {
-                message_map.remove(&partition_id).context("Unexpected partition ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
-            })
-            .collect::<anyhow::Result<_>>()?;
-
-        Ok(Categorized {
-            processable: processable_messages,
-            already_processed: already_processed_messages,
-        })
+            .collect::<anyhow::Result<_>>()
     }
 }
 
@@ -185,10 +168,9 @@ pub mod shared_state_for_tests {
             &mut self,
             publish_token: &str,
             messages: Vec<PreProcessedMessage>,
-        ) -> anyhow::Result<Categorized<CheckpointedMessage, PreProcessedMessage>> {
+        ) -> anyhow::Result<Vec<(PreProcessedMessage, Position)>> {
             let mut state = self.state.lock().unwrap();
-            let mut processable_messages = Vec::new();
-            let mut already_processed_messages = Vec::new();
+            let mut checkpointed_messages = Vec::new();
             for message in messages {
                 let partition_id = message.partition_id();
                 let processing_state = state
@@ -203,10 +185,7 @@ pub mod shared_state_for_tests {
                             partition_id,
                             SharedStateForPartition::InProgress(publish_token.to_string()),
                         );
-                        processable_messages.push(CheckpointedMessage {
-                            position,
-                            content: message,
-                        });
+                        checkpointed_messages.push((message, position));
                     }
                     SharedStateForPartition::InProgress(in_progress_token) => {
                         assert_ne!(
@@ -217,14 +196,28 @@ pub mod shared_state_for_tests {
                         // the local token but haven't been updated recently
                     }
                     SharedStateForPartition::Completed => {
-                        already_processed_messages.push(message);
+                        checkpointed_messages.push((message, Position::Eof(None)));
                     }
                 }
             }
-            Ok(Categorized {
-                processable: processable_messages,
-                already_processed: already_processed_messages,
-            })
+            Ok(checkpointed_messages)
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    // use quickwit_metastore::metastore_for_test;
+
+    // use super::*;
+    // use crate::source::test_setup_helper::setup_index;
+
+    // #[tokio::test]
+    // async fn test_queue_shared_state_impl() {
+    //     let metastore = metastore_for_test();
+
+    //     // let index_uid = setup_index(metastore.clone()).await;
+
+    //     // TODO
+    // }
 }

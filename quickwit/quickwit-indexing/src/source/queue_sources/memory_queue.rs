@@ -85,10 +85,10 @@ impl Queue for MemoryQueue {
         Ok(vec![])
     }
 
-    async fn acknowledge(&self, ack_ids: &[&str]) -> anyhow::Result<()> {
+    async fn acknowledge(&self, ack_ids: &Vec<String>) -> anyhow::Result<()> {
         let mut inner_state = self.inner_state.lock().unwrap();
         for ack_id in ack_ids {
-            if let Some(msg) = inner_state.in_flight.remove(*ack_id) {
+            if let Some(msg) = inner_state.in_flight.remove(ack_id) {
                 inner_state.acked.push(msg);
             }
         }
