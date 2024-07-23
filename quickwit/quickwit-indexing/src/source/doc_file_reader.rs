@@ -22,6 +22,7 @@ use std::path::Path;
 
 use anyhow::Context;
 use async_compression::tokio::bufread::GzipDecoder;
+use async_trait::async_trait;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_metastore::checkpoint::PartitionId;
@@ -117,13 +118,6 @@ impl DocFileReader {
         Ok(reader)
     }
 
-    pub fn from_stdin() -> Self {
-        DocFileReader {
-            reader: SkipReader::new(Box::new(tokio::io::stdin()), 0),
-            next_offset: 0,
-        }
-    }
-
     /// Reads the next record from the underlying file. Returns `None` when EOF
     /// is reached.
     pub async fn next_record(&mut self) -> anyhow::Result<Option<FileRecord>> {
@@ -141,7 +135,19 @@ impl DocFileReader {
     }
 }
 
+#[async_trait]
+pub trait BatchReader: Send {
+    async fn read_batch(
+        &mut self,
+        source_ctx: &SourceContext,
+        source_type: SourceType,
+    ) -> anyhow::Result<BatchBuilder>;
+
+    fn is_eof(&self) -> bool;
+}
+
 pub struct ObjectUriBatchReader {
+    partition_id: PartitionId,
     reader: DocFileReader,
     current_offset: usize,
     is_eof: bool,
@@ -150,6 +156,7 @@ pub struct ObjectUriBatchReader {
 impl ObjectUriBatchReader {
     pub async fn try_new(
         storage_resolver: &StorageResolver,
+        partition_id: PartitionId,
         uri: &Uri,
         position: Position,
     ) -> anyhow::Result<Self> {
@@ -160,6 +167,7 @@ impl ObjectUriBatchReader {
                 .context("file offset should be stored as usize")?,
             Position::Eof(_) => {
                 return Ok(ObjectUriBatchReader {
+                    partition_id,
                     reader: DocFileReader::empty(),
                     current_offset: 0,
                     is_eof: true,
@@ -168,16 +176,19 @@ impl ObjectUriBatchReader {
         };
         let reader = DocFileReader::from_uri(storage_resolver, uri, current_offset).await?;
         Ok(ObjectUriBatchReader {
+            partition_id,
             reader,
             current_offset,
             is_eof: false,
         })
     }
+}
 
-    pub async fn read_batch(
+#[async_trait]
+impl BatchReader for ObjectUriBatchReader {
+    async fn read_batch(
         &mut self,
         source_ctx: &SourceContext,
-        partition_id: PartitionId,
         source_type: SourceType,
     ) -> anyhow::Result<BatchBuilder> {
         let limit_num_bytes = self.current_offset + BATCH_NUM_BYTES_LIMIT as usize;
@@ -201,7 +212,7 @@ impl ObjectUriBatchReader {
             batch_builder
                 .checkpoint_delta
                 .record_partition_delta(
-                    partition_id,
+                    self.partition_id.clone(),
                     Position::offset(self.current_offset),
                     to_position,
                 )
@@ -212,33 +223,40 @@ impl ObjectUriBatchReader {
         Ok(batch_builder)
     }
 
-    pub fn is_eof(&self) -> bool {
+    fn is_eof(&self) -> bool {
         self.is_eof
     }
 }
 
 pub struct StdinBatchReader {
-    reader: DocFileReader,
+    reader: BufReader<tokio::io::Stdin>,
     is_eof: bool,
 }
 
 impl StdinBatchReader {
     pub fn new() -> Self {
         Self {
-            reader: DocFileReader::from_stdin(),
+            reader: BufReader::new(tokio::io::stdin()),
             is_eof: false,
         }
     }
+}
 
-    pub async fn read_batch(
+#[async_trait]
+impl BatchReader for StdinBatchReader {
+    async fn read_batch(
         &mut self,
         source_ctx: &SourceContext,
         source_type: SourceType,
     ) -> anyhow::Result<BatchBuilder> {
         let mut batch_builder = BatchBuilder::new(source_type);
         while batch_builder.num_bytes < BATCH_NUM_BYTES_LIMIT {
-            if let Some(record) = source_ctx.protect_future(self.reader.next_record()).await? {
-                batch_builder.add_doc(record.doc);
+            let mut buf = String::new();
+            let bytes_read = source_ctx
+                .protect_future(self.reader.read_line(&mut buf))
+                .await?;
+            if bytes_read > 0 {
+                batch_builder.add_doc(buf.into());
             } else {
                 self.is_eof = true;
                 break;
@@ -248,7 +266,7 @@ impl StdinBatchReader {
         Ok(batch_builder)
     }
 
-    pub fn is_eof(&self) -> bool {
+    fn is_eof(&self) -> bool {
         self.is_eof
     }
 }
@@ -302,13 +320,15 @@ pub mod file_test_helpers {
         temp_file
     }
 
-    pub async fn generate_dummy_doc_file(gzip: bool, lines: usize) -> NamedTempFile {
+    pub async fn generate_dummy_doc_file(gzip: bool, lines: usize) -> (NamedTempFile, usize) {
         let mut documents_bytes = Vec::with_capacity(DUMMY_DOC.len() * lines);
         for _ in 0..lines {
             documents_bytes.write_all(DUMMY_DOC).unwrap();
             documents_bytes.write_all("\n".as_bytes()).unwrap();
         }
-        write_to_tmp(documents_bytes, gzip).await
+        let size = documents_bytes.len();
+        let file = write_to_tmp(documents_bytes, gzip).await;
+        (file, size)
     }
 
     pub async fn generate_index_doc_file(gzip: bool, lines: usize) -> NamedTempFile {

@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_config::{FileSourceMessageType, FileSourceSqs};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::SourceType;
@@ -33,6 +34,7 @@ use ulid::Ulid;
 use super::local_state::QueueLocalState;
 use super::message::{MessageType, ReadyMessage};
 use super::shared_state::{QueueSharedState, QueueSharedStateImpl};
+use super::sqs_queue::SqsQueue;
 use super::visibility::spawn_visibility_task;
 use super::Queue;
 use crate::actors::DocProcessor;
@@ -98,6 +100,22 @@ impl QueueCoordinator {
             publish_lock: PublishLock::default(),
             publish_token: Ulid::new().to_string(),
         }
+    }
+
+    pub async fn try_from_config(
+        config: FileSourceSqs,
+        source_runtime: SourceRuntime,
+    ) -> anyhow::Result<Self> {
+        let queue = SqsQueue::try_new(config.queue_url, config.wait_time_seconds).await?;
+        let message_type = match config.message_type {
+            FileSourceMessageType::S3Notification => MessageType::S3Notification,
+            FileSourceMessageType::RawUri => MessageType::RawUri,
+        };
+        Ok(QueueCoordinator::new(
+            source_runtime,
+            Arc::new(queue),
+            message_type,
+        ))
     }
 
     pub async fn initialize(
@@ -189,7 +207,7 @@ impl QueueCoordinator {
         if let Some(msg) = self.local_state.read_in_progress_mut() {
             debug!("process_batch");
             // TODO: should we kill the publish lock if the message visibility extension fails?
-            let batch_builder = msg.read_batch(ctx, self.source_type).await?;
+            let batch_builder = msg.reader.read_batch(ctx, self.source_type).await?;
             println!("batch_builder.num_bytes={}", batch_builder.num_bytes);
             if batch_builder.num_bytes > 0 {
                 self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
@@ -198,7 +216,7 @@ impl QueueCoordinator {
                     .send_message(batch_builder.build())
                     .await?;
             }
-            if msg.progress_tracker.is_eof() {
+            if msg.reader.is_eof() {
                 self.observable_state.num_messages_processed += 1;
                 self.local_state.replace_currently_read(None);
             }
@@ -342,7 +360,7 @@ mod tests {
         let queue = Arc::new(MemoryQueue::default());
         let shared_state = InMemoryQueueSharedState::default();
         let mut coordinator = setup_coordinator(queue.clone(), shared_state.clone());
-        let dummy_doc_file = generate_dummy_doc_file(false, 10).await;
+        let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let partition_id = PreProcessedPayload::ObjectUri(test_uri.clone()).partition_id();
         let batches = process_messages(&mut coordinator, queue, &[(&test_uri, "ack-id")]).await;
@@ -361,7 +379,7 @@ mod tests {
         let shared_state = InMemoryQueueSharedState::default();
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let lines = BATCH_NUM_BYTES_LIMIT as usize / DUMMY_DOC.len() + 1;
-        let dummy_doc_file = generate_dummy_doc_file(true, lines).await;
+        let (dummy_doc_file, _) = generate_dummy_doc_file(true, lines).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let batches = process_messages(&mut coordinator, queue, &[(&test_uri, "ack-id")]).await;
         assert_eq!(batches.len(), 2);
@@ -373,9 +391,9 @@ mod tests {
         let queue = Arc::new(MemoryQueue::default());
         let shared_state = InMemoryQueueSharedState::default();
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
-        let dummy_doc_file_1 = generate_dummy_doc_file(false, 10).await;
+        let (dummy_doc_file_1, _) = generate_dummy_doc_file(false, 10).await;
         let test_uri_1 = Uri::from_str(dummy_doc_file_1.path().to_str().unwrap()).unwrap();
-        let dummy_doc_file_2 = generate_dummy_doc_file(true, 10).await;
+        let (dummy_doc_file_2, _) = generate_dummy_doc_file(true, 10).await;
         let test_uri_2 = Uri::from_str(dummy_doc_file_2.path().to_str().unwrap()).unwrap();
         let batches = process_messages(
             &mut coordinator,
@@ -392,7 +410,7 @@ mod tests {
         let queue = Arc::new(MemoryQueue::default());
         let shared_state = InMemoryQueueSharedState::default();
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
-        let dummy_doc_file = generate_dummy_doc_file(false, 10).await;
+        let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let batches = process_messages(
             &mut coordinator,
@@ -409,7 +427,7 @@ mod tests {
         let queue = Arc::new(MemoryQueue::default());
         let shared_state = InMemoryQueueSharedState::default();
         let mut coordinator = setup_coordinator(queue.clone(), shared_state.clone());
-        let dummy_doc_file = generate_dummy_doc_file(false, 10).await;
+        let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let partition_id = PreProcessedPayload::ObjectUri(test_uri.clone()).partition_id();
 
@@ -427,7 +445,7 @@ mod tests {
         let shared_state = InMemoryQueueSharedState::default();
         let mut proc_1 = setup_coordinator(queue.clone(), shared_state.clone());
         let mut proc_2 = setup_coordinator(queue.clone(), shared_state.clone());
-        let dummy_doc_file = generate_dummy_doc_file(false, 10).await;
+        let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let partition_id = PreProcessedPayload::ObjectUri(test_uri.clone()).partition_id();
 

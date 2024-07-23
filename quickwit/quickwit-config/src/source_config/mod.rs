@@ -299,9 +299,10 @@ pub struct FileSourceUri {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case", tag = "mode")]
 pub enum FileSourceParams {
-    FileUri(FileSourceUri),
     Stdin,
     Sqs(FileSourceSqs),
+    #[serde(untagged)]
+    FileUri(FileSourceUri),
 }
 
 impl FileSourceParams {
@@ -842,6 +843,17 @@ mod tests {
     fn test_file_source_params_deserialization() {
         {
             let yaml = r#"
+                filepath: source-path.json
+            "#;
+            let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
+            let uri = Uri::from_str("source-path.json").unwrap();
+            assert_eq!(
+                file_params,
+                FileSourceParams::FileUri(FileSourceUri { filepath: uri })
+            );
+        }
+        {
+            let yaml = r#"
                 mode: file_uri
                 filepath: source-path.json
             "#;
@@ -1262,8 +1274,7 @@ mod tests {
             "max_num_pipelines_per_indexer": 1,
             "source_type": "file",
             "params": {
-              "filepath": "/test_non_json_corpus.txt",
-              "mode": "file_uri"
+              "filepath": "/test_non_json_corpus.txt"
             },
             "input_format": "plain_text"
         }"#;
