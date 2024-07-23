@@ -179,8 +179,6 @@ pub fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String> {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use time::macros::datetime;
     use time::Month;
 
@@ -262,7 +260,7 @@ mod tests {
             ),
         ];
         for (fmt, date_time_str, expected) in test_data {
-            let parser = StrptimeParser::from_str(fmt).unwrap();
+            let parser = StrptimeParser::from_strptime(fmt).unwrap();
             let result = parser.parse_date_time(date_time_str);
             if let Err(error) = &result {
                 panic!(
@@ -276,14 +274,14 @@ mod tests {
 
     #[test]
     fn test_parse_date_without_time() {
-        let strptime_parser = StrptimeParser::from_str("%Y-%m-%d").unwrap();
+        let strptime_parser = StrptimeParser::from_strptime("%Y-%m-%d").unwrap();
         let date = strptime_parser.parse_date_time("2012-05-21").unwrap();
         assert_eq!(date, datetime!(2012-05-21 00:00:00 UTC));
     }
 
     #[test]
     fn test_parse_date_am_pm_hour_not_zeroed() {
-        let strptime_parser = StrptimeParser::from_str("%Y-%m-%d %I:%M:%S %p").unwrap();
+        let strptime_parser = StrptimeParser::from_strptime("%Y-%m-%d %I:%M:%S %p").unwrap();
         let date = strptime_parser
             .parse_date_time("2012-05-21 10:05:12 pm")
             .unwrap();
@@ -309,13 +307,13 @@ mod tests {
                     DateTimeInputFormat::Rfc2822,
                     DateTimeInputFormat::Rfc3339,
                     DateTimeInputFormat::Strptime(
-                        StrptimeParser::from_str("%Y-%m-%d %H:%M:%S").unwrap(),
+                        StrptimeParser::from_strptime("%Y-%m-%d %H:%M:%S").unwrap(),
                     ),
                     DateTimeInputFormat::Strptime(
-                        StrptimeParser::from_str("%Y/%m/%d %H:%M:%S").unwrap(),
+                        StrptimeParser::from_strptime("%Y/%m/%d %H:%M:%S").unwrap(),
                     ),
                     DateTimeInputFormat::Strptime(
-                        StrptimeParser::from_str("%Y/%m/%d %H:%M:%S %z").unwrap(),
+                        StrptimeParser::from_strptime("%Y/%m/%d %H:%M:%S %z").unwrap(),
                     ),
                     DateTimeInputFormat::Timestamp,
                 ],
@@ -452,7 +450,7 @@ mod tests {
                     DateTimeInputFormat::Iso8601,
                     DateTimeInputFormat::Rfc3339,
                     DateTimeInputFormat::Strptime(
-                        StrptimeParser::from_str("%Y-%m-%d %H:%M:%S.%f").unwrap(),
+                        StrptimeParser::from_strptime("%Y-%m-%d %H:%M:%S.%f").unwrap(),
                     ),
                 ],
             )

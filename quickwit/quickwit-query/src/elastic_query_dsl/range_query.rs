@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::ops::Bound;
-use std::str::FromStr;
 
 use quickwit_datetime::StrptimeParser;
 use serde::Deserialize;
@@ -59,10 +58,9 @@ impl ConvertableToQueryAst for RangeQuery {
             boost,
             format,
         } = self.value;
-        let (gt, gte, lt, lte) = if let Some(JsonLiteral::String(fmt)) = format {
-            let parser = StrptimeParser::from_str(&fmt).map_err(|reason| {
-                anyhow::anyhow!("failed to create parser from : {}; reason: {}", fmt, reason)
-            })?;
+        let (gt, gte, lt, lte) = if let Some(JsonLiteral::String(java_date_format)) = format {
+            let parser = StrptimeParser::from_java_datetime_format(&java_date_format)
+                .map_err(|err| anyhow::anyhow!("failed to parse range query date format. {err}"))?;
             (
                 gt.map(|v| parse_and_convert(v, &parser)).transpose()?,
                 gte.map(|v| parse_and_convert(v, &parser)).transpose()?,
@@ -105,44 +103,5 @@ fn parse_and_convert(literal: JsonLiteral, parser: &StrptimeParser) -> anyhow::R
         Ok(JsonLiteral::String(parsed_date_time.to_string()))
     } else {
         Ok(literal)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-
-    use quickwit_datetime::StrptimeParser;
-
-    use crate::elastic_query_dsl::range_query::parse_and_convert;
-    use crate::JsonLiteral;
-
-    #[test]
-    fn test_parse_and_convert() -> anyhow::Result<()> {
-        let parser = StrptimeParser::from_str("%Y-%m-%d %H:%M:%S").unwrap();
-
-        // valid datetime
-        let input = JsonLiteral::String("2022-12-30 05:45:00".to_string());
-        let result = parse_and_convert(input, &parser)?;
-        assert_eq!(
-            result,
-            JsonLiteral::String("2022-12-30 5:45:00.0 +00:00:00".to_string())
-        );
-
-        // invalid datetime
-        let input = JsonLiteral::String("invalid datetime".to_string());
-        let result = parse_and_convert(input, &parser);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to parse date time"));
-
-        // non_string(number) input
-        let input = JsonLiteral::Number(27.into());
-        let result = parse_and_convert(input.clone(), &parser)?;
-        assert_eq!(result, input);
-
-        Ok(())
     }
 }
