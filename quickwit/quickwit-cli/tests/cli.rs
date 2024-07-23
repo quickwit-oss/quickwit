@@ -22,6 +22,7 @@
 mod helpers;
 
 use std::path::Path;
+use std::str::FromStr;
 
 use anyhow::Result;
 use clap::error::ErrorKind;
@@ -37,6 +38,7 @@ use quickwit_cli::tool::{
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
+use quickwit_common::uri::Uri;
 use quickwit_config::{RetentionPolicy, SourceInputFormat, CLI_SOURCE_ID};
 use quickwit_metastore::{
     ListSplitsRequestExt, MetastoreResolver, MetastoreServiceExt, MetastoreServiceStreamSplitsExt,
@@ -61,17 +63,21 @@ async fn create_logs_index(test_env: &TestEnv) -> anyhow::Result<()> {
     create_index_cli(args).await
 }
 
-async fn local_ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Result<()> {
+async fn local_ingest_docs(uri: Uri, test_env: &TestEnv) -> anyhow::Result<()> {
     let args = LocalIngestDocsArgs {
         config_uri: test_env.resource_files.config.clone(),
         index_id: test_env.index_id.clone(),
-        input_path_opt: Some(input_path.to_path_buf()),
+        input_path_opt: Some(uri),
         input_format: SourceInputFormat::Json,
         overwrite: false,
         clear_cache: true,
         vrl_script: None,
     };
     local_ingest_docs_cli(args).await
+}
+
+async fn local_ingest_log_docs(test_env: &TestEnv) -> anyhow::Result<()> {
+    local_ingest_docs(test_env.resource_files.log_docs.clone(), test_env).await
 }
 
 #[test]
@@ -252,6 +258,7 @@ async fn test_ingest_docs_cli() {
 
     // Ensure cache directory is empty.
     let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
+    let data_dir_uri = Uri::from_str(test_env.data_dir_path.to_str().unwrap()).unwrap();
 
     assert!(cache_directory_path.read_dir().unwrap().next().is_none());
 
@@ -259,7 +266,7 @@ async fn test_ingest_docs_cli() {
     let args = LocalIngestDocsArgs {
         config_uri: test_env.resource_files.config,
         index_id: test_env.index_id,
-        input_path_opt: Some(test_env.data_dir_path.join("file-does-not-exist.json")),
+        input_path_opt: Some(data_dir_uri.join("file-does-not-exist.json").unwrap()),
         input_format: SourceInputFormat::Json,
         overwrite: false,
         clear_cache: true,
@@ -332,9 +339,7 @@ async fn test_cmd_search_aggregation() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
-        .await
-        .unwrap();
+    local_ingest_log_docs(&test_env).await.unwrap();
 
     let aggregation: Value = json!(
     {
@@ -432,9 +437,7 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
-        .await
-        .unwrap();
+    local_ingest_log_docs(&test_env).await.unwrap();
 
     // search with snippets
     let args = SearchIndexArgs {
@@ -487,9 +490,7 @@ async fn test_search_index_cli() {
         sort_by_score: false,
     };
 
-    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
-        .await
-        .unwrap();
+    local_ingest_log_docs(&test_env).await.unwrap();
 
     let args = create_search_args("level:info");
 
@@ -600,9 +601,7 @@ async fn test_delete_index_cli_dry_run() {
         .unwrap();
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
-    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
-        .await
-        .unwrap();
+    local_ingest_log_docs(&test_env).await.unwrap();
 
     // On non-empty index
     let args = create_delete_args(true);
@@ -626,9 +625,7 @@ async fn test_delete_index_cli() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
-        .await
-        .unwrap();
+    local_ingest_log_docs(&test_env).await.unwrap();
 
     let args = DeleteIndexArgs {
         client_args: test_env.default_client_args(),
@@ -652,9 +649,7 @@ async fn test_garbage_collect_cli_no_grace() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
     let index_uid = test_env.index_metadata().await.unwrap().index_uid;
-    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
-        .await
-        .unwrap();
+    local_ingest_log_docs(&test_env).await.unwrap();
 
     let metastore = MetastoreResolver::unconfigured()
         .resolve(&test_env.metastore_uri)
@@ -762,9 +757,7 @@ async fn test_garbage_collect_index_cli() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
     let index_uid = test_env.index_metadata().await.unwrap().index_uid;
-    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
-        .await
-        .unwrap();
+    local_ingest_log_docs(&test_env).await.unwrap();
 
     let refresh_metastore = |metastore| async {
         // In this test we rely on the file backed metastore and
@@ -914,9 +907,7 @@ async fn test_all_local_index() {
         .unwrap();
     assert!(metadata_file_exists);
 
-    local_ingest_docs(test_env.resource_files.log_docs.as_path(), &test_env)
-        .await
-        .unwrap();
+    local_ingest_log_docs(&test_env).await.unwrap();
 
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
@@ -970,16 +961,21 @@ async fn test_all_with_s3_localstack_cli() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    let s3_path = upload_test_file(
+    let s3_uri = upload_test_file(
         test_env.storage_resolver.clone(),
-        test_env.resource_files.log_docs.clone(),
+        test_env
+            .resource_files
+            .log_docs
+            .filepath()
+            .unwrap()
+            .to_path_buf(),
         "quickwit-integration-tests",
         "sources/",
         &append_random_suffix("test-all--cli-s3-localstack"),
     )
     .await;
 
-    local_ingest_docs(&s3_path, &test_env).await.unwrap();
+    local_ingest_docs(s3_uri, &test_env).await.unwrap();
 
     // Cli search
     let args = SearchIndexArgs {
