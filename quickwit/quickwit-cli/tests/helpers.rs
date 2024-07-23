@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -191,8 +191,8 @@ pub enum TestStorageType {
     LocalFileSystem,
 }
 
-fn uri_from_path(path: PathBuf) -> Uri {
-    Uri::from_str(&format!("file://{}", path.display())).unwrap()
+pub fn uri_from_path(path: &Path) -> Uri {
+    Uri::from_str(path.to_str().unwrap()).unwrap()
 }
 
 /// Creates all necessary artifacts in a test environment.
@@ -264,12 +264,12 @@ pub async fn create_test_env(
         .context("failed to parse cluster endpoint")?;
 
     let resource_files = TestResourceFiles {
-        config: uri_from_path(node_config_path),
-        index_config: uri_from_path(index_config_path),
-        index_config_without_uri: uri_from_path(index_config_without_uri_path),
-        index_config_with_retention: uri_from_path(index_config_with_retention_path),
-        log_docs: uri_from_path(log_docs_path),
-        wikipedia_docs: uri_from_path(wikipedia_docs_path),
+        config: uri_from_path(&node_config_path),
+        index_config: uri_from_path(&index_config_path),
+        index_config_without_uri: uri_from_path(&index_config_without_uri_path),
+        index_config_with_retention: uri_from_path(&index_config_with_retention_path),
+        log_docs: uri_from_path(&log_docs_path),
+        wikipedia_docs: uri_from_path(&wikipedia_docs_path),
     };
 
     Ok(TestEnv {
