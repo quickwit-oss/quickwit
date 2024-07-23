@@ -224,7 +224,7 @@ impl QueueCoordinator {
             // TODO: should we kill the publish lock if the message visibility extension fails?
             let batch_builder = in_progress_ref
                 .reader
-                .read_batch(ctx, self.source_type)
+                .read_batch(ctx.progress(), self.source_type)
                 .await?;
             if batch_builder.num_bytes > 0 {
                 self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
@@ -452,10 +452,7 @@ mod tests {
             "test-index",
             &[(
                 partition_id.clone(),
-                (
-                    "existing_token".to_string(),
-                    Position::Eof(Some(file_size.into())),
-                ),
+                ("existing_token".to_string(), Position::eof(file_size)),
             )],
         );
         let mut coordinator = setup_coordinator(queue.clone(), shared_state.clone());
