@@ -63,6 +63,10 @@ pub struct QueueCoordinatorObservableState {
     pub num_messages_failed_opening: u64,
 }
 
+/// The `QueueCoordinator` fetches messages from a queue, converts them into
+/// record batches, and tracks the messages' state until their entire content is
+/// published. Its API closely resembles the [`crate::source::Source`] trait,
+/// making the implementation of queue sources straightforward.
 pub struct QueueCoordinator {
     storage_resolver: StorageResolver,
     pipeline_id: IndexingPipelineId,
@@ -187,7 +191,7 @@ impl QueueCoordinator {
         // in rare situations, there might be duplicates within a batch
         let deduplicated_messages = preprocessed_messages
             .into_iter()
-            .dedup_by(|x, y| x.partition_id() == y.partition_id());
+            .unique_by(|x| x.partition_id());
 
         let mut untracked_locally = Vec::new();
         let mut already_completed = Vec::new();
@@ -247,13 +251,11 @@ impl QueueCoordinator {
                 .batch_reader
                 .read_batch(ctx.progress(), self.source_type)
                 .await?;
-            if batch_builder.num_bytes > 0 {
-                self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
-                self.observable_state.num_bytes_processed += batch_builder.num_bytes;
-                doc_processor_mailbox
-                    .send_message(batch_builder.build())
-                    .await?;
-            }
+            self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
+            self.observable_state.num_bytes_processed += batch_builder.num_bytes;
+            doc_processor_mailbox
+                .send_message(batch_builder.build())
+                .await?;
             if in_progress_ref.batch_reader.is_eof() {
                 self.local_state
                     .drop_currently_read(self.visible_settings.deadline_for_last_extension)

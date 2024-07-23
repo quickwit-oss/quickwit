@@ -22,7 +22,10 @@ use std::time::Duration;
 
 use futures::future::BoxFuture;
 
-use super::{Queue, ReceiveResult};
+use super::message::RawMessage;
+use super::Queue;
+
+type ReceiveResult = anyhow::Result<Vec<RawMessage>>;
 
 /// A statefull wrapper around a `Queue` that chunks the slow `receive()` call
 /// into shorter iterations. This enables yielding back to the actor system
@@ -48,7 +51,7 @@ impl QueueReceiver {
         &mut self,
         max_messages: usize,
         suggested_deadline: Duration,
-    ) -> ReceiveResult {
+    ) -> anyhow::Result<Vec<RawMessage>> {
         if self.receive.is_none() {
             self.receive = Some(self.queue.clone().receive(max_messages, suggested_deadline));
         }
@@ -85,7 +88,7 @@ mod tests {
             self: Arc<Self>,
             _max_messages: usize,
             _suggested_deadline: Duration,
-        ) -> ReceiveResult {
+        ) -> anyhow::Result<Vec<RawMessage>> {
             tokio::time::sleep(self.receive_sleep).await;
             bail!("Waking up from my nap")
         }

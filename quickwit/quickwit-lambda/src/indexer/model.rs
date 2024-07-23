@@ -33,7 +33,7 @@ pub enum IndexerEvent {
 
 impl IndexerEvent {
     pub fn uri(&self) -> anyhow::Result<Uri> {
-        let path = match self {
+        let path: String = match self {
             IndexerEvent::Custom { source_uri } => source_uri.clone(),
             IndexerEvent::S3(event) => [
                 "s3://",

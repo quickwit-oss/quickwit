@@ -290,7 +290,7 @@ impl fmt::Display for SourceType {
             SourceType::Nats => "NATS",
             SourceType::PubSub => "Google Cloud Pub/Sub",
             SourceType::Pulsar => "Apache Pulsar",
-            SourceType::Stdin => "stdin",
+            SourceType::Stdin => "Stdin",
             SourceType::Sqs => "Amazon SQS",
             SourceType::Unspecified => "unspecified",
             SourceType::Vec => "vec",

@@ -82,8 +82,8 @@ impl SourceConfigForSerialization {
         match &self.source_params {
             SourceParams::Stdin => {
                 bail!(
-                    "stdin ingestions are limited to a local usage. Please use the CLI command \
-                     `quickwit tool local-ingest`."
+                    "stdin can only be used as source through the CLI command `quickwit tool \
+                     local-ingest`"
                 );
             }
             SourceParams::File(_)

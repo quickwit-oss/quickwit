@@ -56,7 +56,7 @@ impl SkipReader {
 
     async fn skip(&mut self) -> io::Result<()> {
         // allocate on the heap to avoid stack overflows
-        let mut buf = vec![0u8; 64000];
+        let mut buf = vec![0u8; 64_000];
         while self.num_bytes_to_skip > 0 {
             let num_bytes_to_read = self.num_bytes_to_skip.min(buf.len());
             let num_bytes_read = self
@@ -130,7 +130,7 @@ impl DocFileReader {
     /// is reached.
     pub async fn next_record(&mut self) -> anyhow::Result<Option<FileRecord>> {
         let mut buf = String::new();
-        // TODO add retry if read stream is broken because of a transient error
+        // TODO retry if stream is broken (#5243)
         let (bytes_read, is_last) = self.reader.read_line_and_peek(&mut buf).await?;
         if bytes_read == 0 {
             Ok(None)
@@ -206,20 +206,17 @@ impl ObjectUriBatchReader {
                 break;
             }
         }
-        if batch_builder.num_bytes > 0 {
-            let to_position = if self.is_eof {
-                Position::eof(new_offset)
-            } else {
-                Position::offset(new_offset)
-            };
-            batch_builder.checkpoint_delta.record_partition_delta(
-                self.partition_id.clone(),
-                Position::offset(self.current_offset),
-                to_position,
-            )?;
-            self.current_offset = new_offset;
-        }
-
+        let to_position = if self.is_eof {
+            Position::eof(new_offset)
+        } else {
+            Position::offset(new_offset)
+        };
+        batch_builder.checkpoint_delta.record_partition_delta(
+            self.partition_id.clone(),
+            Position::offset(self.current_offset),
+            to_position,
+        )?;
+        self.current_offset = new_offset;
         Ok(batch_builder)
     }
 
@@ -391,6 +388,13 @@ mod tests {
         aux_test_full_read_record("data/test_corpus.json.gz", 4).await;
     }
 
+    #[tokio::test]
+    async fn test_empty_file() {
+        let empty_file = tempfile::NamedTempFile::new().unwrap();
+        let empty_file_uri = empty_file.path().to_str().unwrap();
+        aux_test_full_read_record(empty_file_uri, 0).await;
+    }
+
     async fn aux_test_resumed_read_record(
         file: impl AsRef<str>,
         expected_lines: usize,
@@ -471,9 +475,7 @@ mod tests {
                 .await
                 .unwrap();
             parsed_lines += batch.docs.len();
-            if batch.num_bytes > 0 {
-                parsed_batches += 1;
-            }
+            parsed_batches += 1;
             checkpoint_delta.extend(batch.checkpoint_delta).unwrap();
         }
         assert_eq!(parsed_lines, expected_lines);
@@ -484,6 +486,13 @@ mod tests {
             .unwrap()
             .clone();
         assert_eq!(position, Position::eof(file_size))
+    }
+
+    #[tokio::test]
+    async fn test_read_batch_empty_file() {
+        let empty_file = tempfile::NamedTempFile::new().unwrap();
+        let empty_file_uri = empty_file.path().to_str().unwrap();
+        aux_test_full_read_batch(empty_file_uri, 0, 1, 0, Position::Beginning).await;
     }
 
     #[tokio::test]
