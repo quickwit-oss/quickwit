@@ -34,7 +34,7 @@ use ulid::Ulid;
 
 use super::local_state::QueueLocalState;
 use super::message::{MessageType, ReadyMessage};
-use super::shared_state::{checkpoint_messages, QueueSharedState, QueueSharedStateImpl};
+use super::shared_state::{checkpoint_messages, QueueSharedState};
 use super::sqs_queue::SqsQueue;
 use super::visibility::{spawn_visibility_task, VisibilitySettings};
 use super::Queue;
@@ -64,7 +64,7 @@ pub struct QueueCoordinator {
     observable_state: QueueCoordinatorObservableState,
     message_type: MessageType,
     publish_lock: PublishLock,
-    shared_state: Box<dyn QueueSharedState + Sync>,
+    shared_state: QueueSharedState,
     local_state: QueueLocalState,
     publish_token: String,
     visible_settings: VisibilitySettings,
@@ -87,11 +87,11 @@ impl QueueCoordinator {
         message_type: MessageType,
     ) -> Self {
         Self {
-            shared_state: Box::new(QueueSharedStateImpl {
+            shared_state: QueueSharedState {
                 metastore: source_runtime.metastore,
                 source_id: source_runtime.pipeline_id.source_id.clone(),
                 index_uid: source_runtime.pipeline_id.index_uid.clone(),
-            }),
+            },
             local_state: QueueLocalState::default(),
             pipeline_id: source_runtime.pipeline_id,
             source_type: source_runtime.source_config.source_type(),
@@ -178,12 +178,8 @@ impl QueueCoordinator {
             }
         }
 
-        let checkpointed_messages = checkpoint_messages(
-            self.shared_state.as_ref(),
-            &self.publish_token,
-            untracked_locally,
-        )
-        .await?;
+        let checkpointed_messages =
+            checkpoint_messages(&self.shared_state, &self.publish_token, untracked_locally).await?;
 
         let mut ready_messages = Vec::new();
         for (message, position) in checkpointed_messages {
@@ -289,7 +285,7 @@ mod tests {
 
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::uri::Uri;
-    use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
+    use quickwit_proto::types::{NodeId, PipelineUid, Position};
     use tokio::sync::watch;
     use ulid::Ulid;
 
@@ -298,25 +294,23 @@ mod tests {
     use crate::source::doc_file_reader::file_test_helpers::{generate_dummy_doc_file, DUMMY_DOC};
     use crate::source::queue_sources::memory_queue::MemoryQueue;
     use crate::source::queue_sources::message::PreProcessedPayload;
-    use crate::source::queue_sources::shared_state::shared_state_for_tests::{
-        InMemoryQueueSharedState, SharedStateForPartition,
-    };
+    use crate::source::queue_sources::shared_state::shared_state_for_tests::shared_state_for_tests;
     use crate::source::{SourceActor, BATCH_NUM_BYTES_LIMIT};
 
     fn setup_coordinator(
         queue: Arc<MemoryQueue>,
-        shared_state: InMemoryQueueSharedState,
+        shared_state: QueueSharedState,
     ) -> QueueCoordinator {
         let pipeline_id = IndexingPipelineId {
             node_id: NodeId::from_str("test-node").unwrap(),
-            index_uid: IndexUid::for_test("test-index", 0),
-            source_id: "test-source".to_string(),
+            index_uid: shared_state.index_uid.clone(),
+            source_id: shared_state.source_id.clone(),
             pipeline_uid: PipelineUid::random(),
         };
 
         QueueCoordinator {
             local_state: QueueLocalState::default(),
-            shared_state: Box::new(shared_state.clone()),
+            shared_state,
             pipeline_id,
             observable_state: QueueCoordinatorObservableState::default(),
             publish_lock: PublishLock::default(),
@@ -377,7 +371,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_empty_queue() {
         let queue = Arc::new(MemoryQueue::default());
-        let shared_state = InMemoryQueueSharedState::default();
+        let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let batches = process_messages(&mut coordinator, queue, &[]).await;
         assert_eq!(batches.len(), 0);
@@ -386,7 +380,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_one_small_message() {
         let queue = Arc::new(MemoryQueue::default());
-        let shared_state = InMemoryQueueSharedState::default();
+        let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state.clone());
         let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
@@ -394,17 +388,13 @@ mod tests {
         let batches = process_messages(&mut coordinator, queue, &[(&test_uri, "ack-id")]).await;
         assert_eq!(batches.len(), 1);
         assert_eq!(batches[0].docs.len(), 10);
-        assert_eq!(
-            shared_state.get(&partition_id),
-            SharedStateForPartition::InProgress(coordinator.publish_token)
-        );
         assert!(coordinator.local_state.is_awating_commit(&partition_id));
     }
 
     #[tokio::test]
     async fn test_process_one_big_message() {
         let queue = Arc::new(MemoryQueue::default());
-        let shared_state = InMemoryQueueSharedState::default();
+        let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let lines = BATCH_NUM_BYTES_LIMIT as usize / DUMMY_DOC.len() + 1;
         let (dummy_doc_file, _) = generate_dummy_doc_file(true, lines).await;
@@ -417,7 +407,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_two_messages_different_compression() {
         let queue = Arc::new(MemoryQueue::default());
-        let shared_state = InMemoryQueueSharedState::default();
+        let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let (dummy_doc_file_1, _) = generate_dummy_doc_file(false, 10).await;
         let test_uri_1 = Uri::from_str(dummy_doc_file_1.path().to_str().unwrap()).unwrap();
@@ -436,7 +426,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_local_duplicate_message() {
         let queue = Arc::new(MemoryQueue::default());
-        let shared_state = InMemoryQueueSharedState::default();
+        let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
@@ -451,15 +441,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_process_shared_duplicate_message() {
-        let queue = Arc::new(MemoryQueue::default());
-        let shared_state = InMemoryQueueSharedState::default();
-        let mut coordinator = setup_coordinator(queue.clone(), shared_state.clone());
-        let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
+    async fn test_process_shared_complete_message() {
+        let (dummy_doc_file, file_size) = generate_dummy_doc_file(false, 10).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let partition_id = PreProcessedPayload::ObjectUri(test_uri.clone()).partition_id();
 
-        shared_state.set(partition_id.clone(), SharedStateForPartition::Completed);
+        let queue = Arc::new(MemoryQueue::default());
+        let shared_state = shared_state_for_tests(
+            "test-index",
+            &[(
+                partition_id.clone(),
+                (
+                    "existing_token".to_string(),
+                    Position::Eof(Some(file_size.into())),
+                ),
+            )],
+        );
+        let mut coordinator = setup_coordinator(queue.clone(), shared_state.clone());
 
         assert!(!coordinator.local_state.is_tracked(&partition_id));
         let batches = process_messages(&mut coordinator, queue, &[(&test_uri, "ack-id-1")]).await;
@@ -470,7 +468,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_multiple_coordinator() {
         let queue = Arc::new(MemoryQueue::default());
-        let shared_state = InMemoryQueueSharedState::default();
+        let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut proc_1 = setup_coordinator(queue.clone(), shared_state.clone());
         let mut proc_2 = setup_coordinator(queue.clone(), shared_state.clone());
         let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
@@ -478,19 +476,19 @@ mod tests {
         let partition_id = PreProcessedPayload::ObjectUri(test_uri.clone()).partition_id();
 
         let batches_1 = process_messages(&mut proc_1, queue.clone(), &[(&test_uri, "ack1")]).await;
-        let batches_2 = process_messages(&mut proc_2, queue, &[(&test_uri, "ack-id-2")]).await;
+        let batches_2 = process_messages(&mut proc_2, queue, &[(&test_uri, "ack2")]).await;
 
         assert_eq!(batches_1.len(), 1);
-        assert_eq!(batches_2.len(), 0);
         assert_eq!(batches_1[0].docs.len(), 10);
         assert!(proc_1.local_state.is_awating_commit(&partition_id));
         // proc_2 doesn't know for sure what is happening with the message
-        // (proc_1 might have crashed), so it just forgets about it until it
-        // will be received again
-        assert!(!proc_2.local_state.is_tracked(&partition_id));
-        assert!(matches!(
-            shared_state.get(&partition_id),
-            SharedStateForPartition::InProgress(_)
-        ));
+        // (proc_1 might have crashed), so it just acquires it and takes over
+        // processing
+        //
+        // TODO: this test should fail once we implement the grace
+        // period before a partition can be re-acquired
+        assert_eq!(batches_2.len(), 1);
+        assert_eq!(batches_2[0].docs.len(), 10);
+        assert!(proc_2.local_state.is_awating_commit(&partition_id));
     }
 }
