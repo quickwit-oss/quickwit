@@ -27,7 +27,6 @@ pub(crate) struct RegexTokenizer<T> {
     token_matchers: Vec<TokenMatcherFn<T>>,
 }
 
-
 impl<T> RegexTokenizer<T> {
     pub fn new(ptns_router: Vec<(&str, TokenMatcherFn<T>)>) -> Result<Self, regex::Error> {
         let ptns: Vec<String> = ptns_router
