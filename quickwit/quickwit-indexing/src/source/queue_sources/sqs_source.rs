@@ -103,6 +103,6 @@ impl Source for SqsSource {
     }
 
     fn observable_state(&self) -> JsonValue {
-        serde_json::to_value(&self.coordinator.observable_state()).unwrap()
+        serde_json::to_value(self.coordinator.observable_state()).unwrap()
     }
 }

@@ -30,8 +30,8 @@ use quickwit_storage::{OwnedBytes, StorageResolver};
 use serde_json::Value;
 
 use super::visibility::VisibilityTaskHandle;
-use crate::source::doc_file_reader::DocFileReader;
-use crate::source::{BatchBuilder, SourceContext, BATCH_NUM_BYTES_LIMIT};
+use crate::source::doc_file_reader::{ObjectUriBatchReader, StdinBatchReader};
+use crate::source::{BatchBuilder, SourceContext};
 
 #[derive(Debug, Clone, Copy)]
 pub enum MessageType {
@@ -136,24 +136,19 @@ impl ReadyMessage {
         let partition_id = self.partition_id();
         match self.content.payload {
             PreProcessedPayload::ObjectUri(uri) => {
-                let current_offset = match self.position {
-                    Position::Beginning => 0,
-                    Position::Offset(offset) => offset
-                        .as_usize()
-                        .context("file offset should be stored as usize")?,
-                    Position::Eof(_) => return Ok(None),
-                };
-                let reader =
-                    DocFileReader::from_uri(storage_resolver, &uri, current_offset).await?;
-                Ok(Some(InProgressMessage {
-                    progress_tracker: ProgressTracker::ObjectUri(ObjectUriInProgress {
-                        reader,
-                        current_offset,
-                        is_eof: false,
-                    }),
-                    partition_id,
-                    visibility_handle: Some(self.visibility_handle),
-                }))
+                let batch_reader =
+                    ObjectUriBatchReader::try_new(storage_resolver, &uri, self.position).await?;
+                let progress_tracker = ProgressTracker::ObjectUri(batch_reader);
+                if progress_tracker.is_eof() {
+                    Ok(None)
+                } else {
+                    Ok(Some(InProgressMessage {
+                        progress_tracker,
+                        partition_id,
+                        visibility_handle: Some(self.visibility_handle),
+                        observable_state: InProgressMessageObservableState::default(),
+                    }))
+                }
             }
         }
     }
@@ -163,29 +158,32 @@ impl ReadyMessage {
     }
 }
 
-/// A message that is actively being read
-pub struct InProgressMessage {
-    partition_id: PartitionId,
-    visibility_handle: Option<VisibilityTaskHandle>,
-    progress_tracker: ProgressTracker,
+pub enum ProgressTracker {
+    ObjectUri(ObjectUriBatchReader),
+    StdIn(StdinBatchReader),
 }
 
-impl InProgressMessage {
-    pub fn stdin() -> Self {
-        InProgressMessage {
-            partition_id: PartitionId::default(),
-            visibility_handle: None,
-            progress_tracker: ProgressTracker::StdIn(StdInInProgress {
-                reader: DocFileReader::from_stdin(),
-                is_eof: false,
-            }),
+impl ProgressTracker {
+    pub fn is_eof(&self) -> bool {
+        match &self {
+            ProgressTracker::ObjectUri(in_progress) => in_progress.is_eof(),
+            ProgressTracker::StdIn(in_progress) => in_progress.is_eof(),
         }
     }
 }
 
-pub enum ProgressTracker {
-    ObjectUri(ObjectUriInProgress),
-    StdIn(StdInInProgress),
+#[derive(Debug, Default, Clone)]
+pub struct InProgressMessageObservableState {
+    pub num_bytes_processed: u64,
+    pub num_lines_processed: u64,
+}
+
+/// A message that is actively being read
+pub struct InProgressMessage {
+    pub partition_id: PartitionId,
+    pub visibility_handle: Option<VisibilityTaskHandle>,
+    pub progress_tracker: ProgressTracker,
+    pub observable_state: InProgressMessageObservableState,
 }
 
 impl InProgressMessage {
@@ -194,27 +192,19 @@ impl InProgressMessage {
         source_ctx: &SourceContext,
         source_type: SourceType,
     ) -> anyhow::Result<BatchBuilder> {
-        match &mut self.progress_tracker {
+        let batch_builder = match &mut self.progress_tracker {
             ProgressTracker::ObjectUri(in_progress) => {
                 in_progress
                     .read_batch(source_ctx, self.partition_id.clone(), source_type)
-                    .await
+                    .await?
             }
             ProgressTracker::StdIn(in_progress) => {
-                in_progress.read_batch(source_ctx, source_type).await
+                in_progress.read_batch(source_ctx, source_type).await?
             }
-        }
-    }
-
-    pub fn is_eof(&self) -> bool {
-        match &self.progress_tracker {
-            ProgressTracker::ObjectUri(in_progress) => in_progress.is_eof,
-            ProgressTracker::StdIn(in_progress) => in_progress.is_eof,
-        }
-    }
-
-    pub fn partition_id(&self) -> &PartitionId {
-        &self.partition_id
+        };
+        self.observable_state.num_bytes_processed += batch_builder.num_bytes as u64;
+        self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
+        Ok(batch_builder)
     }
 
     pub fn ack_id(&self) -> &str {
@@ -222,77 +212,6 @@ impl InProgressMessage {
             .as_ref()
             .map(|h| h.ack_id())
             .unwrap_or_default()
-    }
-}
-
-pub struct ObjectUriInProgress {
-    reader: DocFileReader,
-    current_offset: usize,
-    is_eof: bool,
-}
-
-impl ObjectUriInProgress {
-    async fn read_batch(
-        &mut self,
-        source_ctx: &SourceContext,
-        partition_id: PartitionId,
-        source_type: SourceType,
-    ) -> anyhow::Result<BatchBuilder> {
-        let limit_num_bytes = self.current_offset + BATCH_NUM_BYTES_LIMIT as usize;
-        let mut new_offset = self.current_offset;
-        let mut batch_builder = BatchBuilder::new(source_type);
-        while new_offset < limit_num_bytes {
-            if let Some(record) = source_ctx.protect_future(self.reader.next_record()).await? {
-                new_offset = record.next_offset as usize;
-                batch_builder.add_doc(record.doc);
-            } else {
-                self.is_eof = true;
-                break;
-            }
-        }
-        if new_offset > self.current_offset {
-            let to_position = if self.is_eof {
-                Position::eof(new_offset)
-            } else {
-                Position::offset(new_offset)
-            };
-            batch_builder
-                .checkpoint_delta
-                .record_partition_delta(
-                    partition_id,
-                    Position::offset(self.current_offset),
-                    to_position,
-                )
-                .unwrap();
-            self.current_offset = new_offset;
-        }
-
-        Ok(batch_builder)
-    }
-}
-
-pub struct StdInInProgress {
-    reader: DocFileReader,
-    is_eof: bool,
-}
-
-impl StdInInProgress {
-    async fn read_batch(
-        &mut self,
-        source_ctx: &SourceContext,
-        source_type: SourceType,
-    ) -> anyhow::Result<BatchBuilder> {
-        let mut batch_builder = BatchBuilder::new(source_type);
-        while batch_builder.num_bytes < BATCH_NUM_BYTES_LIMIT {
-            if let Some(record) = source_ctx.protect_future(self.reader.next_record()).await? {
-                batch_builder.add_doc(record.doc);
-            } else {
-                self.is_eof = true;
-                break;
-            }
-        }
-
-        Ok(batch_builder)
     }
 }
 

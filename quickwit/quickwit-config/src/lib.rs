@@ -56,7 +56,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 pub use source_config::{
-    load_source_config_from_user_config, FileSourceMessageFormat, FileSourceParams, FileSourceSqs,
+    load_source_config_from_user_config, FileSourceMessageType, FileSourceParams, FileSourceSqs,
     FileSourceUri, KafkaSourceParams, KinesisSourceParams, PubSubSourceParams, PulsarSourceAuth,
     PulsarSourceParams, RegionOrEndpoint, SourceConfig, SourceInputFormat, SourceParams,
     SqsSourceParams, TransformConfig, VecSourceParams, VoidSourceParams, CLI_SOURCE_ID,
@@ -113,7 +113,7 @@ pub fn disable_ingest_v1() -> bool {
     IndexTemplateV0_8,
     SourceInputFormat,
     SourceParams,
-    FileSourceMessageFormat,
+    FileSourceMessageType,
     FileSourceSqs,
     FileSourceParams,
     FileSourceUri,

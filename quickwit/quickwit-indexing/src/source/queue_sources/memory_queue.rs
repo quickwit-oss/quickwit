@@ -27,11 +27,11 @@ use quickwit_storage::OwnedBytes;
 use ulid::Ulid;
 
 use super::message::{MessageMetadata, RawMessage};
-use super::{Queue, Received};
+use super::Queue;
 
 #[derive(Default)]
 struct InnerState {
-    in_queue: VecDeque<Received>,
+    in_queue: VecDeque<RawMessage>,
     in_flight: BTreeMap<String, RawMessage>,
     acked: Vec<RawMessage>,
 }
@@ -46,6 +46,7 @@ impl fmt::Debug for InnerState {
     }
 }
 
+/// A simple in-memory queue
 #[derive(Clone, Default, Debug)]
 pub struct MemoryQueue {
     inner_state: Arc<Mutex<InnerState>>,
@@ -62,43 +63,26 @@ impl MemoryQueue {
                 message_id: Ulid::new().to_string(),
             },
         };
-        self.inner_state
-            .lock()
-            .unwrap()
-            .in_queue
-            .push_back(Received::Messages(vec![message]));
-    }
-
-    pub fn send_end_of_queue(&self) {
-        self.inner_state
-            .lock()
-            .unwrap()
-            .in_queue
-            .push_back(Received::EndOfQueue);
+        self.inner_state.lock().unwrap().in_queue.push_back(message);
     }
 }
 
 #[async_trait]
 impl Queue for MemoryQueue {
-    async fn receive(&self) -> anyhow::Result<Received> {
-        let start = Instant::now();
-        while start.elapsed() < Duration::from_millis(100) {
+    async fn receive(&self) -> anyhow::Result<Vec<RawMessage>> {
+        for _ in 0..3 {
             {
                 let mut inner_state = self.inner_state.lock().unwrap();
-                if let Some(rx) = inner_state.in_queue.pop_back() {
-                    if let Received::Messages(messages) = &rx {
-                        for msg in messages {
-                            inner_state
-                                .in_flight
-                                .insert(msg.metadata.ack_id.clone(), msg.clone());
-                        }
-                    }
-                    return Ok(rx);
+                if let Some(msg) = inner_state.in_queue.pop_front() {
+                    inner_state
+                        .in_flight
+                        .insert(msg.metadata.ack_id.clone(), msg.clone());
+                    return Ok(vec![msg]);
                 }
             }
-            tokio::time::sleep(Duration::from_millis(40)).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        Ok(Received::Messages(vec![]))
+        Ok(vec![])
     }
 
     async fn acknowledge(&self, ack_ids: &[String]) -> anyhow::Result<()> {
@@ -117,6 +101,31 @@ impl Queue for MemoryQueue {
         _ack_id: &str,
         suggested_deadline: Duration,
     ) -> anyhow::Result<Instant> {
+        // TODO implement deadlines
         return Ok(Instant::now() + suggested_deadline);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_send_messages() {
+        let memory_queue = MemoryQueue::default();
+        for i in 0..2 {
+            let payload = format!("Test message {}", i);
+            let ack_id = i.to_string();
+            memory_queue.send_message(payload.clone(), &ack_id);
+        }
+        for i in 0..2 {
+            let messages = memory_queue.receive().await.unwrap();
+            assert_eq!(messages.len(), 1);
+            let message = &messages[0];
+            let exp_payload = format!("Test message {}", i);
+            let exp_ack_id = i.to_string();
+            assert_eq!(message.payload.as_ref(), exp_payload.as_bytes());
+            assert_eq!(message.metadata.ack_id, exp_ack_id);
+        }
     }
 }

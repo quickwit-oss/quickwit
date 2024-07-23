@@ -19,6 +19,7 @@
 
 mod coordinator;
 mod local_state;
+#[cfg(test)]
 mod memory_queue;
 mod message;
 mod shared_state;
@@ -33,24 +34,10 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 pub use coordinator::QueueCoordinator;
-pub use memory_queue::MemoryQueue;
-pub use message::MessageType;
 use message::RawMessage;
-
-pub enum Received {
-    Messages(Vec<RawMessage>),
-    EndOfQueue,
-}
-
-#[cfg(test)]
-impl Received {
-    pub fn unwrap(self) -> Vec<RawMessage> {
-        match self {
-            Received::Messages(messages) => messages,
-            Received::EndOfQueue => panic!("unwrap called on EndOfQueue"),
-        }
-    }
-}
+pub use message::{
+    InProgressMessage, InProgressMessageObservableState, MessageType, ProgressTracker,
+};
 
 /// The queue abstraction is based on the AWS SQS and Google Pubsub APIs. The
 /// only requirement of the underlying implementation is that messages exposed
@@ -65,7 +52,7 @@ pub trait Queue: fmt::Debug + Send + Sync + 'static {
     /// are no messages in the queue. It will typically use long polling to do
     /// this efficiently. On the other hand, when there is a message in the
     /// queue, it should be returned as quickly as possible.
-    async fn receive(&self) -> anyhow::Result<Received>;
+    async fn receive(&self) -> anyhow::Result<Vec<RawMessage>>;
 
     /// Try to acknowledge the messages, effectively deleting them from the
     /// queue.
