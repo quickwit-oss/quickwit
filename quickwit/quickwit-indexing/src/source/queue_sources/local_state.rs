@@ -18,7 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::time::Duration;
 
+use anyhow::bail;
 use quickwit_metastore::checkpoint::PartitionId;
 
 use super::message::{InProgressMessage, ReadyMessage};
@@ -93,19 +95,34 @@ impl QueueLocalState {
         self.read_in_progress.as_mut()
     }
 
-    pub fn replace_currently_read(
+    pub async fn drop_currently_read(
+        &mut self,
+        deadline_for_last_extension: Duration,
+    ) -> anyhow::Result<()> {
+        if let Some(in_progress) = self.read_in_progress.take() {
+            self.awaiting_commit.insert(
+                in_progress.partition_id.clone(),
+                in_progress.visibility_handle.ack_id().to_string(),
+            );
+            in_progress
+                .visibility_handle
+                .request_last_extension(deadline_for_last_extension)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Tries to set the message that is currently being read. Returns an error
+    /// if there is already a message being read.
+    pub fn set_currently_read(
         &mut self,
         in_progress: Option<InProgressMessage>,
-    ) -> Option<InProgressMessage> {
-        let replaced_opt = self.read_in_progress.take();
-        if let Some(replaced) = &replaced_opt {
-            self.awaiting_commit.insert(
-                replaced.partition_id.clone(),
-                replaced.visibility_handle.ack_id().to_string(),
-            );
+    ) -> anyhow::Result<()> {
+        if self.read_in_progress.is_some() {
+            bail!("trying to replace in progress message");
         }
         self.read_in_progress = in_progress;
-        replaced_opt
+        Ok(())
     }
 
     /// Returns the ack_id if that message was awaiting_commit

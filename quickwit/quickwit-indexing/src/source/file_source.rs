@@ -128,12 +128,7 @@ impl Source for FileSource {
         match &self.inner {
             #[cfg(feature = "sqs")]
             FileSourceInner::Queue(coordinator) => {
-                serde_json::json!({
-                    "num_bytes_processed": coordinator.observable_state().num_bytes_processed,
-                    "num_lines_processed": coordinator.observable_state().num_lines_processed,
-                    "num_messages_processed": coordinator.observable_state().num_messages_processed,
-                    "num_consecutive_empty_batches": coordinator.observable_state().num_consecutive_empty_batches,
-                })
+                serde_json::to_value(coordinator.observable_state()).unwrap()
             }
             FileSourceInner::Stream {
                 num_bytes_processed,

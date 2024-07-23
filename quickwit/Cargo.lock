@@ -5647,6 +5647,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-kinesis",
  "aws-sdk-s3",
+ "aws-sdk-sqs",
  "aws-smithy-async",
  "aws-smithy-runtime",
  "aws-types",
