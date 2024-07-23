@@ -332,7 +332,9 @@ mod tests {
             pipeline_id,
             observable_state: QueueCoordinatorObservableState::default(),
             publish_lock: PublishLock::default(),
-            queue_receiver: QueueReceiver::new(queue.clone(), Duration::from_millis(50)),
+            // set a very high chunking timeout to make it possible to count the
+            // number of iterations required to process messages
+            queue_receiver: QueueReceiver::new(queue.clone(), Duration::from_secs(10)),
             queue,
             message_type: MessageType::RawUri,
             source_type: SourceType::Unspecified,
@@ -343,7 +345,7 @@ mod tests {
     }
 
     async fn process_messages(
-        tracker: &mut QueueCoordinator,
+        coordinator: &mut QueueCoordinator,
         queue: Arc<MemoryQueueForTests>,
         messages: &[(&Uri, &str)],
     ) -> Vec<RawDocBatch> {
@@ -355,12 +357,12 @@ mod tests {
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
-        tracker
+        coordinator
             .initialize(&doc_processor_mailbox, &ctx)
             .await
             .unwrap();
 
-        tracker
+        coordinator
             .emit_batches(&doc_processor_mailbox, &ctx)
             .await
             .unwrap();
@@ -369,9 +371,11 @@ mod tests {
             queue.send_message(uri.to_string(), ack_id);
         }
 
-        // Need 3 iterations for each msg to emit the first batch (receive, start, emit)
+        // Need 3 iterations for each msg to emit the first batch (receive,
+        // start, emit), assuming the `QueueReceiver` doesn't chunk the receive
+        // future.
         for _ in 0..(messages.len() * 4) {
-            tracker
+            coordinator
                 .emit_batches(&doc_processor_mailbox, &ctx)
                 .await
                 .unwrap();
