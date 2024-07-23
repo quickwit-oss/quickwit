@@ -31,7 +31,6 @@ use quickwit_proto::types::Position;
 use quickwit_storage::{OwnedBytes, StorageResolver};
 use serde_json::Value;
 
-use super::HasAckId;
 use crate::actors::DocProcessor;
 use crate::source::doc_file_reader::DocFileReader;
 use crate::source::{BatchBuilder, SourceContext, BATCH_NUM_BYTES_LIMIT};
@@ -103,12 +102,6 @@ pub struct PreProcessedMessage {
 impl PreProcessedMessage {
     pub fn partition_id(&self) -> PartitionId {
         self.payload.partition_id()
-    }
-}
-
-impl HasAckId for PreProcessedMessage {
-    fn ack_id(&self) -> &str {
-        self.metadata.ack_id.as_str()
     }
 }
 
