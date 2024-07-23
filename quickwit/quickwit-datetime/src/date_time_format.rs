@@ -17,64 +17,210 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
-use ouroboros::self_referencing;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
-use time::error::Format;
+use time::error::{Format, TryFromParsed};
+use time::format_description::modifier::{Day, Hour, Minute, Month as MonthModifier, Padding, Second, Subsecond, SubsecondDigits, Year, YearRepr};
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
-use time::format_description::FormatItem;
+use time::format_description::{Component, OwnedFormatItem};
 use time::parsing::Parsed;
-use time::{Month, OffsetDateTime, PrimitiveDateTime};
+use time::{Month, OffsetDateTime, PrimitiveDateTime, UtcOffset};
 use time_fmt::parse::time_format_item::parse_to_format_item;
 
-use crate::TantivyDateTime;
+use crate::{RegexTokenizer, TantivyDateTime};
 
-/// A date time parser that holds the format specification `Vec<FormatItem>`.
-#[self_referencing]
-pub struct StrptimeParser {
-    strptime_format: String,
-    with_timezone: bool,
-    #[borrows(strptime_format)]
-    #[covariant]
-    items: Vec<FormatItem<'this>>,
+fn literal(s: &[u8]) -> OwnedFormatItem {
+    // builds a boxed slice from a slice
+    let boxed_slice: Box<[u8]> = s.to_vec().into_boxed_slice();
+    OwnedFormatItem::Literal(boxed_slice)
 }
 
-impl FromStr for StrptimeParser {
-    type Err = String;
+fn build_optional_item(java_datetime_format: &str) -> Option<OwnedFormatItem> {
+    assert!(java_datetime_format.len() >= 2);
+    let optional_date_format = &java_datetime_format[1..java_datetime_format.len() - 1];
+    let format_items: Box<[OwnedFormatItem]> = parse_java_datetime_format_items(optional_date_format).ok()?;
+    Some(OwnedFormatItem::Optional(Box::new(OwnedFormatItem::Compound(format_items))))
+}
 
-    fn from_str(strptime_format: &str) -> Result<Self, Self::Err> {
-        StrptimeParser::try_new(
-            strptime_format.to_string(),
-            strptime_format.to_lowercase().contains("%z"),
-            |strptime_format: &String| {
-                parse_to_format_item(strptime_format).map_err(|error| {
-                    format!("invalid strptime format `{strptime_format}`: {error}")
-                })
-            },
-        )
+fn build_zone_offset(_: &str)  -> Option<OwnedFormatItem> {
+    let items: Box<[OwnedFormatItem]> = vec![
+        OwnedFormatItem::Component(Component::OffsetHour(Default::default())),
+        OwnedFormatItem::Literal(b":".to_vec().into_boxed_slice()),
+        OwnedFormatItem::Component(Component::OffsetMinute(Default::default()))
+    ].into_boxed_slice();
+    Some(OwnedFormatItem::Compound(items))
+}
+
+
+fn build_day_item(ptn: &str) -> Option<OwnedFormatItem> {
+    let mut day = Day::default();
+    if ptn.len() == 2 {
+        day.padding = Padding::Zero;
+    } else {
+        day.padding = Padding::None;
+    };
+    Some(OwnedFormatItem::Component(Component::Day(day)))
+}
+
+fn build_hour_item(ptn: &str) -> Option<OwnedFormatItem> {
+    let mut hour = Hour::default();
+    if ptn.len() == 2 {
+        hour.padding = Padding::Zero;
+    } else {
+        hour.padding = Padding::None;
+    };
+    hour.is_12_hour_clock = false;
+    Some(OwnedFormatItem::Component(Component::Hour(hour)))
+}
+
+fn build_month_item(ptn: &str) -> Option<OwnedFormatItem> {
+    let mut month: MonthModifier = Default::default();
+    if ptn.len() == 2 {
+        month.padding = Padding::Zero;
+    } else {
+        month.padding = Padding::None;
     }
+    Some(OwnedFormatItem::Component(Component::Month(month)))
+}
+
+fn build_minute_item(ptn: &str) -> Option<OwnedFormatItem> {
+    let mut minute: Minute = Default::default();
+    if ptn.len() == 2 {
+        minute.padding = Padding::Zero;
+    } else {
+        minute.padding = Padding::None;
+    }
+    Some(OwnedFormatItem::Component(Component::Minute(minute)))
+}
+
+fn build_second_item(ptn: &str) -> Option<OwnedFormatItem> {
+    let mut second: Second = Default::default();
+    if ptn.len() == 2 {
+        second.padding = Padding::Zero;
+    } else {
+        second.padding = Padding::None;
+    }
+    Some(OwnedFormatItem::Component(Component::Second(second)))
+}
+
+
+fn build_fraction_of_second_item(_ptn: &str) -> Option<OwnedFormatItem> {
+    let mut subsecond: Subsecond = Default::default();
+    subsecond.digits = SubsecondDigits::OneOrMore;
+    Some(OwnedFormatItem::Component(Component::Subsecond(subsecond)))
+}
+
+fn build_year_item(ptn: &str) -> Option<OwnedFormatItem> {
+    let year_repr = if ptn.len() == 4 {
+        YearRepr::Full
+    } else {
+        YearRepr::LastTwo
+    };
+    let mut year = Year::default();
+    year.repr = year_repr;
+    Some(OwnedFormatItem::Component(Component::Year(year)))
+}
+
+// Elasticsearch/OpenSearch uses a set of preconfigured formats, more information could be found
+// here https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping-date-format.html
+fn java_date_format_tokenizer() -> &'static RegexTokenizer<OwnedFormatItem> {
+    static JAVA_DATE_FORMAT_TOKENIZER: OnceLock<RegexTokenizer<OwnedFormatItem>> = OnceLock::new();
+    JAVA_DATE_FORMAT_TOKENIZER.get_or_init(|| {
+        RegexTokenizer::new(vec![
+            (r#"yy(yy)?"#, build_year_item),
+            (r#"MM?"#, build_month_item),
+            (r#"dd?"#, build_day_item),
+            (r#"HH?"#, build_hour_item),
+            (r#"mm?"#, build_minute_item),
+            (r#"ss?"#, build_second_item),
+            (r#"S+"#, build_fraction_of_second_item),
+            (r#"Z"#, build_zone_offset),
+            (r#"''"#, |_| Some(literal(b"'"))),
+            (r#"'[^']+'"#, |s| {
+                Some(literal(s[1..s.len() - 1].as_bytes()))
+            }),
+            (r#"[^\w\[\]{}]"#, |s| Some(literal(s.as_bytes()))),
+            (r#"\[.*\]"#, build_optional_item),
+        ])
+        .unwrap()
+    })
+}
+
+// Check if the given date time format is a common alias and replace it with the
+// Java date format it is mapped to, if any.
+// If the java_datetime_format is not an alias, it is expected to be a
+// java date time format and should be returned as is.
+fn resolve_java_datetime_format_alias(java_datetime_format: &str) -> &str {
+    static JAVA_DATE_FORMAT_ALIASES: OnceLock<HashMap<&'static str, &'static str>> =
+        OnceLock::new();
+    let java_datetime_format_map = JAVA_DATE_FORMAT_ALIASES.get_or_init(|| {
+        let mut m = HashMap::new();
+        m.insert("date_optional_time", "yyyy-MM-dd['T'HH:mm:ss.SSSZ]");
+        // m.insert("date_optional_time", "yyyy-MM-dd['T'HH:]");
+        // m.insert("date_optional_time", "yyyy-MM-dd");
+        m.insert("strict_date_optional_time", "yyyy-MM-dd'T['HH:mm:ss.SSSZ]");
+        m.insert(
+            "strict_date_optional_time_nanos",
+            "yyyy-MM-dd['T'HH:mm:ss.SSSSSSZ]",
+        );
+        m.insert("basic_date", "yyyyMMdd");
+        m
+    });
+    java_datetime_format_map
+        .get(java_datetime_format)
+        .copied()
+        .unwrap_or(java_datetime_format)
+}
+
+/// A date time parser that holds the format specification `Vec<FormatItem>`.
+#[derive(Clone)]
+pub struct StrptimeParser {
+    strptime_format: String,
+    items: Box<[OwnedFormatItem]>,
+}
+
+fn parse_java_datetime_format_items(java_datetime_format: &str) -> Result<Box<[OwnedFormatItem]>, String> {
+    let java_datetime_format_resolved = resolve_java_datetime_format_alias(java_datetime_format);
+    let items = java_date_format_tokenizer()
+        .tokenize(java_datetime_format_resolved)
+        .map_err(|pos| {
+            format!(
+                    "failed to parse date format `{java_datetime_format}`. Pattern at pos {pos} \
+                     is not recognized."
+                )
+        })?
+        .into_boxed_slice();
+    Ok(items)
 }
 
 impl StrptimeParser {
-    /// Parse a given date according to the datetime format specified during the StrptimeParser
-    /// creation. If the date format does not provide a specific a time, the time will be set to
-    /// 00:00:00.
-    fn parse_primitive_date_time(&self, date_time_str: &str) -> anyhow::Result<PrimitiveDateTime> {
+    /// Parse a date assume UTC if unspecified.
+    /// See `parse_date_time_with_default_timezone` for more details.
+    pub fn parse_date_time(&self, date_time_str: &str) -> Result<OffsetDateTime, String> {
+        self.parse_date_time_with_default_timezone(date_time_str, UtcOffset::UTC)
+    }
+
+    /// Parse a date. If no timezone is specificied we will assume the timezone passed as `default_offset`.
+    /// If the date is missing, it will be automatically set to 00:00:00.
+    pub fn parse_date_time_with_default_timezone(&self, date_time_str: &str, default_offset: UtcOffset) -> Result<OffsetDateTime, String> {
         let mut parsed = Parsed::new();
         if !parsed
-            .parse_items(date_time_str.as_bytes(), self.borrow_items())?
+            .parse_items(date_time_str.as_bytes(), &self.items)
+            .map_err(|err| err.to_string())?
             .is_empty()
         {
-            anyhow::bail!(
+            return Err(format!(
                 "datetime string `{}` does not match strptime format `{}`",
                 date_time_str,
-                self.borrow_strptime_format()
-            );
+                &self.strptime_format));
         }
+
         // The parsed datetime contains a date but seems to be missing "time".
         // We complete it artificially with 00:00:00.
         if parsed.hour_24().is_none()
@@ -84,57 +230,72 @@ impl StrptimeParser {
             parsed.set_minute(0u8);
             parsed.set_second(0u8);
         }
+
         if parsed.year().is_none() {
             let now = OffsetDateTime::now_utc();
             let year = infer_year(parsed.month(), now.month(), now.year());
             parsed.set_year(year);
         }
-        let date_time = parsed.try_into()?;
-        Ok(date_time)
-    }
 
-    pub fn parse_date_time(&self, date_time_str: &str) -> Result<OffsetDateTime, String> {
-        if *self.borrow_with_timezone() {
-            OffsetDateTime::parse(date_time_str, self.borrow_items()).map_err(|err| err.to_string())
-        } else {
-            self.parse_primitive_date_time(date_time_str)
-                .map(|date_time| date_time.assume_utc())
-                .map_err(|err| err.to_string())
+        if parsed.offset_hour().is_some() {
+            let offset_datetime: OffsetDateTime = parsed
+                .try_into()
+                .map_err(|err: TryFromParsed| err.to_string())?;
+            return Ok(offset_datetime);
         }
+        let primitive_date_time: PrimitiveDateTime = parsed.try_into()
+            .map_err(|err: TryFromParsed| err.to_string())?;
+        Ok(primitive_date_time.assume_offset(default_offset))
     }
 
     pub fn format_date_time(&self, date_time: &OffsetDateTime) -> Result<String, Format> {
-        date_time.format(self.borrow_items())
+        date_time.format(&self.items)
     }
-}
 
-impl Clone for StrptimeParser {
-    fn clone(&self) -> Self {
-        // `self.format` is already known to be a valid format.
-        Self::from_str(self.borrow_strptime_format().as_str()).unwrap()
+    pub fn from_strptime(strptime_format: &str) -> Result<StrptimeParser, String> {
+        let items: Box<[OwnedFormatItem]> = parse_to_format_item(strptime_format)
+            .map_err(|err| format!("invalid strptime format `{strptime_format}`: {err}"))?
+            .into_iter()
+            .map(|item| item.into())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        Ok(StrptimeParser::new(strptime_format.to_string(), items))
+    }
+
+    pub fn from_java_datetime_format(java_datetime_format: &str) -> Result<StrptimeParser, String> {
+        let java_datetime_format_resolved = resolve_java_datetime_format_alias(java_datetime_format);
+        let items: Box<[OwnedFormatItem]> = parse_java_datetime_format_items(java_datetime_format_resolved)?;
+        Ok(StrptimeParser::new(java_datetime_format.to_string(), items))
+    }
+
+    fn new(strptime_format: String, items: Box<[OwnedFormatItem]>) -> Self {
+        StrptimeParser {
+            strptime_format,
+            items,
+        }
     }
 }
 
 impl PartialEq for StrptimeParser {
     fn eq(&self, other: &Self) -> bool {
-        self.borrow_strptime_format() == other.borrow_strptime_format()
+        self.strptime_format == other.strptime_format
     }
 }
 
 impl Eq for StrptimeParser {}
 
 impl std::fmt::Debug for StrptimeParser {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter
             .debug_struct("StrptimeParser")
-            .field("format", &self.borrow_strptime_format())
+            .field("format", &self.strptime_format)
             .finish()
     }
 }
 
 impl std::hash::Hash for StrptimeParser {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.borrow_strptime_format().hash(state);
+        self.strptime_format.hash(state);
     }
 }
 
@@ -170,7 +331,7 @@ impl DateTimeInputFormat {
             DateTimeInputFormat::Iso8601 => "iso8601",
             DateTimeInputFormat::Rfc2822 => "rfc2822",
             DateTimeInputFormat::Rfc3339 => "rfc3339",
-            DateTimeInputFormat::Strptime(parser) => parser.borrow_strptime_format(),
+            DateTimeInputFormat::Strptime(parser) => parser.strptime_format.as_str(),
             DateTimeInputFormat::Timestamp => "unix_timestamp",
         }
     }
@@ -198,7 +359,7 @@ impl FromStr for DateTimeInputFormat {
                          format must contain at least one `strftime` special characters"
                     ));
                 }
-                DateTimeInputFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?)
+                DateTimeInputFormat::Strptime(StrptimeParser::from_strptime(date_time_format_str)?)
             }
         };
         Ok(date_time_format)
@@ -241,7 +402,7 @@ impl DateTimeOutputFormat {
             DateTimeOutputFormat::Iso8601 => "iso8601",
             DateTimeOutputFormat::Rfc2822 => "rfc2822",
             DateTimeOutputFormat::Rfc3339 => "rfc3339",
-            DateTimeOutputFormat::Strptime(parser) => parser.borrow_strptime_format(),
+            DateTimeOutputFormat::Strptime(parser) => parser.strptime_format.as_str(),
             DateTimeOutputFormat::TimestampSecs => "unix_timestamp_secs",
             DateTimeOutputFormat::TimestampMillis => "unix_timestamp_millis",
             DateTimeOutputFormat::TimestampMicros => "unix_timestamp_micros",
@@ -300,7 +461,7 @@ impl FromStr for DateTimeOutputFormat {
                          format must contain at least one `strftime` special characters"
                     ));
                 }
-                DateTimeOutputFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?)
+                DateTimeOutputFormat::Strptime(StrptimeParser::from_strptime(date_time_format_str)?)
             }
         };
         Ok(date_time_format)
@@ -341,6 +502,7 @@ pub(super) fn infer_year(
 
 #[cfg(test)]
 mod tests {
+
     use time::macros::datetime;
     use time::Month;
 
@@ -463,16 +625,105 @@ mod tests {
     }
 
     #[test]
-    fn test_strictly_parse_datetime_format() {
-        let parser = StrptimeParser::from_str("%Y-%m-%d").unwrap();
+    fn test_parse_datetime_format_missing_time() {
+        let parser = StrptimeParser::from_strptime("%Y-%m-%d").unwrap();
         assert_eq!(
             parser.parse_date_time("2021-01-01").unwrap(),
             datetime!(2021-01-01 00:00:00 UTC)
         );
+    }
+
+    #[test]
+    fn test_parse_datetime_format_strict_on_trailing_data() {
+        let parser = StrptimeParser::from_strptime("%Y-%m-%d").unwrap();
         let error = parser.parse_date_time("2021-01-01TABC").unwrap_err();
         assert_eq!(
             error,
             "datetime string `2021-01-01TABC` does not match strptime format `%Y-%m-%d`"
+        );
+    }
+
+    #[test]
+    fn test_parse_strptime_with_timezone() {
+        let parser = StrptimeParser::from_strptime("%Y-%m-%dT%H:%M:%S %z").unwrap();
+        let offset_datetime = parser.parse_date_time("2021-01-01T11:00:03 +07:00").unwrap();
+        assert_eq!(
+            offset_datetime,
+            datetime!(2021-01-01 11:00:03 +7)
+        );
+    }
+
+    #[track_caller]
+    fn test_parse_java_datetime_aux(java_date_time_format: &str, date_str: &str, expected_datetime: OffsetDateTime) {
+        let parser = StrptimeParser::from_java_datetime_format(java_date_time_format).unwrap();
+        let datetime = parser.parse_date_time(date_str).unwrap();
+        assert_eq!(datetime, expected_datetime);
+    }
+
+    #[test]
+    fn test_parse_java_datetime_format() {
+        test_parse_java_datetime_aux(
+            "yyyy MM dd",
+            "2021 01 01",
+            datetime!(2021-01-01 00:00:00 UTC)
+        );
+        test_parse_java_datetime_aux(
+            "yyyy!MM?dd",
+            "2021!01?01",
+            datetime!(2021-01-01 00:00:00 UTC)
+        );
+        test_parse_java_datetime_aux(
+            "yyyy!MM?dd'T'HH:",
+            "2021!01?01T13:",
+            datetime!(2021-01-01 13:00:00 UTC)
+        );
+        test_parse_java_datetime_aux(
+            "yyyy!MM?dd['T'HH:]",
+            "2021!01?01",
+            datetime!(2021-01-01 00:00:00 UTC)
+        );
+        test_parse_java_datetime_aux(
+            "yyyy!MM?dd['T'HH:]",
+            "2021!01?01T13:",
+            datetime!(2021-01-01 13:00:00 UTC)
+        );
+    }
+
+
+    #[test]
+    fn test_parse_java_missing_time() {
+        test_parse_java_datetime_aux(
+            "yyyy-MM-dd",
+            "2021-01-01",
+            datetime!(2021-01-01 00:00:00 UTC)
+        );
+    }
+
+    #[test]
+    fn test_parse_java_optional_missing_time() {
+        test_parse_java_datetime_aux(
+            "yyyy-MM-dd[ HH:mm:ss]",
+            "2021-01-01",
+            datetime!(2021-01-01 00:00:00 UTC)
+        );
+        test_parse_java_datetime_aux(
+            "yyyy-MM-dd[ HH:mm:ss]",
+            "2021-01-01 12:34:56",
+            datetime!(2021-01-01 12:34:56 UTC)
+        );
+    }
+
+    #[test]
+    fn test_parse_java_datetime_format_aliases() {
+        test_parse_java_datetime_aux(
+            "date_optional_time",
+            "2021-01-01",
+            datetime!(2021-01-01 00:00:00 UTC)
+        );
+        test_parse_java_datetime_aux(
+            "date_optional_time",
+            "2021-01-21T03:01:22.312+01:00",
+            datetime!(2021-01-21 03:01:22.312 +1)
         );
     }
 
