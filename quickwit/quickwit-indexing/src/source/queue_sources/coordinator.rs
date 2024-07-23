@@ -23,17 +23,18 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_common::rate_limited_warn;
+use quickwit_common::rate_limited_error;
 use quickwit_config::{FileSourceMessageType, FileSourceSqs};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::SourceType;
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
+use tracing::info;
 use ulid::Ulid;
 
 use super::local_state::QueueLocalState;
-use super::message::{MessageType, ReadyMessage};
+use super::message::{MessageType, PreProcessingError, ReadyMessage};
 use super::shared_state::{checkpoint_messages, QueueSharedState};
 use super::visibility::{spawn_visibility_task, VisibilitySettings};
 use super::{Queue, QueueReceiver};
@@ -156,23 +157,30 @@ impl QueueCoordinator {
             .receive(1, self.visible_settings.deadline_for_receive)
             .await?;
 
-        let mut invalid_messages = Vec::new();
-        let preprocessed_messages = raw_messages
-            .into_iter()
-            .map(|msg| msg.pre_process(self.message_type))
-            .filter_map(|res| res.map_err(|err| invalid_messages.push(err)).ok())
-            .collect::<Vec<_>>();
-        if !invalid_messages.is_empty() {
-            self.observable_state.num_messages_failed_preprocessing +=
-                invalid_messages.len() as u64;
-            rate_limited_warn!(
+        let mut format_errors = Vec::new();
+        let mut discardable_ack_ids = Vec::new();
+        let mut preprocessed_messages = Vec::new();
+        for message in raw_messages {
+            match message.pre_process(self.message_type) {
+                Ok(preprocessed_message) => preprocessed_messages.push(preprocessed_message),
+                Err(PreProcessingError::UnexpectedFormat(err)) => format_errors.push(err),
+                Err(PreProcessingError::Discardable { ack_id, reason }) => {
+                    info!(reason, "acknowledge message without processing");
+                    discardable_ack_ids.push(ack_id)
+                }
+            }
+        }
+        if !format_errors.is_empty() {
+            self.observable_state.num_messages_failed_preprocessing += format_errors.len() as u64;
+            rate_limited_error!(
                 limit_per_min = 10,
-                count = invalid_messages.len(),
-                last_err = ?invalid_messages.last().unwrap(),
-                "invalid messages skipped, use a dead letter queue to limit retries"
+                count = format_errors.len(),
+                last_err = ?format_errors.last().unwrap(),
+                "invalid message(s) not processed, use a dead letter queue to limit retries"
             );
         }
         if preprocessed_messages.is_empty() {
+            self.queue.acknowledge(&discardable_ack_ids).await?;
             return Ok(());
         }
 
@@ -218,10 +226,11 @@ impl QueueCoordinator {
         self.local_state.set_ready_for_read(ready_messages);
 
         // Acknowledge messages that already have been processed
-        let ack_ids = already_completed
+        let mut ack_ids = already_completed
             .iter()
             .map(|msg| msg.metadata.ack_id.clone())
             .collect::<Vec<_>>();
+        ack_ids.append(&mut discardable_ack_ids);
         self.queue.acknowledge(&ack_ids).await?;
 
         Ok(())
@@ -258,7 +267,7 @@ impl QueueCoordinator {
                 }
                 Err(err) => {
                     self.observable_state.num_messages_failed_opening += 1;
-                    rate_limited_warn!(
+                    rate_limited_error!(
                         limit_per_min = 5,
                         err = ?err,
                         "failed to start processing message"

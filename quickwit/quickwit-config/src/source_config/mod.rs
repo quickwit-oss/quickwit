@@ -934,6 +934,20 @@ mod tests {
                 "Only one notification can be specified for now"
             );
         }
+        {
+            let json = r#"
+            {
+                "notifications": [
+                    {
+                        "queue_url": "https://sqs.us-east-1.amazonaws.com/123456789012/queue",
+                        "message_type": "s3_notification"
+                    }
+                ]
+            }
+            "#;
+            let error = serde_json::from_str::<FileSourceParams>(json).unwrap_err();
+            assert!(error.to_string().contains("missing field `type`"));
+        }
     }
 
     #[test]
