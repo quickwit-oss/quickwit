@@ -25,6 +25,7 @@ use std::ops::{Add, Mul, Sub};
 use bytesize::ByteSize;
 use quickwit_actors::AskError;
 use quickwit_common::pubsub::Event;
+use quickwit_common::rate_limited_error;
 use quickwit_common::tower::{MakeLoadShedError, RpcName};
 use serde::{Deserialize, Serialize};
 use thiserror;
@@ -55,7 +56,10 @@ pub enum IndexingError {
 impl ServiceError for IndexingError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::Internal(err_msg) => {
+                rate_limited_error!(limit_per_min = 6, "indexing error: {err_msg}");
+                ServiceErrorCode::Internal
+            }
             Self::Metastore(metastore_error) => metastore_error.error_code(),
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,

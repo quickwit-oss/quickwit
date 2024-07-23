@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_common::rate_limited_error;
 use quickwit_common::tower::MakeLoadShedError;
 use thiserror;
 
@@ -43,7 +44,10 @@ pub enum ClusterError {
 impl ServiceError for ClusterError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::Internal(err_msg) => {
+                rate_limited_error!(limit_per_min = 6, "cluster internal error: {err_msg}");
+                ServiceErrorCode::Internal
+            }
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
