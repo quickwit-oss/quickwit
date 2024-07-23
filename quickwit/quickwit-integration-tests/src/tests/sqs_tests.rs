@@ -18,23 +18,28 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::io::Write;
+use std::iter;
 use std::str::FromStr;
 
 use quickwit_common::uri::Uri;
 use quickwit_config::ConfigFormat;
 use quickwit_indexing::source::sqs_queue::test_helpers as sqs_test_helpers;
 use quickwit_metastore::SplitState;
+use quickwit_serve::SearchRequestQueryString;
 use tempfile::NamedTempFile;
+use tracing::info;
 
 use crate::test_utils::ClusterSandbox;
 
-fn write_to_tmp() -> NamedTempFile {
+fn create_mock_data_file(num_lines: usize) -> (NamedTempFile, Uri) {
     let mut temp_file = tempfile::NamedTempFile::new().unwrap();
-    for _ in 0..10 {
-        temp_file.write_all(br#"{"body": "hello"}"#).unwrap()
+    for i in 0..num_lines {
+        writeln!(temp_file, "{{\"body\": \"hello {}\"}}", i).unwrap()
     }
     temp_file.flush().unwrap();
-    temp_file
+    let path = temp_file.path().to_str().unwrap();
+    let uri = Uri::from_str(path).unwrap();
+    (temp_file, uri)
 }
 
 #[tokio::test]
@@ -56,12 +61,13 @@ async fn test_sqs_single_node_cluster() {
         index_id
     );
 
+    info!("create SQS queue");
     let sqs_client = sqs_test_helpers::get_localstack_sqs_client().await.unwrap();
     let queue_url = sqs_test_helpers::create_queue(&sqs_client, "test-single-node-cluster").await;
 
     sandbox.wait_for_cluster_num_ready_nodes(1).await.unwrap();
 
-    // Create the index.
+    info!("create index");
     sandbox
         .indexer_rest_client
         .indexes()
@@ -81,12 +87,14 @@ async fn test_sqs_single_node_cluster() {
                 mode: sqs
                 queue_url: {}
                 message_type: raw_uri
+                # decrease poll duration to avoid hanging actor shutdown
+                wait_time_seconds: 2
             input_format: plain_text
         "#,
         source_id, queue_url
     );
 
-    // Create SQS source
+    info!("create file source with SQS notification");
     sandbox
         .indexer_rest_client
         .sources(index_id)
@@ -94,20 +102,40 @@ async fn test_sqs_single_node_cluster() {
         .await
         .unwrap();
 
-    // Send one message.
-    let tmp_file = write_to_tmp();
-    let path = tmp_file.path().to_str().unwrap();
-    let uri = Uri::from_str(path).unwrap();
-    sqs_test_helpers::send_message(&sqs_client, &queue_url, uri.as_str()).await;
+    // Send messages with duplicates
+    let tmp_mock_data_files: Vec<_> = iter::repeat_with(|| create_mock_data_file(1000))
+        .take(10)
+        .collect();
+    for (_, uri) in &tmp_mock_data_files {
+        sqs_test_helpers::send_message(&sqs_client, &queue_url, uri.as_str()).await;
+    }
+    sqs_test_helpers::send_message(&sqs_client, &queue_url, tmp_mock_data_files[0].1.as_str())
+        .await;
+    sqs_test_helpers::send_message(&sqs_client, &queue_url, tmp_mock_data_files[5].1.as_str())
+        .await;
 
-    // Wait for the split to be published.
-    // TODO check why this is so slow
+    info!("wait for split to be published");
     sandbox
         .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
         .await
         .unwrap();
 
-    // Delete the index
+    info!("count docs using search");
+    let search_result = sandbox
+        .indexer_rest_client
+        .search(
+            index_id,
+            SearchRequestQueryString {
+                query: "".to_string(),
+                max_hits: 0,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(search_result.num_hits, 10 * 1000);
+
+    info!("delete index");
     sandbox
         .indexer_rest_client
         .indexes()

@@ -142,8 +142,9 @@ impl QueueCoordinator {
 
     /// Polls messages from the queue and prepares them for processing
     async fn poll_messages(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        // TODO increase `max_messages` when previous messages were small
         // receive() typically uses long polling so it can be long to respond
+        // TODO increase `max_messages` when previous messages were small
+        // TODO avoid blocking actor teardown with the long polling future
         let raw_messages = ctx
             .protect_future(
                 self.queue
