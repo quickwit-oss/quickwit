@@ -169,9 +169,9 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             continue;
         }
         match source_config.source_params {
-            SourceParams::File(FileSourceParams::FileUri(_))
-            | SourceParams::File(FileSourceParams::Stdin)
+            SourceParams::File(FileSourceParams::Filepath(_))
             | SourceParams::IngestCli
+            | SourceParams::Stdin
             | SourceParams::Void(_)
             | SourceParams::Vec(_) => { // We don't need to schedule those.
             }
@@ -213,7 +213,7 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             | SourceParams::PubSub(_)
             | SourceParams::Sqs(_)
             | SourceParams::Pulsar(_)
-            | SourceParams::File(FileSourceParams::Sqs(_)) => {
+            | SourceParams::File(FileSourceParams::Notifications(_)) => {
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::NonSharded {

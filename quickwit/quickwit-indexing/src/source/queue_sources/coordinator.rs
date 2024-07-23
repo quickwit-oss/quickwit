@@ -235,7 +235,7 @@ impl QueueCoordinator {
         if let Some(in_progress_ref) = self.local_state.read_in_progress_mut() {
             // TODO: should we kill the publish lock if the message visibility extension failed?
             let batch_builder = in_progress_ref
-                .reader
+                .batch_reader
                 .read_batch(ctx.progress(), self.source_type)
                 .await?;
             if batch_builder.num_bytes > 0 {
@@ -245,7 +245,7 @@ impl QueueCoordinator {
                     .send_message(batch_builder.build())
                     .await?;
             }
-            if in_progress_ref.reader.is_eof() {
+            if in_progress_ref.batch_reader.is_eof() {
                 self.local_state
                     .drop_currently_read(self.visible_settings.deadline_for_last_extension)
                     .await?;

@@ -896,9 +896,8 @@ impl<T> Default for FilterRange<T> {
 /// (false) or the shard table (true)
 fn use_shard_api(params: &SourceParams) -> bool {
     match params {
-        SourceParams::File(FileSourceParams::FileUri(_)) => false,
-        SourceParams::File(FileSourceParams::Sqs(_)) => true,
-        SourceParams::File(FileSourceParams::Stdin) => panic!("stdin cannot be checkpointed"),
+        SourceParams::File(FileSourceParams::Filepath(_)) => false,
+        SourceParams::File(FileSourceParams::Notifications(_)) => true,
         SourceParams::Ingest => true,
         SourceParams::IngestApi => false,
         SourceParams::IngestCli => false,
@@ -907,6 +906,7 @@ fn use_shard_api(params: &SourceParams) -> bool {
         SourceParams::PubSub(_) => false,
         SourceParams::Pulsar(_) => false,
         SourceParams::Sqs(_) => true,
+        SourceParams::Stdin => panic!("stdin cannot be checkpointed"),
         SourceParams::Vec(_) => false,
         SourceParams::Void(_) => false,
     }
