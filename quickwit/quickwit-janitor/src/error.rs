@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_common::rate_limited_error;
 use quickwit_proto::metastore::MetastoreError;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::{Deserialize, Serialize};
@@ -37,7 +38,10 @@ pub enum JanitorError {
 impl ServiceError for JanitorError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::Internal(err_msg) => {
+                rate_limited_error!(limit_per_min = 6, err_msg);
+                ServiceErrorCode::Internal
+            }
             Self::InvalidDeleteQuery(_) => ServiceErrorCode::BadRequest,
             Self::Metastore(metastore_error) => metastore_error.error_code(),
         }

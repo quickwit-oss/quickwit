@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use hyper::StatusCode;
+use quickwit_common::rate_limited_error;
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::IngestRequestV2Builder;
 use quickwit_proto::ingest::router::{
@@ -147,7 +148,10 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     let Some(ingest_request) = ingest_request_opt else {
         return Ok(ElasticBulkResponse::default());
     };
-    let ingest_response = ingest_router.ingest(ingest_request).await?;
+    let ingest_response = ingest_router.ingest(ingest_request).await.map_err(|err| {
+        rate_limited_error!(limit_per_min=6, err=?err, "router error");
+        err
+    })?;
     make_elastic_bulk_response_v2(ingest_response, per_subrequest_doc_handles, now)
 }
 
@@ -168,8 +172,14 @@ fn make_elastic_bulk_response_v2(
             .expect("`index_uid` should be a required field");
 
         // Find the doc handles for the subresponse.
-        let mut doc_handles =
-            remove_doc_handles(&mut per_subrequest_doc_handles, success.subrequest_id)?;
+        let mut doc_handles = remove_doc_handles(
+            &mut per_subrequest_doc_handles,
+            success.subrequest_id,
+        )
+        .map_err(|err| {
+            rate_limited_error!(limit_per_min=6, index_id=%index_id, "could not subrequest id");
+            err
+        })?;
         doc_handles.sort_unstable_by(|left, right| left.doc_uid.cmp(&right.doc_uid));
 
         // Populate the response items with one error per parse failure.
@@ -178,9 +188,11 @@ fn make_elastic_bulk_response_v2(
 
             // Since the generated doc UIDs are monotonically increasing, and inserted in order, we
             // can find doc handles using binary search.
+            let failed_doc_uid = parse_failure.doc_uid();
             let doc_handle_idx = doc_handles
-                .binary_search_by_key(&parse_failure.doc_uid(), |doc_handle| doc_handle.doc_uid)
+                .binary_search_by_key(&failed_doc_uid, |doc_handle| doc_handle.doc_uid)
                 .map_err(|_| {
+                    rate_limited_error!(limit_per_min=6, doc_uid=%failed_doc_uid, "could not find doc_uid from parse failure");
                     ElasticsearchError::new(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         format!(
@@ -228,7 +240,16 @@ fn make_elastic_bulk_response_v2(
 
         // Find the doc handles for the subrequest.
         let doc_handles =
-            remove_doc_handles(&mut per_subrequest_doc_handles, failure.subrequest_id)?;
+            remove_doc_handles(&mut per_subrequest_doc_handles, failure.subrequest_id).map_err(
+                |err| {
+                    rate_limited_error!(
+                        limit_per_min = 6,
+                        subrequest = failure.subrequest_id,
+                        "failed to find error subrequest"
+                    );
+                    err
+                },
+            )?;
 
         // Populate the response items with one error per doc handle.
         let (exception, reason, status) = match failure.reason() {

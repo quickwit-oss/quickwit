@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_actors::AskError;
+use quickwit_common::rate_limited_error;
 use quickwit_common::tower::{MakeLoadShedError, RpcName};
 use thiserror;
 
@@ -52,7 +53,13 @@ impl From<quickwit_common::tower::TaskCancelled> for ControlPlaneError {
 impl ServiceError for ControlPlaneError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::Internal(error_msg) => {
+                rate_limited_error!(
+                    limit_per_min = 6,
+                    "control plane internal error: {error_msg}"
+                );
+                ServiceErrorCode::Internal
+            }
             Self::Metastore(metastore_error) => metastore_error.error_code(),
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
