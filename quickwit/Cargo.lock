@@ -5862,7 +5862,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "itertools 0.13.0",
- "ouroboros",
+ "regex",
  "serde",
  "serde_json",
  "tantivy",
@@ -6296,6 +6296,7 @@ dependencies = [
  "proptest",
  "quickwit-common",
  "quickwit-datetime",
+ "regex",
  "serde",
  "serde_json",
  "serde_with 3.9.0",
