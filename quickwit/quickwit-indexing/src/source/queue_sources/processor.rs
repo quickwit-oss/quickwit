@@ -149,7 +149,7 @@ impl QueueProcessor {
 
         let preprocessed_messages = raw_messages
             .into_iter()
-            .map(|m| m.pre_process(self.queue_params.message_type))
+            .map(|msg| msg.pre_process(self.queue_params.message_type))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         let categorized_using_local_state =
@@ -164,11 +164,13 @@ impl QueueProcessor {
             .await?;
 
         // Drop visibility tasks for messages that have been processed by another pipeline
-        let completed_visibility_tasks = categorized_using_shared_state
-            .already_processed
-            .iter()
-            .filter_map(|m| self.local_state.mark_completed(m.partition_id()))
-            .collect();
+        let mut completed_visibility_tasks = Vec::new();
+        for preproc_msg in &categorized_using_shared_state.already_processed {
+            let handle_opt = self.local_state.mark_completed(preproc_msg.partition_id());
+            if let Some(handle) = handle_opt {
+                completed_visibility_tasks.push(handle);
+            }
+        }
         acknowledge_and_abort(&*self.queue, completed_visibility_tasks).await?;
 
         // Acknowledge messages that have been processed by another pipeline

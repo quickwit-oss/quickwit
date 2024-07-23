@@ -38,7 +38,8 @@ use message::{PreProcessedMessage, RawMessage};
 /// The queue abstraction is based on the AWS SQS and Google Pubsub APIs. The
 /// only requirement of the underlying implementation is that messages exposed
 /// to a given consumer are hidden to other consumers for a configurable period
-/// of time. Retries are
+/// of time. Retries are handled by the implementation because queues might
+/// behave differently (throttling, deduplication...).
 #[async_trait]
 pub trait Queue: fmt::Debug + Send + Sync + 'static {
     /// Poll the queue to receive messages.
@@ -49,11 +50,12 @@ pub trait Queue: fmt::Debug + Send + Sync + 'static {
     /// queue, it should be returned as quickly as possible.
     async fn receive(&self) -> anyhow::Result<Vec<RawMessage>>;
 
-    /// Try to acknowledge the messages, effectively deleting them from the queue.
+    /// Try to acknowledge the messages, effectively deleting them from the
+    /// queue.
     ///
-    /// The call might return `Ok(())` yet fail partially:
-    /// - if it's a transient failure? -> TODO check
-    /// - if the message was already acknowledged
+    /// The call returns `Ok(())` if:
+    /// - the acknowledgement of some of the messages failed due to a transient failure
+    /// - the message was already acknowledged
     async fn acknowledge(&self, ack_ids: &[&str]) -> anyhow::Result<()>;
 
     /// Modify the visibility deadline of the messages.
