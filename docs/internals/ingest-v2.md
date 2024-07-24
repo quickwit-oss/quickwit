@@ -17,7 +17,7 @@ indexer:
 
 See [full configuration example](https://github.com/quickwit-oss/quickwit/blob/main/config/quickwit.yaml).
 
-The only way to use the ingest API V2 is to use the [bulk endpoint](../reference/es_compatible_api#_bulk--batch-ingestion-endpoint) of the Elasticsearch-compatible API. The native Quickwit API is not yet compatible with the ingest V2 API.
+The only way to use the ingest API V2 is to use the [bulk endpoint](../reference/es_compatible_api.md#_bulk--batch-ingestion-endpoint) of the Elasticsearch-compatible API. The native Quickwit API is not yet compatible with the ingest V2 API.
 
 ## Caveats
 
