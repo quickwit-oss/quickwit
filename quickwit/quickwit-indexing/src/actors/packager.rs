@@ -388,7 +388,7 @@ mod tests {
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_proto::search::{deserialize_split_fields, ListFieldsEntryResponse};
-    use quickwit_proto::types::{IndexUid, NodeId};
+    use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId};
     use tantivy::directory::MmapDirectory;
     use tantivy::schema::{NumericOptions, Schema, Type, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, IndexBuilder, IndexSettings};
@@ -519,6 +519,7 @@ mod tests {
                 node_id,
                 index_uid,
                 source_id,
+                doc_mapping_uid: DocMappingUid::default(),
                 split_id: "test-split".to_string(),
                 partition_id: 17u64,
                 num_docs,

@@ -20,7 +20,7 @@
 use std::collections::BTreeSet;
 use std::ops::{Range, RangeInclusive};
 
-use quickwit_proto::types::{IndexUid, SplitId};
+use quickwit_proto::types::{DocMappingUid, IndexUid, SplitId};
 use serde::{Deserialize, Serialize};
 
 use crate::split_metadata::{utc_now_timestamp, SplitMaturity};
@@ -92,6 +92,11 @@ pub(crate) struct SplitMetadataV0_8 {
 
     #[serde(default)]
     num_merge_ops: usize,
+
+    // we default fill with zero: we don't know the right uid, and it's correct to assume all
+    // splits before when updates first appeared are compatible with each other.
+    #[serde(default)]
+    doc_mapping_uid: DocMappingUid,
 }
 
 impl From<SplitMetadataV0_8> for SplitMetadata {
@@ -127,6 +132,7 @@ impl From<SplitMetadataV0_8> for SplitMetadata {
             tags: v8.tags,
             footer_offsets: v8.footer_offsets,
             num_merge_ops: v8.num_merge_ops,
+            doc_mapping_uid: v8.doc_mapping_uid,
         }
     }
 }
@@ -148,6 +154,7 @@ impl From<SplitMetadata> for SplitMetadataV0_8 {
             tags: split.tags,
             footer_offsets: split.footer_offsets,
             num_merge_ops: split.num_merge_ops,
+            doc_mapping_uid: split.doc_mapping_uid,
         }
     }
 }

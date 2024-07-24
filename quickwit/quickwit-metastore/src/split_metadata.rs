@@ -25,7 +25,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use bytesize::ByteSize;
-use quickwit_proto::types::{IndexUid, SourceId, SplitId};
+use quickwit_proto::types::{DocMappingUid, IndexUid, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationMilliSeconds};
 use time::OffsetDateTime;
@@ -133,6 +133,10 @@ pub struct SplitMetadata {
     /// Number of merge operations that was involved to create
     /// this split.
     pub num_merge_ops: usize,
+
+    /// Doc mapping UID used when creating this split. This split may only be merged with other
+    /// splits using the same doc mapping UID.
+    pub doc_mapping_uid: DocMappingUid,
 }
 
 impl fmt::Debug for SplitMetadata {
@@ -281,6 +285,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
             footer_offsets: 1000..2000,
             num_merge_ops: 3,
+            doc_mapping_uid: DocMappingUid::default(),
         }
     }
 
@@ -420,6 +425,7 @@ mod tests {
             footer_offsets: 0..1024,
             delete_opstamp: 0,
             num_merge_ops: 0,
+            doc_mapping_uid: DocMappingUid::default(),
         };
 
         let expected_output = "SplitMetadata { split_id: \"split-1\", index_uid: IndexUid { \

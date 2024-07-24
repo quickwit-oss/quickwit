@@ -23,7 +23,7 @@ use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
 
 use quickwit_metastore::SplitMetadata;
-use quickwit_proto::types::{IndexUid, NodeId, SourceId, SplitId};
+use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SourceId, SplitId};
 use tantivy::DateTime;
 use time::OffsetDateTime;
 
@@ -36,6 +36,9 @@ pub struct SplitAttrs {
     pub index_uid: IndexUid,
     /// Source ID to which the split belongs.
     pub source_id: SourceId,
+
+    /// Doc mapping UID used to produce this split.
+    pub doc_mapping_uid: DocMappingUid,
 
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -100,6 +103,7 @@ pub fn create_split_metadata(
         node_id: split_attrs.node_id.to_string(),
         index_uid: split_attrs.index_uid.clone(),
         source_id: split_attrs.source_id.clone(),
+        doc_mapping_uid: split_attrs.doc_mapping_uid,
         split_id: split_attrs.split_id.clone(),
         partition_id: split_attrs.partition_id,
         num_docs: split_attrs.num_docs as usize,

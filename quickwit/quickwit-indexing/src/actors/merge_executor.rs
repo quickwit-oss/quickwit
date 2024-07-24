@@ -236,7 +236,7 @@ pub fn merge_split_attrs(
     pipeline_id: MergePipelineId,
     merge_split_id: SplitId,
     splits: &[SplitMetadata],
-) -> SplitAttrs {
+) -> anyhow::Result<SplitAttrs> {
     let partition_id = combine_partition_ids_aux(splits.iter().map(|split| split.partition_id));
     let time_range: Option<RangeInclusive<DateTime>> = merge_time_range(splits);
     let uncompressed_docs_size_in_bytes = sum_doc_sizes_in_bytes(splits);
@@ -250,10 +250,21 @@ pub fn merge_split_attrs(
         .map(|split| split.delete_opstamp)
         .min()
         .unwrap_or(0);
-    SplitAttrs {
+    let doc_mapping_uid = splits
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("attempted to merge zero splits"))?
+        .doc_mapping_uid;
+    if splits
+        .iter()
+        .any(|split| split.doc_mapping_uid != doc_mapping_uid)
+    {
+        anyhow::bail!("attempted to merge splits with different doc mapping uid");
+    }
+    Ok(SplitAttrs {
         node_id: pipeline_id.node_id.clone(),
         index_uid: pipeline_id.index_uid.clone(),
         source_id: pipeline_id.source_id.clone(),
+        doc_mapping_uid,
         split_id: merge_split_id,
         partition_id,
         replaced_split_ids,
@@ -262,7 +273,7 @@ pub fn merge_split_attrs(
         uncompressed_docs_size_in_bytes,
         delete_opstamp,
         num_merge_ops: max_merge_ops(splits) + 1,
-    }
+    })
 }
 
 fn max_merge_ops(splits: &[SplitMetadata]) -> usize {
@@ -324,7 +335,7 @@ impl MergeExecutor {
         )?;
         ctx.record_progress();
 
-        let split_attrs = merge_split_attrs(self.pipeline_id.clone(), merge_split_id, &splits);
+        let split_attrs = merge_split_attrs(self.pipeline_id.clone(), merge_split_id, &splits)?;
         Ok(IndexedSplit {
             split_attrs,
             index: merged_index,
@@ -436,6 +447,7 @@ impl MergeExecutor {
                 node_id: NodeId::new(split.node_id),
                 index_uid: split.index_uid,
                 source_id: split.source_id,
+                doc_mapping_uid: split.doc_mapping_uid,
                 split_id: merge_split_id,
                 partition_id: split.partition_id,
                 replaced_split_ids: vec![split.split_id.clone()],

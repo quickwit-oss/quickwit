@@ -25,7 +25,7 @@ use quickwit_common::metrics::GaugeGuard;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::types::{IndexUid, PublishToken};
+use quickwit_proto::types::{DocMappingUid, IndexUid, PublishToken};
 use tantivy::directory::MmapDirectory;
 use tantivy::IndexBuilder;
 use tracing::{instrument, Span};
@@ -82,6 +82,7 @@ impl IndexedSplitBuilder {
         pipeline_id: IndexingPipelineId,
         partition_id: u64,
         last_delete_opstamp: u64,
+        doc_mapping_uid: DocMappingUid,
         scratch_directory: TempDirectory,
         index_builder: IndexBuilder,
         io_controls: IoControls,
@@ -105,6 +106,7 @@ impl IndexedSplitBuilder {
                 node_id: pipeline_id.node_id,
                 index_uid: pipeline_id.index_uid,
                 source_id: pipeline_id.source_id,
+                doc_mapping_uid,
                 partition_id,
                 split_id,
                 num_docs: 0,

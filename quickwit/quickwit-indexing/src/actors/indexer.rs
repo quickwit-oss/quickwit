@@ -42,7 +42,7 @@ use quickwit_proto::indexing::{IndexingPipelineId, PipelineMetrics};
 use quickwit_proto::metastore::{
     LastDeleteOpstampRequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::types::PublishToken;
+use quickwit_proto::types::{DocMappingUid, PublishToken};
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use serde::Serialize;
 use tantivy::schema::Schema;
@@ -98,6 +98,7 @@ struct IndexerState {
     publish_lock: PublishLock,
     publish_token_opt: Option<PublishToken>,
     schema: Schema,
+    doc_mapping_uid: DocMappingUid,
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
@@ -130,6 +131,7 @@ impl IndexerState {
             self.pipeline_id.clone(),
             partition_id,
             last_delete_opstamp,
+            self.doc_mapping_uid,
             self.indexing_directory.clone(),
             index_builder,
             io_controls,
@@ -572,6 +574,7 @@ impl Indexer {
                 publish_lock: PublishLock::default(),
                 publish_token_opt: None,
                 schema,
+                doc_mapping_uid: doc_mapper.doc_mapping_uid(),
                 tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
