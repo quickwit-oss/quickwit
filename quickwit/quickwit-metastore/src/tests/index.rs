@@ -45,7 +45,7 @@ use crate::tests::cleanup_index;
 use crate::{
     CreateIndexRequestExt, IndexMetadataResponseExt, IndexesMetadataResponseExt,
     ListIndexesMetadataResponseExt, MetastoreServiceExt, SplitMetadata, StageSplitsRequestExt,
-    UpdateIndexRequestExt,
+    UpdateIndexRequestExt, UpdateIndexResponseExt,
 };
 
 pub async fn test_metastore_create_index<

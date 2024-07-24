@@ -47,7 +47,7 @@ use quickwit_proto::metastore::{
     MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest,
     ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    UpdateIndexResponse, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
 use sea_query::{Alias, Asterisk, Expr, Func, PostgresQueryBuilder, Query, UnionType};
@@ -68,7 +68,8 @@ use crate::file_backed::MutationOccurred;
 use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
-    IndexesMetadataResponseExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
+    IndexesMetadataResponseExt, PublishSplitsRequestExt, UpdateIndexResponseExt,
+    STREAM_SPLITS_CHUNK_SIZE,
 };
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
@@ -395,7 +396,7 @@ impl MetastoreService for PostgresqlMetastore {
     async fn update_index(
         &self,
         request: UpdateIndexRequest,
-    ) -> MetastoreResult<IndexMetadataResponse> {
+    ) -> MetastoreResult<UpdateIndexResponse> {
         let retention_policy_opt = request.deserialize_retention_policy()?;
         let search_settings = request.deserialize_search_settings()?;
         let indexing_settings = request.deserialize_indexing_settings()?;
@@ -413,7 +414,10 @@ impl MetastoreService for PostgresqlMetastore {
             })
             .await
         })?;
-        IndexMetadataResponse::try_from_index_metadata(&updated_index_metadata)
+        UpdateIndexResponse::try_from_index_metadata_and_restart_pipeline(
+            &updated_index_metadata,
+            false,
+        )
     }
 
     #[instrument(skip(self))]

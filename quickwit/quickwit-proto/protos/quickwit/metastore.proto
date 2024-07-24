@@ -97,7 +97,7 @@ service MetastoreService {
   rpc CreateIndex(CreateIndexRequest) returns (CreateIndexResponse);
 
   // Update an index.
-  rpc UpdateIndex(UpdateIndexRequest) returns (IndexMetadataResponse);
+  rpc UpdateIndex(UpdateIndexRequest) returns (UpdateIndexResponse);
 
   // Returns the `IndexMetadata` of an index identified by its IndexID or its IndexUID.
   rpc IndexMetadata(IndexMetadataRequest) returns (IndexMetadataResponse);
@@ -217,6 +217,11 @@ message UpdateIndexRequest {
   optional string retention_policy_json = 3;
   string indexing_settings_json = 4;
   string doc_mapping_json = 5;
+}
+
+message UpdateIndexResponse {
+  string index_metadata_serialized_json = 1;
+  bool restart_pipeline = 2;
 }
 
 message ListIndexesMetadataRequest {
