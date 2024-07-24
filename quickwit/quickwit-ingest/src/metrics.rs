@@ -18,11 +18,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, new_gauge, IntCounter, IntGauge};
+use quickwit_common::metrics::{new_counter, new_counter_vec, new_gauge, IntCounter, IntGauge};
 
 pub struct IngestMetrics {
-    pub ingested_num_bytes: IntCounter,
-    pub ingested_num_docs: IntCounter,
+    pub ingested_docs_bytes_valid: IntCounter,
+    pub ingested_docs_bytes_invalid: IntCounter,
+    pub ingested_docs_invalid: IntCounter,
+    pub ingested_docs_valid: IntCounter,
+
     pub replicated_num_bytes_total: IntCounter,
     pub replicated_num_docs_total: IntCounter,
     pub queue_count: IntGauge,
@@ -30,19 +33,33 @@ pub struct IngestMetrics {
 
 impl Default for IngestMetrics {
     fn default() -> Self {
-        Self {
-            ingested_num_bytes: new_counter(
-                "ingested_num_bytes",
-                "Total size of the docs ingested in bytes",
-                "ingest",
-                &[],
-            ),
-            ingested_num_docs: new_counter(
-                "ingested_num_docs",
-                "Number of docs received to be ingested",
-                "ingest",
-                &[],
-            ),
+        let ingest_docs_bytes_total = new_counter_vec(
+            "docs_bytes_total",
+            "Total size of the docs ingested, measured in ingester's leader, after validation and \
+             before persistence/replication",
+            "ingest",
+            &[],
+            ["validity"],
+        );
+        let ingested_docs_bytes_valid = ingest_docs_bytes_total.with_label_values(["valid"]);
+        let ingested_docs_bytes_invalid = ingest_docs_bytes_total.with_label_values(["invalid"]);
+
+        let ingest_docs_total = new_counter_vec(
+            "docs_total",
+            "Total number of the docs ingested, measured in ingester's leader, after validation \
+             and before persistence/replication",
+            "ingest",
+            &[],
+            ["validity"],
+        );
+        let ingested_docs_valid = ingest_docs_total.with_label_values(["valid"]);
+        let ingested_docs_invalid = ingest_docs_total.with_label_values(["invalid"]);
+
+        IngestMetrics {
+            ingested_docs_bytes_valid,
+            ingested_docs_bytes_invalid,
+            ingested_docs_valid,
+            ingested_docs_invalid,
             replicated_num_bytes_total: new_counter(
                 "replicated_num_bytes_total",
                 "Total size in bytes of the replicated docs.",

@@ -145,7 +145,7 @@ fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
         let num_shards = shard_entries.len().max(1) as u64;
         let average_throughput_per_shard_bytes: u64 = shard_entries
             .iter()
-            .map(|shard_entry| shard_entry.ingestion_rate.0 as u64 * bytesize::MIB)
+            .map(|shard_entry| shard_entry.long_term_ingestion_rate.0 as u64 * bytesize::MIB)
             .sum::<u64>()
             .div_ceil(num_shards)
             // A shard throughput cannot exceed PIPELINE_THROUGHPUT in the long term (this is
@@ -352,6 +352,7 @@ impl IndexingScheduler {
         notify_on_drop: Option<Arc<NotifyChangeOnDrop>>,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
+        crate::metrics::CONTROL_PLANE_METRICS.apply_total.inc();
         for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer() {
             // We don't want to block on a slow indexer so we apply this change asynchronously
             // TODO not blocking is cool, but we need to make sure there is not accumulation

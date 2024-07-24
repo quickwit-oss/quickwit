@@ -25,9 +25,8 @@ use quickwit_common::tower::MakeLoadShedError;
 
 use self::ingester::{PersistFailureReason, ReplicateFailureReason};
 use self::router::IngestFailureReason;
-use super::types::NodeId;
 use super::GrpcServiceError;
-use crate::types::{queue_id, DocUid, Position, QueueId, ShardId, SourceUid};
+use crate::types::{queue_id, DocUid, NodeIdRef, Position, QueueId, ShardId, SourceUid};
 use crate::{ServiceError, ServiceErrorCode};
 
 pub mod ingester;
@@ -95,11 +94,11 @@ impl MakeLoadShedError for IngestV2Error {
 
 impl Shard {
     /// List of nodes that are storing the shard (the leader, and optionally the follower).
-    pub fn ingesters(&self) -> impl Iterator<Item = NodeId> + '_ {
+    pub fn ingesters(&self) -> impl Iterator<Item = &NodeIdRef> + '_ {
         [Some(&self.leader_id), self.follower_id.as_ref()]
             .into_iter()
             .flatten()
-            .map(|node_id| NodeId::new(node_id.clone()))
+            .map(|node_id| NodeIdRef::from_str(node_id))
     }
 
     pub fn source_uid(&self) -> SourceUid {

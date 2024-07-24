@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
 use bytesize::ByteSize;
@@ -25,7 +25,7 @@ use quickwit_cluster::{Cluster, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
-use quickwit_common::tower::Rate;
+use quickwit_common::tower::{ConstantRate, Rate};
 use quickwit_proto::ingest::ShardState;
 use quickwit_proto::types::{split_queue_id, NodeId, QueueId, ShardId, SourceUid};
 use serde::{Deserialize, Serialize, Serializer};
@@ -50,16 +50,20 @@ pub struct ShardInfo {
     pub shard_id: ShardId,
     pub shard_state: ShardState,
     /// Shard ingestion rate in MiB/s.
-    pub ingestion_rate: RateMibPerSec,
+    /// Short term ingestion rate. It is measured over a short period of time.
+    pub short_term_ingestion_rate: RateMibPerSec,
+    /// Long term ingestion rate. It is measured over a larger period of time.
+    pub long_term_ingestion_rate: RateMibPerSec,
 }
 
 impl Serialize for ShardInfo {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&format!(
-            "{}:{}:{}",
+            "{}:{}:{}:{}",
             self.shard_id,
             self.shard_state.as_json_str_name(),
-            self.ingestion_rate.0,
+            self.short_term_ingestion_rate.0,
+            self.long_term_ingestion_rate.0,
         ))
     }
 }
@@ -81,7 +85,14 @@ impl<'de> Deserialize<'de> for ShardInfo {
         let shard_state = ShardState::from_json_str_name(shard_state_str)
             .ok_or_else(|| serde::de::Error::custom("invalid shard state"))?;
 
-        let ingestion_rate = parts
+        let short_term_ingestion_rate = parts
+            .next()
+            .ok_or_else(|| serde::de::Error::custom("invalid shard info"))?
+            .parse::<u16>()
+            .map(RateMibPerSec)
+            .map_err(|_| serde::de::Error::custom("invalid shard ingestion rate"))?;
+
+        let long_term_ingestion_rate = parts
             .next()
             .ok_or_else(|| serde::de::Error::custom("invalid shard info"))?
             .parse::<u16>()
@@ -91,7 +102,8 @@ impl<'de> Deserialize<'de> for ShardInfo {
         Ok(Self {
             shard_id,
             shard_state,
-            ingestion_rate,
+            short_term_ingestion_rate,
+            long_term_ingestion_rate,
         })
     }
 }
@@ -148,6 +160,111 @@ impl LocalShardsSnapshot {
 pub(super) struct BroadcastLocalShardsTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
+    shard_throughput_time_series_map: ShardThroughputTimeSeriesMap,
+}
+
+const SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN: usize = 12;
+
+#[derive(Default)]
+struct ShardThroughputTimeSeriesMap {
+    shard_time_series: HashMap<(SourceUid, ShardId), ShardThroughputTimeSerie>,
+}
+
+impl ShardThroughputTimeSeriesMap {
+    // Records a list of shard throughputs.
+    //
+    // A new time series is created for each new shard_ids.
+    // If a shard_id had a time series, and it is not present in the
+    // `shard_throughput`, the time series will be removed.
+    #[allow(clippy::mutable_key_type)]
+    pub fn record_shard_throughputs(
+        &mut self,
+        shard_throughputs: HashMap<(SourceUid, ShardId), (ShardState, ConstantRate)>,
+    ) {
+        self.shard_time_series
+            .retain(|key, _| shard_throughputs.contains_key(key));
+        for ((source_uid, shard_id), (shard_state, throughput)) in shard_throughputs {
+            let throughput_measurement = throughput.rescale(Duration::from_secs(1)).work_bytes();
+            let shard_time_serie = self
+                .shard_time_series
+                .entry((source_uid.clone(), shard_id.clone()))
+                .or_default();
+            shard_time_serie.shard_state = shard_state;
+            shard_time_serie.record(throughput_measurement);
+        }
+    }
+
+    pub fn get_per_source_shard_infos(&self) -> BTreeMap<SourceUid, ShardInfos> {
+        let mut per_source_shard_infos: BTreeMap<SourceUid, ShardInfos> = BTreeMap::new();
+        for ((source_uid, shard_id), shard_time_series) in self.shard_time_series.iter() {
+            let shard_state = shard_time_series.shard_state;
+            let short_term_ingestion_rate_mib_per_sec_u64: u64 =
+                shard_time_series.last().as_u64().div_ceil(ONE_MIB.as_u64());
+            let long_term_ingestion_rate_mib_per_sec_u64: u64 = shard_time_series
+                .average()
+                .as_u64()
+                .div_ceil(ONE_MIB.as_u64());
+            INGEST_V2_METRICS
+                .shard_st_throughput_mib
+                .observe(short_term_ingestion_rate_mib_per_sec_u64 as f64);
+            INGEST_V2_METRICS
+                .shard_lt_throughput_mib
+                .observe(long_term_ingestion_rate_mib_per_sec_u64 as f64);
+
+            let short_term_ingestion_rate =
+                RateMibPerSec(short_term_ingestion_rate_mib_per_sec_u64 as u16);
+            let long_term_ingestion_rate =
+                RateMibPerSec(long_term_ingestion_rate_mib_per_sec_u64 as u16);
+            let shard_info = ShardInfo {
+                shard_id: shard_id.clone(),
+                shard_state,
+                short_term_ingestion_rate,
+                long_term_ingestion_rate,
+            };
+
+            per_source_shard_infos
+                .entry(source_uid.clone())
+                .or_default()
+                .insert(shard_info);
+        }
+        per_source_shard_infos
+    }
+}
+
+#[derive(Default)]
+struct ShardThroughputTimeSerie {
+    shard_state: ShardState,
+    measurements: [ByteSize; SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN],
+    len: usize,
+}
+
+impl ShardThroughputTimeSerie {
+    fn last(&self) -> ByteSize {
+        self.measurements.last().copied().unwrap_or_default()
+    }
+
+    fn average(&self) -> ByteSize {
+        if self.len == 0 {
+            return ByteSize::default();
+        }
+        let sum = self
+            .measurements
+            .iter()
+            .rev()
+            .take(self.len)
+            .map(ByteSize::as_u64)
+            .sum::<u64>();
+        ByteSize::b(sum / self.len as u64)
+    }
+
+    fn record(&mut self, new_throughput_measurement: ByteSize) {
+        self.len = (self.len + 1).min(SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN);
+        self.measurements.rotate_left(1);
+        let Some(last_measurement) = self.measurements.last_mut() else {
+            return;
+        };
+        *last_measurement = new_throughput_measurement;
+    }
 }
 
 impl BroadcastLocalShardsTask {
@@ -155,17 +272,17 @@ impl BroadcastLocalShardsTask {
         let mut broadcaster = Self {
             cluster,
             weak_state,
+            shard_throughput_time_series_map: Default::default(),
         };
         tokio::spawn(async move { broadcaster.run().await })
     }
 
-    async fn snapshot_local_shards(&self) -> Option<LocalShardsSnapshot> {
+    async fn snapshot_local_shards(&mut self) -> Option<LocalShardsSnapshot> {
         let state = self.weak_state.upgrade()?;
 
         let Ok(mut state_guard) = state.lock_partially().await else {
             return Some(LocalShardsSnapshot::default());
         };
-        let mut per_source_shard_infos: BTreeMap<SourceUid, ShardInfos> = BTreeMap::new();
 
         let queue_ids: Vec<(QueueId, ShardState)> = state_guard
             .shards
@@ -182,36 +299,35 @@ impl BroadcastLocalShardsTask {
         let mut num_open_shards = 0;
         let mut num_closed_shards = 0;
 
-        for (queue_id, shard_state) in queue_ids {
-            let Some((_rate_limiter, rate_meter)) = state_guard.rate_trackers.get_mut(&queue_id)
-            else {
-                warn!(
-                    "rate limiter `{queue_id}` not found: this should never happen, please report"
-                );
-                continue;
-            };
-            let Some((index_uid, source_id, shard_id)) = split_queue_id(&queue_id) else {
-                continue;
-            };
-            let source_uid = SourceUid {
-                index_uid,
-                source_id,
-            };
-            // Shard ingestion rate in MiB/s.
-            let ingestion_rate_per_sec = rate_meter.harvest().rescale(Duration::from_secs(1));
-            let ingestion_rate_mib_per_sec_u64 = ingestion_rate_per_sec.work() / ONE_MIB.as_u64();
-            let ingestion_rate = RateMibPerSec(ingestion_rate_mib_per_sec_u64 as u16);
+        #[allow(clippy::mutable_key_type)]
+        let ingestion_rates: HashMap<(SourceUid, ShardId), (ShardState, ConstantRate)> = queue_ids
+            .iter()
+            .flat_map(|(queue_id, shard_state)| {
+                let Some((_rate_limiter, rate_meter)) = state_guard.rate_trackers.get_mut(queue_id)
+                else {
+                    warn!(
+                        "rate limiter `{queue_id}` not found: this should never happen, please \
+                         report"
+                    );
+                    return None;
+                };
+                let (index_uid, source_id, shard_id) = split_queue_id(queue_id)?;
+                let source_uid = SourceUid {
+                    index_uid,
+                    source_id,
+                };
+                // Shard ingestion rate in MiB/s.
+                Some(((source_uid, shard_id), (*shard_state, rate_meter.harvest())))
+            })
+            .collect();
 
-            let shard_info = ShardInfo {
-                shard_id,
-                shard_state,
-                ingestion_rate,
-            };
-            per_source_shard_infos
-                .entry(source_uid)
-                .or_default()
-                .insert(shard_info);
-        }
+        self.shard_throughput_time_series_map
+            .record_shard_throughputs(ingestion_rates);
+
+        let per_source_shard_infos = self
+            .shard_throughput_time_series_map
+            .get_per_source_shard_infos();
+
         for shard_infos in per_source_shard_infos.values() {
             for shard_info in shard_infos {
                 match shard_info.shard_state {
@@ -349,10 +465,11 @@ mod tests {
         let shard_info = ShardInfo {
             shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
-            ingestion_rate: RateMibPerSec(42),
+            short_term_ingestion_rate: RateMibPerSec(42),
+            long_term_ingestion_rate: RateMibPerSec(40),
         };
         let serialized = serde_json::to_string(&shard_info).unwrap();
-        assert_eq!(serialized, r#""00000000000000000001:open:42""#);
+        assert_eq!(serialized, r#""00000000000000000001:open:42:40""#);
 
         let deserialized = serde_json::from_str::<ShardInfo>(&serialized).unwrap();
         assert_eq!(deserialized, shard_info);
@@ -376,7 +493,8 @@ mod tests {
                 vec![ShardInfo {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
-                    ingestion_rate: RateMibPerSec(42),
+                    short_term_ingestion_rate: RateMibPerSec(42),
+                    long_term_ingestion_rate: RateMibPerSec(42),
                 }]
                 .into_iter()
                 .collect(),
@@ -416,7 +534,8 @@ mod tests {
                 vec![ShardInfo {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
-                    ingestion_rate: RateMibPerSec(42),
+                    short_term_ingestion_rate: RateMibPerSec(42),
+                    long_term_ingestion_rate: RateMibPerSec(42),
                 }]
                 .into_iter()
                 .collect(),
@@ -469,9 +588,10 @@ mod tests {
             .unwrap();
         let (_temp_dir, state) = IngesterState::for_test().await;
         let weak_state = state.weak();
-        let task = BroadcastLocalShardsTask {
+        let mut task = BroadcastLocalShardsTask {
             cluster,
             weak_state,
+            shard_throughput_time_series_map: Default::default(),
         };
         let previous_snapshot = task.snapshot_local_shards().await.unwrap();
         assert!(previous_snapshot.per_source_shard_infos.is_empty());
@@ -592,7 +712,7 @@ mod tests {
                 let shard_info = event.shard_infos.iter().next().unwrap();
                 assert_eq!(shard_info.shard_id, ShardId::from(1));
                 assert_eq!(shard_info.shard_state, ShardState::Open);
-                assert_eq!(shard_info.ingestion_rate, 42u16);
+                assert_eq!(shard_info.short_term_ingestion_rate, 42u16);
             })
             .forever();
 
@@ -608,7 +728,8 @@ mod tests {
         let value = serde_json::to_string(&vec![ShardInfo {
             shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
-            ingestion_rate: RateMibPerSec(42),
+            short_term_ingestion_rate: RateMibPerSec(42),
+            long_term_ingestion_rate: RateMibPerSec(42),
         }])
         .unwrap();
 
@@ -616,5 +737,27 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         assert_eq!(local_shards_update_counter.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn test_shard_throughput_time_serie() {
+        let mut time_serie = ShardThroughputTimeSerie::default();
+        assert_eq!(time_serie.last(), ByteSize::mb(0));
+        assert_eq!(time_serie.average(), ByteSize::mb(0));
+        time_serie.record(ByteSize::mb(2));
+        assert_eq!(time_serie.last(), ByteSize::mb(2));
+        assert_eq!(time_serie.average(), ByteSize::mb(2));
+        time_serie.record(ByteSize::mb(1));
+        assert_eq!(time_serie.last(), ByteSize::mb(1));
+        assert_eq!(time_serie.average(), ByteSize::kb(1500));
+        time_serie.record(ByteSize::mb(3));
+        assert_eq!(time_serie.last(), ByteSize::mb(3));
+        assert_eq!(time_serie.average(), ByteSize::mb(2));
+        for _ in 0..SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN {
+            time_serie.record(ByteSize::mb(4));
+            assert_eq!(time_serie.last(), ByteSize::mb(4));
+        }
+
+        assert_eq!(time_serie.last(), ByteSize::mb(4));
     }
 }
