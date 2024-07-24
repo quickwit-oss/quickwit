@@ -154,6 +154,9 @@ pub enum ElasticException {
     #[serde(rename = "index_not_found_exception")]
     IndexNotFound,
     // This is an exception proper to Quickwit.
+    #[serde(rename = "rate_limited_exception")]
+    RateLimited,
+    // This is an exception proper to Quickwit.
     #[serde(rename = "source_not_found_exception")]
     SourceNotFound,
     #[serde(rename = "timeout_exception")]

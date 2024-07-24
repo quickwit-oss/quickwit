@@ -247,6 +247,11 @@ fn make_elastic_bulk_response_v2(
                 format!("timeout [{}]", failure.index_id),
                 StatusCode::REQUEST_TIMEOUT,
             ),
+            IngestFailureReason::RateLimited => (
+                ElasticException::RateLimited,
+                format!("too many requests [{}]", failure.index_id),
+                StatusCode::TOO_MANY_REQUESTS,
+            ),
             reason => {
                 let pretty_reason = reason
                     .as_str_name()
