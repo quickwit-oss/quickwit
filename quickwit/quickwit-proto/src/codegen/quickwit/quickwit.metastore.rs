@@ -32,6 +32,8 @@ pub struct UpdateIndexRequest {
     pub retention_policy_json: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(string, tag = "4")]
     pub indexing_settings_json: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub doc_mapping_json: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

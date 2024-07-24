@@ -30,6 +30,7 @@ use quickwit_config::{
     validate_index_id_pattern, IndexTemplate, IndexTemplateId, PostgresMetastoreConfig,
     INGEST_V2_SOURCE_ID,
 };
+use quickwit_doc_mapper::DefaultDocMapperBuilder;
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
     serde_utils, AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
@@ -399,6 +400,19 @@ impl MetastoreService for PostgresqlMetastore {
         let retention_policy_opt = request.deserialize_retention_policy()?;
         let search_settings = request.deserialize_search_settings()?;
         let indexing_settings = request.deserialize_indexing_settings()?;
+        let doc_mapping = request.deserialize_doc_mapping()?;
+
+        // verify the new mapping is coherent
+        let doc_mapper_builder = DefaultDocMapperBuilder {
+            doc_mapping: doc_mapping.clone(),
+            default_search_fields: search_settings.default_search_fields.clone(),
+        };
+        doc_mapper_builder
+            .try_build()
+            .map_err(|e| MetastoreError::InvalidArgument {
+                message: format!("invalid mapping update: {e}"),
+            })?;
+
         let index_uid: IndexUid = request.index_uid().clone();
         let updated_index_metadata = run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
@@ -406,6 +420,7 @@ impl MetastoreService for PostgresqlMetastore {
                     index_metadata.set_retention_policy(retention_policy_opt);
                 mutation_occurred |= index_metadata.set_search_settings(search_settings);
                 mutation_occurred |= index_metadata.set_indexing_settings(indexing_settings);
+                mutation_occurred |= index_metadata.set_doc_mapping(doc_mapping)?;
                 Ok(MutationOccurred::from(mutation_occurred))
             })
             .await

@@ -211,6 +211,20 @@ macro_rules! metastore_test_suite {
 
             #[tokio::test]
             #[serial_test::serial]
+            async fn test_metastore_update_doc_mapping() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::index::test_metastore_update_doc_mapping::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::serial]
+            async fn test_metastore_update_doc_mapping_fail_case() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::index::test_metastore_update_doc_mapping_fail_case::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::serial]
             async fn test_metastore_update_indexing_settings() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::index::test_metastore_update_indexing_settings::<$metastore_type>().await;

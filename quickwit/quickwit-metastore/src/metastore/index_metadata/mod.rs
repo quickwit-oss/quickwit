@@ -20,11 +20,11 @@
 pub(crate) mod serialize;
 
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
+    DocMapping, IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
 };
 use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
 use quickwit_proto::types::{IndexUid, SourceId};
@@ -127,6 +127,37 @@ impl IndexMetadata {
             true
         } else {
             false
+        }
+    }
+
+    /// Replaces the doc mapping in the index config, returning whether a mutation occurred, or
+    /// possibly an error if this change is not allowed
+    pub fn set_doc_mapping(&mut self, doc_mapping: DocMapping) -> MetastoreResult<bool> {
+        if self.index_config.doc_mapping != doc_mapping {
+            if self.index_config.doc_mapping.doc_mapping_uid == doc_mapping.doc_mapping_uid {
+                let message = "tried to edit doc_mapping keeping the same uid".to_string();
+                return Err(MetastoreError::InvalidArgument { message });
+            }
+            if self.index_config.doc_mapping.timestamp_field != doc_mapping.timestamp_field {
+                let message = "tried to change timestamp field".to_string();
+                return Err(MetastoreError::InvalidArgument { message });
+            }
+            {
+                // TODO: i'm not sure this is necessary, we can relax this requirement once we know
+                // for sure
+                let old_tokenizers: HashSet<_> =
+                    self.index_config.doc_mapping.tokenizers.iter().collect();
+                let new_tokenizers: HashSet<_> = doc_mapping.tokenizers.iter().collect();
+                if !new_tokenizers.is_superset(&old_tokenizers) {
+                    let message = "removed or modified existing customtokenizers".to_string();
+                    return Err(MetastoreError::InvalidArgument { message });
+                }
+            }
+
+            self.index_config.doc_mapping = doc_mapping;
+            Ok(true)
+        } else {
+            Ok(false)
         }
     }
 

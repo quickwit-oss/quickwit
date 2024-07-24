@@ -98,12 +98,6 @@ pub fn load_index_config_update(
         current_index_config.index_uri,
         new_index_config.index_uri
     );
-    ensure!(
-        current_index_config
-            .doc_mapping
-            .eq_ignore_doc_mapping_uid(&new_index_config.doc_mapping),
-        "`doc_mapping` cannot be updated"
-    );
     Ok(new_index_config)
 }
 
@@ -440,12 +434,12 @@ mod test {
                       tokenizer: default
                       record: position
         "#;
-        let load_error = load_index_config_update(
+        let updated_config = load_index_config_update(
             ConfigFormat::Yaml,
             updated_config_yaml.as_bytes(),
             &original_config,
         )
-        .unwrap_err();
-        assert!(format!("{:?}", load_error).contains("`doc_mapping` cannot be updated"));
+        .unwrap();
+        assert_eq!(updated_config.doc_mapping.field_mappings.len(), 1);
     }
 }

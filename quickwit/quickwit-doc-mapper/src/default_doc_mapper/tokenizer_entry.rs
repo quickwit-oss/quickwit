@@ -26,7 +26,7 @@ use tantivy::tokenizer::{
 };
 
 /// A `TokenizerEntry` defines a custom tokenizer with its name and configuration.
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash, utoipa::ToSchema)]
 pub struct TokenizerEntry {
     /// Tokenizer name.
     pub name: String,
@@ -36,7 +36,7 @@ pub struct TokenizerEntry {
 }
 
 /// Tokenizer configuration.
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash, utoipa::ToSchema)]
 pub struct TokenizerConfig {
     #[serde(flatten)]
     pub(crate) tokenizer_type: TokenizerType,
@@ -94,7 +94,7 @@ pub fn analyze_text(text: &str, tokenizer: &TokenizerConfig) -> anyhow::Result<V
     Ok(tokens)
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TokenFilterType {
     RemoveLong,
@@ -122,7 +122,7 @@ impl TokenFilterType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TokenizerType {
     #[cfg(any(test, feature = "multilang"))]
@@ -133,7 +133,7 @@ pub enum TokenizerType {
     SourceCode,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NgramTokenizerOption {
     pub min_gram: usize,
@@ -142,7 +142,7 @@ pub struct NgramTokenizerOption {
     pub prefix_only: bool,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RegexTokenizerOption {
     pub pattern: String,
