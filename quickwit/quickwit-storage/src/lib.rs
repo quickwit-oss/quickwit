@@ -113,17 +113,6 @@ pub async fn load_file(
     Ok(bytes)
 }
 
-// this function isn't meant to be called, just to break compilation if
-// serde_json::Map is an ordered map and not a btree map
-#[allow(dead_code)]
-#[cfg(not(any(test, feature = "testsuite", feature = "integration-testsuite")))]
-unsafe fn serde_json_preserve_order_canary(
-    val: serde_json::Map<String, serde_json::Value>,
-) -> std::collections::BTreeMap<String, serde_json::Value> {
-    use std::mem::transmute as assert_serde_json__preserve_order__disabled;
-    assert_serde_json__preserve_order__disabled(val)
-}
-
 #[cfg(any(test, feature = "testsuite", feature = "integration-testsuite"))]
 mod for_test {
     use std::sync::Arc;
