@@ -1226,7 +1226,7 @@ pub(super) mod tests {
             open_fetch_stream_request,
             mrecordlog.clone(),
             shard_status_rx,
-            10,
+            10, //< we request batch larger than 10 bytes.
         );
 
         let mut mrecordlog_guard = mrecordlog.write().await;
@@ -1244,6 +1244,7 @@ pub(super) mod tests {
             .append_records(
                 &queue_id,
                 None,
+                // This doc is longer than 10 bytes.
                 std::iter::once(MRecord::new_doc("test-doc-foo").encode()),
             )
             .await
