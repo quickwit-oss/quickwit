@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use bytes::Bytes;
+use quickwit_common::rate_limited_error;
 use quickwit_opentelemetry::otlp::{
     OtlpGrpcLogsService, OtlpGrpcTracesService, OTEL_LOGS_INDEX_ID, OTEL_TRACES_INDEX_ID,
 };
@@ -154,7 +155,10 @@ impl ServiceError for OtlpApiError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
             OtlpApiError::InvalidPayload(_) => ServiceErrorCode::BadRequest,
-            OtlpApiError::Ingest(_) => ServiceErrorCode::Internal,
+            OtlpApiError::Ingest(err_msg) => {
+                rate_limited_error!(limit_per_min = 6, "otlp internal error: {err_msg}");
+                ServiceErrorCode::Internal
+            }
         }
     }
 }

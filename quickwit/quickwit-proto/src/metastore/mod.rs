@@ -19,6 +19,7 @@
 
 use std::fmt;
 
+use quickwit_common::rate_limited_error;
 use quickwit_common::retry::Retryable;
 use quickwit_common::tower::MakeLoadShedError;
 use serde::{Deserialize, Serialize};
@@ -192,15 +193,51 @@ impl ServiceError for MetastoreError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
             Self::AlreadyExists(_) => ServiceErrorCode::AlreadyExists,
-            Self::Connection { .. } => ServiceErrorCode::Internal,
-            Self::Db { .. } => ServiceErrorCode::Internal,
+            Self::Connection { message } => {
+                rate_limited_error!(
+                    limit_per_min = 6,
+                    "metastore/connection internal error: {message}"
+                );
+                ServiceErrorCode::Internal
+            }
+            Self::Db { message } => {
+                rate_limited_error!(limit_per_min = 6, "metastore/db internal error: {message}");
+                ServiceErrorCode::Internal
+            }
             Self::FailedPrecondition { .. } => ServiceErrorCode::BadRequest,
             Self::Forbidden { .. } => ServiceErrorCode::Forbidden,
-            Self::Internal { .. } => ServiceErrorCode::Internal,
+            Self::Internal { message, cause } => {
+                rate_limited_error!(
+                    limit_per_min = 6,
+                    "metastore internal error: {message} cause: {cause}"
+                );
+                ServiceErrorCode::Internal
+            }
             Self::InvalidArgument { .. } => ServiceErrorCode::BadRequest,
-            Self::Io { .. } => ServiceErrorCode::Internal,
-            Self::JsonDeserializeError { .. } => ServiceErrorCode::Internal,
-            Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
+            Self::Io { message } => {
+                rate_limited_error!(limit_per_min = 6, "metastore/io internal error: {message}");
+                ServiceErrorCode::Internal
+            }
+            Self::JsonDeserializeError {
+                struct_name,
+                message,
+            } => {
+                rate_limited_error!(
+                    limit_per_min = 6,
+                    "metastore/jsondeser internal error: [{struct_name}] {message}"
+                );
+                ServiceErrorCode::Internal
+            }
+            Self::JsonSerializeError {
+                struct_name,
+                message,
+            } => {
+                rate_limited_error!(
+                    limit_per_min = 6,
+                    "metastore/jsonser internal error: [{struct_name}]  {message}"
+                );
+                ServiceErrorCode::Internal
+            }
             Self::NotFound(_) => ServiceErrorCode::NotFound,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
