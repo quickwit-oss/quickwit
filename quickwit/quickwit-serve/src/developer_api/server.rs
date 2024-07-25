@@ -92,9 +92,9 @@ impl DeveloperService for DeveloperApiServer {
                 "chitchat_state": cluster_snapshot.chitchat_state_snapshot.node_state_snapshots,
             })
         });
-        if let Some(control_plane_maibox) = &self.control_plane_mailbox_opt {
+        if let Some(control_plane_mailbox) = &self.control_plane_mailbox_opt {
             if roles.is_empty() || roles.contains(&QuickwitService::ControlPlane) {
-                debug_info["control_plane"] = match control_plane_maibox.ask(GetDebugInfo).await {
+                debug_info["control_plane"] = match control_plane_mailbox.ask(GetDebugInfo).await {
                     Ok(debug_info) => debug_info,
                     Err(error) => {
                         json!({"error": error.to_string()})

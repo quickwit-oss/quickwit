@@ -15,7 +15,7 @@ To deploy Quickwit on Kubernetes, you will need:
 
 1. Install `kubectl` and `glasskube` cli.
 
-To install `kubectl` locally, you can refere to [this documentation](https://kubernetes.io/docs/tasks/tools/#install-kubectl).
+To install `kubectl` locally, you can refer to [this documentation](https://kubernetes.io/docs/tasks/tools/#install-kubectl).
 
 To install `glasskube` cli locally, you can refer to [this documentation](https://glasskube.dev/docs/getting-started/install) and choose the right installation options according to your operating system.
 
@@ -52,7 +52,7 @@ Or use the CLI instead:
 glasskube install quickwit
 ```
 
-In both, you'll have to set the value of thoses parameters:
+In both, you'll have to set the value of those parameters:
 
 * `defaultIndexRootUri`: the default index URI is a S3 compliant bucket which usually looks like this: `s3://<bucket-name>/<optional-base-path>`
 * `metastoreUri`: if you're not using PostgreSQL and object storage, you can pick the same bucket and value you used for the `defaultIndexRootUri` parameter

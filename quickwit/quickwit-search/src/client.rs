@@ -249,9 +249,9 @@ impl SearchServiceClient {
         }
     }
 
-    /// Gets the value associated to a key stored locally in the targetted node.
+    /// Gets the value associated to a key stored locally in the targeted node.
     /// This call is not "distributed".
-    /// If the key is not present on the targetted search `None` is simply returned.
+    /// If the key is not present on the targeted search `None` is simply returned.
     pub async fn get_kv(&mut self, get_kv_req: GetKvRequest) -> crate::Result<Option<Vec<u8>>> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Local(service) => {
@@ -269,7 +269,7 @@ impl SearchServiceClient {
         }
     }
 
-    /// Gets the value associated to a key stored locally in the targetted node.
+    /// Gets the value associated to a key stored locally in the targeted node.
     /// This call is not "distributed". It is up to the client to put the K,V pair
     /// on several nodes.
     pub async fn put_kv(&mut self, put_kv_req: PutKvRequest) -> crate::Result<()> {

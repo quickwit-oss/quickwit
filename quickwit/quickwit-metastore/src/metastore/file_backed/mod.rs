@@ -120,7 +120,7 @@ impl From<bool> for MutationOccurred<()> {
 /// ready to be fetched and updated.
 ///
 /// Transitioning states are useful to track inconsistencies between the in-memory and on-disk data
-/// structures when error(s) occurr during index creations and deletions:
+/// structures when error(s) occur during index creations and deletions:
 /// - `Creating` indicates that the metastore updated the manifest file with this state but not yet
 ///   the index metadata file;
 /// - `Deleting` indicates that the metastore updated the manifest file with this state but the

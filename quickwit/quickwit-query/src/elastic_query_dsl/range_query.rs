@@ -24,7 +24,7 @@ use quickwit_datetime::StrptimeParser;
 use serde::Deserialize;
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
-use crate::elastic_query_dsl::ConvertableToQueryAst;
+use crate::elastic_query_dsl::ConvertibleToQueryAst;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::QueryAst;
 use crate::JsonLiteral;
@@ -48,7 +48,7 @@ pub struct RangeQueryParams {
 
 pub type RangeQuery = OneFieldMap<RangeQueryParams>;
 
-impl ConvertableToQueryAst for RangeQuery {
+impl ConvertibleToQueryAst for RangeQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
         let field = self.field;
         let RangeQueryParams {

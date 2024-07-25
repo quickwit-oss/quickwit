@@ -360,7 +360,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     if let Err(cause) = upload_result {
                         warn!(cause=?cause, split_id=packaged_split.split_id(), "Failed to upload split. Killing!");
                         kill_switch.kill();
-                        bail!("failed to upload split `{}`. killing the actor contex", packaged_split.split_id());
+                        bail!("failed to upload split `{}`. killing the actor context", packaged_split.split_id());
                     }
 
                     packaged_splits_and_metadata.push((packaged_split, metadata));

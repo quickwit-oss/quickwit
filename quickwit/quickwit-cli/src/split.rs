@@ -124,7 +124,7 @@ impl FromStr for OutputFormat {
             "pretty-json" | "pretty_json" => Ok(OutputFormat::PrettyJson),
             "table" => Ok(OutputFormat::Table),
             _ => bail!(
-                "unkown output format `{output_format_str}`. supported formats are: `table`, \
+                "unknown output format `{output_format_str}`. supported formats are: `table`, \
                  `json`, and `pretty-json`"
             ),
         }

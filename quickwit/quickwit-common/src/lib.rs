@@ -207,7 +207,7 @@ pub fn num_cpus() -> usize {
     match std::thread::available_parallelism() {
         Ok(num_cpus) => num_cpus.get(),
         Err(io_error) => {
-            error!(errror=?io_error, "failed to detect the number of threads available: arbitrarily returning 2");
+            error!(error=?io_error, "failed to detect the number of threads available: arbitrarily returning 2");
             2
         }
     }

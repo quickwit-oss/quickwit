@@ -199,7 +199,7 @@ impl FileSourceReader {
     }
 
     // This function is only called for GZIP file.
-    // Because they cannot be seeked into, we have to scan them to the right initial position.
+    // Because they cannot be sought into, we have to scan them to the right initial position.
     async fn skip(&mut self) -> io::Result<()> {
         // Allocate once a 64kb buffer.
         let mut buf = [0u8; 64000];

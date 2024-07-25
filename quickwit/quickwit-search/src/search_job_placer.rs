@@ -180,7 +180,7 @@ impl SearchJobPlacer {
 
         let total_load: usize = jobs.iter().map(|job| job.cost()).sum();
 
-        // allow arround 5% disparity. Round up so we never end up in a case where
+        // allow around 5% disparity. Round up so we never end up in a case where
         // target_load * num_nodes < total_load
         // some of our tests needs 2 splits to be put on 2 different searchers. It makes sens for
         // these tests to keep doing so (testing root merge). Either we can make the allowed

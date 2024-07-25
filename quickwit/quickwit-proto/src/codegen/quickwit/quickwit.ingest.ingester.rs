@@ -629,7 +629,7 @@ pub trait IngesterService: std::fmt::Debug + Send + Sync + 'static {
         request: quickwit_common::ServiceStream<SynReplicationMessage>,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<AckReplicationMessage>>;
     /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
-    /// otherwise the stream will go undefinitely or until the shard is closed.
+    /// otherwise the stream will go indefinitely or until the shard is closed.
     async fn open_fetch_stream(
         &self,
         request: OpenFetchStreamRequest,
@@ -2475,7 +2475,7 @@ pub mod ingester_service_grpc_client {
             self.inner.streaming(req, path, codec).await
         }
         /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
-        /// otherwise the stream will go undefinitely or until the shard is closed.
+        /// otherwise the stream will go indefinitely or until the shard is closed.
         pub async fn open_fetch_stream(
             &mut self,
             request: impl tonic::IntoRequest<super::OpenFetchStreamRequest>,
@@ -2728,7 +2728,7 @@ pub mod ingester_service_grpc_server {
             + Send
             + 'static;
         /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
-        /// otherwise the stream will go undefinitely or until the shard is closed.
+        /// otherwise the stream will go indefinitely or until the shard is closed.
         async fn open_fetch_stream(
             &self,
             request: tonic::Request<super::OpenFetchStreamRequest>,

@@ -191,7 +191,7 @@ pub struct IndexedSplitBatchBuilder {
     pub _split_builders_guard: GaugeGuard<'static>,
 }
 
-/// Sends notifications to the Publisher that the last batch of splits was emtpy.
+/// Sends notifications to the Publisher that the last batch of splits was empty.
 #[derive(Debug)]
 pub struct EmptySplit {
     pub index_uid: IndexUid,

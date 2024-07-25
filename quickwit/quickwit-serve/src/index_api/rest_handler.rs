@@ -787,9 +787,9 @@ async fn reset_source_checkpoint(
     source_id: SourceId,
     metastore: MetastoreServiceClient,
 ) -> MetastoreResult<()> {
-    let index_metadata_resquest = IndexMetadataRequest::for_index_id(index_id.to_string());
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
-        .index_metadata(index_metadata_resquest)
+        .index_metadata(index_metadata_request)
         .await?
         .deserialize_index_metadata()?
         .index_uid;

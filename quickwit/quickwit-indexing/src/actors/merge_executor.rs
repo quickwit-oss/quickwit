@@ -512,7 +512,7 @@ impl MergeExecutor {
                 let query_ast: QueryAst = serde_json::from_str(&delete_query.query_ast)
                     .context("invalid query_ast json")?;
                 // We ignore the docmapper default fields when we consider delete query.
-                // We reparse the query here defensivley, but actually, it should already have been
+                // We reparse the query here defensively, but actually, it should already have been
                 // done in the delete task rest handler.
                 let parsed_query_ast = query_ast.parse_user_query(&[]).context("invalid query")?;
                 debug!(

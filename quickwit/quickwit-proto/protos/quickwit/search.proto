@@ -63,11 +63,11 @@ service SearchService {
   // Performs a scroll request.
   rpc Scroll(ScrollRequest) returns (SearchResponse);
 
-  // gRPC request used to store a key in the local storage of the targetted node.
+  // gRPC request used to store a key in the local storage of the targeted node.
   // This RPC is used in the mini distributed immutable KV store embedded in quickwit.
   rpc PutKV(PutKVRequest) returns (PutKVResponse);
 
-  // Gets a key from the local storage of the targetted node.
+  // Gets a key from the local storage of the targeted node.
   // This RPC is used in the mini distributed immutable KV store embedded in quickwit.
   rpc GetKV(GetKVRequest) returns (GetKVResponse);
 

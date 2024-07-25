@@ -1658,7 +1658,7 @@ mod tests {
                     {
                         "name": "concat",
                         "type": "concatenate",
-                        "concatenate_fields": ["inexistant_field"]
+                        "concatenate_fields": ["inexistent_field"]
                     }
                 ]
             }"#

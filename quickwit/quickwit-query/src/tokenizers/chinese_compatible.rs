@@ -145,7 +145,7 @@ mod tests {
             res.push(tok.clone());
         }
 
-        // latin alphabet splited on white spaces, Han split on each char
+        // latin alphabet split on white spaces, Han split on each char
         let expected = [
             Token {
                 offset_from: 0,

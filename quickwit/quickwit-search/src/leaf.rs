@@ -440,7 +440,7 @@ async fn leaf_search_single_split(
     Ok(leaf_search_response)
 }
 
-/// Rewrite a request removing parts which incure additional download or computation with no
+/// Rewrite a request removing parts which incur additional download or computation with no
 /// effect.
 ///
 /// This include things such as sorting result by a field or _score when no document is requested,
@@ -702,7 +702,7 @@ impl<'a> RemoveTimestampRange<'a> {
         use quickwit_query::InterpretUserInput;
         let Some(lower_bound) = DateTime::interpret_json(lower_bound) else {
             // we shouldn't be able to get here, we would have errored much earlier in root search
-            warn!("unparseable time bound in leaf search: {lower_bound:?}");
+            warn!("unparsable time bound in leaf search: {lower_bound:?}");
             return;
         };
         let bound = if included {
@@ -718,7 +718,7 @@ impl<'a> RemoveTimestampRange<'a> {
         use quickwit_query::InterpretUserInput;
         let Some(upper_bound) = DateTime::interpret_json(upper_bound) else {
             // we shouldn't be able to get here, we would have errored much earlier in root search
-            warn!("unparseable time bound in leaf search: {upper_bound:?}");
+            warn!("unparsable time bound in leaf search: {upper_bound:?}");
             return;
         };
         let bound = if included {
@@ -1338,7 +1338,7 @@ async fn leaf_search_single_split_wrapper(
         }),
     }
     if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {
-        // TODO: we could use the RWLock instead and read the value instead of updateing it
+        // TODO: we could use the RWLock instead and read the value instead of updating it
         // unconditionally.
         split_filter
             .write()
@@ -1398,7 +1398,7 @@ mod tests {
 
         let timestamp_field = "timestamp".to_string();
 
-        // cases where the bounds are larger than the split: no bound is emited
+        // cases where the bounds are larger than the split: no bound is emitted
         let split = SplitIdAndFooterOffsets {
             timestamp_start: Some(time2),
             timestamp_end: Some(time3),
@@ -1588,7 +1588,7 @@ mod tests {
 
         let timestamp_field = "timestamp".to_string();
 
-        // cases where the bounds are larger than the split: no bound is emited
+        // cases where the bounds are larger than the split: no bound is emitted
         let split = SplitIdAndFooterOffsets {
             timestamp_start: Some(time1),
             timestamp_end: Some(time3),

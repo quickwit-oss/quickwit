@@ -338,7 +338,7 @@ mod tests {
         };
         let MutationOccurred::Yes(subresponse) = shards.open_shard(subrequest.clone()).unwrap()
         else {
-            panic!("expected `MutationOccured::Yes`");
+            panic!("expected `MutationOccurred::Yes`");
         };
         assert_eq!(subresponse.subrequest_id, 0);
 
@@ -352,7 +352,7 @@ mod tests {
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
 
         let MutationOccurred::No(subresponse) = shards.open_shard(subrequest).unwrap() else {
-            panic!("Expected `MutationOccured::No`");
+            panic!("Expected `MutationOccurred::No`");
         };
         assert_eq!(subresponse.subrequest_id, 0);
 
@@ -369,7 +369,7 @@ mod tests {
             doc_mapping_uid: Some(DocMappingUid::default()),
         };
         let MutationOccurred::Yes(subresponse) = shards.open_shard(subrequest).unwrap() else {
-            panic!("Expected `MutationOccured::No`");
+            panic!("Expected `MutationOccurred::No`");
         };
         assert_eq!(subresponse.subrequest_id, 0);
 
@@ -454,7 +454,7 @@ mod tests {
             publish_token: "test-publish-token".to_string(),
         };
         let MutationOccurred::No(response) = shards.acquire_shards(request).unwrap() else {
-            panic!("Expected `MutationOccured::No`");
+            panic!("Expected `MutationOccurred::No`");
         };
         assert!(response.acquired_shards.is_empty());
 
@@ -465,7 +465,7 @@ mod tests {
             publish_token: "test-publish-token".to_string(),
         };
         let MutationOccurred::No(response) = shards.acquire_shards(request.clone()).unwrap() else {
-            panic!("Expected `MutationOccured::No`");
+            panic!("Expected `MutationOccurred::No`");
         };
         assert!(response.acquired_shards.is_empty());
 
@@ -482,7 +482,7 @@ mod tests {
         );
         let MutationOccurred::Yes(response) = shards.acquire_shards(request.clone()).unwrap()
         else {
-            panic!("expected `MutationOccured::Yes`");
+            panic!("expected `MutationOccurred::Yes`");
         };
         assert_eq!(response.acquired_shards.len(), 1);
         let acquired_shard = &response.acquired_shards[0];
@@ -511,7 +511,7 @@ mod tests {
             force: false,
         };
         let MutationOccurred::No(response) = shards.delete_shards(request).unwrap() else {
-            panic!("expected `MutationOccured::No`");
+            panic!("expected `MutationOccurred::No`");
         };
         assert_eq!(response.index_uid(), &index_uid);
         assert_eq!(response.source_id, source_id);
@@ -525,7 +525,7 @@ mod tests {
             force: false,
         };
         let MutationOccurred::No(response) = shards.delete_shards(request).unwrap() else {
-            panic!("expected `MutationOccured::No`");
+            panic!("expected `MutationOccurred::No`");
         };
         assert_eq!(response.index_uid(), &index_uid);
         assert_eq!(response.source_id, source_id);
@@ -562,7 +562,7 @@ mod tests {
             force: false,
         };
         let MutationOccurred::Yes(response) = shards.delete_shards(request).unwrap() else {
-            panic!("expected `MutationOccured::Yes`");
+            panic!("expected `MutationOccurred::Yes`");
         };
         assert_eq!(response.index_uid(), &index_uid);
         assert_eq!(response.source_id, source_id);
@@ -578,7 +578,7 @@ mod tests {
             force: true,
         };
         let MutationOccurred::Yes(response) = shards.delete_shards(request).unwrap() else {
-            panic!("expected `MutationOccured::Yes`");
+            panic!("expected `MutationOccurred::Yes`");
         };
         assert_eq!(response.index_uid(), &index_uid);
         assert_eq!(response.source_id, source_id);

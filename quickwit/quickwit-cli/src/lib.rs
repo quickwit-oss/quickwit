@@ -397,7 +397,7 @@ pub mod busy_detector {
             })
             .is_err()
         {
-            // a debug was emited recently, don't emit log for this one
+            // a debug was emitted recently, don't emit log for this one
             SUPPRESSED_DEBUG_COUNT.fetch_add(1, Ordering::Relaxed);
             return;
         }

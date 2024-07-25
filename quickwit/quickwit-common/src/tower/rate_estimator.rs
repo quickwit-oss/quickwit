@@ -185,8 +185,8 @@ impl Bucket {
         let current_bits = self.bits.fetch_add(work, Ordering::Relaxed) + work;
         let bucket_val = BucketVal::from(current_bits);
 
-        // This is not the bucket we targetted, we need to retry and update the bucket with the new
-        // bucket_ord and a resetted value.
+        // This is not the bucket we targeted, we need to retry and update the bucket with the new
+        // bucket_ord and a reset value.
         if bucket_val.bucket_ord_hash != expected_bucket_ord_hash {
             let mut expected_bits = current_bits;
             let new_bits: u64 = BucketVal {

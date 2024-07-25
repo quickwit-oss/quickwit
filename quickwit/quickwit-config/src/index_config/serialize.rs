@@ -327,7 +327,7 @@ mod test {
             assert_eq!(updated_config.index_uri.as_str(), "s3://mybucket/hdfs-logs");
         }
         {
-            // use the current index_uri explicitely
+            // use the current index_uri explicitly
             let updated_config_yaml = r#"
                 version: 0.8
                 index_id: hdfs-logs

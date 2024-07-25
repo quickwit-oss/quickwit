@@ -1388,8 +1388,8 @@ mod tests {
     }
 
     fn sort_dataset() -> Vec<(Option<u64>, Option<u64>)> {
-        // every comination of 0..=2 + None, in random order.
-        // (2, 1) is dupplicated to allow testing for DocId sorting with two sort fields
+        // every combination of 0..=2 + None, in random order.
+        // (2, 1) is duplicated to allow testing for DocId sorting with two sort fields
         vec![
             (Some(2), Some(1)),
             (Some(0), Some(1)),
@@ -1500,7 +1500,7 @@ mod tests {
         let cmp_2_asc = |a: &Doc, b: &Doc| reverse_int(&b.1 .1).cmp(&reverse_int(&a.1 .1));
 
         {
-            // the logic for sorting isn't easy to wrap one's head arround. These simple tests are
+            // the logic for sorting isn't easy to wrap one's head around. These simple tests are
             // here to convince oneself they do what we want them todo
             let mut data = vec![(1, (None, None)), (0, (None, None))];
             let data_copy = data.clone();
@@ -1604,7 +1604,7 @@ mod tests {
                 assert_eq!(
                     res.partial_hits.len(),
                     slice_len,
-                    "missmatch slice_len for \"{sort_str}\":{slice_len}"
+                    "mismatch slice_len for \"{sort_str}\":{slice_len}"
                 );
                 for (expected, got) in dataset.iter().zip(res.partial_hits.iter()) {
                     if expected.0 as u32 != got.doc_id {
@@ -1628,7 +1628,7 @@ mod tests {
                             .collect::<Vec<_>>();
                         eprintln!("expected: {:#?}", expected_docids);
                         eprintln!("got: {:#?}", got_docids);
-                        panic!("missmatch ordering for \"{sort_str}\":{slice_len}");
+                        panic!("mismatch ordering for \"{sort_str}\":{slice_len}");
                     }
                 }
             }
@@ -1669,7 +1669,7 @@ mod tests {
                 }),
             })
             .collect::<Vec<_>>();
-        // we eliminte based on sort value
+        // we eliminate based on sort value
         for (i, search_after) in partial_sort_value.into_iter().enumerate() {
             let request = SearchRequest {
                 max_hits: 1000,
@@ -1706,7 +1706,7 @@ mod tests {
             }
         }
 
-        // we eliminte based on split id
+        // we eliminate based on split id
         {
             let search_after = PartialHit {
                 split_id: "fake_split_id2".to_string(),

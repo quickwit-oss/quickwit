@@ -854,7 +854,7 @@ impl Ingester {
         }
         let Entry::Vacant(entry) = state_guard.replication_tasks.entry(leader_id.clone()) else {
             return Err(IngestV2Error::Internal(format!(
-                "a replication stream betwen {leader_id} and {follower_id} is already opened"
+                "a replication stream between {leader_id} and {follower_id} is already opened"
             )));
         };
         // Channel capacity: there is no need to bound the capacity of the channel here because it

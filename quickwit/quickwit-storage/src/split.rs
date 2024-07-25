@@ -139,7 +139,7 @@ impl PutPayload for FilePayload {
 #[derive(Default)]
 pub struct SplitPayloadBuilder {
     /// File name, payload, and range of the payload in the bundle file
-    /// Range coud be computed on the fly, and is just kept here for convenience.
+    /// Range could be computed on the fly, and is just kept here for convenience.
     payloads: Vec<(String, Box<dyn PutPayload>, Range<u64>)>,
     current_offset: usize,
 }

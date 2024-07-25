@@ -42,7 +42,7 @@ const DEFAULT_PHRASE_QUERY_MAX_EXPANSION: u32 = 50;
 pub struct UserInputQuery {
     pub user_text: String,
     // Set of search fields to search into for text not specifically
-    // targetting a field.
+    // targeting a field.
     //
     // If None, the default search fields, as defined in the DocMapper
     // will be used.
