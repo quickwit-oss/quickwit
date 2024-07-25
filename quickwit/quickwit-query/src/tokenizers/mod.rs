@@ -77,7 +77,7 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .filter(LowerCaser)
         .build();
-    tokenizer_manager.register("chinese_compatible", chinese_tokenizer, false);
+    tokenizer_manager.register("chinese_compatible", chinese_tokenizer, true);
     tokenizer_manager.register(
         "source_code_default",
         TextAnalyzer::builder(CodeTokenizer::default())
