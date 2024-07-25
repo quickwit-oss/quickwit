@@ -30,14 +30,20 @@ use time::format_description::FormatItem;
 use time::parsing::Parsed;
 use time::{Month, OffsetDateTime, PrimitiveDateTime};
 use time_fmt::parse::time_format_item::parse_to_format_item;
+use time_tz::{OffsetResult, PrimitiveDateTimeExt};
 
 use crate::TantivyDateTime;
+
+enum TimezoneSource {
+    Default(&'static time_tz::Tz),
+    Parsed,
+}
 
 /// A date time parser that holds the format specification `Vec<FormatItem>`.
 #[self_referencing]
 pub struct StrptimeParser {
     strptime_format: String,
-    with_timezone: bool,
+    timezone_source: TimezoneSource,
     #[borrows(strptime_format)]
     #[covariant]
     items: Vec<FormatItem<'this>>,
@@ -47,9 +53,23 @@ impl FromStr for StrptimeParser {
     type Err = String;
 
     fn from_str(strptime_format: &str) -> Result<Self, Self::Err> {
+        let timezone_source = if strptime_format.contains("%z") {
+            TimezoneSource::Parsed
+        } else {
+            TimezoneSource::Default(time_tz::timezones::db::UTC)
+        };
+        Self::try_new_with_timezone_source(strptime_format, timezone_source)
+    }
+}
+
+impl StrptimeParser {
+    fn try_new_with_timezone_source(
+        strptime_format: &str,
+        timezone_source: TimezoneSource,
+    ) -> Result<Self, String> {
         StrptimeParser::try_new(
             strptime_format.to_string(),
-            strptime_format.to_lowercase().contains("%z"),
+            timezone_source,
             |strptime_format: &String| {
                 parse_to_format_item(strptime_format).map_err(|error| {
                     format!("invalid strptime format `{strptime_format}`: {error}")
@@ -57,9 +77,7 @@ impl FromStr for StrptimeParser {
             },
         )
     }
-}
 
-impl StrptimeParser {
     /// Parse a given date according to the datetime format specified during the StrptimeParser
     /// creation. If the date format does not provide a specific a time, the time will be set to
     /// 00:00:00.
@@ -94,12 +112,18 @@ impl StrptimeParser {
     }
 
     pub fn parse_date_time(&self, date_time_str: &str) -> Result<OffsetDateTime, String> {
-        if *self.borrow_with_timezone() {
-            OffsetDateTime::parse(date_time_str, self.borrow_items()).map_err(|err| err.to_string())
+        if let TimezoneSource::Default(default_tz) = self.borrow_timezone_source() {
+            let primitive_datetime = self
+                .parse_primitive_date_time(date_time_str)
+                .map_err(|err| err.to_string())?;
+            let parsed_time = primitive_datetime.assume_timezone(*default_tz);
+            if let OffsetResult::Some(datetime) = parsed_time {
+                Ok(datetime)
+            } else {
+                Err("failed to apply timezone".to_string())
+            }
         } else {
-            self.parse_primitive_date_time(date_time_str)
-                .map(|date_time| date_time.assume_utc())
-                .map_err(|err| err.to_string())
+            OffsetDateTime::parse(date_time_str, self.borrow_items()).map_err(|err| err.to_string())
         }
     }
 
@@ -153,13 +177,49 @@ fn is_strftime_formatting(format_str: &str) -> bool {
         .any(|marker| format_str.contains(marker))
 }
 
+#[derive(Serialize, Deserialize)]
+enum StrptimeForSerde {
+    String(String),
+    WithDefaultTimezone { format: String, default_tz: String },
+}
+
+impl TryFrom<StrptimeForSerde> for StrptimeParser {
+    type Error = String;
+
+    fn try_from(strptime_for_serde: StrptimeForSerde) -> Result<Self, Self::Error> {
+        match strptime_for_serde {
+            StrptimeForSerde::String(format) => StrptimeParser::from_str(&format),
+            StrptimeForSerde::WithDefaultTimezone { format, default_tz } => {
+                let tz = time_tz::timezones::get_by_name(&default_tz)
+                    .ok_or("failed to parse timezone")?;
+                StrptimeParser::try_new_with_timezone_source(&format, TimezoneSource::Default(tz))
+            }
+        }
+    }
+}
+
+impl From<StrptimeParser> for StrptimeForSerde {
+    fn from(strptime_parser: StrptimeParser) -> Result<Self, Self::Error> {
+        match strptime_parser.borrow_timezone_source() {
+            TimezoneSource::Default(default_tz) => Ok(StrptimeForSerde::WithDefaultTimezone {
+                format: strptime_parser.borrow_strptime_format().to_string(),
+                default_tz: *default_tz.name(),
+            }),
+            TimezoneSource::Parsed => Ok(StrptimeForSerde::String(
+                strptime_parser.borrow_strptime_format().to_string(),
+            )),
+        }
+    }
+}
+
 /// Specifies the datetime and unix timestamp formats to use when parsing date strings.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
 pub enum DateTimeInputFormat {
     Iso8601,
     Rfc2822,
     #[default]
     Rfc3339,
+    #[serde(try_from = "StrptimeForSerde", into = "StrptimeForSerde")]
     Strptime(StrptimeParser),
     Timestamp,
 }
@@ -176,11 +236,11 @@ impl DateTimeInputFormat {
     }
 }
 
-impl Display for DateTimeInputFormat {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
+// impl Display for DateTimeInputFormat {
+//     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+//         formatter.write_str(self.as_str())
+//     }
+// }
 
 impl FromStr for DateTimeInputFormat {
     type Err = String;
@@ -208,18 +268,26 @@ impl FromStr for DateTimeInputFormat {
 impl Serialize for DateTimeInputFormat {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: serde::Serializer {
+        // if let DateTimeInputFormat::Strptime(parser) = self {
+        //     if let TimezoneSource::Default(default_tz) = parser.borrow_timezone_source() {
+        //         return serializer.serialize_some(&StrptimeWithDefaultTimezone {
+        //             format: self.as_str().to_string(),
+        //             default_tz: default_tz.to_string(),
+        //         });
+        //     }
+        // }
         serializer.serialize_str(self.as_str())
     }
 }
 
-impl<'de> Deserialize<'de> for DateTimeInputFormat {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
-        let date_time_format_str: String = Deserialize::deserialize(deserializer)?;
-        let date_time_format = date_time_format_str.parse().map_err(D::Error::custom)?;
-        Ok(date_time_format)
-    }
-}
+// impl<'de> Deserialize<'de> for DateTimeInputFormat {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where D: Deserializer<'de> {
+//         let date_time_format_str: String = Deserialize::deserialize(deserializer)?;
+//         let date_time_format = date_time_format_str.parse().map_err(D::Error::custom)?;
+//         Ok(date_time_format)
+//     }
+// }
 
 /// Specifies the datetime format to use when displaying datetime values.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Default)]

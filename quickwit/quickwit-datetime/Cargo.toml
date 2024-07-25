@@ -19,3 +19,4 @@ serde_json = { workspace = true }
 tantivy = { workspace = true }
 time = { workspace = true }
 time-fmt = "0.3.8"
+time-tz = { workspace = true, features = [ "db" ] }
