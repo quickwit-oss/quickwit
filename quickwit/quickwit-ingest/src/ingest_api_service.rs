@@ -27,6 +27,7 @@ use quickwit_actors::{
 };
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::tower::Cost;
+use quickwit_proto::ingest::RateLimitingCause;
 use tracing::{error, info};
 use ulid::Ulid;
 
@@ -166,7 +167,7 @@ impl IngestApiService {
 
         if disk_used > self.disk_limit {
             info!("ingestion rejected due to disk limit");
-            return Err(IngestServiceError::RateLimited);
+            return Err(IngestServiceError::RateLimited(RateLimitingCause::WalFull));
         }
 
         if self
@@ -175,7 +176,7 @@ impl IngestApiService {
             .is_err()
         {
             info!("ingest request rejected due to memory limit");
-            return Err(IngestServiceError::RateLimited);
+            return Err(IngestServiceError::RateLimited(RateLimitingCause::WalFull));
         }
         let mut num_docs = 0usize;
         let mut notifications = Vec::new();

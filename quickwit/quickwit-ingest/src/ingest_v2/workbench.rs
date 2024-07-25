@@ -26,7 +26,7 @@ use quickwit_proto::ingest::ingester::{PersistFailure, PersistFailureReason, Per
 use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
-use quickwit_proto::ingest::{IngestV2Error, IngestV2Result};
+use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, RateLimitingCause};
 use quickwit_proto::types::{NodeId, SubrequestId};
 use tracing::warn;
 
@@ -160,11 +160,14 @@ impl IngestWorkbench {
                     self.record_ingester_unavailable(subrequest_id);
                 }
             }
-            IngestV2Error::Internal(_)
-            | IngestV2Error::ShardNotFound { .. }
-            | IngestV2Error::TooManyRequests => {
+            IngestV2Error::Internal(_) | IngestV2Error::ShardNotFound { .. } => {
                 for subrequest_id in persist_summary.subrequest_ids {
                     self.record_internal_error(subrequest_id);
+                }
+            }
+            IngestV2Error::TooManyRequests(rate_limiting_cause) => {
+                for subrequest_id in persist_summary.subrequest_ids {
+                    self.record_too_many_requests(subrequest_id, rate_limiting_cause);
                 }
             }
         }
@@ -199,11 +202,23 @@ impl IngestWorkbench {
         self.record_failure(subrequest_id, SubworkbenchFailure::Internal);
     }
 
+    fn record_too_many_requests(
+        &mut self,
+        subrequest_id: SubrequestId,
+        rate_limiting_cause: RateLimitingCause,
+    ) {
+        self.record_failure(
+            subrequest_id,
+            SubworkbenchFailure::RateLimited(rate_limiting_cause),
+        );
+    }
+
     pub fn into_ingest_result(self) -> IngestV2Result<IngestResponseV2> {
         let num_subworkbenches = self.subworkbenches.len();
         let mut successes = Vec::with_capacity(self.num_successes);
         let mut failures = Vec::with_capacity(num_subworkbenches - self.num_successes);
 
+        // We consider the last retry outcome as the actual outcome.
         for subworkbench in self.subworkbenches.into_values() {
             if let Some(persist_success) = subworkbench.persist_success_opt {
                 let success = IngestSuccess {
@@ -230,6 +245,7 @@ impl IngestWorkbench {
         let num_failures = failures.len();
         assert_eq!(num_successes + num_failures, num_subworkbenches);
 
+        // For tests, we sort the successes and failures by subrequest_id
         #[cfg(test)]
         {
             for success in &mut successes {
@@ -240,19 +256,7 @@ impl IngestWorkbench {
             successes.sort_by_key(|success| success.subrequest_id);
             failures.sort_by_key(|failure| failure.subrequest_id);
         }
-        if self.num_successes == 0
-            && num_failures > 0
-            && failures.iter().all(|failure| {
-                matches!(
-                    failure.reason(),
-                    IngestFailureReason::RateLimited
-                        | IngestFailureReason::ResourceExhausted
-                        | IngestFailureReason::Timeout
-                )
-            })
-        {
-            return Err(IngestV2Error::TooManyRequests);
-        }
+
         let response = IngestResponseV2 {
             successes,
             failures,
@@ -292,6 +296,8 @@ pub(super) enum SubworkbenchFailure {
     Internal,
     // The ingester is no longer in the pool or a transport error occurred.
     Unavailable,
+    // The ingester is rate limited.
+    RateLimited(RateLimitingCause),
 }
 
 impl SubworkbenchFailure {
@@ -305,6 +311,14 @@ impl SubworkbenchFailure {
             // In our last attempt, we did not manage to reach the ingester.
             // We can consider that as a no shards available.
             Self::Unavailable => IngestFailureReason::NoShardsAvailable,
+            Self::RateLimited(rate_limiting_cause) => match rate_limiting_cause {
+                RateLimitingCause::RouterLoadShedding => IngestFailureReason::RouterLoadShedding,
+                RateLimitingCause::LoadShedding => IngestFailureReason::RouterLoadShedding,
+                RateLimitingCause::WalFull => IngestFailureReason::WalFull,
+                RateLimitingCause::CircuitBreaker => IngestFailureReason::CircuitBreaker,
+                RateLimitingCause::ShardRateLimiting => IngestFailureReason::ShardRateLimited,
+                RateLimitingCause::Unknown => IngestFailureReason::Unspecified,
+            },
             Self::Persist(persist_failure_reason) => (*persist_failure_reason).into(),
         }
     }
@@ -331,7 +345,7 @@ impl IngestSubworkbench {
         self.persist_success_opt.is_none() && self.last_failure_is_transient()
     }
 
-    /// Returns `false` if and only if the last attempt suggests retrying will fail.
+    /// Returns `false` if and only if the last attempt suggests retrying (on any node) will fail.
     /// e.g.:
     /// - the index does not exist
     /// - the source does not exist.
@@ -343,6 +357,7 @@ impl IngestSubworkbench {
             Some(SubworkbenchFailure::NoShardsAvailable) => true,
             Some(SubworkbenchFailure::Persist(_)) => true,
             Some(SubworkbenchFailure::Unavailable) => true,
+            Some(SubworkbenchFailure::RateLimited(_)) => true,
             None => true,
         }
     }

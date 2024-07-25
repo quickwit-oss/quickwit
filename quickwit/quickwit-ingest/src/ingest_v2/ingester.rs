@@ -37,7 +37,7 @@ use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::Pool;
-use quickwit_common::{rate_limited_warn, ServiceStream};
+use quickwit_common::{rate_limited_error, rate_limited_warn, ServiceStream};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, ControlPlaneService, ControlPlaneServiceClient,
 };
@@ -544,7 +544,7 @@ impl Ingester {
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
                         shard_id: subrequest.shard_id,
-                        reason: PersistFailureReason::ResourceExhausted as i32,
+                        reason: PersistFailureReason::WalFull as i32,
                     };
                     persist_failures.push(persist_failure);
                     continue;
@@ -562,7 +562,7 @@ impl Ingester {
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
                         shard_id: subrequest.shard_id,
-                        reason: PersistFailureReason::RateLimited as i32,
+                        reason: PersistFailureReason::ShardRateLimited as i32,
                     };
                     persist_failures.push(persist_failure);
                     continue;
@@ -695,9 +695,7 @@ impl Ingester {
                             PersistFailureReason::ShardNotFound
                         }
                         ReplicateFailureReason::ShardClosed => PersistFailureReason::ShardClosed,
-                        ReplicateFailureReason::ResourceExhausted => {
-                            PersistFailureReason::ResourceExhausted
-                        }
+                        ReplicateFailureReason::WalFull => PersistFailureReason::WalFull,
                     };
                     let persist_failure = PersistFailure {
                         subrequest_id: replicate_failure.subrequest_id,
@@ -889,13 +887,12 @@ impl Ingester {
 
         let mut state_guard = self.state.lock_partially().await?;
 
-        let shard =
-            state_guard
-                .shards
-                .get_mut(&queue_id)
-                .ok_or_else(|| IngestV2Error::ShardNotFound {
-                    shard_id: open_fetch_stream_request.shard_id().clone(),
-                })?;
+        let shard = state_guard.shards.get_mut(&queue_id).ok_or_else(|| {
+            rate_limited_error!(limit_per_min=6, queue_id=%queue_id, "shard not found");
+            IngestV2Error::ShardNotFound {
+                shard_id: open_fetch_stream_request.shard_id().clone(),
+            }
+        })?;
         // An indexer can only know about a newly opened shard if it has been scheduled by the
         // control plane, which confirms that the shard was correctly opened in the
         // metastore.
@@ -2102,7 +2099,10 @@ mod tests {
         assert_eq!(persist_response.failures.len(), 1);
 
         let persist_failure = &persist_response.failures[0];
-        assert_eq!(persist_failure.reason(), PersistFailureReason::RateLimited);
+        assert_eq!(
+            persist_failure.reason(),
+            PersistFailureReason::ShardRateLimited
+        );
     }
 
     // This test should be run manually and independently of other tests with the `failpoints`

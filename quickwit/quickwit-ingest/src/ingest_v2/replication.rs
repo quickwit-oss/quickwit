@@ -624,7 +624,7 @@ impl ReplicationTask {
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
                     shard_id: subrequest.shard_id,
-                    reason: ReplicateFailureReason::ResourceExhausted as i32,
+                    reason: ReplicateFailureReason::WalFull as i32,
                 };
                 replicate_failures.push(replicate_failure);
                 continue;

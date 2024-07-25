@@ -23,7 +23,7 @@ use mrecordlog::error::*;
 use quickwit_actors::AskError;
 use quickwit_common::tower::BufferError;
 pub(crate) use quickwit_proto::error::{grpc_error_to_grpc_status, grpc_status_to_service_error};
-use quickwit_proto::ingest::IngestV2Error;
+use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
 use quickwit_proto::types::IndexId;
 use quickwit_proto::{tonic, GrpcServiceError, ServiceError, ServiceErrorCode};
 use serde::{Deserialize, Serialize};
@@ -42,8 +42,8 @@ pub enum IngestServiceError {
     InvalidPosition(String),
     #[error("io error {0}")]
     IoError(String),
-    #[error("rate limited")]
-    RateLimited,
+    #[error("rate limited {0}")]
+    RateLimited(RateLimitingCause),
     #[error("ingest service is unavailable ({0})")]
     Unavailable(String),
 }
@@ -88,7 +88,9 @@ impl From<IngestV2Error> for IngestServiceError {
             IngestV2Error::ShardNotFound { .. } => {
                 IngestServiceError::Internal("shard not found".to_string())
             }
-            IngestV2Error::TooManyRequests => IngestServiceError::RateLimited,
+            IngestV2Error::TooManyRequests(rate_limiting_cause) => {
+                IngestServiceError::RateLimited(rate_limiting_cause)
+            }
         }
     }
 }
@@ -102,7 +104,7 @@ impl ServiceError for IngestServiceError {
             Self::Internal(_) => ServiceErrorCode::Internal,
             Self::InvalidPosition(_) => ServiceErrorCode::BadRequest,
             Self::IoError { .. } => ServiceErrorCode::Internal,
-            Self::RateLimited => ServiceErrorCode::TooManyRequests,
+            Self::RateLimited(_) => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
@@ -118,7 +120,7 @@ impl GrpcServiceError for IngestServiceError {
     }
 
     fn new_too_many_requests() -> Self {
-        Self::RateLimited
+        Self::RateLimited(RateLimitingCause::Unknown)
     }
 
     fn new_unavailable(error_msg: String) -> Self {
@@ -145,7 +147,7 @@ impl From<IngestServiceError> for tonic::Status {
             IngestServiceError::Internal(_) => tonic::Code::Internal,
             IngestServiceError::InvalidPosition(_) => tonic::Code::InvalidArgument,
             IngestServiceError::IoError { .. } => tonic::Code::Internal,
-            IngestServiceError::RateLimited => tonic::Code::ResourceExhausted,
+            IngestServiceError::RateLimited(_) => tonic::Code::ResourceExhausted,
             IngestServiceError::Unavailable(_) => tonic::Code::Unavailable,
         };
         let message = error.to_string();

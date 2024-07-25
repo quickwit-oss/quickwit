@@ -137,6 +137,13 @@ macro_rules! with_lock_metrics {
             let now = std::time::Instant::now();
             let guard = $future;
 
+            let elapsed = now.elapsed();
+            if elapsed > std::time::Duration::from_secs(1) {
+                quickwit_common::rate_limited_warn!(
+                    limit_per_min=6,
+                    "lock acquisition took {}ms", elapsed.as_millis()
+                );
+            }
             $crate::ingest_v2::metrics::INGEST_V2_METRICS
                 .wal_acquire_lock_requests_in_flight
                 .with_label_values([$($label),*])
@@ -144,7 +151,7 @@ macro_rules! with_lock_metrics {
             $crate::ingest_v2::metrics::INGEST_V2_METRICS
                 .wal_acquire_lock_request_duration_secs
                 .with_label_values([$($label),*])
-                .observe(now.elapsed().as_secs_f64());
+                .observe(elapsed.as_secs_f64());
 
             guard
         }
@@ -155,6 +162,7 @@ macro_rules! with_lock_metrics {
 mod tests {
 
     use quickwit_actors::AskError;
+    use quickwit_proto::ingest::RateLimitingCause;
 
     use super::*;
     use crate::{CreateQueueRequest, IngestRequest, SuggestTruncateRequest};
@@ -287,7 +295,7 @@ mod tests {
                 .ask_for_res(ingest_request.clone())
                 .await
                 .unwrap_err(),
-            AskError::ErrorReply(IngestServiceError::RateLimited)
+            AskError::ErrorReply(IngestServiceError::RateLimited(RateLimitingCause::WalFull))
         ));
 
         // delete the first batch
