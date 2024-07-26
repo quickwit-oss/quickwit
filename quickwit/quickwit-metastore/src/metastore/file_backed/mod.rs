@@ -505,6 +505,7 @@ impl MetastoreService for FileBackedMetastore {
         let retention_policy_opt = request.deserialize_retention_policy()?;
         let search_settings = request.deserialize_search_settings()?;
         let indexing_settings = request.deserialize_indexing_settings()?;
+        let doc_mapping = request.deserialize_doc_mapping()?;
         let index_uid = request.index_uid();
 
         let index_metadata = self
@@ -512,6 +513,7 @@ impl MetastoreService for FileBackedMetastore {
                 let mut mutation_occurred = index.set_retention_policy(retention_policy_opt);
                 mutation_occurred |= index.set_search_settings(search_settings);
                 mutation_occurred |= index.set_indexing_settings(indexing_settings);
+                mutation_occurred |= index.set_doc_mapping(doc_mapping);
 
                 let index_metadata = index.metadata().clone();
 

@@ -216,6 +216,7 @@ message UpdateIndexRequest {
   string search_settings_json = 2;
   optional string retention_policy_json = 3;
   string indexing_settings_json = 4;
+  string doc_mapping_json = 5;
 }
 
 message ListIndexesMetadataRequest {

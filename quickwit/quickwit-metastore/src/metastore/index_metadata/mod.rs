@@ -24,7 +24,7 @@ use std::collections::HashMap;
 
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
+    DocMapping, IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
 };
 use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
 use quickwit_proto::types::{IndexUid, SourceId};
@@ -124,6 +124,16 @@ impl IndexMetadata {
     pub fn set_indexing_settings(&mut self, indexing_settings: IndexingSettings) -> bool {
         if self.index_config.indexing_settings != indexing_settings {
             self.index_config.indexing_settings = indexing_settings;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Replaces the current doc mapping, returning whether a mutation occurred.
+    pub fn set_doc_mapping(&mut self, doc_mapping: DocMapping) -> bool {
+        if self.index_config.doc_mapping != doc_mapping {
+            self.index_config.doc_mapping = doc_mapping;
             true
         } else {
             false
