@@ -34,6 +34,7 @@ use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_metastore::{MetastoreResolver, SplitState};
+use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_client::LogsServiceClient;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_client::TraceServiceClient;
 use quickwit_proto::types::NodeId;
 use quickwit_rest_client::models::IngestSource;
@@ -93,6 +94,7 @@ pub struct ClusterSandbox {
     pub searcher_rest_client: QuickwitClient,
     pub indexer_rest_client: QuickwitClient,
     pub trace_client: TraceServiceClient<tonic::transport::Channel>,
+    pub logs_client: LogsServiceClient<tonic::transport::Channel>,
     _temp_dir: TempDir,
     join_handles: Vec<JoinHandle<Result<HashMap<String, ActorExitStatus>, anyhow::Error>>>,
     shutdown_trigger: ClusterShutdownTrigger,
@@ -206,7 +208,8 @@ impl ClusterSandbox {
                 indexer_config.node_config.rest_config.listen_addr,
             ))
             .build(),
-            trace_client: TraceServiceClient::new(channel),
+            trace_client: TraceServiceClient::new(channel.clone()),
+            logs_client: LogsServiceClient::new(channel),
             _temp_dir: temp_dir,
             join_handles,
             shutdown_trigger,
