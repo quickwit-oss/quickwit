@@ -319,6 +319,7 @@ Updates the configurations of an index. This endpoint follows PUT semantics, whi
 - The retention policy update is automatically picked up by the janitor service on its next state refresh.
 - The search settings update is automatically picked up by searcher nodes when the next query is executed.
 - The indexing settings update is not automatically picked up by the indexer nodes, they need to be manually restarted.
+- The doc mapping update is not automatically picked up by the indexer nodes, they have to be manually restarted.
 
 #### PUT payload
 
@@ -327,7 +328,7 @@ Updates the configurations of an index. This endpoint follows PUT semantics, whi
 | `version`           | `String`           | Config format version, use the same as your Quickwit version.                                                         | _required_                            |
 | `index_id`          | `String`           | Index ID, must be the same index as in the request URI.                                                               | _required_                            |
 | `index_uri`         | `String`           | Defines where the index files are stored. Cannot be updated.                                                          | `{current_index_uri}`                 |
-| `doc_mapping`       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping). Cannot be updated. | _required_                            |
+| `doc_mapping`       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping).             | _required_                            |
 | `indexing_settings` | `IndexingSettings` | Indexing settings object as specified in the [index config docs](../configuration/index-config.md#indexing-settings). |                                       |
 | `search_settings`   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).     |                                       |
 | `retention`         | `Retention`        | Retention policy object as specified in the [index config docs](../configuration/index-config.md#retention-policy).   |                                       |
