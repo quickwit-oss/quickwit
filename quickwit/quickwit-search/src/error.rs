@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_common::rate_limited_error;
 use quickwit_doc_mapper::QueryParserError;
 use quickwit_proto::error::grpc_error_to_grpc_status;
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
@@ -56,11 +57,20 @@ impl ServiceError for SearchError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
             Self::IndexesNotFound { .. } => ServiceErrorCode::NotFound,
-            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::Internal(error_msg) => {
+                rate_limited_error!(limit_per_min = 6, "search internal error: {error_msg}");
+                ServiceErrorCode::Internal
+            }
             Self::InvalidAggregationRequest(_) => ServiceErrorCode::BadRequest,
             Self::InvalidArgument(_) => ServiceErrorCode::BadRequest,
             Self::InvalidQuery(_) => ServiceErrorCode::BadRequest,
-            Self::StorageResolver(_) => ServiceErrorCode::Internal,
+            Self::StorageResolver(storage_err) => {
+                rate_limited_error!(
+                    limit_per_min = 6,
+                    "search's storager resolver internal error: {storage_err}"
+                );
+                ServiceErrorCode::Internal
+            }
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,

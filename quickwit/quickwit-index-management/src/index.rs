@@ -25,6 +25,7 @@ use futures_util::StreamExt;
 use itertools::Itertools;
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_common::pretty::PrettySample;
+use quickwit_common::rate_limited_error;
 use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
@@ -70,13 +71,28 @@ pub enum IndexServiceError {
 impl ServiceError for IndexServiceError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::Internal(err_msg) => {
+                rate_limited_error!(limit_per_min = 6, err_msg);
+                ServiceErrorCode::Internal
+            }
             Self::InvalidConfig(_) => ServiceErrorCode::BadRequest,
             Self::InvalidIdentifier(_) => ServiceErrorCode::BadRequest,
             Self::Metastore(error) => error.error_code(),
             Self::OperationNotAllowed(_) => ServiceErrorCode::Forbidden,
-            Self::SplitDeletion(_) => ServiceErrorCode::Internal,
-            Self::Storage(_) => ServiceErrorCode::Internal,
+            Self::SplitDeletion(delete_splits_error) => {
+                rate_limited_error!(
+                    limit_per_min = 6,
+                    "index service internal error/split deletion: {delete_splits_error:?}"
+                );
+                ServiceErrorCode::Internal
+            }
+            Self::Storage(storage_error) => {
+                rate_limited_error!(
+                    limit_per_min = 6,
+                    "index service internal error/storage {storage_error:?}"
+                );
+                ServiceErrorCode::Internal
+            }
         }
     }
 }

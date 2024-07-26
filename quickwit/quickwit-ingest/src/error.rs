@@ -21,6 +21,7 @@ use std::io;
 
 use mrecordlog::error::*;
 use quickwit_actors::AskError;
+use quickwit_common::rate_limited_error;
 use quickwit_common::tower::BufferError;
 pub(crate) use quickwit_proto::error::{grpc_error_to_grpc_status, grpc_status_to_service_error};
 use quickwit_proto::ingest::IngestV2Error;
@@ -96,12 +97,24 @@ impl From<IngestV2Error> for IngestServiceError {
 impl ServiceError for IngestServiceError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::Corruption { .. } => ServiceErrorCode::Internal,
+            Self::Corruption(err_msg) => {
+                rate_limited_error!(
+                    limit_per_min = 6,
+                    "ingest/corruption internal error: {err_msg}"
+                );
+                ServiceErrorCode::Internal
+            }
             Self::IndexAlreadyExists { .. } => ServiceErrorCode::AlreadyExists,
             Self::IndexNotFound { .. } => ServiceErrorCode::NotFound,
-            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::Internal(err_msg) => {
+                rate_limited_error!(limit_per_min = 6, "ingest internal error: {err_msg}");
+                ServiceErrorCode::Internal
+            }
             Self::InvalidPosition(_) => ServiceErrorCode::BadRequest,
-            Self::IoError { .. } => ServiceErrorCode::Internal,
+            Self::IoError(io_err) => {
+                rate_limited_error!(limit_per_min = 6, "ingest/io internal error: {io_err}");
+                ServiceErrorCode::Internal
+            }
             Self::RateLimited => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }

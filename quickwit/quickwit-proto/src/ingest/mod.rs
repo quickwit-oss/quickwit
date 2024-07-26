@@ -21,6 +21,7 @@ use std::iter::zip;
 
 use bytes::Bytes;
 use bytesize::ByteSize;
+use quickwit_common::rate_limited_error;
 use quickwit_common::tower::MakeLoadShedError;
 
 use self::ingester::{PersistFailureReason, ReplicateFailureReason};
@@ -59,7 +60,10 @@ impl From<quickwit_common::tower::TaskCancelled> for IngestV2Error {
 impl ServiceError for IngestV2Error {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::Internal(error_msg) => {
+                rate_limited_error!(limit_per_min = 6, "ingest internal error: {error_msg}");
+                ServiceErrorCode::Internal
+            }
             Self::ShardNotFound { .. } => ServiceErrorCode::NotFound,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
