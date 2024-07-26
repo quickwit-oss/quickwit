@@ -17,8 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
+
 use anyhow::{ensure, Context};
 use quickwit_common::uri::Uri;
+use quickwit_doc_mapper::DefaultDocMapperBuilder;
 use quickwit_proto::types::{DocMappingUid, IndexId};
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -81,7 +84,7 @@ pub fn load_index_config_update(
         .index_uri
         .parent()
         .expect("index URI should have a parent");
-    let new_index_config = load_index_config_from_user_config(
+    let mut new_index_config = load_index_config_from_user_config(
         config_format,
         index_config_bytes,
         current_index_parent_dir,
@@ -98,12 +101,63 @@ pub fn load_index_config_update(
         current_index_config.index_uri,
         new_index_config.index_uri
     );
-    ensure!(
-        current_index_config
-            .doc_mapping
-            .eq_ignore_doc_mapping_uid(&new_index_config.doc_mapping),
-        "`doc_mapping` cannot be updated"
-    );
+
+    // verify the new mapping is coherent
+    let doc_mapper_builder = DefaultDocMapperBuilder {
+        doc_mapping: new_index_config.doc_mapping.clone(),
+        default_search_fields: new_index_config
+            .search_settings
+            .default_search_fields
+            .clone(),
+    };
+    doc_mapper_builder
+        .try_build()
+        .context("invalid mapping update")?;
+
+    {
+        let new_mapping_uid = new_index_config.doc_mapping.doc_mapping_uid;
+        // we verify whether they are equal ignoring the mapping uid as it is generated at random:
+        // we don't want to record a mapping change when nothing really happened.
+        new_index_config.doc_mapping.doc_mapping_uid =
+            current_index_config.doc_mapping.doc_mapping_uid;
+        if new_index_config.doc_mapping != current_index_config.doc_mapping {
+            new_index_config.doc_mapping.doc_mapping_uid = new_mapping_uid;
+            ensure!(
+                current_index_config.doc_mapping.doc_mapping_uid
+                    != new_index_config.doc_mapping.doc_mapping_uid,
+                "`doc_mapping_doc_mapping_uid` must change when the doc mapping is updated",
+            );
+            ensure!(
+                current_index_config.doc_mapping.timestamp_field
+                    == new_index_config.doc_mapping.timestamp_field,
+                "`doc_mapping.timestamp_field` cannot be updated, current value {}, new expected \
+                 value {}",
+                current_index_config
+                    .doc_mapping
+                    .timestamp_field
+                    .as_deref()
+                    .unwrap_or("<none>"),
+                new_index_config
+                    .doc_mapping
+                    .timestamp_field
+                    .as_deref()
+                    .unwrap_or("<none>"),
+            );
+            // TODO: i'm not sure this is necessary, we can relax this requirement once we know
+            // for sure
+            let current_tokenizers: HashSet<_> =
+                current_index_config.doc_mapping.tokenizers.iter().collect();
+            let new_tokenizers: HashSet<_> =
+                new_index_config.doc_mapping.tokenizers.iter().collect();
+            ensure!(
+                new_tokenizers.is_superset(&current_tokenizers),
+                "`.doc_mapping.tokenizers` must be a superset of previously available tokenizers"
+            );
+        } else {
+            // the docmapping is unchanged, keep the old uid
+        }
+    }
+
     Ok(new_index_config)
 }
 
@@ -440,12 +494,113 @@ mod test {
                       tokenizer: default
                       record: position
         "#;
-        let load_error = load_index_config_update(
+        let updated_config = load_index_config_update(
             ConfigFormat::Yaml,
             updated_config_yaml.as_bytes(),
             &original_config,
         )
-        .unwrap_err();
-        assert!(format!("{:?}", load_error).contains("`doc_mapping` cannot be updated"));
+        .unwrap();
+        assert_eq!(updated_config.doc_mapping.field_mappings.len(), 1);
+    }
+
+    #[test]
+    fn test_update_doc_mappings_failing_cases() {
+        let original_config_yaml = r#"
+            version: 0.8
+            index_id: hdfs-logs
+            doc_mapping:
+                mode: lenient
+                doc_mapping_uid: 00000000000000000000000000
+                timestamp_field: timestamp
+                field_mappings:
+                    - name: timestamp
+                      type: datetime
+                      fast: true
+        "#;
+        let original_config: IndexConfig = load_index_config_from_user_config(
+            ConfigFormat::Yaml,
+            original_config_yaml.as_bytes(),
+            &Uri::for_test("s3://mybucket"),
+        )
+        .unwrap();
+
+        let updated_config_yaml = r#"
+            version: 0.8
+            index_id: hdfs-logs
+            doc_mapping:
+                mode: lenient
+                doc_mapping_uid: 00000000000000000000000000
+                timestamp_field: timestamp
+                field_mappings:
+                    - name: timestamp
+                      type: datetime
+                      fast: true
+                    - name: body
+                      type: text
+                      tokenizer: default
+                      record: position
+        "#;
+        load_index_config_update(
+            ConfigFormat::Yaml,
+            updated_config_yaml.as_bytes(),
+            &original_config,
+        )
+        .expect_err("mapping changed but uid fixed should error");
+
+        let updated_config_yaml = r#"
+            version: 0.8
+            index_id: hdfs-logs
+            doc_mapping:
+                mode: lenient
+                field_mappings:
+                    - name: timestamp
+                      type: datetime
+                      fast: true
+        "#;
+        load_index_config_update(
+            ConfigFormat::Yaml,
+            updated_config_yaml.as_bytes(),
+            &original_config,
+        )
+        .expect_err("timestamp field removed should error");
+
+        let updated_config_yaml = r#"
+            version: 0.8
+            index_id: hdfs-logs
+            doc_mapping:
+                mode: lenient
+                timestamp_field: timestamp
+                field_mappings:
+                    - name: body
+                      type: text
+                      tokenizer: default
+                      record: position
+        "#;
+        load_index_config_update(
+            ConfigFormat::Yaml,
+            updated_config_yaml.as_bytes(),
+            &original_config,
+        )
+        .expect_err("field required for timestamp is absent");
+
+        let updated_config_yaml = r#"
+            version: 0.8
+            index_id: hdfs-logs
+            doc_mapping:
+                mode: lenient
+                timestamp_field: timestamp
+                field_mappings:
+                    - name: timestamp
+                      type: datetime
+                      fast: true
+            search_settings:
+              default_search_fields: ["i_dont_exist"]
+        "#;
+        load_index_config_update(
+            ConfigFormat::Yaml,
+            updated_config_yaml.as_bytes(),
+            &original_config,
+        )
+        .expect_err("field required for default search is absent");
     }
 }

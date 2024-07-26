@@ -588,6 +588,7 @@ async fn update_index(
         &new_index_config.search_settings,
         &new_index_config.retention_policy_opt,
         &new_index_config.indexing_settings,
+        &new_index_config.doc_mapping,
     )?;
     let update_resp = metastore.update_index(update_request).await?;
     Ok(update_resp.deserialize_index_metadata()?)

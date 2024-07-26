@@ -31,7 +31,8 @@ use std::ops::Bound;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::{
-    IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig, INGEST_V2_SOURCE_ID,
+    DocMapping, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
+    INGEST_V2_SOURCE_ID,
 };
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
@@ -229,6 +230,11 @@ impl FileBackedIndex {
     /// Replaces the indexing settings in the index config, returning whether a mutation occurred.
     pub fn set_indexing_settings(&mut self, search_settings: IndexingSettings) -> bool {
         self.metadata.set_indexing_settings(search_settings)
+    }
+
+    /// Replaces the doc mapping in the index config, returning whether a mutation occurred.
+    pub fn set_doc_mapping(&mut self, doc_mapping: DocMapping) -> bool {
+        self.metadata.set_doc_mapping(doc_mapping)
     }
 
     /// Stages a single split.

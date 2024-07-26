@@ -33,7 +33,7 @@ pub use index_metadata::IndexMetadata;
 use itertools::Itertools;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_config::{
-    IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
+    DocMapping, IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
@@ -191,6 +191,7 @@ pub trait UpdateIndexRequestExt {
         search_settings: &SearchSettings,
         retention_policy_opt: &Option<RetentionPolicy>,
         indexing_settings: &IndexingSettings,
+        doc_mapping: &DocMapping,
     ) -> MetastoreResult<UpdateIndexRequest>;
 
     /// Deserializes the `search_settings_json` field of an [`UpdateIndexRequest`] into a
@@ -204,6 +205,10 @@ pub trait UpdateIndexRequestExt {
     /// Deserializes the `indexing_settings_json` field of an [`UpdateIndexRequest`] into a
     /// [`IndexingSettings`] object.
     fn deserialize_indexing_settings(&self) -> MetastoreResult<IndexingSettings>;
+
+    /// Deserilalize the `doc_mapping_json` field of an `[UpdateIndexRequest]` into a
+    /// [`DocMapping`] object.
+    fn deserialize_doc_mapping(&self) -> MetastoreResult<DocMapping>;
 }
 
 impl UpdateIndexRequestExt for UpdateIndexRequest {
@@ -212,6 +217,7 @@ impl UpdateIndexRequestExt for UpdateIndexRequest {
         search_settings: &SearchSettings,
         retention_policy_opt: &Option<RetentionPolicy>,
         indexing_settings: &IndexingSettings,
+        doc_mapping: &DocMapping,
     ) -> MetastoreResult<UpdateIndexRequest> {
         let search_settings_json = serde_utils::to_json_str(search_settings)?;
         let retention_policy_json = retention_policy_opt
@@ -219,12 +225,14 @@ impl UpdateIndexRequestExt for UpdateIndexRequest {
             .map(serde_utils::to_json_str)
             .transpose()?;
         let indexing_settings_json = serde_utils::to_json_str(indexing_settings)?;
+        let doc_mapping_json = serde_utils::to_json_str(doc_mapping)?;
 
         let update_request = UpdateIndexRequest {
             index_uid: Some(index_uid.into()),
             search_settings_json,
             retention_policy_json,
             indexing_settings_json,
+            doc_mapping_json,
         };
         Ok(update_request)
     }
@@ -242,6 +250,10 @@ impl UpdateIndexRequestExt for UpdateIndexRequest {
 
     fn deserialize_indexing_settings(&self) -> MetastoreResult<IndexingSettings> {
         serde_utils::from_json_str(&self.indexing_settings_json)
+    }
+
+    fn deserialize_doc_mapping(&self) -> MetastoreResult<DocMapping> {
+        serde_utils::from_json_str(&self.doc_mapping_json)
     }
 }
 

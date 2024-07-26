@@ -31,13 +31,14 @@ use quickwit_config::{
     IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig, CLI_SOURCE_ID,
     INGEST_V2_SOURCE_ID,
 };
+use quickwit_doc_mapper::{Cardinality, FieldMappingEntry, FieldMappingType, QuickwitJsonOptions};
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataFailure,
     IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataSubrequest,
     IndexesMetadataRequest, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
     StageSplitsRequest, UpdateIndexRequest,
 };
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{DocMappingUid, IndexUid};
 
 use super::DefaultForTest;
 use crate::tests::cleanup_index;
@@ -126,6 +127,7 @@ pub async fn test_metastore_update_retention_policy<
             &index_config.search_settings,
             &loop_retention_policy_opt,
             &index_config.indexing_settings,
+            &index_config.doc_mapping,
         )
         .unwrap();
         let response_metadata = metastore
@@ -172,6 +174,7 @@ pub async fn test_metastore_update_search_settings<
             },
             &index_config.retention_policy_opt,
             &index_config.indexing_settings,
+            &index_config.doc_mapping,
         )
         .unwrap();
         let response_metadata = metastore
@@ -228,6 +231,7 @@ pub async fn test_metastore_update_indexing_settings<
                 merge_policy: loop_indexing_settings.clone(),
                 ..Default::default()
             },
+            &index_config.doc_mapping,
         )
         .unwrap();
         let resp_metadata = metastore
@@ -252,6 +256,69 @@ pub async fn test_metastore_update_indexing_settings<
             updated_metadata.index_config.indexing_settings.merge_policy,
             loop_indexing_settings
         );
+    }
+    cleanup_index(&mut metastore, index_uid).await;
+}
+
+pub async fn test_metastore_update_doc_mapping<
+    MetastoreToTest: MetastoreService + MetastoreServiceExt + DefaultForTest,
+>() {
+    let (mut metastore, index_uid, index_config) =
+        setup_metastore_for_update::<MetastoreToTest>().await;
+
+    let json_options = QuickwitJsonOptions {
+        description: None,
+        stored: false,
+        indexing_options: None,
+        expand_dots: false,
+        fast: Default::default(),
+    };
+
+    let initial = index_config.doc_mapping.clone();
+    let mut new_field = initial.clone();
+    new_field.field_mappings.push(FieldMappingEntry {
+        name: "new_field".to_string(),
+        mapping_type: FieldMappingType::Json(json_options.clone(), Cardinality::SingleValued),
+    });
+    new_field.doc_mapping_uid = DocMappingUid::random();
+    let mut new_field_stored = initial.clone();
+    new_field_stored.field_mappings.push(FieldMappingEntry {
+        name: "new_field".to_string(),
+        mapping_type: FieldMappingType::Json(
+            QuickwitJsonOptions {
+                stored: true,
+                ..json_options
+            },
+            Cardinality::SingleValued,
+        ),
+    });
+    new_field_stored.doc_mapping_uid = DocMappingUid::random();
+
+    for loop_doc_mapping in [initial.clone(), new_field, new_field_stored, initial] {
+        let index_update = UpdateIndexRequest::try_from_updates(
+            index_uid.clone(),
+            &index_config.search_settings,
+            &index_config.retention_policy_opt,
+            &index_config.indexing_settings,
+            &loop_doc_mapping,
+        )
+        .unwrap();
+        let resp_metadata = metastore
+            .update_index(index_update)
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert_eq!(resp_metadata.index_config.doc_mapping, loop_doc_mapping);
+        let updated_metadata = metastore
+            .index_metadata(IndexMetadataRequest::for_index_id(
+                index_uid.index_id.to_string(),
+            ))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert_eq!(updated_metadata.index_config.doc_mapping, loop_doc_mapping);
     }
     cleanup_index(&mut metastore, index_uid).await;
 }
