@@ -381,8 +381,11 @@ mod tests {
         let node_id = NodeId::from("test-node");
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_id = "test-source".to_string();
-        let doc_mapping_uid1 = DocMappingUid::random();
-        let doc_mapping_uid2 = DocMappingUid::random();
+        let [doc_mapping_uid1, doc_mapping_uid2] = {
+            let mut doc_mappings = [DocMappingUid::random(), DocMappingUid::random()];
+            doc_mappings.sort();
+            doc_mappings
+        };
         let pipeline_id = MergePipelineId {
             node_id,
             index_uid: index_uid.clone(),
