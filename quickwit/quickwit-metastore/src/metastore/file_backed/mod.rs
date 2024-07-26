@@ -508,12 +508,15 @@ impl MetastoreService for FileBackedMetastore {
         let doc_mapping = request.deserialize_doc_mapping()?;
         let index_uid = request.index_uid();
 
+        let mut mutation_requiring_restart_occurred = false;
         let index_metadata = self
             .mutate(index_uid, |index| {
-                let mut mutation_occurred = index.set_retention_policy(retention_policy_opt);
+                mutation_requiring_restart_occurred =
+                    index.set_indexing_settings(indexing_settings);
+                mutation_requiring_restart_occurred |= index.set_doc_mapping(doc_mapping);
+                let mut mutation_occurred = mutation_requiring_restart_occurred;
+                mutation_occurred |= index.set_retention_policy(retention_policy_opt);
                 mutation_occurred |= index.set_search_settings(search_settings);
-                mutation_occurred |= index.set_indexing_settings(indexing_settings);
-                mutation_occurred |= index.set_doc_mapping(doc_mapping);
 
                 let index_metadata = index.metadata().clone();
 
@@ -524,7 +527,10 @@ impl MetastoreService for FileBackedMetastore {
                 }
             })
             .await?;
-        UpdateIndexResponse::try_from_index_metadata_and_restart_pipeline(&index_metadata, false)
+        UpdateIndexResponse::try_from_index_metadata_and_restart_pipeline(
+            &index_metadata,
+            mutation_requiring_restart_occurred,
+        )
     }
 
     async fn delete_index(&self, request: DeleteIndexRequest) -> MetastoreResult<EmptyResponse> {

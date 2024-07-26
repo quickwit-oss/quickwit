@@ -403,20 +403,25 @@ impl MetastoreService for PostgresqlMetastore {
         let doc_mapping = request.deserialize_doc_mapping()?;
 
         let index_uid: IndexUid = request.index_uid().clone();
+
+        let mut mutation_requiring_restart_occurred = false;
         let updated_index_metadata = run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
-                let mut mutation_occurred =
-                    index_metadata.set_retention_policy(retention_policy_opt);
+                mutation_requiring_restart_occurred =
+                    index_metadata.set_indexing_settings(indexing_settings);
+                mutation_requiring_restart_occurred |=
+                    index_metadata.set_doc_mapping(doc_mapping);
+                let mut mutation_occurred = mutation_requiring_restart_occurred;
+                mutation_occurred |= index_metadata.set_retention_policy(retention_policy_opt);
                 mutation_occurred |= index_metadata.set_search_settings(search_settings);
-                mutation_occurred |= index_metadata.set_indexing_settings(indexing_settings);
-                mutation_occurred |= index_metadata.set_doc_mapping(doc_mapping);
+
                 Ok(MutationOccurred::from(mutation_occurred))
             })
             .await
         })?;
         UpdateIndexResponse::try_from_index_metadata_and_restart_pipeline(
             &updated_index_metadata,
-            false,
+            mutation_requiring_restart_occurred,
         )
     }
 
