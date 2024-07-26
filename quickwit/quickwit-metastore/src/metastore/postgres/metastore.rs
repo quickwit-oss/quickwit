@@ -409,8 +409,7 @@ impl MetastoreService for PostgresqlMetastore {
             mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
                 mutation_requiring_restart_occurred =
                     index_metadata.set_indexing_settings(indexing_settings);
-                mutation_requiring_restart_occurred |=
-                    index_metadata.set_doc_mapping(doc_mapping);
+                mutation_requiring_restart_occurred |= index_metadata.set_doc_mapping(doc_mapping);
                 let mut mutation_occurred = mutation_requiring_restart_occurred;
                 mutation_occurred |= index_metadata.set_retention_policy(retention_policy_opt);
                 mutation_occurred |= index_metadata.set_search_settings(search_settings);

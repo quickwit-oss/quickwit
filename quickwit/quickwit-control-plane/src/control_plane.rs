@@ -594,7 +594,12 @@ impl Handler<UpdateIndexRequest> for ControlPlane {
         };
         self.model
             .update_index_config(&index_uid, index_metadata.index_config)?;
-        // TODO: Handle doc mapping and/or indexing settings update here.
+        if response.restart_pipeline {
+            self.indexing_scheduler
+                .add_index_to_restart(index_uid.clone());
+            // TODO maybe we should wait, and only reply when the update is really done?
+            let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
+        }
         info!(%index_uid, "updated index");
         Ok(Ok(response))
     }
