@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use bytes::Bytes;
 use quickwit_common::rate_limited_error;
 use quickwit_opentelemetry::otlp::{
     OtlpGrpcLogsService, OtlpGrpcTracesService, OTEL_LOGS_INDEX_ID, OTEL_TRACES_INDEX_ID,
@@ -36,9 +35,10 @@ use serde::{self, Serialize};
 use tracing::error;
 use warp::{Filter, Rejection};
 
+use crate::decompression::get_body_bytes;
 use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
-use crate::{require, with_arg, BodyFormat};
+use crate::{require, with_arg, Body, BodyFormat};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(otlp_default_logs_handler, otlp_default_traces_handler))]
@@ -75,7 +75,8 @@ pub(crate) fn otlp_default_logs_handler(
             "application/x-protobuf",
         ))
         .and(warp::post())
-        .and(warp::body::bytes())
+        //.and(warp::body::bytes())
+        .and(get_body_bytes())
         .then(|otlp_logs_service, body| async move {
             otlp_ingest_logs(otlp_logs_service, OTEL_LOGS_INDEX_ID.to_string(), body).await
         })
@@ -93,7 +94,7 @@ pub(crate) fn otlp_logs_handler(
             "application/x-protobuf",
         ))
         .and(warp::post())
-        .and(warp::body::bytes())
+        .and(get_body_bytes())
         .then(otlp_ingest_logs)
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
@@ -119,7 +120,7 @@ pub(crate) fn otlp_default_traces_handler(
             "application/x-protobuf",
         ))
         .and(warp::post())
-        .and(warp::body::bytes())
+        .and(get_body_bytes())
         .then(|otlp_traces_service, body| async move {
             otlp_ingest_traces(otlp_traces_service, OTEL_TRACES_INDEX_ID.to_string(), body).await
         })
@@ -137,7 +138,7 @@ pub(crate) fn otlp_ingest_traces_handler(
             "application/x-protobuf",
         ))
         .and(warp::post())
-        .and(warp::body::bytes())
+        .and(get_body_bytes())
         .then(otlp_ingest_traces)
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
@@ -166,11 +167,12 @@ impl ServiceError for OtlpApiError {
 async fn otlp_ingest_logs(
     otlp_logs_service: OtlpGrpcLogsService,
     _index_id: IndexId, // <- TODO: use index ID when gRPC service supports it.
-    body: Bytes,
+    body: Body,
 ) -> Result<ExportLogsServiceResponse, OtlpApiError> {
     // TODO: use index ID.
-    let export_logs_request: ExportLogsServiceRequest = prost::Message::decode(&body[..])
-        .map_err(|err| OtlpApiError::InvalidPayload(err.to_string()))?;
+    let export_logs_request: ExportLogsServiceRequest =
+        prost::Message::decode(&body.content[..])
+            .map_err(|err| OtlpApiError::InvalidPayload(err.to_string()))?;
     let result = otlp_logs_service
         .export(tonic::Request::new(export_logs_request))
         .await
@@ -181,10 +183,11 @@ async fn otlp_ingest_logs(
 async fn otlp_ingest_traces(
     otlp_traces_service: OtlpGrpcTracesService,
     _index_id: IndexId, // <- TODO: use index ID when gRPC service supports it.
-    body: Bytes,
+    body: Body,
 ) -> Result<ExportTraceServiceResponse, OtlpApiError> {
-    let export_traces_request: ExportTraceServiceRequest = prost::Message::decode(&body[..])
-        .map_err(|err| OtlpApiError::InvalidPayload(err.to_string()))?;
+    let export_traces_request: ExportTraceServiceRequest =
+        prost::Message::decode(&body.content[..])
+            .map_err(|err| OtlpApiError::InvalidPayload(err.to_string()))?;
     let response = otlp_traces_service
         .export(tonic::Request::new(export_traces_request))
         .await
@@ -194,6 +197,10 @@ async fn otlp_ingest_traces(
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
     use prost::Message;
     use quickwit_ingest::{CommitType, IngestResponse, IngestServiceClient, MockIngestService};
     use quickwit_opentelemetry::otlp::{
@@ -211,6 +218,12 @@ mod tests {
 
     use super::otlp_ingest_api_handlers;
     use crate::rest::recover_fn;
+
+    fn compress(body: &[u8]) -> Vec<u8> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(body).expect("Failed to write to encoder");
+        encoder.finish().expect("Failed to finish compression")
+    }
 
     #[tokio::test]
     async fn test_otlp_ingest_logs_handler() {
@@ -281,6 +294,28 @@ mod tests {
             );
         }
         {
+            // Test default otlp endpoint with compression
+            let resp = warp::test::request()
+                .path("/otlp/v1/logs")
+                .method("POST")
+                .header("content-type", "application/x-protobuf")
+                .header("content-encoding", "gzip")
+                .body(compress(&body))
+                .reply(&otlp_traces_api_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let actual_response: ExportLogsServiceResponse =
+                serde_json::from_slice(resp.body()).unwrap();
+            assert!(actual_response.partial_success.is_some());
+            assert_eq!(
+                actual_response
+                    .partial_success
+                    .unwrap()
+                    .rejected_log_records,
+                0
+            );
+        }
+        {
             // Test endpoint with given index ID.
             let resp = warp::test::request()
                 .path("/otel-traces-v0_6/otlp/v1/logs")
@@ -335,6 +370,22 @@ mod tests {
                 .method("POST")
                 .header("content-type", "application/x-protobuf")
                 .body(body.clone())
+                .reply(&otlp_traces_api_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let actual_response: ExportTraceServiceResponse =
+                serde_json::from_slice(resp.body()).unwrap();
+            assert!(actual_response.partial_success.is_some());
+            assert_eq!(actual_response.partial_success.unwrap().rejected_spans, 0);
+        }
+        {
+            // Test default otlp endpoint with compression
+            let resp = warp::test::request()
+                .path("/otlp/v1/traces")
+                .method("POST")
+                .header("content-type", "application/x-protobuf")
+                .header("content-encoding", "gzip")
+                .body(compress(&body))
                 .reply(&otlp_traces_api_handler)
                 .await;
             assert_eq!(resp.status(), 200);
