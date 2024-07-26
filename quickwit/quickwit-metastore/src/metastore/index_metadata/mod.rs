@@ -130,8 +130,7 @@ impl IndexMetadata {
         }
     }
 
-    /// Replaces the doc mapping in the index config, returning whether a mutation occurred, or
-    /// possibly an error if this change is not allowed
+    /// Replaces the current doc mapping, returning whether a mutation occurred.
     pub fn set_doc_mapping(&mut self, doc_mapping: DocMapping) -> bool {
         if self.index_config.doc_mapping != doc_mapping {
             self.index_config.doc_mapping = doc_mapping;

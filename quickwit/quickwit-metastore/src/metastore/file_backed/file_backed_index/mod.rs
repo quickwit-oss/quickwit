@@ -232,8 +232,7 @@ impl FileBackedIndex {
         self.metadata.set_indexing_settings(search_settings)
     }
 
-    /// Replaces the doc mapping in the index config, returning whether a mutation occurred, or
-    /// possibly an error if this change is not allowed
+    /// Replaces the doc mapping in the index config, returning whether a mutation occurred.
     pub fn set_doc_mapping(&mut self, doc_mapping: DocMapping) -> bool {
         self.metadata.set_doc_mapping(doc_mapping)
     }
