@@ -1059,7 +1059,7 @@ mod tests {
 
         let requests = client.actual_requests().collect::<Vec<_>>();
         assert_eq!(requests.len(), 1);
-        assert!(requests[0].uri().to_string().ends_with("DeleteObjects"));
+        assert!(requests[0].uri().to_string().ends_with("delete"));
     }
 
     #[tokio::test]
