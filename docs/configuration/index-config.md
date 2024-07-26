@@ -14,7 +14,7 @@ In addition to the `index_id`, the index configuration lets you define five item
 - The **search settings**: it defines the default search fields `default_search_fields`, a list of fields that Quickwit will search into if the user query does not explicitly target a field.
 - The **retention policy**: it defines how long Quickwit should keep the indexed data. If not specified, the data is stored forever.
 
-Configuration is set at index creation but can be changed using the [update endpoint](../reference/rest-api.md) or the [CLI](../reference/cli.md).
+Configuration is set at index creation and can be changed using the [update endpoint](../reference/rest-api.md) or the [CLI](../reference/cli.md).
 
 ## Config file format
 

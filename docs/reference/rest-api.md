@@ -321,6 +321,10 @@ Updates the configurations of an index. This endpoint follows PUT semantics, whi
 - The indexing settings update is not automatically picked up by the indexer nodes, they need to be manually restarted.
 - The doc mapping update is not automatically picked up by the indexer nodes, they have to be manually restarted.
 
+Updating the doc mapping doesn't reindex existing data. Queries and answers are mapped on a best effort basis when querying older splits.
+It is also not possible to update the timestamp field, or to modify/remove existing non-default tokenizers (but it is possible to change
+which tokenizer is used for a field).
+
 #### PUT payload
 
 | Variable            | Type               | Description                                                                                                           | Default value                         |

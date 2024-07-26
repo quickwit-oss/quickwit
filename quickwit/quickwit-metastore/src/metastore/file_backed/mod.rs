@@ -44,7 +44,6 @@ use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::ServiceStream;
 use quickwit_config::IndexTemplate;
-use quickwit_doc_mapper::DefaultDocMapperBuilder;
 use quickwit_proto::metastore::{
     serde_utils, AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
@@ -509,23 +508,12 @@ impl MetastoreService for FileBackedMetastore {
         let doc_mapping = request.deserialize_doc_mapping()?;
         let index_uid = request.index_uid();
 
-        // verify the new mapping is coherent
-        let doc_mapper_builder = DefaultDocMapperBuilder {
-            doc_mapping: doc_mapping.clone(),
-            default_search_fields: search_settings.default_search_fields.clone(),
-        };
-        doc_mapper_builder
-            .try_build()
-            .map_err(|e| MetastoreError::InvalidArgument {
-                message: format!("invalid mapping update: {e}"),
-            })?;
-
         let index_metadata = self
             .mutate(index_uid, |index| {
                 let mut mutation_occurred = index.set_retention_policy(retention_policy_opt);
                 mutation_occurred |= index.set_search_settings(search_settings);
                 mutation_occurred |= index.set_indexing_settings(indexing_settings);
-                mutation_occurred |= index.set_doc_mapping(doc_mapping)?;
+                mutation_occurred |= index.set_doc_mapping(doc_mapping);
 
                 let index_metadata = index.metadata().clone();
 

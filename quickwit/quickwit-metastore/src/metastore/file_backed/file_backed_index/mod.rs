@@ -234,7 +234,7 @@ impl FileBackedIndex {
 
     /// Replaces the doc mapping in the index config, returning whether a mutation occurred, or
     /// possibly an error if this change is not allowed
-    pub fn set_doc_mapping(&mut self, doc_mapping: DocMapping) -> MetastoreResult<bool> {
+    pub fn set_doc_mapping(&mut self, doc_mapping: DocMapping) -> bool {
         self.metadata.set_doc_mapping(doc_mapping)
     }
 
