@@ -182,6 +182,13 @@ curl -XPOST -H 'Content-Type: application/json' 'http://localhost:7280/api/v1/gh
 The Quickwit Kafka source supports SSL and SASL authentication. This is
 particularly useful when consuming data from an external Kafka service.
 
+:::tip
+
+The certificate and key files must be present on all Quickwit nodes for the
+Kafka source to be created and for the indexing pipelines to run successfully.
+
+:::
+
 ### SSL configuration
 
 ```yaml
