@@ -1081,7 +1081,7 @@ pub mod search_service_client {
                 .insert(GrpcMethod::new("quickwit.search.SearchService", "Scroll"));
             self.inner.unary(req, path, codec).await
         }
-        /// gRPC request used to store a key in the local storage of the targetted node.
+        /// gRPC request used to store a key in the local storage of the targeted node.
         /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
         pub async fn put_kv(
             &mut self,
@@ -1105,7 +1105,7 @@ pub mod search_service_client {
                 .insert(GrpcMethod::new("quickwit.search.SearchService", "PutKV"));
             self.inner.unary(req, path, codec).await
         }
-        /// Gets a key from the local storage of the targetted node.
+        /// Gets a key from the local storage of the targeted node.
         /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
         pub async fn get_kv(
             &mut self,
@@ -1322,13 +1322,13 @@ pub mod search_service_server {
             &self,
             request: tonic::Request<super::ScrollRequest>,
         ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
-        /// gRPC request used to store a key in the local storage of the targetted node.
+        /// gRPC request used to store a key in the local storage of the targeted node.
         /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
         async fn put_kv(
             &self,
             request: tonic::Request<super::PutKvRequest>,
         ) -> std::result::Result<tonic::Response<super::PutKvResponse>, tonic::Status>;
-        /// Gets a key from the local storage of the targetted node.
+        /// Gets a key from the local storage of the targeted node.
         /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
         async fn get_kv(
             &self,

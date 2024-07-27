@@ -21,7 +21,7 @@ POST api/v1/_elastic/_bulk
 POST api/v1/_elastic/<index>/_bulk
 ```
 
-The _bulk ingestion API makes it possible to index a batch of documents, possibly targetting several indices in the same request.
+The _bulk ingestion API makes it possible to index a batch of documents, possibly targeting several indices in the same request.
 
 #### Request Body example
 
@@ -228,7 +228,7 @@ You can pass the `sort` value of the last hit in a subsequent request where othe
 ```json
 {
   // keep all fields from the original request
-  "seach_after": [
+  "search_after": [
     1701962929199
   ]
 }
@@ -256,7 +256,7 @@ POST api/v1/_elastic/_msearch
 Runs several search requests at once.
 
 The payload is expected to alternate:
-- a `header` json object, containing the targetted index id.
+- a `header` json object, containing the targeted index id.
 - a `search request body` as defined in the [`_search` endpoint section].
 
 
@@ -725,7 +725,7 @@ Search APIs that accept <index_id> requests path parameter also support multi-ta
 
 ### Multi-target syntax
 
-In multi-target syntax, you can use a comma or its URL encoded version '%2C' seperated list to run a request on multiple indices: test1,test2,test3. You can also sue [glob-like](https://en.wikipedia.org/wiki/Glob_(programming)) wildcard ( \* ) expressions to target indices that match a pattern: test\* or \*test or te\*t or \*test\*.
+In multi-target syntax, you can use a comma or its URL encoded version '%2C' separated list to run a request on multiple indices: test1,test2,test3. You can also sue [glob-like](https://en.wikipedia.org/wiki/Glob_(programming)) wildcard ( \* ) expressions to target indices that match a pattern: test\* or \*test or te\*t or \*test\*.
 
 The multi-target expression has the following constraints:
 

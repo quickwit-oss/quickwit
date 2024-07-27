@@ -62,7 +62,7 @@ static ORIGIN_OF_TIME: Lazy<Instant> = Lazy::new(Instant::now);
 /// a uniform distribution over the interval [0, commit_timeout).
 ///
 /// Each period of this cycle is divided into three phases.
-/// - waking [t_wake..t_work_start) acquisition of the period guard (this is instantenous)
+/// - waking [t_wake..t_work_start) acquisition of the period guard (this is instantaneous)
 ///   acquisition of the semaphore
 /// - working [t_work_start..t_work_end)
 /// - sleeping [t=t_work_end..t_sleep_end)
@@ -222,7 +222,7 @@ mod tests {
     fn assert_approx_equal_sleep_time(left: Duration, right: Duration) {
         let delta = (left.as_millis() as i128 - right.as_millis() as i128).unsigned_abs();
         if delta >= NUDGE_TOLERANCE.mul_f32(1.1).as_millis() {
-            panic!("{left:?} and {right:?} are not approximatively equal.");
+            panic!("{left:?} and {right:?} are not approximately equal.");
         }
     }
 

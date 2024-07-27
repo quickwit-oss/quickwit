@@ -24,7 +24,7 @@ use crate::merge_policy::MergeTask;
 
 #[derive(Debug)]
 pub struct MergeScratch {
-    /// A [`MergeTask`] tracked by either the `MergePlannner` or the `DeleteTaksPlanner`
+    /// A [`MergeTask`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
     /// See planners docs to understand the usage.
     pub merge_task: MergeTask,
     /// Scratch directory for computing the merge.

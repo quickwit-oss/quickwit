@@ -290,7 +290,7 @@ impl Default for IngestApiConfig {
 
 impl IngestApiConfig {
     /// Returns the replication factor, as defined in environment variable or in the configuration
-    /// in that order (the environment variable can overrrides the configuration).
+    /// in that order (the environment variable can overrides the configuration).
     pub fn replication_factor(&self) -> anyhow::Result<NonZeroUsize> {
         if let Ok(replication_factor_str) = env::var("QW_INGEST_REPLICATION_FACTOR") {
             let replication_factor = match replication_factor_str.trim() {

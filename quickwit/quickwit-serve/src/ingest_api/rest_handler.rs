@@ -27,6 +27,7 @@ use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
     IngestRouterServiceClient, IngestSubrequest,
 };
+use quickwit_proto::ingest::RateLimitingCause;
 use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
@@ -166,7 +167,8 @@ fn convert_ingest_response_v2(
         });
     }
     let ingest_failure = response.failures.pop().unwrap();
-    Err(match ingest_failure.reason() {
+    let reason = ingest_failure.reason();
+    Err(match reason {
         IngestFailureReason::Unspecified => {
             IngestServiceError::Internal("unknown error".to_string())
         }
@@ -181,10 +183,21 @@ fn convert_ingest_response_v2(
         IngestFailureReason::NoShardsAvailable => {
             IngestServiceError::Unavailable("no shards available".to_string())
         }
-        IngestFailureReason::RateLimited => IngestServiceError::RateLimited,
-        IngestFailureReason::ResourceExhausted => IngestServiceError::RateLimited,
+        IngestFailureReason::ShardRateLimited => {
+            IngestServiceError::RateLimited(RateLimitingCause::ShardRateLimiting)
+        }
+        IngestFailureReason::WalFull => IngestServiceError::RateLimited(RateLimitingCause::WalFull),
         IngestFailureReason::Timeout => {
             IngestServiceError::Internal("request timed out".to_string())
+        }
+        IngestFailureReason::RouterLoadShedding => {
+            IngestServiceError::RateLimited(RateLimitingCause::RouterLoadShedding)
+        }
+        IngestFailureReason::LoadShedding => {
+            IngestServiceError::RateLimited(RateLimitingCause::LoadShedding)
+        }
+        IngestFailureReason::CircuitBreaker => {
+            IngestServiceError::RateLimited(RateLimitingCause::CircuitBreaker)
         }
     })
 }

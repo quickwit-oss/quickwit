@@ -311,7 +311,7 @@ expected:
         searchable: true
         aggregatable: true
 ---
-# Exact match index + Non matching excact index
+# Exact match index + Non matching exact index
 method: [GET]
 engines:
   - quickwit
@@ -334,4 +334,3 @@ engines:
   - elasticsearch
 endpoint: doesno*texist/_field_caps?fields=date
 status_code: 200
-

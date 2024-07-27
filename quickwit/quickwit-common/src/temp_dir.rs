@@ -130,10 +130,10 @@ impl<'a> Builder<'a> {
         size
     }
 
-    /// Constracts the prefix from the parts specified by the join function.
-    /// If parts are small enough they will be simply contcatenated with the
+    /// Constructs the prefix from the parts specified by the join function.
+    /// If parts are small enough they will be simply concatenated with the
     /// separator character in between. If parts are too large they will
-    /// trancated by replacing the middle of each part with "..". The resulting
+    /// truncated by replacing the middle of each part with "..". The resulting
     /// string will be at most max_length characters long.
     fn prefix(&self) -> io::Result<String> {
         if self.parts.is_empty() {
@@ -144,7 +144,7 @@ impl<'a> Builder<'a> {
         } else {
             self.parts.len() - 1
         };
-        // We want to preserve at least one letter from each part with separatos.
+        // We want to preserve at least one letter from each part with separators.
         if self.max_length < self.parts.len() + separator_count + self.num_rand_chars {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -163,7 +163,7 @@ impl<'a> Builder<'a> {
         // parts can use in addition to the average.
         for part in &self.parts {
             if part.len() <= average_len {
-                // Adjust the avaible length from the parts that are shorter
+                // Adjust the available length from the parts that are shorter
                 leftovers += average_len - part.len();
             }
         }

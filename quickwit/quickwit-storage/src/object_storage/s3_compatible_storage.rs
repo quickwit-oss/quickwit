@@ -56,7 +56,7 @@ use crate::{
     StorageResolverError, StorageResult, STORAGE_METRICS,
 };
 
-/// Semaphore to limit the number of concurent requests to the object store. Some object stores
+/// Semaphore to limit the number of concurrent requests to the object store. Some object stores
 /// (R2, SeaweedFs...) return errors when too many concurrent requests are emitted.
 static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {
     let num_permits: usize = quickwit_common::get_from_env("QW_S3_MAX_CONCURRENCY", 10_000usize);

@@ -66,7 +66,7 @@ Hardcoding credentials into configuration files is not secure and strongly disco
 | Env variable | Description |
 | --- | --- |
 | `QW_S3_ENDPOINT` | Custom S3 endpoint. |
-| `QW_S3_MAX_CONCURRENCY` | Limit the number of concurent requests to S3 |
+| `QW_S3_MAX_CONCURRENCY` | Limit the number of concurrent requests to S3 |
 
 #### Storage flavors
 

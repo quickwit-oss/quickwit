@@ -95,7 +95,7 @@ Matches if the document contains any of the tokens provided.
 ###### Examples
 `field:IN [ab cd]` will match 'ab' or 'cd', but nothing else.
 
-###### Perfomance Note
+###### Performance Note
 This is a lot like writing `field:ab OR field:cd`. When there are only a handful of terms to search for, using ORs is usually faster.
 When there are many values to match, a term set query can become more efficient.
 
@@ -150,7 +150,7 @@ bounds = term TO term
        | '*' TO term
 
 comparison_range = comparison_operator term
-comparision_operator = '<' | '>' | '<=' | '>='
+comparison_operator = '<' | '>' | '<=' | '>='
 ```
 
 Matches if the document contains a token between the provided bounds for that field.

@@ -135,7 +135,7 @@ fast:
 | `tokenizer` | Name of the `Tokenizer`. ([See tokenizers](#description-of-available-tokenizers)) for a list of available tokenizers.  | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 | `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |
-| `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids and the dictionary. The default behaviour for `true` is to store the original text unchanged. The normalizers on the fast field is seperately configured. It can be configured via `normalizer: lowercase`. ([See normalizers](#description-of-available-normalizers)) for a list of available normalizers. | `false` |
+| `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids and the dictionary. The default behaviour for `true` is to store the original text unchanged. The normalizers on the fast field is separately configured. It can be configured via `normalizer: lowercase`. ([See normalizers](#description-of-available-normalizers)) for a list of available normalizers. | `false` |
 
 ##### Description of available tokenizers
 
@@ -327,7 +327,7 @@ stored: true
 indexed: true
 fast: true
 input_format: hex
-output_foramt: hex
+output_format: hex
 ```
 
 **Parameters for bytes field**
@@ -432,7 +432,7 @@ tokenizer: default
 record: basic
 ```
 
-Concatenate fields don't support fast fields, and are never stored. They uses their own tokenizer, independantly of the
+Concatenate fields don't support fast fields, and are never stored. They uses their own tokenizer, independently of the
 tokenizer configured on the individual fields.
 At query time, concatenate fields don't support range queries.
 Only the following types are supported inside a concatenate field: text, bool, i64, u64, json. Other types are rejected
@@ -458,7 +458,7 @@ when the features are supported, add these:
 ---
 Only the following types are supported inside a concatenate field: text, datetime, bool, i64, u64, ip, json. Other types are rejected
 ---
-Datetime can only be queried in their RFC-3339 form, possibly omiting later components. # todo! will have to confirm this is achievable
+Datetime can only be queried in their RFC-3339 form, possibly omitting later components. # todo! will have to confirm this is achievable
 ---
 plan:
 - implement text/bool/i64/u64 (nothing to do on search side for it to work). all gets converted to strings

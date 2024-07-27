@@ -382,7 +382,7 @@ def benchmark_hdfs_indexing():
         indexer_result = invoke_hdfs_indexer()
         bench_result["lambda_report"] = indexer_result.extract_report()
     except Exception as e:
-        bench_result["invokation_error"] = repr(e)
+        bench_result["invocation_error"] = repr(e)
         print(f"Failed to invoke indexer")
 
     with open(f"lambda-bench.log", "a+") as f:
@@ -409,7 +409,7 @@ def benchmark_hdfs_search(payload: str):
             indexer_result = invoke_hdfs_searcher(payload, download_logs=False)
             bench_result["lambda_report"] = indexer_result.extract_report()
         except Exception as e:
-            bench_result["invokation_error"] = repr(e)
+            bench_result["invocation_error"] = repr(e)
             print(f"Failed to invoke searcher")
 
         with open(f"lambda-bench.log", "a+") as f:

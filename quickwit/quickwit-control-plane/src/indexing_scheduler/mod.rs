@@ -32,7 +32,7 @@ use once_cell::sync::OnceCell;
 use quickwit_common::pretty::PrettySample;
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
-    PIPELINE_THROUGHTPUT,
+    PIPELINE_THROUGHPUT,
 };
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::NodeId;
@@ -63,7 +63,7 @@ pub struct IndexingSchedulerState {
     pub last_applied_plan_timestamp: Option<Instant>,
 }
 
-/// The [`IndexingScheduler`] is responsible for listing indexing tasks and assiging them to
+/// The [`IndexingScheduler`] is responsible for listing indexing tasks and assigning them to
 /// indexers.
 /// We call this duty `scheduling`. Contrary to what the name suggests, most indexing tasks are
 /// ever running. We just borrowed the terminology to Kubernetes.
@@ -150,10 +150,10 @@ fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
             .div_ceil(num_shards)
             // A shard throughput cannot exceed PIPELINE_THROUGHPUT in the long term (this is
             // enforced by the configuration).
-            .min(PIPELINE_THROUGHTPUT.as_u64());
+            .min(PIPELINE_THROUGHPUT.as_u64());
         let num_cpu_millis = (PIPELINE_FULL_CAPACITY.cpu_millis() as u64
             * average_throughput_per_shard_bytes)
-            / PIPELINE_THROUGHTPUT.as_u64();
+            / PIPELINE_THROUGHPUT.as_u64();
         const MIN_CPU_LOAD_PER_SHARD: u32 = 50u32;
         NonZeroU32::new((num_cpu_millis as u32).max(MIN_CPU_LOAD_PER_SHARD)).unwrap()
     } else {

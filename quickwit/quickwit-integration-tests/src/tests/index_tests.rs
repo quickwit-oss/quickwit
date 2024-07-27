@@ -658,7 +658,7 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
     let sandbox = ClusterSandbox::start_cluster_with_otlp_service(&nodes_services)
         .await
         .unwrap();
-    // Wait fo the pipelines to start (one for logs and one for traces)
+    // Wait for the pipelines to start (one for logs and one for traces)
     sandbox.wait_for_indexing_pipelines(2).await.unwrap();
 
     let scope_spans = vec![ScopeSpans {

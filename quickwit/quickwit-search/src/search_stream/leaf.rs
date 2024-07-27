@@ -662,7 +662,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_leaf_search_stream_to_partitionned_clickhouse_binary_output_with_filtering(
+    async fn test_leaf_search_stream_to_partitioned_clickhouse_binary_output_with_filtering(
     ) -> anyhow::Result<()> {
         let index_id = "single-node-simple-2";
         let doc_mapping_yaml = r#"

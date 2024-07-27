@@ -1,4 +1,4 @@
-# regression test for bizare handling of - vs NOT when no positive clause is present
+# regression test for bizarre handling of - vs NOT when no positive clause is present
 endpoint: simple/search
 params:
   query: "-ts:1234567890 AND -ts:1234567891"

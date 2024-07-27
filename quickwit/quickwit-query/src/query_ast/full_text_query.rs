@@ -177,8 +177,9 @@ pub enum FullTextMode {
     },
     BoolPrefix {
         operator: BooleanOperand,
-        // max_expansions correspond to the fuzzy stop of query evalution. It's not the same as the
-        // max_expansions of a PhrasePrefixQuery, where it's used for the range expansion.
+        // max_expansions correspond to the fuzzy stop of query evaluation. It's not the same as
+        // the max_expansions of a PhrasePrefixQuery, where it's used for the range
+        // expansion.
         max_expansions: u32,
     },
     // Act as Phrase with slop 0 if the field has positions,
@@ -247,7 +248,7 @@ impl BuildTantivyAst for FullTextQuery {
 }
 
 impl FullTextQuery {
-    /// Returns the last term of the query assuming the query is targetting a string or a Json
+    /// Returns the last term of the query assuming the query is targeting a string or a Json
     /// field.
     ///
     /// This strange method is used to identify which term range should be warmed up for

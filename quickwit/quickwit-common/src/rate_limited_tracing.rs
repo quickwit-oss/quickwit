@@ -28,8 +28,8 @@ use coarsetime::{Duration, Instant};
 ///
 /// `call_count` is the number of calls since the last upgrade of generation, it's stored
 /// in the lower 32b of the atomic, so it can just be incremented on the fast path.
-/// `generation` is the number of time we reseted the `call_count`. It isn't used as is, and
-/// is just compared to itself to detect and handle properly concurent resets frop multiple
+/// `generation` is the number of time we reset the `call_count`. It isn't used as is, and
+/// is just compared to itself to detect and handle properly concurrent resets from multiple
 /// threads.
 #[derive(Clone, Copy)]
 struct LogSiteMetadata {
@@ -62,7 +62,7 @@ pub fn should_log<F: Fn() -> Instant>(
 ) -> bool {
     //  count_atomic is treated as 2 u32: upper bits count "generation", lower bits count number of
     //  calls since LAST_RESET. We assume there won't be 2**32 calls to this log in ~60s.
-    //  Generation is free to wrap arround.
+    //  Generation is free to wrap around.
 
     // Because the lower 32 bits are storing the log count, we can
     // increment the entire u64 to record this log call.

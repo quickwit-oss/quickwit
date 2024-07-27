@@ -57,7 +57,7 @@ pub fn render_config(config_content: &[u8]) -> Result<String> {
                     // This line is commented out, return the line as is.
                     captures
                         .get(0)
-                        .expect("0th capture should aways be set")
+                        .expect("0th capture should always be set")
                         .as_str()
                         .to_string()
                 } else if let Ok(env_var_value) = std::env::var(env_var_key) {

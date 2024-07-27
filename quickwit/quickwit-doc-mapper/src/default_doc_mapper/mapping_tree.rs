@@ -282,7 +282,7 @@ impl LeafType {
                 let val = u64::from_json_to_self(&json_val, numeric_options.coerce)?;
                 Ok(OneOrIter::one((val).into()))
             }
-            LeafType::F64(_) => Err("unsuported concat type: f64".to_string()),
+            LeafType::F64(_) => Err("unsupported concat type: f64".to_string()),
             LeafType::Bool(_) => {
                 if let JsonValue::Bool(val) = json_val {
                     Ok(OneOrIter::one((val).into()))
@@ -290,11 +290,13 @@ impl LeafType {
                     Err(format!("expected boolean, got `{json_val}`"))
                 }
             }
-            LeafType::IpAddr(_) => Err("unsuported concat type: IpAddr".to_string()),
+            LeafType::IpAddr(_) => Err("unsupported concat type: IpAddr".to_string()),
             LeafType::DateTime(_date_time_options) => {
-                Err("unsuported concat type: DateTime".to_string())
+                Err("unsupported concat type: DateTime".to_string())
             }
-            LeafType::Bytes(_binary_options) => Err("unsuported concat type: DateTime".to_string()),
+            LeafType::Bytes(_binary_options) => {
+                Err("unsupported concat type: DateTime".to_string())
+            }
             LeafType::Json(_) => {
                 if let JsonValue::Object(json_obj) = json_val {
                     Ok(OneOrIter::Iter(
@@ -2035,8 +2037,8 @@ mod tests {
             vec!["one.two", "three"]
         );
         assert_eq!(super::build_field_path_from_str(r#"one."#), vec!["one"]);
-        // Those are invalid field paths, but we chekc that it does not panick.
-        // Issue #3538 is about validating field paths before trying ot build the path.
+        // Those are invalid field paths, but we check that it does not panic.
+        // Issue #3538 is about validating field paths before trying to build the path.
         assert_eq!(super::build_field_path_from_str("\\."), vec!["."]);
         assert_eq!(super::build_field_path_from_str("a."), vec!["a"]);
         assert_eq!(super::build_field_path_from_str(".a"), vec!["", "a"]);

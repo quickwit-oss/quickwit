@@ -78,7 +78,7 @@ fn create_index_template_handler(
     path = "/templates",
     request_body = VersionedIndexTemplate,
     responses(
-        (status = 200, description = "The index template was successfuly created.")
+        (status = 200, description = "The index template was successfully created.")
     ),
 )]
 /// Creates a new index template.
@@ -125,7 +125,7 @@ fn get_index_template_handler(
     tag = "Templates",
     path = "/templates/{template_id}",
     responses(
-        (status = 200, description = "The index template was successfuly retrieved."),
+        (status = 200, description = "The index template was successfully retrieved."),
         (status = 404, description = "The index template was not found.")
     ),
 )]
@@ -161,7 +161,7 @@ fn update_index_template_handler(
     tag = "Templates",
     path = "/templates/{template_id}",
     responses(
-        (status = 200, description = "The index template was successfuly retrieved."),
+        (status = 200, description = "The index template was successfully retrieved."),
         (status = 404, description = "The index template was not found.")
     ),
 )]
@@ -216,7 +216,7 @@ fn delete_index_template_handler(
     tag = "Templates",
     path = "/templates/{template_id}",
     responses(
-        (status = 200, description = "The index template was successfuly deleted."),
+        (status = 200, description = "The index template was successfully deleted."),
         (status = 404, description = "The index template was not found.")
     ),
 )]
@@ -249,7 +249,7 @@ fn list_index_templates_handler(
     tag = "Templates",
     path = "/templates",
     responses(
-        (status = 200, description = "The index template was successfuly retrieved."),
+        (status = 200, description = "The index template was successfully retrieved."),
     ),
 )]
 /// Retrieves all the index templates stored in the metastore.
@@ -384,7 +384,7 @@ mod tests {
             .method("PUT")
             .json(&json!({
                 "version": "0.7",
-                "template_id": "test-template-bar", // This `template_id` should be ignored and overriden by the path parameter.
+                "template_id": "test-template-bar", // This `template_id` should be ignored and overridden by the path parameter.
                 "index_id_patterns": ["test-index-foo*"],
                 "doc_mapping": {},
             }))

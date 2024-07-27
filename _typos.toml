@@ -1,2 +1,6 @@
 [files]
 extend-exclude = ["**/*.json"]
+
+[default.extend-words]
+# Don't correct the surname "Teh"
+strat = "strat"

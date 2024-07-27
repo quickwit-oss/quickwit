@@ -199,7 +199,7 @@ mod tests {
         let mut one_task_per_call_service = OneTaskPerCallService { service };
         tokio::select!(
             _ = async { one_task_per_call_service.ready().await.unwrap().call(Request).await } => {
-                panic!("this sould have timed out");
+                panic!("this should have timed out");
             },
             _ = tokio::time::sleep(Duration::from_millis(10)) => (),
         );

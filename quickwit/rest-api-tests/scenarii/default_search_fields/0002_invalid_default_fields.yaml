@@ -1,5 +1,5 @@
 # should fail because we are not in dynamic,
-# yet we are targetting a field not in the field mapping.
+# yet we are targeting a field not in the field mapping.
 method: POST
 endpoint: indexes/
 json:

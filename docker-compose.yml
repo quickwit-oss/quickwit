@@ -53,7 +53,7 @@ services:
     image: postgres:${POSTGRES_VERSION:-12.17-alpine}
     container_name: postgres
     ports:
-      - "${MAP_HOST_POSTGRESS:-127.0.0.1}:5432:5432"
+      - "${MAP_HOST_POSTGRES:-127.0.0.1}:5432:5432"
     profiles:
       - all
       - postgres

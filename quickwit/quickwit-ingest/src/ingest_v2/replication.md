@@ -23,6 +23,6 @@ Two gRPC streams back the independent streams of requests and responses between 
 
 ### Replication stream errors
 
-- When a replication request fails, the leader and follower close the shard(s) targetted by the request.
+- When a replication request fails, the leader and follower close the shard(s) targeted by the request.
 
-- When a replication stream fails (transport error, timeout), the leader and follower close the shard(s) targetted by the stream. Then, the leader reopens a new stream if necessary.
+- When a replication stream fails (transport error, timeout), the leader and follower close the shard(s) targeted by the stream. Then, the leader reopens a new stream if necessary.

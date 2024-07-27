@@ -136,7 +136,7 @@ pub(super) async fn send_telemetry() {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand).await;
 }
 
-/// Convert the incomming file path to a source config
+/// Convert the incoming file path to a source config
 pub(super) async fn configure_source(
     input_path: PathBuf,
     input_format: SourceInputFormat,
@@ -356,7 +356,7 @@ pub(super) async fn wait_for_merges(
             break;
         }
         // We tolerate a relatively low refresh rate because the indexer
-        // typically runs for longuer periods of times and merges happen only
+        // typically runs for longer periods of times and merges happen only
         // occasionally.
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }

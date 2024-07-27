@@ -476,7 +476,7 @@ mod expression_dsl {
         })(input)
     }
 
-    /// Parse a field name into a path, de-escaping where appropirate.
+    /// Parse a field name into a path, de-escaping where appropriate.
     pub(crate) fn parse_field_name(input: &str) -> anyhow::Result<Vec<Cow<str>>> {
         let (i, res) = separated_list0(tag("."), escaped_key)(input)
             .finish()

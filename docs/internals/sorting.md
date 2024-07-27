@@ -2,7 +2,7 @@
 
 Quickwit can sort results based on fastfield values or score. This document discuss where and how
  it happens.
-It also tries to describe optimizations that may be enabled (but are not necessarily implemente)
+It also tries to describe optimizations that may be enabled (but are not necessarily implemented)
 by this behavior.
 
 ## Behavior
@@ -35,7 +35,7 @@ results. It reduces the risks of inconsistencies between in-split and between-sp
 `SortOrder` gets new `compare` and `compare_opt` method which can be used to compare two values with
  respect to the particular sort order required, and with proper handling of the `None` special case.
 
-# Optimization permited
+# Optimization permitted
 
 Both orders allow an optimization when sorting by date (either direction), by leveraging splits
 meta-data to know in advance if a split can, or not, contain better results. Changing the sorting

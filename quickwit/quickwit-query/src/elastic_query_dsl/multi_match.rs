@@ -28,7 +28,7 @@ use crate::elastic_query_dsl::match_query::{MatchQuery, MatchQueryParams};
 use crate::elastic_query_dsl::phrase_prefix_query::{
     MatchPhrasePrefixQuery, MatchPhrasePrefixQueryParams,
 };
-use crate::elastic_query_dsl::{ConvertableToQueryAst, ElasticQueryDslInner};
+use crate::elastic_query_dsl::{ConvertibleToQueryAst, ElasticQueryDslInner};
 
 /// Multi match queries are a bit odd. They end up being expanded into another type query of query.
 /// In Quickwit, we operate this expansion in generic way at the time of deserialization.
@@ -156,7 +156,7 @@ pub enum MatchType {
     BoolPrefix,
 }
 
-impl ConvertableToQueryAst for MultiMatchQuery {
+impl ConvertibleToQueryAst for MultiMatchQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<crate::query_ast::QueryAst> {
         self.0.convert_to_query_ast()
     }

@@ -42,7 +42,7 @@ deployed, you should probably push the Quickwit image to ECR and use ECR
 interface VPC endpoints instead (approx. ~$0.01/hour/AZ).
 
 When using the default image, you will quickly run into the Docker Hub rate
-limiting. We recommand pushing the Quickwit image to ECR and configure that as
+limiting. We recommend pushing the Quickwit image to ECR and configure that as
 `quickwit_image`. Note that the architecture of the image that you push to ECR
 must match the `quickwit_cpu_architecture` variable (`ARM64` by default).
 

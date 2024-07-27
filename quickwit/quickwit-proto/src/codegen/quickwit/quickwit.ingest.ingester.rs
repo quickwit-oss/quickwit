@@ -436,8 +436,8 @@ pub enum PersistFailureReason {
     Unspecified = 0,
     ShardNotFound = 1,
     ShardClosed = 2,
-    RateLimited = 3,
-    ResourceExhausted = 4,
+    ShardRateLimited = 3,
+    WalFull = 4,
     Timeout = 5,
 }
 impl PersistFailureReason {
@@ -452,10 +452,10 @@ impl PersistFailureReason {
                 "PERSIST_FAILURE_REASON_SHARD_NOT_FOUND"
             }
             PersistFailureReason::ShardClosed => "PERSIST_FAILURE_REASON_SHARD_CLOSED",
-            PersistFailureReason::RateLimited => "PERSIST_FAILURE_REASON_RATE_LIMITED",
-            PersistFailureReason::ResourceExhausted => {
-                "PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED"
+            PersistFailureReason::ShardRateLimited => {
+                "PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED"
             }
+            PersistFailureReason::WalFull => "PERSIST_FAILURE_REASON_WAL_FULL",
             PersistFailureReason::Timeout => "PERSIST_FAILURE_REASON_TIMEOUT",
         }
     }
@@ -465,8 +465,8 @@ impl PersistFailureReason {
             "PERSIST_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
             "PERSIST_FAILURE_REASON_SHARD_NOT_FOUND" => Some(Self::ShardNotFound),
             "PERSIST_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
-            "PERSIST_FAILURE_REASON_RATE_LIMITED" => Some(Self::RateLimited),
-            "PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED" => Some(Self::ResourceExhausted),
+            "PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED" => Some(Self::ShardRateLimited),
+            "PERSIST_FAILURE_REASON_WAL_FULL" => Some(Self::WalFull),
             "PERSIST_FAILURE_REASON_TIMEOUT" => Some(Self::Timeout),
             _ => None,
         }
@@ -480,7 +480,7 @@ pub enum ReplicateFailureReason {
     Unspecified = 0,
     ShardNotFound = 1,
     ShardClosed = 2,
-    ResourceExhausted = 4,
+    WalFull = 4,
 }
 impl ReplicateFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -496,9 +496,7 @@ impl ReplicateFailureReason {
             ReplicateFailureReason::ShardClosed => {
                 "REPLICATE_FAILURE_REASON_SHARD_CLOSED"
             }
-            ReplicateFailureReason::ResourceExhausted => {
-                "REPLICATE_FAILURE_REASON_RESOURCE_EXHAUSTED"
-            }
+            ReplicateFailureReason::WalFull => "REPLICATE_FAILURE_REASON_WAL_FULL",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -507,9 +505,7 @@ impl ReplicateFailureReason {
             "REPLICATE_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
             "REPLICATE_FAILURE_REASON_SHARD_NOT_FOUND" => Some(Self::ShardNotFound),
             "REPLICATE_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
-            "REPLICATE_FAILURE_REASON_RESOURCE_EXHAUSTED" => {
-                Some(Self::ResourceExhausted)
-            }
+            "REPLICATE_FAILURE_REASON_WAL_FULL" => Some(Self::WalFull),
             _ => None,
         }
     }
@@ -629,7 +625,7 @@ pub trait IngesterService: std::fmt::Debug + Send + Sync + 'static {
         request: quickwit_common::ServiceStream<SynReplicationMessage>,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<AckReplicationMessage>>;
     /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
-    /// otherwise the stream will go undefinitely or until the shard is closed.
+    /// otherwise the stream will go indefinitely or until the shard is closed.
     async fn open_fetch_stream(
         &self,
         request: OpenFetchStreamRequest,
@@ -2475,7 +2471,7 @@ pub mod ingester_service_grpc_client {
             self.inner.streaming(req, path, codec).await
         }
         /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
-        /// otherwise the stream will go undefinitely or until the shard is closed.
+        /// otherwise the stream will go indefinitely or until the shard is closed.
         pub async fn open_fetch_stream(
             &mut self,
             request: impl tonic::IntoRequest<super::OpenFetchStreamRequest>,
@@ -2728,7 +2724,7 @@ pub mod ingester_service_grpc_server {
             + Send
             + 'static;
         /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
-        /// otherwise the stream will go undefinitely or until the shard is closed.
+        /// otherwise the stream will go indefinitely or until the shard is closed.
         async fn open_fetch_stream(
             &self,
             request: tonic::Request<super::OpenFetchStreamRequest>,

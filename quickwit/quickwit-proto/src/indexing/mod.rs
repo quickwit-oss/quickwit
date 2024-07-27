@@ -190,7 +190,7 @@ pub const PIPELINE_FULL_CAPACITY: CpuCapacity = CpuCapacity::from_cpu_millis(4_0
 
 /// One full pipeline (including merging) is supposed to have the capacity to index at least 20mb/s.
 /// This is a defensive value: In reality, this is typically above 30mb/s.
-pub const PIPELINE_THROUGHTPUT: ByteSize = ByteSize::mb(20);
+pub const PIPELINE_THROUGHPUT: ByteSize = ByteSize::mb(20);
 
 /// The CpuCapacity represents an amount of CPU resource available.
 ///

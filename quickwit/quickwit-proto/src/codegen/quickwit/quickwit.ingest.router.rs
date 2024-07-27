@@ -75,9 +75,12 @@ pub enum IngestFailureReason {
     SourceNotFound = 2,
     Internal = 3,
     NoShardsAvailable = 4,
-    RateLimited = 5,
-    ResourceExhausted = 6,
+    ShardRateLimited = 5,
+    WalFull = 6,
     Timeout = 7,
+    RouterLoadShedding = 8,
+    LoadShedding = 9,
+    CircuitBreaker = 10,
 }
 impl IngestFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -95,11 +98,18 @@ impl IngestFailureReason {
             IngestFailureReason::NoShardsAvailable => {
                 "INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE"
             }
-            IngestFailureReason::RateLimited => "INGEST_FAILURE_REASON_RATE_LIMITED",
-            IngestFailureReason::ResourceExhausted => {
-                "INGEST_FAILURE_REASON_RESOURCE_EXHAUSTED"
+            IngestFailureReason::ShardRateLimited => {
+                "INGEST_FAILURE_REASON_SHARD_RATE_LIMITED"
             }
+            IngestFailureReason::WalFull => "INGEST_FAILURE_REASON_WAL_FULL",
             IngestFailureReason::Timeout => "INGEST_FAILURE_REASON_TIMEOUT",
+            IngestFailureReason::RouterLoadShedding => {
+                "INGEST_FAILURE_REASON_ROUTER_LOAD_SHEDDING"
+            }
+            IngestFailureReason::LoadShedding => "INGEST_FAILURE_REASON_LOAD_SHEDDING",
+            IngestFailureReason::CircuitBreaker => {
+                "INGEST_FAILURE_REASON_CIRCUIT_BREAKER"
+            }
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -110,9 +120,14 @@ impl IngestFailureReason {
             "INGEST_FAILURE_REASON_SOURCE_NOT_FOUND" => Some(Self::SourceNotFound),
             "INGEST_FAILURE_REASON_INTERNAL" => Some(Self::Internal),
             "INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE" => Some(Self::NoShardsAvailable),
-            "INGEST_FAILURE_REASON_RATE_LIMITED" => Some(Self::RateLimited),
-            "INGEST_FAILURE_REASON_RESOURCE_EXHAUSTED" => Some(Self::ResourceExhausted),
+            "INGEST_FAILURE_REASON_SHARD_RATE_LIMITED" => Some(Self::ShardRateLimited),
+            "INGEST_FAILURE_REASON_WAL_FULL" => Some(Self::WalFull),
             "INGEST_FAILURE_REASON_TIMEOUT" => Some(Self::Timeout),
+            "INGEST_FAILURE_REASON_ROUTER_LOAD_SHEDDING" => {
+                Some(Self::RouterLoadShedding)
+            }
+            "INGEST_FAILURE_REASON_LOAD_SHEDDING" => Some(Self::LoadShedding),
+            "INGEST_FAILURE_REASON_CIRCUIT_BREAKER" => Some(Self::CircuitBreaker),
             _ => None,
         }
     }

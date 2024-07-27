@@ -93,11 +93,11 @@ impl TryFrom<ElasticQueryDsl> for QueryAst {
     }
 }
 
-pub(crate) trait ConvertableToQueryAst {
+pub(crate) trait ConvertibleToQueryAst {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst>;
 }
 
-impl ConvertableToQueryAst for ElasticQueryDslInner {
+impl ConvertibleToQueryAst for ElasticQueryDslInner {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
         match self {
             Self::QueryString(query_string_query) => query_string_query.convert_to_query_ast(),

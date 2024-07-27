@@ -355,7 +355,7 @@ pub(super) async fn get_region(
     if let Some(endpoint) = sdk_config.endpoint_url() {
         return Ok(RegionOrEndpoint::Endpoint(endpoint.to_string()));
     }
-    bail!("unable to sniff region from envioronment")
+    bail!("unable to sniff region from environment")
 }
 
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]

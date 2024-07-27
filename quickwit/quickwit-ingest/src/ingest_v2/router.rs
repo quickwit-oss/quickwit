@@ -36,18 +36,24 @@ use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
     IngesterService, PersistFailureReason, PersistRequest, PersistResponse, PersistSubrequest,
 };
-use quickwit_proto::ingest::router::{IngestRequestV2, IngestResponseV2, IngestRouterService};
-use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
+use quickwit_proto::ingest::router::{
+    IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
+};
+use quickwit_proto::ingest::{
+    CommitTypeV2, IngestV2Error, IngestV2Result, RateLimitingCause, ShardState,
+};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::{Mutex, Semaphore};
-use tracing::info;
+use tokio::time::error::Elapsed;
+use tracing::{error, info};
 
 use super::broadcast::LocalShardsUpdate;
 use super::debouncing::{
     DebouncedGetOrCreateOpenShardsRequest, GetOrCreateOpenShardsRequestDebouncer,
 };
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
+use super::metrics::IngestResultMetrics;
 use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
 use super::IngesterPool;
@@ -66,7 +72,19 @@ fn ingest_request_timeout() -> Duration {
             "QW_INGEST_REQUEST_TIMEOUT_MS",
             DEFAULT_INGEST_REQUEST_TIMEOUT.as_millis() as u64,
         );
-        Duration::from_millis(duration_ms)
+        let minimum_ingest_request_timeout: Duration =
+            PERSIST_REQUEST_TIMEOUT * (MAX_PERSIST_ATTEMPTS as u32) + Duration::from_secs(5);
+        let requested_ingest_request_timeout = Duration::from_millis(duration_ms);
+        if requested_ingest_request_timeout < minimum_ingest_request_timeout {
+            error!(
+                "ingest request timeout too short {}ms, setting to {}ms",
+                requested_ingest_request_timeout.as_millis(),
+                minimum_ingest_request_timeout.as_millis()
+            );
+            minimum_ingest_request_timeout
+        } else {
+            requested_ingest_request_timeout
+        }
     })
 }
 
@@ -192,7 +210,7 @@ impl IngestRouter {
             info!(closed_shards=?debounced_request.closed_shards, "reporting closed shard(s) to control plane");
         }
         if !debounced_request.is_empty() && !unavailable_leaders.is_empty() {
-            info!(unvailable_leaders=?unavailable_leaders, "reporting unavailable leader(s) to control plane");
+            info!(unavailable_leaders=?unavailable_leaders, "reporting unavailable leader(s) to control plane");
 
             for unavailable_leader in unavailable_leaders.iter() {
                 debounced_request
@@ -442,9 +460,14 @@ impl IngestRouter {
             self.retry_batch_persist(ingest_request, MAX_PERSIST_ATTEMPTS),
         )
         .await
-        .map_err(|_| {
+        .map_err(|_elapsed: Elapsed| {
             let message = format!(
                 "ingest request timed out after {} millis",
+                timeout_duration.as_millis()
+            );
+            error!(
+                "ingest request should not timeout as there is a timeout on independent ingest \
+                 requests too. timeout after {}",
                 timeout_duration.as_millis()
             );
             IngestV2Error::Timeout(message)
@@ -461,6 +484,90 @@ impl IngestRouter {
     }
 }
 
+fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_subrequests: usize) {
+    let num_subrequests = num_subrequests as u64;
+    let ingest_results_metrics: &IngestResultMetrics =
+        &crate::ingest_v2::metrics::INGEST_V2_METRICS.ingest_results;
+    match ingest_result {
+        Ok(ingest_response) => {
+            ingest_results_metrics
+                .success
+                .inc_by(ingest_response.successes.len() as u64);
+            for ingest_failure in &ingest_response.failures {
+                match ingest_failure.reason() {
+                    IngestFailureReason::CircuitBreaker => {
+                        ingest_results_metrics.circuit_breaker.inc();
+                    }
+                    IngestFailureReason::Unspecified => ingest_results_metrics.unspecified.inc(),
+                    IngestFailureReason::IndexNotFound => {
+                        ingest_results_metrics.index_not_found.inc()
+                    }
+                    IngestFailureReason::SourceNotFound => {
+                        ingest_results_metrics.source_not_found.inc()
+                    }
+                    IngestFailureReason::Internal => ingest_results_metrics.internal.inc(),
+                    IngestFailureReason::NoShardsAvailable => {
+                        ingest_results_metrics.no_shards_available.inc()
+                    }
+                    IngestFailureReason::ShardRateLimited => {
+                        ingest_results_metrics.shard_rate_limited.inc()
+                    }
+                    IngestFailureReason::WalFull => ingest_results_metrics.wal_full.inc(),
+                    IngestFailureReason::Timeout => ingest_results_metrics.timeout.inc(),
+                    IngestFailureReason::RouterLoadShedding => {
+                        ingest_results_metrics.router_load_shedding.inc()
+                    }
+                    IngestFailureReason::LoadShedding => ingest_results_metrics.load_shedding.inc(),
+                }
+            }
+        }
+        Err(ingest_error) => match ingest_error {
+            IngestV2Error::TooManyRequests(rate_limiting_cause) => match rate_limiting_cause {
+                RateLimitingCause::RouterLoadShedding => {
+                    ingest_results_metrics
+                        .router_load_shedding
+                        .inc_by(num_subrequests);
+                }
+                RateLimitingCause::LoadShedding => {
+                    ingest_results_metrics.load_shedding.inc_by(num_subrequests)
+                }
+                RateLimitingCause::WalFull => {
+                    ingest_results_metrics.wal_full.inc_by(num_subrequests);
+                }
+                RateLimitingCause::CircuitBreaker => {
+                    ingest_results_metrics
+                        .circuit_breaker
+                        .inc_by(num_subrequests);
+                }
+                RateLimitingCause::ShardRateLimiting => {
+                    ingest_results_metrics
+                        .shard_rate_limited
+                        .inc_by(num_subrequests);
+                }
+                RateLimitingCause::Unknown => {
+                    ingest_results_metrics.unspecified.inc_by(num_subrequests);
+                }
+            },
+            IngestV2Error::Timeout(_) => {
+                ingest_results_metrics
+                    .router_timeout
+                    .inc_by(num_subrequests);
+            }
+            IngestV2Error::ShardNotFound { .. } => {
+                ingest_results_metrics
+                    .shard_not_found
+                    .inc_by(num_subrequests);
+            }
+            IngestV2Error::Unavailable(_) => {
+                ingest_results_metrics.unavailable.inc_by(num_subrequests);
+            }
+            IngestV2Error::Internal(_) => {
+                ingest_results_metrics.internal.inc_by(num_subrequests);
+            }
+        },
+    }
+}
+
 #[async_trait]
 impl IngestRouterService for IngestRouter {
     async fn ingest(&self, ingest_request: IngestRequestV2) -> IngestV2Result<IngestResponseV2> {
@@ -468,15 +575,21 @@ impl IngestRouterService for IngestRouter {
 
         let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingest_router);
         gauge_guard.add(request_size_bytes as i64);
+        let num_subrequests = ingest_request.subrequests.len();
 
         let _permit = self
             .ingest_semaphore
             .clone()
             .try_acquire_many_owned(request_size_bytes as u32)
-            .map_err(|_| IngestV2Error::TooManyRequests)?;
+            .map_err(|_| IngestV2Error::TooManyRequests(RateLimitingCause::RouterLoadShedding))?;
 
-        self.ingest_timeout(ingest_request, ingest_request_timeout())
-            .await
+        let ingest_res = self
+            .ingest_timeout(ingest_request, ingest_request_timeout())
+            .await;
+
+        update_ingest_metrics(&ingest_res, num_subrequests);
+
+        ingest_res
     }
 }
 
@@ -1098,7 +1211,7 @@ mod tests {
                     index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
-                    reason: PersistFailureReason::RateLimited as i32,
+                    reason: PersistFailureReason::ShardRateLimited as i32,
                 }],
             });
             (persist_summary, persist_result)
@@ -1572,7 +1685,7 @@ mod tests {
                         index_uid: Some(index_uid_clone.clone()),
                         source_id: "test-source".to_string(),
                         shard_id: Some(ShardId::from(1)),
-                        reason: PersistFailureReason::RateLimited as i32,
+                        reason: PersistFailureReason::ShardRateLimited as i32,
                     }],
                 };
                 Ok(response)

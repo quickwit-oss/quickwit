@@ -22,7 +22,7 @@ use std::str::CharIndices;
 
 use tantivy::tokenizer::{Token, TokenStream, Tokenizer};
 
-/// A Tokenizer spliting based on casing families often used in code such ase camelCase or
+/// A Tokenizer splitting based on casing families often used in code such ase camelCase or
 /// PascalCase.
 ///
 /// For instance, it splits `PigCaféFactory2` as `[Pig, Café, Factory, 2]`, or `RPCResult` into
@@ -91,7 +91,7 @@ impl<'a> CodeTokenStream<'a> {
                 AdvanceResult::Backtrack => {
                     self.chars = checkpoint;
                     self.state.reset();
-                    // this can't recurse more than once, Backtrack is only emited from hex state,
+                    // this can't recurse more than once, Backtrack is only emitted from hex state,
                     // and calling with false prevent that state from being generated.
                     return self.advance_inner(false);
                 }
@@ -348,9 +348,9 @@ struct ProcessingHexState {
 }
 
 enum HexResult {
-    // no token emited
+    // no token emitted
     None,
-    // a token is being emited, after that the state needs to be reset.
+    // a token is being emitted, after that the state needs to be reset.
     Emit(TokenOffsets),
     // we got an error, but where able to generate a code tokenizer state
     RecoverableError(ProcessingCharsState),
@@ -386,7 +386,7 @@ impl ProcessingHexState {
                         return HexResult::Emit(self.start_offset..next_char_offset);
                     }
                 }
-                // we got an invalid non-delimiter, or our sequence is an odd-lenght. Either way,
+                // we got an invalid non-delimiter, or our sequence is an odd-length. Either way,
                 // we need to go switch to the code tokenizer
                 return self.to_processing_chars_state();
             }
