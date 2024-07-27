@@ -738,7 +738,7 @@ impl QuickwitSegmentTopKCollector for GenericQuickwitSegmentTopKCollector {
                 );
             }
         } else {
-            // Probaly would make sense to check the fence against e.g. sort_values1 earlier,
+            // Probably would make sense to check the fence against e.g. sort_values1 earlier,
             // before creating the SegmentPartialHit.
             //
             // Below are different versions to avoid iterating the caches if they are unused.

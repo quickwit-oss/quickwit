@@ -188,7 +188,7 @@ impl std::hash::Hash for SortValue {
 impl SortValue {
     /// Where multiple variant could represent the same logical value, convert to a canonical form.
     ///
-    /// For number, we prefer to represent them, in order, as i64, then as u64 and finaly as f64.
+    /// For number, we prefer to represent them, in order, as i64, then as u64 and finally as f64.
     pub fn normalize(&self) -> Self {
         match self {
             SortValue::I64(_) => *self,

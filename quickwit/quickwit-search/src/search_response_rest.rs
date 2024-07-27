@@ -130,7 +130,7 @@ pub struct StorageRequestCount {
     pub fastfield: usize,
     /// Number of fieldnorm downloaded
     pub fieldnorm: usize,
-    /// Number of sstable dowloaded
+    /// Number of sstable downloaded
     pub sstable: usize,
     /// Number of posting list downloaded
     pub posting: usize,

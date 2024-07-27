@@ -718,7 +718,7 @@ mod tests {
     #[tokio::test]
     async fn test_put_kv_happy_path() {
         // 3 servers 1, 2, 3
-        // Targetted key has affinity [2, 3, 1].
+        // Targeted key has affinity [2, 3, 1].
         //
         // Put on 2 and 3 is successful
         // Get succeeds on 2.
@@ -763,7 +763,7 @@ mod tests {
     #[tokio::test]
     async fn test_put_kv_failing_get() {
         // 3 servers 1, 2, 3
-        // Targetted key has affinity [2, 3, 1].
+        // Targeted key has affinity [2, 3, 1].
         //
         // Put on 2 and 3 is successful
         // Get fails on 2.

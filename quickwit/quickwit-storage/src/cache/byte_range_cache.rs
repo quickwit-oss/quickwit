@@ -143,7 +143,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             .unwrap_or(true);
 
         let (final_range, final_bytes) = if can_drop_first && can_drop_last {
-            // if we are here, either ther was no overlapping block, or there was, but this buffer
+            // if we are here, either there was no overlapping block, or there was, but this buffer
             // covers entirely every block it overlapped with. There is no merging to do.
             (byte_range, bytes)
         } else {
@@ -207,7 +207,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             self.update_counter_drop_item(range.end - range.start);
         }
 
-        // and finaly insert the newly added buffer
+        // and finally insert the newly added buffer
         key.range_start = final_range.start;
         let value = CacheValue {
             range_end: final_range.end,

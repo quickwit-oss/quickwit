@@ -396,7 +396,7 @@ mod tests {
         assert!(!matches_any_pattern("field1", &["fi*eld".to_string()]));
         assert!(!matches_any_pattern("field1", &["field".to_string()]));
 
-        // 2.nd pattern matches
+        // 2nd pattern matches
         assert!(matches_any_pattern(
             "field",
             &["a".to_string(), "field".to_string()]

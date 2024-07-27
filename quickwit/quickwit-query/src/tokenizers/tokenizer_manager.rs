@@ -44,7 +44,7 @@ impl TokenizerManager {
             is_lowercaser: Arc::new(RwLock::new(HashMap::new())),
         };
 
-        // in practice these will almost always be overriden in
+        // in practice these will almost always be overridden in
         // create_default_quickwit_tokenizer_manager()
         let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
             .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))

@@ -292,7 +292,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
 }
 
 fn convert_scheduling_solution_to_physical_plan_single_node(
-    indexer_assigment: &IndexerAssignment,
+    indexer_assignment: &IndexerAssignment,
     previous_tasks: &[IndexingTask],
     sources: &[SourceToSchedule],
     id_to_ord_map: &IdToOrdMap,
@@ -301,7 +301,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node(
     for source in sources {
         let source_num_shards =
             if let Some(source_ord) = id_to_ord_map.source_ord(&source.source_uid) {
-                indexer_assigment.num_shards(source_ord)
+                indexer_assignment.num_shards(source_ord)
             } else {
                 // This can happen for IngestV1
                 1u32
@@ -1135,7 +1135,7 @@ mod tests {
         let node1 = NodeId::new("node1".to_string());
         let node2 = NodeId::new("node2".to_string());
         // This node is missing from the capacity map.
-        // It should not be assigned any task despite being pressent in shard locations.
+        // It should not be assigned any task despite being present in shard locations.
         let node_missing = NodeId::new("node_missing".to_string());
         let mut remaining_num_shards_per_node = HashMap::default();
         remaining_num_shards_per_node

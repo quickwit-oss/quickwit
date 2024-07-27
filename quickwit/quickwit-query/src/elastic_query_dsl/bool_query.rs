@@ -21,7 +21,7 @@ use serde::Deserialize;
 use serde_with::formats::PreferMany;
 use serde_with::{serde_as, DefaultOnNull, OneOrMany};
 
-use crate::elastic_query_dsl::{ConvertableToQueryAst, ElasticQueryDslInner};
+use crate::elastic_query_dsl::{ConvertibleToQueryAst, ElasticQueryDslInner};
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::{self, QueryAst};
 
@@ -68,7 +68,7 @@ fn convert_vec(query_dsls: Vec<ElasticQueryDslInner>) -> anyhow::Result<Vec<Quer
         .collect()
 }
 
-impl ConvertableToQueryAst for BoolQuery {
+impl ConvertibleToQueryAst for BoolQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
         let bool_query_ast = query_ast::BoolQuery {
             must: convert_vec(self.must)?,

@@ -119,7 +119,7 @@ impl From<TantivyQueryAst> for Box<dyn TantivyQuery> {
     }
 }
 
-// Remove the occurence of trivial AST in the given list of asts.
+// Remove the occurrence of trivial AST in the given list of asts.
 //
 // If `stop_before_empty` is true, then we will make sure to stop removing asts if it is
 // the last element.

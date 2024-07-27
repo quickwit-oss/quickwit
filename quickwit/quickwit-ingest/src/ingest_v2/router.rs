@@ -210,7 +210,7 @@ impl IngestRouter {
             info!(closed_shards=?debounced_request.closed_shards, "reporting closed shard(s) to control plane");
         }
         if !debounced_request.is_empty() && !unavailable_leaders.is_empty() {
-            info!(unvailable_leaders=?unavailable_leaders, "reporting unavailable leader(s) to control plane");
+            info!(unavailable_leaders=?unavailable_leaders, "reporting unavailable leader(s) to control plane");
 
             for unavailable_leader in unavailable_leaders.iter() {
                 debounced_request

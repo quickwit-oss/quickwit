@@ -86,12 +86,12 @@ expected:
 # This is a bit of a sloppy just testing that the tokenizer property is
 # plugged
 #
-# We only apply it to quickwit becasue the raw tokenizer does not exist in ES.
+# We only apply it to quickwit because the raw tokenizer does not exist in ES.
 method: [GET]
 json:
   query:
     match_phrase_prefix:
       payload.commits.message:
         query: "automated comm"
-        analyzer: inexistant_tokenizer
+        analyzer: inexistent_tokenizer
 status_code: 400

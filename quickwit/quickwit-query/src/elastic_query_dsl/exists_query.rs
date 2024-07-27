@@ -19,7 +19,7 @@
 
 use serde::Deserialize;
 
-use crate::elastic_query_dsl::ConvertableToQueryAst;
+use crate::elastic_query_dsl::ConvertibleToQueryAst;
 use crate::query_ast::{self, QueryAst};
 
 #[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
@@ -27,7 +27,7 @@ pub struct ExistsQuery {
     field: String,
 }
 
-impl ConvertableToQueryAst for ExistsQuery {
+impl ConvertibleToQueryAst for ExistsQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
         Ok(QueryAst::FieldPresence(query_ast::FieldPresenceQuery {
             field: self.field,

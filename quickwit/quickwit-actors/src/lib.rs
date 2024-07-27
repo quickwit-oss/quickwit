@@ -90,13 +90,13 @@ fn heartbeat_from_env_or_default() -> Duration {
         return Duration::from_millis(500);
     }
     match std::env::var("QW_ACTOR_HEARTBEAT_SECS") {
-        Ok(actor_hearbeat_secs_str) => {
-            if let Ok(actor_hearbeat_secs) = actor_hearbeat_secs_str.parse::<NonZeroU64>() {
-                info!("set the actor heartbeat to {actor_hearbeat_secs} seconds");
-                return Duration::from_secs(actor_hearbeat_secs.get());
+        Ok(actor_heartbeat_secs_str) => {
+            if let Ok(actor_heartbeat_secs) = actor_heartbeat_secs_str.parse::<NonZeroU64>() {
+                info!("set the actor heartbeat to {actor_heartbeat_secs} seconds");
+                return Duration::from_secs(actor_heartbeat_secs.get());
             } else {
                 warn!(
-                    "failed to parse `QW_ACTOR_HEARTBEAT_SECS={actor_hearbeat_secs_str}` in \
+                    "failed to parse `QW_ACTOR_HEARTBEAT_SECS={actor_heartbeat_secs_str}` in \
                      seconds > 0, using default heartbeat (30 seconds)"
                 );
             };

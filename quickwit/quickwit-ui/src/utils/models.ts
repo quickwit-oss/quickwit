@@ -139,7 +139,7 @@ export function extractAggregationResults(aggregation: any): ParsedAggregationRe
   } else if ("term_agg" in aggregation) {
     // we have a term aggregation, but maybe there is an histogram inside
     const term_buckets = aggregation.term_agg.buckets;
-    if (term_buckets.lenght == 0) {
+    if (term_buckets.length == 0) {
       return null;
     }
     if (term_buckets.length > 0 && "histo_agg" in term_buckets[0]) {

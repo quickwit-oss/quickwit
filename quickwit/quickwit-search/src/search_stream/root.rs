@@ -203,7 +203,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_root_search_stream_single_split_partitionned() -> anyhow::Result<()> {
+    async fn test_root_search_stream_single_split_partitioned() -> anyhow::Result<()> {
         let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_json_helper("test", &["body"]),

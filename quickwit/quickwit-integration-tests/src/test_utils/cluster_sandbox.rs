@@ -232,7 +232,7 @@ impl ClusterSandbox {
             tick.tick().await;
 
             if now.elapsed() > Duration::from_secs(5) {
-                panic!("standlone node timed out");
+                panic!("standalone node timed out");
             }
             if sandbox
                 .indexer_rest_client

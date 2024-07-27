@@ -60,7 +60,7 @@ pub struct SortField {
 #[serde(rename_all = "snake_case")]
 pub enum ElasticDateFormat {
     /// Sort values are in milliseconds by default to ease migration from ES.
-    /// We allow the user to sepecify nanoseconds if needed.
+    /// We allow the user to specify nanoseconds if needed.
     /// We add `Int` to the name to avoid confusion ES variant `EpochMillis` which,
     /// returns milliseconds as strings.
     EpochNanosInt,

@@ -2377,8 +2377,8 @@ mod tests {
             IndexMetadata::for_test(&index_uid.index_id, "ram://indexes/test-index:0");
         model.add_index(index_metadata);
 
-        let souce_config = SourceConfig::ingest_v2();
-        model.add_source(&index_uid, souce_config).unwrap();
+        let source_config = SourceConfig::ingest_v2();
+        model.add_source(&index_uid, source_config).unwrap();
 
         let progress = Progress::default();
 

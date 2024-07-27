@@ -31,7 +31,7 @@ pub struct Source {
     pub source_ord: SourceOrd,
     pub load_per_shard: NonZeroU32,
     /// Affinities of the source for each indexer.
-    /// In the begginning, affinities are initialized to be the count of shards of the source
+    /// In the beginning, affinities are initialized to be the count of shards of the source
     /// that are located on the indexer.
     ///
     /// As we compute unassigned sources, we decrease the affinity by the given number of shards,

@@ -547,7 +547,7 @@ mod tests {
         for (field, term, pos) in elements {
             let field = Field::from_field_id(*field);
             let term = Term::from_field_text(field, term);
-            // this is a 1 element bound, but it's enought for testing.
+            // this is a 1 element bound, but it's enough for testing.
             let range = TermRange {
                 start: Bound::Included(term.clone()),
                 end: Bound::Included(term),

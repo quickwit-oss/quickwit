@@ -167,7 +167,7 @@ const SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN: usize = 12;
 
 #[derive(Default)]
 struct ShardThroughputTimeSeriesMap {
-    shard_time_series: HashMap<(SourceUid, ShardId), ShardThroughputTimeSerie>,
+    shard_time_series: HashMap<(SourceUid, ShardId), ShardThroughputTimeSeries>,
 }
 
 impl ShardThroughputTimeSeriesMap {
@@ -185,12 +185,12 @@ impl ShardThroughputTimeSeriesMap {
             .retain(|key, _| shard_throughputs.contains_key(key));
         for ((source_uid, shard_id), (shard_state, throughput)) in shard_throughputs {
             let throughput_measurement = throughput.rescale(Duration::from_secs(1)).work_bytes();
-            let shard_time_serie = self
+            let shard_time_series = self
                 .shard_time_series
                 .entry((source_uid.clone(), shard_id.clone()))
                 .or_default();
-            shard_time_serie.shard_state = shard_state;
-            shard_time_serie.record(throughput_measurement);
+            shard_time_series.shard_state = shard_state;
+            shard_time_series.record(throughput_measurement);
         }
     }
 
@@ -232,13 +232,13 @@ impl ShardThroughputTimeSeriesMap {
 }
 
 #[derive(Default)]
-struct ShardThroughputTimeSerie {
+struct ShardThroughputTimeSeries {
     shard_state: ShardState,
     measurements: [ByteSize; SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN],
     len: usize,
 }
 
-impl ShardThroughputTimeSerie {
+impl ShardThroughputTimeSeries {
     fn last(&self) -> ByteSize {
         self.measurements.last().copied().unwrap_or_default()
     }
@@ -740,24 +740,24 @@ mod tests {
     }
 
     #[test]
-    fn test_shard_throughput_time_serie() {
-        let mut time_serie = ShardThroughputTimeSerie::default();
-        assert_eq!(time_serie.last(), ByteSize::mb(0));
-        assert_eq!(time_serie.average(), ByteSize::mb(0));
-        time_serie.record(ByteSize::mb(2));
-        assert_eq!(time_serie.last(), ByteSize::mb(2));
-        assert_eq!(time_serie.average(), ByteSize::mb(2));
-        time_serie.record(ByteSize::mb(1));
-        assert_eq!(time_serie.last(), ByteSize::mb(1));
-        assert_eq!(time_serie.average(), ByteSize::kb(1500));
-        time_serie.record(ByteSize::mb(3));
-        assert_eq!(time_serie.last(), ByteSize::mb(3));
-        assert_eq!(time_serie.average(), ByteSize::mb(2));
+    fn test_shard_throughput_time_series() {
+        let mut time_series = ShardThroughputTimeSeries::default();
+        assert_eq!(time_series.last(), ByteSize::mb(0));
+        assert_eq!(time_series.average(), ByteSize::mb(0));
+        time_series.record(ByteSize::mb(2));
+        assert_eq!(time_series.last(), ByteSize::mb(2));
+        assert_eq!(time_series.average(), ByteSize::mb(2));
+        time_series.record(ByteSize::mb(1));
+        assert_eq!(time_series.last(), ByteSize::mb(1));
+        assert_eq!(time_series.average(), ByteSize::kb(1500));
+        time_series.record(ByteSize::mb(3));
+        assert_eq!(time_series.last(), ByteSize::mb(3));
+        assert_eq!(time_series.average(), ByteSize::mb(2));
         for _ in 0..SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN {
-            time_serie.record(ByteSize::mb(4));
-            assert_eq!(time_serie.last(), ByteSize::mb(4));
+            time_series.record(ByteSize::mb(4));
+            assert_eq!(time_series.last(), ByteSize::mb(4));
         }
 
-        assert_eq!(time_serie.last(), ByteSize::mb(4));
+        assert_eq!(time_series.last(), ByteSize::mb(4));
     }
 }

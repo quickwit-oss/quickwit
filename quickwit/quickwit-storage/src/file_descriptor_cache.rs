@@ -227,7 +227,7 @@ mod tests {
         assert_eq!(cache_metrics.misses_num_items.get(), 10);
     }
 
-    // This mimicks Quickwit's workload where the fd cache is much smaller than the number of
+    // This mimics Quickwit's workload where the fd cache is much smaller than the number of
     // splits. Each search will read from the same split file, and the cache will help avoid
     // opening the file several times.
     #[tokio::test]

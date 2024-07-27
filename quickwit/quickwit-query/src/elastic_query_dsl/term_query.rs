@@ -21,7 +21,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use super::StringOrStructForSerialization;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
-use crate::elastic_query_dsl::{ConvertableToQueryAst, ElasticQueryDslInner};
+use crate::elastic_query_dsl::{ConvertibleToQueryAst, ElasticQueryDslInner};
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::{self, QueryAst};
 
@@ -93,7 +93,7 @@ impl From<TermQuery> for ElasticQueryDslInner {
     }
 }
 
-impl ConvertableToQueryAst for TermQuery {
+impl ConvertibleToQueryAst for TermQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
         let TermQueryParams { value, boost } = self.value;
         let term_ast: QueryAst = query_ast::TermQuery {

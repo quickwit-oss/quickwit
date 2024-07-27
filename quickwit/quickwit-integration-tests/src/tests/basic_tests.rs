@@ -205,7 +205,7 @@ async fn test_multi_nodes_cluster() {
     )
     .await
     .unwrap();
-    // Wait until split is commited and search.
+    // Wait until split is committed and search.
     tokio::time::sleep(Duration::from_secs(4)).await;
     let search_response_one_hit = sandbox
         .searcher_rest_client

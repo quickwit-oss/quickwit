@@ -20,7 +20,7 @@
 use serde::Deserialize;
 
 use crate::elastic_query_dsl::{
-    ConvertableToQueryAst, ElasticQueryDslInner, StringOrStructForSerialization,
+    ConvertibleToQueryAst, ElasticQueryDslInner, StringOrStructForSerialization,
 };
 use crate::query_ast::{FullTextParams, FullTextQuery, QueryAst};
 use crate::{BooleanOperand, MatchAllOrNone, OneFieldMap};
@@ -49,7 +49,7 @@ pub(crate) struct MatchQueryParams {
     pub(crate) _lenient: bool,
 }
 
-impl ConvertableToQueryAst for MatchQuery {
+impl ConvertibleToQueryAst for MatchQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
         let full_text_params = FullTextParams {
             tokenizer: None,

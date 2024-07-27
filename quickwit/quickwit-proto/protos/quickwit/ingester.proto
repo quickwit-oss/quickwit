@@ -32,7 +32,7 @@ service IngesterService {
   rpc OpenReplicationStream(stream SynReplicationMessage) returns (stream AckReplicationMessage);
 
   // Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
-  // otherwise the stream will go undefinitely or until the shard is closed.
+  // otherwise the stream will go indefinitely or until the shard is closed.
   rpc OpenFetchStream(OpenFetchStreamRequest) returns (stream FetchMessage);
 
   // Streams status updates, called "observations", from an ingester.

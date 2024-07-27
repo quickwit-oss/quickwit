@@ -62,7 +62,7 @@ Searcher nodes:
 <!-- 1GB fast_field_cache_capacity + 0.5GB split_footer_cache_capacity + 0.5GB/req aggregation_memory_limit -->
 - Searcher nodes don't use disk unless the [split
   cache](../configuration/node-config.md#Searcher-split-cache-configuration) is
-  explicitely enabled
+  explicitly enabled
 
 One strength of Quickwit is that its Searchers are stateless, which makes it
 easy to scale them up and down based on the workload. Scale the number of

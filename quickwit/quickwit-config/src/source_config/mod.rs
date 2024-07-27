@@ -476,7 +476,7 @@ impl TransformConfig {
         // If we are missing the VRL feature we do not return an error here,
         // to avoid breaking unit tests.
         //
-        // We do return an explicit error on instanciation of the program however.
+        // We do return an explicit error on instantiation of the program however.
         Ok(())
     }
 

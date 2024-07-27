@@ -19,7 +19,7 @@
 
 use serde::Deserialize;
 
-use crate::elastic_query_dsl::ConvertableToQueryAst;
+use crate::elastic_query_dsl::ConvertibleToQueryAst;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::UserInputQuery;
 use crate::BooleanOperand;
@@ -47,7 +47,7 @@ pub(crate) struct QueryStringQuery {
     _lenient: bool,
 }
 
-impl ConvertableToQueryAst for QueryStringQuery {
+impl ConvertibleToQueryAst for QueryStringQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<crate::query_ast::QueryAst> {
         if self.default_field.is_some() && self.fields.is_some() {
             anyhow::bail!("fields and default_field cannot be both set in `query_string` queries");
@@ -67,7 +67,7 @@ impl ConvertableToQueryAst for QueryStringQuery {
 
 #[cfg(test)]
 mod tests {
-    use crate::elastic_query_dsl::{ConvertableToQueryAst, QueryStringQuery};
+    use crate::elastic_query_dsl::{ConvertibleToQueryAst, QueryStringQuery};
     use crate::query_ast::{QueryAst, UserInputQuery};
     use crate::BooleanOperand;
 

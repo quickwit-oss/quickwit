@@ -52,7 +52,7 @@ Provided demonstration setups:
 
 ### Deploy and run
 
-The Makefile is a usefull entrypoint to show how the Lambda deployment can used.
+The Makefile is a useful entrypoint to show how the Lambda deployment can used.
 
 Configure your shell and AWS account:
 ```bash

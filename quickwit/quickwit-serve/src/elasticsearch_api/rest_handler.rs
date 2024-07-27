@@ -555,10 +555,10 @@ async fn es_compat_index_cat_indices(
         })
         .map(|cat_index| cat_index.serialize_filtered(&query_params.h))
         .collect::<Result<Vec<serde_json::Value>, serde_json::Error>>()
-        .map_err(|serde_errror| {
+        .map_err(|serde_error| {
             ElasticsearchError::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to serialize cat indices response: {}", serde_errror),
+                format!("Failed to serialize cat indices response: {}", serde_error),
                 None,
             )
         })?;

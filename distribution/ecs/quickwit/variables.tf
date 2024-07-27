@@ -65,7 +65,7 @@ variable "enable_cloudwatch_logging" {
 }
 
 variable "log_configuration" {
-  description = "Custom log configuraiton for Quickwit tasks"
+  description = "Custom log configuration for Quickwit tasks"
   default     = {}
 }
 

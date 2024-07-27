@@ -56,7 +56,7 @@ This engine-specific context is perfect if you know all steps will target a spec
 Once the context is loaded, the steps described in `_setup.yaml` and `_setup.<engine>.yaml` (if present) will be executed.
 
 These steps are just like any other steps except you are guaranteed they will be executed respectively before and after all other steps.
-In particular, when targetting one specific test using the `--test flag`,
+In particular, when targeting one specific test using the `--test flag`,
 the necessary `setup` and `teardown` script will be automatically executed.
 
 # teardown

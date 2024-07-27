@@ -647,7 +647,7 @@ pub async fn test_metastore_publish_splits<
             .await
             .unwrap();
 
-        let publish_splits_resquest = PublishSplitsRequest {
+        let publish_splits_request = PublishSplitsRequest {
             index_uid: Some(index_uid.clone()),
             staged_split_ids: vec![split_id_1.clone(), split_id_2.clone()],
             index_checkpoint_delta_json_opt: Some({
@@ -658,7 +658,7 @@ pub async fn test_metastore_publish_splits<
             ..Default::default()
         };
         let error = metastore
-            .publish_splits(publish_splits_resquest)
+            .publish_splits(publish_splits_request)
             .await
             .unwrap_err();
         assert!(matches!(

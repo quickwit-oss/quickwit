@@ -160,7 +160,7 @@ fn assert_remove_extraneous_shards_post_condition(
 
 // -------------------------------------------------------------------------
 // Phase 2
-// Releave sources from the node that are exceeding their maximum load.
+// Relieve sources from the node that are exceeding their maximum load.
 
 fn enforce_indexers_cpu_capacity(problem: &SchedulingProblem, solution: &mut SchedulingSolution) {
     for indexer_assignment in &mut solution.indexer_assignments {
@@ -277,7 +277,7 @@ fn place_unassigned_shards_with_affinity(
 // We go through the sources in decreasing order of their load,
 // in two passes.
 //
-// In the first pase, we have a look at
+// In the first pass, we have a look at
 // the nodes with which there is an affinity.
 //
 // If one of them has room for all of the shards, then we assign all
@@ -429,7 +429,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_remove_extranous_shards() {
+    fn test_remove_extraneous_shards() {
         let mut problem =
             SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(4_000), mcpu(5_000)]);
         problem.add_source(1, NonZeroU32::new(1_000u32).unwrap());
@@ -442,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_extranous_shards_2() {
+    fn test_remove_extraneous_shards_2() {
         let mut problem =
             SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(5_000), mcpu(4_000)]);
         problem.add_source(2, NonZeroU32::new(1_000).unwrap());

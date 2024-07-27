@@ -21,7 +21,7 @@ use serde::Deserialize;
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::{
-    default_max_expansions, ConvertableToQueryAst, ElasticQueryDslInner,
+    default_max_expansions, ConvertibleToQueryAst, ElasticQueryDslInner,
 };
 use crate::query_ast::{self, FullTextMode, FullTextParams, QueryAst};
 use crate::MatchAllOrNone;
@@ -48,7 +48,7 @@ impl From<MatchPhrasePrefixQuery> for ElasticQueryDslInner {
     }
 }
 
-impl ConvertableToQueryAst for MatchPhrasePrefixQuery {
+impl ConvertibleToQueryAst for MatchPhrasePrefixQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
         let MatchPhrasePrefixQueryParams {
             query,

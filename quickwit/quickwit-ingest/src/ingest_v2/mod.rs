@@ -149,7 +149,7 @@ pub struct IngestRequestV2Builder {
 }
 
 impl IngestRequestV2Builder {
-    /// Adds a document to the request, returning the ID of the subrequest to wich it was added and
+    /// Adds a document to the request, returning the ID of the subrequest to which it was added and
     /// its newly assigned [`DocUid`].
     pub fn add_doc(&mut self, index_id: IndexId, doc: &[u8]) -> (SubrequestId, DocUid) {
         match self.per_index_id_doc_batch_builders.entry(index_id) {

@@ -60,7 +60,7 @@ We only mutate the state server side to update the cache whenever needed.
 
 The idea here is that if that if the put request failed, we can still return the right results even if we have an obsolete version of the `ScrollContext`.
 
-# Quickwit implementation (improvment, quirks and shortcuts)
+# Quickwit implementation (improvement, quirks and shortcuts)
 
 We do not do explicitly protect the split from our store Point-In-Time information
 from deletion. Instead we simply rely on the existing grace period mechanism (a split

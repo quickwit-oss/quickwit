@@ -152,7 +152,7 @@ pub trait SearchService: 'static + Send + Sync {
     ) -> crate::Result<ListFieldsResponse>;
 
     /// Describe how a search would be processed.
-    async fn search_plan(&self, reqiest: SearchRequest) -> crate::Result<SearchPlanResponse>;
+    async fn search_plan(&self, request: SearchRequest) -> crate::Result<SearchPlanResponse>;
 }
 
 impl SearchServiceImpl {

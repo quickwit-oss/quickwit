@@ -110,7 +110,7 @@ impl CodegenBuilder {
         self
     }
 
-    /// Generates `RpcName` trait implentations for request types.
+    /// Generates `RpcName` trait implementations for request types.
     pub fn generate_rpc_name_impls(mut self) -> Self {
         self.generate_prom_labels_for_requests = true;
         self
@@ -517,7 +517,7 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
     let tower_layer_stack_name = &context.tower_layer_stack_name;
     let mock_name = &context.mock_name;
     let mock_wrapper_name = quote::format_ident!("{}Wrapper", mock_name);
-    let error_mesage = format!(
+    let error_message = format!(
         "`{}` must be wrapped in a `{}`: use `{}::from_mock(mock)` to instantiate the client",
         mock_name, mock_wrapper_name, client_name
     );
@@ -555,7 +555,7 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
                 T: #service_name,
             {
                 #[cfg(any(test, feature = "testsuite"))]
-                assert!(std::any::TypeId::of::<T>() != std::any::TypeId::of::<#mock_name>(), #error_mesage);
+                assert!(std::any::TypeId::of::<T>() != std::any::TypeId::of::<#mock_name>(), #error_message);
                 Self {
                     inner: #inner_client_name(std::sync::Arc::new(instance)),
                 }
