@@ -103,7 +103,7 @@ use quickwit_proto::ingest::ingester::{
     PersistFailureReason, PersistResponse,
 };
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
-use quickwit_proto::ingest::IngestV2Error;
+use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
 use quickwit_proto::metastore::{
     EntityKind, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
     MetastoreServiceClient,
@@ -797,7 +797,7 @@ impl CircuitBreakerEvaluator for PersistCircuitBreakerEvaluator {
         };
         for persist_failure in &persist_response.failures {
             // This is the error we return when the WAL is full.
-            if persist_failure.reason() == PersistFailureReason::ResourceExhausted {
+            if persist_failure.reason() == PersistFailureReason::WalFull {
                 return true;
             }
         }
@@ -805,7 +805,7 @@ impl CircuitBreakerEvaluator for PersistCircuitBreakerEvaluator {
     }
 
     fn make_circuit_breaker_output(&self) -> IngestV2Error {
-        IngestV2Error::TooManyRequests
+        IngestV2Error::TooManyRequests(RateLimitingCause::CircuitBreaker)
     }
 }
 

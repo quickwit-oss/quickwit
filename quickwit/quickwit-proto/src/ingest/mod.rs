@@ -36,6 +36,22 @@ pub mod router;
 include!("../codegen/quickwit/quickwit.ingest.rs");
 pub type IngestV2Result<T> = std::result::Result<T, IngestV2Error>;
 
+#[derive(Debug, Copy, Clone, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RateLimitingCause {
+    #[error("router load shedding")]
+    RouterLoadShedding,
+    #[error("load shadding")]
+    LoadShedding,
+    #[error("wal full (memory or disk)")]
+    WalFull,
+    #[error("circuit breaker")]
+    CircuitBreaker,
+    #[error("shard rate limiting")]
+    ShardRateLimiting,
+    #[error("unknown")]
+    Unknown,
+}
+
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IngestV2Error {
@@ -46,7 +62,7 @@ pub enum IngestV2Error {
     #[error("request timed out: {0}")]
     Timeout(String),
     #[error("too many requests")]
-    TooManyRequests,
+    TooManyRequests(RateLimitingCause),
     #[error("service unavailable: {0}")]
     Unavailable(String),
 }
@@ -66,7 +82,7 @@ impl ServiceError for IngestV2Error {
             }
             Self::ShardNotFound { .. } => ServiceErrorCode::NotFound,
             Self::Timeout(_) => ServiceErrorCode::Timeout,
-            Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
+            Self::TooManyRequests(_) => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
@@ -82,7 +98,7 @@ impl GrpcServiceError for IngestV2Error {
     }
 
     fn new_too_many_requests() -> Self {
-        Self::TooManyRequests
+        Self::TooManyRequests(RateLimitingCause::Unknown)
     }
 
     fn new_unavailable(message: String) -> Self {
@@ -92,7 +108,7 @@ impl GrpcServiceError for IngestV2Error {
 
 impl MakeLoadShedError for IngestV2Error {
     fn make_load_shed_error() -> Self {
-        IngestV2Error::TooManyRequests
+        IngestV2Error::TooManyRequests(RateLimitingCause::LoadShedding)
     }
 }
 
@@ -293,8 +309,8 @@ impl From<PersistFailureReason> for IngestFailureReason {
             PersistFailureReason::Unspecified => IngestFailureReason::Unspecified,
             PersistFailureReason::ShardNotFound => IngestFailureReason::NoShardsAvailable,
             PersistFailureReason::ShardClosed => IngestFailureReason::NoShardsAvailable,
-            PersistFailureReason::ResourceExhausted => IngestFailureReason::ResourceExhausted,
-            PersistFailureReason::RateLimited => IngestFailureReason::RateLimited,
+            PersistFailureReason::WalFull => IngestFailureReason::WalFull,
+            PersistFailureReason::ShardRateLimited => IngestFailureReason::ShardRateLimited,
             PersistFailureReason::Timeout => IngestFailureReason::Timeout,
         }
     }
@@ -306,7 +322,7 @@ impl From<ReplicateFailureReason> for PersistFailureReason {
             ReplicateFailureReason::Unspecified => PersistFailureReason::Unspecified,
             ReplicateFailureReason::ShardNotFound => PersistFailureReason::ShardNotFound,
             ReplicateFailureReason::ShardClosed => PersistFailureReason::ShardClosed,
-            ReplicateFailureReason::ResourceExhausted => PersistFailureReason::ResourceExhausted,
+            ReplicateFailureReason::WalFull => PersistFailureReason::WalFull,
         }
     }
 }

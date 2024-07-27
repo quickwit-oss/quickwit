@@ -154,6 +154,9 @@ pub enum ElasticException {
     #[serde(rename = "index_not_found_exception")]
     IndexNotFound,
     // This is an exception proper to Quickwit.
+    #[serde(rename = "rate_limited_exception")]
+    RateLimited,
+    // This is an exception proper to Quickwit.
     #[serde(rename = "source_not_found_exception")]
     SourceNotFound,
     #[serde(rename = "timeout_exception")]
@@ -166,6 +169,7 @@ impl ElasticException {
             Self::ActionRequestValidation => "action_request_validation_exception",
             Self::DocumentParsing => "document_parsing_exception",
             Self::Internal => "internal_exception",
+            Self::RateLimited => "rate_limited_exception",
             Self::IllegalArgument => "illegal_argument_exception",
             Self::IndexNotFound => "index_not_found_exception",
             Self::SourceNotFound => "source_not_found_exception",
