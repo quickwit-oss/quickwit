@@ -19,6 +19,7 @@
 
 use std::fmt::Formatter;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use http_serde::http::StatusCode;
@@ -173,13 +174,12 @@ pub(crate) async fn start_rest_server(
         .map(|| redirect(http::Uri::from_static("/ui/search")))
         .recover(recover_fn);
 
-    // let extra_headers = warp::reply::with::headers(
-    //     quickwit_services
-    //         .node_config
-    //         .rest_config
-    //         .extra_headers
-    //         .clone(),
-    // );
+    let extra_headers = warp::reply::with::headers(
+        to_warp_header_map(&quickwit_services
+            .node_config
+            .rest_config
+            .extra_headers)
+    );
 
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
@@ -191,7 +191,7 @@ pub(crate) async fn start_rest_server(
         .or(developer_routes)
         .with(request_counter)
         .recover(recover_fn_final)
-        // .with(extra_headers)
+        .with(extra_headers)
         .boxed();
 
     let warp_service = warp::service(rest_routes);
@@ -446,11 +446,23 @@ fn build_cors(cors_origins: &[String]) -> CorsLayer {
     cors
 }
 
+fn to_warp_header_map(header_map: &http_serde::http::HeaderMap) -> warp::http::HeaderMap {
+    let mut warp_header_map = warp::http::HeaderMap::new();
+    header_map
+        .iter()
+        .for_each(|(key, value)| {
+            warp_header_map.insert(
+                warp::http::HeaderName::from_str(key.as_str()).expect("header name must be valid"),
+                warp::http::HeaderValue::from_str(value.to_str().expect("header value must be a valid str")).expect("header value must be valid"),
+            );
+        });
+    warp_header_map
+}
+
 #[cfg(test)]
 mod tests {
     use std::future::Future;
     use std::pin::Pin;
-    use std::str::FromStr;
     use std::task::{Context, Poll};
 
     use http_serde::http::{HeaderName, HeaderValue};
@@ -741,21 +753,9 @@ mod tests {
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
         };
 
-        let mut warp_header_map = warp::http::HeaderMap::new();
-        node_config
-            .rest_config
-            .extra_headers
-            .iter()
-            .for_each(|(key, value)| {
-                warp_header_map.insert(
-                    warp::http::HeaderName::from_str(key.as_str()).unwrap(),
-                    warp::http::HeaderValue::from_str(value.to_str().unwrap()).unwrap(),
-                );
-            });
-
         let handler = api_v1_routes(Arc::new(quickwit_services))
             .recover(recover_fn_final)
-            .with(warp::reply::with::headers(warp_header_map));
+            .with(warp::reply::with::headers(to_warp_header_map(&node_config.rest_config.extra_headers)));
 
         let resp = warp::test::request()
             .path("/api/v1/version")
