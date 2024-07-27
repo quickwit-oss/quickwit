@@ -89,7 +89,7 @@ async fn create_channel(client: tokio::io::DuplexStream) -> anyhow::Result<Chann
     use http::Uri;
     use quickwit_proto::tonic::transport::Endpoint;
 
-    let mut client = Some(client);
+    let mut client = Some(hyper_util::rt::TokioIo::new(client));
     let channel = Endpoint::try_from("http://test.server")?
         .connect_with_connector(tower::service_fn(move |_: Uri| {
             let client = client.take();

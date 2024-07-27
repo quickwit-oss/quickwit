@@ -15,7 +15,10 @@ license.workspace = true
 [dev-dependencies]
 anyhow = { workspace = true }
 futures-util = { workspace = true }
+http-body-util = { workspace = true }
+http-serde = { workspace = true }
 hyper = { workspace = true }
+hyper-util = { workspace = true }
 itertools = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }

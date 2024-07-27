@@ -21,8 +21,8 @@ use std::fmt::Formatter;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use hyper::http::HeaderValue;
-use hyper::{http, Method, StatusCode};
+use http_serde::http::StatusCode;
+use hyper::{http, Method};
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_search::SearchService;
 use tower::make::Shared;
@@ -173,13 +173,13 @@ pub(crate) async fn start_rest_server(
         .map(|| redirect(http::Uri::from_static("/ui/search")))
         .recover(recover_fn);
 
-    let extra_headers = warp::reply::with::headers(
-        quickwit_services
-            .node_config
-            .rest_config
-            .extra_headers
-            .clone(),
-    );
+    // let extra_headers = warp::reply::with::headers(
+    //     quickwit_services
+    //         .node_config
+    //         .rest_config
+    //         .extra_headers
+    //         .clone(),
+    // );
 
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
@@ -191,7 +191,7 @@ pub(crate) async fn start_rest_server(
         .or(developer_routes)
         .with(request_counter)
         .recover(recover_fn_final)
-        .with(extra_headers)
+        // .with(extra_headers)
         .boxed();
 
     let warp_service = warp::service(rest_routes);
@@ -437,7 +437,7 @@ fn build_cors(cors_origins: &[String]) -> CorsLayer {
             info!(origins = ?cors_origins, "CORS is enabled, the following origins will be allowed");
             let origins = cors_origins
                 .iter()
-                .map(|origin| origin.parse::<HeaderValue>().unwrap())
+                .map(|origin| origin.parse::<warp::http::HeaderValue>().unwrap())
                 .collect::<Vec<_>>();
             cors = cors.allow_origin(origins);
         };
@@ -450,10 +450,11 @@ fn build_cors(cors_origins: &[String]) -> CorsLayer {
 mod tests {
     use std::future::Future;
     use std::pin::Pin;
+    use std::str::FromStr;
     use std::task::{Context, Poll};
 
-    use http::HeaderName;
-    use hyper::{Request, Response, StatusCode};
+    use http_serde::http::{HeaderName, HeaderValue};
+    use hyper::{Request, Response};
     use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
     use quickwit_config::NodeConfig;
     use quickwit_index_management::IndexService;
@@ -499,7 +500,7 @@ mod tests {
                 headers.get("Access-Control-Allow-Methods"),
                 Some(
                     &"GET,POST,PUT,DELETE,OPTIONS"
-                        .parse::<HeaderValue>()
+                        .parse::<warp::http::HeaderValue>()
                         .unwrap()
                 )
             );
@@ -517,7 +518,7 @@ mod tests {
             let headers = resp.headers();
             assert_eq!(
                 headers.get("Access-Control-Allow-Origin"),
-                Some(&"*".parse::<HeaderValue>().unwrap())
+                Some(&"*".parse::<warp::http::HeaderValue>().unwrap())
             );
             assert_eq!(headers.get("Access-Control-Allow-Methods"), None);
             assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
@@ -530,13 +531,13 @@ mod tests {
             let headers = resp.headers();
             assert_eq!(
                 headers.get("Access-Control-Allow-Origin"),
-                Some(&"*".parse::<HeaderValue>().unwrap())
+                Some(&"*".parse::<warp::http::HeaderValue>().unwrap())
             );
             assert_eq!(
                 headers.get("Access-Control-Allow-Methods"),
                 Some(
                     &"GET,POST,PUT,DELETE,OPTIONS"
-                        .parse::<HeaderValue>()
+                        .parse::<warp::http::HeaderValue>()
                         .unwrap()
                 )
             );
@@ -567,7 +568,7 @@ mod tests {
                 headers.get("Access-Control-Allow-Methods"),
                 Some(
                     &"GET,POST,PUT,DELETE,OPTIONS"
-                        .parse::<HeaderValue>()
+                        .parse::<warp::http::HeaderValue>()
                         .unwrap()
                 )
             );
@@ -581,13 +582,17 @@ mod tests {
             let headers = resp.headers();
             assert_eq!(
                 headers.get("Access-Control-Allow-Origin"),
-                Some(&"https://quickwit.io".parse::<HeaderValue>().unwrap())
+                Some(
+                    &"https://quickwit.io"
+                        .parse::<warp::http::HeaderValue>()
+                        .unwrap()
+                )
             );
             assert_eq!(
                 headers.get("Access-Control-Allow-Methods"),
                 Some(
                     &"GET,POST,PUT,DELETE,OPTIONS"
-                        .parse::<HeaderValue>()
+                        .parse::<warp::http::HeaderValue>()
                         .unwrap()
                 )
             );
@@ -618,13 +623,17 @@ mod tests {
             let headers = resp.headers();
             assert_eq!(
                 headers.get("Access-Control-Allow-Origin"),
-                Some(&"http://localhost:3000".parse::<HeaderValue>().unwrap())
+                Some(
+                    &"http://localhost:3000"
+                        .parse::<warp::http::HeaderValue>()
+                        .unwrap()
+                )
             );
             assert_eq!(
                 headers.get("Access-Control-Allow-Methods"),
                 Some(
                     &"GET,POST,PUT,DELETE,OPTIONS"
-                        .parse::<HeaderValue>()
+                        .parse::<warp::http::HeaderValue>()
                         .unwrap()
                 )
             );
@@ -638,13 +647,17 @@ mod tests {
             let headers = resp.headers();
             assert_eq!(
                 headers.get("Access-Control-Allow-Origin"),
-                Some(&"https://quickwit.io".parse::<HeaderValue>().unwrap())
+                Some(
+                    &"https://quickwit.io"
+                        .parse::<warp::http::HeaderValue>()
+                        .unwrap()
+                )
             );
             assert_eq!(
                 headers.get("Access-Control-Allow-Methods"),
                 Some(
                     &"GET,POST,PUT,DELETE,OPTIONS"
-                        .parse::<HeaderValue>()
+                        .parse::<warp::http::HeaderValue>()
                         .unwrap()
                 )
             );
@@ -658,7 +671,7 @@ mod tests {
         (*request.method_mut()) = Method::OPTIONS;
         request
             .headers_mut()
-            .insert("Origin", HeaderValue::from_static(origin));
+            .insert("Origin", warp::http::HeaderValue::from_static(origin));
         request
     }
 
@@ -676,7 +689,7 @@ mod tests {
         fn call(&mut self, _req: Request<()>) -> Self::Future {
             let body = "hello, world!\n".to_string();
             let resp = Response::builder()
-                .status(StatusCode::OK)
+                .status(http::StatusCode::OK)
                 .body(body)
                 .expect("Unable to create `http::Response`");
 
@@ -728,11 +741,21 @@ mod tests {
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
         };
 
+        let mut warp_header_map = warp::http::HeaderMap::new();
+        node_config
+            .rest_config
+            .extra_headers
+            .iter()
+            .for_each(|(key, value)| {
+                warp_header_map.insert(
+                    warp::http::HeaderName::from_str(key.as_str()).unwrap(),
+                    warp::http::HeaderValue::from_str(value.to_str().unwrap()).unwrap(),
+                );
+            });
+
         let handler = api_v1_routes(Arc::new(quickwit_services))
             .recover(recover_fn_final)
-            .with(warp::reply::with::headers(
-                node_config.rest_config.extra_headers.clone(),
-            ));
+            .with(warp::reply::with::headers(warp_header_map));
 
         let resp = warp::test::request()
             .path("/api/v1/version")

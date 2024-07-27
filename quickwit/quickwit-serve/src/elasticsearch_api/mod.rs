@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use bulk::{es_compat_bulk_handler, es_compat_index_bulk_handler};
 pub use filter::ElasticCompatibleApi;
-use hyper::StatusCode;
+use http_serde::http::StatusCode;
 use quickwit_config::NodeConfig;
 use quickwit_index_management::IndexService;
 use quickwit_ingest::IngestServiceClient;

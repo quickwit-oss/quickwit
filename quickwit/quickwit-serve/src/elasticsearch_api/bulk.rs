@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use hyper::StatusCode;
+use http_serde::http::StatusCode;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
@@ -159,7 +159,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use hyper::StatusCode;
+    use http_serde::http::StatusCode;
     use quickwit_config::{IngestApiConfig, NodeConfig};
     use quickwit_index_management::IndexService;
     use quickwit_ingest::{FetchRequest, IngestServiceClient, SuggestTruncateRequest};

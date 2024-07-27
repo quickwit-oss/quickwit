@@ -22,6 +22,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use anyhow::Context;
+use bytes::{Buf, BufMut};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use ulid::Ulid;
@@ -78,22 +79,18 @@ impl Serialize for DocMappingUid {
 }
 
 impl prost::Message for DocMappingUid {
-    fn encode_raw<B>(&self, buf: &mut B)
-    where B: prost::bytes::BufMut {
+    fn encode_raw(&self, buf: &mut impl BufMut) {
         // TODO: when `bytes::encode` supports `&[u8]`, we can remove this allocation.
         prost::encoding::bytes::encode(1u32, &self.0.to_bytes().to_vec(), buf);
     }
 
-    fn merge_field<B>(
+    fn merge_field(
         &mut self,
         tag: u32,
         wire_type: prost::encoding::WireType,
-        buf: &mut B,
+        buf: &mut impl Buf,
         ctx: prost::encoding::DecodeContext,
-    ) -> ::core::result::Result<(), prost::DecodeError>
-    where
-        B: prost::bytes::Buf,
-    {
+    ) -> ::core::result::Result<(), prost::DecodeError> {
         const STRUCT_NAME: &str = "DocMappingUid";
 
         match tag {

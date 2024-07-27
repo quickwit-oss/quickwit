@@ -19,7 +19,7 @@
 
 use elasticsearch_dsl::search::SearchResponse as ElasticsearchResponse;
 use elasticsearch_dsl::ErrorCause;
-use hyper::StatusCode;
+use http_serde::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_with::formats::PreferMany;
 use serde_with::{serde_as, OneOrMany};

@@ -22,11 +22,11 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use hyper::{Body, Method, Request, StatusCode};
 use quickwit_config::service::QuickwitService;
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
+use reqwest::Url;
 
 use crate::test_utils::{ingest_with_retry, ClusterSandbox};
 
@@ -43,25 +43,20 @@ async fn test_ui_redirect_on_get() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
     let node_config = sandbox.node_configs.first().unwrap();
-    let client = hyper::Client::builder()
+    let client = reqwest::Client::builder()
         .pool_idle_timeout(Duration::from_secs(30))
-        .http2_only(true)
-        .build_http();
+        .build()
+        .unwrap();
     let root_uri = format!(
         "http://{}/",
         node_config.node_config.rest_config.listen_addr
     )
-    .parse::<hyper::Uri>()
+    .parse::<Url>()
     .unwrap();
-    let response = client.get(root_uri.clone()).await.unwrap();
-    assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
-    let post_request = Request::builder()
-        .uri(root_uri)
-        .method(Method::POST)
-        .body(Body::from("{}"))
-        .unwrap();
-    let response = client.request(post_request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    let response = client.get(root_uri.clone()).send().await.unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::MOVED_PERMANENTLY);
+    let response = client.post(root_uri).json(b"{}").send().await.unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::METHOD_NOT_ALLOWED);
     sandbox.shutdown().await.unwrap();
 }
 

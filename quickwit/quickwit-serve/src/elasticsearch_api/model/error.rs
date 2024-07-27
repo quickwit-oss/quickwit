@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use elasticsearch_dsl::search::ErrorCause;
-use hyper::StatusCode;
+use http_serde::http::StatusCode;
 use quickwit_common::{rate_limited_debug, rate_limited_error};
 use quickwit_index_management::IndexServiceError;
 use quickwit_ingest::IngestServiceError;

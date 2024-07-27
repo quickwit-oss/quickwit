@@ -16,6 +16,7 @@ bytes = { workspace = true }
 bytesize = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
+hyper-util = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }

@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use hyper::StatusCode;
 use tracing::error;
 use warp::reply::with_status;
 
@@ -44,10 +43,10 @@ pub struct MetricsApi;
 /// These are in the form of prometheus metrics.
 pub fn metrics_handler() -> impl warp::Reply {
     match quickwit_common::metrics::metrics_text_payload() {
-        Ok(metrics) => with_status(metrics, StatusCode::OK),
+        Ok(metrics) => with_status(metrics, warp::http::StatusCode::OK),
         Err(e) => {
             error!("failed to encode prometheus metrics: {e}");
-            with_status(String::new(), StatusCode::INTERNAL_SERVER_ERROR)
+            with_status(String::new(), warp::http::StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }

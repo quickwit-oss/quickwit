@@ -24,7 +24,12 @@ glob = { workspace = true }
 hex = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }
-hyper = { workspace = true }
+# warp relies on hyper 0.14
+hyper = { version = "0.14", features = [
+  "server",
+  "http1",
+  "http2"
+] }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
 once_cell = { workspace = true }

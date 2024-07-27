@@ -577,7 +577,9 @@ fn make_streaming_reply(result: Result<hyper::Body, SearchError>) -> impl Reply 
             warp::reply::Response::new(body)
         }
         Err(error) => {
-            status_code = error.error_code().http_status_code();
+            status_code =
+                hyper::StatusCode::from_u16(error.error_code().http_status_code().as_u16())
+                    .expect("cannot fail");
             warp::reply::Response::new(hyper::Body::from(error.to_string()))
         }
     };
