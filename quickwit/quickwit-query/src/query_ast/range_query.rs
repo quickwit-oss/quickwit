@@ -20,15 +20,14 @@
 use std::ops::Bound;
 
 use serde::{Deserialize, Serialize};
-use tantivy::query::{
-    FastFieldRangeWeight as TantivyFastFieldRangeQuery, RangeQuery as TantivyRangeQuery,
-};
+use tantivy::fastfield::FastValue;
+use tantivy::query::{EmptyQuery, RangeQuery as TantivyRangeQuery};
 use tantivy::schema::Schema as TantivySchema;
-use tantivy::DateTime;
+use tantivy::{DateTime, Term};
 
 use super::QueryAst;
 use crate::json_literal::InterpretUserInput;
-use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
+use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::BuildTantivyAst;
 use crate::tokenizers::TokenizerManager;
 use crate::{InvalidQuery, JsonLiteral};
@@ -40,132 +39,11 @@ pub struct RangeQuery {
     pub upper_bound: Bound<JsonLiteral>,
 }
 
-struct NumericalBoundaries {
-    i64_range: (Bound<i64>, Bound<i64>),
-    u64_range: (Bound<u64>, Bound<u64>),
-    f64_range: (Bound<f64>, Bound<f64>),
-}
-
-fn extract_boundary_value<T>(bound: &Bound<T>) -> Option<&T> {
-    match bound {
-        Bound::Included(val) | Bound::Excluded(val) => Some(val),
-        Bound::Unbounded => None,
-    }
-}
-
-trait IntType {
-    fn min() -> Self;
-    fn max() -> Self;
-    fn to_f64(self) -> f64;
-    fn from_f64(val: f64) -> Self;
-}
-impl IntType for i64 {
-    fn min() -> Self {
-        Self::MIN
-    }
-    fn max() -> Self {
-        Self::MAX
-    }
-    fn to_f64(self) -> f64 {
-        self as f64
-    }
-    fn from_f64(val: f64) -> Self {
-        val as Self
-    }
-}
-impl IntType for u64 {
-    fn min() -> Self {
-        Self::MIN
-    }
-    fn max() -> Self {
-        Self::MAX
-    }
-    fn to_f64(self) -> f64 {
-        self as f64
-    }
-    fn from_f64(val: f64) -> Self {
-        val as Self
-    }
-}
-
-fn convert_lower_bound<'a, T: IntType + InterpretUserInput<'a>>(
-    lower_bound_f64: f64,
-    lower_bound: &'a Bound<JsonLiteral>,
-) -> Bound<T> {
-    convert_bound(lower_bound).unwrap_or_else(|| {
-        if lower_bound_f64 <= T::min().to_f64() {
-            // All value should match
-            return Bound::Unbounded;
-        }
-        if lower_bound_f64 > T::max().to_f64() {
-            // No values should match
-            return Bound::Excluded(T::max());
-        }
-        // The miss was due to a decimal number.
-        Bound::Included(T::from_f64(lower_bound_f64.ceil()))
-    })
-}
-
-fn convert_upper_bound<'a, T: IntType + InterpretUserInput<'a>>(
-    upper_bound_f64: f64,
-    lower_bound: &'a Bound<JsonLiteral>,
-) -> Bound<T> {
-    convert_bound(lower_bound).unwrap_or_else(|| {
-        if upper_bound_f64 >= T::max().to_f64() {
-            // All value should match
-            return Bound::Unbounded;
-        }
-        if upper_bound_f64 < T::min().to_f64() {
-            // No values should match
-            return Bound::Excluded(T::max());
-        }
-        // The miss was due to a decimal number.
-        Bound::Included(T::from_f64(upper_bound_f64.floor()))
-    })
-}
-
-/// This function interprets the lower_bound and upper_bound as numerical boundaries
-/// for JSON field.
-fn compute_numerical_boundaries(
-    lower_bound: &Bound<JsonLiteral>,
-    upper_bound: &Bound<JsonLiteral>,
-) -> Option<NumericalBoundaries> {
-    // Let's check that this range can be interpret (as in both, bounds),
-    // as a numerical range.
-    // Note that if interpreting as a f64 range fails, we consider the boundary non
-    // numerical and do not attempt to build u64/i64 boundaries.
-    let lower_bound_f64: Bound<f64> = convert_bound(lower_bound)?;
-    let upper_bound_f64: Bound<f64> = convert_bound(upper_bound)?;
-
-    let lower_bound_i64: Bound<i64>;
-    let lower_bound_u64: Bound<u64>;
-    if let Some(lower_bound_f64) = extract_boundary_value(&lower_bound_f64).copied() {
-        lower_bound_i64 = convert_lower_bound(lower_bound_f64, lower_bound);
-        lower_bound_u64 = convert_lower_bound(lower_bound_f64, lower_bound);
-    } else {
-        lower_bound_i64 = Bound::Unbounded;
-        lower_bound_u64 = Bound::Unbounded;
-    }
-
-    let upper_bound_i64: Bound<i64>;
-    let upper_bound_u64: Bound<u64>;
-    if let Some(upper_bound_f64) = extract_boundary_value(&upper_bound_f64).copied() {
-        upper_bound_i64 = convert_upper_bound(upper_bound_f64, upper_bound);
-        upper_bound_u64 = convert_upper_bound(upper_bound_f64, upper_bound);
-    } else {
-        upper_bound_i64 = Bound::Unbounded;
-        upper_bound_u64 = Bound::Unbounded;
-    }
-    Some(NumericalBoundaries {
-        i64_range: (lower_bound_i64, upper_bound_i64),
-        u64_range: (lower_bound_u64, upper_bound_u64),
-        f64_range: (lower_bound_f64, upper_bound_f64),
-    })
-}
-
 /// Converts a given bound JsonLiteral bound into a bound of type T.
 fn convert_bound<'a, T>(bound: &'a Bound<JsonLiteral>) -> Option<Bound<T>>
-where T: InterpretUserInput<'a> {
+where
+    T: InterpretUserInput<'a>,
+{
     match bound {
         Bound::Included(val) => {
             let val = T::interpret_json(val)?;
@@ -204,22 +82,6 @@ impl From<RangeQuery> for QueryAst {
     }
 }
 
-/// Return
-/// - Some(true) if the range is guaranteed to be empty
-/// - Some(false) if the range is not empty
-/// - None if we cannot judge easily.
-fn is_empty<T: Ord>(boundaries: &(Bound<T>, Bound<T>)) -> Option<bool> {
-    match boundaries {
-        (Bound::Included(lower), Bound::Included(upper)) => Some(lower > upper),
-        (Bound::Included(lower), Bound::Excluded(upper))
-        | (Bound::Excluded(lower), Bound::Included(upper)) => Some(lower >= upper),
-        (Bound::Unbounded, Bound::Included(_)) | (Bound::Included(_), Bound::Unbounded) => {
-            Some(false)
-        }
-        _ => None,
-    }
-}
-
 impl BuildTantivyAst for RangeQuery {
     fn build_tantivy_ast_impl(
         &self,
@@ -228,7 +90,7 @@ impl BuildTantivyAst for RangeQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (_field, field_entry, _path) =
+        let (field, field_entry, json_path) =
             super::utils::find_field_or_hit_dynamic(&self.field, schema)?;
         if !field_entry.is_fast() {
             return Err(InvalidQuery::SchemaError(format!(
@@ -246,20 +108,29 @@ impl BuildTantivyAst for RangeQuery {
             tantivy::schema::FieldType::U64(_) => {
                 let (lower_bound, upper_bound) =
                     convert_bounds(&self.lower_bound, &self.upper_bound, field_entry.name())?;
-                TantivyFastFieldRangeQuery::new::<u64>(self.field.clone(), lower_bound, upper_bound)
-                    .into()
+                TantivyRangeQuery::new(
+                    lower_bound.map(|val| Term::from_field_u64(field, val)),
+                    upper_bound.map(|val| Term::from_field_u64(field, val)),
+                )
+                .into()
             }
             tantivy::schema::FieldType::I64(_) => {
                 let (lower_bound, upper_bound) =
                     convert_bounds(&self.lower_bound, &self.upper_bound, field_entry.name())?;
-                TantivyFastFieldRangeQuery::new::<i64>(self.field.clone(), lower_bound, upper_bound)
-                    .into()
+                TantivyRangeQuery::new(
+                    lower_bound.map(|val| Term::from_field_i64(field, val)),
+                    upper_bound.map(|val| Term::from_field_i64(field, val)),
+                )
+                .into()
             }
             tantivy::schema::FieldType::F64(_) => {
                 let (lower_bound, upper_bound) =
                     convert_bounds(&self.lower_bound, &self.upper_bound, field_entry.name())?;
-                TantivyFastFieldRangeQuery::new::<f64>(self.field.clone(), lower_bound, upper_bound)
-                    .into()
+                TantivyRangeQuery::new(
+                    lower_bound.map(|val| Term::from_field_f64(field, val)),
+                    upper_bound.map(|val| Term::from_field_f64(field, val)),
+                )
+                .into()
             }
             tantivy::schema::FieldType::Bool(_) => {
                 return Err(InvalidQuery::RangeQueryNotSupportedForField {
@@ -272,12 +143,11 @@ impl BuildTantivyAst for RangeQuery {
                     convert_bounds(&self.lower_bound, &self.upper_bound, field_entry.name())?;
                 let truncate_datetime =
                     |date: &DateTime| date.truncate(date_options.get_precision());
-                let truncated_lower_bound = map_bound(&lower_bound, truncate_datetime);
-                let truncated_upper_bound = map_bound(&upper_bound, truncate_datetime);
-                TantivyFastFieldRangeQuery::new::<DateTime>(
-                    self.field.clone(),
-                    truncated_lower_bound,
-                    truncated_upper_bound,
+                let lower_bound = map_bound(&lower_bound, truncate_datetime);
+                let upper_bound = map_bound(&upper_bound, truncate_datetime);
+                TantivyRangeQuery::new(
+                    lower_bound.map(|val| Term::from_field_date(field, val)),
+                    upper_bound.map(|val| Term::from_field_date(field, val)),
                 )
                 .into()
             }
@@ -288,55 +158,52 @@ impl BuildTantivyAst for RangeQuery {
                 });
             }
             tantivy::schema::FieldType::Bytes(_) => todo!(),
-            tantivy::schema::FieldType::JsonObject(_) => {
-                let full_path = self.field.clone();
-                let mut sub_queries: Vec<TantivyQueryAst> = Vec::new();
-                if let Some(NumericalBoundaries {
-                    i64_range,
-                    u64_range,
-                    f64_range,
-                }) = compute_numerical_boundaries(&self.lower_bound, &self.upper_bound)
-                {
-                    // Adding the f64 range.
-                    sub_queries.push(
-                        TantivyFastFieldRangeQuery::new(
-                            full_path.clone(),
-                            f64_range.0,
-                            f64_range.1,
-                        )
-                        .into(),
-                    );
-                    // Adding the i64 range.
-                    if !is_empty(&i64_range).unwrap_or(false) {
-                        sub_queries.push(
-                            TantivyFastFieldRangeQuery::new(
-                                full_path.clone(),
-                                i64_range.0,
-                                i64_range.1,
-                            )
-                            .into(),
-                        );
-                    }
-                    // Adding the u64 range.
-                    if !is_empty(&u64_range).unwrap_or(false) {
-                        sub_queries.push(
-                            TantivyFastFieldRangeQuery::new(full_path, u64_range.0, u64_range.1)
-                                .into(),
-                        );
-                    }
+            tantivy::schema::FieldType::JsonObject(opt) => {
+                let empty_term =
+                    Term::from_field_json_path(field, json_path, opt.is_expand_dots_enabled());
+                fn term_with_fastval<T: FastValue>(term: &Term, val: T) -> Term {
+                    let mut term = term.clone();
+                    term.append_type_and_fast_value(val);
+                    term
                 }
-                // TODO add support for str range queries.
-                let bool_query = TantivyBoolQuery {
-                    should: sub_queries,
-                    ..Default::default()
-                };
-                bool_query.into()
+                fn query_from_fast_val_range<T: FastValue>(
+                    empty_term: &Term,
+                    range: (Bound<T>, Bound<T>),
+                ) -> TantivyRangeQuery {
+                    TantivyRangeQuery::new(
+                        range.0.map(|val| term_with_fastval(empty_term, val)),
+                        range.1.map(|val| term_with_fastval(empty_term, val)),
+                    )
+                }
+                // Try to convert the bounds into numerical values in following order i64, u64,
+                // f64. Tantivy will convert to the correct numerical type of the column if it
+                // doesn't match.
+                let bounds_range: Option<(Bound<i64>, Bound<i64>)> =
+                    convert_bound(&self.lower_bound).zip(convert_bound(&self.upper_bound));
+                if let Some(range) = bounds_range {
+                    return Ok(query_from_fast_val_range(&empty_term, range).into());
+                }
+                let bounds_range: Option<(Bound<u64>, Bound<u64>)> =
+                    convert_bound(&self.lower_bound).zip(convert_bound(&self.upper_bound));
+                if let Some(range) = bounds_range {
+                    return Ok(query_from_fast_val_range(&empty_term, range).into());
+                }
+                let bounds_range: Option<(Bound<f64>, Bound<f64>)> =
+                    convert_bound(&self.lower_bound).zip(convert_bound(&self.upper_bound));
+                if let Some(range) = bounds_range {
+                    return Ok(query_from_fast_val_range(&empty_term, range).into());
+                }
+                // TODO add support for str query
+                return Ok(EmptyQuery.into());
             }
             tantivy::schema::FieldType::IpAddr(_) => {
                 let (lower_bound, upper_bound) =
                     convert_bounds(&self.lower_bound, &self.upper_bound, field_entry.name())?;
-                TantivyRangeQuery::new_ip_bounds(self.field.clone(), lower_bound, upper_bound)
-                    .into()
+                TantivyRangeQuery::new(
+                    lower_bound.map(|val| Term::from_field_ip_addr(field, val)),
+                    upper_bound.map(|val| Term::from_field_ip_addr(field, val)),
+                )
+                .into()
             }
         })
     }
