@@ -24,12 +24,17 @@ use hyper::StatusCode;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
 use quickwit_metastore::SplitState;
+use quickwit_proto::opentelemetry::proto::collector::logs::v1::ExportLogsServiceRequest;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
+use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value;
+use quickwit_proto::opentelemetry::proto::common::v1::AnyValue;
+use quickwit_proto::opentelemetry::proto::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
 use quickwit_proto::opentelemetry::proto::trace::v1::{ResourceSpans, ScopeSpans, Span};
 use quickwit_rest_client::error::{ApiError, Error};
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
 use serde_json::json;
+use tonic::codec::CompressionEncoding;
 
 use crate::ingest_json;
 use crate::test_utils::{ingest_with_retry, ClusterSandbox};
@@ -660,7 +665,9 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
         .unwrap();
     // Wait for the pipelines to start (one for logs and one for traces)
     sandbox.wait_for_indexing_pipelines(2).await.unwrap();
+    let client = sandbox.trace_client.clone();
 
+    // build test OTEL span
     let scope_spans = vec![ScopeSpans {
         spans: vec![
             Span {
@@ -686,14 +693,12 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
     }];
     let request = ExportTraceServiceRequest { resource_spans };
 
-    // Send the spans on the default index.
-    {
-        let response = sandbox
-            .trace_client
-            .clone()
-            .export(request.clone())
-            .await
-            .unwrap();
+    // Send the spans on the default index, uncompressed and compressed
+    for mut tested_client in vec![
+        client.clone(),
+        client.clone().send_compressed(CompressionEncoding::Gzip),
+    ] {
+        let response = tested_client.export(request.clone()).await.unwrap();
         assert_eq!(
             response
                 .into_inner()
@@ -711,13 +716,62 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
             "qw-otel-traces-index",
             tonic::metadata::MetadataValue::try_from("non-existing-index").unwrap(),
         );
-        let status = sandbox
-            .trace_client
-            .clone()
-            .export(tonic_request)
-            .await
-            .unwrap_err();
+        let status = client.clone().export(tonic_request).await.unwrap_err();
         assert_eq!(status.code(), tonic::Code::NotFound);
+    }
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_ingest_logs_with_otlp_grpc_api() {
+    quickwit_common::setup_logging_for_tests();
+    let nodes_services = vec![
+        HashSet::from_iter([QuickwitService::Searcher]),
+        HashSet::from_iter([QuickwitService::Metastore]),
+        HashSet::from_iter([QuickwitService::Indexer]),
+        HashSet::from_iter([QuickwitService::ControlPlane]),
+        HashSet::from_iter([QuickwitService::Janitor]),
+    ];
+    let sandbox = ClusterSandbox::start_cluster_with_otlp_service(&nodes_services)
+        .await
+        .unwrap();
+    // Wait fo the pipelines to start (one for logs and one for traces)
+    sandbox.wait_for_indexing_pipelines(2).await.unwrap();
+    let client = sandbox.logs_client.clone();
+
+    // build test OTEL log
+    let log_record = LogRecord {
+        time_unix_nano: 1_000_000_001,
+        body: Some(AnyValue {
+            value: Some(Value::StringValue("hello".to_string())),
+        }),
+        ..Default::default()
+    };
+    let scope_logs = ScopeLogs {
+        log_records: vec![log_record],
+        ..Default::default()
+    };
+    let resource_logs = vec![ResourceLogs {
+        scope_logs: vec![scope_logs],
+        ..Default::default()
+    }];
+    let request = ExportLogsServiceRequest { resource_logs };
+
+    // Send the logs on the default index, uncompressed and compressed
+    for mut tested_client in vec![
+        client.clone(),
+        client.clone().send_compressed(CompressionEncoding::Gzip),
+    ] {
+        let response = tested_client.export(request.clone()).await.unwrap();
+        assert_eq!(
+            response
+                .into_inner()
+                .partial_success
+                .unwrap()
+                .rejected_log_records,
+            0
+        );
     }
 
     sandbox.shutdown().await.unwrap();
