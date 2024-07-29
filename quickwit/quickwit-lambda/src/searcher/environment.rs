@@ -20,7 +20,7 @@
 pub(crate) const CONFIGURATION_TEMPLATE: &str = r#"
 version: 0.8
 node_id: lambda-searcher
-metastore_uri: s3://${QW_LAMBDA_METASTORE_BUCKET}/index#polling_interval=${QW_LAMBDA_SEARCHER_METASTORE_POLLING_INTERVAL_SECONDS:-60}s
+metastore_uri: ${QW_LAMBDA_METASTORE_URI}
 default_index_root_uri: s3://${QW_LAMBDA_INDEX_BUCKET}/index
 data_dir: /tmp
 searcher:

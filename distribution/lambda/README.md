@@ -85,7 +85,7 @@ simplify the setup and avoid unstable deployments.
 | Variable | Description | Default |
 |---|---|---|
 | QW_LAMBDA_INDEX_ID | the index this Lambda interacts with (one and only one) | required |
-| QW_LAMBDA_METASTORE_BUCKET | bucket name for metastore files | required |
+| QW_LAMBDA_METASTORE_URI | [Metastore URI](https://quickwit.io/docs/configuration/metastore-config) | required |
 | QW_LAMBDA_INDEX_BUCKET | bucket name for split files | required |
 | QW_LAMBDA_OPENTELEMETRY_URL | HTTP OTEL tracing collector endpoint | none, OTEL disabled |
 | QW_LAMBDA_OPENTELEMETRY_AUTHORIZATION | Authorization header value for HTTP OTEL calls | none, OTEL disabled |
@@ -106,7 +106,6 @@ Indexer only:
 Searcher only:
 | Variable | Description | Default |
 |---|---|---|
-| QW_LAMBDA_SEARCHER_METASTORE_POLLING_INTERVAL_SECONDS | refresh interval of the metastore | 60 |
 | QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY | `searcher.partial_request_cache_capacity` node config | 64M |
 
 

@@ -20,6 +20,12 @@ class IndexerService(Construct):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        metastore_uri = environment.get("QW_LAMBDA_METASTORE_URI")
+        if not metastore_uri:
+            # Backwards compatibility.
+            metastore_bucket = environment.get("QW_LAMBDA_METASTORE_BUCKET", store.bucket)
+            metastore_uri = f"s3://${metastore_bucket}/index"
+
         self.lambda_function = aws_lambda.Function(
             self,
             id="Lambda",
@@ -28,7 +34,7 @@ class IndexerService(Construct):
             handler="N/A",
             environment={
                 "QW_LAMBDA_INDEX_BUCKET": store_bucket.bucket_name,
-                "QW_LAMBDA_METASTORE_BUCKET": store_bucket.bucket_name,
+                "QW_LAMBDA_METASTORE_URI": metastore_uri,
                 "QW_LAMBDA_INDEX_ID": index_id,
                 "QW_LAMBDA_INDEX_CONFIG_URI": f"s3://{index_config_bucket}/{index_config_key}",
                 **environment,

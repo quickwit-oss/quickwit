@@ -17,6 +17,13 @@ class SearcherService(Construct):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        metastore_uri = environment.get("QW_LAMBDA_METASTORE_URI")
+        if not metastore_uri:
+            # Backwards compatibility.
+            metastore_bucket = environment.get("QW_LAMBDA_METASTORE_BUCKET", store.bucket)
+            metastore_polling = environment.get("QW_LAMBDA_SEARCHER_METASTORE_POLLING_INTERVAL_SECONDS", 60)
+            metastore_uri = f"s3://${metastore_bucket}/index#polling_interval={metastore_polling}s"
+
         self.lambda_function = aws_lambda.Function(
             self,
             id="Lambda",
@@ -25,7 +32,7 @@ class SearcherService(Construct):
             handler="N/A",
             environment={
                 "QW_LAMBDA_INDEX_BUCKET": store_bucket.bucket_name,
-                "QW_LAMBDA_METASTORE_BUCKET": store_bucket.bucket_name,
+                "QW_LAMBDA_METASTORE_URI": metastore_uri,
                 "QW_LAMBDA_INDEX_ID": index_id,
                 **environment,
             },

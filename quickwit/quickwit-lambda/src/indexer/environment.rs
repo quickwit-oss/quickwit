@@ -26,7 +26,7 @@ pub const CONFIGURATION_TEMPLATE: &str = r#"
 version: 0.8
 node_id: lambda-indexer
 cluster_id: lambda-ephemeral
-metastore_uri: s3://${QW_LAMBDA_METASTORE_BUCKET}/index
+metastore_uri: ${QW_LAMBDA_METASTORE_URI}
 default_index_root_uri: s3://${QW_LAMBDA_INDEX_BUCKET}/index
 data_dir: /tmp
 "#;
