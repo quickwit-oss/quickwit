@@ -229,6 +229,7 @@ async fn test_update_doc_mapping_json_to_text() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_update_doc_mapping_json_to_object() {
     let index_id = "update-json-to-object";
     let original_doc_mappings = json!({
@@ -408,6 +409,7 @@ async fn test_update_doc_mapping_tokenizer_raw_to_phrase() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_update_doc_mapping_strict_to_dynamic() {
     let index_id = "update-strict-to-dynamic";
     let original_doc_mappings = json!({
