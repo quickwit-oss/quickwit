@@ -75,7 +75,6 @@ pub(crate) fn otlp_default_logs_handler(
             "application/x-protobuf",
         ))
         .and(warp::post())
-        //.and(warp::body::bytes())
         .and(get_body_bytes())
         .then(|otlp_logs_service, body| async move {
             otlp_ingest_logs(otlp_logs_service, OTEL_LOGS_INDEX_ID.to_string(), body).await
