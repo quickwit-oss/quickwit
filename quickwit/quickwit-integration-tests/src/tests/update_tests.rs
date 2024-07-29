@@ -45,11 +45,11 @@ async fn assert_hit_count(
         )
         .await;
     if let Ok(expected_hit_count) = expected_hits {
-        let resp = search_res.unwrap();
-        assert_eq!(resp.errors.len(), 0);
-        assert_eq!(resp.num_hits, expected_hit_count);
+        let resp = search_res.unwrap_or_else(|_| panic!("query: {}", query));
+        assert_eq!(resp.errors.len(), 0, "query: {}", query);
+        assert_eq!(resp.num_hits, expected_hit_count, "query: {}", query);
     } else if let Ok(search_response) = search_res {
-        assert!(search_response.errors.len() > 0);
+        assert!(!search_response.errors.is_empty(), "query: {}", query);
     }
 }
 
@@ -391,6 +391,174 @@ async fn test_update_doc_mappings_json_to_object() {
         updated_doc_mappings,
         ingest_after_update,
         &[("body.field1:hello", Ok(1)), ("body.field1:hola", Ok(1))],
+    )
+    .await;
+}
+
+// TODO expected to be fix as part of #5084
+#[tokio::test]
+#[ignore]
+async fn test_update_doc_mappings_tokenizer_default_to_raw() {
+    let index_id = "update-tokenizer-default-to-raw";
+    let original_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "text", "tokenizer": "default"}
+        ]
+    });
+    let ingest_before_update = &[json!({"body": "hello-world"})];
+    let updated_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "text", "tokenizer": "raw"}
+        ]
+    });
+    let ingest_after_update = &[json!({"body": "bonjour-monde"})];
+    validate_search_across_doc_mapping_updates(
+        index_id,
+        original_doc_mappings,
+        ingest_before_update,
+        updated_doc_mappings,
+        ingest_after_update,
+        &[
+            ("body:hello", Ok(1)),
+            ("body:world", Ok(1)),
+            // phrases queries won't apply to older splits that didn't support them
+            ("body:\"hello world\"", Ok(0)),
+            ("body:\"hello-world\"", Ok(0)),
+            ("body:bonjour", Ok(0)),
+            ("body:monde", Ok(0)),
+            // the raw tokenizer only returns exact matches
+            ("body:\"bonjour monde\"", Ok(0)),
+            ("body:\"bonjour-monde\"", Ok(1)),
+        ],
+    )
+    .await;
+}
+
+// TODO expected to be fix as part of #5084
+#[tokio::test]
+#[ignore]
+async fn test_update_doc_mappings_tokenizer_add_position() {
+    let index_id = "update-tokenizer-add-position";
+    let original_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "text", "tokenizer": "default"}
+        ]
+    });
+    let ingest_before_update = &[json!({"body": "hello-world"})];
+    let updated_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "text", "tokenizer": "default", "record": "position"}
+        ]
+    });
+    let ingest_after_update = &[json!({"body": "bonjour-monde"})];
+    validate_search_across_doc_mapping_updates(
+        index_id,
+        original_doc_mappings,
+        ingest_before_update,
+        updated_doc_mappings,
+        ingest_after_update,
+        &[
+            ("body:hello", Ok(1)),
+            ("body:world", Ok(1)),
+            // phrases queries don't apply to older splits that didn't support them
+            ("body:\"hello-world\"", Ok(0)),
+            ("body:\"hello world\"", Ok(0)),
+            ("body:bonjour", Ok(1)),
+            ("body:monde", Ok(1)),
+            ("body:\"bonjour-monde\"", Ok(1)),
+            ("body:\"bonjour monde\"", Ok(1)),
+        ],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_update_doc_mappings_tokenizer_raw_to_phrase() {
+    let index_id = "update-tokenizer-raw-to-phrase";
+    let original_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "text", "tokenizer": "raw"}
+        ]
+    });
+    let ingest_before_update = &[json!({"body": "hello-world"})];
+    let updated_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "text", "tokenizer": "default", "record": "position"}
+        ]
+    });
+    let ingest_after_update = &[json!({"body": "bonjour-monde"})];
+    validate_search_across_doc_mapping_updates(
+        index_id,
+        original_doc_mappings,
+        ingest_before_update,
+        updated_doc_mappings,
+        ingest_after_update,
+        &[
+            ("body:hello", Ok(0)),
+            ("body:world", Ok(0)),
+            // raw tokenizer used here, only exact matches returned
+            ("body:\"hello-world\"", Ok(1)),
+            ("body:\"hello world\"", Ok(0)),
+            ("body:bonjour", Ok(1)),
+            ("body:monde", Ok(1)),
+            ("body:\"bonjour-monde\"", Ok(1)),
+            ("body:\"bonjour monde\"", Ok(1)),
+        ],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_update_doc_mappings_add_on_dynamic() {
+    let index_id = "update-add-on-dynamic";
+    let original_doc_mappings = json!({
+        "mode": "dynamic",
+    });
+    let ingest_before_update = &[json!({"body": "hello"})];
+    let updated_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "text"}
+        ]
+    });
+    let ingest_after_update = &[json!({"body": "world"})];
+    validate_search_across_doc_mapping_updates(
+        index_id,
+        original_doc_mappings,
+        ingest_before_update,
+        updated_doc_mappings,
+        ingest_after_update,
+        &[("body:hello", Ok(1)), ("body:world", Ok(1))],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_update_doc_mappings_add_field() {
+    let index_id = "update-add-field";
+    let original_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "text"},
+        ]
+    });
+    let ingest_before_update = &[json!({"body": "hello"})];
+    let updated_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "text"},
+            {"name": "title", "type": "text"},
+        ]
+    });
+    let ingest_after_update = &[json!({"body": "world", "title": "salutations"})];
+    validate_search_across_doc_mapping_updates(
+        index_id,
+        original_doc_mappings,
+        ingest_before_update,
+        updated_doc_mappings,
+        ingest_after_update,
+        &[
+            ("body:hello", Ok(1)),
+            ("body:world", Ok(1)),
+            ("title:salutations", Ok(1)),
+        ],
     )
     .await;
 }
