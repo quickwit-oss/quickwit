@@ -23,7 +23,7 @@ use std::time::Duration;
 use quickwit_config::service::QuickwitService;
 use serde_json::{json, Value};
 
-use super::assert_hit_count;
+use super::assert_hits_unordered;
 use crate::test_utils::ClusterSandbox;
 
 /// Update the doc mapping between 2 calls to local-ingest (forces separate indexing pipelines) and
@@ -34,7 +34,7 @@ async fn validate_search_across_doc_mapping_updates(
     ingest_before_update: &[Value],
     updated_doc_mapping: Value,
     ingest_after_update: &[Value],
-    query_and_expect: &[(&str, Result<u64, ()>)],
+    query_and_expect: &[(&str, Result<&[Value], ()>)],
 ) {
     quickwit_common::setup_logging_for_tests();
     let nodes_services = vec![HashSet::from_iter([
@@ -123,8 +123,8 @@ async fn validate_search_across_doc_mapping_updates(
         .await
         .unwrap();
 
-    for (query, expected_hits) in query_and_expect {
-        assert_hit_count(&sandbox, index_id, query, *expected_hits).await;
+    for (query, expected_hits) in query_and_expect.iter().copied() {
+        assert_hits_unordered(&sandbox, index_id, query, expected_hits).await;
     }
 
     sandbox.shutdown().await.unwrap();
@@ -152,8 +152,8 @@ async fn test_update_doc_mapping_text_to_u64() {
         updated_doc_mappings,
         ingest_after_update,
         &[
-            ("body:14", Ok(1)),
-            ("body:16", Ok(1)),
+            ("body:14", Ok(&[json!({"body": 14})])),
+            ("body:16", Ok(&[json!({"body": 16})])),
             // error expected because the validation is performed
             // by latest doc mapping
             ("body:hello", Err(())),
@@ -186,9 +186,9 @@ async fn test_update_doc_mapping_u64_to_text() {
         updated_doc_mappings,
         ingest_after_update,
         &[
-            ("body:14", Ok(1)),
-            ("body:16", Ok(1)),
-            ("body:hello", Ok(1)),
+            ("body:14", Ok(&[json!({"body": "14"})])),
+            ("body:16", Ok(&[json!({"body": "16"})])),
+            ("body:hello", Ok(&[json!({"body": "hello world"})])),
         ],
     )
     .await;
@@ -219,7 +219,7 @@ async fn test_update_doc_mapping_json_to_text() {
         updated_doc_mappings,
         ingest_after_update,
         &[
-            ("body:hello", Ok(1)),
+            ("body:hello", Ok(&[json!({"body": "hello world"})])),
             // error expected because the validation is performed
             // by latest doc mapping
             ("body.field1:hello", Err(())),
@@ -262,7 +262,16 @@ async fn test_update_doc_mapping_json_to_object() {
         ingest_before_update,
         updated_doc_mappings,
         ingest_after_update,
-        &[("body.field1:hello", Ok(1)), ("body.field1:hola", Ok(1))],
+        &[
+            (
+                "body.field1:hello",
+                Ok(&[json!({"body": {"field1": "hello"}})]),
+            ),
+            (
+                "body.field1:hola",
+                Ok(&[json!({"body": {"field1": "hola"}})]),
+            ),
+        ],
     )
     .await;
 }
@@ -291,16 +300,19 @@ async fn test_update_doc_mapping_tokenizer_default_to_raw() {
         updated_doc_mappings,
         ingest_after_update,
         &[
-            ("body:hello", Ok(1)),
-            ("body:world", Ok(1)),
+            ("body:hello", Ok(&[json!({"body": "hello-world"})])),
+            ("body:world", Ok(&[json!({"body": "bonjour-monde"})])),
             // phrases queries won't apply to older splits that didn't support them
-            ("body:\"hello world\"", Ok(0)),
-            ("body:\"hello-world\"", Ok(0)),
-            ("body:bonjour", Ok(0)),
-            ("body:monde", Ok(0)),
+            ("body:\"hello world\"", Ok(&[])),
+            ("body:\"hello-world\"", Ok(&[])),
+            ("body:bonjour", Ok(&[])),
+            ("body:monde", Ok(&[])),
             // the raw tokenizer only returns exact matches
-            ("body:\"bonjour monde\"", Ok(0)),
-            ("body:\"bonjour-monde\"", Ok(1)),
+            ("body:\"bonjour monde\"", Ok(&[])),
+            (
+                "body:\"bonjour-monde\"",
+                Ok(&[json!({"body": "bonjour-monde"})]),
+            ),
         ],
     )
     .await;
@@ -330,15 +342,21 @@ async fn test_update_doc_mapping_tokenizer_add_position() {
         updated_doc_mappings,
         ingest_after_update,
         &[
-            ("body:hello", Ok(1)),
-            ("body:world", Ok(1)),
+            ("body:hello", Ok(&[json!({"body": "hello-world"})])),
+            ("body:world", Ok(&[json!({"body": "hello-world"})])),
             // phrases queries don't apply to older splits that didn't support them
-            ("body:\"hello-world\"", Ok(0)),
-            ("body:\"hello world\"", Ok(0)),
-            ("body:bonjour", Ok(1)),
-            ("body:monde", Ok(1)),
-            ("body:\"bonjour-monde\"", Ok(1)),
-            ("body:\"bonjour monde\"", Ok(1)),
+            ("body:\"hello-world\"", Ok(&[])),
+            ("body:\"hello world\"", Ok(&[])),
+            ("body:bonjour", Ok(&[json!({"body": "bonjour-monde"})])),
+            ("body:monde", Ok(&[json!({"body": "bonjour-monde"})])),
+            (
+                "body:\"bonjour-monde\"",
+                Ok(&[json!({"body": "bonjour-monde"})]),
+            ),
+            (
+                "body:\"bonjour monde\"",
+                Ok(&[json!({"body": "bonjour-monde"})]),
+            ),
         ],
     )
     .await;
@@ -366,15 +384,24 @@ async fn test_update_doc_mapping_tokenizer_raw_to_phrase() {
         updated_doc_mappings,
         ingest_after_update,
         &[
-            ("body:hello", Ok(0)),
-            ("body:world", Ok(0)),
+            ("body:hello", Ok(&[])),
+            ("body:world", Ok(&[])),
             // raw tokenizer used here, only exact matches returned
-            ("body:\"hello-world\"", Ok(1)),
-            ("body:\"hello world\"", Ok(0)),
-            ("body:bonjour", Ok(1)),
-            ("body:monde", Ok(1)),
-            ("body:\"bonjour-monde\"", Ok(1)),
-            ("body:\"bonjour monde\"", Ok(1)),
+            (
+                "body:\"hello-world\"",
+                Ok(&[json!({"body": "hello-world"})]),
+            ),
+            ("body:\"hello world\"", Ok(&[])),
+            ("body:bonjour", Ok(&[json!({"body": "bonjour-monde"})])),
+            ("body:monde", Ok(&[json!({"body": "bonjour-monde"})])),
+            (
+                "body:\"bonjour-monde\"",
+                Ok(&[json!({"body": "bonjour-monde"})]),
+            ),
+            (
+                "body:\"bonjour monde\"",
+                Ok(&[json!({"body": "bonjour-monde"})]),
+            ),
         ],
     )
     .await;
@@ -401,9 +428,15 @@ async fn test_update_doc_mapping_strict_to_dynamic() {
         updated_doc_mappings,
         ingest_after_update,
         &[
-            ("body:hello", Ok(1)),
-            ("body:world", Ok(1)),
-            ("title:salutations", Ok(1)),
+            ("body:hello", Ok(&[json!({"body": "hello"})])),
+            (
+                "body:world",
+                Ok(&[json!({"body": "world", "title": "salutations"})]),
+            ),
+            (
+                "title:salutations",
+                Ok(&[json!({"body": "world", "title": "salutations"})]),
+            ),
         ],
     )
     .await;
@@ -429,7 +462,10 @@ async fn test_update_doc_mapping_dynamic_to_strict() {
         ingest_before_update,
         updated_doc_mappings,
         ingest_after_update,
-        &[("body:hello", Ok(1)), ("body:world", Ok(1))],
+        &[
+            ("body:hello", Ok(&[json!({"body": "hello"})])),
+            ("body:world", Ok(&[json!({"body": "world"})])),
+        ],
     )
     .await;
 }
@@ -459,9 +495,15 @@ async fn test_update_doc_mapping_add_field_on_strict() {
         updated_doc_mappings,
         ingest_after_update,
         &[
-            ("body:hello", Ok(1)),
-            ("body:world", Ok(1)),
-            ("title:salutations", Ok(1)),
+            ("body:hello", Ok(&[json!({"body": "hello"})])),
+            (
+                "body:world",
+                Ok(&[json!({"body": "world", "title": "salutations"})]),
+            ),
+            (
+                "title:salutations",
+                Ok(&[json!({"body": "world", "title": "salutations"})]),
+            ),
         ],
     )
     .await;

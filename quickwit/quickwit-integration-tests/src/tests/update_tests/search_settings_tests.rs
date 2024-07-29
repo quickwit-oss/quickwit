@@ -24,7 +24,7 @@ use quickwit_config::service::QuickwitService;
 use quickwit_rest_client::rest_client::CommitType;
 use serde_json::json;
 
-use super::assert_hit_count;
+use super::assert_hits_unordered;
 use crate::ingest_json;
 use crate::test_utils::{ingest_with_retry, ClusterSandbox};
 
@@ -103,7 +103,7 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
     tokio::time::sleep(Duration::from_secs(4)).await;
 
     // No hit because `default_search_fields`` only covers the `title` field
-    assert_hit_count(&sandbox, "my-updatable-index", "record", Ok(0)).await;
+    assert_hits_unordered(&sandbox, "my-updatable-index", "record", Ok(&[])).await;
 
     // Update the index to also search `body` by default, the same search should
     // now have 1 hit
@@ -131,7 +131,13 @@ async fn test_update_search_settings_on_multi_nodes_cluster() {
         .await
         .unwrap();
 
-    assert_hit_count(&sandbox, "my-updatable-index", "record", Ok(1)).await;
+    assert_hits_unordered(
+        &sandbox,
+        "my-updatable-index",
+        "record",
+        Ok(&[json!({"title": "first", "body": "first record"})]),
+    )
+    .await;
 
     sandbox.shutdown().await.unwrap();
 }
