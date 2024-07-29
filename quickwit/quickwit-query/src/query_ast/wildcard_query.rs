@@ -198,3 +198,58 @@ impl BuildTantivyAst for WildcardQuery {
         Ok(phrase_prefix_query.into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tantivy::schema::{TextFieldIndexing, TextOptions};
+
+    use super::*;
+    use crate::create_default_quickwit_tokenizer_manager;
+
+    #[test]
+    fn test_extract_term_for_wildcard() {
+        let query = WildcardQuery {
+            field: "my_field".to_string(),
+            value: "MyString Wh1ch a nOrMal Tokenizer would cut*".to_string(),
+        };
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+        for tokenizer in ["raw", "whitespace"] {
+            let mut schema_builder = TantivySchema::builder();
+            let text_options = TextOptions::default()
+                .set_indexing_options(TextFieldIndexing::default().set_tokenizer(tokenizer));
+            schema_builder.add_text_field("my_field", text_options);
+            let schema = schema_builder.build();
+
+            let (_field, term) = query
+                .extract_prefix_term(&schema, &tokenizer_manager)
+                .unwrap();
+            let value = term.value();
+            let text = value.as_str().unwrap();
+            assert_eq!(text, query.value.trim_end_matches('*'));
+        }
+
+        for tokenizer in [
+            "raw_lowercase",
+            "lowercase",
+            "default",
+            "en_stem",
+            "chinese_compatible",
+            "source_code_default",
+            "source_code_with_hex",
+        ] {
+            let mut schema_builder = TantivySchema::builder();
+            let text_options = TextOptions::default()
+                .set_indexing_options(TextFieldIndexing::default().set_tokenizer(tokenizer));
+            schema_builder.add_text_field("my_field", text_options);
+            let schema = schema_builder.build();
+
+            let (_field, term) = query
+                .extract_prefix_term(&schema, &tokenizer_manager)
+                .unwrap();
+
+            let value = term.value();
+            let text = value.as_str().unwrap();
+            assert_eq!(text, &query.value.trim_end_matches('*').to_lowercase());
+        }
+    }
+}

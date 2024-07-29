@@ -1207,6 +1207,11 @@ pub async fn search_plan(
             .terms_grouped_by_field
             .values()
             .map(|terms: &HashMap<tantivy::Term, bool>| terms.len())
+            .sum::<usize>()
+        + warmup_info
+            .term_ranges_grouped_by_field
+            .values()
+            .map(|terms: &HashMap<_, bool>| terms.len())
             .sum::<usize>();
     let position_query_count = warmup_info
         .terms_grouped_by_field
@@ -1217,7 +1222,17 @@ pub async fn search_plan(
                 .filter(|load_position| **load_position)
                 .count()
         })
-        .sum();
+        .sum::<usize>()
+        + warmup_info
+            .term_ranges_grouped_by_field
+            .values()
+            .map(|terms: &HashMap<_, bool>| {
+                terms
+                    .values()
+                    .filter(|load_position| **load_position)
+                    .count()
+            })
+            .sum::<usize>();
     Ok(SearchPlanResponse {
         result: serde_json::to_string(&SearchPlanResponseRest {
             quickwit_ast: request_metadata.query_ast_resolved,
