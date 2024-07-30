@@ -123,7 +123,8 @@ hostname = "0.3"
 http = "0.2.9"
 http-serde = "1.1.2"
 humantime = "2.1.0"
-hyper = { version = "0.14", features = [
+h2 = "= 0.3.26"
+hyper = { version = "=0.14.28", features = [
   "client",
   "http1",
   "http2",
