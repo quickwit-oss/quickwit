@@ -22,14 +22,14 @@ use std::time::Duration;
 
 use quickwit_config::service::QuickwitService;
 use quickwit_rest_client::rest_client::CommitType;
-use quickwit_serve::SearchRequestQueryString;
 use serde_json::json;
 
+use super::assert_hits_unordered;
 use crate::ingest_json;
 use crate::test_utils::{ingest_with_retry, ClusterSandbox};
 
 #[tokio::test]
-async fn test_update_on_multi_nodes_cluster() {
+async fn test_update_search_settings_on_multi_nodes_cluster() {
     quickwit_common::setup_logging_for_tests();
     let nodes_services = vec![
         HashSet::from_iter([QuickwitService::Searcher]),
@@ -56,7 +56,7 @@ async fn test_update_on_multi_nodes_cluster() {
         assert_eq!(indexing_service_counters.num_running_pipelines, 0);
     }
 
-    // Create index
+    // Create an index
     sandbox
         .indexer_rest_client
         .indexes()
@@ -87,36 +87,28 @@ async fn test_update_on_multi_nodes_cluster() {
         .await
         .unwrap());
 
-    // Wait until indexing pipelines are started.
+    // Wait until indexing pipelines are started
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
 
-    // Check that ingest request send to searcher is forwarded to indexer and thus indexed.
     ingest_with_retry(
-        &sandbox.searcher_rest_client,
+        &sandbox.indexer_rest_client,
         "my-updatable-index",
         ingest_json!({"title": "first", "body": "first record"}),
         CommitType::Auto,
     )
     .await
     .unwrap();
-    // Wait until split is committed and search.
+
+    // Wait until split is committed
     tokio::time::sleep(Duration::from_secs(4)).await;
-    // No hit because default_search_fields covers "title" only
-    let search_response_no_hit = sandbox
-        .searcher_rest_client
-        .search(
-            "my-updatable-index",
-            SearchRequestQueryString {
-                query: "record".to_string(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(search_response_no_hit.num_hits, 0);
-    // Update index to also search "body" by default, search should now have 1 hit
+
+    // No hit because `default_search_fields`` only covers the `title` field
+    assert_hits_unordered(&sandbox, "my-updatable-index", "record", Ok(&[])).await;
+
+    // Update the index to also search `body` by default, the same search should
+    // now have 1 hit
     sandbox
-        .searcher_rest_client
+        .indexer_rest_client
         .indexes()
         .update(
             "my-updatable-index",
@@ -138,17 +130,14 @@ async fn test_update_on_multi_nodes_cluster() {
         )
         .await
         .unwrap();
-    let search_response_no_hit = sandbox
-        .searcher_rest_client
-        .search(
-            "my-updatable-index",
-            SearchRequestQueryString {
-                query: "record".to_string(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(search_response_no_hit.num_hits, 1);
+
+    assert_hits_unordered(
+        &sandbox,
+        "my-updatable-index",
+        "record",
+        Ok(&[json!({"title": "first", "body": "first record"})]),
+    )
+    .await;
+
     sandbox.shutdown().await.unwrap();
 }

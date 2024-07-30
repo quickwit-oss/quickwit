@@ -19,4 +19,4 @@
 
 mod basic_tests;
 mod index_tests;
-mod index_update_tests;
+mod update_tests;

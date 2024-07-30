@@ -6049,6 +6049,7 @@ dependencies = [
  "hyper 0.14.29",
  "itertools 0.13.0",
  "quickwit-actors",
+ "quickwit-cli",
  "quickwit-common",
  "quickwit-config",
  "quickwit-metastore",
