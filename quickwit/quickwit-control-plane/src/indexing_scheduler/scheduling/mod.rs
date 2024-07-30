@@ -280,7 +280,9 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
             // Ingest V1 is simple. One pipeline per indexer node.
             if let Some(indexing_task) = previous_tasks.first() {
                 // The pipeline already exists, let's reuse it.
-                vec![(*indexing_task).clone()]
+                let mut indexing_task = (*indexing_task).clone();
+                indexing_task.restart = indexes_to_restart.contains(&source.source_uid.index_uid);
+                vec![indexing_task]
             } else {
                 // The source is new, we need to create a new task.
                 vec![IndexingTask {
@@ -288,7 +290,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
                     source_id: source.source_uid.source_id.clone(),
                     pipeline_uid: Some(PipelineUid::random()),
                     shard_ids: Vec::new(),
-                    restart: indexes_to_restart.contains(&source.source_uid.index_uid),
+                    restart: false,
                 }]
             }
         }

@@ -404,6 +404,7 @@ struct IndexingPlansDiff<'a> {
     pub unplanned_node_ids: FnvHashSet<&'a str>,
     pub missing_tasks_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
     pub unplanned_tasks_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
+    pub tasks_to_restart_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
 }
 
 impl<'a> IndexingPlansDiff<'a> {
@@ -425,8 +426,14 @@ impl<'a> IndexingPlansDiff<'a> {
                 == 0
     }
 
+    fn has_no_restart_tasks(&self) -> bool {
+        self.tasks_to_restart_by_node_id
+            .values()
+            .all(|tasks_to_restart| tasks_to_restart.is_empty())
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.has_same_nodes() && self.has_same_tasks()
+        self.has_same_nodes() && self.has_same_tasks() && self.has_no_restart_tasks()
     }
 }
 
@@ -488,6 +495,11 @@ impl<'a> fmt::Debug for IndexingPlansDiff<'a> {
         if !self.unplanned_tasks_by_node_id.is_empty() {
             write!(formatter, "{separator}unplanned_tasks_by_node_id=",)?;
             format_indexing_task_map(formatter, &self.unplanned_tasks_by_node_id)?;
+            separator = ", "
+        }
+        if !self.tasks_to_restart_by_node_id.is_empty() {
+            write!(formatter, "{separator}tasks_to_restart_by_node_id=",)?;
+            format_indexing_task_map(formatter, &self.tasks_to_restart_by_node_id)?;
         }
         write!(formatter, ")")
     }
@@ -596,6 +608,8 @@ fn get_indexing_plans_diff<'a>(
     let mut missing_tasks_by_node_id: FnvHashMap<&str, Vec<&IndexingTask>> = FnvHashMap::default();
     let mut unplanned_tasks_by_node_id: FnvHashMap<&str, Vec<&IndexingTask>> =
         FnvHashMap::default();
+    let mut tasks_to_restart_by_node_id: FnvHashMap<&str, Vec<&IndexingTask>> =
+        FnvHashMap::default();
     for node_id in running_node_ids.iter().chain(planned_node_ids.iter()) {
         let running_tasks = running_plan
             .get(*node_id)
@@ -609,12 +623,16 @@ fn get_indexing_plans_diff<'a>(
             get_indexing_tasks_diff(running_tasks, last_applied_tasks);
         missing_tasks_by_node_id.insert(*node_id, missing_tasks);
         unplanned_tasks_by_node_id.insert(*node_id, unplanned_tasks);
+
+        let tasks_to_restart = running_tasks.iter().filter(|task| task.restart).collect();
+        tasks_to_restart_by_node_id.insert(*node_id, tasks_to_restart);
     }
     IndexingPlansDiff {
         missing_node_ids,
         unplanned_node_ids,
         missing_tasks_by_node_id,
         unplanned_tasks_by_node_id,
+        tasks_to_restart_by_node_id,
     }
 }
 
@@ -1021,6 +1039,7 @@ mod tests {
             unplanned_node_ids: FnvHashSet::default(),
             missing_tasks_by_node_id: map,
             unplanned_tasks_by_node_id: FnvHashMap::default(),
+            tasks_to_restart_by_node_id: FnvHashMap::default(),
         };
 
         let debug = format!("{plan:?}");
