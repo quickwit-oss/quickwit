@@ -22,11 +22,26 @@ use quickwit_doc_mapper::QueryParserError;
 use quickwit_proto::error::grpc_error_to_grpc_status;
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
 use quickwit_proto::{tonic, GrpcServiceError, ServiceError, ServiceErrorCode};
-use quickwit_storage::StorageResolverError;
+use quickwit_storage::{StorageError, StorageResolverError};
 use serde::{Deserialize, Serialize};
 use tantivy::TantivyError;
 use thiserror::Error;
 use tokio::task::JoinError;
+
+
+#[derive(Error, Debug)]
+pub(crate) enum SingleSplitLeafSearchError {
+    #[error("panic")]
+    Panic,
+    #[error("missing split")]
+    MissingSplit,
+    #[error("storage error: {0}")]
+    StorageError(#[from] StorageError),
+    #[error("tantivy error: {0}")]
+    TantivyError(#[from] TantivyError),
+    #[error("invalid query")]
+    InvalidQuery(String),
+}
 
 /// Possible SearchError
 #[allow(missing_docs)]
