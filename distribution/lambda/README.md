@@ -95,6 +95,12 @@ simplify the setup and avoid unstable deployments.
 [1]: https://rust-lang-nursery.github.io/rust-cookbook/development_tools/debugging/config_log.html
 
 
+> [!TIP]  
+> The Indexer Lambda's logging is quite verbose. To reduce the associated
+> CloudWatch costs, you can disable some lower level logs by setting the
+> `RUST_LOG` environment variable to `info,quickwit_actors=warn`, or disable
+> INFO logs altogether by setting `RUST_LOG=warn`.
+
 Indexer only:
 | Variable | Description | Default |
 |---|---|---|
@@ -151,7 +157,13 @@ You can query and visualize the Quickwit Searcher Lambda from Grafana by using t
 
 #### Configure Grafana data source
 
-You need to provide the following information.
+If you don't have a Grafana instance running yet, you can start one with the Quickwit plugin installed using Docker:
+
+```bash
+docker run -e GF_INSTALL_PLUGINS="quickwit-quickwit-datasource" -p 3000:3000 grafana/grafana
+```
+
+In the `Connections > Data sources` page, add a new Quickwit data source and configure the following settings:
 
 |Variable|Description|Example|
 |--|--|--|
@@ -159,4 +171,4 @@ You need to provide the following information.
 |Custom HTTP Headers| If you configure API Gateway to require an API key, set `x-api-key` HTTP Header | Header: `x-api-key` <br> Value: API key value|
 |Index ID| Same as `QW_LAMBDA_INDEX_ID` | hdfs-logs |
 
-After entering these values, click "Save & test" and you can now query your Quickwit Lambda from Grafana!
+After entering these values, click "Save & test". You can now query your Quickwit Lambda from Grafana!

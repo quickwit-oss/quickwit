@@ -165,7 +165,12 @@ class MockDataStack(Stack):
             index_id=index_id,
             index_config_bucket=index_config.s3_bucket_name,
             index_config_key=index_config.s3_object_key,
-            indexer_environment=lambda_env,
+            indexer_environment={
+                # the actor system is very verbose when the source is shutting
+                # down (each Lambda invocation)
+                "RUST_LOG": "info,quickwit_actors=warn",
+                **lambda_env,
+            },
             searcher_environment=lambda_env,
             indexer_package_location=indexer_package_location,
             searcher_package_location=searcher_package_location,
