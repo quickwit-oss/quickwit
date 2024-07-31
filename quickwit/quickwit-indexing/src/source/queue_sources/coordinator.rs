@@ -22,64 +22,66 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_config::QueueParams;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::SourceType;
 use quickwit_storage::StorageResolver;
-use serde_json::{json, Value as JsonValue};
+use serde::Serialize;
 use tracing::debug;
 use ulid::Ulid;
 
 use super::local_state::QueueLocalState;
-use super::message::ReadyMessage;
+use super::memory_queue::MemoryQueue;
+use super::message::{InProgressMessage, MessageType, ReadyMessage};
 use super::shared_state::{QueueSharedState, QueueSharedStateImpl};
 use super::visibility::spawn_visibility_task;
-use super::Queue;
+use super::{Queue, Received};
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 use crate::source::{SourceContext, SourceRuntime};
 
-#[derive(Default)]
-pub struct QueueProcessorObservableState {
+#[derive(Default, Serialize)]
+pub struct QueueCoordinatorObservableState {
     /// Number of bytes processed by the source.
-    num_bytes_processed: u64,
+    pub num_bytes_processed: u64,
+    /// Number of lines processed by the source.
+    pub num_lines_processed: u64,
     /// Number of messages processed by the source.
-    num_messages_processed: u64,
+    pub nnum_messages_processed: u64,
     // Number of invalid messages, i.e., that were empty or could not be parsed.
-    num_invalid_messages: u64,
+    pub num_invalid_messages: u64,
     /// Number of time we looped without getting a single message
-    num_consecutive_empty_batches: u64,
+    pub num_consecutive_empty_batches: u64,
 }
 
-pub struct QueueProcessor {
+pub struct QueueCoordinator {
     storage_resolver: StorageResolver,
     pipeline_id: IndexingPipelineId,
     source_type: SourceType,
     queue: Arc<dyn Queue>,
-    observable_state: QueueProcessorObservableState,
-    queue_params: QueueParams,
+    observable_state: QueueCoordinatorObservableState,
+    message_type: MessageType,
     publish_lock: PublishLock,
     shared_state: Box<dyn QueueSharedState>,
     local_state: QueueLocalState,
     publish_token: String,
 }
 
-impl fmt::Debug for QueueProcessor {
+impl fmt::Debug for QueueCoordinator {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
-            .debug_struct("QueueProcessor")
+            .debug_struct("QueueTracker")
             .field("index_id", &self.pipeline_id.index_uid.index_id)
             .field("queue", &self.queue)
             .finish()
     }
 }
 
-impl QueueProcessor {
+impl QueueCoordinator {
     pub fn new(
         source_runtime: SourceRuntime,
         queue: Arc<dyn Queue>,
-        queue_params: QueueParams,
+        message_type: MessageType,
     ) -> Self {
         Self {
             shared_state: Box::new(QueueSharedStateImpl {
@@ -92,8 +94,31 @@ impl QueueProcessor {
             source_type: source_runtime.source_config.source_type(),
             storage_resolver: source_runtime.storage_resolver,
             queue,
-            observable_state: QueueProcessorObservableState::default(),
-            queue_params,
+            observable_state: QueueCoordinatorObservableState::default(),
+            message_type,
+            publish_lock: PublishLock::default(),
+            publish_token: Ulid::new().to_string(),
+        }
+    }
+
+    pub fn for_stdin(source_runtime: SourceRuntime) -> Self {
+        let queue = MemoryQueue::default();
+        queue.send_end_of_queue();
+        let mut local_state = QueueLocalState::default();
+        local_state.replace_currently_read(Some(InProgressMessage::stdin()));
+        Self {
+            shared_state: Box::new(QueueSharedStateImpl {
+                metastore: source_runtime.metastore,
+                source_id: source_runtime.pipeline_id.source_id.clone(),
+                index_uid: source_runtime.pipeline_id.index_uid.clone(),
+            }),
+            local_state: QueueLocalState::default(),
+            pipeline_id: source_runtime.pipeline_id,
+            source_type: source_runtime.source_config.source_type(),
+            storage_resolver: source_runtime.storage_resolver,
+            queue: Arc::new(queue),
+            observable_state: QueueCoordinatorObservableState::default(),
+            message_type: MessageType::RawUri,
             publish_lock: PublishLock::default(),
             publish_token: Ulid::new().to_string(),
         }
@@ -116,9 +141,17 @@ impl QueueProcessor {
     }
 
     /// Polls messages from the queue and prepares them for processing
-    async fn poll_messages(&mut self, ctx: &SourceContext) -> anyhow::Result<()> {
+    async fn poll_messages(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         // receive() typically uses long polling so it can be long to respond
-        let raw_messages = ctx.protect_future(self.queue.receive()).await?;
+        let received = ctx.protect_future(self.queue.receive()).await?;
+
+        let raw_messages = if let Received::Messages(msg) = received {
+            msg
+        } else {
+            // TODO: send exit with success
+            // ctx.send_exit_with_success(doc_processor_mailbox).await?;
+            return Err(ActorExitStatus::Success);
+        };
 
         if raw_messages.is_empty() {
             self.observable_state.num_consecutive_empty_batches += 1;
@@ -129,8 +162,10 @@ impl QueueProcessor {
 
         let preprocessed_messages = raw_messages
             .into_iter()
-            .map(|msg| msg.pre_process(self.queue_params.message_type))
+            .map(|msg| msg.pre_process(self.message_type))
             .collect::<anyhow::Result<Vec<_>>>()?;
+
+        // TODO deduplicate the batch itself
 
         let mut untracked_locally = Vec::new();
         let mut already_completed = Vec::new();
@@ -186,14 +221,21 @@ impl QueueProcessor {
         if let Some(msg) = self.local_state.read_in_progress_mut() {
             debug!("process_batch");
             // TODO: should we kill the publish lock if the message visibility extension fails?
-            msg.process_batch(doc_processor_mailbox, ctx).await?;
+            let batch_builder = msg.read_batch(ctx, self.source_type).await?;
+            if batch_builder.num_bytes > 0 {
+                self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
+                self.observable_state.num_bytes_processed += batch_builder.num_bytes;
+                doc_processor_mailbox
+                    .send_message(batch_builder.build())
+                    .await?;
+            }
             if msg.is_eof() {
                 self.local_state.replace_currently_read(None);
             }
         } else if let Some(ready_message) = self.local_state.get_ready_for_read() {
             debug!("start_processing");
             let new_in_progress = ready_message
-                .start_processing(&self.storage_resolver, self.source_type)
+                .start_processing(&self.storage_resolver)
                 .await?;
             self.local_state.replace_currently_read(new_in_progress);
         } else {
@@ -223,15 +265,8 @@ impl QueueProcessor {
         self.queue.acknowledge(&completed).await
     }
 
-    pub fn observable_state(&self) -> JsonValue {
-        json!({
-            "index_id": self.pipeline_id.index_uid.index_id.clone(),
-            "source_id": self.pipeline_id.source_id.clone(),
-            "num_bytes_processed": self.observable_state.num_bytes_processed,
-            "num_messages_processed": self.observable_state.num_messages_processed,
-            "num_invalid_messages": self.observable_state.num_invalid_messages,
-            "num_consecutive_empty_batches": self.observable_state.num_consecutive_empty_batches,
-        })
+    pub fn observable_state(&self) -> &QueueCoordinatorObservableState {
+        &self.observable_state
     }
 }
 
@@ -241,7 +276,6 @@ mod tests {
 
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::uri::Uri;
-    use quickwit_config::QueueMessageType;
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
     use tokio::sync::watch;
     use ulid::Ulid;
@@ -256,28 +290,25 @@ mod tests {
     };
     use crate::source::{SourceActor, BATCH_NUM_BYTES_LIMIT};
 
-    fn setup_processor(
+    fn setup_coordinator(
         queue: Arc<MemoryQueue>,
         shared_state: InMemoryQueueSharedState,
-    ) -> QueueProcessor {
+    ) -> QueueCoordinator {
         let pipeline_id = IndexingPipelineId {
             node_id: NodeId::from_str("test-node").unwrap(),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::random(),
         };
-        let queue_params = QueueParams {
-            message_type: QueueMessageType::RawUri,
-        };
 
-        QueueProcessor {
+        QueueCoordinator {
             local_state: QueueLocalState::default(),
             shared_state: Box::new(shared_state.clone()),
             pipeline_id,
-            observable_state: QueueProcessorObservableState::default(),
+            observable_state: QueueCoordinatorObservableState::default(),
             publish_lock: PublishLock::default(),
             queue,
-            queue_params,
+            message_type: MessageType::RawUri,
             source_type: SourceType::Unspecified,
             storage_resolver: StorageResolver::for_test(),
             publish_token: Ulid::new().to_string(),
@@ -285,7 +316,7 @@ mod tests {
     }
 
     async fn process_messages(
-        processor: &mut QueueProcessor,
+        tracker: &mut QueueCoordinator,
         queue: Arc<MemoryQueue>,
         messages: &[(&Uri, &str)],
     ) -> Vec<RawDocBatch> {
@@ -297,12 +328,12 @@ mod tests {
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
-        processor
+        tracker
             .initialize(&doc_processor_mailbox, &ctx)
             .await
             .unwrap();
 
-        processor
+        tracker
             .emit_batches(&doc_processor_mailbox, &ctx)
             .await
             .unwrap();
@@ -313,7 +344,7 @@ mod tests {
 
         // Need 3 iterations for each msg to emit the first batch (receive, start, emit)
         for _ in 0..(messages.len() * 4) {
-            processor
+            tracker
                 .emit_batches(&doc_processor_mailbox, &ctx)
                 .await
                 .unwrap();
@@ -331,8 +362,8 @@ mod tests {
     async fn test_process_empty_queue() {
         let queue = Arc::new(MemoryQueue::default());
         let shared_state = InMemoryQueueSharedState::default();
-        let mut processor = setup_processor(queue.clone(), shared_state);
-        let batches = process_messages(&mut processor, queue, &[]).await;
+        let mut coordinator = setup_coordinator(queue.clone(), shared_state);
+        let batches = process_messages(&mut coordinator, queue, &[]).await;
         assert_eq!(batches.len(), 0);
     }
 
@@ -340,29 +371,29 @@ mod tests {
     async fn test_process_one_small_message() {
         let queue = Arc::new(MemoryQueue::default());
         let shared_state = InMemoryQueueSharedState::default();
-        let mut processor = setup_processor(queue.clone(), shared_state.clone());
+        let mut coordinator = setup_coordinator(queue.clone(), shared_state.clone());
         let dummy_doc_file = generate_dummy_doc_file(false, 10).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let partition_id = PreProcessedPayload::ObjectUri(test_uri.clone()).partition_id();
-        let batches = process_messages(&mut processor, queue, &[(&test_uri, "ack-id")]).await;
+        let batches = process_messages(&mut coordinator, queue, &[(&test_uri, "ack-id")]).await;
         assert_eq!(batches.len(), 1);
         assert_eq!(batches[0].docs.len(), 10);
         assert_eq!(
             shared_state.get(&partition_id),
-            SharedStateForPartition::InProgress(processor.publish_token)
+            SharedStateForPartition::InProgress(coordinator.publish_token)
         );
-        assert!(processor.local_state.is_awating_commit(&partition_id));
+        assert!(coordinator.local_state.is_awating_commit(&partition_id));
     }
 
     #[tokio::test]
     async fn test_process_one_big_message() {
         let queue = Arc::new(MemoryQueue::default());
         let shared_state = InMemoryQueueSharedState::default();
-        let mut processor = setup_processor(queue.clone(), shared_state);
+        let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let lines = BATCH_NUM_BYTES_LIMIT as usize / DUMMY_DOC.len() + 1;
         let dummy_doc_file = generate_dummy_doc_file(true, lines).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
-        let batches = process_messages(&mut processor, queue, &[(&test_uri, "ack-id")]).await;
+        let batches = process_messages(&mut coordinator, queue, &[(&test_uri, "ack-id")]).await;
         assert_eq!(batches.len(), 2);
         assert_eq!(batches.iter().map(|b| b.docs.len()).sum::<usize>(), lines);
     }
@@ -371,13 +402,13 @@ mod tests {
     async fn test_process_two_messages_different_compression() {
         let queue = Arc::new(MemoryQueue::default());
         let shared_state = InMemoryQueueSharedState::default();
-        let mut processor = setup_processor(queue.clone(), shared_state);
+        let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let dummy_doc_file_1 = generate_dummy_doc_file(false, 10).await;
         let test_uri_1 = Uri::from_str(dummy_doc_file_1.path().to_str().unwrap()).unwrap();
         let dummy_doc_file_2 = generate_dummy_doc_file(true, 10).await;
         let test_uri_2 = Uri::from_str(dummy_doc_file_2.path().to_str().unwrap()).unwrap();
         let batches = process_messages(
-            &mut processor,
+            &mut coordinator,
             queue,
             &[(&test_uri_1, "ack-id-1"), (&test_uri_2, "ack-id-2")],
         )
@@ -390,11 +421,11 @@ mod tests {
     async fn test_process_local_duplicate_message() {
         let queue = Arc::new(MemoryQueue::default());
         let shared_state = InMemoryQueueSharedState::default();
-        let mut processor = setup_processor(queue.clone(), shared_state);
+        let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let dummy_doc_file = generate_dummy_doc_file(false, 10).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let batches = process_messages(
-            &mut processor,
+            &mut coordinator,
             queue,
             &[(&test_uri, "ack-id-1"), (&test_uri, "ack-id-2")],
         )
@@ -407,25 +438,25 @@ mod tests {
     async fn test_process_shared_duplicate_message() {
         let queue = Arc::new(MemoryQueue::default());
         let shared_state = InMemoryQueueSharedState::default();
-        let mut processor = setup_processor(queue.clone(), shared_state.clone());
+        let mut coordinator = setup_coordinator(queue.clone(), shared_state.clone());
         let dummy_doc_file = generate_dummy_doc_file(false, 10).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let partition_id = PreProcessedPayload::ObjectUri(test_uri.clone()).partition_id();
 
         shared_state.set(partition_id.clone(), SharedStateForPartition::Completed);
 
-        assert!(!processor.local_state.is_tracked(&partition_id));
-        let batches = process_messages(&mut processor, queue, &[(&test_uri, "ack-id-1")]).await;
+        assert!(!coordinator.local_state.is_tracked(&partition_id));
+        let batches = process_messages(&mut coordinator, queue, &[(&test_uri, "ack-id-1")]).await;
         assert_eq!(batches.len(), 0);
-        assert!(processor.local_state.is_completed(&partition_id));
+        assert!(coordinator.local_state.is_completed(&partition_id));
     }
 
     #[tokio::test]
-    async fn test_process_multiple_processor() {
+    async fn test_process_multiple_coordinator() {
         let queue = Arc::new(MemoryQueue::default());
         let shared_state = InMemoryQueueSharedState::default();
-        let mut proc_1 = setup_processor(queue.clone(), shared_state.clone());
-        let mut proc_2 = setup_processor(queue.clone(), shared_state.clone());
+        let mut proc_1 = setup_coordinator(queue.clone(), shared_state.clone());
+        let mut proc_2 = setup_coordinator(queue.clone(), shared_state.clone());
         let dummy_doc_file = generate_dummy_doc_file(false, 10).await;
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let partition_id = PreProcessedPayload::ObjectUri(test_uri.clone()).partition_id();

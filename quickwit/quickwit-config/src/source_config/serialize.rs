@@ -24,7 +24,10 @@ use quickwit_proto::types::SourceId;
 use serde::{Deserialize, Serialize};
 
 use super::{TransformConfig, RESERVED_SOURCE_IDS};
-use crate::{validate_identifier, ConfigFormat, SourceConfig, SourceInputFormat, SourceParams};
+use crate::{
+    validate_identifier, ConfigFormat, FileSourceParams, SourceConfig, SourceInputFormat,
+    SourceParams,
+};
 
 type SourceConfigForSerialization = SourceConfigV0_8;
 
@@ -80,7 +83,7 @@ impl SourceConfigForSerialization {
         match &self.source_params {
             // We want to forbid source_config with no filepath
             SourceParams::File(file_params) => {
-                if file_params.filepath.is_none() {
+                if matches!(file_params, FileSourceParams::Stdin) {
                     bail!(
                         "source `{}` of type `file` must contain a filepath",
                         self.source_id

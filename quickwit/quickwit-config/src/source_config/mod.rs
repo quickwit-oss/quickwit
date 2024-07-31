@@ -233,17 +233,15 @@ pub enum SourceParams {
 
 impl SourceParams {
     pub fn file_from_uri(uri: Uri) -> Self {
-        Self::File(FileSourceParams {
-            filepath: Some(uri),
-        })
+        Self::File(FileSourceParams::FileUri(FileSourceUri { filepath: uri }))
     }
 
     pub fn file_from_str<P: AsRef<str>>(filepath: P) -> anyhow::Result<Self> {
-        FileSourceParams::from_str(filepath.as_ref()).map(Self::File)
+        Uri::from_str(filepath.as_ref()).map(Self::file_from_uri)
     }
 
     pub fn stdin() -> Self {
-        Self::File(FileSourceParams { filepath: None })
+        Self::File(FileSourceParams::Stdin)
     }
 
     pub fn void() -> Self {
@@ -268,37 +266,45 @@ impl SourceParams {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FileSourceMessageFormat {
+    /// See https://docs.aws.amazon.com/AmazonS3/latest/userguide/notification-content-structure.html
+    S3Notification,
+    /// A string with the URI of the file (e.g `s3://bucket/key`)
+    RawUri,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct FileSourceParams {
-    /// Path of the file to read. Assume stdin if None.
+pub struct FileSourceSqs {
+    pub queue_url: String,
+    /// Polling wait time in seconds for receiving messages. Leave default value.
+    #[serde(default = "default_wait_time_seconds")]
+    pub wait_time_seconds: u8,
+    pub message_format: FileSourceMessageFormat,
+}
+
+fn default_wait_time_seconds() -> u8 {
+    20
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct FileSourceUri {
     #[schema(value_type = String)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    #[serde(deserialize_with = "uri_from_str")]
-    pub filepath: Option<Uri>, //< If None read from stdin.
+    pub filepath: Uri,
 }
 
-impl FromStr for FileSourceParams {
-    type Err = anyhow::Error;
-
-    fn from_str(filepath: &str) -> anyhow::Result<Self> {
-        let uri = Uri::from_str(filepath)?;
-        Ok(Self {
-            filepath: Some(uri),
-        })
-    }
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case", tag = "mode")]
+pub enum FileSourceParams {
+    FileUri(FileSourceUri),
+    Stdin,
+    Sqs(FileSourceSqs),
 }
 
-/// Deserializing as an URI
-fn uri_from_str<'de, D>(deserializer: D) -> Result<Option<Uri>, D::Error>
-where D: Deserializer<'de> {
-    let filepath_opt: Option<String> = Deserialize::deserialize(deserializer)?;
-    if let Some(filepath) = filepath_opt {
-        let uri = Uri::from_str(&filepath).map_err(D::Error::custom)?;
-        Ok(Some(uri))
-    } else {
-        Ok(None)
+impl FileSourceParams {
+    pub fn from_filepath<P: AsRef<str>>(filepath: P) -> anyhow::Result<Self> {
+        Uri::from_str(filepath.as_ref()).map(|uri| Self::FileUri(FileSourceUri { filepath: uri }))
     }
 }
 
@@ -344,34 +350,12 @@ pub struct PubSubSourceParams {
     pub max_messages_per_pull: Option<i32>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum QueueMessageType {
-    S3Notification,
-    // GcsNotification,
-    // RawData,
-    RawUri,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct QueueParams {
-    pub message_type: QueueMessageType,
-    // pub deduplication_window_duration_sec: usize,
-    // pub deduplication_window_max_messages: usize,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SqsSourceParams {
     pub queue_url: String,
     /// Polling wait time in seconds for receiving messages. Leave default value.
     #[serde(default = "default_wait_time_seconds")]
     pub wait_time_seconds: u8,
-    #[serde(flatten)]
-    pub queue_params: QueueParams,
-}
-
-fn default_wait_time_seconds() -> u8 {
-    20
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -853,14 +837,42 @@ mod tests {
     }
 
     #[test]
-    fn test_file_source_params_serialization() {
+    fn test_file_source_params_deserialization() {
         {
             let yaml = r#"
+                type: file_uri
                 filepath: source-path.json
             "#;
             let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
             let uri = Uri::from_str("source-path.json").unwrap();
-            assert_eq!(file_params.filepath.unwrap(), uri);
+            assert_eq!(
+                file_params,
+                FileSourceParams::FileUri(FileSourceUri { filepath: uri })
+            );
+        }
+        {
+            let yaml = r#"
+                type: stdin
+            "#;
+            let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
+            assert_eq!(file_params, FileSourceParams::Stdin);
+        }
+        {
+            let yaml = r#"
+                mode: sqs
+                queue_url: https://sqs.us-east-1.amazonaws.com/123456789012/queue-name
+                notification_format: s3_notification
+            "#;
+            let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
+            assert_eq!(
+                file_params,
+                FileSourceParams::Sqs(FileSourceSqs {
+                    queue_url: "https://sqs.us-east-1.amazonaws.com/123456789012/queue-name"
+                        .to_string(),
+                    wait_time_seconds: default_wait_time_seconds(),
+                    message_format: FileSourceMessageFormat::S3Notification,
+                })
+            );
         }
     }
 

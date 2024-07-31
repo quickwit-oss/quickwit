@@ -35,11 +35,14 @@ struct Inner {
     extension_failed: AtomicBool,
 }
 
-/// A shareable reference to a visibility extension task
+/// A handle to a visibility extension task
 ///
-/// To safely manage their lifecycle, tasks are stopped when their last handle
-/// is dropped. This guaranties for instance that all running visibility tasks
-/// are aborted when the indexing pipeline is restarted.
+/// To safely manage their lifecycle, tasks are stopped when their handle is
+/// dropped. This ensures for instance that all running visibility tasks are
+/// aborted when the indexing pipeline is restarted.
+///
+/// This struct is not `Clone` on purpose. A single owned reference to the task
+/// should be enough.
 pub struct VisibilityTaskHandle {
     inner: Arc<Inner>,
 }
@@ -73,11 +76,6 @@ pub fn spawn_visibility_task(
     VisibilityTaskHandle { inner }
 }
 
-/// This is still work in progress. Using the `PublishLock` isn't enough to
-/// communicate visibility extension failures:
-/// - we don't want to fail the pipeline if we fail to extend the visibility of a message that is
-///   still waiting for processing
-/// - the Processor must also be notified that it shouldn't process this message anymore
 async fn extend_visibility_loop(initial_deadline: Instant, inner_weak: Weak<Inner>) {
     let mut next_deadline: tokio::time::Instant = initial_deadline.into();
     loop {

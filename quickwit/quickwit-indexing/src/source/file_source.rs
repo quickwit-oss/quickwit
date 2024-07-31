@@ -18,37 +18,24 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::bail;
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_config::FileSourceParams;
-use quickwit_metastore::checkpoint::PartitionId;
-use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::{Position, SourceId};
-use serde::Serialize;
-use tracing::info;
+use quickwit_common::uri::Uri;
+use quickwit_config::{FileSourceMessageFormat, FileSourceParams, FileSourceSqs};
+use quickwit_proto::types::SourceId;
 
-use super::doc_file_reader::DocFileReader;
-use super::BatchBuilder;
+use super::queue_sources::sqs_queue::SqsQueue;
+use super::queue_sources::{MemoryQueue, MessageType, QueueCoordinator};
 use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
-/// Number of bytes after which a new batch is cut.
-pub(crate) const BATCH_NUM_BYTES_LIMIT: u64 = 500_000;
-
-#[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct FileSourceCounters {
-    pub offset: u64,
-    pub num_lines_processed: usize,
-}
-
 pub struct FileSource {
     source_id: SourceId,
-    reader: DocFileReader,
-    partition_id: Option<PartitionId>,
-    counters: FileSourceCounters,
+    processor: QueueCoordinator,
 }
 
 impl fmt::Debug for FileSource {
@@ -59,46 +46,22 @@ impl fmt::Debug for FileSource {
 
 #[async_trait]
 impl Source for FileSource {
+    async fn initialize(
+        &mut self,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
+        ctx: &SourceContext,
+    ) -> Result<(), ActorExitStatus> {
+        self.processor.initialize(doc_processor_mailbox, ctx).await
+    }
+
     async fn emit_batches(
         &mut self,
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        let limit_num_bytes = self.counters.offset + BATCH_NUM_BYTES_LIMIT;
-        let mut new_offset = self.counters.offset;
-        let mut batch_builder = BatchBuilder::new(SourceType::File);
-        let mut is_eof = false;
-        while new_offset < limit_num_bytes {
-            if let Some(record) = ctx.protect_future(self.reader.next_record()).await? {
-                new_offset = record.next_offset;
-                self.counters.num_lines_processed += 1;
-                batch_builder.add_doc(record.doc);
-            } else {
-                is_eof = true;
-                break;
-            }
-        }
-        if new_offset > self.counters.offset {
-            if let Some(partition_id) = &self.partition_id {
-                batch_builder
-                    .checkpoint_delta
-                    .record_partition_delta(
-                        partition_id.clone(),
-                        Position::offset(self.counters.offset),
-                        Position::offset(new_offset),
-                    )
-                    .unwrap();
-            }
-            ctx.send_message(doc_processor_mailbox, batch_builder.build())
-                .await?;
-            self.counters.offset = new_offset;
-        }
-        if is_eof {
-            info!("reached end of file");
-            ctx.send_exit_with_success(doc_processor_mailbox).await?;
-            return Err(ActorExitStatus::Success);
-        }
-        Ok(Duration::default())
+        self.processor
+            .emit_batches(doc_processor_mailbox, ctx)
+            .await
     }
 
     fn name(&self) -> String {
@@ -106,8 +69,37 @@ impl Source for FileSource {
     }
 
     fn observable_state(&self) -> serde_json::Value {
-        serde_json::to_value(&self.counters).unwrap()
+        serde_json::json!({
+            "offset": self.processor.observable_state().num_bytes_processed,
+            "num_lines_processed": self.processor.observable_state().num_lines_processed,
+        })
     }
+}
+
+#[cfg(feature = "sqs")]
+async fn sqs_processor(
+    source_runtime: SourceRuntime,
+    sqs_notif: FileSourceSqs,
+) -> anyhow::Result<QueueCoordinator> {
+    use super::queue_sources::MessageType;
+
+    let queue = SqsQueue::try_new(sqs_notif.queue_url, sqs_notif.wait_time_seconds).await?;
+    let message_type = match sqs_notif.message_format {
+        FileSourceMessageFormat::S3Notification => MessageType::S3Notification,
+        FileSourceMessageFormat::RawUri => MessageType::RawUri,
+    };
+    Ok(QueueCoordinator::new(
+        source_runtime,
+        Arc::new(queue),
+        message_type,
+    ))
+}
+
+fn file_processor(source_runtime: SourceRuntime, uri: Uri) -> QueueCoordinator {
+    let queue = MemoryQueue::default();
+    queue.send_message(uri.into_string(), "");
+    queue.send_end_of_queue();
+    QueueCoordinator::new(source_runtime, Arc::new(queue), MessageType::RawUri)
 }
 
 pub struct FileSourceFactory;
@@ -121,35 +113,21 @@ impl TypedSourceFactory for FileSourceFactory {
         source_runtime: SourceRuntime,
         params: FileSourceParams,
     ) -> anyhow::Result<FileSource> {
-        let Some(uri) = &params.filepath else {
-            return Ok(FileSource {
-                source_id: source_runtime.source_id().to_string(),
-                reader: DocFileReader::from_stdin(),
-                partition_id: None,
-                counters: FileSourceCounters::default(),
-            });
+        let source_id = source_runtime.source_config.source_id.clone();
+        let processor = match params {
+            FileSourceParams::FileUri(file_uri) => {
+                file_processor(source_runtime, file_uri.filepath)
+            }
+            FileSourceParams::Stdin => QueueCoordinator::for_stdin(source_runtime),
+            #[cfg(feature = "sqs")]
+            FileSourceParams::Sqs(sqs_notif) => sqs_processor(source_runtime, sqs_notif).await?,
+            #[allow(unreachable_patterns)]
+            params => bail!("Unsupported file source: {:?}", params),
         };
 
-        let partition_id = PartitionId::from(uri.as_str());
-        let checkpoint = source_runtime.fetch_checkpoint().await?;
-        let offset = checkpoint
-            .position_for_partition(&partition_id)
-            .map(|position| {
-                position
-                    .as_usize()
-                    .context("file offset should be stored as usize")
-            })
-            .transpose()?
-            .unwrap_or(0);
-        let reader = DocFileReader::from_uri(&source_runtime.storage_resolver, uri, offset).await?;
         Ok(FileSource {
-            source_id: source_runtime.source_id().to_string(),
-            reader,
-            partition_id: Some(partition_id),
-            counters: FileSourceCounters {
-                offset: offset as u64,
-                ..Default::default()
-            },
+            processor,
+            source_id,
         })
     }
 }
@@ -160,7 +138,7 @@ mod tests {
     use std::str::FromStr;
 
     use quickwit_actors::{Command, Universe};
-    use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
+    use quickwit_config::{FileSourceUri, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpointDelta};
     use quickwit_proto::types::{IndexUid, Position};
 
@@ -182,9 +160,9 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let params = if gzip {
-            FileSourceParams::from_str("data/test_corpus.json.gz").unwrap()
+            FileSourceParams::from_filepath("data/test_corpus.json.gz").unwrap()
         } else {
-            FileSourceParams::from_str("data/test_corpus.json").unwrap()
+            FileSourceParams::from_filepath("data/test_corpus.json").unwrap()
         };
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
@@ -234,8 +212,10 @@ mod tests {
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let temp_file = generate_dummy_doc_file(gzip, 20_000).await;
         let filepath = temp_file.path().to_str().unwrap();
-        let params = FileSourceParams::from_str(filepath).unwrap();
-        let uri = params.filepath.as_ref().unwrap().clone();
+        let uri = Uri::from_str(filepath).unwrap();
+        let params = FileSourceParams::FileUri(FileSourceUri {
+            filepath: uri.clone(),
+        });
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
@@ -306,8 +286,10 @@ mod tests {
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let temp_file = generate_index_doc_file(gzip, 100).await;
         let temp_file_path = temp_file.path().to_str().unwrap();
-        let params = FileSourceParams::from_str(temp_file_path).unwrap();
-        let uri = params.filepath.as_ref().unwrap();
+        let uri = Uri::from_str(temp_file_path).unwrap();
+        let params = FileSourceParams::FileUri(FileSourceUri {
+            filepath: uri.clone(),
+        });
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
@@ -350,5 +332,82 @@ mod tests {
         );
         let indexer_messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(&indexer_messages[0].docs[0].starts_with(b"2\n"));
+    }
+}
+
+#[cfg(all(test, feature = "sqs-localstack-tests"))]
+mod localstack_tests {
+    use std::str::FromStr;
+
+    use quickwit_actors::Universe;
+    use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::uri::Uri;
+    use quickwit_config::{SourceConfig, SourceParams};
+    use quickwit_metastore::metastore_for_test;
+
+    use super::*;
+    use crate::models::RawDocBatch;
+    use crate::source::doc_file_reader::file_test_helpers::generate_dummy_doc_file;
+    use crate::source::queue_sources::sqs_queue::test_helpers::{
+        create_queue, get_localstack_sqs_client, send_message,
+    };
+    use crate::source::test_setup_helper::setup_index;
+    use crate::source::tests::SourceRuntimeBuilder;
+    use crate::source::SourceActor;
+
+    #[tokio::test]
+    async fn test_file_source_sqs_notifications() {
+        // queue setup
+        let sqs_client = get_localstack_sqs_client().await.unwrap();
+        let queue_url = create_queue(&sqs_client, "check-connectivity").await;
+        let dummy_doc_file = generate_dummy_doc_file(false, 10).await;
+        let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
+        send_message(&sqs_client, &queue_url, test_uri.as_str()).await;
+
+        // source setup
+        let source_params = FileSourceParams::Sqs(FileSourceSqs {
+            queue_url,
+            wait_time_seconds: 1,
+            message_format: FileSourceMessageFormat::RawUri,
+        });
+        let source_config = SourceConfig::for_test(
+            "test-file-source-sqs-notifications",
+            SourceParams::File(source_params.clone()),
+        );
+        let metastore = metastore_for_test();
+        let index_id = append_random_suffix("test-sqs-index");
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_config, &[]).await;
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+            .with_metastore(metastore)
+            .build();
+        let sqs_source = FileSourceFactory::typed_create_source(source_runtime, source_params)
+            .await
+            .unwrap();
+
+        // actor setup
+        let universe = Universe::with_accelerated_time();
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        {
+            let actor = SourceActor {
+                source: Box::new(sqs_source),
+                doc_processor_mailbox: doc_processor_mailbox.clone(),
+            };
+            let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
+
+            // run the source actor for a while
+            tokio::time::timeout(Duration::from_millis(500), handle.join())
+                .await
+                .unwrap_err();
+
+            let next_message = doc_processor_inbox
+                .drain_for_test()
+                .into_iter()
+                .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
+                .map(|box_raw_doc_batch| *box_raw_doc_batch)
+                .next()
+                .unwrap();
+            assert_eq!(next_message.docs.len(), 10);
+        }
+        universe.assert_quit().await;
     }
 }
