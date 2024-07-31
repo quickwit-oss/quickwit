@@ -55,7 +55,6 @@ impl QueueSharedState {
                 subrequest_id: idx as u32,
                 index_uid: Some(self.index_uid.clone()),
                 source_id: self.source_id.clone(),
-                // TODO: make this optional?
                 leader_id: String::new(),
                 follower_id: None,
                 shard_id: Some(ShardId::from(partition_id.as_str())),

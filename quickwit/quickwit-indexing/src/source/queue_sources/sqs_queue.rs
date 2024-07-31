@@ -85,36 +85,33 @@ impl Queue for SqsQueue {
         })
         .await?;
 
-        receive_output
-            .messages
-            .unwrap_or_default()
-            .into_iter()
-            .map(|msg| {
-                let delivery_attempts: usize = msg
-                    .attributes
-                    .as_ref()
-                    .and_then(|attrs| {
-                        attrs.get(&MessageSystemAttributeName::ApproximateReceiveCount)
-                    })
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
-                let ack_id = msg
-                    .receipt_handle
-                    .context("missing receipt_handle in received message")?;
-                let message_id = msg
-                    .message_id
-                    .context("missing message_id in received message")?;
-                Ok(RawMessage {
-                    metadata: MessageMetadata {
-                        ack_id,
-                        message_id,
-                        initial_deadline,
-                        delivery_attempts,
-                    },
-                    payload: OwnedBytes::new(msg.body.unwrap_or_default().into_bytes()),
-                })
-            })
-            .collect::<anyhow::Result<_>>()
+        let received_messages = receive_output.messages.unwrap_or_default();
+        let mut resulting_raw_messages = Vec::with_capacity(received_messages.len());
+        for received_message in received_messages {
+            let delivery_attempts: usize = received_message
+                .attributes
+                .as_ref()
+                .and_then(|attrs| attrs.get(&MessageSystemAttributeName::ApproximateReceiveCount))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+            let ack_id = received_message
+                .receipt_handle
+                .context("missing receipt_handle in received message")?;
+            let message_id = received_message
+                .message_id
+                .context("missing message_id in received message")?;
+            let raw_message = RawMessage {
+                metadata: MessageMetadata {
+                    ack_id,
+                    message_id,
+                    initial_deadline,
+                    delivery_attempts,
+                },
+                payload: OwnedBytes::new(received_message.body.unwrap_or_default().into_bytes()),
+            };
+            resulting_raw_messages.push(raw_message);
+        }
+        Ok(resulting_raw_messages)
     }
 
     async fn acknowledge(&self, ack_ids: &[String]) -> anyhow::Result<()> {
