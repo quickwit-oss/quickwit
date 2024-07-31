@@ -183,7 +183,7 @@ index_id: tutorial-sqs-file
 doc_mapping:
   mode: dynamic
 indexing_settings:
-  commit_timeout_secs: 5
+  commit_timeout_secs: 30
 EOF
 
 ./quickwit index create --index-config tutorial-sqs-file-index.yaml
@@ -208,6 +208,12 @@ EOF
 ./quickwit source create --index tutorial-sqs-file --source-config tutorial-sqs-file-source.yaml
 ```
 
+:::tip
+
+The `num_pipeline` configuration controls how many consumers will poll from the queue in parallel. Choose the number according to the indexer compute resources you want to dedicate to this source. As a rule of thumb, configure 1 pipeline for every 2 cores.
+
+:::
+
 ## Ingest data
 
 We can now ingest data into Quickwit by uploading files to S3. If you have the
@@ -222,7 +228,7 @@ curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10
 If you prefer not to use the AWS CLI, you can also download the file and upload
 it manually to the source bucket using the AWS console.
 
-Wait approximately 20 seconds and the data should appear in the index:
+Wait approximately 1 minute and the data should appear in the index:
 
 ```bash
 ./quickwit index describe --index tutorial-sqs-file

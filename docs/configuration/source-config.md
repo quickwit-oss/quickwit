@@ -43,9 +43,15 @@ To ingest a specific file, run the indexing directly in an adhoc CLI process wit
 
 Both local and object files are supported, provided that the environment is configured with the appropriate permissions. A tutorial is available [here](/docs/ingest-data/ingest-local-file.md).
 
-#### Notification based file ingestion
+#### Notification based file ingestion (beta)
 
-You can setup a source that uses notifications to continuously index new files. A complete tutorial can be found [here](/docs/ingest-data/sqs-files.md).
+Quickwit can automatically ingest all new files that are uploaded to an S3 bucket. This requires creating and configuring an [SQS notification queue](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ways-to-add-notification-config-to-bucket.html). A complete tutorial can be found [here](/docs/ingest-data/sqs-files.md).
+
+:::note
+
+Quickwit does not automatically delete the source files after a successful ingestion. On AWS for instance, you can use [S3 object expiration](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html) to configure how long they should be retained in the bucket.
+
+:::
 
 The `notifications` parameter takes an array of notification settings. Currently one notifier can be configured per source and only the SQS notification `type` is supported.
 
