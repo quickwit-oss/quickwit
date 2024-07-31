@@ -22,10 +22,6 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use async_trait::async_trait;
 use aws_sdk_sqs::config::{BehaviorVersion, Builder, Region, SharedAsyncSleep};
-// use aws_sdk_sqs::error::{DisplayErrorContext, SdkError};
-// use aws_sdk_sqs::operation::change_message_visibility::ChangeMessageVisibilityError;
-// use aws_sdk_sqs::operation::delete_message_batch::DeleteMessageBatchError;
-// use aws_sdk_sqs::operation::receive_message::ReceiveMessageError;
 use aws_sdk_sqs::types::{DeleteMessageBatchRequestEntry, MessageSystemAttributeName};
 use aws_sdk_sqs::{Client, Config};
 use itertools::Itertools;
@@ -56,12 +52,15 @@ impl SqsQueue {
 
 #[async_trait]
 impl Queue for SqsQueue {
-    async fn receive(&self, max_messages: usize) -> anyhow::Result<Vec<RawMessage>> {
-        let visibility_timeout_sec = 120;
+    async fn receive(
+        &self,
+        max_messages: usize,
+        suggested_deadline: Duration,
+    ) -> anyhow::Result<Vec<RawMessage>> {
         // TODO: We estimate the message deadline using the start of the
         // ReceiveMessage request. This might be overly pessimistic: the docs
         // state that it starts when the message is returned.
-        let initial_deadline = Instant::now() + Duration::from_secs(visibility_timeout_sec as u64);
+        let initial_deadline = Instant::now() + suggested_deadline;
         let res = self
             .sqs_client
             .receive_message()
@@ -69,7 +68,7 @@ impl Queue for SqsQueue {
             .message_system_attribute_names(MessageSystemAttributeName::ApproximateReceiveCount)
             .wait_time_seconds(self.wait_time_seconds as i32)
             .set_max_number_of_messages(Some(max_messages as i32))
-            .visibility_timeout(visibility_timeout_sec)
+            .visibility_timeout(suggested_deadline.as_secs() as i32)
             .send()
             .await?;
 
@@ -315,10 +314,13 @@ mod localstack_tests {
         test_helpers::send_message(&client, &queue_url, message).await;
 
         let queue = SqsQueue::try_new(queue_url, 20).await.unwrap();
-        let messages = tokio::time::timeout(Duration::from_millis(500), queue.receive(5))
-            .await
-            .unwrap()
-            .unwrap();
+        let messages = tokio::time::timeout(
+            Duration::from_millis(500),
+            queue.receive(5, Duration::from_secs(60)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].payload.as_slice(), message.as_bytes());
 

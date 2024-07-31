@@ -69,7 +69,11 @@ impl MemoryQueue {
 
 #[async_trait]
 impl Queue for MemoryQueue {
-    async fn receive(&self, max_messages: usize) -> anyhow::Result<Vec<RawMessage>> {
+    async fn receive(
+        &self,
+        max_messages: usize,
+        _suggested_deadline: Duration,
+    ) -> anyhow::Result<Vec<RawMessage>> {
         for _ in 0..3 {
             {
                 let mut inner_state = self.inner_state.lock().unwrap();
@@ -135,7 +139,10 @@ mod tests {
     async fn test_receive_1_by_1() {
         let memory_queue = prefilled_queue(2);
         for i in 0..2 {
-            let messages = memory_queue.receive(1).await.unwrap();
+            let messages = memory_queue
+                .receive(1, Duration::from_secs(5))
+                .await
+                .unwrap();
             assert_eq!(messages.len(), 1);
             let message = &messages[0];
             let exp_payload = format!("Test message {}", i);
@@ -148,7 +155,10 @@ mod tests {
     #[tokio::test]
     async fn test_receive_2_by_2() {
         let memory_queue = prefilled_queue(2);
-        let messages = memory_queue.receive(2).await.unwrap();
+        let messages = memory_queue
+            .receive(2, Duration::from_secs(5))
+            .await
+            .unwrap();
         assert_eq!(messages.len(), 2);
         for (i, message) in messages.iter().enumerate() {
             let exp_payload = format!("Test message {}", i);
@@ -161,7 +171,10 @@ mod tests {
     #[tokio::test]
     async fn test_receive_early_if_only_1() {
         let memory_queue = prefilled_queue(1);
-        let messages = memory_queue.receive(2).await.unwrap();
+        let messages = memory_queue
+            .receive(2, Duration::from_secs(5))
+            .await
+            .unwrap();
         assert_eq!(messages.len(), 1);
         let message = &messages[0];
         let exp_payload = "Test message 0".to_string();
