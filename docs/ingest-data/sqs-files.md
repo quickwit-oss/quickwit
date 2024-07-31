@@ -1,12 +1,12 @@
 ---
-title: S3 files with SQS notifications
+title: S3 with SQS notifications
 description: A short tutorial describing how to set up Quickwit to ingest data from S3 files using an SQS notifier
 tags: [s3, sqs, integration]
 icon_url: /img/tutorials/file-ndjson.svg
 sidebar_position: 5
 ---
 
-In this tutorial, we will describe how to set up Quickwit to ingest data from S3
+In this tutorial, we describe how to set up Quickwit to ingest data from S3
 with bucket notification events flowing through SQS. We will first create the
 AWS resources (S3 bucket, SQS queue, notifications) using terraform. We will
 then configure the Quickwit index and file source. Finally we will send some
@@ -14,9 +14,9 @@ data to the source bucket and verify that it gets indexed.
 
 ## AWS resources
 
-The complete terraform script can be downloaded [here](/docs/assets/sqs-file-source.tf).
+The complete terraform script can be downloaded [here](../assets/sqs-file-source.tf).
 
-First, create the bucket that will receive the data files (NDJSON format):
+First, create the bucket that will receive the source data files (NDJSON format):
 
 ```
 resource "aws_s3_bucket" "file_source" {
@@ -25,17 +25,19 @@ resource "aws_s3_bucket" "file_source" {
 ```
 
 Then setup the SQS queue that will carry the notifications when files are added
-to the bucket. The queue is configured with a policy that allows the source bucket to
-write notifications to it. Also create a deadletter queue to receive events that
-couldn't be processed by the file source:
+to the bucket. The queue is configured with a policy that allows the source
+bucket to write the S3 notification messages to it. Also create a dead letter
+queue (DLQ) to receive the messages that couldn't be processed by the file
+source (e.g corrupted files). Messages are moved to the DLQ after 5 indexing
+attempts. 
 
 ```
 locals {
   sqs_notification_queue_name = "qw-tuto-s3-event-notifications"
-  sqs_notification_deadletter_queue_name = "${sqs_notification_queue_name}-deadletter"
 }
 
 data "aws_iam_policy_document" "sqs_notification" {
+  statement {
     effect = "Allow"
 
     principals {
@@ -55,7 +57,7 @@ data "aws_iam_policy_document" "sqs_notification" {
 }
 
 resource "aws_sqs_queue" "s3_events_deadletter" {
-  name = "${local.sqs_notification_deadletter_queue_name}"
+  name = "${locals.sqs_notification_queue_name}-deadletter"
 }
 
 resource "aws_sqs_queue" "s3_events" {
@@ -78,7 +80,7 @@ resource "aws_sqs_queue_redrive_allow_policy" "s3_events_deadletter" {
 }
 ```
 
-Finally, configure the notification that writes messages to SQS each time a new
+Configure the bucket notification that writes messages to SQS each time a new
 file is created in the source bucket:
 
 ```
@@ -93,8 +95,8 @@ resource "aws_s3_bucket_notification" "bucket_notification" {
 ```
 
 The source needs to have access to both the notification queue and the source
-bucket. The following creates an IAM user and credentials that can be used to
-associate the right permissions with your local Quickwit instance:
+bucket. The following policy document contains the minimum permissions required
+by the source:
 
 ```
 data "aws_iam_policy_document" "quickwit_node" {
@@ -114,7 +116,12 @@ data "aws_iam_policy_document" "quickwit_node" {
     resources = ["${aws_s3_bucket.file_source.arn}/*"]
   }
 }
+```
 
+Create the IAM user and credentials that will be used to
+associate this policy to your local Quickwit instance:
+
+```
 resource "aws_iam_user" "quickwit_node" {
   name = "quickwit-filesource-tutorial"
   path = "/system/"
@@ -140,10 +147,10 @@ running on EC2/ECS, attach the policy document to an IAM roles instead.
 
 :::
 
-Download the [complete terraform script](/docs/assets/sqs-file-source.tf) and
-run it using `terraform init` and `terraform apply`. After a successful
-execution, the outputs required to configure Quickwit will be displayed. You can
-display the sensitive key id and secret key by running:
+Download the [complete terraform script](../assets/sqs-file-source.tf) and
+deploy it using `terraform init` and `terraform apply`. After a successful
+execution, the outputs required to configure Quickwit will be listed. You can
+display the values of the sensitive outputs (key id and secret key) with:
 
 
 ```bash
@@ -153,8 +160,8 @@ terraform output quickwit_node_secret_access_key
 
 ## Run Quickwit
 
-[Install Quickwit locally](/docs/get-started/installation), then run Quickwit
-with the necessary access rights by replacing the
+[Install Quickwit locally](/docs/get-started/installation), then in your install
+directory, run Quickwit with the necessary access rights by replacing the
 `<quickwit_node_access_key_id>` and `<quickwit_node_secret_access_key>` with the
 matching Terraform output values:
 
@@ -167,7 +174,7 @@ AWS_REGION=us-east-1 \
 
 ## Configure the index and the source
 
-In another terminal, create an index:
+In another terminal, in the Quickwit install directory, create an index:
 
 ```bash
 cat << EOF > tutorial-sqs-file-index.yaml
@@ -223,6 +230,6 @@ Wait approximately 20 seconds and the data should appear in the index:
 
 ## Tear down the resources
 
-The resources instantiated above don't incur any fixed costs, but we still
-recommend deleting them after you complete the tutorial. In the directory with
-the Terraform script, run `terraform destroy`.
+The AWS resources instantiated in this tutorial don't incur any fixed costs, but
+we still recommend deleting them when you are done. In the directory with the
+Terraform script, run `terraform destroy`.

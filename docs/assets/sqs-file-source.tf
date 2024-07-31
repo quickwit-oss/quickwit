@@ -19,9 +19,8 @@ provider "aws" {
 }
 
 locals {
-  sqs_notification_queue_name            = "qw-tuto-s3-event-notifications"
-  sqs_notification_deadletter_queue_name = "${local.sqs_notification_queue_name}-deadletter"
-  source_bucket_name                     = "qw-tuto-source-bucket"
+  sqs_notification_queue_name = "qw-tuto-s3-event-notifications"
+  source_bucket_name          = "qw-tuto-source-bucket"
 }
 
 resource "aws_s3_bucket" "file_source" {
@@ -61,7 +60,7 @@ resource "aws_sqs_queue" "s3_events" {
 }
 
 resource "aws_sqs_queue" "s3_events_deadletter" {
-  name = local.sqs_notification_deadletter_queue_name
+  name = "${locals.sqs_notification_queue_name}-deadletter"
 }
 
 resource "aws_sqs_queue_redrive_allow_policy" "s3_events_deadletter" {

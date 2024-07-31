@@ -31,7 +31,7 @@ The source parameters indicate how to connect to a data store and are specific t
 
 ### File source
 
-A file source reads data from files containing JSON objects separated by newlines (NDJSON). Only gzip compression is supported and the file must end with the `.gz` suffix.
+A file source reads data from files containing JSON objects separated by newlines (NDJSON). Gzip compression is supported provided that the file name ends with the `.gz` suffix.
 
 #### Ingest a single file (CLI only)
 
@@ -41,17 +41,20 @@ To ingest a specific file, run the indexing directly in an adhoc CLI process wit
 ./quickwit tool local-ingest --index <index> --input-path <input-path>
 ```
 
-Both local and object files are supported, provided that the environment is configured with the appropriate permissions.
+Both local and object files are supported, provided that the environment is configured with the appropriate permissions. A tutorial is available [here](/docs/ingest-data/ingest-local-file.md).
 
 #### Notification based file ingestion
 
-You can setup a source that continuously indexes new files based on notifications. The `notifications` parameter takes an array of notification settings. Currently one notifier can be configured per source and only the SQS notification `type` is supported.
+You can setup a source that uses notifications to continuously index new files. A complete tutorial can be found [here](/docs/ingest-data/sqs-files.md).
 
-These are the required fields for the SQS `notifications` configuration:
-- `queue_url`, the complete URL of the SQS queue
-- `message_type`, the format of the message payload. It can be either
-  - `s3_notification`, an [S3 event notification](https://docs.aws.amazon.com/AmazonS3/latest/userguide/EventNotifications.html)
-  - `raw_uri`, a message containing just the URI (e.g. `s3://mybucket/mykey`)
+The `notifications` parameter takes an array of notification settings. Currently one notifier can be configured per source and only the SQS notification `type` is supported.
+
+Required fields for the SQS `notifications` parameter items:
+- `type`: `sqs`
+- `queue_url`: complete URL of the SQS queue (e.g `https://sqs.us-east-1.amazonaws.com/123456789012/queue-name`)
+- `message_type`: format of the message payload, either
+  - `s3_notification`: an [S3 event notification](https://docs.aws.amazon.com/AmazonS3/latest/userguide/EventNotifications.html)
+  - `raw_uri`: a message containing just the file object URI (e.g. `s3://mybucket/mykey`)
 
 *Adding a file source with SQS notifications to an index with the [CLI](../reference/cli.md#source)*
 
@@ -69,8 +72,6 @@ params:
 EOF
 ./quickwit source create --index my-index --source-config source-config.yaml
 ```
-
-You can find a complete example of SQS based notifications in the [tutorials](/docs/ingest-data/sqs-files.md).
 
 ### Ingest API source
 
