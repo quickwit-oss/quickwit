@@ -29,14 +29,61 @@ The source type designates the kind of source being configured. As of version 0.
 
 The source parameters indicate how to connect to a data store and are specific to the source type.
 
-### File source (CLI only)
+### File source
 
-A file source reads data from a local file. The file must consist of JSON objects separated by a newline (NDJSON).
-As of version 0.5, a file source can only be ingested with the [CLI command](/docs/reference/cli.md#tool-local-ingest). Compressed files (bz2, gzip, ...) and remote files (Amazon S3, HTTP, ...) are not supported.
+A file source reads data from files containing JSON objects separated by newlines (NDJSON). Gzip compression is supported provided that the file name ends with the `.gz` suffix.
+
+#### Ingest a single file (CLI only)
+
+To ingest a specific file, run the indexing directly in an adhoc CLI process with:
 
 ```bash
-./quickwit tool local-ingest --input-path <INPUT_PATH>
+./quickwit tool local-ingest --index <index> --input-path <input-path>
 ```
+
+Both local and object files are supported, provided that the environment is configured with the appropriate permissions. A tutorial is available [here](/docs/ingest-data/ingest-local-file.md).
+
+#### Notification based file ingestion (beta)
+
+Quickwit can automatically ingest all new files that are uploaded to an S3 bucket. This requires creating and configuring an [SQS notification queue](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ways-to-add-notification-config-to-bucket.html). A complete example can be found [in this tutorial](/docs/ingest-data/sqs-files.md).
+
+
+The `notifications` parameter takes an array of notification settings. Currently one notifier can be configured per source and only the SQS notification `type` is supported.
+
+Required fields for the SQS `notifications` parameter items:
+- `type`: `sqs`
+- `queue_url`: complete URL of the SQS queue (e.g `https://sqs.us-east-1.amazonaws.com/123456789012/queue-name`)
+- `message_type`: format of the message payload, either
+  - `s3_notification`: an [S3 event notification](https://docs.aws.amazon.com/AmazonS3/latest/userguide/EventNotifications.html)
+  - `raw_uri`: a message containing just the file object URI (e.g. `s3://mybucket/mykey`)
+
+*Adding a file source with SQS notifications to an index with the [CLI](../reference/cli.md#source)*
+
+```bash
+cat << EOF > source-config.yaml
+version: 0.8
+source_id: my-sqs-file-source
+source_type: file
+num_pipelines: 2
+params:
+  notifications:
+    - type: sqs
+      queue_url: https://sqs.us-east-1.amazonaws.com/123456789012/queue-name
+      message_type: s3_notification
+EOF
+./quickwit source create --index my-index --source-config source-config.yaml
+```
+
+:::note
+
+- Quickwit does not automatically delete the source files after a successful ingestion. You can use [S3 object expiration](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html) to configure how long they should be retained in the bucket.
+- Configure the notification to only forward events of type `s3:ObjectCreated:*`. Other events are acknowledged by the source without further processing and an warning is logged.
+- We strongly recommend using a [dead letter queue](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html) to receive all messages that couldn't be processed by the file source. A `maxReceiveCount` of 5 is a good default value. Here are some common situations where the notification message ends up in the dead letter queue:
+  - the notification message could not be parsed (e.g it is not a valid S3 notification)
+  - the file was not found
+  - the file is corrupted (e.g unexpected compression)
+
+:::
 
 ### Ingest API source
 

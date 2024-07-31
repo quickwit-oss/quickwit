@@ -30,11 +30,11 @@ use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_common::pretty::PrettySample;
+use quickwit_config::{FileSourceParams, SourceParams};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
     PIPELINE_THROUGHPUT,
 };
-use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::NodeId;
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
@@ -168,22 +168,22 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
         if !source_config.enabled {
             continue;
         }
-        match source_config.source_type() {
-            SourceType::Cli
-            | SourceType::File
-            | SourceType::Vec
-            | SourceType::Void
-            | SourceType::Unspecified => {
-                // We don't need to schedule those.
+        match source_config.source_params {
+            SourceParams::File(FileSourceParams::Filepath(_))
+            | SourceParams::IngestCli
+            | SourceParams::Stdin
+            | SourceParams::Void(_)
+            | SourceParams::Vec(_) => { // We don't need to schedule those.
             }
-            SourceType::IngestV1 => {
+
+            SourceParams::IngestApi => {
                 // TODO ingest v1 is scheduled differently
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::IngestV1,
                 });
             }
-            SourceType::IngestV2 => {
+            SourceParams::Ingest => {
                 // Expect: the source should exist since we just read it from `get_source_configs`.
                 // Note that we keep all shards, including Closed shards:
                 // A closed shards still needs to be indexed.
@@ -208,11 +208,11 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                     },
                 });
             }
-            SourceType::Kafka
-            | SourceType::Kinesis
-            | SourceType::PubSub
-            | SourceType::Nats
-            | SourceType::Pulsar => {
+            SourceParams::Kafka(_)
+            | SourceParams::Kinesis(_)
+            | SourceParams::PubSub(_)
+            | SourceParams::Pulsar(_)
+            | SourceParams::File(FileSourceParams::Notifications(_)) => {
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::NonSharded {

@@ -459,6 +459,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-sqs"
+version = "1.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3587fbaf540d65337c2356ebf3f78fba160025b3d69634175f1ea3a7895738e9"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "http 0.2.12",
+ "once_cell",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-sso"
 version = "1.36.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5627,6 +5649,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-kinesis",
  "aws-sdk-s3",
+ "aws-sdk-sqs",
  "aws-smithy-async",
  "aws-smithy-runtime",
  "aws-types",
@@ -5952,6 +5975,7 @@ dependencies = [
  "async-compression",
  "async-trait",
  "aws-sdk-kinesis",
+ "aws-sdk-sqs",
  "bytes",
  "bytesize",
  "criterion",
@@ -5988,6 +6012,7 @@ dependencies = [
  "quickwit-storage",
  "rand 0.8.5",
  "rdkafka",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
@@ -6045,6 +6070,7 @@ name = "quickwit-integration-tests"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "aws-sdk-sqs",
  "futures-util",
  "hyper 0.14.29",
  "itertools 0.13.0",
@@ -6052,6 +6078,7 @@ dependencies = [
  "quickwit-cli",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-rest-client",
@@ -6063,6 +6090,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -8471,9 +8499,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.39.1"
+version = "1.39.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d040ac2b29ab03b09d4129c2f5bbd012a3ac2f79d38ff506a4bf8dd34b0eac8a"
+checksum = "daa4fb1bc778bd6f04cbfc4bb2d06a7396a8f299dc33ea1900cedaa316f467b1"
 dependencies = [
  "backtrace",
  "bytes",

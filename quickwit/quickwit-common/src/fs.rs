@@ -34,7 +34,7 @@ pub async fn empty_dir<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Helper function to get the cache path.
+/// Helper function to get the indexer split cache path.
 pub fn get_cache_directory_path(data_dir_path: &Path) -> PathBuf {
     data_dir_path.join("indexer-split-cache").join("splits")
 }

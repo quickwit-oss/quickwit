@@ -24,7 +24,10 @@ use quickwit_proto::types::SourceId;
 use serde::{Deserialize, Serialize};
 
 use super::{TransformConfig, RESERVED_SOURCE_IDS};
-use crate::{validate_identifier, ConfigFormat, SourceConfig, SourceInputFormat, SourceParams};
+use crate::{
+    validate_identifier, ConfigFormat, FileSourceParams, SourceConfig, SourceInputFormat,
+    SourceParams,
+};
 
 type SourceConfigForSerialization = SourceConfigV0_8;
 
@@ -65,12 +68,11 @@ impl SourceConfigForSerialization {
     /// Checks the validity of the `SourceConfig` as a "deserializable source".
     ///
     /// Two remarks:
-    /// - This does not check connectivity. (See `check_connectivity(..)`)
-    /// This just validate configuration, without performing any IO.
-    /// - This is only here to validate user input.
-    /// When ingesting from stdin, we programmatically create an invalid `SourceConfig`.
-    ///
-    /// TODO refactor #1065
+    /// - This does not check connectivity, it just validate configuration,
+    /// without performing any IO. See `check_connectivity(..)`.
+    /// - This is used each time the `SourceConfig` is deserialized (at creation but also during
+    ///   communications with the metastore). When ingesting from stdin, we programmatically create
+    ///   an invalid `SourceConfig` and only use it locally.
     fn validate_and_build(self) -> anyhow::Result<SourceConfig> {
         if !RESERVED_SOURCE_IDS.contains(&self.source_id.as_str()) {
             validate_identifier("source", &self.source_id)?;
@@ -78,16 +80,16 @@ impl SourceConfigForSerialization {
         let num_pipelines = NonZeroUsize::new(self.num_pipelines)
             .ok_or_else(|| anyhow::anyhow!("`desired_num_pipelines` must be strictly positive"))?;
         match &self.source_params {
-            // We want to forbid source_config with no filepath
-            SourceParams::File(file_params) => {
-                if file_params.filepath.is_none() {
-                    bail!(
-                        "source `{}` of type `file` must contain a filepath",
-                        self.source_id
-                    )
-                }
+            SourceParams::Stdin => {
+                bail!(
+                    "stdin can only be used as source through the CLI command `quickwit tool \
+                     local-ingest`"
+                );
             }
-            SourceParams::Kafka(_) | SourceParams::Kinesis(_) | SourceParams::Pulsar(_) => {
+            SourceParams::File(_)
+            | SourceParams::Kafka(_)
+            | SourceParams::Kinesis(_)
+            | SourceParams::Pulsar(_) => {
                 // TODO consider any validation opportunity
             }
             SourceParams::PubSub(_)
@@ -98,7 +100,9 @@ impl SourceConfigForSerialization {
             | SourceParams::Void(_) => {}
         }
         match &self.source_params {
-            SourceParams::PubSub(_) | SourceParams::Kafka(_) => {}
+            SourceParams::PubSub(_)
+            | SourceParams::Kafka(_)
+            | SourceParams::File(FileSourceParams::Notifications(_)) => {}
             _ => {
                 if self.num_pipelines > 1 {
                     bail!("Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka sources. open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types");

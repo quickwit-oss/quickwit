@@ -766,15 +766,9 @@ mod kafka_broker_tests {
 
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
-    use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-    use quickwit_metastore::{
-        metastore_for_test, CreateIndexRequestExt, SplitMetadata, StageSplitsRequestExt,
-    };
-    use quickwit_proto::metastore::{
-        CreateIndexRequest, MetastoreService, MetastoreServiceClient, PublishSplitsRequest,
-        StageSplitsRequest,
-    };
+    use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+    use quickwit_metastore::metastore_for_test;
     use quickwit_proto::types::IndexUid;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
@@ -783,7 +777,7 @@ mod kafka_broker_tests {
     use tokio::sync::watch;
 
     use super::*;
-    use crate::new_split_id;
+    use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::{quickwit_supported_sources, RawDocBatch, SourceActor};
 
@@ -913,71 +907,6 @@ mod kafka_broker_tests {
         }
         merged_batch.docs.sort();
         Ok(merged_batch)
-    }
-
-    async fn setup_index(
-        metastore: MetastoreServiceClient,
-        index_id: &str,
-        source_config: &SourceConfig,
-        partition_deltas: &[(u64, i64, i64)],
-    ) -> IndexUid {
-        let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
-        let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
-            &index_config,
-            &[source_config.clone()],
-        )
-        .unwrap();
-        let index_uid: IndexUid = metastore
-            .create_index(create_index_request)
-            .await
-            .unwrap()
-            .index_uid()
-            .clone();
-
-        if partition_deltas.is_empty() {
-            return index_uid;
-        }
-        let split_id = new_split_id();
-        let split_metadata = SplitMetadata::for_test(split_id.clone());
-        let stage_splits_request =
-            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
-                .unwrap();
-        metastore.stage_splits(stage_splits_request).await.unwrap();
-
-        let mut source_delta = SourceCheckpointDelta::default();
-        for (partition_id, from_position, to_position) in partition_deltas.iter().copied() {
-            source_delta
-                .record_partition_delta(
-                    partition_id.into(),
-                    {
-                        if from_position < 0 {
-                            Position::Beginning
-                        } else {
-                            Position::offset(from_position as u64)
-                        }
-                    },
-                    Position::offset(to_position as u64),
-                )
-                .unwrap();
-        }
-        let checkpoint_delta = IndexCheckpointDelta {
-            source_id: source_config.source_id.to_string(),
-            source_delta,
-        };
-        let checkpoint_delta_json = serde_json::to_string(&checkpoint_delta).unwrap();
-        let publish_splits_request = PublishSplitsRequest {
-            index_uid: Some(index_uid.clone()),
-            index_checkpoint_delta_json_opt: Some(checkpoint_delta_json),
-            staged_split_ids: vec![split_id.clone()],
-            replaced_split_ids: Vec::new(),
-            publish_token_opt: None,
-        };
-        metastore
-            .publish_splits(publish_splits_request)
-            .await
-            .unwrap();
-        index_uid
     }
 
     #[tokio::test]
@@ -1110,8 +1039,17 @@ mod kafka_broker_tests {
         let index_id = append_random_suffix("test-kafka-source--process-assign-partitions--index");
         let (_source_id, source_config) = get_source_config(&topic, "earliest");
 
-        let index_uid =
-            setup_index(metastore.clone(), &index_id, &source_config, &[(2, -1, 42)]).await;
+        let index_uid = setup_index(
+            metastore.clone(),
+            &index_id,
+            &source_config,
+            &[(
+                PartitionId::from(2u64),
+                Position::Beginning,
+                Position::offset(42u64),
+            )],
+        )
+        .await;
 
         let SourceParams::Kafka(params) = source_config.clone().source_params else {
             panic!(
@@ -1243,8 +1181,17 @@ mod kafka_broker_tests {
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--suggest-truncate--index");
         let (_source_id, source_config) = get_source_config(&topic, "earliest");
-        let index_uid =
-            setup_index(metastore.clone(), &index_id, &source_config, &[(2, -1, 42)]).await;
+        let index_uid = setup_index(
+            metastore.clone(),
+            &index_id,
+            &source_config,
+            &[(
+                PartitionId::from(2u64),
+                Position::Beginning,
+                Position::offset(42u64),
+            )],
+        )
+        .await;
 
         let SourceParams::Kafka(params) = source_config.clone().source_params else {
             panic!(
@@ -1436,7 +1383,18 @@ mod kafka_broker_tests {
                 metastore.clone(),
                 &index_id,
                 &source_config,
-                &[(0, -1, 0), (1, -1, 2)],
+                &[
+                    (
+                        PartitionId::from(0u64),
+                        Position::Beginning,
+                        Position::offset(0u64),
+                    ),
+                    (
+                        PartitionId::from(1u64),
+                        Position::Beginning,
+                        Position::offset(2u64),
+                    ),
+                ],
             )
             .await;
             let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
