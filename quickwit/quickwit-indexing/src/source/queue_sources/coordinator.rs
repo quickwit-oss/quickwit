@@ -176,7 +176,7 @@ impl QueueCoordinator {
                 limit_per_min = 10,
                 count = format_errors.len(),
                 last_err = ?format_errors.last().unwrap(),
-                "invalid message(s) not processed, use a dead letter queue to limit retries"
+                "invalid messages not processed, use a dead letter queue to limit retries"
             );
         }
         if preprocessed_messages.is_empty() {
@@ -268,7 +268,7 @@ impl QueueCoordinator {
                     rate_limited_error!(
                         limit_per_min = 5,
                         err = ?err,
-                        "failed to start processing message"
+                        "failed to start message processing"
                     );
                 }
             }
