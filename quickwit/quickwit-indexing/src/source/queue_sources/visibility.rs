@@ -89,12 +89,12 @@ async fn handle_visibility(
                 next_deadline = new_deadline.into();
             }
             Ok(Err(err)) => {
-                error!(err=%err, "Failed to modify message deadline");
+                error!(err=%err, "failed to modify message deadline");
                 publish_lock.kill().await;
                 break;
             }
             Err(_) => {
-                error!("Failed to modify message deadline on time");
+                error!("failed to modify message deadline on time");
                 publish_lock.kill().await;
                 break;
             }

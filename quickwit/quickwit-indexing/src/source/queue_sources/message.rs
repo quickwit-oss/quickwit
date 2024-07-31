@@ -164,6 +164,7 @@ impl CheckpointedMessage {
     }
 }
 
+// A message that is actively being read
 pub enum InProgressMessage {
     ObjectUri(ObjectUriInProgress),
 }
