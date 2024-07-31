@@ -21,138 +21,92 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use quickwit_metastore::checkpoint::PartitionId;
 
-use super::message::{CheckpointedMessage, InProgressMessage, PreProcessedMessage};
-use super::visibility::VisibilityTaskHandle;
-use super::Categorized;
+use super::message::{InProgressMessage, ReadyMessage};
 
-/// Tracks the state of the the queue messages that is known to the owning
-/// indexing pipeline.
+/// Tracks the state of the queue messages that are known to the owning indexing
+/// pipeline.
 ///
-/// Messages first land in the `ready` queue. In parallel, they are also
-/// recorded as `in_flight`, where the visibility handle is kept alive. Messages
-/// are then moved to `in_progress` to track the reader's progress. It's only
-/// when the events are published that the in-flight visiblity handles are
-/// dropped and the partition is marked as `completed``.
+/// Messages first land in the `ready_for_read` queue. They are then moved to
+/// `read_in_progress` to track the reader's progress. Once the reader reaches
+/// EOF, the message is transitioned as `awaiting_commit`. Once the message is
+/// known to be fully indexed and committed (e.g after receiving the
+/// `suggest_truncate` call), it is moved to `completed`.
 #[derive(Default)]
 pub struct QueueLocalState {
-    /// Visibility handles for all messages from the moment they are marked
-    /// `ready` until they are committed (`completed`)
-    in_flight: BTreeMap<PartitionId, VisibilityTaskHandle>,
     /// Messages that were received from the queue and are ready to be read
-    ready: VecDeque<CheckpointedMessage>,
+    ready_for_read: VecDeque<ReadyMessage>,
     /// Message that is currently being read and sent to the `DocProcessor`
-    in_progress: Option<InProgressMessage>,
-    /// Partitions that were indexed and committed
+    read_in_progress: Option<InProgressMessage>,
+    /// Partitions that were read and are still being indexed, with their
+    /// associated ack_id
+    awaiting_commit: BTreeMap<PartitionId, String>,
+    /// Partitions that were fully indexed and committed
     completed: BTreeSet<PartitionId>,
 }
 
 impl QueueLocalState {
-    /// Split the message list into:
-    /// - processable (returned)
-    /// - already processed (returned)
-    /// - tracked as in progress (dropped)
-    pub fn filter_completed(
-        &self,
-        messages: Vec<PreProcessedMessage>,
-    ) -> Categorized<PreProcessedMessage, PreProcessedMessage> {
-        let mut processable = Vec::new();
-        let mut completed = Vec::new();
-        for message in messages {
-            let partition_id = message.partition_id();
-            if self.completed.contains(&partition_id) {
-                completed.push(message);
-            } else if self.in_flight.contains_key(&partition_id) {
-                // already in progress, drop the message
-            } else {
-                processable.push(message);
+    pub fn is_ready_for_read(&self, partition_id: &PartitionId) -> bool {
+        self.ready_for_read
+            .iter()
+            .any(|msg| &msg.partition_id() == partition_id)
+    }
+
+    pub fn is_read_in_progress(&self, partition_id: &PartitionId) -> bool {
+        self.read_in_progress
+            .as_ref()
+            .map_or(false, |msg| msg.partition_id() == partition_id)
+    }
+
+    pub fn is_awating_commit(&self, partition_id: &PartitionId) -> bool {
+        self.awaiting_commit.contains_key(partition_id)
+    }
+
+    pub fn is_completed(&self, partition_id: &PartitionId) -> bool {
+        self.completed.contains(partition_id)
+    }
+
+    pub fn is_tracked(&self, partition_id: &PartitionId) -> bool {
+        self.is_ready_for_read(partition_id)
+            || self.is_read_in_progress(partition_id)
+            || self.is_awating_commit(partition_id)
+            || self.is_completed(partition_id)
+    }
+
+    pub fn set_ready_for_read(&mut self, ready_messages: Vec<ReadyMessage>) {
+        for message in ready_messages {
+            self.ready_for_read.push_back(message)
+        }
+    }
+
+    pub fn get_ready_for_read(&mut self) -> Option<ReadyMessage> {
+        while let Some(msg) = self.ready_for_read.pop_front() {
+            // don't return messages for which we didn't manage to extend the
+            // visibility, they will pop up in the queue again anyway
+            if !msg.visibility_handle.extension_failed() {
+                return Some(msg);
             }
         }
-        Categorized {
-            already_processed: completed,
-            processable,
+        None
+    }
+
+    pub fn read_in_progress_mut(&mut self) -> Option<&mut InProgressMessage> {
+        self.read_in_progress.as_mut()
+    }
+
+    pub fn replace_currently_read(&mut self, in_progress: Option<InProgressMessage>) {
+        if let Some(just_finished) = self.read_in_progress.take() {
+            self.awaiting_commit.insert(
+                just_finished.partition_id().clone(),
+                just_finished.ack_id().to_string(),
+            );
         }
+        self.read_in_progress = in_progress;
     }
 
-    pub fn set_ready_messages(
-        &mut self,
-        ready_messages: Vec<(CheckpointedMessage, VisibilityTaskHandle)>,
-    ) {
-        for (message, handle) in ready_messages {
-            let partition_id = message.partition_id();
-            self.in_flight.insert(partition_id, handle);
-            self.ready.push_back(message)
-        }
-    }
-
-    pub fn in_progress_mut(&mut self) -> Option<&mut InProgressMessage> {
-        self.in_progress.as_mut()
-    }
-
-    pub fn set_in_progress(&mut self, in_progress: Option<InProgressMessage>) {
-        self.in_progress = in_progress;
-    }
-
-    pub fn get_ready_message(&mut self) -> Option<CheckpointedMessage> {
-        self.ready.pop_front()
-    }
-
-    pub fn mark_completed(&mut self, partition_id: PartitionId) -> Option<VisibilityTaskHandle> {
-        let visibility_handle = self.in_flight.remove(&partition_id);
+    /// Returns the ack_id if that message was awaiting_commit
+    pub fn mark_completed(&mut self, partition_id: PartitionId) -> Option<String> {
+        let ack_id_opt = self.awaiting_commit.remove(&partition_id);
         self.completed.insert(partition_id);
-        visibility_handle
-    }
-}
-
-#[cfg(test)]
-pub mod test_helpers {
-    use quickwit_metastore::checkpoint::PartitionId;
-
-    use super::*;
-
-    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-    pub enum LocalStateForPartition {
-        Unknown,
-        Ready,
-        ReadInProgress,
-        WaitForCommit,
-        Completed,
-    }
-
-    impl QueueLocalState {
-        pub fn state(&self, partition_id: &PartitionId) -> LocalStateForPartition {
-            let is_completed = self.completed.contains(partition_id);
-            let is_read_in_progress = self
-                .in_progress
-                .as_ref()
-                .map(|msg| msg.partition_id() == partition_id)
-                .unwrap_or(false);
-            let is_wait_for_commit =
-                self.in_flight.contains_key(partition_id) && !is_read_in_progress;
-            let is_ready = self
-                .ready
-                .iter()
-                .any(|msg| msg.partition_id() == *partition_id);
-
-            let states = [
-                is_completed,
-                is_read_in_progress,
-                is_wait_for_commit,
-                is_ready,
-            ];
-            let simulteanous_states = states.into_iter().filter(|x| *x).count();
-            assert!(simulteanous_states <= 1);
-
-            if is_completed {
-                LocalStateForPartition::Completed
-            } else if is_ready {
-                LocalStateForPartition::Ready
-            } else if is_read_in_progress {
-                LocalStateForPartition::ReadInProgress
-            } else if is_wait_for_commit {
-                LocalStateForPartition::WaitForCommit
-            } else {
-                LocalStateForPartition::Unknown
-            }
-        }
+        ack_id_opt
     }
 }

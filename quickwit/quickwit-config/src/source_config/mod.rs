@@ -250,6 +250,7 @@ impl SourceParams {
         Self::Void(VoidSourceParams)
     }
 
+    /// Checkpoints can be stored either in the index metadata (false) or the shard table (true).
     pub fn use_shard_api(&self) -> bool {
         match self {
             SourceParams::File(_) => false,
