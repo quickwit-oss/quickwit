@@ -97,7 +97,7 @@ resource "aws_s3_bucket_notification" "bucket_notification" {
 :::note
 
 Only events of type `s3:ObjectCreated:*` are supported. Other types (e.g.
-`ObjectRemoved`) are discarded with an error log.
+`ObjectRemoved`) are acknowledged and a warning is logged.
 
 :::
 

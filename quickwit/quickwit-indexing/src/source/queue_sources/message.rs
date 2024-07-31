@@ -23,12 +23,14 @@ use std::str::FromStr;
 use std::time::Instant;
 
 use anyhow::Context;
+use quickwit_common::rate_limited_warn;
 use quickwit_common::uri::Uri;
 use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::types::Position;
 use quickwit_storage::{OwnedBytes, StorageResolver};
 use serde_json::Value;
 use thiserror::Error;
+use tracing::info;
 
 use super::visibility::VisibilityTaskHandle;
 use crate::source::doc_file_reader::ObjectUriBatchReader;
@@ -74,12 +76,8 @@ impl fmt::Debug for RawMessage {
 
 #[derive(Error, Debug)]
 pub enum PreProcessingError {
-    /// The message can be acknowledged without processing
-    #[error("skippable message: {reason}")]
-    Discardable {
-        reason: &'static str,
-        ack_id: String,
-    },
+    #[error("message can be acknowledged without processing")]
+    Discardable { ack_id: String },
     #[error("unexpected message format: {0}")]
     UnexpectedFormat(#[from] anyhow::Error),
 }
@@ -140,8 +138,8 @@ impl PreProcessedMessage {
 fn uri_from_s3_notification(message: &[u8], ack_id: &str) -> Result<Uri, PreProcessingError> {
     let value: Value = serde_json::from_slice(message).context("invalid JSON message")?;
     if matches!(value["Event"].as_str(), Some("s3:TestEvent")) {
+        info!("discarding S3 test event");
         return Err(PreProcessingError::Discardable {
-            reason: "S3 test event",
             ack_id: ack_id.to_string(),
         });
     }
@@ -149,17 +147,21 @@ fn uri_from_s3_notification(message: &[u8], ack_id: &str) -> Result<Uri, PreProc
         .as_str()
         .context("invalid S3 notification: Records[0].eventName not found")?;
     if !event_name.starts_with("ObjectCreated:") {
-        return Err(PreProcessingError::UnexpectedFormat(anyhow::anyhow!(
-            "only s3:ObjectCreated:* are supported, got {}",
-            event_name
-        )));
+        rate_limited_warn!(
+            limit_per_min = 5,
+            event = event_name,
+            "only s3:ObjectCreated:* events are supported"
+        );
+        return Err(PreProcessingError::Discardable {
+            ack_id: ack_id.to_string(),
+        });
     }
     let key = value["Records"][0]["s3"]["object"]["key"]
         .as_str()
         .context("invalid S3 notification: Records[0].s3.object.key not found")?;
     let bucket = value["Records"][0]["s3"]["bucket"]["name"]
         .as_str()
-        .context("invalid S3 notification: Records[0].s3.bucket.name not found".to_string())?;
+        .context("invalid S3 notification: Records[0].s3.bucket.name not found")?;
     Uri::from_str(&format!("s3://{}/{}", bucket, key)).map_err(|e| e.into())
 }
 
@@ -325,12 +327,12 @@ mod tests {
             uri_from_s3_notification(&OwnedBytes::new(invalid_message.as_bytes()), "myackid");
         assert!(matches!(
             result,
-            Err(PreProcessingError::UnexpectedFormat(_))
+            Err(PreProcessingError::Discardable { .. })
         ));
     }
 
     #[test]
-    fn test_uri_from_s3_notification_skippable() {
+    fn test_uri_from_s3_notification_discardable() {
         let invalid_message = r#"{
             "Service":"Amazon S3",
             "Event":"s3:TestEvent",
@@ -341,8 +343,7 @@ mod tests {
         }"#;
         let result =
             uri_from_s3_notification(&OwnedBytes::new(invalid_message.as_bytes()), "myackid");
-        if let Err(PreProcessingError::Discardable { reason, ack_id }) = result {
-            assert_eq!(reason, "S3 test event");
+        if let Err(PreProcessingError::Discardable { ack_id }) = result {
             assert_eq!(ack_id, "myackid");
         } else {
             panic!("Expected skippable error");

@@ -30,7 +30,6 @@ use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::SourceType;
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
-use tracing::info;
 use ulid::Ulid;
 
 use super::helpers::QueueReceiver;
@@ -168,10 +167,7 @@ impl QueueCoordinator {
             match message.pre_process(self.message_type) {
                 Ok(preprocessed_message) => preprocessed_messages.push(preprocessed_message),
                 Err(PreProcessingError::UnexpectedFormat(err)) => format_errors.push(err),
-                Err(PreProcessingError::Discardable { ack_id, reason }) => {
-                    info!(reason, "acknowledge message without processing");
-                    discardable_ack_ids.push(ack_id)
-                }
+                Err(PreProcessingError::Discardable { ack_id }) => discardable_ack_ids.push(ack_id),
             }
         }
         if !format_errors.is_empty() {
