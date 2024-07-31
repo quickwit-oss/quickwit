@@ -131,6 +131,7 @@ impl DocFileReader {
     /// is reached.
     pub async fn next_record(&mut self) -> anyhow::Result<Option<FileRecord>> {
         let mut buf = String::new();
+        // TODO add retry if read stream is broken because of a transient error
         let (bytes_read, is_last) = self.reader.read_line_and_peek(&mut buf).await?;
         if bytes_read == 0 {
             Ok(None)
@@ -268,6 +269,8 @@ impl BatchReader for StdinBatchReader {
         let mut batch_builder = BatchBuilder::new(source_type);
         while batch_builder.num_bytes < BATCH_NUM_BYTES_LIMIT {
             let mut buf = String::new();
+            // stdin might be slow because it's depending on external
+            // input (e.g. user typing on a keyboard)
             let bytes_read = source_progress
                 .protect_future(self.reader.read_line(&mut buf))
                 .await?;
