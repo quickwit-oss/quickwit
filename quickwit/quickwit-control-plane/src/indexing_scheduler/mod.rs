@@ -352,7 +352,7 @@ impl IndexingScheduler {
     fn apply_physical_indexing_plan(
         &mut self,
         indexers: &[IndexerNodeInfo],
-        new_physical_plan: PhysicalIndexingPlan,
+        mut new_physical_plan: PhysicalIndexingPlan,
         notify_on_drop: Option<Arc<NotifyChangeOnDrop>>,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
@@ -389,6 +389,7 @@ impl IndexingScheduler {
         }
         self.state.num_applied_physical_indexing_plan += 1;
         self.state.last_applied_plan_timestamp = Some(Instant::now());
+        new_physical_plan.clear_require_restart();
         self.state.last_applied_physical_plan = Some(new_physical_plan);
     }
 
