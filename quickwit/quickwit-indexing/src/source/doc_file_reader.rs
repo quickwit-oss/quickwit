@@ -104,6 +104,9 @@ impl DocFileReader {
         let (dir_uri, file_name) = dir_and_filename(uri)?;
         let storage = storage_resolver.resolve(&dir_uri).await?;
         let file_size = storage.file_num_bytes(file_name).await?.try_into().unwrap();
+        if file_size == 0 {
+            return Ok(DocFileReader::empty());
+        }
         // If it's a gzip file, we can't seek to a specific offset. `SkipReader`
         // starts from the beginning of the file, decompresses and skips the
         // first `offset` bytes.
