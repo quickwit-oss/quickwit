@@ -57,7 +57,7 @@ impl QueueLocalState {
             .map_or(false, |msg| &msg.partition_id == partition_id)
     }
 
-    pub fn is_awating_commit(&self, partition_id: &PartitionId) -> bool {
+    pub fn is_awaiting_commit(&self, partition_id: &PartitionId) -> bool {
         self.awaiting_commit.contains_key(partition_id)
     }
 
@@ -68,7 +68,7 @@ impl QueueLocalState {
     pub fn is_tracked(&self, partition_id: &PartitionId) -> bool {
         self.is_ready_for_read(partition_id)
             || self.is_read_in_progress(partition_id)
-            || self.is_awating_commit(partition_id)
+            || self.is_awaiting_commit(partition_id)
             || self.is_completed(partition_id)
     }
 
