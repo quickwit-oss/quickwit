@@ -60,8 +60,8 @@ pub use source_config::{
     load_source_config_from_user_config, FileSourceMessageType, FileSourceNotification,
     FileSourceParams, FileSourceSqs, KafkaSourceParams, KinesisSourceParams, PubSubSourceParams,
     PulsarSourceAuth, PulsarSourceParams, RegionOrEndpoint, SourceConfig, SourceInputFormat,
-    SourceParams, SqsSourceParams, TransformConfig, VecSourceParams, VoidSourceParams,
-    CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
+    SourceParams, TransformConfig, VecSourceParams, VoidSourceParams, CLI_SOURCE_ID,
+    INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
 };
 use tracing::warn;
 
@@ -118,7 +118,6 @@ pub fn disable_ingest_v1() -> bool {
     FileSourceNotification,
     FileSourceParamsForSerde,
     FileSourceSqs,
-    SqsSourceParams,
     PubSubSourceParams,
     KafkaSourceParams,
     KinesisSourceParams,

@@ -41,8 +41,6 @@ enum SourceType {
   SOURCE_TYPE_PULSAR = 9;
   SOURCE_TYPE_VEC = 10;
   SOURCE_TYPE_VOID = 11;
-  /// Amazon SQS
-  SOURCE_TYPE_SQS = 12;
   SOURCE_TYPE_STDIN = 13;
 }
 

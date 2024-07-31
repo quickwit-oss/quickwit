@@ -211,7 +211,6 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             SourceParams::Kafka(_)
             | SourceParams::Kinesis(_)
             | SourceParams::PubSub(_)
-            | SourceParams::Sqs(_)
             | SourceParams::Pulsar(_)
             | SourceParams::File(FileSourceParams::Notifications(_)) => {
                 sources.push(SourceToSchedule {

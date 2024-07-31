@@ -83,7 +83,6 @@ impl SourceConfig {
             SourceParams::PubSub(_) => SourceType::PubSub,
             SourceParams::Pulsar(_) => SourceType::Pulsar,
             SourceParams::Stdin => SourceType::Stdin,
-            SourceParams::Sqs(_) => SourceType::Sqs,
             SourceParams::Vec(_) => SourceType::Vec,
             SourceParams::Void(_) => SourceType::Void,
         }
@@ -101,7 +100,6 @@ impl SourceConfig {
             SourceParams::Kinesis(params) => serde_json::to_value(params),
             SourceParams::Pulsar(params) => serde_json::to_value(params),
             SourceParams::Stdin => serde_json::to_value(()),
-            SourceParams::Sqs(params) => serde_json::to_value(params),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
         }
@@ -231,7 +229,6 @@ pub enum SourceParams {
     PubSub(PubSubSourceParams),
     Pulsar(PulsarSourceParams),
     Stdin,
-    Sqs(SqsSourceParams),
     Vec(VecSourceParams),
     Void(VoidSourceParams),
 }
@@ -383,11 +380,6 @@ pub struct PubSubSourceParams {
     pub project_id: Option<String>,
     /// Maximum number of messages returned by a pull request (default 1,000)
     pub max_messages_per_pull: Option<i32>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct SqsSourceParams {
-    pub queue_url: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]

@@ -94,10 +94,7 @@ use once_cell::sync::OnceCell;
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
-pub use queue_sources::{
-    sqs_queue,
-    sqs_source::{SqsSource, SqsSourceFactory},
-};
+pub use queue_sources::sqs_queue;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::EventBroker;
@@ -411,8 +408,6 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source(SourceType::Kinesis, KinesisSourceFactory);
         #[cfg(feature = "pulsar")]
         source_factory.add_source(SourceType::Pulsar, PulsarSourceFactory);
-        #[cfg(feature = "sqs")]
-        source_factory.add_source(SourceType::Sqs, SqsSourceFactory);
         source_factory.add_source(SourceType::Vec, VecSourceFactory);
         source_factory.add_source(SourceType::Void, VoidSourceFactory);
         source_factory
@@ -473,17 +468,6 @@ pub async fn check_source_connectivity(
             #[cfg(feature = "pulsar")]
             {
                 pulsar_source::check_connectivity(params).await?;
-                Ok(())
-            }
-        }
-        #[allow(unused_variables)]
-        SourceParams::Sqs(params) => {
-            #[cfg(not(feature = "sqs"))]
-            anyhow::bail!("Quickwit was compiled without the `sqs` feature");
-
-            #[cfg(feature = "sqs")]
-            {
-                queue_sources::sqs_queue::check_connectivity(&params.queue_url).await?;
                 Ok(())
             }
         }

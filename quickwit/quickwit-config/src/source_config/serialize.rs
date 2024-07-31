@@ -89,8 +89,7 @@ impl SourceConfigForSerialization {
             SourceParams::File(_)
             | SourceParams::Kafka(_)
             | SourceParams::Kinesis(_)
-            | SourceParams::Pulsar(_)
-            | SourceParams::Sqs(_) => {
+            | SourceParams::Pulsar(_) => {
                 // TODO consider any validation opportunity
             }
             SourceParams::PubSub(_)
@@ -103,7 +102,6 @@ impl SourceConfigForSerialization {
         match &self.source_params {
             SourceParams::PubSub(_)
             | SourceParams::Kafka(_)
-            | SourceParams::Sqs(_)
             | SourceParams::File(FileSourceParams::Notifications(_)) => {}
             _ => {
                 if self.num_pipelines > 1 {

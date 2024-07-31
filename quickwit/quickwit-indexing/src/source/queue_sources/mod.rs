@@ -26,8 +26,6 @@ mod message;
 mod shared_state;
 #[cfg(feature = "sqs")]
 pub mod sqs_queue;
-#[cfg(feature = "sqs")]
-pub mod sqs_source;
 mod visibility;
 
 use std::fmt;

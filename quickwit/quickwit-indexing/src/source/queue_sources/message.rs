@@ -38,7 +38,7 @@ pub enum MessageType {
     S3Notification,
     // GcsNotification,
     RawUri,
-    RawData,
+    // RawData,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,7 +97,6 @@ impl RawMessage {
                 let payload_str = read_to_string(self.payload).context("failed to read payload")?;
                 PreProcessedPayload::ObjectUri(Uri::from_str(&payload_str)?)
             }
-            MessageType::RawData => unimplemented!(),
         };
         Ok(PreProcessedMessage {
             metadata: self.metadata,
