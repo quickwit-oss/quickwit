@@ -777,7 +777,8 @@ mod kafka_broker_tests {
     use tokio::sync::watch;
 
     use super::*;
-    use crate::source::tests::{setup_index, SourceRuntimeBuilder};
+    use crate::source::test_setup_helper::setup_index;
+    use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::{quickwit_supported_sources, RawDocBatch, SourceActor};
 
     fn create_base_consumer(group_id: &str) -> BaseConsumer {
