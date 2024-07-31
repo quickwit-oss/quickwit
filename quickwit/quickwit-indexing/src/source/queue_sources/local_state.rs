@@ -97,7 +97,7 @@ impl QueueLocalState {
         if let Some(just_finished) = self.read_in_progress.take() {
             self.awaiting_commit.insert(
                 just_finished.partition_id.clone(),
-                just_finished.ack_id().to_string(),
+                just_finished.visibility_handle.ack_id().to_string(),
             );
         }
         self.read_in_progress = in_progress;
