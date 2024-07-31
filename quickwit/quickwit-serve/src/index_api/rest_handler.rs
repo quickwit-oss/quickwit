@@ -710,15 +710,14 @@ async fn create_source(
         load_source_config_from_user_config(config_format, &source_config_bytes)
             .map_err(IndexServiceError::InvalidConfig)?;
     // Note: This check is performed here instead of the source config serde
-    // because many tests use the file source with local files, and can't store
-    // that config in the metastore without going through the validation.
-    if let SourceParams::File(FileSourceParams::Filepath(uri)) = &source_config.source_params {
-        if !uri.protocol().is_object_storage() {
-            return Err(IndexServiceError::InvalidConfig(anyhow::anyhow!(
-                "Only object files are supported. To ingest from the local file system use the \
-                 CLI command `quickwit tool local-ingest`."
-            )));
-        }
+    // because many tests use the file source, and can't store that config in
+    // the metastore without going through the validation.
+    if let SourceParams::File(FileSourceParams::Filepath(_)) = &source_config.source_params {
+        return Err(IndexServiceError::InvalidConfig(anyhow::anyhow!(
+            "path based file sources are limited to a local usage, please use the CLI command \
+             `quickwit tool local-ingest` to ingest data from a specific file or setup a \
+             notification based file source"
+        )));
     }
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = index_service
@@ -1895,7 +1894,7 @@ mod tests {
                 .await;
             assert_eq!(resp.status(), 400);
             let response_body = std::str::from_utf8(resp.body()).unwrap();
-            assert!(response_body.contains("Only object files are supported"))
+            assert!(response_body.contains("limited to a local usage"))
         }
     }
 
