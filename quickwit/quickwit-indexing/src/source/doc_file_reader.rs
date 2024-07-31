@@ -91,6 +91,12 @@ pub struct DocFileReader {
     partition_id: Option<PartitionId>,
 }
 
+/// Result of a read attempt on a `DocFileReader`
+pub struct ReadBatchResponse {
+    pub batch_opt: Option<RawDocBatch>,
+    pub is_eof: bool,
+}
+
 impl DocFileReader {
     pub async fn from_path(
         checkpoint: &SourceCheckpoint,
@@ -149,12 +155,13 @@ impl DocFileReader {
         }
     }
 
-    // Return true if the end of the file has been reached.
-    pub async fn read_batch(
-        &mut self,
-        ctx: &SourceContext,
-    ) -> anyhow::Result<(Option<RawDocBatch>, bool)> {
-        // We collect batches of documents before sending them to the indexer.
+    /// Builds a new record batch from the reader.
+    ///
+    /// Sets `is_eof` to true when the underlying reader reaches EOF while
+    /// building the batch. This helps detecting early that we are done reading
+    /// the file. The returned `batch_opt` is `None` if the reader is already
+    /// EOF.
+    pub async fn read_batch(&mut self, ctx: &SourceContext) -> anyhow::Result<ReadBatchResponse> {
         let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_LIMIT;
         let mut reached_eof = false;
         let mut batch_builder = BatchBuilder::new(SourceType::File);
@@ -187,9 +194,15 @@ impl DocFileReader {
                     .unwrap();
             }
             self.counters.previous_offset = self.counters.current_offset;
-            Ok((Some(batch_builder.build()), reached_eof))
+            Ok(ReadBatchResponse {
+                batch_opt: Some(batch_builder.build()),
+                is_eof: reached_eof,
+            })
         } else {
-            Ok((None, reached_eof))
+            Ok(ReadBatchResponse {
+                batch_opt: None,
+                is_eof: reached_eof,
+            })
         }
     }
 
@@ -268,8 +281,6 @@ pub mod file_test_helpers {
         }
         write_to_tmp(documents_bytes, gzip).await
     }
-
-    // let temp_file_path = temp_file.path().canonicalize().unwrap();
 }
 
 #[cfg(test)]
@@ -354,7 +365,8 @@ mod tests {
         let mut parsed_lines = 0;
         let mut parsed_batches = 0;
         loop {
-            let (batch_opt, is_eof) = doc_batch_reader.read_batch(&ctx).await.unwrap();
+            let ReadBatchResponse { batch_opt, is_eof } =
+                doc_batch_reader.read_batch(&ctx).await.unwrap();
             if let Some(batch) = batch_opt {
                 parsed_lines += batch.docs.len();
                 parsed_batches += 1;
@@ -362,6 +374,8 @@ mod tests {
                 assert!(parsed_lines <= expected_lines);
             } else {
                 assert!(is_eof);
+            }
+            if is_eof {
                 break;
             }
         }
