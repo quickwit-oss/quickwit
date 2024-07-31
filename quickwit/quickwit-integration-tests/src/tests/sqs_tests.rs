@@ -20,7 +20,10 @@
 use std::io::Write;
 use std::iter;
 use std::str::FromStr;
+use std::time::Duration;
 
+use aws_sdk_sqs::types::QueueAttributeName;
+use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::uri::Uri;
 use quickwit_config::ConfigFormat;
 use quickwit_indexing::source::sqs_queue::test_helpers as sqs_test_helpers;
@@ -87,8 +90,6 @@ async fn test_sqs_single_node_cluster() {
                 mode: sqs
                 queue_url: {}
                 message_type: raw_uri
-                # decrease poll duration to avoid hanging actor shutdown
-                wait_time_seconds: 2
             input_format: plain_text
         "#,
         source_id, queue_url
@@ -134,6 +135,30 @@ async fn test_sqs_single_node_cluster() {
         .await
         .unwrap();
     assert_eq!(search_result.num_hits, 10 * 1000);
+
+    wait_until_predicate(
+        || async {
+            let queue_attributes = sqs_client
+                .get_queue_attributes()
+                .queue_url(&queue_url)
+                .attribute_names(QueueAttributeName::All)
+                .send()
+                .await
+                .unwrap();
+            let in_flight_count: usize = queue_attributes
+                .attributes
+                .unwrap()
+                .get(&QueueAttributeName::ApproximateNumberOfMessagesNotVisible)
+                .unwrap()
+                .parse()
+                .unwrap();
+            in_flight_count == 2
+        },
+        Duration::from_secs(5),
+        Duration::from_millis(100),
+    )
+    .await
+    .expect("Number of in-flight messages didn't reach 2 within the timeout");
 
     info!("delete index");
     sandbox

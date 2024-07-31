@@ -6069,6 +6069,7 @@ name = "quickwit-integration-tests"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "aws-sdk-sqs",
  "futures-util",
  "hyper 0.14.29",
  "itertools 0.13.0",

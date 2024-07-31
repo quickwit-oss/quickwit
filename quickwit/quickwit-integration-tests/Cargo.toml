@@ -20,6 +20,7 @@ sqs-localstack-tests = [
 
 [dev-dependencies]
 anyhow = { workspace = true }
+aws-sdk-sqs = { workspace = true }
 futures-util = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }

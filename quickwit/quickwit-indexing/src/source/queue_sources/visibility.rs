@@ -252,9 +252,13 @@ mod tests {
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
         // queue with test message
         let ack_id = "ack_id".to_string();
-        let queue = MemoryQueueForTests::new();
+        let queue = Arc::new(MemoryQueueForTests::new());
         queue.send_message("test message".to_string(), &ack_id);
-        let initial_deadline = queue.receive(1, Duration::from_secs(1)).await.unwrap()[0]
+        let initial_deadline = queue
+            .clone()
+            .receive(1, Duration::from_secs(1))
+            .await
+            .unwrap()[0]
             .metadata
             .initial_deadline;
         // spawn task
@@ -267,7 +271,7 @@ mod tests {
         };
         let handle = spawn_visibility_task(
             &ctx,
-            Arc::new(queue.clone()),
+            queue.clone(),
             ack_id.clone(),
             initial_deadline,
             visibility_settings.clone(),
@@ -300,9 +304,13 @@ mod tests {
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
         // queue with test message
         let ack_id = "ack_id".to_string();
-        let queue = MemoryQueueForTests::new();
+        let queue = Arc::new(MemoryQueueForTests::new());
         queue.send_message("test message".to_string(), &ack_id);
-        let initial_deadline = queue.receive(1, Duration::from_secs(1)).await.unwrap()[0]
+        let initial_deadline = queue
+            .clone()
+            .receive(1, Duration::from_secs(1))
+            .await
+            .unwrap()[0]
             .metadata
             .initial_deadline;
         // spawn task
@@ -315,7 +323,7 @@ mod tests {
         };
         let handle = spawn_visibility_task(
             &ctx,
-            Arc::new(queue.clone()),
+            queue.clone(),
             ack_id.clone(),
             initial_deadline,
             visibility_settings.clone(),
