@@ -436,6 +436,7 @@ impl IndexingPipeline {
             queues_dir_path: self.params.queues_dir_path.clone(),
             storage_resolver: self.params.source_storage_resolver.clone(),
             event_broker: self.params.event_broker.clone(),
+            indexing_setting: self.params.indexing_settings.clone(),
         };
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))
@@ -598,7 +599,7 @@ mod tests {
 
     use quickwit_actors::{Command, Universe};
     use quickwit_common::ServiceStream;
-    use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams, VoidSourceParams};
+    use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, PublishSplitsRequestExt};
@@ -639,7 +640,7 @@ mod tests {
             source_id: "test-source".to_string(),
             num_pipelines: NonZeroUsize::MIN,
             enabled: true,
-            source_params: SourceParams::file(PathBuf::from(test_file)),
+            source_params: SourceParams::file_from_str(test_file).unwrap(),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
@@ -689,7 +690,7 @@ mod tests {
                     && publish_splits_request.staged_split_ids.len() == 1
                     && publish_splits_request.replaced_split_ids.is_empty()
                     && format!("{:?}", checkpoint_delta.source_delta)
-                        .ends_with(":(00000000000000000000..00000000000000001030])")
+                        .ends_with(":(00000000000000000000..~00000000000000001030])")
             })
             .returning(|_| Ok(EmptyResponse {}));
 
@@ -758,7 +759,7 @@ mod tests {
             source_id: "test-source".to_string(),
             num_pipelines: NonZeroUsize::MIN,
             enabled: true,
-            source_params: SourceParams::file(PathBuf::from(test_file)),
+            source_params: SourceParams::file_from_str(test_file).unwrap(),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
@@ -801,7 +802,7 @@ mod tests {
                     && publish_splits_request.replaced_split_ids.is_empty()
                     && checkpoint_delta.source_id == "test-source"
                     && format!("{:?}", checkpoint_delta.source_delta)
-                        .ends_with(":(00000000000000000000..00000000000000001030])")
+                        .ends_with(":(00000000000000000000..~00000000000000001030])")
             })
             .returning(|_| Ok(EmptyResponse {}));
 
@@ -862,7 +863,7 @@ mod tests {
             source_id: "test-source".to_string(),
             num_pipelines: NonZeroUsize::MIN,
             enabled: true,
-            source_params: SourceParams::Void(VoidSourceParams),
+            source_params: SourceParams::void(),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
@@ -965,7 +966,7 @@ mod tests {
             source_id: "test-source".to_string(),
             num_pipelines: NonZeroUsize::MIN,
             enabled: true,
-            source_params: SourceParams::file(PathBuf::from(test_file)),
+            source_params: SourceParams::file_from_str(test_file).unwrap(),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
@@ -1008,7 +1009,7 @@ mod tests {
                     && publish_splits_request.replaced_split_ids.is_empty()
                     && checkpoint_delta.source_id == "test-source"
                     && format!("{:?}", checkpoint_delta.source_delta)
-                        .ends_with(":(00000000000000000000..00000000000000001030])")
+                        .ends_with(":(00000000000000000000..~00000000000000001030])")
             })
             .returning(|_| Ok(EmptyResponse {}));
         let universe = Universe::new();
@@ -1056,6 +1057,7 @@ mod tests {
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.join().await;
         assert!(pipeline_exit_status.is_success());
+        // flaky. Sometimes generations is 2.
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1);
         assert_eq!(pipeline_statistics.num_published_splits, 0);

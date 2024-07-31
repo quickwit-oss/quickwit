@@ -173,7 +173,7 @@ pub fn build_tool_command() -> Command {
 pub struct LocalIngestDocsArgs {
     pub config_uri: Uri,
     pub index_id: IndexId,
-    pub input_path_opt: Option<PathBuf>,
+    pub input_path_opt: Option<Uri>,
     pub input_format: SourceInputFormat,
     pub overwrite: bool,
     pub vrl_script: Option<String>,
@@ -251,9 +251,7 @@ impl ToolCliCommand {
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
         let input_path_opt = if let Some(input_path) = matches.remove_one::<String>("input-path") {
-            Uri::from_str(&input_path)?
-                .filepath()
-                .map(|path| path.to_path_buf())
+            Some(Uri::from_str(&input_path)?)
         } else {
             None
         };
@@ -410,8 +408,8 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         get_resolvers(&config.storage_configs, &config.metastore_configs);
     let mut metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
 
-    let source_params = if let Some(filepath) = args.input_path_opt.as_ref() {
-        SourceParams::file(filepath)
+    let source_params = if let Some(uri) = args.input_path_opt.as_ref() {
+        SourceParams::file_from_uri(uri.clone())
     } else {
         SourceParams::stdin()
     };

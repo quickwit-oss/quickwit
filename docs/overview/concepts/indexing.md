@@ -30,16 +30,7 @@ The disk space allocated to the split store is controlled by the config paramete
 
 ## Data sources
 
-A data source designates the location and set of parameters that allow to connect to and ingest data from an external data store, which can be a file, a stream, or a database. Often, Quickwit simply refers to data sources as "sources". The indexing engine supports file-based and stream-based sources. Quickwit can insert data into an index from one or multiple sources, defined in the index config.
-
-
-### File sources
-
-File sources are sources that read data from a file stored on the local file system.
-
-### Streaming sources
-
-Streaming sources are sources that read data from a streaming service such as Apache Kafka. As of version 0.2, Quickwit only supports Apache Kafka. Future versions of Quickwit will support additional streaming services such as Amazon Kinesis.
+A data source designates the location and set of parameters that allow to connect to and ingest data from an external data store, which can be a file, a stream, or a database. Often, Quickwit simply refers to data sources as "sources". The indexing engine supports local adhoc file ingests using [the CLI](/docs/reference/cli#tool-local-ingest) and streaming sources (e.g. the Kafka source). Quickwit can insert data into an index from one or multiple sources. More details can be found [in the source configuration page](https://quickwit.io/docs/configuration/source-config).
 
 ## Checkpoint
 

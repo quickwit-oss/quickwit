@@ -72,6 +72,12 @@ Clearing local cache directory...
 ✔ Documents successfully indexed.
 ```
 
+:::tip
+
+Object store URIs like `s3://mybucket/mykey.json` are also supported as `--input-path`, provided that your environment is configured with the appropriate permissions.
+
+:::
+
 ## Tear down resources (optional)
 
 That's it! You can now tear down the resources you created. You can do so by running the following command:

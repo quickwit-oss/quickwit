@@ -103,7 +103,9 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
     /// Downloads a slice of a file from the storage, and returns an in memory buffer
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes>;
 
-    /// Open a stream handle on the file from the storage
+    /// Opens a stream handle on the file from the storage.
+    ///
+    /// Might panic, return an error or an empty stream if the range is empty.
     async fn get_slice_stream(
         &self,
         path: &Path,

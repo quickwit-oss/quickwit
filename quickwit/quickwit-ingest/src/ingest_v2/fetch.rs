@@ -64,7 +64,7 @@ pub(super) struct FetchStreamTask {
 }
 
 impl fmt::Debug for FetchStreamTask {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("FetchStreamTask")
             .field("client_id", &self.client_id)
             .field("index_uid", &self.index_uid)

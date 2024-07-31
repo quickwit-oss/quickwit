@@ -320,14 +320,16 @@ def _clean_s3_bucket(bucket_name: str, prefix: str = ""):
     print(f"Cleaning up bucket {bucket_name}/{prefix}...")
     s3 = session.resource("s3")
     bucket = s3.Bucket(bucket_name)
-    bucket.objects.filter(Prefix=prefix).delete()
+    try:
+        bucket.objects.filter(Prefix=prefix).delete()
+    except s3.meta.client.exceptions.NoSuchBucket:
+        print(f"Bucket {bucket_name} not found, skipping cleanup")
 
 
 def empty_hdfs_bucket():
     bucket_name = _get_cloudformation_output_value(
         app.HDFS_STACK_NAME, hdfs_stack.INDEX_STORE_BUCKET_NAME_EXPORT_NAME
     )
-
     _clean_s3_bucket(bucket_name)
 
 

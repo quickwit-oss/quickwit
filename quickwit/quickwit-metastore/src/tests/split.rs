@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use futures::future::try_join_all;
 use quickwit_common::rand::append_random_suffix;
-use quickwit_config::IndexConfig;
+use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteSplitsRequest, EntityKind, IndexMetadataRequest, ListSplitsRequest,
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, PublishSplitsRequest,
@@ -77,8 +77,10 @@ pub async fn test_metastore_publish_splits_empty_splits_array_is_allowed<
     // checkpoint. This operation is allowed and used in the Indexer.
     {
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
+        let source_configs = &[SourceConfig::for_test(&source_id, SourceParams::void())];
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+            CreateIndexRequest::try_from_index_and_source_configs(&index_config, source_configs)
+                .unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -133,6 +135,7 @@ pub async fn test_metastore_publish_splits<
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
     let source_id = format!("{index_id}--source");
+    let source_configs = &[SourceConfig::for_test(&source_id, SourceParams::void())];
 
     let split_id_1 = format!("{index_id}--split-1");
     let split_metadata_1 = SplitMetadata {
@@ -199,7 +202,8 @@ pub async fn test_metastore_publish_splits<
     // Publish a non-existent split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+            CreateIndexRequest::try_from_index_and_source_configs(&index_config, source_configs)
+                .unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -226,7 +230,8 @@ pub async fn test_metastore_publish_splits<
     // Publish a staged split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+            CreateIndexRequest::try_from_index_and_source_configs(&index_config, source_configs)
+                .unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -255,7 +260,8 @@ pub async fn test_metastore_publish_splits<
     // Publish a published split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+            CreateIndexRequest::try_from_index_and_source_configs(&index_config, source_configs)
+                .unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -306,7 +312,8 @@ pub async fn test_metastore_publish_splits<
     // Publish a non-staged split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+            CreateIndexRequest::try_from_index_and_source_configs(&index_config, source_configs)
+                .unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -369,7 +376,8 @@ pub async fn test_metastore_publish_splits<
     // Publish a staged split and non-existent split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+            CreateIndexRequest::try_from_index_and_source_configs(&index_config, source_configs)
+                .unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -407,7 +415,8 @@ pub async fn test_metastore_publish_splits<
     // Publish a published split and non-existent split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+            CreateIndexRequest::try_from_index_and_source_configs(&index_config, source_configs)
+                .unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -460,7 +469,8 @@ pub async fn test_metastore_publish_splits<
     // Publish a non-staged split and non-existent split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+            CreateIndexRequest::try_from_index_and_source_configs(&index_config, source_configs)
+                .unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -520,7 +530,8 @@ pub async fn test_metastore_publish_splits<
     // Publish staged splits on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+            CreateIndexRequest::try_from_index_and_source_configs(&index_config, source_configs)
+                .unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -559,7 +570,8 @@ pub async fn test_metastore_publish_splits<
     // Publish a staged split and published split on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+            CreateIndexRequest::try_from_index_and_source_configs(&index_config, source_configs)
+                .unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -617,7 +629,8 @@ pub async fn test_metastore_publish_splits<
     // Publish published splits on an index
     {
         let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+            CreateIndexRequest::try_from_index_and_source_configs(&index_config, source_configs)
+                .unwrap();
         let index_uid: IndexUid = metastore
             .create_index(create_index_request)
             .await
@@ -681,7 +694,12 @@ pub async fn test_metastore_publish_splits_concurrency<
     let index_id = append_random_suffix("test-publish-concurrency");
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
-    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let source_id = format!("{index_id}--source");
+
+    let source_config = SourceConfig::for_test(&source_id, SourceParams::void());
+    let create_index_request =
+        CreateIndexRequest::try_from_index_and_source_configs(&index_config, &[source_config])
+            .unwrap();
 
     let index_uid: IndexUid = metastore
         .create_index(create_index_request)
@@ -689,8 +707,6 @@ pub async fn test_metastore_publish_splits_concurrency<
         .unwrap()
         .index_uid()
         .clone();
-
-    let source_id = format!("{index_id}--source");
 
     let mut join_handles = Vec::with_capacity(10);
 
@@ -1430,6 +1446,7 @@ pub async fn test_metastore_split_update_timestamp<
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
     let source_id = format!("{index_id}--source");
+    let source_config = SourceConfig::for_test(&source_id, SourceParams::void());
 
     let split_id = format!("{index_id}--split");
     let split_metadata = SplitMetadata {
@@ -1440,7 +1457,9 @@ pub async fn test_metastore_split_update_timestamp<
     };
 
     // Create an index
-    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let create_index_request =
+        CreateIndexRequest::try_from_index_and_source_configs(&index_config, &[source_config])
+            .unwrap();
     let index_uid: IndexUid = metastore
         .create_index(create_index_request)
         .await

@@ -339,8 +339,11 @@ impl<A: Actor> ActorContext<A> {
         self.self_mailbox.try_send_message(msg)
     }
 
-    /// Schedules a message that will be sent to the high-priority
-    /// queue of the actor Mailbox once `after_duration` has elapsed.
+    /// Schedules a message that will be sent to the high-priority queue of the
+    /// actor Mailbox once `after_duration` has elapsed.
+    ///
+    /// Note that this holds a reference to the actor mailbox until the message
+    /// is actually sent.
     pub fn schedule_self_msg<M>(&self, after_duration: Duration, message: M)
     where
         A: DeferableReplyHandler<M>,

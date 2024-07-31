@@ -744,7 +744,7 @@ mod tests {
             source_id: "foo-source".to_string(),
             num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
-            source_params: SourceParams::file("path/to/file"),
+            source_params: SourceParams::file_from_str("path/to/file").unwrap(),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         }];
@@ -753,9 +753,10 @@ mod tests {
             source_type: "file".to_string(),
             enabled: "true".to_string(),
         }];
+        let expected_uri = Uri::from_str("path/to/file").unwrap();
         let expected_params = vec![ParamsRow {
             key: "filepath".to_string(),
-            value: JsonValue::String("path/to/file".to_string()),
+            value: JsonValue::String(expected_uri.to_string()),
         }];
         let expected_checkpoint = vec![
             CheckpointRow {
@@ -820,12 +821,12 @@ mod tests {
         let expected_sources = [
             SourceRow {
                 source_id: "bar-source".to_string(),
-                source_type: "file".to_string(),
+                source_type: "stdin".to_string(),
                 enabled: "true".to_string(),
             },
             SourceRow {
                 source_id: "foo-source".to_string(),
-                source_type: "file".to_string(),
+                source_type: "stdin".to_string(),
                 enabled: "true".to_string(),
             },
         ];

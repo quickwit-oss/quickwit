@@ -49,6 +49,7 @@ use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
 use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
 use quickwit_proto::types::{DocUid, DocUidGenerator, IndexId, NodeId, SubrequestId};
 use tracing::{error, info};
+use workbench::pending_subrequests;
 
 pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::{wait_for_ingester_decommission, wait_for_ingester_status, Ingester};

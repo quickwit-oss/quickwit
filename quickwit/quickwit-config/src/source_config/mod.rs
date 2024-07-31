@@ -19,8 +19,8 @@
 
 pub(crate) mod serialize;
 
+use std::borrow::Cow;
 use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use bytes::Bytes;
@@ -82,6 +82,7 @@ impl SourceConfig {
             SourceParams::Kinesis(_) => SourceType::Kinesis,
             SourceParams::PubSub(_) => SourceType::PubSub,
             SourceParams::Pulsar(_) => SourceType::Pulsar,
+            SourceParams::Stdin => SourceType::Stdin,
             SourceParams::Vec(_) => SourceType::Vec,
             SourceParams::Void(_) => SourceType::Void,
         }
@@ -98,6 +99,7 @@ impl SourceConfig {
             SourceParams::Kafka(params) => serde_json::to_value(params),
             SourceParams::Kinesis(params) => serde_json::to_value(params),
             SourceParams::Pulsar(params) => serde_json::to_value(params),
+            SourceParams::Stdin => serde_json::to_value(()),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
         }
@@ -214,6 +216,7 @@ impl FromStr for SourceInputFormat {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "source_type", content = "params", rename_all = "snake_case")]
 pub enum SourceParams {
+    #[schema(value_type = FileSourceParamsForSerde)]
     File(FileSourceParams),
     Ingest,
     #[serde(rename = "ingest-api")]
@@ -225,17 +228,22 @@ pub enum SourceParams {
     #[serde(rename = "pubsub")]
     PubSub(PubSubSourceParams),
     Pulsar(PulsarSourceParams),
+    Stdin,
     Vec(VecSourceParams),
     Void(VoidSourceParams),
 }
 
 impl SourceParams {
-    pub fn file<P: AsRef<Path>>(filepath: P) -> Self {
-        Self::File(FileSourceParams::file(filepath))
+    pub fn file_from_uri(uri: Uri) -> Self {
+        Self::File(FileSourceParams::Filepath(uri))
+    }
+
+    pub fn file_from_str<P: AsRef<str>>(filepath: P) -> anyhow::Result<Self> {
+        Uri::from_str(filepath.as_ref()).map(Self::file_from_uri)
     }
 
     pub fn stdin() -> Self {
-        Self::File(FileSourceParams::stdin())
+        Self::Stdin
     }
 
     pub fn void() -> Self {
@@ -243,41 +251,92 @@ impl SourceParams {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct FileSourceParams {
-    /// Path of the file to read. Assume stdin if None.
-    #[schema(value_type = String)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    #[serde(deserialize_with = "absolute_filepath_from_str")]
-    pub filepath: Option<PathBuf>, //< If None read from stdin.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FileSourceMessageType {
+    /// See <https://docs.aws.amazon.com/AmazonS3/latest/userguide/notification-content-structure.html>
+    S3Notification,
+    /// A string with the URI of the file (e.g `s3://bucket/key`)
+    RawUri,
 }
 
-/// Deserializing as an URI first to validate the input.
-///
-/// TODO: we might want to replace `PathBuf` with `Uri` directly in
-/// `FileSourceParams`
-fn absolute_filepath_from_str<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
-where D: Deserializer<'de> {
-    let filepath_opt: Option<String> = Deserialize::deserialize(deserializer)?;
-    if let Some(filepath) = filepath_opt {
-        let uri = Uri::from_str(&filepath).map_err(D::Error::custom)?;
-        Ok(Some(PathBuf::from(uri.as_str())))
-    } else {
-        Ok(None)
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct FileSourceSqs {
+    pub queue_url: String,
+    pub message_type: FileSourceMessageType,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FileSourceNotification {
+    Sqs(FileSourceSqs),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct FileSourceParamsForSerde {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    notifications: Vec<FileSourceNotification>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    filepath: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FileSourceParamsForSerde",
+    into = "FileSourceParamsForSerde"
+)]
+pub enum FileSourceParams {
+    Notifications(FileSourceNotification),
+    Filepath(Uri),
+}
+
+impl TryFrom<FileSourceParamsForSerde> for FileSourceParams {
+    type Error = Cow<'static, str>;
+
+    fn try_from(mut value: FileSourceParamsForSerde) -> Result<Self, Self::Error> {
+        if value.filepath.is_some() && !value.notifications.is_empty() {
+            return Err(
+                "File source parameters `notifications` and `filepath` are mutually exclusive"
+                    .into(),
+            );
+        }
+        if let Some(filepath) = value.filepath {
+            let uri = Uri::from_str(&filepath).map_err(|err| err.to_string())?;
+            Ok(FileSourceParams::Filepath(uri))
+        } else if value.notifications.len() == 1 {
+            Ok(FileSourceParams::Notifications(
+                value.notifications.remove(0),
+            ))
+        } else if value.notifications.len() > 1 {
+            return Err("Only one notification can be specified for now".into());
+        } else {
+            return Err(
+                "Either `notifications` or `filepath` must be specified as file source parameters"
+                    .into(),
+            );
+        }
+    }
+}
+
+impl From<FileSourceParams> for FileSourceParamsForSerde {
+    fn from(value: FileSourceParams) -> Self {
+        match value {
+            FileSourceParams::Filepath(uri) => Self {
+                filepath: Some(uri.to_string()),
+                notifications: vec![],
+            },
+            FileSourceParams::Notifications(notification) => Self {
+                filepath: None,
+                notifications: vec![notification],
+            },
+        }
     }
 }
 
 impl FileSourceParams {
-    pub fn file<P: AsRef<Path>>(filepath: P) -> Self {
-        FileSourceParams {
-            filepath: Some(filepath.as_ref().to_path_buf()),
-        }
-    }
-
-    pub fn stdin() -> Self {
-        FileSourceParams { filepath: None }
+    pub fn from_filepath<P: AsRef<str>>(filepath: P) -> anyhow::Result<Self> {
+        Uri::from_str(filepath.as_ref()).map(Self::Filepath)
     }
 }
 
@@ -802,17 +861,87 @@ mod tests {
     }
 
     #[test]
-    fn test_file_source_params_serialization() {
+    fn test_file_source_params_serde() {
         {
             let yaml = r#"
                 filepath: source-path.json
             "#;
-            let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
+            let file_params_deserialized = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
             let uri = Uri::from_str("source-path.json").unwrap();
+            assert_eq!(file_params_deserialized, FileSourceParams::Filepath(uri));
+            let file_params_reserialized = serde_json::to_value(file_params_deserialized).unwrap();
+            file_params_reserialized
+                .get("filepath")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .contains("source-path.json");
+        }
+        {
+            let yaml = r#"
+                notifications:
+                  - type: sqs
+                    queue_url: https://sqs.us-east-1.amazonaws.com/123456789012/queue-name
+                    message_type: s3_notification
+            "#;
+            let file_params_deserialized = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
             assert_eq!(
-                file_params.filepath.unwrap().as_path(),
-                Path::new(uri.as_str())
+                file_params_deserialized,
+                FileSourceParams::Notifications(FileSourceNotification::Sqs(FileSourceSqs {
+                    queue_url: "https://sqs.us-east-1.amazonaws.com/123456789012/queue-name"
+                        .to_string(),
+                    message_type: FileSourceMessageType::S3Notification,
+                })),
             );
+            let file_params_reserialized = serde_json::to_value(&file_params_deserialized).unwrap();
+            assert_eq!(
+                file_params_reserialized,
+                json!({"notifications": [{"type": "sqs", "queue_url": "https://sqs.us-east-1.amazonaws.com/123456789012/queue-name", "message_type": "s3_notification"}]})
+            );
+        }
+        {
+            let yaml = r#"
+                filepath: source-path.json
+                notifications:
+                  - type: sqs
+                    queue_url: https://sqs.us-east-1.amazonaws.com/123456789012/queue-name
+                    message_type: s3_notification
+            "#;
+            let error = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "File source parameters `notifications` and `filepath` are mutually exclusive"
+            );
+        }
+        {
+            let yaml = r#"
+                notifications:
+                  - type: sqs
+                    queue_url: https://sqs.us-east-1.amazonaws.com/123456789012/queue1
+                    message_type: s3_notification
+                  - type: sqs
+                    queue_url: https://sqs.us-east-1.amazonaws.com/123456789012/queue2
+                    message_type: s3_notification
+            "#;
+            let error = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "Only one notification can be specified for now"
+            );
+        }
+        {
+            let json = r#"
+            {
+                "notifications": [
+                    {
+                        "queue_url": "https://sqs.us-east-1.amazonaws.com/123456789012/queue",
+                        "message_type": "s3_notification"
+                    }
+                ]
+            }
+            "#;
+            let error = serde_json::from_str::<FileSourceParams>(json).unwrap_err();
+            assert!(error.to_string().contains("missing field `type`"));
         }
     }
 
@@ -1199,7 +1328,9 @@ mod tests {
             "desired_num_pipelines": 1,
             "max_num_pipelines_per_indexer": 1,
             "source_type": "file",
-            "params": {"filepath": "/test_non_json_corpus.txt"},
+            "params": {
+              "filepath": "s3://mybucket/test_non_json_corpus.txt"
+            },
             "input_format": "plain_text"
         }"#;
         let source_config =

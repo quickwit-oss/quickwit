@@ -820,6 +820,8 @@ impl IngestController {
                     leader_id: shard.leader_id.clone(),
                     follower_id: shard.follower_id.clone(),
                     doc_mapping_uid: shard.doc_mapping_uid,
+                    // Shards are acquired by the ingest sources
+                    publish_token: None,
                 }
             })
             .collect();

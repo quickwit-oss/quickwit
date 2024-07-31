@@ -14,6 +14,7 @@ license.workspace = true
 aws-config = { workspace = true }
 aws-sdk-kinesis = { workspace = true, optional = true }
 aws-sdk-s3 = { workspace = true }
+aws-sdk-sqs = { workspace = true, optional = true }
 aws-smithy-async = { workspace = true }
 aws-smithy-runtime = { workspace = true }
 aws-types = { workspace = true }
@@ -27,3 +28,4 @@ quickwit-common = { workspace = true }
 
 [features]
 kinesis = ["aws-sdk-kinesis"]
+sqs = ["aws-sdk-sqs"]

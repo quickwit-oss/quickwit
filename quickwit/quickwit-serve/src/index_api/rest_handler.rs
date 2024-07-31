@@ -23,7 +23,8 @@ use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     load_index_config_update, load_source_config_from_user_config, validate_index_id_pattern,
-    ConfigFormat, NodeConfig, SourceConfig, SourceParams, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
+    ConfigFormat, FileSourceParams, NodeConfig, SourceConfig, SourceParams, CLI_SOURCE_ID,
+    INGEST_API_SOURCE_ID,
 };
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
@@ -708,12 +709,15 @@ async fn create_source(
     let source_config: SourceConfig =
         load_source_config_from_user_config(config_format, &source_config_bytes)
             .map_err(IndexServiceError::InvalidConfig)?;
-    if let SourceParams::File(_) = &source_config.source_params {
-        return Err(IndexServiceError::OperationNotAllowed(
-            "file sources are limited to a local usage. please use the CLI command `quickwit tool \
-             local-ingest` to ingest data from a file"
-                .to_string(),
-        ));
+    // Note: This check is performed here instead of the source config serde
+    // because many tests use the file source, and can't store that config in
+    // the metastore without going through the validation.
+    if let SourceParams::File(FileSourceParams::Filepath(_)) = &source_config.source_params {
+        return Err(IndexServiceError::InvalidConfig(anyhow::anyhow!(
+            "path based file sources are limited to a local usage, please use the CLI command \
+             `quickwit tool local-ingest` to ingest data from a specific file or setup a \
+             notification based file source"
+        )));
     }
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = index_service
@@ -1642,28 +1646,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_file_source_returns_403() {
-        let metastore = metastore_for_test();
-        let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut node_config = NodeConfig::for_test();
-        node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
-        let index_management_handler =
-            super::index_management_handlers(index_service, Arc::new(node_config))
-                .recover(recover_fn);
-        let source_config_body = r#"{"version": "0.7", "source_id": "file-source", "source_type":
-    "file", "params": {"filepath": "FILEPATH"}}"#;
-        let resp = warp::test::request()
-            .path("/indexes/hdfs-logs/sources")
-            .method("POST")
-            .body(source_config_body)
-            .reply(&index_management_handler)
-            .await;
-        assert_eq!(resp.status(), 403);
-        let response_body = std::str::from_utf8(resp.body()).unwrap();
-        assert!(response_body.contains("limited to a local usage"))
-    }
-
-    #[tokio::test]
     async fn test_create_index_with_yaml() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
@@ -1885,6 +1867,34 @@ mod tests {
                 "Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka \
                  sources"
             ));
+        }
+        {
+            let resp = warp::test::request()
+                .path("/indexes/hdfs-logs/sources")
+                .method("POST")
+                .body(
+                    r#"{"version": "0.8", "source_id": "my-stdin-source", "source_type": "stdin"}"#,
+                )
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 400);
+            let response_body = std::str::from_utf8(resp.body()).unwrap();
+            assert!(
+                response_body.contains("stdin can only be used as source through the CLI command")
+            )
+        }
+        {
+            let resp = warp::test::request()
+                .path("/indexes/hdfs-logs/sources")
+                .method("POST")
+                .body(
+                    r#"{"version": "0.8", "source_id": "my-local-file-source", "source_type": "file", "params": {"filepath": "localfile"}}"#,
+                )
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 400);
+            let response_body = std::str::from_utf8(resp.body()).unwrap();
+            assert!(response_body.contains("limited to a local usage"))
         }
     }
 
