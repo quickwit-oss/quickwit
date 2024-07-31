@@ -22,7 +22,6 @@ use std::path::Path;
 
 use anyhow::Context;
 use async_compression::tokio::bufread::GzipDecoder;
-use async_trait::async_trait;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_common::Progress;
@@ -146,19 +145,6 @@ impl DocFileReader {
     }
 }
 
-#[async_trait]
-pub trait BatchReader: Send {
-    /// Read a batch from an underlying reader. Marks progress on the provided
-    /// handle when slow reads are possible.
-    async fn read_batch(
-        &mut self,
-        source_progress: &Progress,
-        source_type: SourceType,
-    ) -> anyhow::Result<BatchBuilder>;
-
-    fn is_eof(&self) -> bool;
-}
-
 pub struct ObjectUriBatchReader {
     partition_id: PartitionId,
     reader: DocFileReader,
@@ -195,11 +181,8 @@ impl ObjectUriBatchReader {
             is_eof: false,
         })
     }
-}
 
-#[async_trait]
-impl BatchReader for ObjectUriBatchReader {
-    async fn read_batch(
+    pub async fn read_batch(
         &mut self,
         source_progress: &Progress,
         source_type: SourceType,
@@ -240,52 +223,7 @@ impl BatchReader for ObjectUriBatchReader {
         Ok(batch_builder)
     }
 
-    fn is_eof(&self) -> bool {
-        self.is_eof
-    }
-}
-
-pub struct StdinBatchReader {
-    reader: BufReader<tokio::io::Stdin>,
-    is_eof: bool,
-}
-
-impl StdinBatchReader {
-    pub fn new() -> Self {
-        Self {
-            reader: BufReader::new(tokio::io::stdin()),
-            is_eof: false,
-        }
-    }
-}
-
-#[async_trait]
-impl BatchReader for StdinBatchReader {
-    async fn read_batch(
-        &mut self,
-        source_progress: &Progress,
-        source_type: SourceType,
-    ) -> anyhow::Result<BatchBuilder> {
-        let mut batch_builder = BatchBuilder::new(source_type);
-        while batch_builder.num_bytes < BATCH_NUM_BYTES_LIMIT {
-            let mut buf = String::new();
-            // stdin might be slow because it's depending on external
-            // input (e.g. user typing on a keyboard)
-            let bytes_read = source_progress
-                .protect_future(self.reader.read_line(&mut buf))
-                .await?;
-            if bytes_read > 0 {
-                batch_builder.add_doc(buf.into());
-            } else {
-                self.is_eof = true;
-                break;
-            }
-        }
-
-        Ok(batch_builder)
-    }
-
-    fn is_eof(&self) -> bool {
+    pub fn is_eof(&self) -> bool {
         self.is_eof
     }
 }

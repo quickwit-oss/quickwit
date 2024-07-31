@@ -533,6 +533,7 @@ pub enum SourceType {
     Void = 11,
     /// / Amazon SQS
     Sqs = 12,
+    Stdin = 13,
 }
 impl SourceType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -554,6 +555,7 @@ impl SourceType {
             SourceType::Vec => "SOURCE_TYPE_VEC",
             SourceType::Void => "SOURCE_TYPE_VOID",
             SourceType::Sqs => "SOURCE_TYPE_SQS",
+            SourceType::Stdin => "SOURCE_TYPE_STDIN",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -572,6 +574,7 @@ impl SourceType {
             "SOURCE_TYPE_VEC" => Some(Self::Vec),
             "SOURCE_TYPE_VOID" => Some(Self::Void),
             "SOURCE_TYPE_SQS" => Some(Self::Sqs),
+            "SOURCE_TYPE_STDIN" => Some(Self::Stdin),
             _ => None,
         }
     }

@@ -23,8 +23,7 @@ use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     load_index_config_update, load_source_config_from_user_config, validate_index_id_pattern,
-    ConfigFormat, FileSourceParams, NodeConfig, SourceConfig, SourceParams, CLI_SOURCE_ID,
-    INGEST_API_SOURCE_ID,
+    ConfigFormat, NodeConfig, SourceConfig, CLI_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
@@ -709,19 +708,6 @@ async fn create_source(
     let source_config: SourceConfig =
         load_source_config_from_user_config(config_format, &source_config_bytes)
             .map_err(IndexServiceError::InvalidConfig)?;
-    if let SourceParams::File(file_source_params) = &source_config.source_params {
-        match file_source_params {
-            FileSourceParams::FileUri(_) | FileSourceParams::Stdin => {
-                return Err(IndexServiceError::OperationNotAllowed(
-                    "Ad-hoc file ingestions are limited to a local usage. Please use the CLI \
-                     command `quickwit tool local-ingest` to ingest data from a specific file \
-                     file or use notifications (e.g SQS)."
-                        .to_string(),
-                ));
-            }
-            FileSourceParams::Sqs(_) => (),
-        };
-    }
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = index_service
         .metastore()
@@ -1649,28 +1635,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_file_source_returns_403() {
-        let metastore = metastore_for_test();
-        let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut node_config = NodeConfig::for_test();
-        node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
-        let index_management_handler =
-            super::index_management_handlers(index_service, Arc::new(node_config))
-                .recover(recover_fn);
-        let source_config_body = r#"{"version": "0.7", "source_id": "file-source", "source_type":
-    "file", "params": {"filepath": "FILEPATH"}}"#;
-        let resp = warp::test::request()
-            .path("/indexes/hdfs-logs/sources")
-            .method("POST")
-            .body(source_config_body)
-            .reply(&index_management_handler)
-            .await;
-        assert_eq!(resp.status(), 403);
-        let response_body = std::str::from_utf8(resp.body()).unwrap();
-        assert!(response_body.contains("limited to a local usage"))
-    }
-
-    #[tokio::test]
     async fn test_create_index_with_yaml() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
@@ -1892,6 +1856,19 @@ mod tests {
                 "Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka \
                  sources"
             ));
+        }
+        {
+            let resp = warp::test::request()
+                .path("/indexes/hdfs-logs/sources")
+                .method("POST")
+                .body(
+                    r#"{"version": "0.8", "source_id": "my-stdin-source", "source_type": "stdin"}"#,
+                )
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 400);
+            let response_body = std::str::from_utf8(resp.body()).unwrap();
+            assert!(response_body.contains("stdin ingestions are limited to a local usage"))
         }
     }
 

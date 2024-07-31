@@ -43,6 +43,7 @@ enum SourceType {
   SOURCE_TYPE_VOID = 11;
   /// Amazon SQS
   SOURCE_TYPE_SQS = 12;
+  SOURCE_TYPE_STDIN = 13;
 }
 
 // Metastore meant to manage Quickwit's indexes, their splits and delete tasks.

@@ -421,7 +421,7 @@ mod localstack_tests {
     #[tokio::test]
     async fn test_acknowledge_larger_batch() {
         let client = test_helpers::get_localstack_sqs_client().await.unwrap();
-        let queue_url = test_helpers::create_queue(&client, "test-receive-existing-msg").await;
+        let queue_url = test_helpers::create_queue(&client, "test-ack-large").await;
         let message = "hello world";
         for _ in 0..20 {
             test_helpers::send_message(&client, &queue_url, message).await;

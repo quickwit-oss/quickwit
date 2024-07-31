@@ -29,7 +29,7 @@ use quickwit_storage::{OwnedBytes, StorageResolver};
 use serde_json::Value;
 
 use super::visibility::VisibilityTaskHandle;
-use crate::source::doc_file_reader::{BatchReader, ObjectUriBatchReader};
+use crate::source::doc_file_reader::ObjectUriBatchReader;
 
 #[derive(Debug, Clone, Copy)]
 pub enum MessageType {
@@ -146,7 +146,7 @@ impl ReadyMessage {
                     Ok(None)
                 } else {
                     Ok(Some(InProgressMessage {
-                        reader: Box::new(batch_reader),
+                        batch_reader,
                         partition_id,
                         visibility_handle: self.visibility_handle,
                     }))
@@ -164,7 +164,7 @@ impl ReadyMessage {
 pub struct InProgressMessage {
     pub partition_id: PartitionId,
     pub visibility_handle: VisibilityTaskHandle,
-    pub reader: Box<dyn BatchReader>,
+    pub batch_reader: ObjectUriBatchReader,
 }
 
 #[cfg(test)]

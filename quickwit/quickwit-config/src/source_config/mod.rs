@@ -19,6 +19,7 @@
 
 pub(crate) mod serialize;
 
+use std::borrow::Cow;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
@@ -81,6 +82,7 @@ impl SourceConfig {
             SourceParams::Kinesis(_) => SourceType::Kinesis,
             SourceParams::PubSub(_) => SourceType::PubSub,
             SourceParams::Pulsar(_) => SourceType::Pulsar,
+            SourceParams::Stdin => SourceType::Stdin,
             SourceParams::Sqs(_) => SourceType::Sqs,
             SourceParams::Vec(_) => SourceType::Vec,
             SourceParams::Void(_) => SourceType::Void,
@@ -98,6 +100,7 @@ impl SourceConfig {
             SourceParams::Kafka(params) => serde_json::to_value(params),
             SourceParams::Kinesis(params) => serde_json::to_value(params),
             SourceParams::Pulsar(params) => serde_json::to_value(params),
+            SourceParams::Stdin => serde_json::to_value(()),
             SourceParams::Sqs(params) => serde_json::to_value(params),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
@@ -215,6 +218,7 @@ impl FromStr for SourceInputFormat {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "source_type", content = "params", rename_all = "snake_case")]
 pub enum SourceParams {
+    #[schema(value_type = FileSourceParamsInner)]
     File(FileSourceParams),
     Ingest,
     #[serde(rename = "ingest-api")]
@@ -226,6 +230,7 @@ pub enum SourceParams {
     #[serde(rename = "pubsub")]
     PubSub(PubSubSourceParams),
     Pulsar(PulsarSourceParams),
+    Stdin,
     Sqs(SqsSourceParams),
     Vec(VecSourceParams),
     Void(VoidSourceParams),
@@ -233,7 +238,7 @@ pub enum SourceParams {
 
 impl SourceParams {
     pub fn file_from_uri(uri: Uri) -> Self {
-        Self::File(FileSourceParams::FileUri(FileSourceUri { filepath: uri }))
+        Self::File(FileSourceParams::Filepath(uri))
     }
 
     pub fn file_from_str<P: AsRef<str>>(filepath: P) -> anyhow::Result<Self> {
@@ -241,7 +246,7 @@ impl SourceParams {
     }
 
     pub fn stdin() -> Self {
-        Self::File(FileSourceParams::Stdin)
+        Self::Stdin
     }
 
     pub fn void() -> Self {
@@ -265,23 +270,73 @@ pub struct FileSourceSqs {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct FileSourceUri {
-    #[schema(value_type = String)]
-    pub filepath: Uri,
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FileSourceNotification {
+    Sqs(FileSourceSqs),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "snake_case", tag = "mode")]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FileSourceParamsInner {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notifications: Vec<FileSourceNotification>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filepath: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "FileSourceParamsInner", into = "FileSourceParamsInner")]
 pub enum FileSourceParams {
-    Stdin,
-    Sqs(FileSourceSqs),
-    #[serde(untagged)]
-    FileUri(FileSourceUri),
+    Notifications(FileSourceNotification),
+    Filepath(Uri),
+}
+
+impl TryFrom<FileSourceParamsInner> for FileSourceParams {
+    type Error = Cow<'static, str>;
+
+    fn try_from(mut value: FileSourceParamsInner) -> Result<Self, Self::Error> {
+        if value.filepath.is_some() && !value.notifications.is_empty() {
+            return Err(
+                "File source parameters `notifications` and `filepath` are mutually exclusive"
+                    .into(),
+            );
+        }
+        if let Some(filepath) = value.filepath {
+            let uri = Uri::from_str(&filepath).map_err(|err| err.to_string())?;
+            Ok(FileSourceParams::Filepath(uri))
+        } else if value.notifications.len() == 1 {
+            Ok(FileSourceParams::Notifications(
+                value.notifications.remove(0),
+            ))
+        } else if value.notifications.len() > 1 {
+            return Err("Only one notification can be specified for now".into());
+        } else {
+            return Err(
+                "Either `notifications` or `filepath` must be specified as file source parameters"
+                    .into(),
+            );
+        }
+    }
+}
+
+impl From<FileSourceParams> for FileSourceParamsInner {
+    fn from(value: FileSourceParams) -> Self {
+        match value {
+            FileSourceParams::Filepath(uri) => Self {
+                filepath: Some(uri.to_string()),
+                notifications: vec![],
+            },
+            FileSourceParams::Notifications(notification) => Self {
+                filepath: None,
+                notifications: vec![notification],
+            },
+        }
+    }
 }
 
 impl FileSourceParams {
     pub fn from_filepath<P: AsRef<str>>(filepath: P) -> anyhow::Result<Self> {
-        Uri::from_str(filepath.as_ref()).map(|uri| Self::FileUri(FileSourceUri { filepath: uri }))
+        Uri::from_str(filepath.as_ref()).map(Self::Filepath)
     }
 }
 
@@ -811,51 +866,72 @@ mod tests {
     }
 
     #[test]
-    fn test_file_source_params_deserialization() {
+    fn test_file_source_params_serde() {
         {
             let yaml = r#"
                 filepath: source-path.json
             "#;
-            let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
+            let file_params_deserialized = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
             let uri = Uri::from_str("source-path.json").unwrap();
-            assert_eq!(
-                file_params,
-                FileSourceParams::FileUri(FileSourceUri { filepath: uri })
-            );
+            assert_eq!(file_params_deserialized, FileSourceParams::Filepath(uri));
+            let file_params_reserialized = serde_json::to_value(file_params_deserialized).unwrap();
+            file_params_reserialized
+                .get("filepath")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .contains("source-path.json");
         }
         {
             let yaml = r#"
-                mode: file_uri
-                filepath: source-path.json
+                notifications:
+                  - type: sqs
+                    queue_url: https://sqs.us-east-1.amazonaws.com/123456789012/queue-name
+                    message_type: s3_notification
             "#;
-            let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
-            let uri = Uri::from_str("source-path.json").unwrap();
+            let file_params_deserialized = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
             assert_eq!(
-                file_params,
-                FileSourceParams::FileUri(FileSourceUri { filepath: uri })
-            );
-        }
-        {
-            let yaml = r#"
-                mode: stdin
-            "#;
-            let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
-            assert_eq!(file_params, FileSourceParams::Stdin);
-        }
-        {
-            let yaml = r#"
-                mode: sqs
-                queue_url: https://sqs.us-east-1.amazonaws.com/123456789012/queue-name
-                message_type: s3_notification
-            "#;
-            let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
-            assert_eq!(
-                file_params,
-                FileSourceParams::Sqs(FileSourceSqs {
+                file_params_deserialized,
+                FileSourceParams::Notifications(FileSourceNotification::Sqs(FileSourceSqs {
                     queue_url: "https://sqs.us-east-1.amazonaws.com/123456789012/queue-name"
                         .to_string(),
                     message_type: FileSourceMessageType::S3Notification,
-                })
+                })),
+            );
+            let file_params_reserialized = serde_json::to_value(&file_params_deserialized).unwrap();
+            assert_eq!(
+                file_params_reserialized,
+                json!({"notifications": [{"type": "sqs", "queue_url": "https://sqs.us-east-1.amazonaws.com/123456789012/queue-name", "message_type": "s3_notification"}]})
+            );
+        }
+        {
+            let yaml = r#"
+                filepath: source-path.json
+                notifications:
+                  - type: sqs
+                    queue_url: https://sqs.us-east-1.amazonaws.com/123456789012/queue-name
+                    message_type: s3_notification
+            "#;
+            let error = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "File source parameters `notifications` and `filepath` are mutually exclusive"
+            );
+        }
+        {
+            let yaml = r#"
+                notifications:
+                  - type: sqs
+                    queue_url: https://sqs.us-east-1.amazonaws.com/123456789012/queue1
+                    message_type: s3_notification
+                  - type: sqs
+                    queue_url: https://sqs.us-east-1.amazonaws.com/123456789012/queue2
+                    message_type: s3_notification
+            "#;
+            let error = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "Only one notification can be specified for now"
             );
         }
     }
@@ -1244,7 +1320,7 @@ mod tests {
             "max_num_pipelines_per_indexer": 1,
             "source_type": "file",
             "params": {
-              "filepath": "/test_non_json_corpus.txt"
+              "filepath": "s3://mybucket/test_non_json_corpus.txt"
             },
             "input_format": "plain_text"
         }"#;

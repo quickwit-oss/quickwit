@@ -39,6 +39,8 @@ services:
     environment:
       SERVICES: kinesis,s3,sqs
       PERSISTENCE: 1
+      # avoid using the localstack.cloud domain in the generated queue URLs
+      SQS_ENDPOINT_STRATEGY: path
     volumes:
       - .localstack:/etc/localstack/init/ready.d
       - localstack_data:/var/lib/localstack
