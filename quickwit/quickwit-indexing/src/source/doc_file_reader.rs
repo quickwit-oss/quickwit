@@ -20,7 +20,7 @@
 use std::borrow::Borrow;
 use std::ffi::OsStr;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Context;
 use async_compression::tokio::bufread::GzipDecoder;
@@ -100,7 +100,7 @@ pub struct ReadBatchResponse {
 impl DocFileReader {
     pub async fn from_path(
         checkpoint: &SourceCheckpoint,
-        filepath: &PathBuf,
+        filepath: &Path,
         storage_resolver: &StorageResolver,
     ) -> anyhow::Result<Self> {
         let partition_id = PartitionId::from(filepath.to_string_lossy().borrow());
@@ -224,7 +224,7 @@ pub(crate) fn dir_and_filename(filepath: &Path) -> anyhow::Result<(Uri, &Path)> 
     Ok((dir_uri, file_name.as_ref()))
 }
 
-#[cfg(any(test))]
+#[cfg(test)]
 pub mod file_test_helpers {
     use std::io::Write;
 
@@ -286,6 +286,7 @@ pub mod file_test_helpers {
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
+    use std::path::PathBuf;
 
     use file_test_helpers::{generate_dummy_doc_file, DUMMY_DOC};
     use quickwit_actors::{ActorContext, Universe};
