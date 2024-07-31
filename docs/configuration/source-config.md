@@ -45,13 +45,8 @@ Both local and object files are supported, provided that the environment is conf
 
 #### Notification based file ingestion (beta)
 
-Quickwit can automatically ingest all new files that are uploaded to an S3 bucket. This requires creating and configuring an [SQS notification queue](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ways-to-add-notification-config-to-bucket.html). A complete tutorial can be found [here](/docs/ingest-data/sqs-files.md).
+Quickwit can automatically ingest all new files that are uploaded to an S3 bucket. This requires creating and configuring an [SQS notification queue](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ways-to-add-notification-config-to-bucket.html). A complete example can be found [in this tutorial](/docs/ingest-data/sqs-files.md).
 
-:::note
-
-Quickwit does not automatically delete the source files after a successful ingestion. On AWS for instance, you can use [S3 object expiration](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html) to configure how long they should be retained in the bucket.
-
-:::
 
 The `notifications` parameter takes an array of notification settings. Currently one notifier can be configured per source and only the SQS notification `type` is supported.
 
@@ -78,6 +73,14 @@ params:
 EOF
 ./quickwit source create --index my-index --source-config source-config.yaml
 ```
+
+:::note
+
+- Quickwit does not automatically delete the source files after a successful ingestion. You can use [S3 object expiration](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html) to configure how long they should be retained in the bucket.
+- Configure the notification to only forward events of type `s3:ObjectCreated:*`. Other types of event are discarded by the source and an error log is printed.
+- We strongly recommend using a [dead letter queue](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html) to receive all messages that couldn't be processed by the file source. A `maxReceiveCount` of 5 is a good default value.
+
+:::
 
 ### Ingest API source
 

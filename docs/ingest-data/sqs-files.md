@@ -94,6 +94,13 @@ resource "aws_s3_bucket_notification" "bucket_notification" {
 }
 ```
 
+:::note
+
+Only events of type `s3:ObjectCreated:*` are supported. Other types (e.g.
+`ObjectRemoved`) are discarded with an error log.
+
+:::
+
 The source needs to have access to both the notification queue and the source
 bucket. The following policy document contains the minimum permissions required
 by the source:

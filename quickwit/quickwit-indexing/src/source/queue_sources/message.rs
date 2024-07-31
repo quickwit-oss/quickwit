@@ -107,7 +107,10 @@ impl RawMessage {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum PreProcessedPayload {
+    /// The message contains an object URI
     ObjectUri(Uri),
+    // /// The message contains the raw JSON data
+    // RawData(OwnedBytes),
 }
 
 impl PreProcessedPayload {
@@ -134,14 +137,22 @@ impl PreProcessedMessage {
     }
 }
 
-fn uri_from_s3_notification(message: &OwnedBytes, ack_id: &str) -> Result<Uri, PreProcessingError> {
-    let value: Value =
-        serde_json::from_slice(message.as_slice()).context("invalid JSON message")?;
+fn uri_from_s3_notification(message: &[u8], ack_id: &str) -> Result<Uri, PreProcessingError> {
+    let value: Value = serde_json::from_slice(message).context("invalid JSON message")?;
     if matches!(value["Event"].as_str(), Some("s3:TestEvent")) {
         return Err(PreProcessingError::Discardable {
             reason: "S3 test event",
             ack_id: ack_id.to_string(),
         });
+    }
+    let event_name = value["Records"][0]["eventName"]
+        .as_str()
+        .context("invalid S3 notification: Records[0].eventName not found")?;
+    if !event_name.starts_with("ObjectCreated:") {
+        return Err(PreProcessingError::UnexpectedFormat(anyhow::anyhow!(
+            "only s3:ObjectCreated:* are supported, got {}",
+            event_name
+        )));
     }
     let key = value["Records"][0]["s3"]["object"]["key"]
         .as_str()
@@ -246,8 +257,7 @@ mod tests {
                 }
             ]
         }"#;
-        let actual_uri =
-            uri_from_s3_notification(&OwnedBytes::new(test_message.as_bytes()), "myackid").unwrap();
+        let actual_uri = uri_from_s3_notification(test_message.as_bytes(), "myackid").unwrap();
         let expected_uri = Uri::from_str("s3://mybucket/logs.json").unwrap();
         assert_eq!(actual_uri, expected_uri);
     }
@@ -260,6 +270,52 @@ mod tests {
                     "s3": {
                         "object": {
                             "key": "test_key"
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let result =
+            uri_from_s3_notification(&OwnedBytes::new(invalid_message.as_bytes()), "myackid");
+        assert!(matches!(
+            result,
+            Err(PreProcessingError::UnexpectedFormat(_))
+        ));
+    }
+
+    #[test]
+    fn test_uri_from_s3_bad_event_type() {
+        let invalid_message = r#"{
+            "Records": [
+                {
+                    "eventVersion": "2.1",
+                    "eventSource": "aws:s3",
+                    "awsRegion": "us-east-1",
+                    "eventTime": "2024-07-29T12:47:14.577Z",
+                    "eventName": "ObjectRemoved:Delete",
+                    "userIdentity": {
+                        "principalId": "AWS:ARGHGOHSDGOKGHOGHMCC4:user"
+                    },
+                    "requestParameters": {
+                        "sourceIPAddress": "1.1.1.1"
+                    },
+                    "responseElements": {
+                        "x-amz-request-id": "GHGSH",
+                        "x-amz-id-2": "gndflghndflhmnrflsh+gLLKU6X0PvD6ANdVY1+/hspflhjladgfkelagfkndl"
+                    },
+                    "s3": {
+                        "s3SchemaVersion": "1.0",
+                        "configurationId": "hello",
+                        "bucket": {
+                            "name": "mybucket",
+                            "ownerIdentity": {
+                                "principalId": "KMGP12GHKKH"
+                            },
+                            "arn": "arn:aws:s3:::mybucket"
+                        },
+                        "object": {
+                            "key": "my_deleted_file",
+                            "sequencer": "GKHOFLGKHSALFK0"
                         }
                     }
                 }
