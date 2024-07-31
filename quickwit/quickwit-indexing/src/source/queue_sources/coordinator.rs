@@ -371,7 +371,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_empty_queue() {
-        let queue = Arc::new(MemoryQueueForTests::default());
+        let queue = Arc::new(MemoryQueueForTests::new());
         let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let batches = process_messages(&mut coordinator, queue, &[]).await;
@@ -380,7 +380,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_one_small_message() {
-        let queue = Arc::new(MemoryQueueForTests::default());
+        let queue = Arc::new(MemoryQueueForTests::new());
         let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state.clone());
         let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
@@ -394,7 +394,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_one_big_message() {
-        let queue = Arc::new(MemoryQueueForTests::default());
+        let queue = Arc::new(MemoryQueueForTests::new());
         let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let lines = BATCH_NUM_BYTES_LIMIT as usize / DUMMY_DOC.len() + 1;
@@ -407,7 +407,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_two_messages_different_compression() {
-        let queue = Arc::new(MemoryQueueForTests::default());
+        let queue = Arc::new(MemoryQueueForTests::new());
         let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let (dummy_doc_file_1, _) = generate_dummy_doc_file(false, 10).await;
@@ -426,7 +426,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_local_duplicate_message() {
-        let queue = Arc::new(MemoryQueueForTests::default());
+        let queue = Arc::new(MemoryQueueForTests::new());
         let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut coordinator = setup_coordinator(queue.clone(), shared_state);
         let (dummy_doc_file, _) = generate_dummy_doc_file(false, 10).await;
@@ -447,7 +447,7 @@ mod tests {
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let partition_id = PreProcessedPayload::ObjectUri(test_uri.clone()).partition_id();
 
-        let queue = Arc::new(MemoryQueueForTests::default());
+        let queue = Arc::new(MemoryQueueForTests::new());
         let shared_state = shared_state_for_tests(
             "test-index",
             &[(
@@ -468,7 +468,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_multiple_coordinator() {
-        let queue = Arc::new(MemoryQueueForTests::default());
+        let queue = Arc::new(MemoryQueueForTests::new());
         let shared_state = shared_state_for_tests("test-index", Default::default());
         let mut proc_1 = setup_coordinator(queue.clone(), shared_state.clone());
         let mut proc_2 = setup_coordinator(queue.clone(), shared_state.clone());
