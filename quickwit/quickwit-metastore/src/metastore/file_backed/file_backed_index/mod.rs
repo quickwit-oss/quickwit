@@ -47,6 +47,7 @@ use tracing::{info, warn};
 
 use super::MutationOccurred;
 use crate::checkpoint::IndexCheckpointDelta;
+use crate::metastore::use_shard_api;
 use crate::{split_tag_filter, IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState};
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -388,7 +389,7 @@ impl FileBackedIndex {
                 })
             })?;
 
-            if source.source_params.use_shard_api() {
+            if use_shard_api(&source.source_params) {
                 let publish_token = publish_token_opt.ok_or_else(|| {
                     let message = format!(
                         "publish token is required for publishing splits for source `{source_id}`"

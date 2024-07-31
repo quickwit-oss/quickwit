@@ -67,7 +67,7 @@ use crate::file_backed::MutationOccurred;
 use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
-    IndexesMetadataResponseExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
+    use_shard_api, IndexesMetadataResponseExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
 };
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
@@ -690,7 +690,7 @@ impl MetastoreService for PostgresqlMetastore {
                     })
                 })?;
 
-                if source.source_params.use_shard_api() {
+                if use_shard_api(&source.source_params) {
                     let publish_token = request.publish_token_opt.ok_or_else(|| {
                         let message = format!(
                             "publish token is required for publishing splits for source \

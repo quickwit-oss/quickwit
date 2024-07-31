@@ -33,7 +33,8 @@ pub use index_metadata::IndexMetadata;
 use itertools::Itertools;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_config::{
-    DocMapping, IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
+    DocMapping, FileSourceParams, IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings,
+    SourceConfig, SourceParams,
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
@@ -900,6 +901,26 @@ impl<T> Default for FilterRange<T> {
             start: Bound::Unbounded,
             end: Bound::Unbounded,
         }
+    }
+}
+
+/// Maps the given source params to whether checkpoints should be stored in the index metadata
+/// (false) or the shard table (true)
+fn use_shard_api(params: &SourceParams) -> bool {
+    match params {
+        SourceParams::File(FileSourceParams::FileUri(_)) => false,
+        SourceParams::File(FileSourceParams::Sqs(_)) => true,
+        SourceParams::File(FileSourceParams::Stdin) => panic!("stdin cannot be checkpointed"),
+        SourceParams::Ingest => true,
+        SourceParams::IngestApi => false,
+        SourceParams::IngestCli => false,
+        SourceParams::Kafka(_) => false,
+        SourceParams::Kinesis(_) => false,
+        SourceParams::PubSub(_) => false,
+        SourceParams::Pulsar(_) => false,
+        SourceParams::Sqs(_) => true,
+        SourceParams::Vec(_) => false,
+        SourceParams::Void(_) => false,
     }
 }
 
