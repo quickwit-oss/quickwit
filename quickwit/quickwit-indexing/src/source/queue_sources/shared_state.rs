@@ -69,8 +69,7 @@ impl QueueSharedState {
             .open_shards(OpenShardsRequest {
                 subrequests: open_shard_subrequests,
             })
-            .await
-            .unwrap();
+            .await?;
 
         let mut shards = Vec::new();
         let mut re_acquired_shards = Vec::new();
