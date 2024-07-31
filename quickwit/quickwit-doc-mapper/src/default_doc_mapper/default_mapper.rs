@@ -620,12 +620,51 @@ impl DocMapper for DefaultDocMapper {
         let mut field_path: Vec<&str> = Vec::new();
         self.field_mappings
             .populate_json(&mut named_doc, &mut field_path, &mut doc_json);
-
         if let Some(source_json) = extract_single_obj(&mut named_doc, SOURCE_FIELD_NAME)? {
             doc_json.insert(
                 SOURCE_FIELD_NAME.to_string(),
                 JsonValue::Object(source_json),
             );
+        }
+        if matches!(
+            self.mode,
+            Mode::Dynamic(ref opt) if opt.stored
+        ) {
+            // if we are in dynamic mode and there are other fields lefts, we should print them.
+            // They probably come from older schemas when these fields had a dedicated entry
+            'field: for (key, mut value) in named_doc {
+                if key.starts_with('_') {
+                    // this is an internal field, ont meant to be shown
+                    continue 'field;
+                }
+                let Ok(path) = crate::routing_expression::parse_field_name(&key) else {
+                    continue 'field;
+                };
+                let Some((last_segment, path)) = path.split_last() else {
+                    continue 'field;
+                };
+                let mut map = &mut doc_json;
+                for segment in path {
+                    let obj = if map.contains_key(&**segment) {
+                        // we have to do this strange dance to please the borrowchecker
+                        map.get_mut(&**segment).unwrap()
+                    } else {
+                        map.insert(segment.to_string(), serde_json::Map::new().into());
+                        map.get_mut(&**segment).unwrap()
+                    };
+                    let JsonValue::Object(ref mut inner_map) = obj else {
+                        continue 'field;
+                    };
+                    map = inner_map;
+                }
+                map.entry(&**last_segment).or_insert_with(|| {
+                    if value.len() == 1 {
+                        tantivy_value_to_json(value.pop().unwrap())
+                    } else {
+                        JsonValue::Array(value.into_iter().map(tantivy_value_to_json).collect())
+                    }
+                });
+            }
         }
 
         Ok(doc_json)
@@ -2352,5 +2391,101 @@ mod tests {
                 token_stream.next().unwrap().text
             );
         }
+    }
+
+    #[test]
+    fn test_deserialize_doc_after_mapping_change_json_to_obj() {
+        use serde::Deserialize;
+        use tantivy::Document;
+
+        let old_mapper = json!({
+            "field_mappings": [
+                {"name": "body", "type": "json"}
+            ]
+        });
+
+        let builder = DefaultDocMapperBuilder::deserialize(old_mapper.clone()).unwrap();
+        let old_mapper = builder.try_build().unwrap();
+
+        let JsonValue::Object(doc) = json!({
+            "body": {
+                "field.1": "hola",
+                "field2": {
+                    "key": "val",
+                    "arr": [1,"abc", {"k": "v"}],
+                },
+                "field3": ["a", "b"]
+            }
+        }) else {
+            panic!();
+        };
+        let tantivy_doc = old_mapper.doc_from_json_obj(doc.clone(), 0).unwrap().1;
+        let named_doc = tantivy_doc.to_named_doc(&old_mapper.schema());
+
+        let new_mapper = json!({
+            "field_mappings": [
+                {
+                    "name": "body",
+                    "type": "object",
+                    "field_mappings": [
+                        {"name": "field.1", "type": "text"},
+                        {"name": "field2", "type": "json"},
+                        {"name": "field3", "type": "array<text>"},
+                    ]
+                }
+            ]
+        });
+        let builder = DefaultDocMapperBuilder::deserialize(new_mapper).unwrap();
+        let new_mapper = builder.try_build().unwrap();
+
+        assert_eq!(new_mapper.doc_to_json(named_doc.0).unwrap(), doc);
+    }
+
+    #[test]
+    fn test_deserialize_doc_after_mapping_change_obj_to_json() {
+        use serde::Deserialize;
+        use tantivy::Document;
+
+        let old_mapper = json!({
+            "field_mappings": [
+                {
+                    "name": "body",
+                    "type": "object",
+                    "field_mappings": [
+                        {"name": "field.1", "type": "text"},
+                        {"name": "field2", "type": "json"},
+                        {"name": "field3", "type": "array<text>"},
+                    ]
+                }
+            ]
+        });
+
+        let builder = DefaultDocMapperBuilder::deserialize(old_mapper.clone()).unwrap();
+        let old_mapper = builder.try_build().unwrap();
+
+        let JsonValue::Object(doc) = json!({
+            "body": {
+                "field.1": "hola",
+                "field2": {
+                    "key": "val",
+                    "arr": [1,"abc", {"k": "v"}],
+                },
+                "field3": ["a", "b"]
+            }
+        }) else {
+            panic!();
+        };
+        let tantivy_doc = old_mapper.doc_from_json_obj(doc.clone(), 0).unwrap().1;
+        let named_doc = tantivy_doc.to_named_doc(&old_mapper.schema());
+
+        let new_mapper = json!({
+            "field_mappings": [
+                {"name": "body", "type": "json"}
+            ]
+        });
+        let builder = DefaultDocMapperBuilder::deserialize(new_mapper).unwrap();
+        let new_mapper = builder.try_build().unwrap();
+
+        assert_eq!(new_mapper.doc_to_json(named_doc.0).unwrap(), doc);
     }
 }

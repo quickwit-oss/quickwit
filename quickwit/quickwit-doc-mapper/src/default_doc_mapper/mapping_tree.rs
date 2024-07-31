@@ -450,14 +450,161 @@ fn extract_json_val(
     field_path: &[&str],
     cardinality: Cardinality,
 ) -> Option<JsonValue> {
-    let full_path = field_path.join(".");
-    let vals = named_doc.remove(&full_path)?;
+    let mut full_path = field_path.join(".");
+    let vals: Vec<TantivyValue> = if let Some(vals) = named_doc.remove(&full_path) {
+        // we have our value directly
+        vals
+    } else {
+        let mut end_range = full_path.clone();
+        full_path.push('.');
+        // '/' is the character directly after . lexicographically
+        end_range.push('/');
+
+        // TODO use BTreeMap::drain once it exists and is stable
+        let matches = named_doc
+            .range::<String, _>(&full_path..&end_range)
+            .map(|(k, _)| k.clone())
+            .collect::<Vec<_>>();
+
+        if !matches.is_empty() {
+            let mut map = Vec::new();
+            for match_ in matches {
+                let Some(suffix) = match_.strip_prefix(&full_path) else {
+                    // this should never happen
+                    continue;
+                };
+                let Some(tantivy_values) = named_doc.remove(&match_) else {
+                    continue;
+                };
+
+                add_key_to_vec_map(&mut map, suffix, tantivy_values);
+            }
+            vec![TantivyValue::Object(map)]
+        } else {
+            // we didn't find our value, or any child of it, but maybe what we search is actually a
+            // json field closer to the root?
+            let mut split_point_iter = (1..(field_path.len())).rev();
+            loop {
+                let split_point = split_point_iter.next()?;
+                let (doc_path, json_path) = field_path.split_at(split_point);
+                let prefix_path = doc_path.join(".");
+                if let Some(vals) = named_doc.get_mut(&prefix_path) {
+                    // if we found a possible json field, there is no point in searching higher, our
+                    // result would have been in it.
+                    break extract_val_from_tantivy_val(json_path, vals);
+                }
+            }
+        }
+    };
     let mut vals_with_correct_type_it = vals
         .into_iter()
         .flat_map(|value| value_to_json(value, leaf_type));
     match cardinality {
         Cardinality::SingleValued => vals_with_correct_type_it.next(),
         Cardinality::MultiValued => Some(JsonValue::Array(vals_with_correct_type_it.collect())),
+    }
+}
+
+/// extract a subfield from a TantivyValue. The path must be non-empty
+fn extract_val_from_tantivy_val(
+    full_path: &[&str],
+    tantivy_value: &mut Vec<TantivyValue>,
+) -> Vec<TantivyValue> {
+    // return *objects* matching path
+    fn extract_val_aux<'a>(
+        path: &[&str],
+        tantivy_value: &'a mut [TantivyValue],
+    ) -> Vec<&'a mut Vec<(String, TantivyValue)>> {
+        let mut maps: Vec<&'a mut Vec<(String, TantivyValue)>> = tantivy_value
+            .iter_mut()
+            .filter_map(|value| {
+                if let TantivyValue::Object(map) = value {
+                    Some(map)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mut scratch_buffer = Vec::new();
+        for path_segment in path {
+            scratch_buffer.extend(
+                maps.drain(..)
+                    .flatten()
+                    .filter(|(key, _)| key == path_segment)
+                    .filter_map(|(_, value)| {
+                        if let TantivyValue::Object(map) = value {
+                            Some(map)
+                        } else {
+                            None
+                        }
+                    }),
+            );
+            std::mem::swap(&mut maps, &mut scratch_buffer);
+        }
+        maps
+    }
+
+    let Some((last_segment, path)) = full_path.split_last() else {
+        return Vec::new();
+    };
+
+    let mut results = Vec::new();
+    for object in extract_val_aux(path, tantivy_value) {
+        // TODO use extract_if once it's stable
+        let mut i = 0;
+        while i < object.len() {
+            if object[i].0 == *last_segment {
+                let (_, val) = object.swap_remove(i);
+                match val {
+                    TantivyValue::Array(mut vals) => results.append(&mut vals),
+                    _ => results.push(val),
+                }
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    results
+}
+
+fn add_key_to_vec_map(
+    mut map: &mut Vec<(String, TantivyValue)>,
+    suffix: &str,
+    mut tantivy_value: Vec<TantivyValue>,
+) {
+    let Ok(full_inner_path) = crate::routing_expression::parse_field_name(suffix) else {
+        return;
+    };
+    let Some((last_segment, inner_path)) = full_inner_path.split_last() else {
+        return;
+    };
+    for path_segment in inner_path {
+        // there is a cleaner way with find(), but the borrow checker is unhappy for no real reason
+        // thinking there are lifetime issues between two exclusive branches
+        map = if let Some(pos) = map.iter().position(|(key, _)| key == path_segment) {
+            if let (_, TantivyValue::Object(ref mut value)) = map[pos] {
+                value
+            } else {
+                // there is already a key before the end of the path ?!
+                return;
+            }
+        } else {
+            map.push((path_segment.to_string(), TantivyValue::Object(Vec::new())));
+            let TantivyValue::Object(ref mut new_map) = map.last_mut().unwrap().1 else {
+                unreachable!();
+            };
+            new_map
+        }
+    }
+    // if we are here the doc mapping was changed from obj to json. We don't really know if the
+    // field of that obj was multivalued or not. As a best effort, we say it was multivalued
+    // if we have !=1 value. We could always return a vec, but then *every* field would be
+    // transformed into an array of itself.
+    if tantivy_value.len() == 1 {
+        map.push((last_segment.to_string(), tantivy_value.pop().unwrap()));
+    } else {
+        map.push((last_segment.to_string(), TantivyValue::Array(tantivy_value)));
     }
 }
 
