@@ -599,7 +599,7 @@ mod tests {
 
     use quickwit_actors::{Command, Universe};
     use quickwit_common::ServiceStream;
-    use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams, VoidSourceParams};
+    use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, PublishSplitsRequestExt};
@@ -863,7 +863,7 @@ mod tests {
             source_id: "test-source".to_string(),
             num_pipelines: NonZeroUsize::MIN,
             enabled: true,
-            source_params: SourceParams::Void(VoidSourceParams),
+            source_params: SourceParams::void(),
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
