@@ -56,7 +56,7 @@ use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::metrics::IngestResultMetrics;
 use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
-use super::IngesterPool;
+use super::{pending_subrequests, IngesterPool};
 use crate::{get_ingest_router_buffer_size, LeaderId};
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
@@ -171,13 +171,7 @@ impl IngestRouter {
 
         let mut state_guard = self.state.lock().await;
 
-        for subrequest in workbench.subworkbenches.values().filter_map(|subworbench| {
-            if subworbench.is_pending() {
-                Some(&subworbench.subrequest)
-            } else {
-                None
-            }
-        }) {
+        for subrequest in pending_subrequests(&workbench.subworkbenches) {
             if !state_guard.routing_table.has_open_shards(
                 &subrequest.index_id,
                 &subrequest.source_id,
@@ -185,6 +179,7 @@ impl IngestRouter {
                 &mut debounced_request.closed_shards,
                 unavailable_leaders,
             ) {
+                // No shard available! Let's attempt to create one.
                 let acquire_result = state_guard
                     .debouncer
                     .acquire(&subrequest.index_id, &subrequest.source_id);
@@ -294,23 +289,36 @@ impl IngestRouter {
                     }
                     for persist_failure in persist_response.failures {
                         workbench.record_persist_failure(&persist_failure);
-
-                        if persist_failure.reason() == PersistFailureReason::ShardClosed {
-                            let shard_id = persist_failure.shard_id().clone();
-                            let index_uid: IndexUid = persist_failure.index_uid().clone();
-                            let source_id: SourceId = persist_failure.source_id;
-                            closed_shards
-                                .entry((index_uid, source_id))
-                                .or_default()
-                                .push(shard_id);
-                        } else if persist_failure.reason() == PersistFailureReason::ShardNotFound {
-                            let shard_id = persist_failure.shard_id().clone();
-                            let index_uid: IndexUid = persist_failure.index_uid().clone();
-                            let source_id: SourceId = persist_failure.source_id;
-                            deleted_shards
-                                .entry((index_uid, source_id))
-                                .or_default()
-                                .push(shard_id);
+                        match persist_failure.reason() {
+                            PersistFailureReason::ShardClosed => {
+                                let shard_id = persist_failure.shard_id().clone();
+                                let index_uid: IndexUid = persist_failure.index_uid().clone();
+                                let source_id: SourceId = persist_failure.source_id;
+                                closed_shards
+                                    .entry((index_uid, source_id))
+                                    .or_default()
+                                    .push(shard_id);
+                            }
+                            PersistFailureReason::ShardNotFound => {
+                                let shard_id = persist_failure.shard_id().clone();
+                                let index_uid: IndexUid = persist_failure.index_uid().clone();
+                                let source_id: SourceId = persist_failure.source_id;
+                                deleted_shards
+                                    .entry((index_uid, source_id))
+                                    .or_default()
+                                    .push(shard_id);
+                            }
+                            PersistFailureReason::WalFull
+                            | PersistFailureReason::ShardRateLimited => {
+                                // Let's record that the shard is rate limited or that the ingester
+                                // that hosts has its wal full.
+                                //
+                                // That way we will avoid to retry the persist request on the very
+                                // same node.
+                                let shard_id = persist_failure.shard_id().clone();
+                                workbench.rate_limited_shard.insert(shard_id);
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -349,6 +357,7 @@ impl IngestRouter {
     }
 
     async fn batch_persist(&self, workbench: &mut IngestWorkbench, commit_type: CommitTypeV2) {
+        // Let's first create the shards that might be missing.
         let debounced_request = self
             .make_get_or_create_open_shard_request(workbench, &self.ingester_pool)
             .await;
@@ -368,11 +377,14 @@ impl IngestRouter {
         // lines, validate, transform and then pack the docs into compressed batches routed
         // to the right shards.
 
-        for subrequest in workbench.pending_subrequests() {
+        let rate_limited_shards: &HashSet<ShardId> = &workbench.rate_limited_shard;
+        for subrequest in pending_subrequests(&workbench.subworkbenches) {
             let Some(shard) = state_guard
                 .routing_table
                 .find_entry(&subrequest.index_id, &subrequest.source_id)
-                .and_then(|entry| entry.next_open_shard_round_robin(&self.ingester_pool))
+                .and_then(|entry| {
+                    entry.next_open_shard_round_robin(&self.ingester_pool, rate_limited_shards)
+                })
             else {
                 no_shards_available_subrequest_ids.push(subrequest.subrequest_id);
                 continue;
@@ -667,6 +679,7 @@ pub(super) struct PersistRequestSummary {
 mod tests {
     use std::collections::BTreeSet;
 
+    use mockall::Sequence;
     use quickwit_proto::control_plane::{
         GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason,
         GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess, MockControlPlaneService,
@@ -1685,7 +1698,7 @@ mod tests {
                         index_uid: Some(index_uid_clone.clone()),
                         source_id: "test-source".to_string(),
                         shard_id: Some(ShardId::from(1)),
-                        reason: PersistFailureReason::ShardRateLimited as i32,
+                        reason: PersistFailureReason::Timeout as i32,
                     }],
                 };
                 Ok(response)
@@ -1876,5 +1889,165 @@ mod tests {
 
         assert_eq!(routing_table["test-index-0"].as_array().unwrap().len(), 1);
         assert_eq!(routing_table["test-index-1"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_do_not_retry_rate_limited_shards() {
+        // We avoid retrying a shard limited shard at the scale of a workbench.
+        let self_node_id = "test-router".into();
+        let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
+        let ingester_pool = IngesterPool::default();
+        let replication_factor = 1;
+        let router = IngestRouter::new(
+            self_node_id,
+            control_plane,
+            ingester_pool.clone(),
+            replication_factor,
+        );
+        let mut state_guard = router.state.lock().await;
+        let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
+
+        state_guard.routing_table.replace_shards(
+            index_uid.clone(),
+            "test-source",
+            vec![
+                Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "test-source".to_string(),
+                    shard_id: Some(ShardId::from(1)),
+                    shard_state: ShardState::Open as i32,
+                    leader_id: "test-ingester-0".to_string(),
+                    ..Default::default()
+                },
+                Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "test-source".to_string(),
+                    shard_id: Some(ShardId::from(2)),
+                    shard_state: ShardState::Open as i32,
+                    leader_id: "test-ingester-0".to_string(),
+                    ..Default::default()
+                },
+            ],
+        );
+        drop(state_guard);
+
+        // We have two shards.
+        // - shard 1 is rate limited
+        // - shard 2 is timeout.
+        // We expect a retry on shard 2 that is then successful.
+        let mut seq = Sequence::new();
+
+        let mut mock_ingester_0 = MockIngesterService::new();
+        mock_ingester_0
+            .expect_persist()
+            .times(1)
+            .returning(move |request| {
+                assert_eq!(request.leader_id, "test-ingester-0");
+                assert_eq!(request.commit_type(), CommitTypeV2::Auto);
+                assert_eq!(request.subrequests.len(), 1);
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.subrequest_id, 0);
+                let index_uid = subrequest.index_uid().clone();
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.shard_id(), ShardId::from(1));
+                assert_eq!(
+                    subrequest.doc_batch,
+                    Some(DocBatchV2::for_test(["test-doc-foo"]))
+                );
+
+                let response = PersistResponse {
+                    leader_id: request.leader_id,
+                    successes: Vec::new(),
+                    failures: vec![PersistFailure {
+                        subrequest_id: 0,
+                        index_uid: Some(index_uid),
+                        source_id: "test-source".to_string(),
+                        shard_id: Some(ShardId::from(1)),
+                        reason: PersistFailureReason::ShardRateLimited as i32,
+                    }],
+                };
+                Ok(response)
+            })
+            .in_sequence(&mut seq);
+
+        mock_ingester_0
+            .expect_persist()
+            .times(1)
+            .returning(move |request| {
+                assert_eq!(request.leader_id, "test-ingester-0");
+                assert_eq!(request.commit_type(), CommitTypeV2::Auto);
+                assert_eq!(request.subrequests.len(), 1);
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.subrequest_id, 0);
+                let index_uid = subrequest.index_uid().clone();
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.shard_id(), ShardId::from(2));
+                assert_eq!(
+                    subrequest.doc_batch,
+                    Some(DocBatchV2::for_test(["test-doc-foo"]))
+                );
+
+                let response = PersistResponse {
+                    leader_id: request.leader_id,
+                    successes: Vec::new(),
+                    failures: vec![PersistFailure {
+                        subrequest_id: 0,
+                        index_uid: Some(index_uid),
+                        source_id: "test-source".to_string(),
+                        shard_id: Some(ShardId::from(1)),
+                        reason: PersistFailureReason::Timeout as i32,
+                    }],
+                };
+                Ok(response)
+            })
+            .in_sequence(&mut seq);
+
+        mock_ingester_0
+            .expect_persist()
+            .times(1)
+            .returning(move |request| {
+                assert_eq!(request.leader_id, "test-ingester-0");
+                assert_eq!(request.commit_type(), CommitTypeV2::Auto);
+                assert_eq!(request.subrequests.len(), 1);
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.subrequest_id, 0);
+                let index_uid = subrequest.index_uid().clone();
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.shard_id(), ShardId::from(2));
+                assert_eq!(
+                    subrequest.doc_batch,
+                    Some(DocBatchV2::for_test(["test-doc-foo"]))
+                );
+
+                let response = PersistResponse {
+                    leader_id: request.leader_id,
+                    successes: vec![PersistSuccess {
+                        subrequest_id: 0,
+                        index_uid: Some(index_uid),
+                        source_id: "test-source".to_string(),
+                        shard_id: Some(ShardId::from(1)),
+                        num_persisted_docs: 1,
+                        replication_position_inclusive: Some(Position::offset(0u64)),
+                        parse_failures: Vec::new(),
+                    }],
+                    failures: Vec::new(),
+                };
+                Ok(response)
+            })
+            .in_sequence(&mut seq);
+
+        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+
+        let ingest_request = IngestRequestV2 {
+            subrequests: vec![IngestSubrequest {
+                subrequest_id: 0,
+                index_id: "test-index-0".to_string(),
+                source_id: "test-source".to_string(),
+                doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
+            }],
+            commit_type: CommitTypeV2::Auto as i32,
+        };
+        router.ingest(ingest_request).await.unwrap();
     }
 }

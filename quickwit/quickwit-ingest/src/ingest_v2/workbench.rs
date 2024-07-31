@@ -27,7 +27,7 @@ use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, RateLimitingCause};
-use quickwit_proto::types::{NodeId, SubrequestId};
+use quickwit_proto::types::{NodeId, ShardId, SubrequestId};
 use tracing::warn;
 
 use super::router::PersistRequestSummary;
@@ -37,6 +37,7 @@ use super::router::PersistRequestSummary;
 #[derive(Default)]
 pub(super) struct IngestWorkbench {
     pub subworkbenches: BTreeMap<SubrequestId, IngestSubworkbench>,
+    pub rate_limited_shard: HashSet<ShardId>,
     pub num_successes: usize,
     /// The number of batch persist attempts. This is not sum of the number of attempts for each
     /// subrequest.
@@ -49,6 +50,19 @@ pub(super) struct IngestWorkbench {
     // (The point here is to make sure we do not wait for the failure detection to kick the node
     // out of the ingest node.)
     pub unavailable_leaders: HashSet<NodeId>,
+}
+
+/// Returns an iterator of pending of subrequests, sorted by sub request id.
+pub(super) fn pending_subrequests(
+    subworkbenches: &BTreeMap<SubrequestId, IngestSubworkbench>,
+) -> impl Iterator<Item = &IngestSubrequest> {
+    subworkbenches.values().filter_map(|subworbench| {
+        if subworbench.is_pending() {
+            Some(&subworbench.subrequest)
+        } else {
+            None
+        }
+    })
 }
 
 impl IngestWorkbench {
@@ -90,17 +104,6 @@ impl IngestWorkbench {
         self.subworkbenches
             .values()
             .all(|subworbench| !subworbench.is_pending())
-    }
-
-    #[cfg(not(test))]
-    pub fn pending_subrequests(&self) -> impl Iterator<Item = &IngestSubrequest> {
-        self.subworkbenches.values().filter_map(|subworbench| {
-            if subworbench.is_pending() {
-                Some(&subworbench.subrequest)
-            } else {
-                None
-            }
-        })
     }
 
     pub fn record_get_or_create_open_shards_failure(
@@ -263,22 +266,6 @@ impl IngestWorkbench {
         };
         Ok(response)
     }
-
-    #[cfg(test)]
-    pub fn pending_subrequests(&self) -> impl Iterator<Item = &IngestSubrequest> {
-        use itertools::Itertools;
-
-        self.subworkbenches
-            .values()
-            .filter_map(|subworbench| {
-                if subworbench.is_pending() {
-                    Some(&subworbench.subrequest)
-                } else {
-                    None
-                }
-            })
-            .sorted_by_key(|subrequest| subrequest.subrequest_id)
-    }
 }
 
 #[derive(Debug)]
@@ -438,7 +425,7 @@ mod tests {
             },
         ];
         let mut workbench = IngestWorkbench::new(ingest_subrequests, 1);
-        assert_eq!(workbench.pending_subrequests().count(), 2);
+        assert_eq!(pending_subrequests(&workbench.subworkbenches).count(), 2);
         assert!(!workbench.is_complete());
 
         let persist_success = PersistSuccess {
@@ -448,10 +435,9 @@ mod tests {
         workbench.record_persist_success(persist_success);
 
         assert_eq!(workbench.num_successes, 1);
-        assert_eq!(workbench.pending_subrequests().count(), 1);
+        assert_eq!(pending_subrequests(&workbench.subworkbenches).count(), 1);
         assert_eq!(
-            workbench
-                .pending_subrequests()
+            pending_subrequests(&workbench.subworkbenches)
                 .next()
                 .unwrap()
                 .subrequest_id,
@@ -469,10 +455,9 @@ mod tests {
         workbench.record_persist_failure(&persist_failure);
 
         assert_eq!(workbench.num_successes, 1);
-        assert_eq!(workbench.pending_subrequests().count(), 1);
+        assert_eq!(pending_subrequests(&workbench.subworkbenches).count(), 1);
         assert_eq!(
-            workbench
-                .pending_subrequests()
+            pending_subrequests(&workbench.subworkbenches)
                 .next()
                 .unwrap()
                 .subrequest_id,
@@ -491,7 +476,7 @@ mod tests {
 
         assert!(workbench.is_complete());
         assert_eq!(workbench.num_successes, 2);
-        assert_eq!(workbench.pending_subrequests().count(), 0);
+        assert_eq!(pending_subrequests(&workbench.subworkbenches).count(), 0);
     }
 
     #[test]
