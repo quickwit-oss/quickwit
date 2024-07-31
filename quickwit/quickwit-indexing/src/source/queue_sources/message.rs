@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use core::fmt;
 use std::io::read_to_string;
 use std::str::FromStr;
 use std::time::Instant;
@@ -27,6 +28,7 @@ use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::types::Position;
 use quickwit_storage::{OwnedBytes, StorageResolver};
 use serde_json::Value;
+use thiserror::Error;
 
 use super::visibility::VisibilityTaskHandle;
 use crate::source::doc_file_reader::ObjectUriBatchReader;
@@ -61,14 +63,39 @@ pub struct RawMessage {
     pub payload: OwnedBytes,
 }
 
+impl fmt::Debug for RawMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RawMessage")
+            .field("metadata", &self.metadata)
+            .field("payload", &"<bytes>")
+            .finish()
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum PreProcessingError {
+    /// The message can be acknowledged without processing
+    #[error("skippable message: {reason}")]
+    Discardable {
+        reason: &'static str,
+        ack_id: String,
+    },
+    #[error("unexpected message format: {0}")]
+    UnexpectedFormat(#[from] anyhow::Error),
+}
+
 impl RawMessage {
-    pub fn pre_process(self, message_type: MessageType) -> anyhow::Result<PreProcessedMessage> {
+    pub fn pre_process(
+        self,
+        message_type: MessageType,
+    ) -> Result<PreProcessedMessage, PreProcessingError> {
         let payload = match message_type {
-            MessageType::S3Notification => {
-                PreProcessedPayload::ObjectUri(uri_from_s3_notification(&self.payload)?)
-            }
+            MessageType::S3Notification => PreProcessedPayload::ObjectUri(
+                uri_from_s3_notification(&self.payload, &self.metadata.ack_id)?,
+            ),
             MessageType::RawUri => {
-                PreProcessedPayload::ObjectUri(Uri::from_str(&read_to_string(self.payload)?)?)
+                let payload_str = read_to_string(self.payload).context("failed to read payload")?;
+                PreProcessedPayload::ObjectUri(Uri::from_str(&payload_str)?)
             }
             MessageType::RawData => unimplemented!(),
         };
@@ -108,15 +135,22 @@ impl PreProcessedMessage {
     }
 }
 
-fn uri_from_s3_notification(message: &OwnedBytes) -> anyhow::Result<Uri> {
-    let value: Value = serde_json::from_slice(message.as_slice())?;
+fn uri_from_s3_notification(message: &OwnedBytes, ack_id: &str) -> Result<Uri, PreProcessingError> {
+    let value: Value =
+        serde_json::from_slice(message.as_slice()).context("invalid JSON message")?;
+    if matches!(value["Event"].as_str(), Some("s3:TestEvent")) {
+        return Err(PreProcessingError::Discardable {
+            reason: "S3 test event",
+            ack_id: ack_id.to_string(),
+        });
+    }
     let key = value["Records"][0]["s3"]["object"]["key"]
         .as_str()
-        .context("Invalid S3 notification")?;
+        .context("invalid S3 notification: Records[0].s3.object.key not found")?;
     let bucket = value["Records"][0]["s3"]["bucket"]["name"]
         .as_str()
-        .context("Invalid S3 notification")?;
-    Uri::from_str(&format!("s3://{}/{}", bucket, key))
+        .context("invalid S3 notification: Records[0].s3.bucket.name not found".to_string())?;
+    Uri::from_str(&format!("s3://{}/{}", bucket, key)).map_err(|e| e.into())
 }
 
 /// A message for which we know as much of the global processing status as
@@ -172,7 +206,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_uri_from_s3_notification() {
+    fn test_uri_from_s3_notification_valid() {
         let test_message = r#"
         {
             "Records": [
@@ -214,10 +248,13 @@ mod tests {
             ]
         }"#;
         let actual_uri =
-            uri_from_s3_notification(&OwnedBytes::new(test_message.as_bytes())).unwrap();
+            uri_from_s3_notification(&OwnedBytes::new(test_message.as_bytes()), "myackid").unwrap();
         let expected_uri = Uri::from_str("s3://mybucket/logs.json").unwrap();
         assert_eq!(actual_uri, expected_uri);
+    }
 
+    #[test]
+    fn test_uri_from_s3_notification_invalid() {
         let invalid_message = r#"{
             "Records": [
                 {
@@ -229,7 +266,31 @@ mod tests {
                 }
             ]
         }"#;
-        let result = uri_from_s3_notification(&OwnedBytes::new(invalid_message.as_bytes()));
-        assert!(result.is_err());
+        let result =
+            uri_from_s3_notification(&OwnedBytes::new(invalid_message.as_bytes()), "myackid");
+        assert!(matches!(
+            result,
+            Err(PreProcessingError::UnexpectedFormat(_))
+        ));
+    }
+
+    #[test]
+    fn test_uri_from_s3_notification_skippable() {
+        let invalid_message = r#"{
+            "Service":"Amazon S3",
+            "Event":"s3:TestEvent",
+            "Time":"2014-10-13T15:57:02.089Z",
+            "Bucket":"bucketname",
+            "RequestId":"5582815E1AEA5ADF",
+            "HostId":"8cLeGAmw098X5cv4Zkwcmo8vvZa3eH3eKxsPzbB9wrR+YstdA6Knx4Ip8EXAMPLE"
+        }"#;
+        let result =
+            uri_from_s3_notification(&OwnedBytes::new(invalid_message.as_bytes()), "myackid");
+        if let Err(PreProcessingError::Discardable { reason, ack_id }) = result {
+            assert_eq!(reason, "S3 test event");
+            assert_eq!(ack_id, "myackid");
+        } else {
+            panic!("Expected skippable error");
+        }
     }
 }
