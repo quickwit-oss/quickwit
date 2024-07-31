@@ -28,7 +28,6 @@ use quickwit_common::uri::Uri;
 use quickwit_common::ServiceStream;
 use quickwit_config::{
     validate_index_id_pattern, IndexTemplate, IndexTemplateId, PostgresMetastoreConfig,
-    INGEST_V2_SOURCE_ID,
 };
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
@@ -684,8 +683,14 @@ impl MetastoreService for PostgresqlMetastore {
             }
             if let Some(checkpoint_delta) = checkpoint_delta_opt {
                 let source_id = checkpoint_delta.source_id.clone();
+                let source = index_metadata.sources.get(&source_id).ok_or_else(|| {
+                    MetastoreError::NotFound(EntityKind::Source {
+                        index_id: index_uid.index_id.to_string(),
+                        source_id: source_id.to_string(),
+                    })
+                })?;
 
-                if source_id == INGEST_V2_SOURCE_ID {
+                if source.source_params.use_shard_api() {
                     let publish_token = request.publish_token_opt.ok_or_else(|| {
                         let message = format!(
                             "publish token is required for publishing splits for source \
@@ -1622,6 +1627,7 @@ async fn open_or_fetch_shard<'e>(
         .bind(&subrequest.leader_id)
         .bind(&subrequest.follower_id)
         .bind(subrequest.doc_mapping_uid)
+        .bind(&subrequest.publish_token)
         .fetch_optional(executor.clone())
         .await?;
 

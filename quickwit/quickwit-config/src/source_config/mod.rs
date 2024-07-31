@@ -81,6 +81,7 @@ impl SourceConfig {
             SourceParams::Kinesis(_) => SourceType::Kinesis,
             SourceParams::PubSub(_) => SourceType::PubSub,
             SourceParams::Pulsar(_) => SourceType::Pulsar,
+            SourceParams::Sqs(_) => SourceType::Sqs,
             SourceParams::Vec(_) => SourceType::Vec,
             SourceParams::Void(_) => SourceType::Void,
         }
@@ -97,6 +98,7 @@ impl SourceConfig {
             SourceParams::Kafka(params) => serde_json::to_value(params),
             SourceParams::Kinesis(params) => serde_json::to_value(params),
             SourceParams::Pulsar(params) => serde_json::to_value(params),
+            SourceParams::Sqs(params) => serde_json::to_value(params),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
         }
@@ -224,6 +226,7 @@ pub enum SourceParams {
     #[serde(rename = "pubsub")]
     PubSub(PubSubSourceParams),
     Pulsar(PulsarSourceParams),
+    Sqs(SqsSourceParams),
     Vec(VecSourceParams),
     Void(VoidSourceParams),
 }
@@ -245,6 +248,22 @@ impl SourceParams {
 
     pub fn void() -> Self {
         Self::Void(VoidSourceParams)
+    }
+
+    pub fn use_shard_api(&self) -> bool {
+        match self {
+            SourceParams::File(_) => false,
+            SourceParams::Ingest => true,
+            SourceParams::IngestApi => false,
+            SourceParams::IngestCli => false,
+            SourceParams::Kafka(_) => false,
+            SourceParams::Kinesis(_) => false,
+            SourceParams::PubSub(_) => false,
+            SourceParams::Pulsar(_) => false,
+            SourceParams::Sqs(_) => true,
+            SourceParams::Vec(_) => false,
+            SourceParams::Void(_) => false,
+        }
     }
 }
 
@@ -322,6 +341,36 @@ pub struct PubSubSourceParams {
     pub project_id: Option<String>,
     /// Maximum number of messages returned by a pull request (default 1,000)
     pub max_messages_per_pull: Option<i32>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueMessageType {
+    S3Notification,
+    // GcsNotification,
+    // RawData,
+    RawUri,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct QueueParams {
+    pub message_type: QueueMessageType,
+    // pub deduplication_window_duration_sec: usize,
+    // pub deduplication_window_max_messages: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct SqsSourceParams {
+    pub queue_url: String,
+    /// Polling wait time in seconds for receiving messages. Leave default value.
+    #[serde(default = "default_wait_time_seconds")]
+    pub wait_time_seconds: u8,
+    #[serde(flatten)]
+    pub queue_params: QueueParams,
+}
+
+fn default_wait_time_seconds() -> u8 {
+    20
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]

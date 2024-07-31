@@ -41,6 +41,8 @@ enum SourceType {
   SOURCE_TYPE_PULSAR = 9;
   SOURCE_TYPE_VEC = 10;
   SOURCE_TYPE_VOID = 11;
+  /// Amazon SQS
+  SOURCE_TYPE_SQS = 12;
 }
 
 // Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
@@ -406,6 +408,7 @@ message OpenShardSubrequest {
   string leader_id = 5;
   optional string follower_id = 6;
   quickwit.common.DocMappingUid doc_mapping_uid = 7;
+  optional string publish_token = 8;
 }
 
 message OpenShardsResponse {
