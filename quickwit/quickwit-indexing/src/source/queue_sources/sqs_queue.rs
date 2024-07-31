@@ -217,7 +217,7 @@ pub(crate) async fn check_connectivity(queue_url: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(feature = "sqs-localstack-tests")]
 pub mod test_helpers {
     use ulid::Ulid;
 
@@ -230,7 +230,7 @@ pub mod test_helpers {
         Ok(Client::from_conf(sqs_config.build()))
     }
 
-    pub(crate) async fn create_queue(sqs_client: &Client, queue_name_prefix: &str) -> String {
+    pub async fn create_queue(sqs_client: &Client, queue_name_prefix: &str) -> String {
         let queue_name = format!("{}-{}", queue_name_prefix, Ulid::new());
         sqs_client
             .create_queue()
@@ -242,7 +242,7 @@ pub mod test_helpers {
             .unwrap()
     }
 
-    pub(crate) async fn send_message(sqs_client: &Client, queue_url: &str, payload: &str) {
+    pub async fn send_message(sqs_client: &Client, queue_url: &str, payload: &str) {
         sqs_client
             .send_message()
             .queue_url(queue_url)

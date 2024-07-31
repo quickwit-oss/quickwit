@@ -19,4 +19,6 @@
 
 mod basic_tests;
 mod index_tests;
+#[cfg(feature = "sqs-localstack-tests")]
+mod sqs_tests;
 mod update_tests;

@@ -35,7 +35,6 @@ use ulid::Ulid;
 use super::local_state::QueueLocalState;
 use super::message::{MessageType, ReadyMessage};
 use super::shared_state::{checkpoint_messages, QueueSharedState};
-use super::sqs_queue::SqsQueue;
 use super::visibility::{spawn_visibility_task, VisibilitySettings};
 use super::Queue;
 use crate::actors::DocProcessor;
@@ -112,6 +111,7 @@ impl QueueCoordinator {
         config: FileSourceSqs,
         source_runtime: SourceRuntime,
     ) -> anyhow::Result<Self> {
+        use super::sqs_queue::SqsQueue;
         let queue = SqsQueue::try_new(config.queue_url, config.wait_time_seconds).await?;
         let message_type = match config.message_type {
             FileSourceMessageType::S3Notification => MessageType::S3Notification,

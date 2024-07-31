@@ -6076,6 +6076,7 @@ dependencies = [
  "quickwit-cli",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-rest-client",
@@ -6087,6 +6088,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

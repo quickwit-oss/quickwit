@@ -10,6 +10,12 @@ repository.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[features]
+sqs-localstack-tests = [
+    "quickwit-indexing/sqs",
+    "quickwit-indexing/sqs-localstack-tests"
+]
+
 [dependencies]
 
 [dev-dependencies]
@@ -23,11 +29,13 @@ tempfile = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cli = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
+quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-rest-client = { workspace = true }
