@@ -88,7 +88,7 @@ impl Source for FileSource {
                 num_bytes_processed,
                 num_lines_processed,
             } => {
-                let batch_builder = reader.read_batch(ctx, self.source_type).await?;
+                let batch_builder = reader.read_batch(ctx.progress(), self.source_type).await?;
                 if batch_builder.num_bytes > 0 {
                     *num_bytes_processed += batch_builder.num_bytes;
                     *num_lines_processed += batch_builder.docs.len() as u64;
@@ -214,6 +214,7 @@ mod tests {
     use std::num::NonZeroUsize;
     use std::str::FromStr;
 
+    use bytes::Bytes;
     use quickwit_actors::{Command, Universe};
     use quickwit_common::uri::Uri;
     use quickwit_config::{FileSourceUri, SourceConfig, SourceInputFormat, SourceParams};
@@ -374,7 +375,7 @@ mod tests {
         let source_checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             partition_id,
             Position::Beginning,
-            Position::offset(4u64),
+            Position::offset(16usize),
         )
         .unwrap();
 
@@ -398,12 +399,15 @@ mod tests {
         assert_eq!(
             counters,
             serde_json::json!({
-                "num_bytes_processed": 286u64,
-                "num_lines_processed": 98u64
+                "num_bytes_processed": (800-16) as u64,
+                "num_lines_processed": (100-2) as u64,
             })
         );
         let indexer_messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
-        assert!(&indexer_messages[0].docs[0].starts_with(b"2\n"));
+        assert_eq!(
+            indexer_messages[0].docs[0],
+            Bytes::from_static(b"0000002\n")
+        );
     }
 }
 
