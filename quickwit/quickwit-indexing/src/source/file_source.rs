@@ -28,13 +28,13 @@ use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::SourceId;
 
 use super::doc_file_reader::ObjectUriBatchReader;
-#[cfg(feature = "sqs")]
+#[cfg(feature = "queue-sources")]
 use super::queue_sources::coordinator::QueueCoordinator;
 use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
-enum FileSourceInner {
-    #[cfg(feature = "sqs")]
+enum FileSourceState {
+    #[cfg(feature = "queue-sources")]
     Notification(QueueCoordinator),
     Filepath {
         batch_reader: ObjectUriBatchReader,
@@ -45,7 +45,7 @@ enum FileSourceInner {
 
 pub struct FileSource {
     source_id: SourceId,
-    inner: FileSourceInner,
+    state: FileSourceState,
     source_type: SourceType,
 }
 
@@ -63,12 +63,12 @@ impl Source for FileSource {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        match &mut self.inner {
-            #[cfg(feature = "sqs")]
-            FileSourceInner::Notification(coordinator) => {
+        match &mut self.state {
+            #[cfg(feature = "queue-sources")]
+            FileSourceState::Notification(coordinator) => {
                 coordinator.initialize(doc_processor_mailbox, ctx).await
             }
-            FileSourceInner::Filepath { .. } => Ok(()),
+            FileSourceState::Filepath { .. } => Ok(()),
         }
     }
 
@@ -78,12 +78,12 @@ impl Source for FileSource {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        match &mut self.inner {
-            #[cfg(feature = "sqs")]
-            FileSourceInner::Notification(coordinator) => {
+        match &mut self.state {
+            #[cfg(feature = "queue-sources")]
+            FileSourceState::Notification(coordinator) => {
                 coordinator.emit_batches(doc_processor_mailbox, ctx).await?;
             }
-            FileSourceInner::Filepath {
+            FileSourceState::Filepath {
                 batch_reader,
                 num_bytes_processed,
                 num_lines_processed,
@@ -91,13 +91,11 @@ impl Source for FileSource {
                 let batch_builder = batch_reader
                     .read_batch(ctx.progress(), self.source_type)
                     .await?;
-                if batch_builder.num_bytes > 0 {
-                    *num_bytes_processed += batch_builder.num_bytes;
-                    *num_lines_processed += batch_builder.docs.len() as u64;
-                    doc_processor_mailbox
-                        .send_message(batch_builder.build())
-                        .await?;
-                }
+                *num_bytes_processed += batch_builder.num_bytes;
+                *num_lines_processed += batch_builder.docs.len() as u64;
+                doc_processor_mailbox
+                    .send_message(batch_builder.build())
+                    .await?;
                 if batch_reader.is_eof() {
                     ctx.send_exit_with_success(doc_processor_mailbox).await?;
                     return Err(ActorExitStatus::Success);
@@ -117,22 +115,22 @@ impl Source for FileSource {
         checkpoint: SourceCheckpoint,
         ctx: &SourceContext,
     ) -> anyhow::Result<()> {
-        match &mut self.inner {
-            #[cfg(feature = "sqs")]
-            FileSourceInner::Notification(coordinator) => {
+        match &mut self.state {
+            #[cfg(feature = "queue-sources")]
+            FileSourceState::Notification(coordinator) => {
                 coordinator.suggest_truncate(checkpoint, ctx).await
             }
-            FileSourceInner::Filepath { .. } => Ok(()),
+            FileSourceState::Filepath { .. } => Ok(()),
         }
     }
 
     fn observable_state(&self) -> serde_json::Value {
-        match &self.inner {
-            #[cfg(feature = "sqs")]
-            FileSourceInner::Notification(coordinator) => {
+        match &self.state {
+            #[cfg(feature = "queue-sources")]
+            FileSourceState::Notification(coordinator) => {
                 serde_json::to_value(coordinator.observable_state()).unwrap()
             }
-            FileSourceInner::Filepath {
+            FileSourceState::Filepath {
                 num_bytes_processed,
                 num_lines_processed,
                 ..
@@ -159,7 +157,7 @@ impl TypedSourceFactory for FileSourceFactory {
     ) -> anyhow::Result<FileSource> {
         let source_id = source_runtime.source_config.source_id.clone();
         let source_type = source_runtime.source_config.source_type();
-        let inner = match params {
+        let state = match params {
             FileSourceParams::Filepath(file_uri) => {
                 let partition_id = PartitionId::from(file_uri.as_str());
                 let position = source_runtime
@@ -175,7 +173,7 @@ impl TypedSourceFactory for FileSourceFactory {
                     position,
                 )
                 .await?;
-                FileSourceInner::Filepath {
+                FileSourceState::Filepath {
                     batch_reader,
                     num_bytes_processed: 0,
                     num_lines_processed: 0,
@@ -187,7 +185,7 @@ impl TypedSourceFactory for FileSourceFactory {
             )) => {
                 let coordinator =
                     QueueCoordinator::try_from_sqs_config(sqs_config, source_runtime).await?;
-                FileSourceInner::Notification(coordinator)
+                FileSourceState::Notification(coordinator)
             }
             #[cfg(not(feature = "sqs"))]
             FileSourceParams::Notifications(quickwit_config::FileSourceNotification::Sqs(_)) => {
@@ -196,7 +194,7 @@ impl TypedSourceFactory for FileSourceFactory {
         };
 
         Ok(FileSource {
-            inner,
+            state,
             source_id,
             source_type,
         })

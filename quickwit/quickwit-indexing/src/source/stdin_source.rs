@@ -88,13 +88,11 @@ impl Source for StdinSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let batch_builder = self.reader.read_batch(ctx.progress()).await?;
-        if batch_builder.num_bytes > 0 {
-            self.num_bytes_processed += batch_builder.num_bytes;
-            self.num_lines_processed += batch_builder.docs.len() as u64;
-            doc_processor_mailbox
-                .send_message(batch_builder.build())
-                .await?;
-        }
+        self.num_bytes_processed += batch_builder.num_bytes;
+        self.num_lines_processed += batch_builder.docs.len() as u64;
+        doc_processor_mailbox
+            .send_message(batch_builder.build())
+            .await?;
         if self.reader.is_eof() {
             ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);

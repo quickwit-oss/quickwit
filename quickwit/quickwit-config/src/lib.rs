@@ -55,7 +55,7 @@ pub use quickwit_doc_mapper::DocMapping;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use source_config::FileSourceParamsInner;
+use source_config::FileSourceParamsForSerde;
 pub use source_config::{
     load_source_config_from_user_config, FileSourceMessageType, FileSourceNotification,
     FileSourceParams, FileSourceSqs, KafkaSourceParams, KinesisSourceParams, PubSubSourceParams,
@@ -116,7 +116,7 @@ pub fn disable_ingest_v1() -> bool {
     SourceParams,
     FileSourceMessageType,
     FileSourceNotification,
-    FileSourceParamsInner,
+    FileSourceParamsForSerde,
     FileSourceSqs,
     SqsSourceParams,
     PubSubSourceParams,

@@ -19,13 +19,6 @@
 
 #![allow(clippy::match_like_matches_macro)]
 
-#[cfg(feature = "kinesis")]
-use aws_sdk_kinesis::operation::{
-    create_stream::CreateStreamError, delete_stream::DeleteStreamError,
-    describe_stream::DescribeStreamError, get_records::GetRecordsError,
-    get_shard_iterator::GetShardIteratorError, list_shards::ListShardsError,
-    list_streams::ListStreamsError, merge_shards::MergeShardsError, split_shard::SplitShardError,
-};
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
 use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError;
@@ -36,11 +29,6 @@ use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
-#[cfg(feature = "sqs")]
-use aws_sdk_sqs::operation::{
-    change_message_visibility::ChangeMessageVisibilityError,
-    delete_message_batch::DeleteMessageBatchError, receive_message::ReceiveMessageError,
-};
 
 use crate::retry::AwsRetryable;
 
@@ -114,110 +102,124 @@ impl AwsRetryable for HeadObjectError {
 }
 
 #[cfg(feature = "kinesis")]
-impl AwsRetryable for GetRecordsError {
-    fn is_retryable(&self) -> bool {
-        match self {
-            GetRecordsError::KmsThrottlingException(_) => true,
-            GetRecordsError::ProvisionedThroughputExceededException(_) => true,
-            _ => false,
+mod kinesis {
+    use aws_sdk_kinesis::operation::create_stream::CreateStreamError;
+    use aws_sdk_kinesis::operation::delete_stream::DeleteStreamError;
+    use aws_sdk_kinesis::operation::describe_stream::DescribeStreamError;
+    use aws_sdk_kinesis::operation::get_records::GetRecordsError;
+    use aws_sdk_kinesis::operation::get_shard_iterator::GetShardIteratorError;
+    use aws_sdk_kinesis::operation::list_shards::ListShardsError;
+    use aws_sdk_kinesis::operation::list_streams::ListStreamsError;
+    use aws_sdk_kinesis::operation::merge_shards::MergeShardsError;
+    use aws_sdk_kinesis::operation::split_shard::SplitShardError;
+
+    use super::*;
+
+    impl AwsRetryable for GetRecordsError {
+        fn is_retryable(&self) -> bool {
+            match self {
+                GetRecordsError::KmsThrottlingException(_) => true,
+                GetRecordsError::ProvisionedThroughputExceededException(_) => true,
+                _ => false,
+            }
+        }
+    }
+
+    impl AwsRetryable for GetShardIteratorError {
+        fn is_retryable(&self) -> bool {
+            matches!(
+                self,
+                GetShardIteratorError::ProvisionedThroughputExceededException(_)
+            )
+        }
+    }
+
+    impl AwsRetryable for ListShardsError {
+        fn is_retryable(&self) -> bool {
+            matches!(
+                self,
+                ListShardsError::ResourceInUseException(_)
+                    | ListShardsError::LimitExceededException(_)
+            )
+        }
+    }
+
+    impl AwsRetryable for CreateStreamError {
+        fn is_retryable(&self) -> bool {
+            matches!(
+                self,
+                CreateStreamError::ResourceInUseException(_)
+                    | CreateStreamError::LimitExceededException(_)
+            )
+        }
+    }
+
+    impl AwsRetryable for DeleteStreamError {
+        fn is_retryable(&self) -> bool {
+            matches!(
+                self,
+                DeleteStreamError::ResourceInUseException(_)
+                    | DeleteStreamError::LimitExceededException(_)
+            )
+        }
+    }
+
+    impl AwsRetryable for DescribeStreamError {
+        fn is_retryable(&self) -> bool {
+            matches!(self, DescribeStreamError::LimitExceededException(_))
+        }
+    }
+
+    impl AwsRetryable for ListStreamsError {
+        fn is_retryable(&self) -> bool {
+            matches!(self, ListStreamsError::LimitExceededException(_))
+        }
+    }
+
+    impl AwsRetryable for MergeShardsError {
+        fn is_retryable(&self) -> bool {
+            matches!(
+                self,
+                MergeShardsError::ResourceInUseException(_)
+                    | MergeShardsError::LimitExceededException(_)
+            )
+        }
+    }
+
+    impl AwsRetryable for SplitShardError {
+        fn is_retryable(&self) -> bool {
+            matches!(
+                self,
+                SplitShardError::ResourceInUseException(_)
+                    | SplitShardError::LimitExceededException(_)
+            )
         }
     }
 }
 
-#[cfg(feature = "kinesis")]
-impl AwsRetryable for GetShardIteratorError {
-    fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            GetShardIteratorError::ProvisionedThroughputExceededException(_)
-        )
-    }
-}
-
-#[cfg(feature = "kinesis")]
-impl AwsRetryable for ListShardsError {
-    fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            ListShardsError::ResourceInUseException(_) | ListShardsError::LimitExceededException(_)
-        )
-    }
-}
-
-#[cfg(feature = "kinesis")]
-impl AwsRetryable for CreateStreamError {
-    fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            CreateStreamError::ResourceInUseException(_)
-                | CreateStreamError::LimitExceededException(_)
-        )
-    }
-}
-
-#[cfg(feature = "kinesis")]
-impl AwsRetryable for DeleteStreamError {
-    fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            DeleteStreamError::ResourceInUseException(_)
-                | DeleteStreamError::LimitExceededException(_)
-        )
-    }
-}
-
-#[cfg(feature = "kinesis")]
-impl AwsRetryable for DescribeStreamError {
-    fn is_retryable(&self) -> bool {
-        matches!(self, DescribeStreamError::LimitExceededException(_))
-    }
-}
-
-#[cfg(feature = "kinesis")]
-impl AwsRetryable for ListStreamsError {
-    fn is_retryable(&self) -> bool {
-        matches!(self, ListStreamsError::LimitExceededException(_))
-    }
-}
-
-#[cfg(feature = "kinesis")]
-impl AwsRetryable for MergeShardsError {
-    fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            MergeShardsError::ResourceInUseException(_)
-                | MergeShardsError::LimitExceededException(_)
-        )
-    }
-}
-
-#[cfg(feature = "kinesis")]
-impl AwsRetryable for SplitShardError {
-    fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            SplitShardError::ResourceInUseException(_) | SplitShardError::LimitExceededException(_)
-        )
-    }
-}
-
 #[cfg(feature = "sqs")]
-impl AwsRetryable for ReceiveMessageError {
-    fn is_retryable(&self) -> bool {
-        false
-    }
-}
+mod sqs {
+    use aws_sdk_sqs::operation::change_message_visibility::ChangeMessageVisibilityError;
+    use aws_sdk_sqs::operation::delete_message_batch::DeleteMessageBatchError;
+    use aws_sdk_sqs::operation::receive_message::ReceiveMessageError;
 
-#[cfg(feature = "sqs")]
-impl AwsRetryable for DeleteMessageBatchError {
-    fn is_retryable(&self) -> bool {
-        false
-    }
-}
+    use super::*;
 
-#[cfg(feature = "sqs")]
-impl AwsRetryable for ChangeMessageVisibilityError {
-    fn is_retryable(&self) -> bool {
-        false
+    impl AwsRetryable for ReceiveMessageError {
+        fn is_retryable(&self) -> bool {
+            false
+        }
+    }
+
+    impl AwsRetryable for DeleteMessageBatchError {
+        fn is_retryable(&self) -> bool {
+            false
+        }
+    }
+
+    impl AwsRetryable for ChangeMessageVisibilityError {
+        fn is_retryable(&self) -> bool {
+            false
+        }
     }
 }

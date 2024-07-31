@@ -37,8 +37,6 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use message::RawMessage;
 
-type ReceiveResult = anyhow::Result<Vec<RawMessage>>;
-
 /// The queue abstraction is based on the AWS SQS and Google Pubsub APIs. The
 /// only requirement of the underlying implementation is that messages exposed
 /// to a given consumer are hidden to other consumers for a configurable period
@@ -66,7 +64,7 @@ pub trait Queue: fmt::Debug + Send + Sync + 'static {
         self: Arc<Self>,
         max_messages: usize,
         suggested_deadline: Duration,
-    ) -> ReceiveResult;
+    ) -> anyhow::Result<Vec<RawMessage>>;
 
     /// Tries to acknowledge (delete) the messages.
     ///

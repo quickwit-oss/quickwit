@@ -69,7 +69,7 @@ mod kafka_source;
 mod kinesis;
 #[cfg(feature = "pulsar")]
 mod pulsar_source;
-#[cfg(feature = "sqs")]
+#[cfg(feature = "queue-sources")]
 mod queue_sources;
 mod source_factory;
 mod stdin_source;

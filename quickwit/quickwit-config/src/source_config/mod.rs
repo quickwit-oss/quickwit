@@ -218,7 +218,7 @@ impl FromStr for SourceInputFormat {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "source_type", content = "params", rename_all = "snake_case")]
 pub enum SourceParams {
-    #[schema(value_type = FileSourceParamsInner)]
+    #[schema(value_type = FileSourceParamsForSerde)]
     File(FileSourceParams),
     Ingest,
     #[serde(rename = "ingest-api")]
@@ -277,24 +277,27 @@ pub enum FileSourceNotification {
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct FileSourceParamsInner {
+pub(super) struct FileSourceParamsForSerde {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub notifications: Vec<FileSourceNotification>,
+    notifications: Vec<FileSourceNotification>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub filepath: Option<String>,
+    filepath: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "FileSourceParamsInner", into = "FileSourceParamsInner")]
+#[serde(
+    try_from = "FileSourceParamsForSerde",
+    into = "FileSourceParamsForSerde"
+)]
 pub enum FileSourceParams {
     Notifications(FileSourceNotification),
     Filepath(Uri),
 }
 
-impl TryFrom<FileSourceParamsInner> for FileSourceParams {
+impl TryFrom<FileSourceParamsForSerde> for FileSourceParams {
     type Error = Cow<'static, str>;
 
-    fn try_from(mut value: FileSourceParamsInner) -> Result<Self, Self::Error> {
+    fn try_from(mut value: FileSourceParamsForSerde) -> Result<Self, Self::Error> {
         if value.filepath.is_some() && !value.notifications.is_empty() {
             return Err(
                 "File source parameters `notifications` and `filepath` are mutually exclusive"
@@ -319,7 +322,7 @@ impl TryFrom<FileSourceParamsInner> for FileSourceParams {
     }
 }
 
-impl From<FileSourceParams> for FileSourceParamsInner {
+impl From<FileSourceParams> for FileSourceParamsForSerde {
     fn from(value: FileSourceParams) -> Self {
         match value {
             FileSourceParams::Filepath(uri) => Self {

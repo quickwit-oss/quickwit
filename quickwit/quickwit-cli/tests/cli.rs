@@ -260,7 +260,7 @@ async fn test_ingest_docs_cli() {
     let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
     assert!(cache_directory_path.read_dir().unwrap().next().is_none());
 
-    let does_not_exit_uri = uri_from_path(&test_env.data_dir_path)
+    let does_not_exist_uri = uri_from_path(&test_env.data_dir_path)
         .join("file-does-not-exist.json")
         .unwrap();
 
@@ -268,7 +268,7 @@ async fn test_ingest_docs_cli() {
     let args = LocalIngestDocsArgs {
         config_uri: test_env.resource_files.config,
         index_id: test_env.index_id,
-        input_path_opt: Some(does_not_exit_uri),
+        input_path_opt: Some(does_not_exist_uri),
         input_format: SourceInputFormat::Json,
         overwrite: false,
         clear_cache: true,
