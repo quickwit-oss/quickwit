@@ -32,14 +32,15 @@ use super::message::PreProcessedMessage;
 #[async_trait]
 pub trait QueueSharedState: Send {
     /// Tries to acquire the ownership for the provided messages from the global
-    /// shared context. For each message, if the ownership was successfully
-    /// acquired or the message was already successfully indexed, the position
-    /// is returned along with the message, otherwise the message is dropped.
-    async fn checkpoint_messages(
-        &mut self,
+    /// shared context. For each partition id, if the ownership was successfully
+    /// acquired or the partition was already successfully indexed, the position
+    /// is returned along with the partition id, otherwise the partition id is
+    /// dropped.
+    async fn acquire_shards(
+        &self,
         publish_token: &str,
-        messages: Vec<PreProcessedMessage>,
-    ) -> anyhow::Result<Vec<(PreProcessedMessage, Position)>>;
+        partitions: Vec<PartitionId>,
+    ) -> anyhow::Result<Vec<(PartitionId, Position)>>;
 }
 
 pub struct QueueSharedStateImpl {
@@ -48,12 +49,10 @@ pub struct QueueSharedStateImpl {
     pub source_id: String,
 }
 
-impl QueueSharedStateImpl {
-    /// Tries to acquire the shards associated with the given partitions.
-    /// Partitions that are assumed to be processed by another indexing
-    /// pipeline are filtered out.
+#[async_trait]
+impl QueueSharedState for QueueSharedStateImpl {
     async fn acquire_shards(
-        &mut self,
+        &self,
         publish_token: &str,
         partitions: Vec<PartitionId>,
     ) -> anyhow::Result<Vec<(PartitionId, Position)>> {
@@ -85,7 +84,6 @@ impl QueueSharedStateImpl {
         for sub in open_shard_resp.subresponses {
             let partition_id = partitions[sub.subrequest_id as usize].clone();
             sub.open_shard().follower_id();
-            // TODO: inclusive??? a +1 will likely be required here
             let position = sub
                 .open_shard()
                 .publish_position_inclusive
@@ -106,30 +104,31 @@ impl QueueSharedStateImpl {
     }
 }
 
-#[async_trait]
-impl QueueSharedState for QueueSharedStateImpl {
-    async fn checkpoint_messages(
-        &mut self,
-        publish_token: &str,
-        messages: Vec<PreProcessedMessage>,
-    ) -> anyhow::Result<Vec<(PreProcessedMessage, Position)>> {
-        let mut message_map =
-            BTreeMap::from_iter(messages.into_iter().map(|msg| (msg.partition_id(), msg)));
-        let partition_ids = message_map.keys().cloned().collect();
+/// Acquires shards from the shared state for the provided list of messages and
+/// maps results to that same list
+pub async fn checkpoint_messages(
+    shared_state: &(dyn QueueSharedState + Sync),
+    publish_token: &str,
+    messages: Vec<PreProcessedMessage>,
+) -> anyhow::Result<Vec<(PreProcessedMessage, Position)>> {
+    let mut message_map =
+        BTreeMap::from_iter(messages.into_iter().map(|msg| (msg.partition_id(), msg)));
+    let partition_ids = message_map.keys().cloned().collect();
 
-        let shards = self.acquire_shards(publish_token, partition_ids).await?;
+    let shards = shared_state
+        .acquire_shards(publish_token, partition_ids)
+        .await?;
 
-        shards
-            .into_iter()
-            .map(|(partition_id, position)| {
-                let content = message_map.remove(&partition_id).context("Unexpected partition ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")?;
-                Ok((
-                    content,
-                    position,
-                ))
-            })
-            .collect::<anyhow::Result<_>>()
-    }
+    shards
+    .into_iter()
+    .map(|(partition_id, position)| {
+        let content = message_map.remove(&partition_id).context("Unexpected partition ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")?;
+        Ok((
+            content,
+            position,
+        ))
+    })
+    .collect::<anyhow::Result<_>>()
 }
 
 #[cfg(test)]
@@ -171,15 +170,14 @@ pub mod shared_state_for_tests {
 
     #[async_trait]
     impl QueueSharedState for InMemoryQueueSharedState {
-        async fn checkpoint_messages(
-            &mut self,
+        async fn acquire_shards(
+            &self,
             publish_token: &str,
-            messages: Vec<PreProcessedMessage>,
-        ) -> anyhow::Result<Vec<(PreProcessedMessage, Position)>> {
+            partitions: Vec<PartitionId>,
+        ) -> anyhow::Result<Vec<(PartitionId, Position)>> {
             let mut state = self.state.lock().unwrap();
-            let mut checkpointed_messages = Vec::new();
-            for message in messages {
-                let partition_id = message.partition_id();
+            let mut checkpointed_partitions = Vec::new();
+            for partition_id in partitions {
                 let processing_state = state
                     .get(&partition_id)
                     .unwrap_or(&SharedStateForPartition::AvailableForProcessing(
@@ -189,10 +187,10 @@ pub mod shared_state_for_tests {
                 match processing_state {
                     SharedStateForPartition::AvailableForProcessing(position) => {
                         state.insert(
-                            partition_id,
+                            partition_id.clone(),
                             SharedStateForPartition::InProgress(publish_token.to_string()),
                         );
-                        checkpointed_messages.push((message, position));
+                        checkpointed_partitions.push((partition_id, position));
                     }
                     SharedStateForPartition::InProgress(in_progress_token) => {
                         assert_ne!(
@@ -203,36 +201,141 @@ pub mod shared_state_for_tests {
                         // the local token but haven't been updated recently
                     }
                     SharedStateForPartition::Completed => {
-                        checkpointed_messages.push((message, Position::Eof(None)));
+                        checkpointed_partitions.push((partition_id, Position::Eof(None)));
                     }
                 }
             }
-            Ok(checkpointed_messages)
+            Ok(checkpointed_partitions)
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    // use quickwit_metastore::metastore_for_test;
+    use std::str::FromStr;
+    use std::time::Instant;
+    use std::vec;
 
-    // use super::*;
-    // use crate::source::test_setup_helper::setup_index;
+    use quickwit_common::uri::Uri;
+    use quickwit_proto::ingest::{Shard, ShardState};
+    use quickwit_proto::metastore::{
+        MockMetastoreService, OpenShardSubresponse, OpenShardsResponse,
+    };
 
-    // #[tokio::test]
-    // async fn test_queue_shared_state_impl() {
-    //     let sqs_params = SqsSourceParams {
-    //         queue_url,
-    //         wait_time_seconds: 1,
-    //         queue_params: QueueParams {
-    //             message_type: QueueMessageType::RawUri,
-    //         },
-    //     };
-    //     let source_params = SourceParams::Sqs(sqs_params.clone());
-    //     let source_config = SourceConfig::for_test("test-sqs-source", source_params);
-    //     let metastore = metastore_for_test();
-    //     let index_id = append_random_suffix("test-sqs-index");
-    //     let index_uid = setup_index(metastore.clone(), &index_id, &source_config, &[]).await;
+    use super::*;
+    use crate::source::queue_sources::message::{MessageMetadata, PreProcessedPayload};
 
-    // }
+    fn mock_metastore(
+        tracked: BTreeMap<PartitionId, (String, Position)>,
+    ) -> MetastoreServiceClient {
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_open_shards()
+            .returning(move |request| {
+                let subresponses = request
+                    .subrequests
+                    .into_iter()
+                    .map(|sub_req| {
+                        let partition_id: PartitionId = sub_req.shard_id().to_string().into();
+                        let (token, position) = tracked
+                            .get(&partition_id)
+                            .cloned()
+                            .unwrap_or((sub_req.publish_token.unwrap(), Position::Beginning));
+                        OpenShardSubresponse {
+                            subrequest_id: sub_req.subrequest_id,
+                            open_shard: Some(Shard {
+                                shard_id: sub_req.shard_id,
+                                source_id: sub_req.source_id,
+                                publish_token: Some(token),
+                                index_uid: sub_req.index_uid,
+                                follower_id: sub_req.follower_id,
+                                leader_id: sub_req.leader_id,
+                                doc_mapping_uid: sub_req.doc_mapping_uid,
+                                publish_position_inclusive: Some(position),
+                                shard_state: ShardState::Open as i32,
+                            }),
+                        }
+                    })
+                    .collect();
+                Ok(OpenShardsResponse { subresponses })
+            });
+        MetastoreServiceClient::from_mock(mock_metastore)
+    }
+
+    fn test_messages(message_number: usize) -> Vec<PreProcessedMessage> {
+        (0..message_number)
+            .map(|i| PreProcessedMessage {
+                metadata: MessageMetadata {
+                    ack_id: format!("ackid{}", i),
+                    delivery_attempts: 0,
+                    initial_deadline: Instant::now(),
+                    message_id: format!("mid{}", i),
+                },
+                payload: PreProcessedPayload::ObjectUri(
+                    Uri::from_str(&format!("s3://bucket/key{}", i)).unwrap(),
+                ),
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn test_acquire_shards() {
+        let index_id = "test-sqs-index";
+        let index_uid = IndexUid::new_with_random_ulid(index_id);
+        let metastore = mock_metastore(BTreeMap::from_iter(
+            [(
+                "p1".into(),
+                ("token2".to_string(), Position::Eof(Some(100usize.into()))),
+            )]
+            .into_iter(),
+        ));
+
+        let shared_state = QueueSharedStateImpl {
+            metastore,
+            index_uid,
+            source_id: "test-sqs-source".to_string(),
+        };
+
+        let aquired = shared_state
+            .acquire_shards("token1", vec!["p1".into(), "p2".into()])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            aquired,
+            vec![
+                ("p1".into(), Position::Eof(Some(100usize.into()))),
+                ("p2".into(), Position::Beginning)
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_with_completed() {
+        let index_id = "test-sqs-index";
+        let index_uid = IndexUid::new_with_random_ulid(index_id);
+
+        let source_messages = test_messages(2);
+
+        let metastore = mock_metastore(BTreeMap::from_iter(
+            [(
+                source_messages[0].partition_id(),
+                ("token2".to_string(), Position::Eof(Some(100usize.into()))),
+            )]
+            .into_iter(),
+        ));
+
+        let shared_state = QueueSharedStateImpl {
+            metastore,
+            index_uid,
+            source_id: "test-sqs-source".to_string(),
+        };
+
+        let checkpointed_msg = checkpoint_messages(&shared_state, "token1", source_messages)
+            .await
+            .unwrap();
+        assert_eq!(checkpointed_msg.len(), 2);
+        assert_eq!(checkpointed_msg[0].1, Position::Eof(Some(100usize.into())));
+        assert_eq!(checkpointed_msg[1].1, Position::Beginning);
+    }
 }

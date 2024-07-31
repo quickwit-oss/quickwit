@@ -33,7 +33,7 @@ use ulid::Ulid;
 
 use super::local_state::QueueLocalState;
 use super::message::{MessageType, ReadyMessage};
-use super::shared_state::{QueueSharedState, QueueSharedStateImpl};
+use super::shared_state::{checkpoint_messages, QueueSharedState, QueueSharedStateImpl};
 use super::sqs_queue::SqsQueue;
 use super::visibility::spawn_visibility_task;
 use super::Queue;
@@ -63,7 +63,7 @@ pub struct QueueCoordinator {
     observable_state: QueueCoordinatorObservableState,
     message_type: MessageType,
     publish_lock: PublishLock,
-    shared_state: Box<dyn QueueSharedState>,
+    shared_state: Box<dyn QueueSharedState + Sync>,
     local_state: QueueLocalState,
     publish_token: String,
 }
@@ -136,8 +136,9 @@ impl QueueCoordinator {
 
     /// Polls messages from the queue and prepares them for processing
     async fn poll_messages(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
+        // TODO increase `max_messages` when previous messages were small
         // receive() typically uses long polling so it can be long to respond
-        let raw_messages = ctx.protect_future(self.queue.receive()).await?;
+        let raw_messages = ctx.protect_future(self.queue.receive(1)).await?;
 
         if raw_messages.is_empty() {
             self.observable_state.num_consecutive_empty_batches += 1;
@@ -164,10 +165,12 @@ impl QueueCoordinator {
             }
         }
 
-        let checkpointed_messages = self
-            .shared_state
-            .checkpoint_messages(&self.publish_token, untracked_locally)
-            .await?;
+        let checkpointed_messages = checkpoint_messages(
+            self.shared_state.as_ref(),
+            &self.publish_token,
+            untracked_locally,
+        )
+        .await?;
 
         let mut ready_messages = Vec::new();
         for (message, position) in checkpointed_messages {

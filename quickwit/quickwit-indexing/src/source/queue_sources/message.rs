@@ -39,7 +39,7 @@ pub enum MessageType {
     RawData,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageMetadata {
     /// The handle that should be used to acknowledge the message or change its visibility deadline
     pub ack_id: String,
@@ -56,7 +56,6 @@ pub struct MessageMetadata {
 }
 
 /// The raw messages as received from the queue abstraction
-#[derive(Clone)]
 pub struct RawMessage {
     pub metadata: MessageMetadata,
     pub payload: OwnedBytes,
@@ -80,6 +79,7 @@ impl RawMessage {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum PreProcessedPayload {
     ObjectUri(Uri),
 }
@@ -96,6 +96,7 @@ impl PreProcessedPayload {
 /// partition id. Indeed, the message might be discarded if the partition was
 /// already processed, so it's better to avoid doing unnecessary work at this
 /// stage.
+#[derive(Debug, PartialEq, Eq)]
 pub struct PreProcessedMessage {
     pub metadata: MessageMetadata,
     pub payload: PreProcessedPayload,
