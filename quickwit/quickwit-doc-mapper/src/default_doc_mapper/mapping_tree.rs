@@ -508,7 +508,7 @@ fn extract_json_val(
 /// extract a subfield from a TantivyValue. The path must be non-empty
 fn extract_val_from_tantivy_val(
     full_path: &[&str],
-    tantivy_value: &mut Vec<TantivyValue>,
+    tantivy_value: &mut [TantivyValue],
 ) -> Vec<TantivyValue> {
     // return *objects* matching path
     fn extract_val_aux<'a>(
