@@ -20,9 +20,10 @@
 pub(crate) mod serialize;
 
 use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 
+use anyhow::Context;
 use bytes::Bytes;
 use quickwit_common::is_false;
 use quickwit_common::uri::Uri;
@@ -230,12 +231,26 @@ pub enum SourceParams {
 }
 
 impl SourceParams {
-    pub fn file<P: AsRef<Path>>(filepath: P) -> Self {
-        Self::File(FileSourceParams::file(filepath))
+    pub fn file_from_uri(uri: Uri) -> Self {
+        Self::File(FileSourceParams {
+            filepath: Some(uri),
+        })
+    }
+
+    pub fn file_from_str<P: AsRef<str>>(filepath: P) -> anyhow::Result<Self> {
+        FileSourceParams::from_str(filepath.as_ref()).map(Self::File)
+    }
+
+    pub fn file_from_path<P: AsRef<Path>>(filepath: P) -> anyhow::Result<Self> {
+        let path_str = filepath
+            .as_ref()
+            .to_str()
+            .context("failed to convert path to string")?;
+        Self::file_from_str(path_str)
     }
 
     pub fn stdin() -> Self {
-        Self::File(FileSourceParams::stdin())
+        Self::File(FileSourceParams { filepath: None })
     }
 
     pub fn void() -> Self {
@@ -250,34 +265,30 @@ pub struct FileSourceParams {
     #[schema(value_type = String)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    #[serde(deserialize_with = "absolute_filepath_from_str")]
-    pub filepath: Option<PathBuf>, //< If None read from stdin.
+    #[serde(deserialize_with = "uri_from_str")]
+    pub filepath: Option<Uri>, //< If None read from stdin.
 }
 
-/// Deserializing as an URI first to validate the input.
-///
-/// TODO: we might want to replace `PathBuf` with `Uri` directly in
-/// `FileSourceParams`
-fn absolute_filepath_from_str<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
+impl FromStr for FileSourceParams {
+    type Err = anyhow::Error;
+
+    fn from_str(filepath: &str) -> anyhow::Result<Self> {
+        let uri = Uri::from_str(filepath)?;
+        Ok(Self {
+            filepath: Some(uri),
+        })
+    }
+}
+
+/// Deserializing as an URI
+fn uri_from_str<'de, D>(deserializer: D) -> Result<Option<Uri>, D::Error>
 where D: Deserializer<'de> {
     let filepath_opt: Option<String> = Deserialize::deserialize(deserializer)?;
     if let Some(filepath) = filepath_opt {
         let uri = Uri::from_str(&filepath).map_err(D::Error::custom)?;
-        Ok(Some(PathBuf::from(uri.as_str())))
+        Ok(Some(uri))
     } else {
         Ok(None)
-    }
-}
-
-impl FileSourceParams {
-    pub fn file<P: AsRef<Path>>(filepath: P) -> Self {
-        FileSourceParams {
-            filepath: Some(filepath.as_ref().to_path_buf()),
-        }
-    }
-
-    pub fn stdin() -> Self {
-        FileSourceParams { filepath: None }
     }
 }
 
@@ -809,10 +820,7 @@ mod tests {
             "#;
             let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
             let uri = Uri::from_str("source-path.json").unwrap();
-            assert_eq!(
-                file_params.filepath.unwrap().as_path(),
-                Path::new(uri.as_str())
-            );
+            assert_eq!(file_params.filepath.unwrap(), uri);
         }
     }
 
