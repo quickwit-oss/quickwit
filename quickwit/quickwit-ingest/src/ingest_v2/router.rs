@@ -452,7 +452,7 @@ impl IngestRouter {
         &self,
         ingest_request: IngestRequestV2,
         max_num_attempts: usize,
-    ) -> IngestV2Result<IngestResponseV2> {
+    ) -> IngestResponseV2 {
         let commit_type = ingest_request.commit_type();
         let mut workbench = IngestWorkbench::new(ingest_request.subrequests, max_num_attempts);
         while !workbench.is_complete() {
@@ -483,7 +483,7 @@ impl IngestRouter {
                 timeout_duration.as_millis()
             );
             IngestV2Error::Timeout(message)
-        })?
+        })
     }
 
     pub async fn debug_info(&self) -> JsonValue {
