@@ -34,7 +34,7 @@ use quickwit_storage::OwnedBytes;
 use regex::Regex;
 
 use super::message::MessageMetadata;
-use super::{Queue, RawMessage, Received};
+use super::{Queue, RawMessage};
 
 #[derive(Debug)]
 pub struct SqsQueue {
@@ -56,7 +56,7 @@ impl SqsQueue {
 
 #[async_trait]
 impl Queue for SqsQueue {
-    async fn receive(&self) -> anyhow::Result<Received> {
+    async fn receive(&self) -> anyhow::Result<Vec<RawMessage>> {
         let visibility_timeout_sec = 120;
         // TODO: We estimate the message deadline using the start of the
         // ReceiveMessage request. This might be overly pessimistic: the docs
@@ -73,8 +73,7 @@ impl Queue for SqsQueue {
             .send()
             .await?;
 
-        let messages = res
-            .messages
+        res.messages
             .unwrap_or_default()
             .into_iter()
             .map(|msg| {
@@ -102,8 +101,7 @@ impl Queue for SqsQueue {
                     payload: OwnedBytes::new(msg.body.unwrap_or_default().into_bytes()),
                 })
             })
-            .collect::<anyhow::Result<_>>()?;
-        Ok(Received::Messages(messages))
+            .collect::<anyhow::Result<_>>()
     }
 
     async fn acknowledge(&self, ack_ids: &[String]) -> anyhow::Result<()> {
@@ -319,7 +317,6 @@ mod localstack_tests {
         let queue = SqsQueue::try_new(queue_url, 20).await.unwrap();
         let messages = tokio::time::timeout(Duration::from_millis(500), queue.receive())
             .await
-            .unwrap()
             .unwrap()
             .unwrap();
         assert_eq!(messages.len(), 1);

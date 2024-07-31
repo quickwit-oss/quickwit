@@ -251,7 +251,9 @@ impl SourceParams {
     /// Checkpoints can be stored either in the index metadata (false) or the shard table (true).
     pub fn use_shard_api(&self) -> bool {
         match self {
-            SourceParams::File(_) => false,
+            SourceParams::File(FileSourceParams::FileUri(_)) => false,
+            SourceParams::File(FileSourceParams::Sqs(_)) => true,
+            SourceParams::File(FileSourceParams::Stdin) => panic!("stdin cannot be checkpointed"),
             SourceParams::Ingest => true,
             SourceParams::IngestApi => false,
             SourceParams::IngestCli => false,
@@ -268,8 +270,8 @@ impl SourceParams {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum FileSourceMessageFormat {
-    /// See https://docs.aws.amazon.com/AmazonS3/latest/userguide/notification-content-structure.html
+pub enum FileSourceMessageType {
+    /// See <https://docs.aws.amazon.com/AmazonS3/latest/userguide/notification-content-structure.html>
     S3Notification,
     /// A string with the URI of the file (e.g `s3://bucket/key`)
     RawUri,
@@ -281,7 +283,7 @@ pub struct FileSourceSqs {
     /// Polling wait time in seconds for receiving messages. Leave default value.
     #[serde(default = "default_wait_time_seconds")]
     pub wait_time_seconds: u8,
-    pub message_format: FileSourceMessageFormat,
+    pub message_type: FileSourceMessageType,
 }
 
 fn default_wait_time_seconds() -> u8 {
@@ -840,7 +842,7 @@ mod tests {
     fn test_file_source_params_deserialization() {
         {
             let yaml = r#"
-                type: file_uri
+                mode: file_uri
                 filepath: source-path.json
             "#;
             let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
@@ -852,7 +854,7 @@ mod tests {
         }
         {
             let yaml = r#"
-                type: stdin
+                mode: stdin
             "#;
             let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
             assert_eq!(file_params, FileSourceParams::Stdin);
@@ -861,7 +863,7 @@ mod tests {
             let yaml = r#"
                 mode: sqs
                 queue_url: https://sqs.us-east-1.amazonaws.com/123456789012/queue-name
-                notification_format: s3_notification
+                message_type: s3_notification
             "#;
             let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
             assert_eq!(
@@ -870,7 +872,7 @@ mod tests {
                     queue_url: "https://sqs.us-east-1.amazonaws.com/123456789012/queue-name"
                         .to_string(),
                     wait_time_seconds: default_wait_time_seconds(),
-                    message_format: FileSourceMessageFormat::S3Notification,
+                    message_type: FileSourceMessageType::S3Notification,
                 })
             );
         }
@@ -1259,7 +1261,10 @@ mod tests {
             "desired_num_pipelines": 1,
             "max_num_pipelines_per_indexer": 1,
             "source_type": "file",
-            "params": {"filepath": "/test_non_json_corpus.txt"},
+            "params": {
+              "filepath": "/test_non_json_corpus.txt",
+              "mode": "file_uri"
+            },
             "input_format": "plain_text"
         }"#;
         let source_config =

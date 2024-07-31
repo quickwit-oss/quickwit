@@ -21,21 +21,30 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::bail;
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_common::uri::Uri;
-use quickwit_config::{FileSourceMessageFormat, FileSourceParams, FileSourceSqs};
+use quickwit_config::FileSourceParams;
+use quickwit_metastore::checkpoint::PartitionId;
+use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::SourceId;
 
-use super::queue_sources::sqs_queue::SqsQueue;
-use super::queue_sources::{MemoryQueue, MessageType, QueueCoordinator};
+use super::doc_file_reader::{ObjectUriBatchReader, StdinBatchReader};
+use super::queue_sources::{
+    InProgressMessage, InProgressMessageObservableState, MessageType, ProgressTracker,
+    QueueCoordinator,
+};
 use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
+enum FileSourceInner {
+    Queue(QueueCoordinator),
+    Stream(InProgressMessage),
+}
+
 pub struct FileSource {
     source_id: SourceId,
-    processor: QueueCoordinator,
+    inner: FileSourceInner,
+    source_type: SourceType,
 }
 
 impl fmt::Debug for FileSource {
@@ -51,7 +60,11 @@ impl Source for FileSource {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        self.processor.initialize(doc_processor_mailbox, ctx).await
+        if let FileSourceInner::Queue(coordinator) = &mut self.inner {
+            coordinator.initialize(doc_processor_mailbox, ctx).await
+        } else {
+            Ok(())
+        }
     }
 
     async fn emit_batches(
@@ -59,9 +72,24 @@ impl Source for FileSource {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        self.processor
-            .emit_batches(doc_processor_mailbox, ctx)
-            .await
+        match &mut self.inner {
+            FileSourceInner::Queue(coordinator) => {
+                coordinator.emit_batches(doc_processor_mailbox, ctx).await?;
+            }
+            FileSourceInner::Stream(in_progress) => {
+                let batch_builder = in_progress.read_batch(ctx, self.source_type).await?;
+                if batch_builder.num_bytes > 0 {
+                    doc_processor_mailbox
+                        .send_message(batch_builder.build())
+                        .await?;
+                }
+                if in_progress.progress_tracker.is_eof() {
+                    ctx.send_exit_with_success(doc_processor_mailbox).await?;
+                    return Err(ActorExitStatus::Success);
+                }
+            }
+        }
+        Ok(Duration::ZERO)
     }
 
     fn name(&self) -> String {
@@ -69,37 +97,23 @@ impl Source for FileSource {
     }
 
     fn observable_state(&self) -> serde_json::Value {
-        serde_json::json!({
-            "offset": self.processor.observable_state().num_bytes_processed,
-            "num_lines_processed": self.processor.observable_state().num_lines_processed,
-        })
+        match &self.inner {
+            FileSourceInner::Queue(coordinator) => {
+                serde_json::json!({
+                    "num_bytes_processed": coordinator.observable_state().num_bytes_processed,
+                    "num_lines_processed": coordinator.observable_state().num_lines_processed,
+                    "num_messages_processed": coordinator.observable_state().num_messages_processed,
+                    "num_consecutive_empty_batches": coordinator.observable_state().num_consecutive_empty_batches,
+                })
+            }
+            FileSourceInner::Stream(in_progress) => {
+                serde_json::json!({
+                    "num_bytes_processed": in_progress.observable_state.num_bytes_processed,
+                    "num_lines_processed": in_progress.observable_state.num_lines_processed,
+                })
+            }
+        }
     }
-}
-
-#[cfg(feature = "sqs")]
-async fn sqs_processor(
-    source_runtime: SourceRuntime,
-    sqs_notif: FileSourceSqs,
-) -> anyhow::Result<QueueCoordinator> {
-    use super::queue_sources::MessageType;
-
-    let queue = SqsQueue::try_new(sqs_notif.queue_url, sqs_notif.wait_time_seconds).await?;
-    let message_type = match sqs_notif.message_format {
-        FileSourceMessageFormat::S3Notification => MessageType::S3Notification,
-        FileSourceMessageFormat::RawUri => MessageType::RawUri,
-    };
-    Ok(QueueCoordinator::new(
-        source_runtime,
-        Arc::new(queue),
-        message_type,
-    ))
-}
-
-fn file_processor(source_runtime: SourceRuntime, uri: Uri) -> QueueCoordinator {
-    let queue = MemoryQueue::default();
-    queue.send_message(uri.into_string(), "");
-    queue.send_end_of_queue();
-    QueueCoordinator::new(source_runtime, Arc::new(queue), MessageType::RawUri)
 }
 
 pub struct FileSourceFactory;
@@ -114,20 +128,64 @@ impl TypedSourceFactory for FileSourceFactory {
         params: FileSourceParams,
     ) -> anyhow::Result<FileSource> {
         let source_id = source_runtime.source_config.source_id.clone();
-        let processor = match params {
+        let source_type = source_runtime.source_config.source_type();
+        let inner = match params {
             FileSourceParams::FileUri(file_uri) => {
-                file_processor(source_runtime, file_uri.filepath)
+                let partition_id = PartitionId::from(file_uri.filepath.as_str());
+                let position = source_runtime
+                    .fetch_checkpoint()
+                    .await?
+                    .position_for_partition(&partition_id)
+                    .cloned()
+                    .unwrap_or_default();
+                let batch_reader = ObjectUriBatchReader::try_new(
+                    &source_runtime.storage_resolver,
+                    &file_uri.filepath,
+                    position,
+                )
+                .await?;
+                FileSourceInner::Stream(InProgressMessage {
+                    partition_id,
+                    progress_tracker: ProgressTracker::ObjectUri(batch_reader),
+                    visibility_handle: None,
+                    observable_state: InProgressMessageObservableState::default(),
+                })
             }
-            FileSourceParams::Stdin => QueueCoordinator::for_stdin(source_runtime),
+            FileSourceParams::Stdin => {
+                let batch_reader = StdinBatchReader::new();
+                FileSourceInner::Stream(InProgressMessage {
+                    partition_id: "stdin".into(),
+                    progress_tracker: ProgressTracker::StdIn(batch_reader),
+                    visibility_handle: None,
+                    observable_state: InProgressMessageObservableState::default(),
+                })
+            }
             #[cfg(feature = "sqs")]
-            FileSourceParams::Sqs(sqs_notif) => sqs_processor(source_runtime, sqs_notif).await?,
-            #[allow(unreachable_patterns)]
-            params => bail!("Unsupported file source: {:?}", params),
+            FileSourceParams::Sqs(sqs_notif) => {
+                use quickwit_config::FileSourceMessageType;
+
+                use crate::source::queue_sources::sqs_queue::SqsQueue;
+
+                let queue =
+                    SqsQueue::try_new(sqs_notif.queue_url, sqs_notif.wait_time_seconds).await?;
+                let message_type = match sqs_notif.message_type {
+                    FileSourceMessageType::S3Notification => MessageType::S3Notification,
+                    FileSourceMessageType::RawUri => MessageType::RawUri,
+                };
+                let coordinator =
+                    QueueCoordinator::new(source_runtime, Arc::new(queue), message_type);
+                FileSourceInner::Queue(coordinator)
+            }
+            #[cfg(not(feature = "sqs"))]
+            FileSourceParams::Sqs(sqs_notif) => {
+                anyhow::bail!("Quickwit was compiled without the `sqs` feature")
+            }
         };
 
         Ok(FileSource {
-            processor,
+            inner,
             source_id,
+            source_type,
         })
     }
 }
@@ -137,7 +195,9 @@ mod tests {
     use std::num::NonZeroUsize;
     use std::str::FromStr;
 
+    use assert_json_diff::assert_json_include;
     use quickwit_actors::{Command, Universe};
+    use quickwit_common::uri::Uri;
     use quickwit_config::{FileSourceUri, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpointDelta};
     use quickwit_proto::types::{IndexUid, Position};
@@ -145,10 +205,10 @@ mod tests {
     use super::*;
     use crate::models::RawDocBatch;
     use crate::source::doc_file_reader::file_test_helpers::{
-        generate_dummy_doc_file, generate_index_doc_file,
+        generate_dummy_doc_file, generate_index_doc_file, DUMMY_DOC,
     };
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::SourceActor;
+    use crate::source::{SourceActor, BATCH_NUM_BYTES_LIMIT};
 
     #[tokio::test]
     async fn test_file_source() {
@@ -188,12 +248,13 @@ mod tests {
         assert_eq!(
             counters,
             serde_json::json!({
-                "offset": 1030u64,
+                "num_bytes_processed": 1030u64,
                 "num_lines_processed": 4u32
             })
         );
         let batch = indexer_inbox.drain_for_test();
         assert_eq!(batch.len(), 2);
+        batch[0].downcast_ref::<RawDocBatch>().unwrap();
         assert!(matches!(
             batch[1].downcast_ref::<Command>().unwrap(),
             Command::ExitWithSuccess
@@ -210,7 +271,8 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-        let temp_file = generate_dummy_doc_file(gzip, 20_000).await;
+        let lines = BATCH_NUM_BYTES_LIMIT as usize / DUMMY_DOC.len() + 1;
+        let temp_file = generate_dummy_doc_file(gzip, lines).await;
         let filepath = temp_file.path().to_str().unwrap();
         let uri = Uri::from_str(filepath).unwrap();
         let params = FileSourceParams::FileUri(FileSourceUri {
@@ -237,11 +299,10 @@ mod tests {
             universe.spawn_builder().spawn(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
-        assert_eq!(
-            counters,
-            serde_json::json!({
-                "offset": 700_000u64,
-                "num_lines_processed": 20_000u64
+        assert_json_include!(
+            actual: counters,
+            expected: serde_json::json!({
+                "num_lines_processed": lines,
             })
         );
         let indexer_msgs = doc_processor_inbox.drain_for_test();
@@ -326,7 +387,7 @@ mod tests {
         assert_eq!(
             counters,
             serde_json::json!({
-                "offset": 290u64,
+                "num_bytes_processed": 286u64,
                 "num_lines_processed": 98u64
             })
         );
@@ -342,7 +403,7 @@ mod localstack_tests {
     use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{SourceConfig, SourceParams};
+    use quickwit_config::{FileSourceMessageType, FileSourceSqs, SourceConfig, SourceParams};
     use quickwit_metastore::metastore_for_test;
 
     use super::*;
@@ -368,7 +429,7 @@ mod localstack_tests {
         let source_params = FileSourceParams::Sqs(FileSourceSqs {
             queue_url,
             wait_time_seconds: 1,
-            message_format: FileSourceMessageFormat::RawUri,
+            message_type: FileSourceMessageType::RawUri,
         });
         let source_config = SourceConfig::for_test(
             "test-file-source-sqs-notifications",
