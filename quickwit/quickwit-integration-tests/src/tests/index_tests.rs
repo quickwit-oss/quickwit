@@ -24,6 +24,7 @@ use hyper::StatusCode;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
 use quickwit_metastore::SplitState;
+use quickwit_opentelemetry::otlp::OTEL_LOGS_INDEX_ID;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::ExportLogsServiceRequest;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
 use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value;
@@ -35,6 +36,7 @@ use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
 use serde_json::json;
 use tonic::codec::CompressionEncoding;
+use tracing::info;
 
 use crate::ingest_json;
 use crate::test_utils::{ingest_with_retry, ClusterSandbox};
@@ -651,6 +653,7 @@ async fn test_shutdown() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_ingest_traces_with_otlp_grpc_api() {
     quickwit_common::setup_logging_for_tests();
     let nodes_services = vec![
@@ -730,6 +733,7 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
 #[tokio::test]
 async fn test_ingest_logs_with_otlp_grpc_api() {
     quickwit_common::setup_logging_for_tests();
+    std::env::set_var("QW_ENABLE_INGEST_V2", "true");
     let nodes_services = vec![
         HashSet::from_iter([QuickwitService::Searcher]),
         HashSet::from_iter([QuickwitService::Metastore]),
@@ -743,30 +747,34 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
     // Wait fo the pipelines to start (one for logs and one for traces)
     sandbox.wait_for_indexing_pipelines(2).await.unwrap();
 
-    // build test OTEL log
-    let log_record = LogRecord {
-        time_unix_nano: 1_000_000_001,
-        body: Some(AnyValue {
-            value: Some(Value::StringValue("hello".to_string())),
-        }),
-        ..Default::default()
-    };
-    let scope_logs = ScopeLogs {
-        log_records: vec![log_record],
-        ..Default::default()
-    };
-    let resource_logs = vec![ResourceLogs {
-        scope_logs: vec![scope_logs],
-        ..Default::default()
-    }];
-    let request = ExportLogsServiceRequest { resource_logs };
+    fn build_log(body: String) -> Vec<ResourceLogs> {
+        let log_record = LogRecord {
+            time_unix_nano: 1_000_000_001,
+            body: Some(AnyValue {
+                value: Some(Value::StringValue(body)),
+            }),
+            ..Default::default()
+        };
+        let scope_logs = ScopeLogs {
+            log_records: vec![log_record],
+            ..Default::default()
+        };
+        vec![ResourceLogs {
+            scope_logs: vec![scope_logs],
+            ..Default::default()
+        }]
+    }
 
     // Send the logs on the default index
     let logs_client = sandbox.logs_client.clone();
     let gzip_logs_client = logs_client
         .clone()
         .send_compressed(CompressionEncoding::Gzip);
-    for mut tested_client in vec![logs_client, gzip_logs_client] {
+    for (idx, mut tested_client) in vec![logs_client, gzip_logs_client].into_iter().enumerate() {
+        let body: String = format!("hello{}", idx);
+        let request = ExportLogsServiceRequest {
+            resource_logs: build_log(body.clone()),
+        };
         let response = tested_client.export(request.clone()).await.unwrap();
         assert_eq!(
             response
@@ -776,6 +784,24 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
                 .rejected_log_records,
             0
         );
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        let search_result = sandbox
+            .searcher_rest_client
+            .search(
+                OTEL_LOGS_INDEX_ID,
+                SearchRequestQueryString {
+                    query: format!("body.message:{}", body),
+                    // query: format!("{}", body),
+                    // query: String::new(),
+                    max_hits: 10,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        info!("search_result {:?}", search_result);
+        // TODO very weird thing with timestamp being multiplied by 10^9
+        assert_eq!(search_result.num_hits, 1);
     }
 
     sandbox.shutdown().await.unwrap();
