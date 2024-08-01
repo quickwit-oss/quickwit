@@ -447,7 +447,6 @@ async fn test_update_doc_mapping_unindexed_to_indexed() {
     .await;
 }
 
-
 #[tokio::test]
 #[ignore]
 async fn test_update_doc_mapping_strict_to_dynamic() {
