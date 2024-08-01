@@ -508,14 +508,14 @@ fn extract_json_val(
 /// extract a subfield from a TantivyValue. The path must be non-empty
 fn extract_val_from_tantivy_val(
     full_path: &[&str],
-    tantivy_value: &mut [TantivyValue],
+    tantivy_values: &mut [TantivyValue],
 ) -> Vec<TantivyValue> {
     // return *objects* matching path
     fn extract_val_aux<'a>(
         path: &[&str],
-        tantivy_value: &'a mut [TantivyValue],
+        tantivy_values: &'a mut [TantivyValue],
     ) -> Vec<&'a mut Vec<(String, TantivyValue)>> {
-        let mut maps: Vec<&'a mut Vec<(String, TantivyValue)>> = tantivy_value
+        let mut maps: Vec<&'a mut Vec<(String, TantivyValue)>> = tantivy_values
             .iter_mut()
             .filter_map(|value| {
                 if let TantivyValue::Object(map) = value {
@@ -549,7 +549,7 @@ fn extract_val_from_tantivy_val(
     };
 
     let mut results = Vec::new();
-    for object in extract_val_aux(path, tantivy_value) {
+    for object in extract_val_aux(path, tantivy_values) {
         // TODO use extract_if once it's stable
         let mut i = 0;
         while i < object.len() {
@@ -1583,7 +1583,10 @@ mod tests {
     use time::macros::datetime;
     use time::OffsetDateTime;
 
-    use super::{value_to_json, JsonValueIterator, LeafType, MapOrArrayIter, MappingLeaf};
+    use super::{
+        add_key_to_vec_map, extract_val_from_tantivy_val, value_to_json, JsonValueIterator,
+        LeafType, MapOrArrayIter, MappingLeaf,
+    };
     use crate::default_doc_mapper::date_time_type::QuickwitDateTimeOptions;
     use crate::default_doc_mapper::field_mapping_entry::{
         BinaryFormat, NumericOutputFormat, QuickwitBoolOptions, QuickwitBytesOptions,
@@ -2238,6 +2241,117 @@ mod tests {
             JsonValueIterator::new(json!([{"a":1, "b": 2}, {"a": {"b": [3, 4]}}]))
                 .collect::<Vec<_>>(),
             vec![json!(1), json!(2), json!(3), json!(4)]
+        );
+    }
+
+    #[test]
+    fn test_extract_val_from_tantivy_val() {
+        let obj = TantivyValue::Object;
+        fn array(val: impl IntoIterator<Item = impl Into<TantivyValue>>) -> TantivyValue {
+            TantivyValue::Array(val.into_iter().map(Into::into).collect())
+        }
+
+        let mut sample = vec![obj(vec![
+            (
+                "some".to_string(),
+                obj(vec![
+                    (
+                        "path".to_string(),
+                        obj(vec![("with.dots".to_string(), 1u64.into())]),
+                    ),
+                    (
+                        "other".to_string(),
+                        obj(vec![("path".to_string(), array([2u64, 3]))]),
+                    ),
+                ]),
+            ),
+            ("short".to_string(), 4u64.into()),
+        ])];
+
+        assert_eq!(
+            extract_val_from_tantivy_val(&["some", "other"], &mut sample),
+            vec![obj(vec![("path".to_string(), array([2u64, 3]))])]
+        );
+        assert_eq!(
+            extract_val_from_tantivy_val(&["some", "other"], &mut sample),
+            Vec::new()
+        );
+        assert_eq!(
+            extract_val_from_tantivy_val(&["some", "path", "with.dots"], &mut sample),
+            vec![1u64.into()]
+        );
+        assert_eq!(
+            extract_val_from_tantivy_val(&["some", "path", "with.dots"], &mut sample),
+            Vec::new()
+        );
+        assert_eq!(
+            extract_val_from_tantivy_val(&["short"], &mut sample),
+            vec![4u64.into()]
+        );
+        assert_eq!(
+            extract_val_from_tantivy_val(&["short"], &mut sample),
+            Vec::new()
+        );
+    }
+
+    #[test]
+    fn test_add_key_to_vec_map() {
+        let obj = TantivyValue::Object;
+        fn array(val: impl IntoIterator<Item = impl Into<TantivyValue>>) -> TantivyValue {
+            TantivyValue::Array(val.into_iter().map(Into::into).collect())
+        }
+
+        let mut map = Vec::new();
+
+        add_key_to_vec_map(&mut map, "some.path.with\\.dots", vec![1u64.into()]);
+        assert_eq!(
+            map,
+            &[(
+                "some".to_string(),
+                obj(vec![(
+                    "path".to_string(),
+                    obj(vec![("with.dots".to_string(), 1u64.into())])
+                )])
+            )]
+        );
+
+        add_key_to_vec_map(&mut map, "some.other.path", vec![2u64.into(), 3u64.into()]);
+        assert_eq!(
+            map,
+            &[(
+                "some".to_string(),
+                obj(vec![
+                    (
+                        "path".to_string(),
+                        obj(vec![("with.dots".to_string(), 1u64.into())])
+                    ),
+                    (
+                        "other".to_string(),
+                        obj(vec![("path".to_string(), array([2u64, 3]))])
+                    ),
+                ])
+            )]
+        );
+
+        add_key_to_vec_map(&mut map, "short", vec![4u64.into()]);
+        assert_eq!(
+            map,
+            &[
+                (
+                    "some".to_string(),
+                    obj(vec![
+                        (
+                            "path".to_string(),
+                            obj(vec![("with.dots".to_string(), 1u64.into())])
+                        ),
+                        (
+                            "other".to_string(),
+                            obj(vec![("path".to_string(), array([2u64, 3]))])
+                        ),
+                    ])
+                ),
+                ("short".to_string(), 4u64.into())
+            ]
         );
     }
 }

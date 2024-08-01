@@ -634,7 +634,7 @@ impl DocMapper for DefaultDocMapper {
             // They probably come from older schemas when these fields had a dedicated entry
             'field: for (key, mut value) in named_doc {
                 if key.starts_with('_') {
-                    // this is an internal field, ont meant to be shown
+                    // this is an internal field, not meant to be shown
                     continue 'field;
                 }
                 let Ok(path) = crate::routing_expression::parse_field_name(&key) else {
