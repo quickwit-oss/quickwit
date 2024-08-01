@@ -91,10 +91,14 @@ fn java_date_format_tokenizer() -> &'static RegexTokenizer<OwnedFormatItem> {
     })
 }
 
-fn java_date_format_aliases() -> &'static HashMap<&'static str, &'static str> {
+// Check if the given date time format is a common alias and replace it with the
+// Java simple date format it is mapped to, if any.
+// If the java_datetime_format is not an alias, it is expected to be a
+// java simple date time format and should be returned as is.
+fn resolve_java_datetime_format_alias(java_datetime_format: &str) -> &str {
     static JAVA_DATE_FORMAT_ALIASES: OnceLock<HashMap<&'static str, &'static str>> =
         OnceLock::new();
-    JAVA_DATE_FORMAT_ALIASES.get_or_init(|| {
+    let java_datetime_format_map = JAVA_DATE_FORMAT_ALIASES.get_or_init(|| {
         let mut m = HashMap::new();
         m.insert("date_optional_time", "yyyy-MM-dd'T'HH:mm:ss.SSSZ");
         m.insert("strict_date_optional_time", "yyyy-MM-dd'T'HH:mm:ss.SSSZ");
@@ -104,7 +108,11 @@ fn java_date_format_aliases() -> &'static HashMap<&'static str, &'static str> {
         );
         m.insert("basic_date", "yyyyMMdd");
         m
-    })
+    });
+    java_datetime_format_map
+        .get(java_datetime_format)
+        .copied()
+        .unwrap_or(java_datetime_format)
 }
 
 /// A date time parser that holds the format specification `Vec<FormatItem>`.
@@ -177,15 +185,9 @@ impl StrptimeParser {
     }
 
     pub fn from_java_datetime_format(java_datetime_format: &str) -> Result<StrptimeParser, String> {
-        let format = if java_datetime_format.contains('_') {
-            java_date_format_aliases()
-                .get(java_datetime_format)
-                .unwrap_or(&java_datetime_format)
-        } else {
-            java_datetime_format
-        };
+        let java_datetime_format_resolved = resolve_java_datetime_format_alias(java_datetime_format);
         let items = java_date_format_tokenizer()
-            .tokenize(format)
+            .tokenize(java_datetime_format_resolved)
             .map_err(|pos| {
                 format!(
                     "failed to parse date format `{java_datetime_format}`. Pattern at pos {pos} \
@@ -193,7 +195,7 @@ impl StrptimeParser {
                 )
             })?;
         Ok(StrptimeParser {
-            strptime_format: java_datetime_format.to_string(),
+            strptime_format: java_datetime_format_resolved.to_string(),
             with_timezone: false,
             items,
         })

@@ -6296,7 +6296,6 @@ dependencies = [
  "proptest",
  "quickwit-common",
  "quickwit-datetime",
- "regex",
  "serde",
  "serde_json",
  "serde_with 3.9.0",
