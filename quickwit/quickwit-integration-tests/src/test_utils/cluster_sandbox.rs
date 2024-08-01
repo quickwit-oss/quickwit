@@ -22,7 +22,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Context;
 use futures_util::future;
@@ -161,6 +161,8 @@ impl ClusterSandbox {
         for node_config in node_configs.iter() {
             join_handles.push(tokio::spawn({
                 let node_config = node_config.node_config.clone();
+                let node_id = node_config.node_id.clone();
+                let services = node_config.enabled_services.clone();
                 let metastore_resolver = metastore_resolver.clone();
                 let storage_resolver = storage_resolver.clone();
                 let shutdown_signal = shutdown_trigger.shutdown_signal();
@@ -174,6 +176,7 @@ impl ClusterSandbox {
                         quickwit_serve::do_nothing_env_filter_reload_fn(),
                     )
                     .await?;
+                    debug!("{} stopped successfully ({:?})", node_id, services);
                     Result::<_, anyhow::Error>::Ok(result)
                 }
             }));
@@ -225,32 +228,10 @@ impl ClusterSandbox {
         self.searcher_rest_client.enable_ingest_v2();
     }
 
-    // Starts one node that runs all the services.
+    // Starts one node that runs all the services and wait for it to be ready
     pub async fn start_standalone_node() -> anyhow::Result<Self> {
-        let temp_dir = tempfile::tempdir()?;
-        let services = QuickwitService::supported_services();
-        let node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[services]);
-        let sandbox = Self::start_cluster_with_configs(temp_dir, node_configs).await?;
-
-        let now = Instant::now();
-        let mut tick = tokio::time::interval(Duration::from_millis(100));
-
-        loop {
-            tick.tick().await;
-
-            if now.elapsed() > Duration::from_secs(5) {
-                panic!("standalone node timed out");
-            }
-            if sandbox
-                .indexer_rest_client
-                .node_health()
-                .is_ready()
-                .await
-                .unwrap_or(false)
-            {
-                break;
-            }
-        }
+        let sandbox = Self::start_cluster_nodes(&[QuickwitService::supported_services()]).await?;
+        sandbox.wait_for_cluster_num_ready_nodes(1).await?;
         Ok(sandbox)
     }
 
@@ -434,6 +415,7 @@ impl ClusterSandbox {
     pub async fn shutdown(self) -> Result<Vec<HashMap<String, ActorExitStatus>>, anyhow::Error> {
         // We need to drop rest clients first because reqwest can hold connections open
         // preventing rest server's graceful shutdown.
+        debug!("shutting down test sandbox");
         self.shutdown_trigger.shutdown();
         let result = future::join_all(self.join_handles).await;
         let mut statuses = Vec::new();

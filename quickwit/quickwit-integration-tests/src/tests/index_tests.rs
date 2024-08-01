@@ -665,7 +665,6 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
         .unwrap();
     // Wait for the pipelines to start (one for logs and one for traces)
     sandbox.wait_for_indexing_pipelines(2).await.unwrap();
-    let client = sandbox.trace_client.clone();
 
     // build test OTEL span
     let scope_spans = vec![ScopeSpans {
@@ -693,11 +692,12 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
     }];
     let request = ExportTraceServiceRequest { resource_spans };
 
-    // Send the spans on the default index, uncompressed and compressed
-    for mut tested_client in vec![
-        client.clone(),
-        client.clone().send_compressed(CompressionEncoding::Gzip),
-    ] {
+    // Send the spans on the default index
+    let trace_client = sandbox.trace_client.clone();
+    let gzip_trace_client = trace_client
+        .clone()
+        .send_compressed(CompressionEncoding::Gzip);
+    for mut tested_client in vec![trace_client, gzip_trace_client] {
         let response = tested_client.export(request.clone()).await.unwrap();
         assert_eq!(
             response
@@ -716,10 +716,14 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
             "qw-otel-traces-index",
             tonic::metadata::MetadataValue::try_from("non-existing-index").unwrap(),
         );
-        let status = client.clone().export(tonic_request).await.unwrap_err();
+        let status = sandbox
+            .trace_client
+            .clone()
+            .export(tonic_request)
+            .await
+            .unwrap_err();
         assert_eq!(status.code(), tonic::Code::NotFound);
     }
-
     sandbox.shutdown().await.unwrap();
 }
 
@@ -738,7 +742,6 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
         .unwrap();
     // Wait fo the pipelines to start (one for logs and one for traces)
     sandbox.wait_for_indexing_pipelines(2).await.unwrap();
-    let client = sandbox.logs_client.clone();
 
     // build test OTEL log
     let log_record = LogRecord {
@@ -758,11 +761,12 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
     }];
     let request = ExportLogsServiceRequest { resource_logs };
 
-    // Send the logs on the default index, uncompressed and compressed
-    for mut tested_client in vec![
-        client.clone(),
-        client.clone().send_compressed(CompressionEncoding::Gzip),
-    ] {
+    // Send the logs on the default index
+    let logs_client = sandbox.logs_client.clone();
+    let gzip_logs_client = logs_client
+        .clone()
+        .send_compressed(CompressionEncoding::Gzip);
+    for mut tested_client in vec![logs_client, gzip_logs_client] {
         let response = tested_client.export(request.clone()).await.unwrap();
         assert_eq!(
             response

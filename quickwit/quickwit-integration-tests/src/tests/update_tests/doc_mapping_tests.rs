@@ -17,10 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
 use std::time::Duration;
 
-use quickwit_config::service::QuickwitService;
 use serde_json::{json, Value};
 
 use super::assert_hits_unordered;
@@ -37,17 +35,7 @@ async fn validate_search_across_doc_mapping_updates(
     query_and_expect: &[(&str, Result<&[Value], ()>)],
 ) {
     quickwit_common::setup_logging_for_tests();
-    let nodes_services = vec![HashSet::from_iter([
-        QuickwitService::Searcher,
-        QuickwitService::Metastore,
-        QuickwitService::Indexer,
-        QuickwitService::ControlPlane,
-        QuickwitService::Janitor,
-    ])];
-    let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
-        .await
-        .unwrap();
-    sandbox.wait_for_cluster_num_ready_nodes(1).await.unwrap();
+    let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
 
     {
         // Wait for indexer to fully start.
