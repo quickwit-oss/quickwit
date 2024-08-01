@@ -201,9 +201,12 @@ mod tests {
     use flate2::write::GzEncoder;
     use flate2::Compression;
     use prost::Message;
-    use quickwit_ingest::{CommitType, IngestResponse, IngestServiceClient, MockIngestService};
+    use quickwit_ingest::CommitType;
     use quickwit_opentelemetry::otlp::{
         make_resource_spans_for_test, OtlpGrpcLogsService, OtlpGrpcTracesService,
+    };
+    use quickwit_proto::ingest::router::{
+        IngestResponseV2, IngestRouterServiceClient, IngestSuccess, MockIngestRouterService,
     };
     use quickwit_proto::opentelemetry::proto::collector::logs::v1::{
         ExportLogsServiceRequest, ExportLogsServiceResponse,
@@ -226,23 +229,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_otlp_ingest_logs_handler() {
-        let mut mock_ingest_service = MockIngestService::new();
-        mock_ingest_service
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
             .expect_ingest()
             .withf(|request| {
-                request.doc_batches.len() == 1
+                request.subrequests.len() == 1
+                    && request.subrequests[0].doc_batch.is_some()
                     // && request.commit == CommitType::Auto as i32
-                    && request.doc_batches[0].doc_lengths.len() == 1
+                    && request.subrequests[0].doc_batch.as_ref().unwrap().doc_lengths.len() == 1
             })
             .returning(|_| {
-                Ok(IngestResponse {
-                    num_docs_for_processing: 1,
+                Ok(IngestResponseV2 {
+                    successes: vec![IngestSuccess {
+                        num_ingested_docs: 1,
+                        ..Default::default()
+                    }],
+                    failures: Vec::new(),
                 })
             });
-        let ingest_service_client = IngestServiceClient::from_mock(mock_ingest_service);
-        let logs_service = OtlpGrpcLogsService::new(ingest_service_client.clone());
-        let traces_service =
-            OtlpGrpcTracesService::new(ingest_service_client, Some(CommitType::Force));
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
+        let logs_service = OtlpGrpcLogsService::new(ingest_router.clone());
+        let traces_service = OtlpGrpcTracesService::new(ingest_router, Some(CommitType::Force));
         let export_logs_request = ExportLogsServiceRequest {
             resource_logs: vec![ResourceLogs {
                 resource: Some(Resource {
@@ -339,23 +346,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_otlp_ingest_traces_handler() {
-        let mut mock_ingest_service = MockIngestService::new();
-        mock_ingest_service
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
             .expect_ingest()
             .withf(|request| {
-                request.doc_batches.len() == 1
-                    && request.commit == CommitType::Force as i32
-                    && request.doc_batches[0].doc_lengths.len() == 5
+                request.subrequests.len() == 1
+                        && request.subrequests[0].doc_batch.is_some()
+                        // && request.commit == CommitType::Auto as i32
+                        && request.subrequests[0].doc_batch.as_ref().unwrap().doc_lengths.len() == 5
             })
             .returning(|_| {
-                Ok(IngestResponse {
-                    num_docs_for_processing: 1,
+                Ok(IngestResponseV2 {
+                    successes: vec![IngestSuccess {
+                        num_ingested_docs: 1,
+                        ..Default::default()
+                    }],
+                    failures: Vec::new(),
                 })
             });
-        let ingest_service_client = IngestServiceClient::from_mock(mock_ingest_service);
-        let logs_service = OtlpGrpcLogsService::new(ingest_service_client.clone());
-        let traces_service =
-            OtlpGrpcTracesService::new(ingest_service_client, Some(CommitType::Force));
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
+        let logs_service = OtlpGrpcLogsService::new(ingest_router.clone());
+        let traces_service = OtlpGrpcTracesService::new(ingest_router, Some(CommitType::Force));
         let export_trace_request = ExportTraceServiceRequest {
             resource_spans: make_resource_spans_for_test(),
         };

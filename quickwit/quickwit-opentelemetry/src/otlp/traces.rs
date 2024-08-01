@@ -25,10 +25,14 @@ use async_trait::async_trait;
 use prost::Message;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
-use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
-use quickwit_ingest::{
-    CommitType, DocBatch, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
+use quickwit_config::{
+    load_index_config_from_user_config, ConfigFormat, IndexConfig, INGEST_V2_SOURCE_ID,
 };
+use quickwit_ingest::{CommitType, DocBatchV2Builder, IngestServiceError};
+use quickwit_proto::ingest::router::{
+    IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
+};
+use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
     ExportTracePartialSuccess, ExportTraceServiceRequest, ExportTraceServiceResponse,
@@ -38,7 +42,7 @@ use quickwit_proto::opentelemetry::proto::resource::v1::Resource as OtlpResource
 use quickwit_proto::opentelemetry::proto::trace::v1::span::Link as OtlpLink;
 use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
 use quickwit_proto::opentelemetry::proto::trace::v1::{Span as OtlpSpan, Status as OtlpStatus};
-use quickwit_proto::types::IndexId;
+use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tonic::{Request, Response, Status};
@@ -46,8 +50,8 @@ use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
 use super::{
-    extract_otel_index_id_from_metadata, is_zero, OtelSignal, TryFromSpanIdError,
-    TryFromTraceIdError,
+    extract_otel_index_id_from_metadata, ingest_failures_to_error, is_zero, OtelSignal,
+    TryFromSpanIdError, TryFromTraceIdError,
 };
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{extract_attributes, SpanId, TraceId};
@@ -670,7 +674,7 @@ fn parse_otlp_spans(
 }
 
 struct ParsedSpans {
-    doc_batch: DocBatch,
+    doc_batch: DocBatchV2,
     num_spans: u64,
     num_parse_errors: u64,
     error_message: String,
@@ -678,14 +682,17 @@ struct ParsedSpans {
 
 #[derive(Debug, Clone)]
 pub struct OtlpGrpcTracesService {
-    ingest_service: IngestServiceClient,
+    ingest_router: IngestRouterServiceClient,
     commit_type: CommitType,
 }
 
 impl OtlpGrpcTracesService {
-    pub fn new(ingest_service: IngestServiceClient, commit_type_opt: Option<CommitType>) -> Self {
+    pub fn new(
+        ingest_router: IngestRouterServiceClient,
+        commit_type_opt: Option<CommitType>,
+    ) -> Self {
         Self {
-            ingest_service,
+            ingest_router,
             commit_type: commit_type_opt.unwrap_or_default(),
         }
     }
@@ -714,7 +721,7 @@ impl OtlpGrpcTracesService {
             error_message,
         } = run_cpu_intensive({
             let parent_span = RuntimeSpan::current();
-            || Self::parse_spans(request, parent_span, index_id)
+            || Self::parse_spans(request, parent_span)
         })
         .await
         .map_err(|join_error| {
@@ -728,7 +735,7 @@ impl OtlpGrpcTracesService {
             return Err(tonic::Status::internal(error_message));
         }
         let num_bytes = doc_batch.num_bytes() as u64;
-        self.store_spans(doc_batch).await?;
+        self.store_spans(index_id, doc_batch).await?;
 
         OTLP_SERVICE_METRICS
             .ingested_spans_total
@@ -753,22 +760,28 @@ impl OtlpGrpcTracesService {
     fn parse_spans(
         request: ExportTraceServiceRequest,
         parent_span: RuntimeSpan,
-        index_id: IndexId,
     ) -> tonic::Result<ParsedSpans> {
         let spans = parse_otlp_spans(request)?;
         let num_spans = spans.len() as u64;
         let mut num_parse_errors = 0;
         let mut error_message = String::new();
 
-        let mut doc_batch_builder = DocBatchBuilder::new(index_id).json_writer();
+        let mut doc_batch_builder = DocBatchV2Builder::default().json_writer();
+        let mut doc_uid_generator = DocUidGenerator::default();
         for span in spans {
-            if let Err(error) = doc_batch_builder.ingest_doc(&span.0) {
+            let doc_uid = doc_uid_generator.next_doc_uid();
+            if let Err(error) = doc_batch_builder.add_doc(doc_uid, span.0) {
                 error!(error=?error, "failed to JSON serialize span");
                 error_message = format!("failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
             }
         }
-        let doc_batch = doc_batch_builder.build();
+        let doc_batch_opt = doc_batch_builder.into_inner().build();
+        let doc_batch = if let Some(doc_batch) = doc_batch_opt {
+            doc_batch
+        } else {
+            DocBatchV2::default()
+        };
         let current_span = RuntimeSpan::current();
         current_span.record("num_spans", num_spans);
         current_span.record("num_bytes", doc_batch.num_bytes());
@@ -784,13 +797,27 @@ impl OtlpGrpcTracesService {
     }
 
     #[instrument(skip_all, fields(num_bytes = doc_batch.num_bytes()))]
-    async fn store_spans(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
-        let ingest_request = IngestRequest {
-            doc_batches: vec![doc_batch],
-            commit: self.commit_type.into(),
+    async fn store_spans(
+        &mut self,
+        index_id: String,
+        doc_batch: DocBatchV2,
+    ) -> Result<(), tonic::Status> {
+        let subrequest = IngestSubrequest {
+            subrequest_id: 0,
+            index_id,
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
+            doc_batch: Some(doc_batch),
         };
-        self.ingest_service.ingest(ingest_request).await?;
-        Ok(())
+        let request = IngestRequestV2 {
+            commit_type: self.commit_type.into(),
+            subrequests: vec![subrequest],
+        };
+        let response = self
+            .ingest_router
+            .ingest(request)
+            .await
+            .map_err(|e| IngestServiceError::from(e))?;
+        ingest_failures_to_error(response).map_err(|e| e.into())
     }
 
     async fn export_instrumented(
