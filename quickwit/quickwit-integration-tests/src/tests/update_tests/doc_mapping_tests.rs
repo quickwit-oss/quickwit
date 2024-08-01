@@ -277,9 +277,7 @@ async fn test_update_doc_mapping_json_to_object() {
     .await;
 }
 
-// TODO expected to be fix as part of #5084
 #[tokio::test]
-#[ignore]
 async fn test_update_doc_mapping_tokenizer_default_to_raw() {
     let index_id = "update-tokenizer-default-to-raw";
     let original_doc_mappings = json!({
@@ -302,10 +300,11 @@ async fn test_update_doc_mapping_tokenizer_default_to_raw() {
         ingest_after_update,
         &[
             ("body:hello", Ok(&[json!({"body": "hello-world"})])),
-            ("body:world", Ok(&[json!({"body": "bonjour-monde"})])),
+            ("body:world", Ok(&[json!({"body": "hello-world"})])),
             // phrases queries won't apply to older splits that didn't support them
             ("body:\"hello world\"", Ok(&[])),
             ("body:\"hello-world\"", Ok(&[])),
+            ("body:\"hello-worl\"*", Ok(&[])),
             ("body:bonjour", Ok(&[])),
             ("body:monde", Ok(&[])),
             // the raw tokenizer only returns exact matches
@@ -314,14 +313,16 @@ async fn test_update_doc_mapping_tokenizer_default_to_raw() {
                 "body:\"bonjour-monde\"",
                 Ok(&[json!({"body": "bonjour-monde"})]),
             ),
+            (
+                "body:\"bonjour-mond\"*",
+                Ok(&[json!({"body": "bonjour-monde"})]),
+            ),
         ],
     )
     .await;
 }
 
-// TODO expected to be fix as part of #5084
 #[tokio::test]
-#[ignore]
 async fn test_update_doc_mapping_tokenizer_add_position() {
     let index_id = "update-tokenizer-add-position";
     let original_doc_mappings = json!({
@@ -348,6 +349,7 @@ async fn test_update_doc_mapping_tokenizer_add_position() {
             // phrases queries don't apply to older splits that didn't support them
             ("body:\"hello-world\"", Ok(&[])),
             ("body:\"hello world\"", Ok(&[])),
+            ("body:\"hello-worl\"*", Ok(&[])),
             ("body:bonjour", Ok(&[json!({"body": "bonjour-monde"})])),
             ("body:monde", Ok(&[json!({"body": "bonjour-monde"})])),
             (
@@ -356,6 +358,10 @@ async fn test_update_doc_mapping_tokenizer_add_position() {
             ),
             (
                 "body:\"bonjour monde\"",
+                Ok(&[json!({"body": "bonjour-monde"})]),
+            ),
+            (
+                "body:\"bonjour-mond\"*",
                 Ok(&[json!({"body": "bonjour-monde"})]),
             ),
         ],
@@ -407,6 +413,40 @@ async fn test_update_doc_mapping_tokenizer_raw_to_phrase() {
     )
     .await;
 }
+
+#[tokio::test]
+async fn test_update_doc_mapping_unindexed_to_indexed() {
+    let index_id = "update-not-indexed-to-indexed";
+    let original_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "text", "indexed": false}
+        ]
+    });
+    let ingest_before_update = &[json!({"body": "hello"})];
+    let updated_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "text", "tokenizer": "raw"}
+        ]
+    });
+    let ingest_after_update = &[json!({"body": "bonjour"})];
+    validate_search_across_doc_mapping_updates(
+        index_id,
+        original_doc_mappings,
+        ingest_before_update,
+        updated_doc_mappings,
+        ingest_after_update,
+        &[
+            // term query won't apply to older splits that weren't indexed
+            ("body:hello", Ok(&[])),
+            ("body:IN [hello]", Ok(&[])),
+            // works on newer data
+            ("body:bonjour", Ok(&[json!({"body": "bonjour"})])),
+            ("body:IN [bonjour]", Ok(&[json!({"body": "bonjour"})])),
+        ],
+    )
+    .await;
+}
+
 
 #[tokio::test]
 #[ignore]

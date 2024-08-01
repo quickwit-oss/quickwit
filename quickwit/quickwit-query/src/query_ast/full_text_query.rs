@@ -143,6 +143,12 @@ impl FullTextParams {
                 Ok(TantivyBoolQuery::build_clause(operator, leaf_queries).into())
             }
             FullTextMode::Phrase { slop } => {
+                if !index_record_option.has_positions() {
+                    return Err(InvalidQuery::SchemaError(
+                        "Applied phrase query on field which does not have positions indexed"
+                            .to_string(),
+                    ));
+                }
                 let mut phrase_query = TantivyPhraseQuery::new_with_offset(terms);
                 phrase_query.set_slop(slop);
                 Ok(phrase_query.into())
