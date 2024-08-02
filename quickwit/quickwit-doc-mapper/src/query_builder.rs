@@ -270,12 +270,9 @@ fn extract_prefix_term_ranges(
 
 #[cfg(test)]
 mod test {
-    use quickwit_datetime::{parse_date_time_str, DateTimeInputFormat};
     use quickwit_query::create_default_quickwit_tokenizer_manager;
     use quickwit_query::query_ast::query_ast_from_user_text;
-    use tantivy::columnar::MonotonicallyMappableToU64;
     use tantivy::schema::{DateOptions, DateTimePrecision, Schema, FAST, INDEXED, STORED, TEXT};
-    use tantivy::DateTime;
 
     use super::build_query;
     use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
@@ -497,54 +494,46 @@ mod test {
 
     #[test]
     fn test_datetime_range_query() {
-        let input_formats = [DateTimeInputFormat::Rfc3339];
         {
             // Check range on datetime in millisecond, precision has no impact as it is in
             // milliseconds.
             let start_date_time_str = "2023-01-10T08:38:51.150Z";
-            let start_date_time = parse_date_time_str(start_date_time_str, &input_formats).unwrap();
-            let start_date_time_u64 = start_date_time.to_u64();
             let end_date_time_str = "2023-01-10T08:38:51.160Z";
-            let end_date_time: DateTime =
-                parse_date_time_str(end_date_time_str, &input_formats).unwrap();
-            let end_date_time_u64 = end_date_time.to_u64();
-            let expectation_with_lower_and_upper_bounds = format!(
-                r#"FastFieldRangeWeight {{ field: "dt", lower_bound: Included({start_date_time_u64}), upper_bound: Included({end_date_time_u64}), column_type_opt: Some(DateTime) }}"#,
+            check_build_query_static_mode(
+                &format!("dt:[{start_date_time_str} TO {end_date_time_str}]"),
+                Vec::new(),
+                TestExpectation::Ok("2023-01-10T08:38:51.15Z"),
             );
             check_build_query_static_mode(
                 &format!("dt:[{start_date_time_str} TO {end_date_time_str}]"),
                 Vec::new(),
-                TestExpectation::Ok(&expectation_with_lower_and_upper_bounds),
-            );
-            let expectation_with_upper_bound = format!(
-                r#"FastFieldRangeWeight {{ field: "dt", lower_bound: Unbounded, upper_bound: Excluded({end_date_time_u64}), column_type_opt: Some(DateTime) }}"#,
+                TestExpectation::Ok("RangeQuery"),
             );
             check_build_query_static_mode(
                 &format!("dt:<{end_date_time_str}"),
                 Vec::new(),
-                TestExpectation::Ok(&expectation_with_upper_bound),
+                TestExpectation::Ok("lower_bound: Unbounded"),
+            );
+            check_build_query_static_mode(
+                &format!("dt:<{end_date_time_str}"),
+                Vec::new(),
+                TestExpectation::Ok("upper_bound: Excluded"),
+            );
+            check_build_query_static_mode(
+                &format!("dt:<{end_date_time_str}"),
+                Vec::new(),
+                TestExpectation::Ok("2023-01-10T08:38:51.16Z"),
             );
         }
 
         // Check range on datetime in microseconds and truncation to milliseconds.
         {
             let start_date_time_str = "2023-01-10T08:38:51.000150Z";
-            let start_date_time = parse_date_time_str(start_date_time_str, &input_formats)
-                .unwrap()
-                .truncate(DateTimePrecision::Milliseconds);
-            let start_date_time_u64 = start_date_time.to_u64();
             let end_date_time_str = "2023-01-10T08:38:51.000151Z";
-            let end_date_time: DateTime = parse_date_time_str(end_date_time_str, &input_formats)
-                .unwrap()
-                .truncate(DateTimePrecision::Milliseconds);
-            let end_date_time_u64 = end_date_time.to_u64();
-            let expectation_with_lower_and_upper_bounds = format!(
-                r#"FastFieldRangeWeight {{ field: "dt", lower_bound: Included({start_date_time_u64}), upper_bound: Included({end_date_time_u64}), column_type_opt: Some(DateTime) }}"#,
-            );
             check_build_query_static_mode(
                 &format!("dt:[{start_date_time_str} TO {end_date_time_str}]"),
                 Vec::new(),
-                TestExpectation::Ok(&expectation_with_lower_and_upper_bounds),
+                TestExpectation::Ok("2023-01-10T08:38:51Z"),
             );
         }
     }
@@ -555,17 +544,17 @@ mod test {
             "ip:[127.0.0.1 TO 127.1.1.1]",
             Vec::new(),
             TestExpectation::Ok(
-                "RangeQuery { field: \"ip\", value_type: IpAddr, lower_bound: Included([0, 0, 0, \
-                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), upper_bound: Included([0, 0, 0, \
-                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 1, 1, 1])",
+                "RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=6, \
+                 type=IpAddr, ::ffff:127.0.0.1)), upper_bound: Included(Term(field=6, \
+                 type=IpAddr, ::ffff:127.1.1.1)) } }",
             ),
         );
         check_build_query_static_mode(
             "ip:>127.0.0.1",
             Vec::new(),
             TestExpectation::Ok(
-                "RangeQuery { field: \"ip\", value_type: IpAddr, lower_bound: Excluded([0, 0, 0, \
-                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), upper_bound: Unbounded",
+                "RangeQuery { bounds: BoundsRange { lower_bound: Excluded(Term(field=6, \
+                 type=IpAddr, ::ffff:127.0.0.1)), upper_bound: Unbounded } }",
             ),
         );
     }
@@ -576,14 +565,14 @@ mod test {
             "f64_fast:[7.7 TO 77.7]",
             Vec::new(),
             TestExpectation::Ok(
-                r#"FastFieldRangeWeight { field: "f64_fast", lower_bound: Included(13843727484564851917), upper_bound: Included(13858540105214250189), column_type_opt: Some(F64) }"#,
+                r#"RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=12, type=F64, 7.7)), upper_bound: Included(Term(field=12, type=F64, 77.7)) } }"#,
             ),
         );
         check_build_query_static_mode(
             "f64_fast:>7",
             Vec::new(),
             TestExpectation::Ok(
-                r#"FastFieldRangeWeight { field: "f64_fast", lower_bound: Excluded(13842939354630062080), upper_bound: Unbounded, column_type_opt: Some(F64)"#,
+                r#"RangeQuery { bounds: BoundsRange { lower_bound: Excluded(Term(field=12, type=F64, 7.0)), upper_bound: Unbounded } }"#,
             ),
         );
     }
@@ -593,12 +582,12 @@ mod test {
         check_build_query_static_mode(
             "i64_fast:[-7 TO 77]",
             Vec::new(),
-            TestExpectation::Ok(r#"FastFieldRangeWeight { field: "i64_fast","#),
+            TestExpectation::Ok(r#"field=11"#),
         );
         check_build_query_static_mode(
             "i64_fast:>7",
             Vec::new(),
-            TestExpectation::Ok(r#"FastFieldRangeWeight { field: "i64_fast","#),
+            TestExpectation::Ok(r#"field=11"#),
         );
     }
 
@@ -607,12 +596,12 @@ mod test {
         check_build_query_static_mode(
             "u64_fast:[7 TO 77]",
             Vec::new(),
-            TestExpectation::Ok(r#"FastFieldRangeWeight { field: "u64_fast","#),
+            TestExpectation::Ok(r#"field=10,"#),
         );
         check_build_query_static_mode(
             "u64_fast:>7",
             Vec::new(),
-            TestExpectation::Ok(r#"FastFieldRangeWeight { field: "u64_fast","#),
+            TestExpectation::Ok(r#"field=10,"#),
         );
     }
 
@@ -622,9 +611,9 @@ mod test {
             "ips:[127.0.0.1 TO 127.1.1.1]",
             Vec::new(),
             TestExpectation::Ok(
-                "RangeQuery { field: \"ips\", value_type: IpAddr, lower_bound: Included([0, 0, 0, \
-                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), upper_bound: Included([0, 0, 0, \
-                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 1, 1, 1])",
+                "RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=7, \
+                 type=IpAddr, ::ffff:127.0.0.1)), upper_bound: Included(Term(field=7, \
+                 type=IpAddr, ::ffff:127.1.1.1)) } }",
             ),
         );
     }
