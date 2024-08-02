@@ -816,7 +816,7 @@ impl OtlpGrpcTracesService {
             .ingest_router
             .ingest(request)
             .await
-            .map_err(|e| IngestServiceError::from(e))?;
+            .map_err(IngestServiceError::from)?;
         ingest_failures_to_error(response).map_err(|e| e.into())
     }
 
