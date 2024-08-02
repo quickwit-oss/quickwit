@@ -59,7 +59,7 @@ use quickwit_proto::metastore::{
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
     MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
     OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
-    ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest,
+    ToggleSourceRequest, UpdateIndexRequest, UpdateIndexResponse, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
@@ -78,7 +78,7 @@ use super::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadataResponseExt,
     IndexesMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsRequestExt,
     ListSplitsResponseExt, PublishSplitsRequestExt, StageSplitsRequestExt, UpdateIndexRequestExt,
-    STREAM_SPLITS_CHUNK_SIZE,
+    UpdateIndexResponseExt, STREAM_SPLITS_CHUNK_SIZE,
 };
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{IndexMetadata, ListSplitsQuery, MetastoreServiceExt, Split, SplitState};
@@ -501,19 +501,22 @@ impl MetastoreService for FileBackedMetastore {
     async fn update_index(
         &self,
         request: UpdateIndexRequest,
-    ) -> MetastoreResult<IndexMetadataResponse> {
+    ) -> MetastoreResult<UpdateIndexResponse> {
         let retention_policy_opt = request.deserialize_retention_policy()?;
         let search_settings = request.deserialize_search_settings()?;
         let indexing_settings = request.deserialize_indexing_settings()?;
         let doc_mapping = request.deserialize_doc_mapping()?;
         let index_uid = request.index_uid();
 
+        let mut mutation_requiring_restart_occurred = false;
         let index_metadata = self
             .mutate(index_uid, |index| {
-                let mut mutation_occurred = index.set_retention_policy(retention_policy_opt);
+                mutation_requiring_restart_occurred =
+                    index.set_indexing_settings(indexing_settings);
+                mutation_requiring_restart_occurred |= index.set_doc_mapping(doc_mapping);
+                let mut mutation_occurred = mutation_requiring_restart_occurred;
+                mutation_occurred |= index.set_retention_policy(retention_policy_opt);
                 mutation_occurred |= index.set_search_settings(search_settings);
-                mutation_occurred |= index.set_indexing_settings(indexing_settings);
-                mutation_occurred |= index.set_doc_mapping(doc_mapping);
 
                 let index_metadata = index.metadata().clone();
 
@@ -524,7 +527,10 @@ impl MetastoreService for FileBackedMetastore {
                 }
             })
             .await?;
-        IndexMetadataResponse::try_from_index_metadata(&index_metadata)
+        UpdateIndexResponse::try_from_index_metadata_and_restart_pipeline(
+            &index_metadata,
+            mutation_requiring_restart_occurred,
+        )
     }
 
     async fn delete_index(&self, request: DeleteIndexRequest) -> MetastoreResult<EmptyResponse> {

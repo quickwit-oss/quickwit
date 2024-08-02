@@ -35,7 +35,7 @@ use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
     PIPELINE_THROUGHPUT,
 };
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{IndexUid, NodeId};
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
 use tracing::{debug, info, warn};
@@ -108,6 +108,7 @@ pub struct IndexingScheduler {
     indexer_pool: IndexerPool,
     state: IndexingSchedulerState,
     pub(crate) next_rebuild_tracker: RebuildNotifier,
+    indexes_to_restart: FnvHashSet<IndexUid>,
 }
 
 impl fmt::Debug for IndexingScheduler {
@@ -236,6 +237,7 @@ impl IndexingScheduler {
             indexer_pool,
             state: IndexingSchedulerState::default(),
             next_rebuild_tracker: RebuildNotifier::default(),
+            indexes_to_restart: FnvHashSet::default(),
         }
     }
 
@@ -281,6 +283,7 @@ impl IndexingScheduler {
             &indexer_id_to_cpu_capacities,
             self.state.last_applied_physical_plan.as_ref(),
             &shard_locations,
+            &self.indexes_to_restart,
         );
         let shard_locality_metrics =
             get_shard_locality_metrics(&new_physical_plan, &shard_locations);
@@ -296,6 +299,7 @@ impl IndexingScheduler {
             }
         }
         self.apply_physical_indexing_plan(&indexers, new_physical_plan, Some(notify_on_drop));
+        self.indexes_to_restart.clear();
         self.state.num_schedule_indexing_plan += 1;
     }
 
@@ -348,7 +352,7 @@ impl IndexingScheduler {
     fn apply_physical_indexing_plan(
         &mut self,
         indexers: &[IndexerNodeInfo],
-        new_physical_plan: PhysicalIndexingPlan,
+        mut new_physical_plan: PhysicalIndexingPlan,
         notify_on_drop: Option<Arc<NotifyChangeOnDrop>>,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
@@ -385,7 +389,14 @@ impl IndexingScheduler {
         }
         self.state.num_applied_physical_indexing_plan += 1;
         self.state.last_applied_plan_timestamp = Some(Instant::now());
+        new_physical_plan.clear_require_restart();
         self.state.last_applied_physical_plan = Some(new_physical_plan);
+    }
+
+    /// Add an index to the list of indexes for which all pipelines should be restarted, even if
+    /// their plan didn't otherwise change.
+    pub fn add_index_to_restart(&mut self, index: IndexUid) {
+        self.indexes_to_restart.insert(index);
     }
 }
 
@@ -394,6 +405,7 @@ struct IndexingPlansDiff<'a> {
     pub unplanned_node_ids: FnvHashSet<&'a str>,
     pub missing_tasks_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
     pub unplanned_tasks_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
+    pub tasks_to_restart_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
 }
 
 impl<'a> IndexingPlansDiff<'a> {
@@ -415,8 +427,14 @@ impl<'a> IndexingPlansDiff<'a> {
                 == 0
     }
 
+    fn has_no_restart_tasks(&self) -> bool {
+        self.tasks_to_restart_by_node_id
+            .values()
+            .all(|tasks_to_restart| tasks_to_restart.is_empty())
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.has_same_nodes() && self.has_same_tasks()
+        self.has_same_nodes() && self.has_same_tasks() && self.has_no_restart_tasks()
     }
 }
 
@@ -478,6 +496,11 @@ impl<'a> fmt::Debug for IndexingPlansDiff<'a> {
         if !self.unplanned_tasks_by_node_id.is_empty() {
             write!(formatter, "{separator}unplanned_tasks_by_node_id=",)?;
             format_indexing_task_map(formatter, &self.unplanned_tasks_by_node_id)?;
+            separator = ", "
+        }
+        if !self.tasks_to_restart_by_node_id.is_empty() {
+            write!(formatter, "{separator}tasks_to_restart_by_node_id=",)?;
+            format_indexing_task_map(formatter, &self.tasks_to_restart_by_node_id)?;
         }
         write!(formatter, ")")
     }
@@ -586,6 +609,8 @@ fn get_indexing_plans_diff<'a>(
     let mut missing_tasks_by_node_id: FnvHashMap<&str, Vec<&IndexingTask>> = FnvHashMap::default();
     let mut unplanned_tasks_by_node_id: FnvHashMap<&str, Vec<&IndexingTask>> =
         FnvHashMap::default();
+    let mut tasks_to_restart_by_node_id: FnvHashMap<&str, Vec<&IndexingTask>> =
+        FnvHashMap::default();
     for node_id in running_node_ids.iter().chain(planned_node_ids.iter()) {
         let running_tasks = running_plan
             .get(*node_id)
@@ -599,12 +624,16 @@ fn get_indexing_plans_diff<'a>(
             get_indexing_tasks_diff(running_tasks, last_applied_tasks);
         missing_tasks_by_node_id.insert(*node_id, missing_tasks);
         unplanned_tasks_by_node_id.insert(*node_id, unplanned_tasks);
+
+        let tasks_to_restart = running_tasks.iter().filter(|task| task.restart).collect();
+        tasks_to_restart_by_node_id.insert(*node_id, tasks_to_restart);
     }
     IndexingPlansDiff {
         missing_node_ids,
         unplanned_node_ids,
         missing_tasks_by_node_id,
         unplanned_tasks_by_node_id,
+        tasks_to_restart_by_node_id,
     }
 }
 
@@ -680,18 +709,21 @@ mod tests {
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                restart: false,
             };
             let task_1b = IndexingTask {
                 pipeline_uid: Some(PipelineUid::for_test(11u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                restart: false,
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::for_test(20u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
+                restart: false,
             };
             running_plan.insert(
                 "indexer-1".to_string(),
@@ -712,12 +744,14 @@ mod tests {
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                restart: false,
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::for_test(2u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
+                restart: false,
             };
             running_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
             desired_plan.insert("indexer-1".to_string(), vec![task_2.clone()]);
@@ -744,12 +778,14 @@ mod tests {
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                restart: false,
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::for_test(2u128)),
                 index_uid: Some(index_uid2.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
+                restart: false,
             };
             running_plan.insert("indexer-2".to_string(), vec![task_2.clone()]);
             desired_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
@@ -784,18 +820,21 @@ mod tests {
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                restart: false,
             };
             let task_1b = IndexingTask {
                 pipeline_uid: Some(PipelineUid::for_test(11u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                restart: false,
             };
             let task_1c = IndexingTask {
                 pipeline_uid: Some(PipelineUid::for_test(12u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                restart: false,
             };
             running_plan.insert("indexer-1".to_string(), vec![task_1a.clone()]);
             desired_plan.insert(
@@ -951,8 +990,13 @@ mod tests {
         indexer_max_loads.insert("indexer1".to_string(), mcpu(3_000));
         indexer_max_loads.insert("indexer2".to_string(), mcpu(3_000));
         let shard_locations = ShardLocations::default();
-        let physical_plan =
-            build_physical_indexing_plan(&sources[..], &indexer_max_loads, None, &shard_locations);
+        let physical_plan = build_physical_indexing_plan(
+            &sources[..],
+            &indexer_max_loads,
+            None,
+            &shard_locations,
+            &FnvHashSet::default(),
+        );
         assert_eq!(physical_plan.indexing_tasks_per_indexer().len(), 2);
         let indexing_tasks_1 = physical_plan.indexer("indexer1").unwrap();
         assert_eq!(indexing_tasks_1.len(), 2);
@@ -968,18 +1012,21 @@ mod tests {
             source_id: "my-source".to_string(),
             pipeline_uid: Some(PipelineUid::random()),
             shard_ids: vec!["shard1".into()],
+            restart: false,
         };
         let task2 = IndexingTask {
             index_uid: Some(IndexUid::for_test("index2", 123)),
             source_id: "my-source".to_string(),
             pipeline_uid: Some(PipelineUid::random()),
             shard_ids: vec!["shard2".into(), "shard3".into()],
+            restart: false,
         };
         let task3 = IndexingTask {
             index_uid: Some(IndexUid::for_test("index3", 123)),
             source_id: "my-source".to_string(),
             pipeline_uid: Some(PipelineUid::random()),
             shard_ids: vec!["shard6".into()],
+            restart: false,
         };
         // order made to map with the debug for lisibility
         map.insert("indexer5", vec![&task2]);
@@ -993,6 +1040,7 @@ mod tests {
             unplanned_node_ids: FnvHashSet::default(),
             missing_tasks_by_node_id: map,
             unplanned_tasks_by_node_id: FnvHashMap::default(),
+            tasks_to_restart_by_node_id: FnvHashMap::default(),
         };
 
         let debug = format!("{plan:?}");
@@ -1025,7 +1073,9 @@ mod tests {
                 indexer_max_loads.insert(indexer_id, mcpu(4_000));
             }
             let shard_locations = ShardLocations::default();
-            let _physical_indexing_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None, &shard_locations);
+            let _physical_indexing_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None, &shard_locations,
+            &FnvHashSet::default(),
+                );
         }
     }
 

@@ -44,7 +44,7 @@ service ControlPlaneService {
   rpc CreateIndex(quickwit.metastore.CreateIndexRequest) returns (quickwit.metastore.CreateIndexResponse);
 
   // Updates an index.
-  rpc UpdateIndex(quickwit.metastore.UpdateIndexRequest) returns (quickwit.metastore.IndexMetadataResponse);
+  rpc UpdateIndex(quickwit.metastore.UpdateIndexRequest) returns (quickwit.metastore.UpdateIndexResponse);
 
   // Deletes an index.
   rpc DeleteIndex(quickwit.metastore.DeleteIndexRequest) returns (quickwit.metastore.EmptyResponse);

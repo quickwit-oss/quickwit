@@ -141,9 +141,7 @@ pub trait ControlPlaneService: std::fmt::Debug + Send + Sync + 'static {
     async fn update_index(
         &self,
         request: super::metastore::UpdateIndexRequest,
-    ) -> crate::control_plane::ControlPlaneResult<
-        super::metastore::IndexMetadataResponse,
-    >;
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::UpdateIndexResponse>;
     /// Deletes an index.
     async fn delete_index(
         &self,
@@ -279,7 +277,7 @@ impl ControlPlaneService for ControlPlaneServiceClient {
         &self,
         request: super::metastore::UpdateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
-        super::metastore::IndexMetadataResponse,
+        super::metastore::UpdateIndexResponse,
     > {
         self.inner.0.update_index(request).await
     }
@@ -341,7 +339,7 @@ pub mod mock_control_plane_service {
             &self,
             request: super::super::metastore::UpdateIndexRequest,
         ) -> crate::control_plane::ControlPlaneResult<
-            super::super::metastore::IndexMetadataResponse,
+            super::super::metastore::UpdateIndexResponse,
         > {
             self.inner.lock().await.update_index(request).await
         }
@@ -415,7 +413,7 @@ for InnerControlPlaneServiceClient {
 }
 impl tower::Service<super::metastore::UpdateIndexRequest>
 for InnerControlPlaneServiceClient {
-    type Response = super::metastore::IndexMetadataResponse;
+    type Response = super::metastore::UpdateIndexResponse;
     type Error = crate::control_plane::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
@@ -542,7 +540,7 @@ struct ControlPlaneServiceTowerServiceStack {
     >,
     update_index_svc: quickwit_common::tower::BoxService<
         super::metastore::UpdateIndexRequest,
-        super::metastore::IndexMetadataResponse,
+        super::metastore::UpdateIndexResponse,
         crate::control_plane::ControlPlaneError,
     >,
     delete_index_svc: quickwit_common::tower::BoxService<
@@ -590,7 +588,7 @@ impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
         &self,
         request: super::metastore::UpdateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
-        super::metastore::IndexMetadataResponse,
+        super::metastore::UpdateIndexResponse,
     > {
         self.update_index_svc.clone().ready().await?.call(request).await
     }
@@ -644,11 +642,11 @@ type CreateIndexLayer = quickwit_common::tower::BoxLayer<
 type UpdateIndexLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         super::metastore::UpdateIndexRequest,
-        super::metastore::IndexMetadataResponse,
+        super::metastore::UpdateIndexResponse,
         crate::control_plane::ControlPlaneError,
     >,
     super::metastore::UpdateIndexRequest,
-    super::metastore::IndexMetadataResponse,
+    super::metastore::UpdateIndexResponse,
     crate::control_plane::ControlPlaneError,
 >;
 type DeleteIndexLayer = quickwit_common::tower::BoxLayer<
@@ -755,25 +753,25 @@ impl ControlPlaneServiceTowerLayerStack {
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     super::metastore::UpdateIndexRequest,
-                    super::metastore::IndexMetadataResponse,
+                    super::metastore::UpdateIndexResponse,
                     crate::control_plane::ControlPlaneError,
                 >,
             > + Clone + Send + Sync + 'static,
         <L as tower::Layer<
             quickwit_common::tower::BoxService<
                 super::metastore::UpdateIndexRequest,
-                super::metastore::IndexMetadataResponse,
+                super::metastore::UpdateIndexResponse,
                 crate::control_plane::ControlPlaneError,
             >,
         >>::Service: tower::Service<
                 super::metastore::UpdateIndexRequest,
-                Response = super::metastore::IndexMetadataResponse,
+                Response = super::metastore::UpdateIndexResponse,
                 Error = crate::control_plane::ControlPlaneError,
             > + Clone + Send + Sync + 'static,
         <<L as tower::Layer<
             quickwit_common::tower::BoxService<
                 super::metastore::UpdateIndexRequest,
-                super::metastore::IndexMetadataResponse,
+                super::metastore::UpdateIndexResponse,
                 crate::control_plane::ControlPlaneError,
             >,
         >>::Service as tower::Service<
@@ -984,13 +982,13 @@ impl ControlPlaneServiceTowerLayerStack {
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     super::metastore::UpdateIndexRequest,
-                    super::metastore::IndexMetadataResponse,
+                    super::metastore::UpdateIndexResponse,
                     crate::control_plane::ControlPlaneError,
                 >,
             > + Send + Sync + 'static,
         L::Service: tower::Service<
                 super::metastore::UpdateIndexRequest,
-                Response = super::metastore::IndexMetadataResponse,
+                Response = super::metastore::UpdateIndexResponse,
                 Error = crate::control_plane::ControlPlaneError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<
@@ -1346,10 +1344,10 @@ where
         >
         + tower::Service<
             super::metastore::UpdateIndexRequest,
-            Response = super::metastore::IndexMetadataResponse,
+            Response = super::metastore::UpdateIndexResponse,
             Error = crate::control_plane::ControlPlaneError,
             Future = BoxFuture<
-                super::metastore::IndexMetadataResponse,
+                super::metastore::UpdateIndexResponse,
                 crate::control_plane::ControlPlaneError,
             >,
         >
@@ -1420,7 +1418,7 @@ where
         &self,
         request: super::metastore::UpdateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
-        super::metastore::IndexMetadataResponse,
+        super::metastore::UpdateIndexResponse,
     > {
         self.clone().call(request).await
     }
@@ -1515,7 +1513,7 @@ where
         &self,
         request: super::metastore::UpdateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
-        super::metastore::IndexMetadataResponse,
+        super::metastore::UpdateIndexResponse,
     > {
         self.inner
             .clone()
@@ -1643,10 +1641,7 @@ for ControlPlaneServiceGrpcServerAdapter {
     async fn update_index(
         &self,
         request: tonic::Request<super::metastore::UpdateIndexRequest>,
-    ) -> Result<
-        tonic::Response<super::metastore::IndexMetadataResponse>,
-        tonic::Status,
-    > {
+    ) -> Result<tonic::Response<super::metastore::UpdateIndexResponse>, tonic::Status> {
         self.inner
             .0
             .update_index(request.into_inner())
@@ -1844,7 +1839,7 @@ pub mod control_plane_service_grpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::metastore::UpdateIndexRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::metastore::IndexMetadataResponse>,
+            tonic::Response<super::super::metastore::UpdateIndexResponse>,
             tonic::Status,
         > {
             self.inner
@@ -2083,7 +2078,7 @@ pub mod control_plane_service_grpc_server {
             &self,
             request: tonic::Request<super::super::metastore::UpdateIndexRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::metastore::IndexMetadataResponse>,
+            tonic::Response<super::super::metastore::UpdateIndexResponse>,
             tonic::Status,
         >;
         /// Deletes an index.
@@ -2273,7 +2268,7 @@ pub mod control_plane_service_grpc_server {
                     > tonic::server::UnaryService<
                         super::super::metastore::UpdateIndexRequest,
                     > for UpdateIndexSvc<T> {
-                        type Response = super::super::metastore::IndexMetadataResponse;
+                        type Response = super::super::metastore::UpdateIndexResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

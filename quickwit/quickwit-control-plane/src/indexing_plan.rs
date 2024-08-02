@@ -82,4 +82,12 @@ impl PhysicalIndexingPlan {
             });
         }
     }
+
+    pub fn clear_require_restart(&mut self) {
+        for tasks in self.indexing_tasks_per_indexer_id.values_mut() {
+            for task in tasks {
+                task.restart = false;
+            }
+        }
+    }
 }

@@ -39,7 +39,7 @@ use quickwit_common::{shared_consts, Progress};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
-use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadataResponseExt};
+use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, UpdateIndexResponseExt};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
@@ -48,8 +48,8 @@ use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
     DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
-    IndexMetadataResponse, IndexTemplateMatch, MetastoreError, MetastoreResult, MetastoreService,
-    MetastoreServiceClient, ToggleSourceRequest, UpdateIndexRequest,
+    IndexTemplateMatch, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    ToggleSourceRequest, UpdateIndexRequest, UpdateIndexResponse,
 };
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::Serialize;
@@ -566,7 +566,7 @@ impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
 // request to the metastore, and then act on the event.
 #[async_trait]
 impl Handler<UpdateIndexRequest> for ControlPlane {
-    type Reply = ControlPlaneResult<IndexMetadataResponse>;
+    type Reply = ControlPlaneResult<UpdateIndexResponse>;
 
     async fn handle(
         &mut self,
@@ -594,7 +594,12 @@ impl Handler<UpdateIndexRequest> for ControlPlane {
         };
         self.model
             .update_index_config(&index_uid, index_metadata.index_config)?;
-        // TODO: Handle doc mapping and/or indexing settings update here.
+        if response.restart_pipeline {
+            self.indexing_scheduler
+                .add_index_to_restart(index_uid.clone());
+            // TODO maybe we should wait, and only reply when the update is really done?
+            let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
+        }
         info!(%index_uid, "updated index");
         Ok(Ok(response))
     }

@@ -31,7 +31,7 @@ use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
     ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitInfo, SplitState,
-    UpdateIndexRequestExt,
+    UpdateIndexRequestExt, UpdateIndexResponseExt,
 };
 use quickwit_proto::metastore::{
     DeleteSourceRequest, EntityKind, IndexMetadataRequest, ListIndexesMetadataRequest,

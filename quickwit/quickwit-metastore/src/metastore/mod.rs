@@ -42,7 +42,7 @@ use quickwit_proto::metastore::{
     IndexMetadataFailure, IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
     ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse, MetastoreError,
     MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
-    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
+    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest, UpdateIndexResponse,
 };
 use quickwit_proto::types::{IndexUid, NodeId, SplitId};
 use time::OffsetDateTime;
@@ -270,11 +270,42 @@ pub trait IndexMetadataResponseExt {
     fn deserialize_index_metadata(&self) -> MetastoreResult<IndexMetadata>;
 }
 
+/// Helper trait to build a [`UpdateIndexResponse`] and deserialize its payload.
+pub trait UpdateIndexResponseExt {
+    /// Creates a new [`UpdateIndexResponse`] from an [`IndexMetadata`].
+    fn try_from_index_metadata_and_restart_pipeline(
+        index_metadata: &IndexMetadata,
+        restart_pipeline: bool,
+    ) -> MetastoreResult<UpdateIndexResponse>;
+
+    /// Deserializes the `index_metadata_serialized_json` field of a [`UpdateIndexResponse`] into
+    /// an [`IndexMetadata`].
+    fn deserialize_index_metadata(&self) -> MetastoreResult<IndexMetadata>;
+}
+
 impl IndexMetadataResponseExt for IndexMetadataResponse {
     fn try_from_index_metadata(index_metadata: &IndexMetadata) -> MetastoreResult<Self> {
         let index_metadata_serialized_json = serde_utils::to_json_str(index_metadata)?;
         let request = Self {
             index_metadata_serialized_json,
+        };
+        Ok(request)
+    }
+
+    fn deserialize_index_metadata(&self) -> MetastoreResult<IndexMetadata> {
+        serde_utils::from_json_str(&self.index_metadata_serialized_json)
+    }
+}
+
+impl UpdateIndexResponseExt for UpdateIndexResponse {
+    fn try_from_index_metadata_and_restart_pipeline(
+        index_metadata: &IndexMetadata,
+        restart_pipeline: bool,
+    ) -> MetastoreResult<Self> {
+        let index_metadata_serialized_json = serde_utils::to_json_str(index_metadata)?;
+        let request = Self {
+            index_metadata_serialized_json,
+            restart_pipeline,
         };
         Ok(request)
     }

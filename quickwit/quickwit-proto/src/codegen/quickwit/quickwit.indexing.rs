@@ -21,6 +21,8 @@ pub struct IndexingTask {
     /// The shards assigned to the indexer.
     #[prost(message, repeated, tag = "3")]
     pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
+    #[prost(bool, tag = "5")]
+    pub restart: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

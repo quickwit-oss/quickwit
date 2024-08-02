@@ -599,12 +599,23 @@ impl IndexingService {
             self.shutdown_pipelines(&pipeline_diff.pipelines_to_shutdown)
                 .await;
         }
+
         let mut spawn_pipeline_failures: Vec<IndexingPipelineId> = Vec::new();
 
+        if !pipeline_diff.pipelines_to_restart.is_empty() {
+            spawn_pipeline_failures.append(
+                &mut self
+                    .restart_pipelines(&pipeline_diff.pipelines_to_restart, ctx)
+                    .await?,
+            );
+        }
+
         if !pipeline_diff.pipelines_to_spawn.is_empty() {
-            spawn_pipeline_failures = self
-                .spawn_pipelines(&pipeline_diff.pipelines_to_spawn, ctx)
-                .await?;
+            spawn_pipeline_failures.append(
+                &mut self
+                    .spawn_pipelines(&pipeline_diff.pipelines_to_spawn, ctx)
+                    .await?,
+            );
         }
         self.assign_shards_to_pipelines(tasks).await;
         self.update_chitchat_running_plan().await;
@@ -623,19 +634,22 @@ impl IndexingService {
     /// current running plan.
     fn compute_pipeline_diff(&self, tasks: &[IndexingTask]) -> IndexingPipelineDiff {
         let mut pipelines_to_spawn: Vec<IndexingPipelineId> = Vec::new();
+        let mut pipelines_to_restart: Vec<IndexingPipelineId> = Vec::new();
         let mut scheduled_pipeline_uids: HashSet<PipelineUid> = HashSet::with_capacity(tasks.len());
 
         for task in tasks {
             let pipeline_uid = task.pipeline_uid();
 
+            let pipeline_id = IndexingPipelineId {
+                node_id: self.node_id.clone(),
+                index_uid: task.index_uid().clone(),
+                source_id: task.source_id.clone(),
+                pipeline_uid,
+            };
             if !self.indexing_pipelines.contains_key(&pipeline_uid) {
-                let pipeline_id = IndexingPipelineId {
-                    node_id: self.node_id.clone(),
-                    index_uid: task.index_uid().clone(),
-                    source_id: task.source_id.clone(),
-                    pipeline_uid,
-                };
                 pipelines_to_spawn.push(pipeline_id);
+            } else if task.restart {
+                pipelines_to_restart.push(pipeline_id);
             }
             scheduled_pipeline_uids.insert(pipeline_uid);
         }
@@ -649,7 +663,79 @@ impl IndexingService {
         IndexingPipelineDiff {
             pipelines_to_shutdown,
             pipelines_to_spawn,
+            pipelines_to_restart,
         }
+    }
+
+    /// Fetch metadata required to (re)spawn a list of pipeline.
+    async fn get_metadata_for_spawn(
+        &mut self,
+        pipelines_to_spawn: &[IndexingPipelineId],
+        ctx: &ActorContext<Self>,
+    ) -> Result<
+        (
+            HashMap<IndexUid, IndexMetadata>,
+            HashMap<MergePipelineId, Vec<SplitMetadata>>,
+        ),
+        IndexingError,
+    > {
+        let indexes_metadata = self.indexes_metadata(ctx, pipelines_to_spawn).await?;
+
+        let per_index_uid_indexes_metadata: HashMap<IndexUid, IndexMetadata> = indexes_metadata
+            .into_iter()
+            .map(|index_metadata| (index_metadata.index_uid.clone(), index_metadata))
+            .collect();
+
+        let per_merge_pipeline_immature_splits: HashMap<MergePipelineId, Vec<SplitMetadata>> = self
+            .fetch_immature_splits_for_new_merge_pipelines(pipelines_to_spawn, ctx)
+            .await?;
+        Ok((
+            per_index_uid_indexes_metadata,
+            per_merge_pipeline_immature_splits,
+        ))
+    }
+
+    /// Spawn a single pipeline from its id, and metadata meant to spawn a group of pipelines.
+    async fn spawn_with_matadata(
+        &mut self,
+        pipeline_to_spawn: &IndexingPipelineId,
+        per_index_uid_indexes_metadata: &HashMap<IndexUid, IndexMetadata>,
+        per_merge_pipeline_immature_splits: &mut HashMap<MergePipelineId, Vec<SplitMetadata>>,
+        ctx: &ActorContext<Self>,
+    ) -> bool {
+        if let Some(index_metadata) =
+            per_index_uid_indexes_metadata.get(&pipeline_to_spawn.index_uid)
+        {
+            if let Some(source_config) = index_metadata.sources.get(&pipeline_to_spawn.source_id) {
+                let merge_pipeline_id = pipeline_to_spawn.merge_pipeline_id();
+                let immature_splits_opt =
+                    per_merge_pipeline_immature_splits.remove(&merge_pipeline_id);
+
+                if let Err(error) = self
+                    .spawn_pipeline_inner(
+                        ctx,
+                        pipeline_to_spawn.clone(),
+                        index_metadata.index_config.clone(),
+                        source_config.clone(),
+                        immature_splits_opt,
+                    )
+                    .await
+                {
+                    error!(pipeline_id=?pipeline_to_spawn, %error, "failed to spawn pipeline");
+                    return false;
+                }
+            } else {
+                error!(pipeline_id=?pipeline_to_spawn, "failed to spawn pipeline: source not found");
+                return false;
+            }
+        } else {
+            error!(
+                "failed to spawn pipeline: index `{}` no longer exists",
+                pipeline_to_spawn.index_uid
+            );
+            return false;
+        }
+        true
     }
 
     /// Spawns the pipelines with supplied ids and returns a list of failed pipelines.
@@ -658,56 +744,79 @@ impl IndexingService {
         pipelines_to_spawn: &[IndexingPipelineId],
         ctx: &ActorContext<Self>,
     ) -> Result<Vec<IndexingPipelineId>, IndexingError> {
-        let indexes_metadata = self.indexes_metadata(ctx, pipelines_to_spawn).await?;
-
-        let per_index_uid_indexes_metadata: HashMap<IndexUid, IndexMetadata> = indexes_metadata
-            .into_iter()
-            .map(|index_metadata| (index_metadata.index_uid.clone(), index_metadata))
-            .collect();
-
-        let mut per_merge_pipeline_immature_splits: HashMap<MergePipelineId, Vec<SplitMetadata>> =
-            self.fetch_immature_splits_for_new_merge_pipelines(pipelines_to_spawn, ctx)
-                .await?;
+        let (per_index_uid_indexes_metadata, mut per_merge_pipeline_immature_splits) =
+            self.get_metadata_for_spawn(pipelines_to_spawn, ctx).await?;
 
         let mut spawn_pipeline_failures: Vec<IndexingPipelineId> = Vec::new();
 
         for pipeline_to_spawn in pipelines_to_spawn {
-            if let Some(index_metadata) =
-                per_index_uid_indexes_metadata.get(&pipeline_to_spawn.index_uid)
+            if !self
+                .spawn_with_matadata(
+                    pipeline_to_spawn,
+                    &per_index_uid_indexes_metadata,
+                    &mut per_merge_pipeline_immature_splits,
+                    ctx,
+                )
+                .await
             {
-                if let Some(source_config) =
-                    index_metadata.sources.get(&pipeline_to_spawn.source_id)
-                {
-                    let merge_pipeline_id = pipeline_to_spawn.merge_pipeline_id();
-                    let immature_splits_opt =
-                        per_merge_pipeline_immature_splits.remove(&merge_pipeline_id);
-
-                    if let Err(error) = self
-                        .spawn_pipeline_inner(
-                            ctx,
-                            pipeline_to_spawn.clone(),
-                            index_metadata.index_config.clone(),
-                            source_config.clone(),
-                            immature_splits_opt,
-                        )
-                        .await
-                    {
-                        error!(pipeline_id=?pipeline_to_spawn, %error, "failed to spawn pipeline");
-                        spawn_pipeline_failures.push(pipeline_to_spawn.clone());
-                    }
-                } else {
-                    error!(pipeline_id=?pipeline_to_spawn, "failed to spawn pipeline: source not found");
-                    spawn_pipeline_failures.push(pipeline_to_spawn.clone());
-                }
-            } else {
-                error!(
-                    "failed to spawn pipeline: index `{}` no longer exists",
-                    pipeline_to_spawn.index_uid
-                );
                 spawn_pipeline_failures.push(pipeline_to_spawn.clone());
             }
         }
         Ok(spawn_pipeline_failures)
+    }
+
+    /// Restart the pipelines with supplied ids and returns a list of failed pipelines.
+    async fn restart_pipelines(
+        &mut self,
+        pipelines_to_restart: &[IndexingPipelineId],
+        ctx: &ActorContext<Self>,
+    ) -> Result<Vec<IndexingPipelineId>, IndexingError> {
+        let (per_index_uid_indexes_metadata, mut per_merge_pipeline_immature_splits) = self
+            .get_metadata_for_spawn(pipelines_to_restart, ctx)
+            .await?;
+
+        let mut restart_pipeline_failures: Vec<IndexingPipelineId> = Vec::new();
+
+        for pipeline_to_restart in pipelines_to_restart {
+            match self
+                .detach_indexing_pipeline(&pipeline_to_restart.pipeline_uid)
+                .await
+            {
+                Ok(pipeline_handle) => {
+                    // TODO in the future we want to:
+                    // - pause SourceActor loop
+                    // - send eof to DocProcessor
+                    // - wait for Publisher
+                    // - wait for SourceActor to have processed the truncate if any
+                    // - finally kill the pipeline (it should be dead already)
+
+                    // Killing the pipeline ensures that all the pipeline actors will stop.
+                    pipeline_handle.kill().await;
+                }
+                Err(error) => {
+                    // if the pipeline didn't already exist, it's a logic error, but we can start
+                    // the pipeline as if nothing happened anyway, so just log the error.
+                    error!(
+                        pipeline_uid=%pipeline_to_restart,
+                        ?error,
+                        "failed to detach indexing pipeline to restart it",
+                    );
+                }
+            }
+            if !self
+                .spawn_with_matadata(
+                    pipeline_to_restart,
+                    &per_index_uid_indexes_metadata,
+                    &mut per_merge_pipeline_immature_splits,
+                    ctx,
+                )
+                .await
+            {
+                restart_pipeline_failures.push(pipeline_to_restart.clone());
+            }
+        }
+
+        Ok(restart_pipeline_failures)
     }
 
     /// Shuts down the pipelines with supplied ids and performs necessary cleanup.
@@ -768,6 +877,7 @@ impl IndexingService {
                     source_id: pipeline_handle.indexing_pipeline_id.source_id.clone(),
                     pipeline_uid: Some(pipeline_handle.indexing_pipeline_id.pipeline_uid),
                     shard_ids,
+                    restart: false,
                 }
             })
             .collect();
@@ -967,6 +1077,7 @@ impl Handler<Healthz> for IndexingService {
 struct IndexingPipelineDiff {
     pipelines_to_shutdown: Vec<PipelineUid>,
     pipelines_to_spawn: Vec<IndexingPipelineId>,
+    pipelines_to_restart: Vec<IndexingPipelineId>,
 }
 
 #[cfg(test)]
@@ -1250,12 +1361,14 @@ mod tests {
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(0u128)),
+                restart: false,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(1u128)),
+                restart: false,
             },
         ];
         indexing_service
@@ -1294,24 +1407,28 @@ mod tests {
                 source_id: INGEST_API_SOURCE_ID.to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(3u128)),
+                restart: false,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(1u128)),
+                restart: false,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(2u128)),
+                restart: false,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: source_config_2.source_id.clone(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(4u128)),
+                restart: false,
             },
         ];
         indexing_service
@@ -1352,18 +1469,21 @@ mod tests {
                 source_id: INGEST_API_SOURCE_ID.to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(3u128)),
+                restart: false,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(1u128)),
+                restart: false,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: source_config_2.source_id.clone(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(4u128)),
+                restart: false,
             },
         ];
         indexing_service
@@ -1799,18 +1919,21 @@ mod tests {
                         source_id: "test-source".to_string(),
                         shard_ids: Vec::new(),
                         pipeline_uid: Some(PipelineUid::for_test(0)),
+                        restart: false,
                     },
                     IndexingTask {
                         index_uid: Some(IndexUid::for_test("test-index-1", 0)),
                         source_id: "test-source".to_string(),
                         shard_ids: Vec::new(),
                         pipeline_uid: Some(PipelineUid::for_test(1)),
+                        restart: false,
                     },
                     IndexingTask {
                         index_uid: Some(IndexUid::for_test("test-index-2", 0)),
                         source_id: "test-source".to_string(),
                         shard_ids: Vec::new(),
                         pipeline_uid: Some(PipelineUid::for_test(2)),
+                        restart: false,
                     },
                 ],
             })

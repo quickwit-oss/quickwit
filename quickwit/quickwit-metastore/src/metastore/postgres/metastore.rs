@@ -46,7 +46,7 @@ use quickwit_proto::metastore::{
     MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest,
     ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    UpdateIndexResponse, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
 use sea_query::{Alias, Asterisk, Expr, Func, PostgresQueryBuilder, Query, UnionType};
@@ -67,7 +67,8 @@ use crate::file_backed::MutationOccurred;
 use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
-    use_shard_api, IndexesMetadataResponseExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
+    use_shard_api, IndexesMetadataResponseExt, PublishSplitsRequestExt, UpdateIndexResponseExt,
+    STREAM_SPLITS_CHUNK_SIZE,
 };
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
@@ -394,25 +395,32 @@ impl MetastoreService for PostgresqlMetastore {
     async fn update_index(
         &self,
         request: UpdateIndexRequest,
-    ) -> MetastoreResult<IndexMetadataResponse> {
+    ) -> MetastoreResult<UpdateIndexResponse> {
         let retention_policy_opt = request.deserialize_retention_policy()?;
         let search_settings = request.deserialize_search_settings()?;
         let indexing_settings = request.deserialize_indexing_settings()?;
         let doc_mapping = request.deserialize_doc_mapping()?;
 
         let index_uid: IndexUid = request.index_uid().clone();
+
+        let mut mutation_requiring_restart_occurred = false;
         let updated_index_metadata = run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata::<MetastoreError, _>(tx, index_uid, |index_metadata| {
-                let mut mutation_occurred =
-                    index_metadata.set_retention_policy(retention_policy_opt);
+                mutation_requiring_restart_occurred =
+                    index_metadata.set_indexing_settings(indexing_settings);
+                mutation_requiring_restart_occurred |= index_metadata.set_doc_mapping(doc_mapping);
+                let mut mutation_occurred = mutation_requiring_restart_occurred;
+                mutation_occurred |= index_metadata.set_retention_policy(retention_policy_opt);
                 mutation_occurred |= index_metadata.set_search_settings(search_settings);
-                mutation_occurred |= index_metadata.set_indexing_settings(indexing_settings);
-                mutation_occurred |= index_metadata.set_doc_mapping(doc_mapping);
+
                 Ok(MutationOccurred::from(mutation_occurred))
             })
             .await
         })?;
-        IndexMetadataResponse::try_from_index_metadata(&updated_index_metadata)
+        UpdateIndexResponse::try_from_index_metadata_and_restart_pipeline(
+            &updated_index_metadata,
+            mutation_requiring_restart_occurred,
+        )
     }
 
     #[instrument(skip(self))]

@@ -46,6 +46,8 @@ message IndexingTask {
   PipelineUid pipeline_uid = 4;
   // The shards assigned to the indexer.
   repeated quickwit.ingest.ShardId shard_ids = 3;
+
+  bool restart = 5;
 }
 
 message ApplyIndexingPlanResponse {}
