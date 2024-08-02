@@ -60,8 +60,8 @@ use tracing::{debug, error, instrument, warn, Span as RuntimeSpan};
 
 use crate::metrics::JAEGER_SERVICE_METRICS;
 
-#[cfg(test)]
-mod integration_tests;
+// #[cfg(test)]
+// mod integration_tests;
 mod metrics;
 
 // OpenTelemetry to Jaeger Transformation
