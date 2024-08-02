@@ -20,7 +20,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
-use tantivy::schema::Schema as TantivySchema;
+use tantivy::schema::{IndexRecordOption, Schema as TantivySchema, Type};
 use tantivy::Term;
 
 use crate::query_ast::{BuildTantivyAst, QueryAst, TantivyQueryAst, TermQuery};
@@ -36,13 +36,20 @@ pub struct TermSetQuery {
     pub terms_per_field: HashMap<String, BTreeSet<String>>,
 }
 
+fn is_term_str(term: &Term) -> bool {
+    let val = term.value();
+    let typ = val.json_path_type().unwrap_or_else(|| val.typ());
+    typ == Type::Str
+}
+
 impl TermSetQuery {
     fn make_term_iterator(
         &self,
         schema: &TantivySchema,
         tokenizer_manager: &TokenizerManager,
-    ) -> Result<HashSet<Term>, InvalidQuery> {
-        let mut terms: HashSet<Term> = HashSet::default();
+    ) -> Result<(HashSet<Term>, Vec<Vec<Term>>), InvalidQuery> {
+        let mut all_terms: HashSet<Term> = HashSet::default();
+        let mut intersections: Vec<Vec<Term>> = Vec::new();
         for (full_path, values) in &self.terms_per_field {
             for value in values {
                 // Mapping a text (field, value) is non-trivial:
@@ -56,15 +63,34 @@ impl TermSetQuery {
                     field: full_path.to_string(),
                     value: value.to_string(),
                 };
-                let ast =
-                    term_query.build_tantivy_ast_call(schema, tokenizer_manager, &[], false)?;
+                let ast = term_query.ast_for_term_extraction(schema, tokenizer_manager)?;
                 let tantivy_query: Box<dyn crate::TantivyQuery> = ast.simplify().into();
+                let mut terms = Vec::new();
                 tantivy_query.query_terms(&mut |term, _| {
-                    terms.insert(term.clone());
+                    terms.push(term.clone());
                 });
+
+                let str_term_count = terms.iter().filter(|term| is_term_str(term)).count();
+                if str_term_count <= 1 {
+                    for term in terms {
+                        all_terms.insert(term);
+                    }
+                } else {
+                    // we have a string, and it got split into multiple tokens, so we want an
+                    // intersection of them
+                    let mut phrase = Vec::with_capacity(terms.len());
+                    for term in terms {
+                        if is_term_str(&term) {
+                            phrase.push(term);
+                        } else {
+                            all_terms.insert(term);
+                        }
+                    }
+                    intersections.push(phrase);
+                }
             }
         }
-        Ok(terms)
+        Ok((all_terms, intersections))
     }
 }
 
@@ -76,9 +102,26 @@ impl BuildTantivyAst for TermSetQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let terms_it = self.make_term_iterator(schema, tokenizer_manager)?;
-        let term_set_query = tantivy::query::TermSetQuery::new(terms_it);
-        Ok(term_set_query.into())
+        use tantivy::query::{BooleanQuery, Query, TermQuery, TermSetQuery};
+
+        let (terms_it, intersections) = self.make_term_iterator(schema, tokenizer_manager)?;
+        let term_set_query = TermSetQuery::new(terms_it);
+        if intersections.is_empty() {
+            Ok(term_set_query.into())
+        } else {
+            let mut sub_queries: Vec<Box<dyn Query>> = Vec::with_capacity(intersections.len() + 1);
+            sub_queries.push(Box::new(term_set_query));
+            for intersection in intersections {
+                let terms = intersection
+                    .into_iter()
+                    .map(|term| {
+                        Box::new(TermQuery::new(term, IndexRecordOption::Basic)) as Box<dyn Query>
+                    })
+                    .collect();
+                sub_queries.push(Box::new(BooleanQuery::intersection(terms)));
+            }
+            Ok(BooleanQuery::union(sub_queries).into())
+        }
     }
 }
 

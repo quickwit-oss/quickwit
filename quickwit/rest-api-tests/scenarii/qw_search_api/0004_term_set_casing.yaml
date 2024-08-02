@@ -1,0 +1,17 @@
+endpoint: dyn/search
+params:
+  query: "my_field:CaSe"
+expected:
+  num_hits: 3
+---
+endpoint: dyn/search
+params:
+  query: "my_field:IN [CaSe]"
+expected:
+---
+# we want lower-case to hit only lower-case, not all lower and all case
+endpoint: dyn/search
+params:
+  query: "my_field:IN [mixed lower-case]"
+expected:
+  num_hits: 2
