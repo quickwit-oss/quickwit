@@ -60,6 +60,8 @@ doc_mapping:
     - name: timestamp_nanos
       type: datetime
       input_formats: [unix_timestamp]
+      # should be this but not supported
+      # input_formats: [unix_timestamp_nanos]
       output_format: unix_timestamp_nanos
       indexed: false
       fast: true
@@ -67,6 +69,8 @@ doc_mapping:
     - name: observed_timestamp_nanos
       type: datetime
       input_formats: [unix_timestamp]
+      # should be this but not supported
+      # input_formats: [unix_timestamp_nanos]
       output_format: unix_timestamp_nanos
     - name: service_name
       type: text

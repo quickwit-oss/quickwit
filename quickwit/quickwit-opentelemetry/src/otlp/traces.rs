@@ -109,6 +109,8 @@ doc_mapping:
     - name: span_start_timestamp_nanos
       type: datetime
       input_formats: [unix_timestamp]
+      # should be this but not supported
+      # input_formats: [unix_timestamp_nanos]
       output_format: unix_timestamp_nanos
       indexed: false
       fast: true
@@ -116,6 +118,8 @@ doc_mapping:
     - name: span_end_timestamp_nanos
       type: datetime
       input_formats: [unix_timestamp]
+      # should be this but not supported
+      # input_formats: [unix_timestamp_nanos]
       output_format: unix_timestamp_nanos
       indexed: false
       fast: false

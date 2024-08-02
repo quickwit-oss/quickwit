@@ -772,6 +772,32 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
                 .rejected_log_records,
             0
         );
+
+        sandbox
+            .wait_for_splits("otel-logs-v0_7", Some(vec![SplitState::Published]), 1)
+            .await
+            .unwrap();
+
+        let search_res = sandbox
+            .searcher_rest_client
+            .search(
+                "otel-logs-v0_7",
+                SearchRequestQueryString {
+                    query: String::new(),
+                    max_hits: 10,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            search_res.hits[0]
+                .get("timestamp_nanos")
+                .unwrap()
+                .as_u64()
+                .unwrap(),
+            1_000_000_001
+        );
     }
 
     sandbox.shutdown().await.unwrap();
