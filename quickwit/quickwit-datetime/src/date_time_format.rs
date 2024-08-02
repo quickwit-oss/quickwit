@@ -64,16 +64,6 @@ fn build_zone_offset(_: &str) -> Option<OwnedFormatItem> {
     Some(OwnedFormatItem::Compound(items))
 }
 
-fn build_day_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut day = Day::default();
-    if ptn.len() == 2 {
-        day.padding = Padding::Zero;
-    } else {
-        day.padding = Padding::None;
-    };
-    Some(OwnedFormatItem::Component(Component::Day(day)))
-}
-
 fn build_year_item(ptn: &str) -> Option<OwnedFormatItem> {
     let year_repr = if ptn.len() == 4 {
         YearRepr::Full
@@ -93,6 +83,16 @@ fn build_month_item(ptn: &str) -> Option<OwnedFormatItem> {
         month.padding = Padding::None;
     }
     Some(OwnedFormatItem::Component(Component::Month(month)))
+}
+
+fn build_day_item(ptn: &str) -> Option<OwnedFormatItem> {
+    let mut day = Day::default();
+    if ptn.len() == 2 {
+        day.padding = Padding::Zero;
+    } else {
+        day.padding = Padding::None;
+    };
+    Some(OwnedFormatItem::Component(Component::Day(day)))
 }
 
 fn build_hour_item(ptn: &str) -> Option<OwnedFormatItem> {
@@ -167,8 +167,6 @@ fn resolve_java_datetime_format_alias(java_datetime_format: &str) -> &str {
     let java_datetime_format_map = JAVA_DATE_FORMAT_ALIASES.get_or_init(|| {
         let mut m = HashMap::new();
         m.insert("date_optional_time", "yyyy-MM-dd['T'HH:mm:ss.SSSZ]");
-        // m.insert("date_optional_time", "yyyy-MM-dd['T'HH:]");
-        // m.insert("date_optional_time", "yyyy-MM-dd");
         m.insert("strict_date_optional_time", "yyyy-MM-dd'T['HH:mm:ss.SSSZ]");
         m.insert(
             "strict_date_optional_time_nanos",

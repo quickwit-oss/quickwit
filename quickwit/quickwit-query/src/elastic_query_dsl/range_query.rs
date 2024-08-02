@@ -21,6 +21,7 @@ use std::ops::Bound;
 
 use quickwit_datetime::StrptimeParser;
 use serde::Deserialize;
+use time::format_description::well_known::Rfc3339;
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::ConvertibleToQueryAst;
@@ -100,8 +101,45 @@ fn parse_and_convert(literal: JsonLiteral, parser: &StrptimeParser) -> anyhow::R
         let parsed_date_time = parser
             .parse_date_time(&date_time_str)
             .map_err(|reason| anyhow::anyhow!("Failed to parse date time: {}", reason))?;
-        Ok(JsonLiteral::String(parsed_date_time.to_string()))
+        let parsed_date_time_rfc3339 = parsed_date_time.format(&Rfc3339)?;
+        Ok(JsonLiteral::String(parsed_date_time_rfc3339))
     } else {
         Ok(literal)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ops::Bound;
+
+    use super::{RangeQuery as ElasticRangeQuery, RangeQueryParams as ElasticRangeQueryParams};
+    use crate::elastic_query_dsl::ConvertibleToQueryAst;
+    use crate::query_ast::{QueryAst, RangeQuery};
+    use crate::JsonLiteral;
+
+    #[test]
+    fn test_date_range_query_with_format() {
+        let range_query_params = ElasticRangeQueryParams {
+            gt: Some(JsonLiteral::String("2021-01-03T13:32:43".to_string())),
+            gte: None,
+            lt: None,
+            lte: None,
+            boost: None,
+            format: JsonLiteral::String("yyyy-MM-dd['T'HH:mm:ss]".to_string()).into(),
+        };
+        let range_query = ElasticRangeQuery {
+            field: "date".to_string(),
+            value: range_query_params,
+        };
+        let range_query_ast = range_query.convert_to_query_ast().unwrap();
+        assert!(matches!(
+            range_query_ast,
+            QueryAst::Range(RangeQuery {
+                field,
+                lower_bound: Bound::Excluded(lower_bound),
+                upper_bound: Bound::Unbounded,
+            })
+            if field == "date" && lower_bound == JsonLiteral::String("2021-01-03T13:32:43Z".to_string())
+        ));
     }
 }
