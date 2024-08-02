@@ -719,9 +719,9 @@ mod tests {
                 },
                 "body": "happy",
                 "response_date": "2021-12-19T16:39:59Z",
-                 "response_payload": "YWJj",
-                 "response_time": 2.0,
-                 "timestamp": 1628837062
+                "response_payload": "YWJj",
+                "response_time": 2.0,
+                "timestamp": 1628837062
             })
         );
         universe.assert_quit().await;
