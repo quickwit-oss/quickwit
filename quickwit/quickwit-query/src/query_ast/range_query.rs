@@ -41,9 +41,7 @@ pub struct RangeQuery {
 
 /// Converts a given bound JsonLiteral bound into a bound of type T.
 fn convert_bound<'a, T>(bound: &'a Bound<JsonLiteral>) -> Option<Bound<T>>
-where
-    T: InterpretUserInput<'a>,
-{
+where T: InterpretUserInput<'a> {
     match bound {
         Bound::Included(val) => {
             let val = T::interpret_json(val)?;
@@ -224,7 +222,6 @@ mod tests {
     use tantivy::schema::{DateOptions, DateTimePrecision, Schema, FAST, STORED, TEXT};
 
     use super::RangeQuery;
-    use crate::query_ast::tantivy_query_ast::TantivyBoolQuery;
     use crate::query_ast::BuildTantivyAst;
     use crate::{
         create_default_quickwit_tokenizer_manager, InvalidQuery, JsonLiteral, MatchAllOrNone,
@@ -279,24 +276,22 @@ mod tests {
             "my_i64_field",
             JsonLiteral::String("1980".to_string()),
             JsonLiteral::String("1989".to_string()),
-            "FastFieldRangeWeight { field: \"my_i64_field\", lower_bound: \
-             Included(9223372036854777788), upper_bound: Included(9223372036854777797), \
-             column_type_opt: Some(I64) }",
+            "RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=0, type=I64, \
+             1980)), upper_bound: Included(Term(field=0, type=I64, 1989)) } }",
         );
         test_range_query_typed_field_util(
             "my_u64_field",
             JsonLiteral::String("1980".to_string()),
             JsonLiteral::String("1989".to_string()),
-            "FastFieldRangeWeight { field: \"my_u64_field\", lower_bound: Included(1980), \
-             upper_bound: Included(1989), column_type_opt: Some(U64) }",
+            "RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=1, type=U64, \
+             1980)), upper_bound: Included(Term(field=1, type=U64, 1989)) } }",
         );
         test_range_query_typed_field_util(
             "my_f64_field",
             JsonLiteral::String("1980".to_string()),
             JsonLiteral::String("1989".to_string()),
-            "FastFieldRangeWeight { field: \"my_f64_field\", lower_bound: \
-             Included(13879794984393113600), upper_bound: Included(13879834566811713536), \
-             column_type_opt: Some(F64) }",
+            "RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=2, type=F64, \
+             1980.0)), upper_bound: Included(Term(field=2, type=F64, 1989.0)) } }",
         );
     }
 
@@ -387,35 +382,11 @@ mod tests {
                 true,
             )
             .unwrap();
-        let TantivyBoolQuery {
-            must,
-            must_not,
-            should,
-            filter,
-        } = tantivy_ast.as_bool_query().unwrap();
-        assert!(must.is_empty());
-        assert!(must_not.is_empty());
-        assert!(filter.is_empty());
-        assert_eq!(should.len(), 3);
-        let range_queries: Vec<&dyn tantivy::query::Query> = should
-            .iter()
-            .map(|ast| ast.as_leaf().unwrap())
-            .collect::<Vec<_>>();
         assert_eq!(
-            format!("{:?}", range_queries[0]),
-            "FastFieldRangeWeight { field: \"hello\", lower_bound: \
-             Included(13879794984393113600), upper_bound: Included(13879834566811713536), \
-             column_type_opt: Some(F64) }"
-        );
-        assert_eq!(
-            format!("{:?}", range_queries[1]),
-            "FastFieldRangeWeight { field: \"hello\", lower_bound: Included(9223372036854777788), \
-             upper_bound: Included(9223372036854777797), column_type_opt: Some(I64) }"
-        );
-        assert_eq!(
-            format!("{:?}", range_queries[2]),
-            "FastFieldRangeWeight { field: \"hello\", lower_bound: Included(1980), upper_bound: \
-             Included(1989), column_type_opt: Some(U64) }"
+            format!("{:?}", tantivy_ast),
+            "Leaf(RangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=6, \
+             type=Json, path=hello, type=I64, 1980)), upper_bound: Included(Term(field=6, \
+             type=Json, path=hello, type=I64, 1989)) } })"
         );
     }
 
