@@ -292,7 +292,7 @@ impl Ingester {
 
         let mut per_source_shard_ids: HashMap<(IndexUid, SourceId), Vec<ShardId>> = HashMap::new();
 
-        let state_guard = with_lock_metrics!(self.state.lock_fully().await, "reset_shards", "read")
+        let state_guard = with_lock_metrics!(self.state.lock_fully(), "reset_shards", "read")
             .expect("ingester should be ready");
 
         for queue_id in state_guard.mrecordlog.list_queues() {
@@ -325,7 +325,7 @@ impl Ingester {
         match advise_reset_shards_result {
             Ok(Ok(advise_reset_shards_response)) => {
                 let mut state_guard =
-                    with_lock_metrics!(self.state.lock_fully().await, "reset_shards", "write")
+                    with_lock_metrics!(self.state.lock_fully(), "reset_shards", "write")
                         .expect("ingester should be ready");
 
                 state_guard
@@ -458,8 +458,7 @@ impl Ingester {
         let force_commit = commit_type == CommitTypeV2::Force;
         let leader_id: NodeId = persist_request.leader_id.into();
 
-        let mut state_guard =
-            with_lock_metrics!(self.state.lock_fully().await, "persist", "write")?;
+        let mut state_guard = with_lock_metrics!(self.state.lock_fully(), "persist", "write")?;
 
         if state_guard.status() != IngesterStatus::Ready {
             persist_failures.reserve_exact(persist_request.subrequests.len());
@@ -929,8 +928,9 @@ impl Ingester {
         &self,
         init_shards_request: InitShardsRequest,
     ) -> IngestV2Result<InitShardsResponse> {
-        let mut state_guard =
-            with_lock_metrics!(self.state.lock_fully().await, "init_shards", "write")?;
+        let mut state_guard = with_lock_metrics!(self.state.lock_fully(), "init_shards", "write")?;
+        // we do this to allow simultaneous reborrow of multiple fields.
+        let state_guard = &mut *state_guard;
 
         if state_guard.status() != IngesterStatus::Ready {
             return Err(IngestV2Error::Internal("node decommissioned".to_string()));
@@ -984,7 +984,7 @@ impl Ingester {
             )));
         }
         let mut state_guard =
-            with_lock_metrics!(self.state.lock_fully().await, "truncate_shards", "write")?;
+            with_lock_metrics!(self.state.lock_fully(), "truncate_shards", "write")?;
 
         for subrequest in truncate_shards_request.subrequests {
             let queue_id = subrequest.queue_id();
@@ -1011,7 +1011,7 @@ impl Ingester {
         close_shards_request: CloseShardsRequest,
     ) -> IngestV2Result<CloseShardsResponse> {
         let mut state_guard =
-            with_lock_metrics!(self.state.lock_partially().await, "close_shards", "write")?;
+            with_lock_metrics!(self.state.lock_partially(), "close_shards", "write")?;
 
         let mut successes = Vec::with_capacity(close_shards_request.shard_pkeys.len());
 
@@ -1166,7 +1166,7 @@ impl IngesterService for Ingester {
             })
             .collect();
         let mut state_guard =
-            with_lock_metrics!(self.state.lock_fully(), "retain_shards", "write").await?;
+            with_lock_metrics!(self.state.lock_fully(), "retain_shards", "write")?;
         let remove_queue_ids: HashSet<QueueId> = state_guard
             .shards
             .keys()
@@ -1210,8 +1210,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
             warn!("ingester state update failed");
             return;
         };
-        let Ok(mut state_guard) =
-            with_lock_metrics!(state.lock_fully().await, "gc_shards", "write")
+        let Ok(mut state_guard) = with_lock_metrics!(state.lock_fully(), "gc_shards", "write")
         else {
             error!("failed to lock the ingester state");
             return;

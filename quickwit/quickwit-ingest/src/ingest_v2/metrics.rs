@@ -76,7 +76,7 @@ impl Default for IngestResultMetrics {
     }
 }
 
-pub(super) struct IngestV2Metrics {
+pub(crate) struct IngestV2Metrics {
     pub reset_shards_operations_total: IntCounterVec<1>,
     pub open_shards: IntGauge,
     pub closed_shards: IntGauge,
@@ -84,6 +84,7 @@ pub(super) struct IngestV2Metrics {
     pub shard_st_throughput_mib: Histogram,
     pub wal_acquire_lock_requests_in_flight: IntGaugeVec<2>,
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
+    pub wal_hold_lock_duration_secs: HistogramVec<2>,
     pub wal_disk_used_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
     pub ingest_results: IngestResultMetrics,
@@ -139,6 +140,14 @@ impl Default for IngestV2Metrics {
                 ["operation", "type"],
                 exponential_buckets(0.001, 2.0, 12).unwrap(),
             ),
+            wal_hold_lock_duration_secs: new_histogram_vec(
+                "wal_hold_lock_duration_secs",
+                "Duration for which a lock was held in seconds.",
+                "ingest",
+                &[],
+                ["operation", "type"],
+                exponential_buckets(0.001, 2.0, 12).unwrap(),
+            ),
             wal_disk_used_bytes: new_gauge(
                 "wal_disk_used_bytes",
                 "WAL disk space used in bytes.",
@@ -168,4 +177,4 @@ pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
         .set(wal_usage.memory_used_bytes as i64);
 }
 
-pub(super) static INGEST_V2_METRICS: Lazy<IngestV2Metrics> = Lazy::new(IngestV2Metrics::default);
+pub(crate) static INGEST_V2_METRICS: Lazy<IngestV2Metrics> = Lazy::new(IngestV2Metrics::default);
