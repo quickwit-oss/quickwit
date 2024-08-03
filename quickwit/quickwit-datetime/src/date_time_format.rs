@@ -27,8 +27,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use time::error::{Format, TryFromParsed};
 use time::format_description::modifier::{
-    Day, Hour, Minute, Month as MonthModifier, Padding, Second, Subsecond, SubsecondDigits, Year,
-    YearRepr,
+    Day, Hour, Minute, Month as MonthModifier, Padding, Second, Subsecond, SubsecondDigits,
+    WeekNumber, WeekNumberRepr, Weekday, WeekdayRepr, Year, YearRepr,
 };
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 use time::format_description::{Component, OwnedFormatItem};
@@ -42,6 +42,15 @@ fn literal(s: &[u8]) -> OwnedFormatItem {
     // builds a boxed slice from a slice
     let boxed_slice: Box<[u8]> = s.to_vec().into_boxed_slice();
     OwnedFormatItem::Literal(boxed_slice)
+}
+
+#[inline]
+fn get_padding(ptn: &str) -> Padding {
+    if ptn.len() == 2 {
+        Padding::Zero
+    } else {
+        Padding::None
+    }
 }
 
 fn build_optional_item(java_datetime_format: &str) -> Option<OwnedFormatItem> {
@@ -65,64 +74,65 @@ fn build_zone_offset(_: &str) -> Option<OwnedFormatItem> {
 }
 
 fn build_year_item(ptn: &str) -> Option<OwnedFormatItem> {
+    let mut year = Year::default();
     let year_repr = if ptn.len() == 4 {
         YearRepr::Full
     } else {
         YearRepr::LastTwo
     };
-    let mut year = Year::default();
     year.repr = year_repr;
     Some(OwnedFormatItem::Component(Component::Year(year)))
 }
 
+fn build_week_year_item(ptn: &str) -> Option<OwnedFormatItem> {
+    // TODO no `Component` for that
+    build_year_item(ptn)
+}
+
 fn build_month_item(ptn: &str) -> Option<OwnedFormatItem> {
     let mut month: MonthModifier = Default::default();
-    if ptn.len() == 2 {
-        month.padding = Padding::Zero;
-    } else {
-        month.padding = Padding::None;
-    }
+    month.padding = get_padding(ptn);
     Some(OwnedFormatItem::Component(Component::Month(month)))
 }
 
 fn build_day_item(ptn: &str) -> Option<OwnedFormatItem> {
     let mut day = Day::default();
-    if ptn.len() == 2 {
-        day.padding = Padding::Zero;
-    } else {
-        day.padding = Padding::None;
-    };
+    day.padding = get_padding(ptn);
     Some(OwnedFormatItem::Component(Component::Day(day)))
+}
+
+fn build_weekday_item(_: &str) -> Option<OwnedFormatItem> {
+    let mut weekday = Weekday::default();
+    weekday.repr = WeekdayRepr::Monday;
+    weekday.one_indexed = false;
+    Some(OwnedFormatItem::Component(Component::Weekday(weekday)))
+}
+
+fn build_week_number_item(ptn: &str) -> Option<OwnedFormatItem> {
+    let mut week_number = WeekNumber::default();
+    week_number.repr = WeekNumberRepr::Monday;
+    week_number.padding = get_padding(ptn);
+    Some(OwnedFormatItem::Component(Component::WeekNumber(
+        week_number,
+    )))
 }
 
 fn build_hour_item(ptn: &str) -> Option<OwnedFormatItem> {
     let mut hour = Hour::default();
-    if ptn.len() == 2 {
-        hour.padding = Padding::Zero;
-    } else {
-        hour.padding = Padding::None;
-    };
+    hour.padding = get_padding(ptn);
     hour.is_12_hour_clock = false;
     Some(OwnedFormatItem::Component(Component::Hour(hour)))
 }
 
 fn build_minute_item(ptn: &str) -> Option<OwnedFormatItem> {
     let mut minute: Minute = Default::default();
-    if ptn.len() == 2 {
-        minute.padding = Padding::Zero;
-    } else {
-        minute.padding = Padding::None;
-    }
+    minute.padding = get_padding(ptn);
     Some(OwnedFormatItem::Component(Component::Minute(minute)))
 }
 
 fn build_second_item(ptn: &str) -> Option<OwnedFormatItem> {
     let mut second: Second = Default::default();
-    if ptn.len() == 2 {
-        second.padding = Padding::Zero;
-    } else {
-        second.padding = Padding::None;
-    }
+    second.padding = get_padding(ptn);
     Some(OwnedFormatItem::Component(Component::Second(second)))
 }
 
@@ -152,6 +162,9 @@ fn java_date_format_tokenizer() -> &'static RegexTokenizer<OwnedFormatItem> {
             }),
             (r#"[^\w\[\]{}]"#, |s| Some(literal(s.as_bytes()))),
             (r#"\[.*\]"#, build_optional_item),
+            (r#"xx(xx)?"#, build_week_year_item),
+            (r#"ww?"#, build_week_number_item),
+            (r#"e?"#, build_weekday_item),
         ])
         .unwrap()
     })
@@ -211,7 +224,7 @@ impl StrptimeParser {
         self.parse_date_time_with_default_timezone(date_time_str, UtcOffset::UTC)
     }
 
-    /// Parse a date. If no timezone is specificied we will assume the timezone passed as
+    /// Parse a date. If no timezone is specified we will assume the timezone passed as
     /// `default_offset`. If the date is missing, it will be automatically set to 00:00:00.
     pub fn parse_date_time_with_default_timezone(
         &self,
