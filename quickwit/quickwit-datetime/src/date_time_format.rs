@@ -186,6 +186,9 @@ fn resolve_java_datetime_format_alias(java_datetime_format: &str) -> &str {
             "yyyy-MM-dd['T'HH:mm:ss.SSSSSSZ]",
         );
         m.insert("basic_date", "yyyyMMdd");
+        m.insert("strict_basic_week_date", "yyyy'W'wwe"); // xxxx'W'wwe
+        m.insert("basic_week_date_time_no_millis", "yyyy'W'wwe'T'HHmmssZ"); // xxxx'W'wwe'T'HHmmssZ
+        m.insert("week_date", "yyyy-'W'ww-e"); // xxxx-'W'ww-e
         m
     });
     java_datetime_format_map
@@ -751,6 +754,20 @@ mod tests {
             "date_optional_time",
             "2021-01-21T03:01:22.312+01:00",
             datetime!(2021-01-21 03:01:22.312 +1),
+        );
+    }
+
+    #[test]
+    fn test_parse_java_week_formats() {
+        test_parse_java_datetime_aux(
+            "strict_basic_week_date",
+            "2024W313",
+            datetime!(2024-08-01 0:00:00.0 +00:00:00),
+        );
+        test_parse_java_datetime_aux(
+            "basic_week_date_time_no_millis",
+            "2018W313T121212+01:00",
+            datetime!(2018-08-02 12:12:12.0 +01:00:00),
         );
     }
 
