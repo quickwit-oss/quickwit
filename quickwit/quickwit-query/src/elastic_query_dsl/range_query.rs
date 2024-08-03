@@ -127,7 +127,7 @@ mod tests {
             boost: None,
             format: JsonLiteral::String("yyyy-MM-dd['T'HH:mm:ss]".to_string()).into(),
         };
-        let range_query = ElasticRangeQuery {
+        let range_query: ElasticRangeQuery = ElasticRangeQuery {
             field: "date".to_string(),
             value: range_query_params,
         };
