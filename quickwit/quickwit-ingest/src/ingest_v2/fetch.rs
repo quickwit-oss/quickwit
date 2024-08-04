@@ -41,6 +41,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, warn};
 
 use super::models::ShardStatus;
+use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{with_lock_metrics, ClientId, IngesterPool};
 
@@ -182,7 +183,14 @@ impl FetchStreamTask {
                     to_position_inclusive: Some(to_position_inclusive.clone()),
                 };
                 let fetch_message = FetchMessage::new_payload(fetch_payload);
-
+                {
+                    use prost::Message;
+                    let fetch_num_bytes: i64 = fetch_message.encoded_len() as i64;
+                    if fetch_num_bytes > INGEST_V2_METRICS.max_grpc_message_bytes_fetch.get() {
+                        warn!(new_max_grpc_size=fetch_num_bytes, "new largest fetch message encounterred");
+                        INGEST_V2_METRICS.max_grpc_message_bytes_fetch.set(fetch_num_bytes);
+                    }
+                }
                 if self
                     .fetch_message_tx
                     .send(Ok(fetch_message), batch_size)
