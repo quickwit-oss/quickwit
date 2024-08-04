@@ -187,3 +187,18 @@ expected:
     total:
       value: 1
       relation: "eq"
+---
+# Timestamp field with a custom format.
+json:
+  query:
+    range:
+      created_at:
+        gte: "2015|02|01 T00:00:00.001999Z"
+        lte: "2015|02|01 T00:00:00.001999Z"
+        # Elasticsearch date format requires text to be escaped with single quotes
+        format: yyyy|MM|dd 'T'HH:mm:ss.SSSSSS'Z'
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
