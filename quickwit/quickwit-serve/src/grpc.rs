@@ -82,6 +82,7 @@ pub(crate) async fn start_grpc_server(
         .is_service_enabled(QuickwitService::Indexer)
     {
         enabled_grpc_services.insert("ingest-api");
+        info!(max_message_size=%max_message_size, "setting max grpc message size");
         Some(services.ingest_service.as_grpc_service(max_message_size))
     } else {
         None

@@ -46,7 +46,7 @@ use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::error::Elapsed;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use super::broadcast::LocalShardsUpdate;
 use super::debouncing::{
@@ -57,6 +57,7 @@ use super::metrics::IngestResultMetrics;
 use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
 use super::{pending_subrequests, IngesterPool};
+use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::{get_ingest_router_buffer_size, LeaderId};
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
@@ -423,6 +424,12 @@ impl IngestRouter {
                 commit_type: commit_type as i32,
             };
             let persist_future = async move {
+                use prost::Message;
+                let persist_num_bytes: i64 = persist_request.encoded_len() as i64;
+                if persist_num_bytes > INGEST_V2_METRICS.max_grpc_message_bytes_persist.get() {
+                    warn!(new_max_grpc_size=persist_num_bytes, "new largest ingest message encounterred");
+                    INGEST_V2_METRICS.max_grpc_message_bytes_persist.set(persist_num_bytes);
+                }
                 let persist_result = tokio::time::timeout(
                     PERSIST_REQUEST_TIMEOUT,
                     ingester.persist(persist_request),

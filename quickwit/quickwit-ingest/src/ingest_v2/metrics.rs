@@ -87,10 +87,15 @@ pub(super) struct IngestV2Metrics {
     pub wal_disk_used_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
     pub ingest_results: IngestResultMetrics,
+    pub max_grpc_message_bytes_fetch: IntGauge,
+    pub max_grpc_message_bytes_persist: IntGauge,
 }
 
 impl Default for IngestV2Metrics {
     fn default() -> Self {
+        let max_grpc_message_bytes = new_gauge_vec(
+            "max_grpc_message_bytes", "max size in bytes of a grpc message before being sent", "ingest", &[], ["rpc"]
+        );
         Self {
             ingest_results: IngestResultMetrics::default(),
             reset_shards_operations_total: new_counter_vec(
@@ -151,6 +156,8 @@ impl Default for IngestV2Metrics {
                 "ingest",
                 &[],
             ),
+            max_grpc_message_bytes_persist: max_grpc_message_bytes.with_label_values(["persist"]),
+            max_grpc_message_bytes_fetch: max_grpc_message_bytes.with_label_values(["fetch"]),
         }
     }
 }
