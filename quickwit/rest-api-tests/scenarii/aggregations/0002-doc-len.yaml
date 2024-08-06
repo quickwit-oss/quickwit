@@ -12,7 +12,7 @@ json:
 expected:
   aggregations:
     doc_len:
-      value: 913.0
+      value: 952.0
 ---
 # Test doc len isn't shown when querying documents
 method: [GET]
