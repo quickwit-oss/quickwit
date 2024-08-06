@@ -47,7 +47,7 @@ quickwit-query = { workspace = true }
 quickwit-storage = { workspace = true }
 
 [dev-dependencies]
-dotenv = { workspace = true }
+dotenvy = { workspace = true }
 futures = { workspace = true }
 md5 = { workspace = true }
 mockall = { workspace = true }
