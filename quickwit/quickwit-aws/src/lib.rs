@@ -20,6 +20,7 @@
 use std::time::Duration;
 
 use aws_config::retry::RetryConfig;
+use aws_config::stalled_stream_protection::StalledStreamProtectionConfig;
 use aws_config::BehaviorVersion;
 pub use aws_smithy_async::rt::sleep::TokioSleep;
 use aws_smithy_runtime::client::http::hyper_014::HyperClientBuilder;
@@ -63,6 +64,7 @@ pub async fn get_aws_config() -> &'static aws_config::SdkConfig {
                 .build(https_connector);
 
             aws_config::defaults(BehaviorVersion::v2024_03_28())
+                .stalled_stream_protection(StalledStreamProtectionConfig::enabled().build())
                 .http_client(hyper_client)
                 // Currently handle this ourselves so probably best for now to leave it as is.
                 .retry_config(RetryConfig::disabled())
