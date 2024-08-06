@@ -6080,6 +6080,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-indexing",
  "quickwit-metastore",
+ "quickwit-opentelemetry",
  "quickwit-proto",
  "quickwit-rest-client",
  "quickwit-serve",

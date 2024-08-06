@@ -47,7 +47,7 @@ fn create_mock_data_file(num_lines: usize) -> (NamedTempFile, Uri) {
 
 #[tokio::test]
 async fn test_sqs_single_node_cluster() {
-    tracing_subscriber::fmt::init();
+    quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
     let index_id = "test-sqs-source-single-node-cluster";
     let index_config = format!(

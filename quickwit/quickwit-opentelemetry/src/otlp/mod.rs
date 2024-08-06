@@ -20,6 +20,8 @@
 use std::collections::HashMap;
 
 use quickwit_config::{validate_identifier, validate_index_id_pattern};
+use quickwit_ingest::IngestServiceError;
+use quickwit_proto::ingest::router::IngestResponseV2;
 use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpValue;
 use quickwit_proto::opentelemetry::proto::common::v1::{
     AnyValue as OtlpAnyValue, ArrayValue as OtlpArrayValue, KeyValue as OtlpKeyValue,
@@ -218,6 +220,21 @@ pub(crate) fn extract_otel_index_id_from_metadata(
         ))
     })?;
     Ok(index_id.to_string())
+}
+
+fn ingest_failures_to_error(mut response: IngestResponseV2) -> Result<(), IngestServiceError> {
+    let num_responses = response.successes.len() + response.failures.len();
+    if num_responses != 1 {
+        return Err(IngestServiceError::Internal(format!(
+            "Expected a single failure/success, got {}.",
+            num_responses
+        )));
+    }
+    if response.successes.pop().is_some() {
+        return Ok(());
+    }
+    let ingest_failure = response.failures.pop().unwrap();
+    Err(ingest_failure.into())
 }
 
 #[cfg(test)]

@@ -18,7 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod basic_tests;
-mod index_tests;
+mod ingest_tests;
+mod otlp_tests;
 #[cfg(feature = "sqs-localstack-tests")]
 mod sqs_tests;
 mod update_tests;
