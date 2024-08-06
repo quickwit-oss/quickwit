@@ -1744,7 +1744,7 @@ impl crate::tests::DefaultForTest for PostgresqlMetastore {
         // The number of connections to Postgres should not be
         // too catastrophic, as it is limited by the number of concurrent
         // unit tests running (= number of test-threads).
-        dotenv::dotenv().ok();
+        dotenvy::dotenv().ok();
         let uri: Uri = std::env::var("QW_TEST_DATABASE_URL")
             .expect("environment variable `QW_TEST_DATABASE_URL` should be set")
             .parse()
