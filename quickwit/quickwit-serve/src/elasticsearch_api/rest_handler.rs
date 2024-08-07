@@ -26,7 +26,7 @@ use bytes::Bytes;
 use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticsearchResponse};
 use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
 use futures_util::StreamExt;
-use hyper::StatusCode;
+use http_serde::http::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
 use quickwit_config::{validate_index_id_pattern, NodeConfig};
@@ -951,7 +951,7 @@ pub(crate) fn str_lines(body: &str) -> impl Iterator<Item = &str> {
 
 #[cfg(test)]
 mod tests {
-    use hyper::StatusCode;
+    use http_serde::http::StatusCode;
 
     use super::{partial_hit_from_search_after_param, *};
 

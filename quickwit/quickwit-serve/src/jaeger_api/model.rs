@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 
 use base64::prelude::{Engine, BASE64_STANDARD};
-use hyper::StatusCode;
+use http_serde::http::StatusCode;
 use itertools::Itertools;
 use prost_types::{Duration, Timestamp};
 use quickwit_proto::jaeger::api_v2::{KeyValue, Log, Process, Span, SpanRef, ValueType};

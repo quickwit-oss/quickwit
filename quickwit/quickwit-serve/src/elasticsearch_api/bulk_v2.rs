@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use hyper::StatusCode;
+use http_serde::http::StatusCode;
 use quickwit_common::rate_limited_error;
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::IngestRequestV2Builder;

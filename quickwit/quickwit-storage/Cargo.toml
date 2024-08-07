@@ -18,7 +18,8 @@ bytes = { workspace = true }
 bytesize = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
-hyper = { workspace = true }
+# AWS SDK still relies on hyper 0.14
+hyper = { version = "0.14" }
 lru = { workspace = true }
 md5 = { workspace = true }
 mockall = { workspace = true, optional = true }

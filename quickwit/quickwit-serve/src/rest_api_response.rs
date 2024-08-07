@@ -17,9 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use http_serde::http::StatusCode;
 use hyper::header::CONTENT_TYPE;
 use hyper::http::HeaderValue;
-use hyper::{Body, Response, StatusCode};
+use hyper::{Body, Response};
 use quickwit_proto::ServiceError;
 use serde::{self, Serialize};
 use warp::Reply;
@@ -81,7 +82,8 @@ impl Reply for RestApiResponse {
                 response
                     .headers_mut()
                     .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-                *response.status_mut() = self.status_code;
+                *response.status_mut() =
+                    hyper::StatusCode::from_u16(self.status_code.as_u16()).expect("cannot fail");
                 response
             }
             Err(()) => {

@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use hyper::StatusCode;
 use serde::Deserialize;
 use tracing::{error, info};
 use warp::{Filter, Rejection};
@@ -46,14 +45,14 @@ pub fn log_level_handler(
                         info!(filter = env_filter.filter, "setting log level");
                         warp::reply::with_status(
                             format!("set log level to:[{}]", env_filter.filter),
-                            StatusCode::OK,
+                            warp::http::StatusCode::OK,
                         )
                     }
                     Err(_) => {
                         error!(filter = env_filter.filter, "invalid log level");
                         warp::reply::with_status(
                             format!("invalid log level:[{}]", env_filter.filter),
-                            StatusCode::BAD_REQUEST,
+                            warp::http::StatusCode::BAD_REQUEST,
                         )
                     }
                 }

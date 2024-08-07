@@ -870,7 +870,7 @@ fn get_sort_field_datetime_format(
     if let Some(sort_field) = sort_field {
         if let Some(sort_field_datetime_format_int) = &sort_field.sort_datetime_format {
             let sort_field_datetime_format =
-                SortDatetimeFormat::from_i32(*sort_field_datetime_format_int)
+                SortDatetimeFormat::try_from(*sort_field_datetime_format_int)
                     .context("invalid sort datetime format")?;
             return Ok(Some(sort_field_datetime_format));
         }
@@ -1285,7 +1285,7 @@ fn convert_search_after_datetime_values(
             let Some(datetime_format_int) = sort_field.sort_datetime_format else {
                 continue;
             };
-            let input_datetime_format = SortDatetimeFormat::from_i32(datetime_format_int)
+            let input_datetime_format = SortDatetimeFormat::try_from(datetime_format_int)
                 .context("invalid sort datetime format")?;
             convert_sort_datetime_value_into_nanos(search_after_sort_value, input_datetime_format)?;
         }

@@ -83,7 +83,7 @@ where K: Hash + Eq + Clone
 impl<K> Unpin for ChangeStreamAdapter<K> where K: Hash + Eq + Clone {}
 
 type HttpRequest = http::Request<tonic::body::BoxBody>;
-type HttpResponse = http::Response<hyper::Body>;
+type HttpResponse = http::Response<tonic::body::BoxBody>;
 type ChangeStream<K> = UnboundedReceiverStream<Result<TowerChange<K, Channel>, Infallible>>;
 type Discover<K> = PendingRequestsDiscover<ChangeStream<K>, CompleteOnResponse>;
 type ChannelImpl<K> = Buffer<Balance<Discover<K>, HttpRequest>, HttpRequest>;

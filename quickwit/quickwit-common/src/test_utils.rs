@@ -21,9 +21,9 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use futures::Future;
-use hyper::service::Service;
 use hyper::Uri;
 use tokio::time::error::Elapsed;
+use tower::Service;
 
 pub async fn wait_until_predicate<Fut>(
     predicate: impl Fn() -> Fut,
@@ -58,7 +58,7 @@ pub async fn wait_for_server_ready(socket_addr: SocketAddr) -> anyhow::Result<()
         .build()?;
     while num_attempts < max_num_attempts {
         tokio::time::sleep(Duration::from_millis(50 * (num_attempts + 1))).await;
-        let mut http = hyper::client::connect::HttpConnector::new();
+        let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
         match http.call(uri.clone()).await {
             Ok(_) => break,
             Err(_) => {

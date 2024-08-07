@@ -20,7 +20,6 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use hyper::StatusCode;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
 use quickwit_metastore::SplitState;
@@ -329,7 +328,7 @@ async fn test_ingest_v2_happy_path() {
         };
         assert_eq!(
             ingest_error.status_code(),
-            Some(StatusCode::SERVICE_UNAVAILABLE)
+            Some(reqwest::StatusCode::SERVICE_UNAVAILABLE)
         );
         assert!(
             i < MAX_NUM_RETRIES,

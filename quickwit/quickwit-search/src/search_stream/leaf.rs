@@ -143,8 +143,8 @@ async fn leaf_search_stream_single_split(
         doc_mapper.as_ref(),
     )?);
 
-    let output_format = OutputFormat::from_i32(stream_request.output_format)
-        .ok_or_else(|| SearchError::Internal("invalid output format specified".to_string()))?;
+    let output_format = OutputFormat::try_from(stream_request.output_format)
+        .map_err(|_| SearchError::Internal("invalid output format specified".to_string()))?;
 
     if request_fields.partition_by_fast_field.is_some()
         && output_format != OutputFormat::ClickHouseRowBinary

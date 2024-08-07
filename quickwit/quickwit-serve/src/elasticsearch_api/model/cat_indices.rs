@@ -20,7 +20,7 @@
 use std::collections::HashSet;
 use std::ops::AddAssign;
 
-use hyper::StatusCode;
+use http_serde::http::StatusCode;
 use quickwit_metastore::{IndexMetadata, SplitMetadata};
 use serde::{Deserialize, Serialize, Serializer};
 

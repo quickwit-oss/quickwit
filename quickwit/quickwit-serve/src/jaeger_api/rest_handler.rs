@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use hyper::StatusCode;
+use http_serde::http::StatusCode;
 use itertools::Itertools;
 use quickwit_jaeger::JaegerService;
 use quickwit_proto::jaeger::storage::v1::{

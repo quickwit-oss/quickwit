@@ -20,8 +20,13 @@ aws-smithy-runtime = { workspace = true }
 aws-types = { workspace = true }
 
 futures = { workspace = true }
-hyper = { workspace = true }
-hyper-rustls = { workspace = true }
+# AWS SDK still relies on hyper 0.14
+hyper = { version = "0.14", features = [
+  "client",
+  "http1",
+  "http2"
+] }
+hyper-rustls = "0.24"
 tokio = { workspace = true }
 
 quickwit-common = { workspace = true }

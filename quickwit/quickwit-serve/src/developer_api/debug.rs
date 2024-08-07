@@ -23,7 +23,6 @@ use std::time::Duration;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use glob::{MatchOptions, Pattern as GlobPattern};
-use hyper::StatusCode;
 use quickwit_cluster::Cluster;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::developer::{DeveloperService, DeveloperServiceClient, GetDebugInfoRequest};
@@ -78,7 +77,7 @@ async fn get_node_debug_infos(
                         "failed to parse node ID glob patterns `{}`: {error}",
                         query_params.node_ids.as_deref().unwrap_or("")
                     ),
-                    StatusCode::BAD_REQUEST,
+                    warp::http::StatusCode::BAD_REQUEST,
                 )
                 .into_response()
             }
@@ -94,7 +93,7 @@ async fn get_node_debug_infos(
             Err(error) => {
                 return warp::reply::with_status(
                     format!("failed to parse roles `{roles}`: {error}"),
-                    StatusCode::BAD_REQUEST,
+                    warp::http::StatusCode::BAD_REQUEST,
                 )
                 .into_response()
             }
