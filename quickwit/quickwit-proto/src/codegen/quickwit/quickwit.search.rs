@@ -259,7 +259,7 @@ pub struct SplitSearchError {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequest {
     /// Search request. This is a perfect copy of the original search request,
-    /// that was sent to root apart from the start_offset & max_hits params.
+    /// that was sent to root apart from the start_offset, max_hits params and index_id_patterns.
     #[prost(message, optional, tag = "1")]
     pub search_request: ::core::option::Option<SearchRequest>,
     /// List of leaf requests, one per index.
