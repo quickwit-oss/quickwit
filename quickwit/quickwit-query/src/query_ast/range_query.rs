@@ -21,7 +21,7 @@ use std::ops::Bound;
 
 use serde::{Deserialize, Serialize};
 use tantivy::fastfield::FastValue;
-use tantivy::query::{EmptyQuery, RangeQuery as TantivyRangeQuery};
+use tantivy::query::RangeQuery as TantivyRangeQuery;
 use tantivy::schema::Schema as TantivySchema;
 use tantivy::{DateTime, Term};
 
@@ -30,6 +30,7 @@ use crate::json_literal::InterpretUserInput;
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::BuildTantivyAst;
 use crate::tokenizers::TokenizerManager;
+use crate::MatchAllOrNone::MatchNone as TantivyEmptyQuery;
 use crate::{InvalidQuery, JsonLiteral};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -88,8 +89,11 @@ impl BuildTantivyAst for RangeQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (field, field_entry, json_path) =
-            super::utils::find_field_or_hit_dynamic(&self.field, schema)?;
+        let Ok((field, field_entry, json_path)) =
+            super::utils::find_field_or_hit_dynamic(&self.field, schema)
+        else {
+            return Ok(TantivyEmptyQuery.into());
+        };
         if !field_entry.is_fast() {
             return Err(InvalidQuery::SchemaError(format!(
                 "range queries are only supported for fast fields. (`{}` is not a fast field)",
@@ -192,7 +196,7 @@ impl BuildTantivyAst for RangeQuery {
                     return Ok(query_from_fast_val_range(&empty_term, range).into());
                 }
                 // TODO add support for str query
-                return Ok(EmptyQuery.into());
+                return Ok(TantivyEmptyQuery.into());
             }
             tantivy::schema::FieldType::IpAddr(_) => {
                 let (lower_bound, upper_bound) =
@@ -304,16 +308,17 @@ mod tests {
             upper_bound: Bound::Included(JsonLiteral::String("1989".to_string())),
         };
         // with validation
-        let invalid_query: InvalidQuery = range_query
+        let invalid_query = range_query
             .build_tantivy_ast_call(
                 &schema,
                 &create_default_quickwit_tokenizer_manager(),
                 &[],
                 true,
             )
-            .unwrap_err();
-        assert!(
-            matches!(invalid_query, InvalidQuery::FieldDoesNotExist { full_path } if full_path == "missing_field.toto")
+            .unwrap();
+        assert_eq!(
+            invalid_query.const_predicate(),
+            Some(MatchAllOrNone::MatchNone),
         );
         // without validation
         assert_eq!(

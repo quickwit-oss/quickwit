@@ -346,7 +346,7 @@ mod tests {
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
-        assert!(root_search_stream(
+        let res = root_search_stream(
             quickwit_proto::search::SearchStreamRequest {
                 index_id: "test-index".to_string(),
                 query_ast: qast_json_helper(r#"invalid_field:"test""#, &[]),
@@ -359,9 +359,11 @@ mod tests {
             ClusterClient::new(search_job_placer.clone()),
         )
         .await
-        .is_err());
+        .unwrap();
 
-        assert!(root_search_stream(
+        assert_eq!(res.count().await, 0);
+
+        let res = root_search_stream(
             quickwit_proto::search::SearchStreamRequest {
                 index_id: "test-index".to_string(),
                 query_ast: qast_json_helper("test", &["invalid_field"]),
@@ -374,7 +376,9 @@ mod tests {
             ClusterClient::new(search_job_placer.clone()),
         )
         .await
-        .is_err());
+        .unwrap();
+
+        assert_eq!(res.count().await, 0);
 
         Ok(())
     }

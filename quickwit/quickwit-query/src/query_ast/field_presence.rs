@@ -26,6 +26,7 @@ use tantivy::Term;
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::{BuildTantivyAst, QueryAst};
 use crate::tokenizers::TokenizerManager;
+use crate::MatchAllOrNone::MatchNone as TantivyEmptyQuery;
 use crate::{find_field_or_hit_dynamic, InvalidQuery};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -80,7 +81,9 @@ impl BuildTantivyAst for FieldPresenceQuery {
         let field_presence_field = schema.get_field(FIELD_PRESENCE_FIELD_NAME).map_err(|_| {
             InvalidQuery::SchemaError("field presence is not available for this split".to_string())
         })?;
-        let (field, field_entry, path) = find_field_or_hit_dynamic(&self.field, schema)?;
+        let Ok((field, field_entry, path)) = find_field_or_hit_dynamic(&self.field, schema) else {
+            return Ok(TantivyEmptyQuery.into());
+        };
         if field_entry.is_fast() {
             let full_path = if path.is_empty() {
                 field_entry.name().to_string()

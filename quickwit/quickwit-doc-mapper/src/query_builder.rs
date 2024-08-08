@@ -154,9 +154,8 @@ impl<'a, 'b> QueryAstVisitor<'a> for ExtractTermSetFields<'b> {
             if let Ok((field, _field_entry, _path)) = find_field_or_hit_dynamic(field, self.schema)
             {
                 self.term_dict_fields_to_warm_up.insert(field);
-            } else {
-                anyhow::bail!("field does not exist: {}", field);
             }
+            // if field does not exist, ignore it
         }
         Ok(())
     }
@@ -246,7 +245,9 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     ) -> Result<(), Self::Err> {
         let terms = match phrase_prefix.get_terms(self.schema, self.tokenizer_manager) {
             Ok((_, terms)) => terms,
-            Err(InvalidQuery::SchemaError(_)) => return Ok(()), /* the query will be nullified when casting to a tantivy ast */
+            Err(InvalidQuery::SchemaError(_) | InvalidQuery::FieldDoesNotExist { .. }) => {
+                return Ok(())
+            } /* the query will be nullified when casting to a tantivy ast */
             Err(e) => return Err(e),
         };
         if let Some((_, term)) = terms.last() {
@@ -256,7 +257,10 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     }
 
     fn visit_wildcard(&mut self, wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
-        let (_, term) = wildcard_query.extract_prefix_term(self.schema, self.tokenizer_manager)?;
+        let Ok((_, term)) = wildcard_query.extract_prefix_term(self.schema, self.tokenizer_manager)
+        else {
+            return Ok(());
+        };
         self.add_prefix_term(term, u32::MAX, false);
         Ok(())
     }
@@ -413,11 +417,7 @@ mod test {
     #[test]
     fn test_build_query_not_dynamic_mode() {
         check_build_query_static_mode("*", Vec::new(), TestExpectation::Ok("All"));
-        check_build_query_static_mode(
-            "foo:bar",
-            Vec::new(),
-            TestExpectation::Err("invalid query: field does not exist: `foo`"),
-        );
+        check_build_query_static_mode("foo:bar", Vec::new(), TestExpectation::Ok("EmptyQuery"));
         check_build_query_static_mode(
             "title:bar",
             Vec::new(),
@@ -426,7 +426,7 @@ mod test {
         check_build_query_static_mode(
             "bar",
             vec!["fieldnotinschema".to_string()],
-            TestExpectation::Err("invalid query: field does not exist: `fieldnotinschema`"),
+            TestExpectation::Ok("EmptyQuery"),
         );
         check_build_query_static_mode(
             "title:[a TO b]",

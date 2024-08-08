@@ -2015,7 +2015,7 @@ mod tests {
     }
 
     #[test]
-    fn test_doc_mapper_sub_field_query_on_non_json_field_should_error() {
+    fn test_doc_mapper_sub_field_query_on_non_json_field_should_not_error() {
         let doc_mapper: DefaultDocMapper = serde_json::from_str(
             r#"{
             "field_mappings": [{"name": "body", "type": "text"}],
@@ -2024,8 +2024,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            default_doc_mapper_query_aux(&doc_mapper, "body.wrong_field:hello").unwrap_err(),
-            "invalid query: field does not exist: `body.wrong_field`"
+            default_doc_mapper_query_aux(&doc_mapper, "body.wrong_field:hello").unwrap(),
+            "EmptyQuery",
         );
     }
 

@@ -1,0 +1,133 @@
+# existing and non existing field
+endpoint: "gharchive-*/_search"
+json:
+  query:
+    query_string:
+      fields:
+        - type
+        - nothing
+      query: "CreateEvent"
+expected:
+  hits:
+    total:
+      value: 4
+---
+# only non-existing fields
+endpoint: "gharchive-*/_search"
+json:
+  query:
+    query_string:
+      fields:
+        - nothing
+        - nothing-either
+      query: "CreateEvent"
+expected:
+  hits:
+    total:
+      value: 0
+---
+# term set query are only in quickwit
+engines: ["quickwit"]
+endpoint: "gharchive-*/_search"
+json:
+  query:
+    query_string:
+      fields:
+        - type
+        - nothing
+      query: "IN [createevent]"
+expected:
+  hits:
+    total:
+      value: 4
+---
+# range query from query parser
+endpoint: "gharchive-*/_search"
+json:
+  query:
+    query_string:
+      fields:
+        # - id not supported
+        - nothing
+      query: "[2 TO 10}"
+expected:
+  hits:
+    total:
+      value: 0
+---
+# range query from ast
+endpoint: "gharchive-*/_search"
+json:
+  query:
+    range:
+      nothing:
+        gte: 1
+        lt: 10
+expected:
+  hits:
+    total:
+      value: 0
+---
+# wildcard query from query parser
+endpoint: "gharchive-*/_search"
+json:
+  query:
+    query_string:
+      fields:
+        - type
+        - nothing
+      query: "Creat*"
+expected:
+  hits:
+    total:
+      value: 4
+---
+# wildcard query from ast
+engines: ["elasticsearch"] # todo support wildcard from ast in quickwit
+endpoint: "gharchive-*/_search"
+json:
+  query:
+    wildcard:
+      type:
+        value: "Creat*"
+expected:
+  hits:
+    total:
+      value: 0
+---
+# phrase prefix query from query parser
+endpoint: "gharchive-*/_search"
+json:
+  query:
+    query_string:
+      fields:
+        - type
+        - nothing
+      query: "\"Creat\"*"
+expected:
+  hits:
+    total:
+      value: 4
+---
+# phrase prefix query from ast
+endpoint: "gharchive-*/_search"
+json:
+  query:
+    match_phrase_prefix:
+      nothing:
+        query: "Creat"
+expected:
+  hits:
+    total:
+      value: 0
+---
+# exists query from ast
+endpoint: "gharchive-*/_search"
+json:
+  query:
+    exists:
+      field: nothing
+expected:
+  hits:
+    total:
+      value: 0

@@ -25,6 +25,7 @@ use tantivy::Term;
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::{BuildTantivyAst, FullTextParams, QueryAst};
 use crate::tokenizers::TokenizerManager;
+use crate::MatchAllOrNone::MatchNone as TantivyEmptyQuery;
 use crate::{find_field_or_hit_dynamic, InvalidQuery};
 
 /// The PhraseQuery node is meant to be tokenized and searched.
@@ -117,7 +118,11 @@ impl BuildTantivyAst for PhrasePrefixQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (_, terms) = self.get_terms(schema, tokenizer_manager)?;
+        let terms = match self.get_terms(schema, tokenizer_manager) {
+            Ok((_, terms)) => terms,
+            Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(TantivyEmptyQuery.into()),
+            Err(e) => return Err(e),
+        };
 
         if terms.is_empty() {
             if self.params.zero_terms_query.is_none() {

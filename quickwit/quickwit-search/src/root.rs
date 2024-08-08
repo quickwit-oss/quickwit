@@ -3732,13 +3732,25 @@ mod tests {
                 Ok(ServiceStream::from(vec![Ok(splits_response)]))
             });
 
-        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service.expect_leaf_search().returning(
+            move |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
+                    num_hits: 0,
+                    partial_hits: Vec::new(),
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 1,
+                    ..Default::default()
+                })
+            },
+        );
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let searcher_context = SearcherContext::for_test();
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
 
-        assert!(root_search(
+        let res = root_search(
             &searcher_context,
             quickwit_proto::search::SearchRequest {
                 index_id_patterns: vec!["test-index".to_string()],
@@ -3750,9 +3762,10 @@ mod tests {
             &cluster_client,
         )
         .await
-        .is_err());
+        .unwrap();
+        assert_eq!(res.num_hits, 0);
 
-        assert!(root_search(
+        let res = root_search(
             &searcher_context,
             quickwit_proto::search::SearchRequest {
                 index_id_patterns: vec!["test-index".to_string()],
@@ -3764,7 +3777,8 @@ mod tests {
             &cluster_client,
         )
         .await
-        .is_err());
+        .unwrap();
+        assert_eq!(res.num_hits, 0);
 
         Ok(())
     }
