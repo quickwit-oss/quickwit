@@ -1,7 +1,12 @@
-# Delete possibly remaining index
+# Delete possibly remaining index and template
 method: DELETE
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/test-index
+status_code: null
+---
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: templates/test-index-template
 status_code: null
 ---
 method: POST

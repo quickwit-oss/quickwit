@@ -1,3 +1,7 @@
 method: DELETE
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/test-index
+---
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: templates/test-index-template

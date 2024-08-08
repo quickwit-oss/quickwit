@@ -220,9 +220,9 @@ async fn test_update_doc_mapping_json_to_text() {
         ingest_after_update,
         &[
             ("body:hello", Ok(&[json!({"body": "hello world"})])),
-            // error expected because the validation is performed
-            // by latest doc mapping
-            ("body.field1:hello", Err(())),
+            // ok because we can query for non existent field and they are ignored, but we don't
+            // get the field because it was deleted. This spec is very odd :-/
+            ("body.field1:hello", Ok(&[json!({})])),
         ],
     )
     .await;

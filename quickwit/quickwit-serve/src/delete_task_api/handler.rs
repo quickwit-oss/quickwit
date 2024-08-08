@@ -236,8 +236,17 @@ mod tests {
             .body(r#"{"query": "unknown_field:test", "start_timestamp": 1, "end_timestamp": 10}"#)
             .reply(&delete_query_api_handlers)
             .await;
-        assert_eq!(resp.status(), 400);
-        assert!(String::from_utf8_lossy(resp.body()).contains("invalid delete query"));
+        assert_eq!(resp.status(), 200);
+        let created_delete_task: DeleteTask = serde_json::from_slice(resp.body()).unwrap();
+        assert_eq!(created_delete_task.opstamp, 2);
+        let created_delete_query = created_delete_task.delete_query.unwrap();
+        assert_eq!(created_delete_query.index_uid(), &test_sandbox.index_uid());
+        assert_eq!(
+            created_delete_query.query_ast,
+            r#"{"type":"full_text","field":"unknown_field","text":"test","params":{"mode":{"type":"phrase_fallback_to_intersection"}}}"#
+        );
+        assert_eq!(created_delete_query.start_timestamp, Some(1));
+        assert_eq!(created_delete_query.end_timestamp, Some(10));
 
         // GET delete tasks.
         let resp = warp::test::request()
@@ -246,7 +255,7 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 200);
         let delete_tasks: Vec<DeleteTask> = serde_json::from_slice(resp.body()).unwrap();
-        assert_eq!(delete_tasks.len(), 1);
+        assert_eq!(delete_tasks.len(), 2);
         test_sandbox.assert_quit().await;
     }
 }

@@ -25,6 +25,7 @@ use tantivy::Term;
 use super::{BuildTantivyAst, QueryAst};
 use crate::query_ast::TantivyQueryAst;
 use crate::tokenizers::TokenizerManager;
+use crate::MatchAllOrNone::MatchNone as TantivyEmptyQuery;
 use crate::{find_field_or_hit_dynamic, InvalidQuery};
 
 /// A Wildcard query allows to match 'bond' with a query like 'b*d'.
@@ -190,7 +191,11 @@ impl BuildTantivyAst for WildcardQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (_, term) = self.extract_prefix_term(schema, tokenizer_manager)?;
+        let term = match self.extract_prefix_term(schema, tokenizer_manager) {
+            Ok((_, term)) => term,
+            Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(TantivyEmptyQuery.into()),
+            Err(e) => return Err(e),
+        };
 
         let mut phrase_prefix_query =
             tantivy::query::PhrasePrefixQuery::new_with_offset(vec![(0, term)]);

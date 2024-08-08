@@ -444,12 +444,9 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
-    .await;
-    assert!(single_node_response.is_err());
-    assert_eq!(
-        single_node_response.err().map(|err| err.to_string()),
-        Some("invalid query: field does not exist: `tag`".to_string())
-    );
+    .await
+    .unwrap();
+    assert_eq!(single_node_response.num_hits, 0);
     test_sandbox.assert_quit().await;
     Ok(())
 }
