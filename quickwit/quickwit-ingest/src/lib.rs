@@ -125,6 +125,49 @@ impl CommitType {
     }
 }
 
+struct TimedMutexGuard<T> {
+    guard: T,
+    acquired_at: std::time::Instant,
+    purpose: [&'static str; 2],
+}
+
+use std::ops::{Deref, DerefMut};
+
+impl<T> Deref for TimedMutexGuard<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.guard
+    }
+}
+
+impl<T> DerefMut for TimedMutexGuard<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.guard
+    }
+}
+
+impl<T> Drop for TimedMutexGuard<T> {
+    fn drop(&mut self) {
+        let elapsed = self.acquired_at.elapsed();
+
+        crate::ingest_v2::metrics::INGEST_V2_METRICS
+            .wal_hold_lock_duration_secs
+            .with_label_values(self.purpose)
+            .observe(elapsed.as_secs_f64());
+
+        if elapsed > std::time::Duration::from_secs(1) {
+            let purpose = self.purpose.join("::");
+            quickwit_common::rate_limited_warn!(
+                limit_per_min = 6,
+                "hold mutext for {}ms for {}",
+                elapsed.as_millis(),
+                purpose,
+            );
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! with_lock_metrics {
     ($future:expr, $($label:tt),*) => {
@@ -134,14 +177,19 @@ macro_rules! with_lock_metrics {
                 .with_label_values([$($label),*])
                 .inc();
 
-            let now = std::time::Instant::now();
-            let guard = $future;
 
-            let elapsed = now.elapsed();
+            let now = std::time::Instant::now();
+            let guard = $future.await;
+
+            let now_after = std::time::Instant::now();
+            let elapsed = now_after.duration_since(now);
             if elapsed > std::time::Duration::from_secs(1) {
+                let text_label = with_lock_metrics!(@concat $($label,)*);
                 quickwit_common::rate_limited_warn!(
                     limit_per_min=6,
-                    "lock acquisition took {}ms", elapsed.as_millis()
+                    "lock acquisition took {}ms for {}",
+                    elapsed.as_millis(),
+                    text_label,
                 );
             }
             $crate::ingest_v2::metrics::INGEST_V2_METRICS
@@ -153,9 +201,16 @@ macro_rules! with_lock_metrics {
                 .with_label_values([$($label),*])
                 .observe(elapsed.as_secs_f64());
 
-            guard
+            guard.map(|guard| $crate::TimedMutexGuard {
+                guard,
+                acquired_at: now_after,
+                purpose: [$($label),*],
+            })
         }
-    }
+    };
+    (@concat $label1:tt, $($label:tt,)*) => {
+        concat!($label1, $("::", $label),*)
+    };
 }
 
 #[cfg(test)]

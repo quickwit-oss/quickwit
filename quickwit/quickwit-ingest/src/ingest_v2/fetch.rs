@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use mrecordlog::Record;
 use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_common::retry::RetryParams;
@@ -133,8 +133,13 @@ impl FetchStreamTask {
             let mut mrecord_buffer = BytesMut::with_capacity(self.batch_num_bytes);
             let mut mrecord_lengths = Vec::new();
 
-            let mrecordlog_guard =
-                with_lock_metrics!(self.mrecordlog.read().await, "fetch", "read");
+            let Some(mrecordlog_guard) =
+                with_lock_metrics!(self.mrecordlog.read().map(Some), "fetch", "read")
+            else {
+                // we always get a Some, that layer is just added to satisfly with_lock_metrics
+                // needs for a Future<Item = Result | Option>
+                unreachable!();
+            };
 
             let Ok(mrecords) = mrecordlog_guard
                 .as_ref()
