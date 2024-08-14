@@ -63,6 +63,7 @@ pub type Result<T> = std::result::Result<T, SearchError>;
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, OnceLock};
+use std::thread;
 
 pub use find_trace_ids_collector::FindTraceIdsCollector;
 use quickwit_config::SearcherConfig;
@@ -98,8 +99,17 @@ pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
 fn search_thread_pool() -> &'static ThreadPool {
     static SEARCH_THREAD_POOL: OnceLock<ThreadPool> = OnceLock::new();
     SEARCH_THREAD_POOL.get_or_init(|| {
-        let search_thread_pool_size =
+        let mut search_thread_pool_size =
             quickwit_common::get_from_env_opt("QW_SEARCH_THREAD_POOL_SIZE");
+
+        if search_thread_pool_size.is_none() {
+            let mut thread = thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(2);
+            thread = thread.saturating_sub(1); // reserve one thread to handle incoming requests
+            search_thread_pool_size = Some(thread);
+        }
+
         ThreadPool::new("search", search_thread_pool_size)
     })
 }
