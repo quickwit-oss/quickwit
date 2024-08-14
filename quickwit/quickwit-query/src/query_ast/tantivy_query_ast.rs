@@ -36,6 +36,18 @@ pub(crate) enum TantivyQueryAst {
     ConstPredicate(MatchAllOrNone),
 }
 
+impl Clone for TantivyQueryAst {
+    fn clone(&self) -> Self {
+        match self {
+            TantivyQueryAst::Bool(bool_query) => TantivyQueryAst::Bool(bool_query.clone()),
+            TantivyQueryAst::ConstPredicate(predicate) => {
+                TantivyQueryAst::ConstPredicate(*predicate)
+            }
+            TantivyQueryAst::Leaf(query) => TantivyQueryAst::Leaf(query.box_clone()),
+        }
+    }
+}
+
 impl From<MatchAllOrNone> for TantivyQueryAst {
     fn from(match_all_or_none: MatchAllOrNone) -> Self {
         TantivyQueryAst::ConstPredicate(match_all_or_none)
@@ -142,7 +154,7 @@ fn remove_with_guard(
     }
 }
 
-#[derive(Default, Debug, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub(crate) struct TantivyBoolQuery {
     pub must: Vec<TantivyQueryAst>,
     pub must_not: Vec<TantivyQueryAst>,
@@ -169,6 +181,7 @@ impl TantivyBoolQuery {
     }
 
     pub fn simplify(mut self) -> TantivyQueryAst {
+        // simplify sub branches
         self.must = simplify_asts(self.must);
         self.should = simplify_asts(self.should);
         self.must_not = simplify_asts(self.must_not);
@@ -188,6 +201,10 @@ impl TantivyBoolQuery {
             // This is just a convention mimicking Elastic/Commonsearch's behavior.
             return TantivyQueryAst::match_all();
         }
+
+        // TODO lift clauses
+
+        // remove sub-queries which don't impact the result
         remove_with_guard(&mut self.must, MatchAllOrNone::MatchAll, true);
         let mut has_no_positive_ast_so_far = self.must.is_empty();
         remove_with_guard(
@@ -196,24 +213,24 @@ impl TantivyBoolQuery {
             has_no_positive_ast_so_far,
         );
         has_no_positive_ast_so_far &= self.filter.is_empty();
+        if !self.filter.is_empty() {
+            // if filter is not empty, we can re-try cleaning must. we can't just check
+            // has_no_positive_ast_so_far as it would clean must if must or filter contained
+            // something
+            remove_with_guard(&mut self.must, MatchAllOrNone::MatchAll, false);
+        }
         remove_with_guard(
             &mut self.should,
             MatchAllOrNone::MatchNone,
             has_no_positive_ast_so_far,
         );
         has_no_positive_ast_so_far &= self.should.is_empty();
-        // we do that a second time in case must happens to have a MatchAll and nothing else,
-        // but filter and/or should had something
-        remove_with_guard(
-            &mut self.must,
-            MatchAllOrNone::MatchAll,
-            has_no_positive_ast_so_far,
-        );
         remove_with_guard(
             &mut self.must_not,
             MatchAllOrNone::MatchNone,
             has_no_positive_ast_so_far,
         );
+
         for must_child in self.must.iter().chain(self.filter.iter()) {
             if must_child.const_predicate() == Some(MatchAllOrNone::MatchNone) {
                 return TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchNone);
@@ -287,10 +304,20 @@ impl From<TantivyBoolQuery> for Box<dyn TantivyQuery> {
 
 #[cfg(test)]
 mod tests {
-    use tantivy::query::EmptyQuery;
+    use proptest::prelude::*;
+    use tantivy::query::{EmptyQuery, TermQuery};
 
     use super::TantivyBoolQuery;
     use crate::query_ast::tantivy_query_ast::{remove_with_guard, MatchAllOrNone, TantivyQueryAst};
+
+    fn term(val: &str) -> TantivyQueryAst {
+        use tantivy::schema::{Field, Term};
+        TermQuery::new(
+            Term::from_field_text(Field::from_field_id(0), val),
+            Default::default(),
+        )
+        .into()
+    }
 
     #[test]
     fn test_simplify_bool_query_with_no_clauses() {
@@ -460,22 +487,6 @@ mod tests {
     fn test_simplify_bool_query_with_match_must_and_other_positive_clauses() {
         let bool_query = TantivyBoolQuery {
             must: vec![TantivyQueryAst::match_all()],
-            should: vec![EmptyQuery.into()],
-            ..Default::default()
-        }
-        .simplify();
-        assert_eq!(bool_query, EmptyQuery.into());
-
-        let bool_query = TantivyBoolQuery {
-            must: vec![TantivyQueryAst::match_all()],
-            should: vec![EmptyQuery.into()],
-            ..Default::default()
-        }
-        .simplify();
-        assert_eq!(bool_query, EmptyQuery.into());
-
-        let bool_query = TantivyBoolQuery {
-            must: vec![TantivyQueryAst::match_all()],
             filter: vec![EmptyQuery.into()],
             ..Default::default()
         }
@@ -522,5 +533,169 @@ mod tests {
             empty_bool_query.const_predicate(),
             Some(MatchAllOrNone::MatchAll)
         );
+    }
+
+    #[test]
+    #[ignore]
+    fn test_simplify_lift_bool_bool() {
+        let bool_query = TantivyBoolQuery {
+            must: vec![
+                TantivyBoolQuery {
+                    must: vec![term("abc"), term("def")],
+                    ..Default::default()
+                }
+                .into(),
+                TantivyBoolQuery {
+                    must: vec![term("ghi"), term("jkl")],
+                    ..Default::default()
+                }
+                .into(),
+            ],
+            ..Default::default()
+        }
+        .simplify();
+        assert_eq!(
+            bool_query,
+            TantivyBoolQuery {
+                must: vec![term("abc"), term("def"), term("ghi"), term("jkl"),],
+                ..Default::default()
+            }
+            .into()
+        );
+
+        let bool_query = TantivyBoolQuery {
+            should: vec![
+                TantivyBoolQuery {
+                    should: vec![term("abc"), term("def")],
+                    ..Default::default()
+                }
+                .into(),
+                TantivyBoolQuery {
+                    should: vec![term("ghi"), term("jkl")],
+                    ..Default::default()
+                }
+                .into(),
+            ],
+            ..Default::default()
+        }
+        .simplify();
+        assert_eq!(
+            bool_query,
+            TantivyBoolQuery {
+                should: vec![term("abc"), term("def"), term("ghi"), term("jkl"),],
+                ..Default::default()
+            }
+            .into()
+        );
+
+        let bool_query = TantivyBoolQuery {
+            must: vec![
+                TantivyBoolQuery {
+                    must: vec![term("abc"), term("def")],
+                    ..Default::default()
+                }
+                .into(),
+                TantivyBoolQuery {
+                    should: vec![term("ghi"), term("jkl")],
+                    ..Default::default()
+                }
+                .into(),
+            ],
+            ..Default::default()
+        }
+        .simplify();
+        assert_eq!(
+            bool_query,
+            TantivyBoolQuery {
+                must: vec![
+                    term("abc"),
+                    term("def"),
+                    TantivyBoolQuery {
+                        should: vec![term("ghi"), term("jkl")],
+                        ..Default::default()
+                    }
+                    .into(),
+                ],
+                ..Default::default()
+            }
+            .into()
+        );
+    }
+
+    #[derive(Debug, Clone)]
+    struct ConstQuery(bool);
+
+    impl tantivy::query::Query for ConstQuery {
+        fn weight(
+            &self,
+            _: tantivy::query::EnableScoring<'_>,
+        ) -> tantivy::Result<Box<dyn tantivy::query::Weight>> {
+            unimplemented!()
+        }
+    }
+
+    impl TantivyQueryAst {
+        fn evaluate_test(&self) -> bool {
+            match self {
+                TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchNone) => false,
+                TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchAll) => true,
+                TantivyQueryAst::Bool(bool_query) => bool_query.evaluate_test(),
+                TantivyQueryAst::Leaf(query) => {
+                    query
+                        .downcast_ref::<ConstQuery>()
+                        .expect("query wasn't a ConstQuery")
+                        .0
+                }
+            }
+        }
+    }
+
+    impl TantivyBoolQuery {
+        fn evaluate_test(&self) -> bool {
+            if self.must_not.iter().any(|sub_ast| sub_ast.evaluate_test()) {
+                return false;
+            }
+            if self.must.len() + self.filter.len() > 0 {
+                self.must.iter().all(|sub_ast| sub_ast.evaluate_test())
+                    && self.filter.iter().all(|sub_ast| sub_ast.evaluate_test())
+            } else {
+                if self.should.is_empty() {
+                    // by convention, an empty query returns all match.
+                    return true;
+                }
+                self.should.iter().any(|sub_ast| sub_ast.evaluate_test())
+            }
+        }
+    }
+
+    fn ast_strategy() -> impl Strategy<Value = TantivyQueryAst> {
+        let ast_leaf = proptest::prop_oneof![
+            Just(TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchNone)),
+            Just(TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchAll)),
+            prop::bool::ANY.prop_map(|val| TantivyQueryAst::Leaf(Box::new(ConstQuery(val)))),
+        ];
+
+        ast_leaf.prop_recursive(4, 32, 16, |element| {
+            let must = proptest::collection::vec(element.clone(), 0..4);
+            let filter = proptest::collection::vec(element.clone(), 0..4);
+            let should = proptest::collection::vec(element.clone(), 0..4);
+            let must_not = proptest::collection::vec(element.clone(), 0..4);
+            (must, filter, should, must_not).prop_map(|(must, filter, should, must_not)| {
+                TantivyQueryAst::Bool(TantivyBoolQuery {
+                    must,
+                    filter,
+                    should,
+                    must_not,
+                })
+            })
+        })
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn test_proptest_simplify_never_change_result(ast in ast_strategy()) {
+            let simplified_ast = ast.clone().simplify();
+            assert_eq!(simplified_ast.evaluate_test(), ast.evaluate_test());
+        }
     }
 }
