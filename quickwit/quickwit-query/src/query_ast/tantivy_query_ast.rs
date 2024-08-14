@@ -202,7 +202,69 @@ impl TantivyBoolQuery {
             return TantivyQueryAst::match_all();
         }
 
-        // TODO lift clauses
+        let mut new_must = Vec::with_capacity(self.must.len());
+        for must in self.must {
+            let mut must_bool = match must {
+                TantivyQueryAst::Bool(bool_query) => bool_query,
+                _ => {
+                    new_must.push(must);
+                    continue;
+                }
+            };
+            if must_bool.should.is_empty() {
+                new_must.append(&mut must_bool.must);
+                self.filter.append(&mut must_bool.filter);
+                self.must_not.append(&mut must_bool.must_not);
+            } else {
+                new_must.push(TantivyQueryAst::Bool(must_bool));
+            }
+        }
+        self.must = new_must;
+
+        let mut new_filter = Vec::with_capacity(self.filter.len());
+        for filter in self.filter {
+            let mut filter_bool = match filter {
+                TantivyQueryAst::Bool(bool_query) => bool_query,
+                _ => {
+                    new_filter.push(filter);
+                    continue;
+                }
+            };
+            if filter_bool.should.is_empty() {
+                new_filter.append(&mut filter_bool.must);
+                new_filter.append(&mut filter_bool.filter);
+                // must_not doeen't contribute to score, no need to move it to some filter_not kind
+                // of thing
+                self.must_not.append(&mut filter_bool.must_not);
+            } else {
+                new_filter.push(TantivyQueryAst::Bool(filter_bool));
+            }
+        }
+        self.filter = new_filter;
+
+        let mut new_should = Vec::with_capacity(self.should.len());
+        for should in self.should {
+            let mut should_bool = match should {
+                TantivyQueryAst::Bool(bool_query) => bool_query,
+                _ => {
+                    new_should.push(should);
+                    continue;
+                }
+            };
+            if should_bool.must.is_empty()
+                && should_bool.filter.is_empty()
+                && should_bool.must_not.is_empty()
+            {
+                new_should.append(&mut should_bool.should);
+            } else {
+                new_should.push(TantivyQueryAst::Bool(should_bool));
+            }
+        }
+        self.should = new_should;
+
+        // TODO we could turn must_not(must_not(abc, def)) into should(filter(abc), filter(def)),
+        // we can't simply have should(abc, def) because of scoring, and should(filter(abc, def))
+        // has a different meaning
 
         // remove sub-queries which don't impact the result
         remove_with_guard(&mut self.must, MatchAllOrNone::MatchAll, true);
@@ -536,7 +598,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_simplify_lift_bool_bool() {
         let bool_query = TantivyBoolQuery {
             must: vec![
@@ -620,10 +681,120 @@ mod tests {
             }
             .into()
         );
+
+        let bool_query = TantivyBoolQuery {
+            should: vec![
+                TantivyBoolQuery {
+                    must: vec![term("abc")],
+                    ..Default::default()
+                }
+                .into(),
+                TantivyBoolQuery {
+                    filter: vec![term("ghi")],
+                    ..Default::default()
+                }
+                .into(),
+            ],
+            ..Default::default()
+        }
+        .simplify();
+        assert_eq!(
+            bool_query,
+            TantivyBoolQuery {
+                should: vec![
+                    term("abc"),
+                    // filter can't get optimized for scoring reasons
+                    TantivyBoolQuery {
+                        filter: vec![term("ghi")],
+                        ..Default::default()
+                    }
+                    .into(),
+                ],
+                ..Default::default()
+            }
+            .into()
+        );
+
+        let bool_query = TantivyBoolQuery {
+            must: vec![
+                TantivyBoolQuery {
+                    should: vec![term("abc")],
+                    ..Default::default()
+                }
+                .into(),
+                TantivyBoolQuery {
+                    should: vec![term("def")],
+                    ..Default::default()
+                }
+                .into(),
+            ],
+            ..Default::default()
+        }
+        .simplify();
+        assert_eq!(
+            bool_query,
+            TantivyBoolQuery {
+                must: vec![term("abc"), term("def"),],
+                ..Default::default()
+            }
+            .into()
+        );
+
+        let bool_query = TantivyBoolQuery {
+            must_not: vec![
+                TantivyBoolQuery {
+                    should: vec![term("abc")],
+                    ..Default::default()
+                }
+                .into(),
+                TantivyBoolQuery {
+                    must: vec![term("def")],
+                    ..Default::default()
+                }
+                .into(),
+            ],
+            ..Default::default()
+        }
+        .simplify();
+        assert_eq!(
+            bool_query,
+            TantivyBoolQuery {
+                must: vec![MatchAllOrNone::MatchAll.into()],
+                must_not: vec![term("abc"), term("def"),],
+                ..Default::default()
+            }
+            .into()
+        );
+
+        let bool_query = TantivyBoolQuery {
+            must: vec![
+                TantivyBoolQuery {
+                    must_not: vec![term("abc"), term("def")],
+                    ..Default::default()
+                }
+                .into(),
+                TantivyBoolQuery {
+                    must_not: vec![term("ghi")],
+                    ..Default::default()
+                }
+                .into(),
+            ],
+            ..Default::default()
+        }
+        .simplify();
+        assert_eq!(
+            bool_query,
+            TantivyBoolQuery {
+                must: vec![MatchAllOrNone::MatchAll.into()],
+                must_not: vec![term("abc"), term("def"), term("ghi"),],
+                ..Default::default()
+            }
+            .into()
+        );
     }
 
     #[derive(Debug, Clone)]
-    struct ConstQuery(bool);
+    struct ConstQuery(bool, u32);
 
     impl tantivy::query::Query for ConstQuery {
         fn weight(
@@ -635,35 +806,64 @@ mod tests {
     }
 
     impl TantivyQueryAst {
-        fn evaluate_test(&self) -> bool {
+        fn evaluate_test(&self) -> Option<u32> {
             match self {
-                TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchNone) => false,
-                TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchAll) => true,
+                TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchNone) => None,
+                TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchAll) => Some(0),
                 TantivyQueryAst::Bool(bool_query) => bool_query.evaluate_test(),
                 TantivyQueryAst::Leaf(query) => {
-                    query
+                    let const_query = query
                         .downcast_ref::<ConstQuery>()
-                        .expect("query wasn't a ConstQuery")
-                        .0
+                        .expect("query wasn't a ConstQuery");
+                    const_query.0.then_some(const_query.1)
                 }
             }
         }
     }
 
     impl TantivyBoolQuery {
-        fn evaluate_test(&self) -> bool {
-            if self.must_not.iter().any(|sub_ast| sub_ast.evaluate_test()) {
-                return false;
+        fn evaluate_test(&self) -> Option<u32> {
+            if self
+                .must_not
+                .iter()
+                .any(|sub_ast| sub_ast.evaluate_test().is_some())
+            {
+                return None;
             }
+            let should_score: u32 = self
+                .should
+                .iter()
+                .filter_map(|should| should.evaluate_test())
+                .sum();
             if self.must.len() + self.filter.len() > 0 {
-                self.must.iter().all(|sub_ast| sub_ast.evaluate_test())
-                    && self.filter.iter().all(|sub_ast| sub_ast.evaluate_test())
+                if self
+                    .must
+                    .iter()
+                    .all(|sub_ast| sub_ast.evaluate_test().is_some())
+                    && self
+                        .filter
+                        .iter()
+                        .all(|sub_ast| sub_ast.evaluate_test().is_some())
+                {
+                    Some(
+                        self.must
+                            .iter()
+                            .map(|sub_ast| sub_ast.evaluate_test().unwrap())
+                            .sum::<u32>()
+                            + should_score,
+                    )
+                } else {
+                    None
+                }
             } else {
                 if self.should.is_empty() {
                     // by convention, an empty query returns all match.
-                    return true;
+                    return Some(0);
                 }
-                self.should.iter().any(|sub_ast| sub_ast.evaluate_test())
+                self.should
+                    .iter()
+                    .any(|sub_ast| sub_ast.evaluate_test().is_some())
+                    .then_some(should_score)
             }
         }
     }
@@ -672,7 +872,8 @@ mod tests {
         let ast_leaf = proptest::prop_oneof![
             Just(TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchNone)),
             Just(TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchAll)),
-            prop::bool::ANY.prop_map(|val| TantivyQueryAst::Leaf(Box::new(ConstQuery(val)))),
+            (prop::bool::ANY, 0u32..5)
+                .prop_map(|(matc, score)| TantivyQueryAst::Leaf(Box::new(ConstQuery(matc, score)))),
         ];
 
         ast_leaf.prop_recursive(4, 32, 16, |element| {
@@ -692,10 +893,13 @@ mod tests {
     }
 
     proptest::proptest! {
+        #![proptest_config(ProptestConfig {
+          cases: 10000, .. ProptestConfig::default()
+        })]
         #[test]
         fn test_proptest_simplify_never_change_result(ast in ast_strategy()) {
             let simplified_ast = ast.clone().simplify();
-            assert_eq!(simplified_ast.evaluate_test(), ast.evaluate_test());
+            assert_eq!(dbg!(simplified_ast).evaluate_test(), ast.evaluate_test());
         }
     }
 }
