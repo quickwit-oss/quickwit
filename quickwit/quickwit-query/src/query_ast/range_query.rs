@@ -26,6 +26,7 @@ use tantivy::schema::Schema as TantivySchema;
 use tantivy::tokenizer::TextAnalyzer;
 use tantivy::{DateTime, Term};
 
+use super::tantivy_query_ast::TantivyBoolQuery;
 use super::QueryAst;
 use crate::json_literal::InterpretUserInput;
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
@@ -200,48 +201,56 @@ impl BuildTantivyAst for RangeQuery {
             }
             tantivy::schema::FieldType::Bytes(_) => todo!(),
             tantivy::schema::FieldType::JsonObject(options) => {
+                let mut sub_queries: Vec<TantivyQueryAst> = Vec::new();
                 let empty_term =
                     Term::from_field_json_path(field, json_path, options.is_expand_dots_enabled());
                 // Try to convert the bounds into numerical values in following order i64, u64,
                 // f64. Tantivy will convert to the correct numerical type of the column if it
                 // doesn't match.
-                let bounds_range: Option<(Bound<i64>, Bound<i64>)> =
+                let bounds_range_i64: Option<(Bound<i64>, Bound<i64>)> =
                     convert_bound(&self.lower_bound).zip(convert_bound(&self.upper_bound));
-                if let Some(range) = bounds_range {
-                    return Ok(query_from_fast_val_range(&empty_term, range).into());
-                }
-                let bounds_range: Option<(Bound<u64>, Bound<u64>)> =
+                let bounds_range_u64: Option<(Bound<u64>, Bound<u64>)> =
                     convert_bound(&self.lower_bound).zip(convert_bound(&self.upper_bound));
-                if let Some(range) = bounds_range {
-                    return Ok(query_from_fast_val_range(&empty_term, range).into());
-                }
-                let bounds_range: Option<(Bound<f64>, Bound<f64>)> =
+                let bounds_range_f64: Option<(Bound<f64>, Bound<f64>)> =
                     convert_bound(&self.lower_bound).zip(convert_bound(&self.upper_bound));
-                if let Some(range) = bounds_range {
-                    return Ok(query_from_fast_val_range(&empty_term, range).into());
+                if let Some(range) = bounds_range_i64 {
+                    sub_queries.push(query_from_fast_val_range(&empty_term, range).into());
+                } else if let Some(range) = bounds_range_u64 {
+                    sub_queries.push(query_from_fast_val_range(&empty_term, range).into());
+                } else if let Some(range) = bounds_range_f64 {
+                    sub_queries.push(query_from_fast_val_range(&empty_term, range).into());
                 }
 
                 let mut normalizer = options
                     .get_fast_field_tokenizer_name()
                     .and_then(|tokenizer_name| tokenizer_manager.get_normalizer(tokenizer_name));
 
-                let (lower_bound, upper_bound) =
-                    convert_bounds(&self.lower_bound, &self.upper_bound, field_entry.name())?;
-                FastFieldRangeQuery::new(
-                    lower_bound.map(|val| {
-                        let val = get_normalized_text(&mut normalizer, val);
-                        let mut term = empty_term.clone();
-                        term.append_type_and_str(&val);
-                        term
-                    }),
-                    upper_bound.map(|val| {
-                        let val = get_normalized_text(&mut normalizer, val);
-                        let mut term = empty_term.clone();
-                        term.append_type_and_str(&val);
-                        term
-                    }),
-                )
-                .into()
+                let bounds_range_str: Option<(Bound<&str>, Bound<&str>)> =
+                    convert_bound(&self.lower_bound).zip(convert_bound(&self.upper_bound));
+                if let Some(range) = bounds_range_str {
+                    let str_query = FastFieldRangeQuery::new(
+                        range.0.map(|val| {
+                            let val = get_normalized_text(&mut normalizer, val);
+                            let mut term = empty_term.clone();
+                            term.append_type_and_str(&val);
+                            term
+                        }),
+                        range.1.map(|val| {
+                            let val = get_normalized_text(&mut normalizer, val);
+                            let mut term = empty_term.clone();
+                            term.append_type_and_str(&val);
+                            term
+                        }),
+                    )
+                    .into();
+                    sub_queries.push(str_query);
+                }
+
+                let bool_query = TantivyBoolQuery {
+                    should: sub_queries,
+                    ..Default::default()
+                };
+                bool_query.into()
             }
             tantivy::schema::FieldType::IpAddr(_) => {
                 let (lower_bound, upper_bound) =
