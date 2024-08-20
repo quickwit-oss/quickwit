@@ -286,7 +286,7 @@ async fn test_ingest_docs_cli() {
 }
 
 #[tokio::test]
-async fn test_ingest_docs_cli_twice() {
+async fn test_reingest_same_file_cli() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-index-simple");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)
