@@ -45,7 +45,6 @@ use crate::utils::load_node_config;
 pub struct IngestArgs {
     pub input_path: Uri,
     pub input_format: SourceInputFormat,
-    pub overwrite: bool,
     pub vrl_script: Option<String>,
     pub clear_cache: bool,
 }
@@ -65,7 +64,6 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         &mut metastore,
         &storage_resolver,
         &config.default_index_root_uri,
-        args.overwrite,
         &source_config,
     )
     .await?;
@@ -122,4 +120,132 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         bail!("Failed to ingest {} documents", statistics.num_invalid_docs)
     }
     Ok(statistics)
+}
+
+#[cfg(all(test, feature = "s3-localstack-tests"))]
+mod tests {
+    use std::path::PathBuf;
+    use std::str::FromStr;
+
+    use quickwit_common::new_coolid;
+    use quickwit_storage::StorageResolver;
+
+    use super::*;
+
+    async fn put_object(
+        storage_resolver: StorageResolver,
+        bucket: &str,
+        prefix: &str,
+        filename: &str,
+        data: Vec<u8>,
+    ) -> Uri {
+        let src_location = format!("s3://{}/{}", bucket, prefix);
+        let storage_uri = Uri::from_str(&src_location).unwrap();
+        let storage = storage_resolver.resolve(&storage_uri).await.unwrap();
+        storage
+            .put(&PathBuf::from(filename), Box::new(data))
+            .await
+            .unwrap();
+        storage_uri.join(filename).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_ingest() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let bucket = "quickwit-integration-tests";
+        let prefix = new_coolid("lambda-ingest-test");
+        let storage_resolver = StorageResolver::unconfigured();
+
+        let index_config = br#"
+        version: 0.8
+        index_id: lambda-test
+        doc_mapping:
+            field_mappings:
+              - name: timestamp
+                type: datetime
+                input_formats:
+                - unix_timestamp
+                fast: true
+            timestamp_field: timestamp
+        "#;
+        let config_uri = put_object(
+            storage_resolver.clone(),
+            bucket,
+            &prefix,
+            "index-config.yaml",
+            index_config.to_vec(),
+        )
+        .await;
+
+        // TODO use dependency injection instead of lazy static for env configs
+        std::env::set_var("QW_LAMBDA_METASTORE_BUCKET", bucket);
+        std::env::set_var("QW_LAMBDA_INDEX_BUCKET", bucket);
+        std::env::set_var("QW_LAMBDA_METASTORE_PREFIX", &prefix);
+        std::env::set_var("QW_LAMBDA_INDEX_PREFIX", &prefix);
+        std::env::set_var("QW_LAMBDA_INDEX_CONFIG_URI", config_uri.as_str());
+        std::env::set_var("QW_LAMBDA_INDEX_ID", "lambda-test");
+
+        // first ingestion creates the index metadata
+        let test_data_1 = br#"{"timestamp": 1724140899, "field1": "value1"}"#;
+        let test_data_1_uri = put_object(
+            storage_resolver.clone(),
+            bucket,
+            &prefix,
+            "data.json",
+            test_data_1.to_vec(),
+        )
+        .await;
+
+        {
+            let args = IngestArgs {
+                input_path: test_data_1_uri.clone(),
+                input_format: SourceInputFormat::Json,
+                vrl_script: None,
+                clear_cache: true,
+            };
+            let stats = ingest(args).await?;
+            assert_eq!(stats.num_invalid_docs, 0);
+            assert_eq!(stats.num_docs, 1);
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        {
+            // ingesting the same data again is a no-op
+            let args = IngestArgs {
+                input_path: test_data_1_uri,
+                input_format: SourceInputFormat::Json,
+                vrl_script: None,
+                clear_cache: true,
+            };
+            let stats = ingest(args).await?;
+            assert_eq!(stats.num_invalid_docs, 0);
+            assert_eq!(stats.num_docs, 0);
+        }
+
+        {
+            // second ingestion should not fail when metadata already exists
+            let test_data = br#"{"timestamp": 1724149900, "field1": "value2"}"#;
+            let test_data_uri = put_object(
+                storage_resolver.clone(),
+                bucket,
+                &prefix,
+                "data2.json",
+                test_data.to_vec(),
+            )
+            .await;
+
+            let args = IngestArgs {
+                input_path: test_data_uri,
+                input_format: SourceInputFormat::Json,
+                vrl_script: None,
+                clear_cache: true,
+            };
+            let stats = ingest(args).await?;
+            assert_eq!(stats.num_invalid_docs, 0);
+            assert_eq!(stats.num_docs, 1);
+        }
+
+        Ok(())
+    }
 }
