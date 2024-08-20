@@ -147,6 +147,7 @@ impl RoutingTableEntry {
     pub fn next_open_shard_round_robin(
         &self,
         ingester_pool: &IngesterPool,
+        rate_limited_shards: &HashSet<ShardId>,
     ) -> Option<&RoutingEntry> {
         for (shards, round_robin_idx) in [
             (&self.local_shards, &self.local_round_robin_idx),
@@ -157,10 +158,14 @@ impl RoutingTableEntry {
             }
             for _attempt in 0..shards.len() {
                 let shard_idx = round_robin_idx.fetch_add(1, Ordering::Relaxed);
-                let shard = &shards[shard_idx % shards.len()];
-
-                if shard.shard_state.is_open() && ingester_pool.contains_key(&shard.leader_id) {
-                    return Some(shard);
+                let shard_routing_entry: &RoutingEntry = &shards[shard_idx % shards.len()];
+                if !shard_routing_entry.shard_state.is_open()
+                    || rate_limited_shards.contains(&shard_routing_entry.shard_id)
+                {
+                    continue;
+                }
+                if ingester_pool.contains_key(&shard_routing_entry.leader_id) {
+                    return Some(shard_routing_entry);
                 }
             }
         }
@@ -658,7 +663,10 @@ mod tests {
         let table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
         let ingester_pool = IngesterPool::default();
 
-        let shard_opt = table_entry.next_open_shard_round_robin(&ingester_pool);
+        let mut rate_limited_shards = HashSet::new();
+
+        let shard_opt =
+            table_entry.next_open_shard_round_robin(&ingester_pool, &rate_limited_shards);
         assert!(shard_opt.is_none());
 
         ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
@@ -695,17 +703,17 @@ mod tests {
             remote_round_robin_idx: AtomicUsize::default(),
         };
         let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool)
+            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(2));
 
         let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool)
+            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(3));
 
         let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool)
+            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(2));
 
@@ -753,17 +761,24 @@ mod tests {
             remote_round_robin_idx: AtomicUsize::default(),
         };
         let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool)
+            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(2));
 
         let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool)
+            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(5));
 
         let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool)
+            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
+            .unwrap();
+        assert_eq!(shard.shard_id, ShardId::from(2));
+
+        rate_limited_shards.insert(ShardId::from(5));
+
+        let shard = table_entry
+            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
             .unwrap();
         assert_eq!(shard.shard_id, ShardId::from(2));
     }

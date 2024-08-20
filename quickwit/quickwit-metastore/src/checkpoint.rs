@@ -33,7 +33,7 @@ use thiserror::Error;
 use tracing::{debug, warn};
 
 /// A `PartitionId` uniquely identifies a partition for a given source.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash)]
 pub struct PartitionId(pub Arc<String>);
 
 impl PartitionId {

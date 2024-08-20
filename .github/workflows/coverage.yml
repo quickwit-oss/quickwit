@@ -37,7 +37,7 @@ jobs:
           - "4571:4571"
           - "8080:8080"
         env:
-          SERVICES: kinesis,s3
+          SERVICES: kinesis,s3,sqs
         options: >-
           --health-cmd "curl -k https://localhost:4566"
           --health-interval 10s

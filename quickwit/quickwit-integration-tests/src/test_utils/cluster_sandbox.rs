@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
+use anyhow::Context;
 use futures_util::future;
 use itertools::Itertools;
 use quickwit_actors::ActorExitStatus;
@@ -419,7 +420,12 @@ impl ClusterSandbox {
             input_format: quickwit_config::SourceInputFormat::Json,
             overwrite: false,
             vrl_script: None,
-            input_path_opt: Some(tmp_data_file.path().to_path_buf()),
+            input_path_opt: Some(QuickwitUri::from_str(
+                tmp_data_file
+                    .path()
+                    .to_str()
+                    .context("temp path could not be converted to URI")?,
+            )?),
         })
         .await?;
         Ok(())
