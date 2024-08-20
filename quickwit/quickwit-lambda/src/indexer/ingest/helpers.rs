@@ -35,7 +35,6 @@ use quickwit_config::{
     load_index_config_from_user_config, ConfigFormat, IndexConfig, NodeConfig, SourceConfig,
     SourceInputFormat, SourceParams, TransformConfig,
 };
-use quickwit_index_management::IndexService;
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
 use quickwit_indexing::models::{DetachIndexingPipeline, DetachMergePipeline, SpawnPipeline};
 use quickwit_indexing::IndexingPipeline;
@@ -154,7 +153,7 @@ pub(super) async fn configure_source(
     })
 }
 
-/// Check if the index exists, creating or overwriting it if necessary
+/// Check if the index exists, creating it if necessary
 ///
 /// If the index exists but without the Lambda source ([`LAMBDA_SOURCE_ID`]),
 /// the source is added.
@@ -162,7 +161,6 @@ pub(super) async fn init_index_if_necessary(
     metastore: &mut MetastoreServiceClient,
     storage_resolver: &StorageResolver,
     default_index_root_uri: &Uri,
-    overwrite: bool,
     source_config: &SourceConfig,
 ) -> anyhow::Result<IndexMetadata> {
     let metadata_result = metastore
@@ -171,23 +169,12 @@ pub(super) async fn init_index_if_necessary(
     let metadata = match metadata_result {
         Ok(metadata_resp) => {
             let current_metadata = metadata_resp.deserialize_index_metadata()?;
-            let mut metadata_changed = false;
-            if overwrite {
-                info!(index_uid = %current_metadata.index_uid, "overwrite enabled, clearing existing index");
-                let mut index_service =
-                    IndexService::new(metastore.clone(), storage_resolver.clone());
-                index_service.clear_index(&INDEX_ID).await?;
-                metadata_changed = true;
-            }
             if !current_metadata.sources.contains_key(LAMBDA_SOURCE_ID) {
                 let add_source_request = AddSourceRequest::try_from_source_config(
                     current_metadata.index_uid.clone(),
                     source_config,
                 )?;
                 metastore.add_source(add_source_request).await?;
-                metadata_changed = true;
-            }
-            if metadata_changed {
                 metastore
                     .index_metadata(IndexMetadataRequest::for_index_id(INDEX_ID.clone()))
                     .await?
