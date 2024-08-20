@@ -305,7 +305,7 @@ pub(super) async fn spawn_pipelines(
 
 /// Prune old Lambda file checkpoints if there are too many
 ///
-/// Without pruning checkpoints accumulate indifinitely. This is particularly
+/// Without pruning checkpoints accumulate indefinitely. This is particularly
 /// problematic when indexing a lot of small files, as the metastore will grow
 /// large even for a small index.
 ///
