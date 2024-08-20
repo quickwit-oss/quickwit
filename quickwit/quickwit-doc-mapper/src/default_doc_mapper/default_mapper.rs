@@ -1697,6 +1697,28 @@ mod tests {
     }
 
     #[test]
+    fn test_concatenate_field_in_default_field() {
+        serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+                "default_search_fields": ["concat"],
+                "field_mappings": [
+                    {
+                        "name": "some_text",
+                        "type": "text"
+                    },
+                    {
+                        "name": "concat",
+                        "type": "concatenate",
+                        "concatenate_fields": ["some_text"]
+                    }
+                ],
+                "mode": "strict"
+            }"#,
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn test_concatenate_field_in_mapping() {
         test_doc_from_json_test_aux(
             r#"{
