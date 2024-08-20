@@ -23,6 +23,7 @@ use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::sync::Arc;
 
+pub(crate) use expression_dsl::parse_field_name;
 use serde_json::Value as JsonValue;
 use siphasher::sip::SipHasher;
 
