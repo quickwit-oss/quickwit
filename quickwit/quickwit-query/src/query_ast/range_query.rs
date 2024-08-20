@@ -245,6 +245,15 @@ impl BuildTantivyAst for RangeQuery {
                     .into();
                     sub_queries.push(str_query);
                 }
+                if sub_queries.is_empty() {
+                    return Err(InvalidQuery::InvalidBoundary {
+                        expected_value_type: "i64, u64, f64, str",
+                        field_name: field_entry.name().to_string(),
+                    });
+                }
+                if sub_queries.len() == 1 {
+                    return Ok(sub_queries.pop().unwrap());
+                }
 
                 let bool_query = TantivyBoolQuery {
                     should: sub_queries,
@@ -406,9 +415,13 @@ mod tests {
             .unwrap();
         assert_eq!(
             format!("{:?}", tantivy_ast),
-            "Leaf(FastFieldRangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=6, \
-             type=Json, path=hello, type=I64, 1980)), upper_bound: Included(Term(field=6, \
-             type=Json, path=hello, type=I64, 1989)) } })"
+            "Bool(TantivyBoolQuery { must: [], must_not: [], should: [Leaf(FastFieldRangeQuery { \
+             bounds: BoundsRange { lower_bound: Included(Term(field=6, type=Json, path=hello, \
+             type=I64, 1980)), upper_bound: Included(Term(field=6, type=Json, path=hello, \
+             type=I64, 1989)) } }), Leaf(FastFieldRangeQuery { bounds: BoundsRange { lower_bound: \
+             Included(Term(field=6, type=Json, path=hello, type=Str, \"1980\")), upper_bound: \
+             Included(Term(field=6, type=Json, path=hello, type=Str, \"1989\")) } })], filter: [] \
+             })"
         );
     }
 
