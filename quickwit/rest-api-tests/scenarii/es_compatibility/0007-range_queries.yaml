@@ -187,3 +187,61 @@ expected:
     total:
       value: 1
       relation: "eq"
+---
+# This field is not a JSON field and doesn not have fast field normalization.
+# That means it is case sensitive
+json:
+  query:
+    range:
+      repo.name:
+        gte: "h"
+        lte: "z"
+expected:
+  hits:
+    total:
+      value: 62
+      relation: "eq"
+---
+# This field is a JSON field and has fast field normalization.
+# That means it is case insensitive
+json:
+  query:
+    range:
+      actor.login:
+        gte: "H" # should automatically be normalized
+        lte: "Z"
+expected:
+  hits:
+    total:
+      value: 68
+      relation: "eq"
+---
+# This field is a JSON field and has fast field normalization.
+# That means it is case insensitive
+json:
+  query:
+    range:
+      actor.login:
+        gte: "h" # should automatically be normalized
+        lte: "z"
+expected:
+  hits:
+    total:
+      value: 68
+      relation: "eq"
+---
+# This field is a JSON field and has fast field normalization.
+# That means it is case insensitive
+json:
+  query:
+    range:
+      actor.login:
+        gte: "H" # should automatically be normalized
+        lte: "Z"
+expected:
+  hits:
+    total:
+      value: 68
+      relation: "eq"
+
+
