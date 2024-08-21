@@ -29,7 +29,8 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::{set_parent_span_from_request_metadata, tonic, GrpcServiceError};
 use quickwit_search::SearchService;
-use tracing::instrument;
+use tracing::{info, instrument};
+use utoipa::openapi::info;
 
 #[derive(Clone)]
 pub struct GrpcSearchAdapter(Arc<dyn SearchService>);
@@ -161,6 +162,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
     ) -> Result<tonic::Response<ReportSplitsResponse>, tonic::Status> {
         set_parent_span_from_request_metadata(request.metadata());
         let get_search_after_context_request = request.into_inner();
+        info!(report_splits_request = ?get_search_after_context_request, "report_splits");
         self.0.report_splits(get_search_after_context_request).await;
         Ok(tonic::Response::new(ReportSplitsResponse {}))
     }

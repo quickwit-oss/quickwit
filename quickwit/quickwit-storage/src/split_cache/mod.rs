@@ -142,6 +142,7 @@ impl SplitCache {
     /// Report the split cache about the existence of new splits.
     pub fn report_splits(&self, report_splits: Vec<ReportSplit>) {
         let mut split_table = self.split_table.lock().unwrap();
+        info!(report_splits = ?report_splits, "Received report of splits.");
         for report_split in report_splits {
             let Ok(split_ulid) = Ulid::from_str(&report_split.split_id) else {
                 error!(split_id=%report_split.split_id, "received invalid split ulid: ignoring");
