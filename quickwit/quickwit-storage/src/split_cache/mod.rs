@@ -141,8 +141,12 @@ impl SplitCache {
 
     /// Report the split cache about the existence of new splits.
     pub fn report_splits(&self, report_splits: Vec<ReportSplit>) {
+        use std::time::Instant;
+        info!(report_splits = ?report_splits.len(), "Received report of splits.");
+        let before = Instant::now();
         let mut split_table = self.split_table.lock().unwrap();
-        info!(report_splits = ?report_splits, "Received report of splits.");
+        let after = Instant::now();
+        info!(duration = ?(after.duration_since(before)),  "lock acquired");
         for report_split in report_splits {
             let Ok(split_ulid) = Ulid::from_str(&report_split.split_id) else {
                 error!(split_id=%report_split.split_id, "received invalid split ulid: ignoring");
@@ -154,18 +158,25 @@ impl SplitCache {
             };
             split_table.report(split_ulid, storage_uri);
         }
+        let end = Instant::now();
+        info!(duration = ?(end.duration_since(after)),  "lock released");
     }
 
     // Returns a split guard object. As long as it is not dropped, the
     // split won't be evinced from the cache.
     async fn get_split_file(&self, split_id: Ulid, storage_uri: &Uri) -> Option<SplitFile> {
+        use std::time::Instant;
         // We touch before even checking the fd cache in order to update the file's last access time
         // for the file cache.
+        info!("locking for read");
+        let before = Instant::now();
         let num_bytes_opt: Option<u64> = self
             .split_table
             .lock()
             .unwrap()
             .touch(split_id, storage_uri);
+        let after = Instant::now();
+        info!(duration = ?(after.duration_since(before)),  "read lock acquired and released");
 
         let num_bytes = num_bytes_opt?;
         self.fd_cache

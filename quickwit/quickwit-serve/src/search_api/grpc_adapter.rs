@@ -30,7 +30,6 @@ use quickwit_proto::search::{
 use quickwit_proto::{set_parent_span_from_request_metadata, tonic, GrpcServiceError};
 use quickwit_search::SearchService;
 use tracing::{info, instrument};
-use utoipa::openapi::info;
 
 #[derive(Clone)]
 pub struct GrpcSearchAdapter(Arc<dyn SearchService>);
