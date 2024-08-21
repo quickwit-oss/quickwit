@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use quickwit_common::split_file;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tracing::info;
 
 use crate::split_cache::split_table::{CandidateSplit, DownloadOpportunity};
 use crate::{SplitCache, StorageResolver};
@@ -79,7 +80,10 @@ pub(crate) fn spawn_download_task(
     let semaphore = Arc::new(Semaphore::new(num_concurrent_downloads.get() as usize));
     tokio::task::spawn(async move {
         loop {
+            let ulid = ulid::Ulid::new();
+            info!(ulid = ?ulid, "Acquire download semaphore.");
             let download_permit = Semaphore::acquire_owned(semaphore.clone()).await.unwrap();
+            info!(ulid = ?ulid, "Acquired download semaphore.");
             let download_opportunity_opt = split_cache
                 .split_table
                 .lock()

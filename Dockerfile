@@ -60,6 +60,10 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
                           libssl3 \
+                          htop \
+                          gdb \
+                          linux-perf \
+                          sudo \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /quickwit

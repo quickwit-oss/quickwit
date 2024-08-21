@@ -26,6 +26,7 @@ use std::sync::{Arc, Mutex};
 
 use tantivy::directory::OwnedBytes;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tracing::info;
 use ulid::Ulid;
 
 use crate::metrics::CacheMetrics;
@@ -134,9 +135,12 @@ impl FileDescriptorCache {
             self.fd_cache_metrics.misses_num_items.inc();
         }
         let split_path = get_split_file_path(root_path, split_id);
+        let ulid = Ulid::new();
+        info!(ulid = ?ulid, split_path = ?split_path, "Acquire fd semaphore.");
         let fd_semaphore_guard = Semaphore::acquire_owned(self.fd_semaphore.clone())
             .await
             .expect("fd_semaphore acquire failed. please report");
+        info!(ulid = ?ulid, split_path = ?split_path, "Acquired fd semaphore.");
         let file: File = tokio::task::spawn_blocking(move || std::fs::File::open(split_path))
             .await
             .map_err(|join_error| {
