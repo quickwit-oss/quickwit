@@ -225,7 +225,7 @@ impl SplitTable {
                 self.on_disk_splits.insert(split_info.split_key)
             }
         };
-        // this is fine to do in an inconsistent state, the last entry will juste be ignored while
+        // this is fine to do in an inconsistent state, the last entry will just be ignored while
         // gcing
         self.gc_downloading_splits_if_necessary();
         assert!(was_not_in_queue);
