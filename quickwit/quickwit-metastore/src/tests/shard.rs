@@ -20,6 +20,7 @@
 use async_trait::async_trait;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_proto::compatibility_shard_update_timestamp;
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AddSourceRequest, CreateIndexRequest, DeleteShardsRequest, EntityKind,
@@ -152,6 +153,9 @@ pub async fn test_metastore_open_shards<
     assert_eq!(shard.follower_id(), "test-ingester-bar");
     assert_eq!(shard.doc_mapping_uid(), DocMappingUid::default(),);
     assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
+    let shard_ts = shard.update_timestamp;
+    assert_ne!(shard_ts, compatibility_shard_update_timestamp());
+    assert_ne!(shard_ts, 0);
     assert!(shard.publish_token.is_none());
 
     // Test open shard #1 is idempotent.
@@ -181,6 +185,7 @@ pub async fn test_metastore_open_shards<
     assert_eq!(shard.leader_id, "test-ingester-foo");
     assert_eq!(shard.follower_id(), "test-ingester-bar");
     assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
+    assert_eq!(shard.update_timestamp, shard_ts);
     assert!(shard.publish_token.is_none());
 
     // Test open shard #2.
@@ -238,6 +243,7 @@ pub async fn test_metastore_acquire_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
             publish_token: Some("test-publish-token-foo".to_string()),
+            update_timestamp: 1724158996,
         },
         Shard {
             index_uid: Some(test_index.index_uid.clone()),
@@ -249,6 +255,7 @@ pub async fn test_metastore_acquire_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
             publish_token: Some("test-publish-token-bar".to_string()),
+            update_timestamp: 1724158996,
         },
         Shard {
             index_uid: Some(test_index.index_uid.clone()),
@@ -260,6 +267,7 @@ pub async fn test_metastore_acquire_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
             publish_token: None,
+            update_timestamp: 1724158996,
         },
         Shard {
             index_uid: Some(test_index.index_uid.clone()),
@@ -271,6 +279,7 @@ pub async fn test_metastore_acquire_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
             publish_token: None,
+            update_timestamp: 1724158996,
         },
     ];
     metastore
@@ -362,6 +371,7 @@ pub async fn test_metastore_list_shards<
                 doc_mapping_uid: Some(DocMappingUid::default()),
                 publish_position_inclusive: Some(Position::Beginning),
                 publish_token: Some("test-publish-token-foo".to_string()),
+                update_timestamp: 1724158996,
             },
             Shard {
                 index_uid: Some(test_index.index_uid.clone()),
@@ -373,6 +383,7 @@ pub async fn test_metastore_list_shards<
                 doc_mapping_uid: Some(DocMappingUid::default()),
                 publish_position_inclusive: Some(Position::Beginning),
                 publish_token: Some("test-publish-token-bar".to_string()),
+                update_timestamp: 1724158997,
             },
         ];
         metastore
@@ -421,6 +432,7 @@ pub async fn test_metastore_list_shards<
         assert_eq!(shard.follower_id(), "test-ingester-bar");
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
         assert_eq!(shard.publish_token(), "test-publish-token-foo");
+        assert_eq!(shard.update_timestamp, 1724158996);
 
         let shard = &subresponse.shards[1];
         assert_eq!(shard.index_uid(), &test_index.index_uid);
@@ -431,6 +443,7 @@ pub async fn test_metastore_list_shards<
         assert_eq!(shard.follower_id(), "test-ingester-qux");
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
         assert_eq!(shard.publish_token(), "test-publish-token-bar");
+        assert_eq!(shard.update_timestamp, 1724158997);
     }
 
     // Test list shards with shard state filter.
@@ -639,6 +652,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
         MetastoreError::NotFound(EntityKind::Shard { .. })
     ));
 
+    let dummy_create_timestamp = 1;
     let shards = vec![Shard {
         index_uid: Some(test_index.index_uid.clone()),
         source_id: test_index.source_id.clone(),
@@ -647,6 +661,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
         doc_mapping_uid: Some(DocMappingUid::default()),
         publish_position_inclusive: Some(Position::Beginning),
         publish_token: Some("test-publish-token-bar".to_string()),
+        update_timestamp: dummy_create_timestamp,
         ..Default::default()
     }];
     metastore
@@ -690,6 +705,10 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
     assert_eq!(
         shards[0].publish_position_inclusive(),
         Position::offset(0u64)
+    );
+    assert!(
+        shards[0].update_timestamp > dummy_create_timestamp,
+        "shard timestamp was not updated"
     );
 
     let index_checkpoint_delta_json = serde_json::to_string(&index_checkpoint_delta).unwrap();
@@ -754,6 +773,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
     )
     .await;
 
+    let dummy_create_timestamp = 1;
     let shards = vec![
         Shard {
             index_uid: Some(test_index.index_uid.clone()),
@@ -763,6 +783,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::offset(0u64)),
             publish_token: Some("test-publish-token-foo".to_string()),
+            update_timestamp: dummy_create_timestamp,
             ..Default::default()
         },
         Shard {
@@ -773,6 +794,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::offset(1u64)),
             publish_token: Some("test-publish-token-foo".to_string()),
+            update_timestamp: dummy_create_timestamp,
             ..Default::default()
         },
         Shard {
@@ -783,6 +805,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::offset(2u64)),
             publish_token: Some("test-publish-token-foo".to_string()),
+            update_timestamp: dummy_create_timestamp,
             ..Default::default()
         },
         Shard {
@@ -793,6 +816,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::offset(3u64)),
             publish_token: Some("test-publish-token-bar".to_string()),
+            update_timestamp: dummy_create_timestamp,
             ..Default::default()
         },
     ];
@@ -850,21 +874,25 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_multi_shards<
     assert_eq!(shard.shard_id(), ShardId::from(0));
     assert_eq!(shard.shard_state(), ShardState::Open);
     assert_eq!(shard.publish_position_inclusive(), Position::offset(10u64));
+    assert!(shard.update_timestamp > dummy_create_timestamp);
 
     let shard = &shards[1];
     assert_eq!(shard.shard_id(), ShardId::from(1));
     assert_eq!(shard.shard_state(), ShardState::Open);
     assert_eq!(shard.publish_position_inclusive(), Position::offset(11u64));
+    assert!(shard.update_timestamp > dummy_create_timestamp);
 
     let shard = &shards[2];
     assert_eq!(shard.shard_id(), ShardId::from(2));
     assert_eq!(shard.shard_state(), ShardState::Closed);
     assert_eq!(shard.publish_position_inclusive(), Position::eof(12u64));
+    assert!(shard.update_timestamp > dummy_create_timestamp);
 
     let shard = &shards[3];
     assert_eq!(shard.shard_id(), ShardId::from(3));
     assert_eq!(shard.shard_state(), ShardState::Open);
     assert_eq!(shard.publish_position_inclusive(), Position::offset(3u64));
+    assert_eq!(shard.update_timestamp, dummy_create_timestamp);
 
     cleanup_index(&mut metastore, test_index.index_uid).await;
 }

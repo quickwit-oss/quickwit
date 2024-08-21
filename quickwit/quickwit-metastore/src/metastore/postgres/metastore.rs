@@ -261,7 +261,8 @@ async fn try_apply_delta_v2(
                 shards
             SET
                 publish_position_inclusive = new_positions.position,
-                shard_state = CASE WHEN new_positions.position LIKE '~%' THEN 'closed' ELSE shards.shard_state END
+                shard_state = CASE WHEN new_positions.position LIKE '~%' THEN 'closed' ELSE shards.shard_state END,
+                update_timestamp = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
             FROM
                 UNNEST($3, $4)
                 AS new_positions(shard_id, position)
@@ -1794,16 +1795,37 @@ mod tests {
             const INSERT_SHARD_QUERY: &str = include_str!("queries/shards/insert.sql");
 
             for shard in shards {
+                assert_eq!(&shard.source_id, source_id);
+                assert_eq!(shard.index_uid(), index_uid);
+                // explicit destructuring to ensure new fields are properly handled
+                let Shard {
+                    doc_mapping_uid,
+                    follower_id,
+                    index_uid,
+                    leader_id,
+                    publish_position_inclusive,
+                    publish_token,
+                    shard_id,
+                    shard_state,
+                    source_id,
+                    update_timestamp,
+                } = shard;
+                let shard_state_name = ShardState::from_i32(shard_state)
+                    .unwrap()
+                    .as_json_str_name();
+                let update_timestamp = OffsetDateTime::from_unix_timestamp(update_timestamp)
+                    .expect("Bad timestamp format");
                 sqlx::query(INSERT_SHARD_QUERY)
                     .bind(index_uid)
                     .bind(source_id)
-                    .bind(shard.shard_id())
-                    .bind(shard.shard_state().as_json_str_name())
-                    .bind(&shard.leader_id)
-                    .bind(&shard.follower_id)
-                    .bind(shard.doc_mapping_uid)
-                    .bind(&shard.publish_position_inclusive().to_string())
-                    .bind(&shard.publish_token)
+                    .bind(shard_id.unwrap())
+                    .bind(shard_state_name)
+                    .bind(leader_id)
+                    .bind(follower_id)
+                    .bind(doc_mapping_uid)
+                    .bind(publish_position_inclusive.unwrap().to_string())
+                    .bind(publish_token)
+                    .bind(update_timestamp)
                     .execute(&self.connection_pool)
                     .await
                     .unwrap();
