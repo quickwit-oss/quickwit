@@ -206,9 +206,8 @@ impl SplitTable {
     fn insert(&mut self, split_info: SplitInfo) {
         let was_not_in_queue = match split_info.status {
             Status::Candidate { .. } => {
-                let was_not_in_queue = self.candidate_splits.insert(split_info.split_key);
                 self.truncate_candidate_list();
-                was_not_in_queue
+                self.candidate_splits.insert(split_info.split_key)
             }
             Status::Downloading { .. } => self.downloading_splits.insert(split_info.split_key),
             Status::OnDisk { num_bytes } => {
@@ -323,7 +322,7 @@ impl SplitTable {
 
     /// Make sure we have at most `MAX_CANDIDATES` candidate splits.
     fn truncate_candidate_list(&mut self) {
-        while self.candidate_splits.len() > MAX_NUM_CANDIDATES {
+        while self.candidate_splits.len() >= MAX_NUM_CANDIDATES {
             let worst_candidate = self.candidate_splits.first().unwrap().split_ulid;
             self.remove(worst_candidate);
         }
