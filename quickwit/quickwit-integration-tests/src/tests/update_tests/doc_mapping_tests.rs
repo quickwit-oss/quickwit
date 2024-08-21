@@ -229,7 +229,6 @@ async fn test_update_doc_mapping_json_to_text() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_update_doc_mapping_json_to_object() {
     let index_id = "update-json-to-object";
     let original_doc_mappings = json!({
@@ -251,6 +250,54 @@ async fn test_update_doc_mapping_json_to_object() {
                     {"name": "field2", "type": "text"},
                 ]
             }
+        ]
+    });
+    let ingest_after_update = &[
+        json!({"body": {"field1": "hola"}}),
+        json!({"body": {"field2": "mundo"}}),
+    ];
+    validate_search_across_doc_mapping_updates(
+        index_id,
+        original_doc_mappings,
+        ingest_before_update,
+        updated_doc_mappings,
+        ingest_after_update,
+        &[
+            (
+                "body.field1:hello",
+                Ok(&[json!({"body": {"field1": "hello"}})]),
+            ),
+            (
+                "body.field1:hola",
+                Ok(&[json!({"body": {"field1": "hola"}})]),
+            ),
+        ],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_update_doc_mapping_object_to_json() {
+    let index_id = "update-json-to-object";
+    let original_doc_mappings = json!({
+        "field_mappings": [
+            {
+                "name": "body",
+                "type": "object",
+                "field_mappings": [
+                    {"name": "field1", "type": "text"},
+                    {"name": "field2", "type": "text"},
+                ]
+            }
+        ]
+    });
+    let ingest_before_update = &[
+        json!({"body": {"field1": "hello"}}),
+        json!({"body": {"field2": "world"}}),
+    ];
+    let updated_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "json"}
         ]
     });
     let ingest_after_update = &[
@@ -448,7 +495,6 @@ async fn test_update_doc_mapping_unindexed_to_indexed() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_update_doc_mapping_strict_to_dynamic() {
     let index_id = "update-strict-to-dynamic";
     let original_doc_mappings = json!({
