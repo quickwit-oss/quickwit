@@ -49,6 +49,7 @@ pub struct UserInputQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_fields: Option<Vec<String>>,
     pub default_operator: BooleanOperand,
+    pub lenient: bool,
 }
 
 impl UserInputQuery {
@@ -73,7 +74,12 @@ impl UserInputQuery {
             BooleanOperand::And => Occur::Must,
             BooleanOperand::Or => Occur::Should,
         };
-        convert_user_input_ast_to_query_ast(user_input_ast, default_occur, search_fields)
+        convert_user_input_ast_to_query_ast(
+            user_input_ast,
+            default_occur,
+            search_fields,
+            self.lenient,
+        )
     }
 }
 
@@ -99,6 +105,7 @@ fn convert_user_input_ast_to_query_ast(
     user_input_ast: UserInputAst,
     default_occur: Occur,
     default_search_fields: &[String],
+    lenient: bool,
 ) -> anyhow::Result<QueryAst> {
     match user_input_ast {
         UserInputAst::Clause(clause) => {
@@ -108,6 +115,7 @@ fn convert_user_input_ast_to_query_ast(
                     sub_ast,
                     default_occur,
                     default_search_fields,
+                    lenient,
                 )?;
                 let children_ast_for_occur: &mut Vec<QueryAst> =
                     match occur_opt.unwrap_or(default_occur) {
@@ -121,7 +129,7 @@ fn convert_user_input_ast_to_query_ast(
         }
         UserInputAst::Leaf(leaf) => match *leaf {
             UserInputLeaf::Literal(literal) => {
-                convert_user_input_literal(literal, default_search_fields)
+                convert_user_input_literal(literal, default_search_fields, lenient)
             }
             UserInputLeaf::All => Ok(QueryAst::MatchAll),
             UserInputLeaf::Range {
@@ -178,6 +186,7 @@ fn convert_user_input_ast_to_query_ast(
                 *underlying,
                 default_occur,
                 default_search_fields,
+                lenient,
             )?;
             let boost: NotNaNf32 = (boost as f32)
                 .try_into()
@@ -218,6 +227,7 @@ fn is_wildcard(phrase: &str) -> bool {
 fn convert_user_input_literal(
     user_input_literal: UserInputLiteral,
     default_search_fields: &[String],
+    lenient: bool,
 ) -> anyhow::Result<QueryAst> {
     let UserInputLiteral {
         field_name,
@@ -272,6 +282,7 @@ fn convert_user_input_literal(
                     field: field_name,
                     text: phrase.clone(),
                     params: full_text_params.clone(),
+                    lenient,
                 }
                 .into()
             }
@@ -303,6 +314,7 @@ mod tests {
             user_text: "hello".to_string(),
             default_fields: None,
             default_operator: BooleanOperand::And,
+            lenient: false,
         };
         let schema = tantivy::schema::Schema::builder().build();
         {
@@ -336,6 +348,7 @@ mod tests {
                 user_text: "hello".to_string(),
                 default_fields: None,
                 default_operator: BooleanOperand::And,
+                lenient: false,
             }
             .parse_user_query(&[])
             .unwrap_err();
@@ -349,6 +362,7 @@ mod tests {
                 user_text: "hello".to_string(),
                 default_fields: Some(Vec::new()),
                 default_operator: BooleanOperand::And,
+                lenient: false,
             }
             .parse_user_query(&[])
             .unwrap_err();
@@ -365,6 +379,7 @@ mod tests {
             user_text: "hello".to_string(),
             default_fields: None,
             default_operator: BooleanOperand::And,
+            lenient: false,
         }
         .parse_user_query(&["defaultfield".to_string()])
         .unwrap();
@@ -385,6 +400,7 @@ mod tests {
             user_text: "field:\"hello\"*".to_string(),
             default_fields: None,
             default_operator: BooleanOperand::And,
+            lenient: false,
         }
         .parse_user_query(&[])
         .unwrap();
@@ -406,6 +422,7 @@ mod tests {
             user_text: "hello".to_string(),
             default_fields: Some(vec!["defaultfield".to_string()]),
             default_operator: BooleanOperand::And,
+            lenient: false,
         }
         .parse_user_query(&["defaultfieldweshouldignore".to_string()])
         .unwrap();
@@ -426,6 +443,7 @@ mod tests {
             user_text: "hello".to_string(),
             default_fields: Some(vec!["fielda".to_string(), "fieldb".to_string()]),
             default_operator: BooleanOperand::And,
+            lenient: false,
         }
         .parse_user_query(&["defaultfieldweshouldignore".to_string()])
         .unwrap();
@@ -441,6 +459,7 @@ mod tests {
             user_text: "myfield:hello".to_string(),
             default_fields: Some(vec!["fieldtoignore".to_string()]),
             default_operator: BooleanOperand::And,
+            lenient: false,
         }
         .parse_user_query(&["fieldtoignore".to_string()])
         .unwrap();
@@ -462,6 +481,7 @@ mod tests {
                 user_text: query.to_string(),
                 default_fields: None,
                 default_operator: BooleanOperand::Or,
+                lenient: false,
             }
             .parse_user_query(&[])
             .unwrap();

@@ -48,6 +48,7 @@ impl ConvertibleToQueryAst for MatchBoolPrefixQuery {
             field: self.field,
             text: self.params.query,
             params: full_text_params,
+            lenient: self.params.lenient,
         }))
     }
 }

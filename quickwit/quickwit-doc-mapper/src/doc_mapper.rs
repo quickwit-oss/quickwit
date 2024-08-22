@@ -361,6 +361,7 @@ mod tests {
             user_text: "json_field.toto.titi:hello".to_string(),
             default_fields: None,
             default_operator: BooleanOperand::And,
+            lenient: false,
         }
         .parse_user_query(&[])
         .unwrap();

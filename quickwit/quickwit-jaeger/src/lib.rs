@@ -1168,7 +1168,8 @@ mod tests {
                 quickwit_query::query_ast::UserInputQuery {
                     user_text: "query".to_string(),
                     default_fields: None,
-                    default_operator: quickwit_query::BooleanOperand::And
+                    default_operator: quickwit_query::BooleanOperand::And,
+                    lenient: false,
                 }
                 .into()
             );

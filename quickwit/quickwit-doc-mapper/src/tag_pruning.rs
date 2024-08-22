@@ -398,6 +398,7 @@ mod test {
             user_text: user_query.to_string(),
             default_fields: None,
             default_operator: BooleanOperand::Or,
+            lenient: false,
         }
         .into();
         let parsed_query_ast = query_ast.parse_user_query(&[]).unwrap();
