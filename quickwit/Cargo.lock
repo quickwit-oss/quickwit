@@ -403,9 +403,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-kinesis"
-version = "1.36.0"
+version = "1.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9eb6e80dd9b470523e0917a9a56302347fb464c46718c215d243638d52ea834b"
+checksum = "65b4929e7c3bcb3a453129c74e116d0d5fec37d10bc019499ad8bcb8191a7f48"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
