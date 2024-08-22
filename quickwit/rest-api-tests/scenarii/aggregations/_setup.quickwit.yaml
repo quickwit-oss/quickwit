@@ -25,6 +25,9 @@ json:
           - rfc3339
         fast_precision: seconds
         fast: true
+      - name: high_prec_test
+        type: u64
+        fast: true
     store_document_size: true
 ---
 # Create empty index
@@ -64,7 +67,7 @@ endpoint: aggregations/ingest
 params:
   commit: force
 ndjson:
-  - {"name": "Fritz", "response": 30, "id": 0}
+  - {"name": "Fritz", "high_prec_test": 1769070189829214200, "response": 30, "id": 0}
   - {"name": "Fritz", "response": 30, "id": 0}
   - {"name": "Holger", "response": 30, "id": 4, "date": "2015-02-06T00:00:00Z", "host": "192.168.0.10"}
   - {"name": "Werner", "response": 20, "id": 5, "date": "2015-01-02T00:00:00Z", "host": "192.168.0.10"}

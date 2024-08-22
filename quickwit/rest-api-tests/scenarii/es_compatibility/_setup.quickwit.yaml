@@ -36,6 +36,10 @@ json:
     timestamp_field: created_at
     mode: dynamic
     field_mappings:
+        - name: repo.name
+          type: text
+          fast: true
+          indexed: true
         - name: actor.id
           type: u64
           fast: true

@@ -65,6 +65,10 @@ image:
     pullPolicy: Always
     tag: edge
 
+serviceAccount:
+  create: false
+  name: quickwit-sa
+
 config:
   default_index_root_uri: gs://{BUCKET}/qw-indexes
   metastore_uri: gs://{BUCKET}/qw-indexes
