@@ -16,8 +16,8 @@ expected:
   message:
     $expect: "\"unknown default search field `regular_field`\" in val"
 ---
-# should fail because default search field targets the root
-# of a json field.
+# should fail because default search field targets a sub field of a
+# non-json field
 method: POST
 endpoint: indexes/
 json:
@@ -26,15 +26,15 @@ json:
   doc_mapping:
     mode: dynamic
     field_mappings:
-      - name: inner_json
-        type: json
+      - name: text
+        type: text
   search_settings:
     default_search_fields:
-      - inner_json
+      - text.inner
 status_code: 400
 expected:
   message:
-    $expect: "\"unknown default search field `inner_json`\" in val"
+    $expect: "\"unknown default search field `text.inner`\" in val"
 ---
 # should fail because dynamic field is not indexed.
 method: POST

@@ -190,9 +190,12 @@ impl ObjectUriBatchReader {
         source_progress: &Progress,
         source_type: SourceType,
     ) -> anyhow::Result<BatchBuilder> {
+        let mut batch_builder = BatchBuilder::new(source_type);
+        if self.is_eof {
+            return Ok(batch_builder);
+        }
         let limit_num_bytes = self.current_offset + BATCH_NUM_BYTES_LIMIT as usize;
         let mut new_offset = self.current_offset;
-        let mut batch_builder = BatchBuilder::new(source_type);
         while new_offset < limit_num_bytes {
             if let Some(record) = source_progress
                 .protect_future(self.reader.next_record())

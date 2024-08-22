@@ -38,6 +38,7 @@ impl IndexerEvent {
             IndexerEvent::S3(event) => [
                 "s3://",
                 event.records[0].s3.bucket.name.as_ref().unwrap(),
+                "/",
                 event.records[0].s3.object.key.as_ref().unwrap(),
             ]
             .join(""),

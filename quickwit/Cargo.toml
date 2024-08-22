@@ -277,7 +277,7 @@ zstd = "0.13.0"
 
 aws-config = "1.5.4"
 aws-credential-types = { version = "1.2", features = ["hardcoded-credentials"] }
-aws-sdk-kinesis = "1.36"
+aws-sdk-kinesis = "1.37"
 aws-sdk-s3 = "1.42"
 aws-sdk-sqs = "1.36"
 aws-smithy-async = "1.2"
@@ -325,7 +325,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "3d1c4b3", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "9f81d59", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
