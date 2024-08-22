@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use async_trait::async_trait;
+use itertools::Itertools;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::compatibility_shard_update_timestamp;
@@ -25,9 +26,10 @@ use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AddSourceRequest, CreateIndexRequest, DeleteShardsRequest, EntityKind,
     ListShardsRequest, ListShardsSubrequest, MetastoreError, MetastoreService, OpenShardSubrequest,
-    OpenShardsRequest, PublishSplitsRequest,
+    OpenShardsRequest, PruneShardsRequest, PublishSplitsRequest,
 };
 use quickwit_proto::types::{DocMappingUid, IndexUid, Position, ShardId, SourceId};
+use time::OffsetDateTime;
 
 use super::DefaultForTest;
 use crate::checkpoint::{IndexCheckpointDelta, PartitionId, SourceCheckpointDelta};
@@ -607,6 +609,130 @@ pub async fn test_metastore_delete_shards<
         .await;
 
     assert_eq!(all_shards.len(), 0);
+
+    cleanup_index(&mut metastore, test_index.index_uid).await;
+}
+
+pub async fn test_metastore_prune_shards<
+    MetastoreUnderTest: MetastoreService + MetastoreServiceExt + DefaultForTest + ReadWriteShardsForTest,
+>() {
+    let mut metastore = MetastoreUnderTest::default_for_test().await;
+
+    let test_index = TestIndex::create_index_with_source(
+        &mut metastore,
+        "test-prune-shards",
+        SourceConfig::ingest_v2(),
+    )
+    .await;
+
+    let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+    let oldest_shard_age = 10000u32;
+
+    // Create shards with timestamp intervals of 100s starting from
+    // now_timestamp - oldest_shard_age
+    let shards = (0..100)
+        .map(|shard_id| Shard {
+            index_uid: Some(test_index.index_uid.clone()),
+            source_id: test_index.source_id.clone(),
+            shard_id: Some(ShardId::from(shard_id)),
+            shard_state: ShardState::Closed as i32,
+            doc_mapping_uid: Some(DocMappingUid::default()),
+            publish_position_inclusive: Some(Position::Beginning),
+            update_timestamp: now_timestamp - oldest_shard_age as i64 + shard_id as i64 * 100,
+            ..Default::default()
+        })
+        .collect_vec();
+
+    metastore
+        .insert_shards(&test_index.index_uid, &test_index.source_id, shards)
+        .await;
+
+    // noop prune request
+    {
+        let prune_index_request = PruneShardsRequest {
+            index_uid: Some(test_index.index_uid.clone()),
+            source_id: test_index.source_id.clone(),
+            max_age: None,
+            max_count: None,
+        };
+        let response = metastore.prune_shards(prune_index_request).await.unwrap();
+        assert_eq!(response.index_uid(), &test_index.index_uid);
+        assert_eq!(response.source_id, test_index.source_id);
+        let all_shards = metastore
+            .list_all_shards(&test_index.index_uid, &test_index.source_id)
+            .await;
+        assert_eq!(all_shards.len(), 100);
+    }
+
+    // delete shards 4 last shards with age limit
+    {
+        let prune_index_request = PruneShardsRequest {
+            index_uid: Some(test_index.index_uid.clone()),
+            source_id: test_index.source_id.clone(),
+            max_age: Some(oldest_shard_age - 350),
+            max_count: None,
+        };
+        let response = metastore.prune_shards(prune_index_request).await.unwrap();
+        assert_eq!(response.index_uid(), &test_index.index_uid);
+        assert_eq!(response.source_id, test_index.source_id);
+        let mut all_shards = metastore
+            .list_all_shards(&test_index.index_uid, &test_index.source_id)
+            .await;
+        assert_eq!(all_shards.len(), 96);
+        all_shards.sort_unstable_by_key(|shard| shard.update_timestamp);
+        assert_eq!(all_shards[0].shard_id(), ShardId::from(4));
+        assert_eq!(all_shards[95].shard_id(), ShardId::from(99));
+    }
+
+    // delete 6 more shards with count limit
+    {
+        let prune_index_request = PruneShardsRequest {
+            index_uid: Some(test_index.index_uid.clone()),
+            source_id: test_index.source_id.clone(),
+            max_age: None,
+            max_count: Some(90),
+        };
+        let response = metastore.prune_shards(prune_index_request).await.unwrap();
+        assert_eq!(response.index_uid(), &test_index.index_uid);
+        assert_eq!(response.source_id, test_index.source_id);
+        let mut all_shards = metastore
+            .list_all_shards(&test_index.index_uid, &test_index.source_id)
+            .await;
+        assert_eq!(all_shards.len(), 90);
+        all_shards.sort_unstable_by_key(|shard| shard.update_timestamp);
+        assert_eq!(all_shards[0].shard_id(), ShardId::from(10));
+        assert_eq!(all_shards[89].shard_id(), ShardId::from(99));
+    }
+
+    // age limit is the limiting factor, delete 10 more shards
+    let prune_index_request = PruneShardsRequest {
+        index_uid: Some(test_index.index_uid.clone()),
+        source_id: test_index.source_id.clone(),
+        max_age: Some(oldest_shard_age - 2950),
+        max_count: Some(80),
+    };
+    let response = metastore.prune_shards(prune_index_request).await.unwrap();
+    assert_eq!(response.index_uid(), &test_index.index_uid);
+    assert_eq!(response.source_id, test_index.source_id);
+    let all_shards = metastore
+        .list_all_shards(&test_index.index_uid, &test_index.source_id)
+        .await;
+    assert_eq!(all_shards.len(), 70);
+
+    // count limit is the limiting factor, delete 20 more shards
+    let prune_index_request = PruneShardsRequest {
+        index_uid: Some(test_index.index_uid.clone()),
+        source_id: test_index.source_id.clone(),
+        max_age: Some(oldest_shard_age - 4000),
+        max_count: Some(50),
+    };
+    let response = metastore.prune_shards(prune_index_request).await.unwrap();
+    assert_eq!(response.index_uid(), &test_index.index_uid);
+    assert_eq!(response.source_id, test_index.source_id);
+    let all_shards = metastore
+        .list_all_shards(&test_index.index_uid, &test_index.source_id)
+        .await;
+    assert_eq!(all_shards.len(), 50);
 
     cleanup_index(&mut metastore, test_index.index_uid).await;
 }

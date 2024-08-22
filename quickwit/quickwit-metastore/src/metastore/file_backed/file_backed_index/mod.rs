@@ -36,7 +36,8 @@ use quickwit_config::{
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteTask, EntityKind, ListShardsSubrequest, ListShardsSubresponse,
-    MetastoreError, MetastoreResult, OpenShardSubrequest, OpenShardSubresponse,
+    MetastoreError, MetastoreResult, OpenShardSubrequest, OpenShardSubresponse, PruneShardsRequest,
+    PruneShardsResponse,
 };
 use quickwit_proto::types::{IndexUid, PublishToken, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
@@ -651,6 +652,14 @@ impl FileBackedIndex {
     ) -> MetastoreResult<MutationOccurred<DeleteShardsResponse>> {
         self.get_shards_for_source_mut(&request.source_id)?
             .delete_shards(request)
+    }
+
+    pub(crate) fn prune_shards(
+        &mut self,
+        request: PruneShardsRequest,
+    ) -> MetastoreResult<MutationOccurred<PruneShardsResponse>> {
+        self.get_shards_for_source_mut(&request.source_id)?
+            .prune_shards(request)
     }
 
     pub(crate) fn list_shards(
