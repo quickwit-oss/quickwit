@@ -133,6 +133,12 @@ impl RpcName for AdviseResetShardsRequest {
     }
 }
 
+impl RpcName for PurgeShardsRequest {
+    fn rpc_name() -> &'static str {
+        "purge_shards"
+    }
+}
+
 impl GetOrCreateOpenShardsFailureReason {
     pub fn create_failure(
         &self,

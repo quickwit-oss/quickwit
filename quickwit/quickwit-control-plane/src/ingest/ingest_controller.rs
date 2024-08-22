@@ -30,11 +30,13 @@ use futures::StreamExt;
 use quickwit_actors::Mailbox;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::Progress;
+use quickwit_indexing::source;
 use quickwit_ingest::{IngesterPool, LeaderId, LocalShardsUpdate};
 use quickwit_proto::control_plane::{
-    AdviseResetShardsRequest, AdviseResetShardsResponse, GetOrCreateOpenShardsFailureReason,
-    GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
-    GetOrCreateOpenShardsSuccess,
+    AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneResult,
+    GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsRequest,
+    GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest, GetOrCreateOpenShardsSuccess,
+    PurgeShardsRequest, PurgeShardsResponse,
 };
 use quickwit_proto::ingest::ingester::{
     CloseShardsRequest, CloseShardsResponse, IngesterService, InitShardFailure,
@@ -45,8 +47,8 @@ use quickwit_proto::ingest::{
     Shard, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey, ShardState,
 };
 use quickwit_proto::metastore::{
-    serde_utils, MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,
-    OpenShardsRequest, OpenShardsResponse,
+    serde_utils, DeleteShardsRequest, DeleteShardsResponse, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, OpenShardSubrequest, OpenShardsRequest, OpenShardsResponse,
 };
 use quickwit_proto::types::{IndexUid, NodeId, NodeIdRef, Position, ShardId, SourceUid};
 use rand::rngs::ThreadRng;
@@ -61,7 +63,7 @@ use ulid::Ulid;
 use super::scaling_arbiter::ScalingArbiter;
 use crate::control_plane::ControlPlane;
 use crate::ingest::wait_handle::WaitHandle;
-use crate::model::{ControlPlaneModel, ScalingMode, ShardEntry, ShardStats};
+use crate::model::{self, ControlPlaneModel, ScalingMode, ShardEntry, ShardStats};
 
 const CLOSE_SHARDS_REQUEST_TIMEOUT: Duration = if cfg!(test) {
     Duration::from_millis(50)
@@ -1166,6 +1168,57 @@ impl IngestController {
             }
             closed_shards
         }
+    }
+
+    async fn purge_shards(
+        &self,
+        purge_shards_request: PurgeShardsRequest,
+        model: &mut ControlPlaneModel,
+        progress: &Progress,
+    ) -> ControlPlaneResult<PurgeShardsResponse> {
+        let mut ingester_ids: BTreeSet<NodeId> = BTreeSet::new();
+        let mut per_source_shards_to_purge: HashMap<SourceUid, Vec<ShardId>> = HashMap::new();
+
+        for purge_shards_subrequest in purge_shards_request.subrequests {
+            let ingester_id = NodeId::from(purge_shards_subrequest.ingester_id);
+            ingester_ids.insert(ingester_id);
+
+            for shards in purge_shards_subrequest.shard_ids {
+                let source_uid = SourceUid {
+                    index_uid: shards.index_uid().clone(),
+                    source_id: shards.source_id,
+                };
+                per_source_shards_to_purge
+                    .entry(source_uid)
+                    .or_default()
+                    .extend(shards.shard_ids);
+            }
+        }
+        for (source_uid, shard_ids) in per_source_shards_to_purge {
+            let delete_shards_request = DeleteShardsRequest {
+                index_uid: Some(source_uid.index_uid),
+                source_id: source_uid.source_id,
+                shard_ids,
+                force: true,
+            };
+            let delete_shards_response = match progress
+                .protect_future(self.metastore.delete_shards(delete_shards_request))
+                .await
+            {
+                Ok(delete_shards_response) => delete_shards_response,
+                Err(metastore_error) => {
+                    error!(error=%metastore_error, "failed to purge shards");
+                    continue;
+                }
+            };
+            let source_uid = SourceUid {
+                index_uid: delete_shards_response.index_uid().clone(),
+                source_id: delete_shards_response.source_id,
+            };
+            model.delete_shards(&source_uid, &delete_shards_response.successes);
+        }
+        self.sync_with_ingesters(&ingester_ids, model);
+        Ok(PurgeShardsResponse::default())
     }
 }
 

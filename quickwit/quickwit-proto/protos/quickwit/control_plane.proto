@@ -68,6 +68,9 @@ service ControlPlaneService {
 
   // Asks the control plane whether the shards listed in the request should be deleted or truncated.
   rpc AdviseResetShards(AdviseResetShardsRequest) returns (AdviseResetShardsResponse);
+
+  // Deletes permanently the shards listed in the request from the control plane, metastore, and ingesters.
+  rpc PurgeShards(PurgeShardsRequest) returns (PurgeShardsResponse);
 }
 
 // Shard API
@@ -121,4 +124,17 @@ message AdviseResetShardsRequest {
 message AdviseResetShardsResponse {
   repeated quickwit.ingest.ShardIds shards_to_delete = 1;
   repeated quickwit.ingest.ShardIdPositions shards_to_truncate = 2;
+}
+
+message PurgeShardsRequest {
+  repeated PurgeShardsSubrequest subrequests = 1;
+}
+
+message PurgeShardsSubrequest {
+  string ingester_id = 1;
+  // Restricts the purge to the shards listed in the request. If empty, all shards are purged.
+  repeated quickwit.ingest.ShardIds shard_ids = 2;
+}
+
+message PurgeShardsResponse {
 }

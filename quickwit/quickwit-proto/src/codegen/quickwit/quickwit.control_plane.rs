@@ -76,6 +76,27 @@ pub struct AdviseResetShardsResponse {
     pub shards_to_truncate: ::prost::alloc::vec::Vec<super::ingest::ShardIdPositions>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PurgeShardsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub subrequests: ::prost::alloc::vec::Vec<PurgeShardsSubrequest>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PurgeShardsSubrequest {
+    #[prost(string, tag = "1")]
+    pub ingester_id: ::prost::alloc::string::String,
+    /// Restricts the purge to the shards listed in the request. If empty, all shards are purged.
+    #[prost(message, repeated, tag = "2")]
+    pub shard_ids: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PurgeShardsResponse {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -175,6 +196,11 @@ pub trait ControlPlaneService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse>;
+    /// Deletes permanently the shards listed in the request from the control plane, metastore, and ingesters.
+    async fn purge_shards(
+        &self,
+        request: PurgeShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<PurgeShardsResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct ControlPlaneServiceClient {
@@ -319,6 +345,12 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
         self.inner.0.advise_reset_shards(request).await
     }
+    async fn purge_shards(
+        &self,
+        request: PurgeShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<PurgeShardsResponse> {
+        self.inner.0.purge_shards(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_control_plane_service {
@@ -390,6 +422,12 @@ pub mod mock_control_plane_service {
             request: super::AdviseResetShardsRequest,
         ) -> crate::control_plane::ControlPlaneResult<super::AdviseResetShardsResponse> {
             self.inner.lock().await.advise_reset_shards(request).await
+        }
+        async fn purge_shards(
+            &self,
+            request: super::PurgeShardsRequest,
+        ) -> crate::control_plane::ControlPlaneResult<super::PurgeShardsResponse> {
+            self.inner.lock().await.purge_shards(request).await
         }
     }
 }
@@ -530,6 +568,22 @@ impl tower::Service<AdviseResetShardsRequest> for InnerControlPlaneServiceClient
         Box::pin(fut)
     }
 }
+impl tower::Service<PurgeShardsRequest> for InnerControlPlaneServiceClient {
+    type Response = PurgeShardsResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: PurgeShardsRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.purge_shards(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct ControlPlaneServiceTowerServiceStack {
@@ -573,6 +627,11 @@ struct ControlPlaneServiceTowerServiceStack {
     advise_reset_shards_svc: quickwit_common::tower::BoxService<
         AdviseResetShardsRequest,
         AdviseResetShardsResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    purge_shards_svc: quickwit_common::tower::BoxService<
+        PurgeShardsRequest,
+        PurgeShardsResponse,
         crate::control_plane::ControlPlaneError,
     >,
 }
@@ -629,6 +688,12 @@ impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
         self.advise_reset_shards_svc.clone().ready().await?.call(request).await
+    }
+    async fn purge_shards(
+        &self,
+        request: PurgeShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<PurgeShardsResponse> {
+        self.purge_shards_svc.clone().ready().await?.call(request).await
     }
 }
 type CreateIndexLayer = quickwit_common::tower::BoxLayer<
@@ -711,6 +776,16 @@ type AdviseResetShardsLayer = quickwit_common::tower::BoxLayer<
     AdviseResetShardsResponse,
     crate::control_plane::ControlPlaneError,
 >;
+type PurgeShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        PurgeShardsRequest,
+        PurgeShardsResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    PurgeShardsRequest,
+    PurgeShardsResponse,
+    crate::control_plane::ControlPlaneError,
+>;
 #[derive(Debug, Default)]
 pub struct ControlPlaneServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
@@ -721,6 +796,7 @@ pub struct ControlPlaneServiceTowerLayerStack {
     delete_source_layers: Vec<DeleteSourceLayer>,
     get_or_create_open_shards_layers: Vec<GetOrCreateOpenShardsLayer>,
     advise_reset_shards_layers: Vec<AdviseResetShardsLayer>,
+    purge_shards_layers: Vec<PurgeShardsLayer>,
 }
 impl ControlPlaneServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -939,6 +1015,31 @@ impl ControlPlaneServiceTowerLayerStack {
                 crate::control_plane::ControlPlaneError,
             >,
         >>::Service as tower::Service<AdviseResetShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    PurgeShardsRequest,
+                    PurgeShardsResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                PurgeShardsRequest,
+                PurgeShardsResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                PurgeShardsRequest,
+                Response = PurgeShardsResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                PurgeShardsRequest,
+                PurgeShardsResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<PurgeShardsRequest>>::Future: Send + 'static,
     {
         self.create_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -955,6 +1056,8 @@ impl ControlPlaneServiceTowerLayerStack {
         self.get_or_create_open_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.advise_reset_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.purge_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -1126,6 +1229,25 @@ impl ControlPlaneServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_purge_shards_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    PurgeShardsRequest,
+                    PurgeShardsResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                PurgeShardsRequest,
+                Response = PurgeShardsResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<PurgeShardsRequest>>::Future: Send + 'static,
+    {
+        self.purge_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn build<T>(self, instance: T) -> ControlPlaneServiceClient
     where
         T: ControlPlaneService,
@@ -1249,6 +1371,14 @@ impl ControlPlaneServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let purge_shards_svc = self
+            .purge_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = ControlPlaneServiceTowerServiceStack {
             inner: inner_client,
             create_index_svc,
@@ -1259,6 +1389,7 @@ impl ControlPlaneServiceTowerLayerStack {
             delete_source_svc,
             get_or_create_open_shards_svc,
             advise_reset_shards_svc,
+            purge_shards_svc,
         };
         ControlPlaneServiceClient::new(tower_svc_stack)
     }
@@ -1406,6 +1537,15 @@ where
                 AdviseResetShardsResponse,
                 crate::control_plane::ControlPlaneError,
             >,
+        >
+        + tower::Service<
+            PurgeShardsRequest,
+            Response = PurgeShardsResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                PurgeShardsResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
         >,
 {
     async fn create_index(
@@ -1458,6 +1598,12 @@ where
         &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
+        self.clone().call(request).await
+    }
+    async fn purge_shards(
+        &self,
+        request: PurgeShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<PurgeShardsResponse> {
         self.clone().call(request).await
     }
 }
@@ -1611,6 +1757,20 @@ where
                 AdviseResetShardsRequest::rpc_name(),
             ))
     }
+    async fn purge_shards(
+        &self,
+        request: PurgeShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<PurgeShardsResponse> {
+        self.inner
+            .clone()
+            .purge_shards(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                PurgeShardsRequest::rpc_name(),
+            ))
+    }
 }
 #[derive(Debug)]
 pub struct ControlPlaneServiceGrpcServerAdapter {
@@ -1716,6 +1876,17 @@ for ControlPlaneServiceGrpcServerAdapter {
         self.inner
             .0
             .advise_reset_shards(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn purge_shards(
+        &self,
+        request: tonic::Request<PurgeShardsRequest>,
+    ) -> Result<tonic::Response<PurgeShardsResponse>, tonic::Status> {
+        self.inner
+            .0
+            .purge_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2061,6 +2232,37 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Deletes permanently the shards listed in the request from the control plane, metastore, and ingesters.
+        pub async fn purge_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PurgeShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::PurgeShardsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/PurgeShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "PurgeShards",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2133,6 +2335,14 @@ pub mod control_plane_service_grpc_server {
             request: tonic::Request<super::AdviseResetShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::AdviseResetShardsResponse>,
+            tonic::Status,
+        >;
+        /// Deletes permanently the shards listed in the request from the control plane, metastore, and ingesters.
+        async fn purge_shards(
+            &self,
+            request: tonic::Request<super::PurgeShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::PurgeShardsResponse>,
             tonic::Status,
         >;
     }
@@ -2587,6 +2797,52 @@ pub mod control_plane_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = AdviseResetShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/PurgeShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct PurgeShardsSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<super::PurgeShardsRequest>
+                    for PurgeShardsSvc<T> {
+                        type Response = super::PurgeShardsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PurgeShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).purge_shards(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = PurgeShardsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
