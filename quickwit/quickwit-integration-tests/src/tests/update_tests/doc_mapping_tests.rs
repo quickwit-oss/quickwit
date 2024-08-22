@@ -278,7 +278,7 @@ async fn test_update_doc_mapping_json_to_object() {
 
 #[tokio::test]
 async fn test_update_doc_mapping_object_to_json() {
-    let index_id = "update-json-to-object";
+    let index_id = "update-object-to-json";
     let original_doc_mappings = json!({
         "field_mappings": [
             {
