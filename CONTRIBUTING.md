@@ -29,7 +29,7 @@ When you submit a pull request to the project, the CI system runs several verifi
 You will be notified by email from the CI system if any issues are discovered, but if you want to run these checks locally before submitting PR or in order to verify changes you can use the following commands in the root directory:
 1. To verify that all tests are passing, run `make test-all`.
 2. To fix code style and format as well as catch common mistakes run `make fix`. Alternatively, run `make -k test-all docker-compose-down` to tear down the Docker services after running all the tests.
-3. To build docs run `make build-docs`.
+3. To build docs run `make build-rustdoc`.
 
 # Development
 
@@ -58,7 +58,7 @@ Run `make test-all` to run all tests.
 * `make fmt` - runs formatter, this command requires the nightly toolchain to be installed by running `rustup toolchain install nightly`.
 * `make fix` - runs formatter and clippy checks.
 * `make typos` - runs the spellcheck tool over the codebase. (Install by running `cargo install typos-cli`)
-* `make docs` - builds docs.
+* `make doc` - builds docs.
 * `make docker-compose-up` - starts Docker services.
 * `make docker-compose-down` - stops Docker services.
 * `make docker-compose-logs` - shows Docker logs.

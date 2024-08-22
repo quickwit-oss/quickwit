@@ -244,7 +244,11 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
         &mut self,
         phrase_prefix: &'a PhrasePrefixQuery,
     ) -> Result<(), Self::Err> {
-        let (_, terms) = phrase_prefix.get_terms(self.schema, self.tokenizer_manager)?;
+        let terms = match phrase_prefix.get_terms(self.schema, self.tokenizer_manager) {
+            Ok((_, terms)) => terms,
+            Err(InvalidQuery::SchemaError(_)) => return Ok(()), /* the query will be nullified when casting to a tantivy ast */
+            Err(e) => return Err(e),
+        };
         if let Some((_, term)) = terms.last() {
             self.add_prefix_term(term.clone(), phrase_prefix.max_expansions, terms.len() > 1);
         }
