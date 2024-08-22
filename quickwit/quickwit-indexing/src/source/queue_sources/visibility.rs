@@ -40,7 +40,7 @@ pub(super) struct VisibilitySettings {
     pub deadline_for_default_extension: Duration,
     /// Rhe timeout for the visibility extension request
     pub request_timeout: Duration,
-    /// an extra margin that is substracted from the expected deadline when
+    /// an extra margin that is subtracted from the expected deadline when
     /// asserting whether we are still in time to extend the visibility
     pub request_margin: Duration,
 }
