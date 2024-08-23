@@ -183,6 +183,7 @@ macro_rules! metastore_test_suite {
             //  - delete_index
 
             #[tokio::test]
+            #[serial_test::file_serial]
             async fn test_metastore_create_index() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::index::test_metastore_create_index::<$metastore_type>().await;
