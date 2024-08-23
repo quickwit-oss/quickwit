@@ -18,17 +18,17 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context};
 use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::metastore::{
     AcquireShardsRequest, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,
-    OpenShardsRequest,
+    OpenShardsRequest, PruneShardsRequest,
 };
 use quickwit_proto::types::{DocMappingUid, IndexUid, Position, ShardId};
 use time::OffsetDateTime;
-use tracing::info;
+use tracing::{error, info};
 
 use super::message::PreProcessedMessage;
 
@@ -40,9 +40,31 @@ pub struct QueueSharedState {
     /// Duration after which the processing of a shard is considered stale and
     /// should be reacquired
     pub reacquire_grace_period: Duration,
+    pub max_age: Option<u32>,
+    pub max_count: Option<u32>,
+    pub last_pruning: Instant,
+    pub pruning_interval: Duration,
 }
 
 impl QueueSharedState {
+    async fn clean_partitions(&self) {
+        if self.max_count.is_none() && self.max_age.is_none() {
+            return;
+        }
+        let result = self
+            .metastore
+            .prune_shards(PruneShardsRequest {
+                index_uid: Some(self.index_uid.clone()),
+                source_id: self.source_id.clone(),
+                max_age: self.max_age,
+                max_count: self.max_count,
+            })
+            .await;
+        if let Err(err) = result {
+            error!(error = ?err, "failed to prune shards");
+        }
+    }
+
     /// Tries to acquire the ownership for the provided messages from the global
     /// shared context. For each partition id, if the ownership was successfully
     /// acquired or the partition was already successfully indexed, the position
@@ -53,6 +75,9 @@ impl QueueSharedState {
         publish_token: &str,
         partitions: Vec<PartitionId>,
     ) -> anyhow::Result<Vec<(PartitionId, Position)>> {
+        if self.last_pruning.elapsed() > self.pruning_interval {
+            self.clean_partitions().await;
+        }
         let open_shard_subrequests = partitions
             .iter()
             .enumerate()
@@ -294,6 +319,10 @@ pub mod shared_state_for_tests {
             index_uid,
             source_id: "test-queue-src".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
+            last_pruning: Instant::now(),
+            max_age: None,
+            max_count: None,
+            pruning_interval: Duration::from_secs(10),
         }
     }
 }
@@ -345,6 +374,10 @@ mod tests {
             index_uid,
             source_id: "test-sqs-source".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
+            last_pruning: Instant::now(),
+            max_age: None,
+            max_count: None,
+            pruning_interval: Duration::from_secs(10),
         };
 
         let aquired = shared_state
@@ -374,6 +407,10 @@ mod tests {
             index_uid,
             source_id: "test-sqs-source".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
+            last_pruning: Instant::now(),
+            max_age: None,
+            max_count: None,
+            pruning_interval: Duration::from_secs(10),
         };
 
         let acquired = shared_state
@@ -403,6 +440,10 @@ mod tests {
             index_uid,
             source_id: "test-sqs-source".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
+            last_pruning: Instant::now(),
+            max_age: None,
+            max_count: None,
+            pruning_interval: Duration::from_secs(10),
         };
 
         let aquired = shared_state
@@ -436,6 +477,10 @@ mod tests {
             index_uid,
             source_id: "test-sqs-source".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
+            last_pruning: Instant::now(),
+            max_age: None,
+            max_count: None,
+            pruning_interval: Duration::from_secs(10),
         };
 
         let checkpointed_msg = checkpoint_messages(&shared_state, "token1", source_messages)

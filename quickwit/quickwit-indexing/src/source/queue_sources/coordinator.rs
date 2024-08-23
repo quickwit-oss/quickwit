@@ -19,7 +19,7 @@
 
 use std::fmt;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
@@ -105,6 +105,10 @@ impl QueueCoordinator {
                 reacquire_grace_period: Duration::from_secs(
                     2 * source_runtime.indexing_setting.commit_timeout_secs as u64,
                 ),
+                last_pruning: Instant::now(),
+                max_age: None,
+                max_count: None,
+                pruning_interval: Duration::from_secs(60),
             },
             local_state: QueueLocalState::default(),
             pipeline_id: source_runtime.pipeline_id,
