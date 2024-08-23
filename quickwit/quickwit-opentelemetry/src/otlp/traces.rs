@@ -25,13 +25,9 @@ use async_trait::async_trait;
 use prost::Message;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
-use quickwit_config::{
-    load_index_config_from_user_config, ConfigFormat, IndexConfig, INGEST_V2_SOURCE_ID,
-};
-use quickwit_ingest::{CommitType, IngestServiceError, JsonDocBatchV2Builder};
-use quickwit_proto::ingest::router::{
-    IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
-};
+use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
+use quickwit_ingest::{CommitType, JsonDocBatchV2Builder};
+use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
@@ -50,8 +46,8 @@ use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
 use super::{
-    extract_otel_index_id_from_metadata, ingest_failures_to_error, is_zero, OtelSignal,
-    TryFromSpanIdError, TryFromTraceIdError,
+    extract_otel_index_id_from_metadata, is_zero, store_helper, OtelSignal, TryFromSpanIdError,
+    TryFromTraceIdError,
 };
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{extract_attributes, SpanId, TraceId};
@@ -797,22 +793,14 @@ impl OtlpGrpcTracesService {
         index_id: String,
         doc_batch: DocBatchV2,
     ) -> Result<(), tonic::Status> {
-        let subrequest = IngestSubrequest {
-            subrequest_id: 0,
+        store_helper(
+            self.ingest_router.clone(),
             index_id,
-            source_id: INGEST_V2_SOURCE_ID.to_string(),
-            doc_batch: Some(doc_batch),
-        };
-        let request = IngestRequestV2 {
-            commit_type: self.commit_type.into(),
-            subrequests: vec![subrequest],
-        };
-        let response = self
-            .ingest_router
-            .ingest(request)
-            .await
-            .map_err(IngestServiceError::from)?;
-        ingest_failures_to_error(response).map_err(|e| e.into())
+            doc_batch,
+            self.commit_type,
+        )
+        .await?;
+        Ok(())
     }
 
     async fn export_instrumented(

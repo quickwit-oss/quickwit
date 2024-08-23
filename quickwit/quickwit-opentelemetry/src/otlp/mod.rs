@@ -19,9 +19,12 @@
 
 use std::collections::HashMap;
 
-use quickwit_config::{validate_identifier, validate_index_id_pattern};
-use quickwit_ingest::IngestServiceError;
-use quickwit_proto::ingest::router::IngestResponseV2;
+use quickwit_config::{validate_identifier, validate_index_id_pattern, INGEST_V2_SOURCE_ID};
+use quickwit_ingest::{CommitType, IngestServiceError};
+use quickwit_proto::ingest::router::{
+    IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
+};
+use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpValue;
 use quickwit_proto::opentelemetry::proto::common::v1::{
     AnyValue as OtlpAnyValue, ArrayValue as OtlpArrayValue, KeyValue as OtlpKeyValue,
@@ -222,7 +225,26 @@ pub(crate) fn extract_otel_index_id_from_metadata(
     Ok(index_id.to_string())
 }
 
-fn ingest_failures_to_error(mut response: IngestResponseV2) -> Result<(), IngestServiceError> {
+async fn store_helper(
+    ingest_router: IngestRouterServiceClient,
+    index_id: String,
+    doc_batch: DocBatchV2,
+    commit_type: CommitType,
+) -> Result<(), IngestServiceError> {
+    let subrequest = IngestSubrequest {
+        subrequest_id: 0,
+        index_id,
+        source_id: INGEST_V2_SOURCE_ID.to_string(),
+        doc_batch: Some(doc_batch),
+    };
+    let request = IngestRequestV2 {
+        commit_type: commit_type.into(),
+        subrequests: vec![subrequest],
+    };
+    let mut response = ingest_router
+        .ingest(request)
+        .await
+        .map_err(IngestServiceError::from)?;
     let num_responses = response.successes.len() + response.failures.len();
     if num_responses != 1 {
         return Err(IngestServiceError::Internal(format!(
