@@ -66,8 +66,8 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
                 name: span_name,
                 trace_id: vec![1; 16],
                 span_id: vec![2; 8],
-                start_time_unix_nano: 1_000_000_001,
-                end_time_unix_nano: 1_000_000_002,
+                start_time_unix_nano: 1724060143000000001,
+                end_time_unix_nano: 1724060144000000000,
                 ..Default::default()
             }],
             ..Default::default()
@@ -157,7 +157,7 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
 
     fn build_log(body: String) -> Vec<ResourceLogs> {
         let log_record = LogRecord {
-            time_unix_nano: 1_000_000_001,
+            time_unix_nano: 1724060143000000001,
             body: Some(AnyValue {
                 value: Some(Value::StringValue(body)),
             }),
@@ -234,7 +234,6 @@ async fn test_jaeger_api() {
     let export_trace_request = ExportTraceServiceRequest {
         resource_spans: make_resource_spans_for_test(),
     };
-    // let span_count = export_trace_request.resource_spans.len();
     sandbox
         .trace_client
         .export(export_trace_request)
