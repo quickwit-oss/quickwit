@@ -17,11 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
+use futures_util::StreamExt;
 use quickwit_config::service::QuickwitService;
 use quickwit_metastore::SplitState;
-use quickwit_opentelemetry::otlp::{OTEL_LOGS_INDEX_ID, OTEL_TRACES_INDEX_ID};
+use quickwit_opentelemetry::otlp::{
+    make_resource_spans_for_test, OTEL_LOGS_INDEX_ID, OTEL_TRACES_INDEX_ID,
+};
+use quickwit_proto::jaeger::storage::v1::{
+    FindTraceIDsRequest, GetOperationsRequest, GetServicesRequest, GetTraceRequest, Operation,
+    SpansResponseChunk, TraceQueryParameters,
+};
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::ExportLogsServiceRequest;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
 use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value;
@@ -84,7 +91,7 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
         let request = ExportTraceServiceRequest {
             resource_spans: build_span(body.clone()),
         };
-        let response = tested_client.export(request.clone()).await.unwrap();
+        let response = tested_client.export(request).await.unwrap();
         assert_eq!(
             response
                 .into_inner()
@@ -179,7 +186,7 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
         let request = ExportLogsServiceRequest {
             resource_logs: build_log(body.clone()),
         };
-        let response = tested_client.export(request.clone()).await.unwrap();
+        let response = tested_client.export(request).await.unwrap();
         assert_eq!(
             response
                 .into_inner()
@@ -205,5 +212,239 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
         .shutdown_services(&HashSet::from_iter([QuickwitService::Indexer]))
         .await
         .unwrap();
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_jaeger_api() {
+    initialize_tests();
+    let nodes_services = vec![
+        HashSet::from_iter([QuickwitService::Searcher]),
+        HashSet::from_iter([QuickwitService::Metastore]),
+        HashSet::from_iter([QuickwitService::Indexer]),
+        HashSet::from_iter([QuickwitService::ControlPlane]),
+        HashSet::from_iter([QuickwitService::Janitor]),
+    ];
+    let mut sandbox = ClusterSandbox::start_cluster_with_otlp_service(&nodes_services)
+        .await
+        .unwrap();
+    // Wait fo the pipelines to start (one for logs and one for traces)
+    sandbox.wait_for_indexing_pipelines(2).await.unwrap();
+
+    let export_trace_request = ExportTraceServiceRequest {
+        resource_spans: make_resource_spans_for_test(),
+    };
+    // let span_count = export_trace_request.resource_spans.len();
+    sandbox
+        .trace_client
+        .export(export_trace_request)
+        .await
+        .unwrap();
+
+    sandbox
+        .wait_for_splits(OTEL_TRACES_INDEX_ID, Some(vec![SplitState::Published]), 1)
+        .await
+        .unwrap();
+
+    sandbox
+        .shutdown_services(&HashSet::from_iter([QuickwitService::Indexer]))
+        .await
+        .unwrap();
+
+    {
+        // Test `GetServices`
+        let get_services_request = GetServicesRequest {};
+        let get_services_response = sandbox
+            .jaeger_client
+            .get_services(tonic::Request::new(get_services_request))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(get_services_response.services, &["quickwit"]);
+    }
+    {
+        // Test `GetOperations`
+        let get_operations_request = GetOperationsRequest {
+            service: "quickwit".to_string(),
+            span_kind: "".to_string(),
+        };
+        let get_operations_response = sandbox
+            .jaeger_client
+            .get_operations(tonic::Request::new(get_operations_request))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(get_operations_response.operations.len(), 4);
+        assert_eq!(
+            get_operations_response.operations,
+            vec![
+                Operation {
+                    name: "delete_splits".to_string(),
+                    span_kind: "client".to_string(),
+                },
+                Operation {
+                    name: "list_splits".to_string(),
+                    span_kind: "client".to_string(),
+                },
+                Operation {
+                    name: "publish_splits".to_string(),
+                    span_kind: "server".to_string(),
+                },
+                Operation {
+                    name: "stage_splits".to_string(),
+                    span_kind: "internal".to_string(),
+                }
+            ]
+        );
+
+        let get_operations_request = GetOperationsRequest {
+            service: "quickwit".to_string(),
+            span_kind: "server".to_string(),
+        };
+        let get_operations_response = sandbox
+            .jaeger_client
+            .get_operations(tonic::Request::new(get_operations_request))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(get_operations_response.operations.len(), 1);
+        assert_eq!(
+            get_operations_response.operations,
+            vec![Operation {
+                name: "publish_splits".to_string(),
+                span_kind: "server".to_string(),
+            },]
+        );
+    }
+    {
+        // Test `FindTraceIds`
+        // TODO: Increase comprehensiveness of this test.
+        // Search by service and operation name.
+        let query = TraceQueryParameters {
+            service_name: "quickwit".to_string(),
+            operation_name: "stage_splits".to_string(),
+            tags: HashMap::new(),
+            start_time_min: None,
+            start_time_max: None,
+            duration_min: None,
+            duration_max: None,
+            num_traces: 10,
+        };
+        let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
+        let find_trace_ids_response = sandbox
+            .jaeger_client
+            .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(find_trace_ids_response.trace_ids.len(), 1);
+        assert_eq!(find_trace_ids_response.trace_ids[0], [1; 16]);
+
+        // Search by service name, operation name, and span attribute.
+        let query = TraceQueryParameters {
+            service_name: "quickwit".to_string(),
+            operation_name: "list_splits".to_string(),
+            tags: HashMap::from([("span_key".to_string(), "span_value".to_string())]),
+            start_time_min: None,
+            start_time_max: None,
+            duration_min: None,
+            duration_max: None,
+            num_traces: 10,
+        };
+        let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
+        let find_trace_ids_response = sandbox
+            .jaeger_client
+            .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(find_trace_ids_response.trace_ids.len(), 1);
+        assert_eq!(find_trace_ids_response.trace_ids[0], [3; 16]);
+
+        // Search by service name, operation name, and event attribute.
+        let query = TraceQueryParameters {
+            service_name: "quickwit".to_string(),
+            operation_name: "delete_splits".to_string(),
+            tags: HashMap::from([("event_key".to_string(), "event_value".to_string())]),
+            start_time_min: None,
+            start_time_max: None,
+            duration_min: None,
+            duration_max: None,
+            num_traces: 10,
+        };
+        let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
+        let find_trace_ids_response = sandbox
+            .jaeger_client
+            .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(find_trace_ids_response.trace_ids.len(), 1);
+        assert_eq!(find_trace_ids_response.trace_ids[0], [5; 16]);
+
+        // Search traces with an error.
+        let query = TraceQueryParameters {
+            service_name: "quickwit".to_string(),
+            operation_name: "list_splits".to_string(),
+            tags: HashMap::from([("error".to_string(), "true".to_string())]),
+            start_time_min: None,
+            start_time_max: None,
+            duration_min: None,
+            duration_max: None,
+            num_traces: 10,
+        };
+        let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
+        let find_trace_ids_response = sandbox
+            .jaeger_client
+            .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(find_trace_ids_response.trace_ids.len(), 1);
+        assert_eq!(find_trace_ids_response.trace_ids[0], [4; 16]);
+
+        // Search traces without an error.
+        let query = TraceQueryParameters {
+            service_name: "quickwit".to_string(),
+            operation_name: "list_splits".to_string(),
+            tags: HashMap::from([("error".to_string(), "false".to_string())]),
+            start_time_min: None,
+            start_time_max: None,
+            duration_min: None,
+            duration_max: None,
+            num_traces: 10,
+        };
+        let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
+        let find_trace_ids_response = sandbox
+            .jaeger_client
+            .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(find_trace_ids_response.trace_ids.len(), 1);
+        assert_eq!(find_trace_ids_response.trace_ids[0], [3; 16]);
+    }
+    {
+        // Test `GetTrace`
+        let get_trace_request = GetTraceRequest {
+            trace_id: [1; 16].to_vec(),
+        };
+        let mut span_stream = sandbox
+            .jaeger_client
+            .get_trace(tonic::Request::new(get_trace_request))
+            .await
+            .unwrap()
+            .into_inner();
+        let SpansResponseChunk { spans } = span_stream.next().await.unwrap().unwrap();
+        assert_eq!(spans.len(), 1);
+
+        let span: &quickwit_proto::jaeger::api_v2::Span = &spans[0];
+        assert_eq!(span.operation_name, "stage_splits");
+
+        let process = span.process.as_ref().unwrap();
+        assert_eq!(process.tags.len(), 1);
+        assert_eq!(process.tags[0].key, "tags");
+        assert_eq!(process.tags[0].v_str, r#"["foo"]"#);
+    }
     sandbox.shutdown().await.unwrap();
 }

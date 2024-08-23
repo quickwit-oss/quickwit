@@ -37,6 +37,7 @@ use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_metastore::{MetastoreResolver, SplitState};
+use quickwit_proto::jaeger::storage::v1::span_reader_plugin_client::SpanReaderPluginClient;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_client::LogsServiceClient;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_client::TraceServiceClient;
 use quickwit_proto::types::NodeId;
@@ -119,6 +120,7 @@ pub struct ClusterSandbox {
     pub indexer_rest_client: QuickwitClient,
     pub trace_client: TraceServiceClient<tonic::transport::Channel>,
     pub logs_client: LogsServiceClient<tonic::transport::Channel>,
+    pub jaeger_client: SpanReaderPluginClient<tonic::transport::Channel>,
     _temp_dir: TempDir,
     node_shutdown_handle: Vec<NodeShutdownHandle>,
 }
@@ -224,9 +226,15 @@ impl ClusterSandbox {
             // is formed.
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        let channel = channel::Endpoint::from_str(&format!(
+        let indexer_channel = channel::Endpoint::from_str(&format!(
             "http://{}",
             indexer_config.node_config.grpc_listen_addr
+        ))
+        .unwrap()
+        .connect_lazy();
+        let searcher_channel = channel::Endpoint::from_str(&format!(
+            "http://{}",
+            searcher_config.node_config.grpc_listen_addr
         ))
         .unwrap()
         .connect_lazy();
@@ -240,8 +248,9 @@ impl ClusterSandbox {
                 indexer_config.node_config.rest_config.listen_addr,
             ))
             .build(),
-            trace_client: TraceServiceClient::new(channel.clone()),
-            logs_client: LogsServiceClient::new(channel),
+            trace_client: TraceServiceClient::new(indexer_channel.clone()),
+            logs_client: LogsServiceClient::new(indexer_channel),
+            jaeger_client: SpanReaderPluginClient::new(searcher_channel),
             _temp_dir: temp_dir,
             node_shutdown_handle: node_shutdown_handlers,
         })
@@ -521,6 +530,7 @@ pub fn build_node_configs(
     for (node_idx, node_services) in nodes_services.iter().enumerate() {
         let mut config = NodeConfig::for_test();
         config.enabled_services.clone_from(node_services);
+        config.jaeger_config.enable_endpoint = true;
         config.cluster_id.clone_from(&cluster_id);
         config.node_id = NodeId::new(format!("test-node-{node_idx}"));
         config.data_dir_path = root_data_dir.join(config.node_id.as_str());
