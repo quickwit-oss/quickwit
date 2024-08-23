@@ -141,21 +141,23 @@ impl DocBatchV2Builder {
         };
         Some(doc_batch)
     }
-
-    pub fn json_writer(self) -> JsonDocBatchV2Builder {
-        JsonDocBatchV2Builder {
-            doc_uids: self.doc_uids,
-            doc_buffer: self.doc_buffer.writer(),
-            doc_lengths: self.doc_lengths,
-        }
-    }
 }
 
-/// Wrapper around the batch builder that can add Serialize structs without an extra copy
+/// Batch builder that can append [`Serialize`] structs without an extra copy
 pub struct JsonDocBatchV2Builder {
     doc_uids: Vec<DocUid>,
     doc_buffer: Writer<BytesMut>,
     doc_lengths: Vec<u32>,
+}
+
+impl Default for JsonDocBatchV2Builder {
+    fn default() -> Self {
+        Self {
+            doc_uids: Vec::new(),
+            doc_buffer: BytesMut::new().writer(),
+            doc_lengths: Vec::new(),
+        }
+    }
 }
 
 impl JsonDocBatchV2Builder {
@@ -169,10 +171,10 @@ impl JsonDocBatchV2Builder {
         Ok(())
     }
 
-    pub fn into_inner(self) -> DocBatchV2Builder {
-        DocBatchV2Builder {
+    pub fn build(self) -> DocBatchV2 {
+        DocBatchV2 {
             doc_uids: self.doc_uids,
-            doc_buffer: self.doc_buffer.into_inner(),
+            doc_buffer: self.doc_buffer.into_inner().freeze(),
             doc_lengths: self.doc_lengths,
         }
     }

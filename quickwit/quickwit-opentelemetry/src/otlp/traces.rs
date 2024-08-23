@@ -28,7 +28,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::{
     load_index_config_from_user_config, ConfigFormat, IndexConfig, INGEST_V2_SOURCE_ID,
 };
-use quickwit_ingest::{CommitType, DocBatchV2Builder, IngestServiceError};
+use quickwit_ingest::{CommitType, IngestServiceError, JsonDocBatchV2Builder};
 use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
 };
@@ -766,7 +766,7 @@ impl OtlpGrpcTracesService {
         let mut num_parse_errors = 0;
         let mut error_message = String::new();
 
-        let mut doc_batch_builder = DocBatchV2Builder::default().json_writer();
+        let mut doc_batch_builder = JsonDocBatchV2Builder::default();
         let mut doc_uid_generator = DocUidGenerator::default();
         for span in spans {
             let doc_uid = doc_uid_generator.next_doc_uid();
@@ -776,12 +776,7 @@ impl OtlpGrpcTracesService {
                 num_parse_errors += 1;
             }
         }
-        let doc_batch_opt = doc_batch_builder.into_inner().build();
-        let doc_batch = if let Some(doc_batch) = doc_batch_opt {
-            doc_batch
-        } else {
-            DocBatchV2::default()
-        };
+        let doc_batch = doc_batch_builder.build();
         let current_span = RuntimeSpan::current();
         current_span.record("num_spans", num_spans);
         current_span.record("num_bytes", doc_batch.num_bytes());
