@@ -25,15 +25,19 @@ use prost::Message;
 use quickwit_common::rate_limited_error;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
-use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
-use quickwit_ingest::{
-    CommitType, DocBatch, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
+use quickwit_config::{
+    load_index_config_from_user_config, ConfigFormat, IndexConfig, INGEST_V2_SOURCE_ID,
 };
+use quickwit_ingest::{CommitType, DocBatchV2Builder, IngestServiceError};
+use quickwit_proto::ingest::router::{
+    IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
+};
+use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsService;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::{
     ExportLogsPartialSuccess, ExportLogsServiceRequest, ExportLogsServiceResponse,
 };
-use quickwit_proto::types::IndexId;
+use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tonic::{Request, Response, Status};
@@ -41,8 +45,8 @@ use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
 use super::{
-    extract_otel_index_id_from_metadata, is_zero, parse_log_record_body, OtelSignal, SpanId,
-    TraceId, TryFromSpanIdError, TryFromTraceIdError,
+    extract_otel_index_id_from_metadata, ingest_failures_to_error, is_zero, parse_log_record_body,
+    OtelSignal, SpanId, TraceId, TryFromSpanIdError, TryFromTraceIdError,
 };
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
@@ -226,7 +230,7 @@ impl PartialEq for OrdLogRecord {
 impl Eq for OrdLogRecord {}
 
 struct ParsedLogRecords {
-    doc_batch: DocBatch,
+    doc_batch: DocBatchV2,
     num_log_records: u64,
     num_parse_errors: u64,
     error_message: String,
@@ -234,12 +238,12 @@ struct ParsedLogRecords {
 
 #[derive(Clone)]
 pub struct OtlpGrpcLogsService {
-    ingest_service: IngestServiceClient,
+    ingest_router: IngestRouterServiceClient,
 }
 
 impl OtlpGrpcLogsService {
-    pub fn new(ingest_service: IngestServiceClient) -> Self {
-        Self { ingest_service }
+    pub fn new(ingest_router: IngestRouterServiceClient) -> Self {
+        Self { ingest_router }
     }
 
     pub fn index_config(default_index_root_uri: &Uri) -> anyhow::Result<IndexConfig> {
@@ -265,7 +269,7 @@ impl OtlpGrpcLogsService {
             error_message,
         } = run_cpu_intensive({
             let parent_span = RuntimeSpan::current();
-            || Self::parse_logs(request, parent_span, index_id)
+            || Self::parse_logs(request, parent_span)
         })
         .await
         .map_err(|join_error| {
@@ -276,7 +280,7 @@ impl OtlpGrpcLogsService {
             return Err(tonic::Status::internal(error_message));
         }
         let num_bytes = doc_batch.num_bytes() as u64;
-        self.store_logs(doc_batch).await?;
+        self.store_logs(index_id, doc_batch).await?;
 
         OTLP_SERVICE_METRICS
             .ingested_log_records_total
@@ -301,21 +305,27 @@ impl OtlpGrpcLogsService {
     fn parse_logs(
         request: ExportLogsServiceRequest,
         parent_span: RuntimeSpan,
-        index_id: IndexId,
     ) -> Result<ParsedLogRecords, Status> {
         let (log_records, mut num_parse_errors) = parse_otlp_logs(request)?;
         let num_log_records = log_records.len() as u64;
         let mut error_message = String::new();
 
-        let mut doc_batch = DocBatchBuilder::new(index_id).json_writer();
+        let mut doc_batch_builder = DocBatchV2Builder::default().json_writer();
+        let mut doc_uid_generator = DocUidGenerator::default();
         for log_record in log_records {
-            if let Err(error) = doc_batch.ingest_doc(&log_record.0) {
+            let doc_uid = doc_uid_generator.next_doc_uid();
+            if let Err(error) = doc_batch_builder.add_doc(doc_uid, log_record.0) {
                 error!(error=?error, "failed to JSON serialize span");
                 error_message = format!("failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
             }
         }
-        let doc_batch = doc_batch.build();
+        let doc_batch_opt = doc_batch_builder.into_inner().build();
+        let doc_batch = if let Some(doc_batch) = doc_batch_opt {
+            doc_batch
+        } else {
+            DocBatchV2::default()
+        };
         let current_span = RuntimeSpan::current();
         current_span.record("num_log_records", num_log_records);
         current_span.record("num_bytes", doc_batch.num_bytes());
@@ -331,13 +341,27 @@ impl OtlpGrpcLogsService {
     }
 
     #[instrument(skip_all, fields(num_bytes = doc_batch.num_bytes()))]
-    async fn store_logs(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
-        let ingest_request = IngestRequest {
-            doc_batches: vec![doc_batch],
-            commit: CommitType::Auto.into(),
+    async fn store_logs(
+        &mut self,
+        index_id: String,
+        doc_batch: DocBatchV2,
+    ) -> Result<(), tonic::Status> {
+        let subrequest = IngestSubrequest {
+            subrequest_id: 0,
+            index_id,
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
+            doc_batch: Some(doc_batch),
         };
-        self.ingest_service.ingest(ingest_request).await?;
-        Ok(())
+        let request = IngestRequestV2 {
+            commit_type: CommitType::Auto.into(),
+            subrequests: vec![subrequest],
+        };
+        let response = self
+            .ingest_router
+            .ingest(request)
+            .await
+            .map_err(|e| IngestServiceError::from(e))?;
+        ingest_failures_to_error(response).map_err(|e| e.into())
     }
 
     async fn export_instrumented(

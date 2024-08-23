@@ -41,6 +41,7 @@ use std::time::Duration;
 use std::{env, fmt};
 
 pub use broadcast::{setup_local_shards_update_listener, LocalShardsUpdate, ShardInfo, ShardInfos};
+use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
 use quickwit_common::tower::Pool;
@@ -48,6 +49,7 @@ use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
 use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
 use quickwit_proto::types::{DocUid, DocUidGenerator, IndexId, NodeId, SubrequestId};
+use serde::Serialize;
 use tracing::{error, info};
 use workbench::pending_subrequests;
 
@@ -138,6 +140,41 @@ impl DocBatchV2Builder {
             doc_lengths: self.doc_lengths,
         };
         Some(doc_batch)
+    }
+
+    pub fn json_writer(self) -> JsonDocBatchV2Builder {
+        JsonDocBatchV2Builder {
+            doc_uids: self.doc_uids,
+            doc_buffer: self.doc_buffer.writer(),
+            doc_lengths: self.doc_lengths,
+        }
+    }
+}
+
+/// Wrapper around the batch builder that can add Serialize structs without an extra copy
+pub struct JsonDocBatchV2Builder {
+    doc_uids: Vec<DocUid>,
+    doc_buffer: Writer<BytesMut>,
+    doc_lengths: Vec<u32>,
+}
+
+impl JsonDocBatchV2Builder {
+    pub fn add_doc(&mut self, doc_uid: DocUid, payload: impl Serialize) -> serde_json::Result<()> {
+        let old_len = self.doc_buffer.get_ref().len();
+        serde_json::to_writer(&mut self.doc_buffer, &payload)?;
+        let new_len = self.doc_buffer.get_ref().len();
+        let written_len = new_len - old_len;
+        self.doc_uids.push(doc_uid);
+        self.doc_lengths.push(written_len as u32);
+        Ok(())
+    }
+
+    pub fn into_inner(self) -> DocBatchV2Builder {
+        DocBatchV2Builder {
+            doc_uids: self.doc_uids,
+            doc_buffer: self.doc_buffer.into_inner(),
+            doc_lengths: self.doc_lengths,
+        }
     }
 }
 
