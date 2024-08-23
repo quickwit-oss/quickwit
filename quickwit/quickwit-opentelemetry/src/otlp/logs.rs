@@ -41,8 +41,8 @@ use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
 use super::{
-    extract_otel_index_id_from_metadata, is_zero, parse_log_record_body, store_helper, OtelSignal,
-    SpanId, TraceId, TryFromSpanIdError, TryFromTraceIdError,
+    extract_otel_index_id_from_metadata, ingest_doc_batch_v2, is_zero, parse_log_record_body,
+    OtelSignal, SpanId, TraceId, TryFromSpanIdError, TryFromTraceIdError,
 };
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
@@ -337,7 +337,7 @@ impl OtlpGrpcLogsService {
         index_id: String,
         doc_batch: DocBatchV2,
     ) -> Result<(), tonic::Status> {
-        store_helper(
+        ingest_doc_batch_v2(
             self.ingest_router.clone(),
             index_id,
             doc_batch,
