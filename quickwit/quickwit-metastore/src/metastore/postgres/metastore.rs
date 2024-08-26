@@ -569,12 +569,12 @@ impl MetastoreService for PostgresqlMetastore {
 
     #[instrument(skip_all, fields(split_ids))]
     async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
+        let index_uid: IndexUid = request.index_uid().clone();
         let splits_metadata = request.deserialize_splits_metadata()?;
 
         if splits_metadata.is_empty() {
             return Ok(Default::default());
         }
-        let index_uid: IndexUid = request.index_uid().clone();
         let mut split_ids = Vec::with_capacity(splits_metadata.len());
         let mut time_range_start_list = Vec::with_capacity(splits_metadata.len());
         let mut time_range_end_list = Vec::with_capacity(splits_metadata.len());
