@@ -18,13 +18,13 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt::Formatter;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use hyper::http::HeaderValue;
 use hyper::{http, Method, StatusCode};
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_search::SearchService;
+use tokio::net::TcpListener;
 use tower::make::Shared;
 use tower::ServiceBuilder;
 use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
@@ -123,7 +123,7 @@ impl Predicate for CompressionPredicate {
 
 /// Starts REST services.
 pub(crate) async fn start_rest_server(
-    rest_listen_addr: SocketAddr,
+    tcp_listener: TcpListener,
     quickwit_services: Arc<QuickwitServices>,
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
@@ -209,24 +209,26 @@ pub(crate) async fn start_rest_server(
         .layer(cors)
         .service(warp_service);
 
+    let rest_listen_addr = tcp_listener.local_addr()?;
     info!(
         rest_listen_addr=?rest_listen_addr,
         "Starting REST server listening on {rest_listen_addr}."
     );
 
+    let rest_listener_std = tcp_listener.into_std()?;
     // `graceful_shutdown()` seems to be blocking in presence of existing connections.
     // The following approach of dropping the serve supposedly is not bullet proof, but it seems to
     // work in our unit test.
     //
     // See more of the discussion here:
     // https://github.com/hyperium/hyper/issues/2386
+
     let serve_fut = async move {
         tokio::select! {
-             res = hyper::Server::bind(&rest_listen_addr).serve(Shared::new(service)) => { res }
+             res = hyper::Server::from_tcp(rest_listener_std)?.serve(Shared::new(service)) => { res }
              _ = shutdown_signal => { Ok(()) }
         }
     };
-
     let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
     serve_res?;
     Ok(())

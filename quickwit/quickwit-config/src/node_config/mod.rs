@@ -482,7 +482,12 @@ impl NodeConfig {
 
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
-        serialize::node_config_for_test()
+        serialize::node_config_for_tests()
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test_from_ports(rest_listen_port: u16, grpc_listen_port: u16) -> Self {
+        serialize::node_config_for_tests_from_ports(rest_listen_port, grpc_listen_port)
     }
 }
 

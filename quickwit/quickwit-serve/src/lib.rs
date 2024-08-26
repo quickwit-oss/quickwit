@@ -43,6 +43,7 @@ mod rest;
 mod rest_api_response;
 mod search_api;
 pub(crate) mod simple_list;
+mod tcp_listener;
 mod template_api;
 mod ui_handler;
 
@@ -115,6 +116,7 @@ use quickwit_search::{
     SearchServiceClient, SearcherContext, SearcherPool,
 };
 use quickwit_storage::{SplitCache, StorageResolver};
+pub use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
 use tower::timeout::Timeout;
 use tower::ServiceBuilder;
@@ -384,6 +386,7 @@ pub async fn serve_quickwit(
     runtimes_config: RuntimesConfig,
     metastore_resolver: MetastoreResolver,
     storage_resolver: StorageResolver,
+    tcp_listener_resolver: TcpListenerResolver,
     shutdown_signal: BoxFutureInfaillible<()>,
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
@@ -709,7 +712,7 @@ pub async fn serve_quickwit(
         }
     });
     let grpc_server = grpc::start_grpc_server(
-        grpc_listen_addr,
+        tcp_listener_resolver.resolve(grpc_listen_addr).await?,
         grpc_config.max_message_size,
         quickwit_services.clone(),
         grpc_readiness_trigger,
@@ -729,7 +732,7 @@ pub async fn serve_quickwit(
         }
     });
     let rest_server = rest::start_rest_server(
-        rest_listen_addr,
+        tcp_listener_resolver.resolve(rest_listen_addr).await?,
         quickwit_services,
         rest_readiness_trigger,
         rest_shutdown_signal,

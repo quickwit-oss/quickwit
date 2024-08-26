@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeSet;
-use std::net::SocketAddr;
+use std::error::Error;
 use std::sync::Arc;
 
 use bytesize::ByteSize;
@@ -32,7 +32,9 @@ use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_serv
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic::codegen::CompressionEncoding;
+use quickwit_proto::tonic::transport::server::TcpIncoming;
 use quickwit_proto::tonic::transport::Server;
+use tokio::net::TcpListener;
 use tracing::*;
 
 use crate::developer_api::DeveloperApiServer;
@@ -41,7 +43,7 @@ use crate::{QuickwitServices, INDEXING_GRPC_SERVER_METRICS_LAYER};
 
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(
-    grpc_listen_addr: SocketAddr,
+    tcp_listener: TcpListener,
     max_message_size: ByteSize,
     services: Arc<QuickwitServices>,
     readiness_trigger: BoxFutureInfaillible<()>,
@@ -186,12 +188,16 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(otlp_trace_grpc_service)
         .add_optional_service(search_grpc_service);
 
+    let grpc_listen_addr = tcp_listener.local_addr()?;
     info!(
         enabled_grpc_services=?enabled_grpc_services,
         grpc_listen_addr=?grpc_listen_addr,
         "Starting gRPC server listening on {grpc_listen_addr}."
     );
-    let serve_fut = server_router.serve_with_shutdown(grpc_listen_addr, shutdown_signal);
+    // nodelay=true and keepalive=None are the default values for Server::builder()
+    let tcp_incoming = TcpIncoming::from_listener(tcp_listener, true, None)
+        .map_err(|err: Box<dyn Error + Send + Sync>| anyhow::anyhow!(err))?;
+    let serve_fut = server_router.serve_with_incoming_shutdown(tcp_incoming, shutdown_signal);
     let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
     serve_res?;
     Ok(())

@@ -97,4 +97,4 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 pprof = [
   "dep:pprof"
 ]
-
+testsuite = []
