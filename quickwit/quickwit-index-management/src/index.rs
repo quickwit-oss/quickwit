@@ -309,7 +309,7 @@ impl IndexService {
         }
         let mut delete_responses: HashMap<String, Vec<SplitInfo>> = HashMap::new();
         let mut delete_errors: HashMap<String, IndexServiceError> = HashMap::new();
-        let mut stream = futures::stream::iter(delete_index_tasks).buffer_unordered(100);
+        let mut stream = futures::stream::iter(delete_index_tasks).buffer_unordered(5);
         while let Some((index_id, delete_response)) = stream.next().await {
             match delete_response {
                 Ok(split_infos) => {
