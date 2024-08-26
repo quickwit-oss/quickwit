@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
 use std::time::Duration;
 
 use quickwit_config::service::QuickwitService;
@@ -26,22 +25,21 @@ use serde_json::json;
 
 use super::assert_hits_unordered;
 use crate::ingest_json;
-use crate::test_utils::{ingest_with_retry, ClusterSandbox};
+use crate::test_utils::{ingest_with_retry, ClusterSandboxConfigBuilder};
 
 #[tokio::test]
 async fn test_update_search_settings_on_multi_nodes_cluster() {
     quickwit_common::setup_logging_for_tests();
-    let nodes_services = vec![
-        HashSet::from_iter([QuickwitService::Searcher]),
-        HashSet::from_iter([QuickwitService::Metastore]),
-        HashSet::from_iter([QuickwitService::Indexer]),
-        HashSet::from_iter([QuickwitService::ControlPlane]),
-        HashSet::from_iter([QuickwitService::Janitor]),
-    ];
-    let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
+    let sandbox = ClusterSandboxConfigBuilder::default()
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Metastore])
+        .add_node([QuickwitService::Indexer])
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Janitor])
+        .build()
         .await
-        .unwrap();
-    sandbox.wait_for_cluster_num_ready_nodes(5).await.unwrap();
+        .start()
+        .await;
 
     {
         // Wait for indexer to fully start.

@@ -27,7 +27,7 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
-use quickwit_serve::{serve_quickwit, BuildInfo, EnvFilterReloadFn};
+use quickwit_serve::{serve_quickwit, BuildInfo, EnvFilterReloadFn, TcpListenerResolver};
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tokio::signal;
 use tracing::{debug, info};
@@ -114,6 +114,7 @@ impl RunCliCommand {
             runtimes_config,
             metastore_resolver,
             storage_resolver,
+            TcpListenerResolver::default(),
             shutdown_signal,
             env_filter_reload_fn,
         )
