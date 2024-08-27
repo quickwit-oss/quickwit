@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ConstWriteAmplificationMergePolicyConfig {
     /// Number of splits to merge together in a single merge operation.
@@ -55,7 +55,7 @@ impl Default for ConstWriteAmplificationMergePolicyConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq, utoipa::ToSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq, Hash, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StableLogMergePolicyConfig {
     /// Number of docs below which all splits are considered as belonging to the same level.
@@ -126,7 +126,7 @@ where S: Serializer {
     s.serialize_str(&value_str)
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash, utoipa::ToSchema)]
 #[serde(tag = "type")]
 #[serde(deny_unknown_fields)]
 pub enum MergePolicyConfig {

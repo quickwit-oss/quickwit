@@ -768,6 +768,7 @@ impl IndexingService {
                     source_id: pipeline_handle.indexing_pipeline_id.source_id.clone(),
                     pipeline_uid: Some(pipeline_handle.indexing_pipeline_id.pipeline_uid),
                     shard_ids,
+                    params_fingerprint: 0,
                 }
             })
             .collect();
@@ -1250,12 +1251,14 @@ mod tests {
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(0u128)),
+                params_fingerprint: 0,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(1u128)),
+                params_fingerprint: 0,
             },
         ];
         indexing_service
@@ -1294,24 +1297,28 @@ mod tests {
                 source_id: INGEST_API_SOURCE_ID.to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(3u128)),
+                params_fingerprint: 0,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(1u128)),
+                params_fingerprint: 0,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(2u128)),
+                params_fingerprint: 0,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: source_config_2.source_id.clone(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(4u128)),
+                params_fingerprint: 0,
             },
         ];
         indexing_service
@@ -1352,18 +1359,21 @@ mod tests {
                 source_id: INGEST_API_SOURCE_ID.to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(3u128)),
+                params_fingerprint: 0,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(1u128)),
+                params_fingerprint: 0,
             },
             IndexingTask {
                 index_uid: Some(metadata.index_uid.clone()),
                 source_id: source_config_2.source_id.clone(),
                 shard_ids: Vec::new(),
                 pipeline_uid: Some(PipelineUid::for_test(4u128)),
+                params_fingerprint: 0,
             },
         ];
         indexing_service
@@ -1799,18 +1809,21 @@ mod tests {
                         source_id: "test-source".to_string(),
                         shard_ids: Vec::new(),
                         pipeline_uid: Some(PipelineUid::for_test(0)),
+                        params_fingerprint: 0,
                     },
                     IndexingTask {
                         index_uid: Some(IndexUid::for_test("test-index-1", 0)),
                         source_id: "test-source".to_string(),
                         shard_ids: Vec::new(),
                         pipeline_uid: Some(PipelineUid::for_test(1)),
+                        params_fingerprint: 0,
                     },
                     IndexingTask {
                         index_uid: Some(IndexUid::for_test("test-index-2", 0)),
                         source_id: "test-source".to_string(),
                         shard_ids: Vec::new(),
                         pipeline_uid: Some(PipelineUid::for_test(2)),
+                        params_fingerprint: 0,
                     },
                 ],
             })
