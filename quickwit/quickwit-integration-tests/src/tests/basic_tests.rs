@@ -27,7 +27,7 @@ use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
 
-use crate::test_utils::{ingest_with_retry, ClusterSandboxConfigBuilder};
+use crate::test_utils::{ingest_with_retry, ClusterSandboxBuilder};
 
 fn get_ndjson_filepath(ndjson_dataset_filename: &str) -> String {
     format!(
@@ -40,10 +40,7 @@ fn get_ndjson_filepath(ndjson_dataset_filename: &str) -> String {
 #[tokio::test]
 async fn test_ui_redirect_on_get() {
     quickwit_common::setup_logging_for_tests();
-    let sandbox = ClusterSandboxConfigBuilder::build_standalone()
-        .await
-        .start()
-        .await;
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let node_config = sandbox.node_configs.first().unwrap();
     let client = hyper::Client::builder()
         .pool_idle_timeout(Duration::from_secs(30))
@@ -67,10 +64,7 @@ async fn test_ui_redirect_on_get() {
 #[tokio::test]
 async fn test_standalone_server() {
     quickwit_common::setup_logging_for_tests();
-    let sandbox = ClusterSandboxConfigBuilder::build_standalone()
-        .await
-        .start()
-        .await;
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     {
         // The indexing service should be running.
         let counters = sandbox
@@ -127,15 +121,13 @@ async fn test_standalone_server() {
 #[tokio::test]
 async fn test_multi_nodes_cluster() {
     quickwit_common::setup_logging_for_tests();
-    let sandbox = ClusterSandboxConfigBuilder::default()
+    let sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Searcher])
         .add_node([QuickwitService::Metastore])
         .add_node([QuickwitService::Indexer])
         .add_node([QuickwitService::ControlPlane])
         .add_node([QuickwitService::Janitor])
-        .build()
-        .await
-        .start()
+        .build_and_start()
         .await;
 
     {

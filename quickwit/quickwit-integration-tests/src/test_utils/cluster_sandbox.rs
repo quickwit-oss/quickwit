@@ -60,31 +60,12 @@ pub struct TestNodeConfig {
     pub enable_otlp: bool,
 }
 
-/// A test environment where you can start a Quickwit cluster and use the gRPC
-/// or REST clients to test it.
-pub struct ClusterSandbox {
-    pub node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
-    pub searcher_rest_client: QuickwitClient,
-    pub indexer_rest_client: QuickwitClient,
-    pub trace_client: TraceServiceClient<tonic::transport::Channel>,
-    pub logs_client: LogsServiceClient<tonic::transport::Channel>,
-    pub jaeger_client: SpanReaderPluginClient<tonic::transport::Channel>,
-    _temp_dir: TempDir,
-    node_shutdown_handles: Vec<NodeShutdownHandle>,
-}
-
-pub struct ClusterSandboxConfig {
-    temp_dir: TempDir,
-    node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
-    tcp_listener_resolver: TestTcpListenerResolver,
-}
-
-pub struct ClusterSandboxConfigBuilder {
+pub struct ClusterSandboxBuilder {
     temp_dir: TempDir,
     node_configs: Vec<TestNodeConfig>,
 }
 
-impl Default for ClusterSandboxConfigBuilder {
+impl Default for ClusterSandboxBuilder {
     fn default() -> Self {
         Self {
             temp_dir: tempfile::tempdir().unwrap(),
@@ -93,7 +74,7 @@ impl Default for ClusterSandboxConfigBuilder {
     }
 }
 
-impl ClusterSandboxConfigBuilder {
+impl ClusterSandboxBuilder {
     pub fn add_node(mut self, services: impl IntoIterator<Item = QuickwitService>) -> Self {
         self.node_configs.push(TestNodeConfig {
             services: HashSet::from_iter(services),
@@ -113,14 +94,6 @@ impl ClusterSandboxConfigBuilder {
         self
     }
 
-    /// Builds a config that runs all the services in a single process
-    pub async fn build_standalone() -> ClusterSandboxConfig {
-        ClusterSandboxConfigBuilder::default()
-            .add_node(QuickwitService::supported_services())
-            .build()
-            .await
-    }
-
     /// Builds a list of of [`NodeConfig`] from the node definitions added to
     /// builder. For each node, a [`NodeConfig`] is built with the right
     /// parameters such that we will be able to run `quickwit_serve` on them and
@@ -129,7 +102,7 @@ impl ClusterSandboxConfigBuilder {
     /// - `metastore_uri` defined by `root_data_dir/metastore`.
     /// - `default_index_root_uri` defined by `root_data_dir/indexes`.
     /// - `peers` defined by others nodes `gossip_advertise_addr`.
-    pub async fn build(self) -> ClusterSandboxConfig {
+    async fn build_config(self) -> ResolvedClusterConfig {
         let root_data_dir = self.temp_dir.path().to_path_buf();
         let cluster_id = new_coolid("test-cluster");
         let mut resolved_node_configs = Vec::new();
@@ -166,15 +139,36 @@ impl ClusterSandboxConfigBuilder {
                 .filter(|seed| *seed != node_config.0.gossip_advertise_addr.to_string())
                 .collect_vec();
         }
-        ClusterSandboxConfig {
+        ResolvedClusterConfig {
             temp_dir: self.temp_dir,
             node_configs: resolved_node_configs,
             tcp_listener_resolver,
         }
     }
+
+    pub async fn build_and_start(self) -> ClusterSandbox {
+        self.build_config().await.start().await
+    }
+
+    pub async fn build_and_start_standalone() -> ClusterSandbox {
+        ClusterSandboxBuilder::default()
+            .add_node(QuickwitService::supported_services())
+            .build_config()
+            .await
+            .start()
+            .await
+    }
 }
 
-impl ClusterSandboxConfig {
+/// Intermediate state where the ports of all the the test cluster nodes have
+/// been reserved and the configurations have been generated.
+struct ResolvedClusterConfig {
+    temp_dir: TempDir,
+    node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
+    tcp_listener_resolver: TestTcpListenerResolver,
+}
+
+impl ResolvedClusterConfig {
     /// Start a cluster using this config and waits for the nodes to be ready
     pub async fn start(self) -> ClusterSandbox {
         let mut node_shutdown_handles = Vec::new();
@@ -299,6 +293,19 @@ pub(crate) async fn ingest_with_retry(
     )
     .await?;
     Ok(())
+}
+
+/// A test environment where you can start a Quickwit cluster and use the gRPC
+/// or REST clients to test it.
+pub struct ClusterSandbox {
+    pub node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
+    pub searcher_rest_client: QuickwitClient,
+    pub indexer_rest_client: QuickwitClient,
+    pub trace_client: TraceServiceClient<tonic::transport::Channel>,
+    pub logs_client: LogsServiceClient<tonic::transport::Channel>,
+    pub jaeger_client: SpanReaderPluginClient<tonic::transport::Channel>,
+    _temp_dir: TempDir,
+    node_shutdown_handles: Vec<NodeShutdownHandle>,
 }
 
 impl ClusterSandbox {

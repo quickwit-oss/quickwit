@@ -22,7 +22,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use super::assert_hits_unordered;
-use crate::test_utils::ClusterSandboxConfigBuilder;
+use crate::test_utils::ClusterSandboxBuilder;
 
 /// Update the doc mapping between 2 calls to local-ingest (forces separate indexing pipelines) and
 /// assert the number of hits for the given query
@@ -35,10 +35,7 @@ async fn validate_search_across_doc_mapping_updates(
     query_and_expect: &[(&str, Result<&[Value], ()>)],
 ) {
     quickwit_common::setup_logging_for_tests();
-    let sandbox = ClusterSandboxConfigBuilder::build_standalone()
-        .await
-        .start()
-        .await;
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
 
     {
         // Wait for indexer to fully start.

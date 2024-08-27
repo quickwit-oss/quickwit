@@ -37,7 +37,7 @@ use quickwit_proto::opentelemetry::proto::logs::v1::{LogRecord, ResourceLogs, Sc
 use quickwit_proto::opentelemetry::proto::trace::v1::{ResourceSpans, ScopeSpans, Span};
 use tonic::codec::CompressionEncoding;
 
-use crate::test_utils::ClusterSandboxConfigBuilder;
+use crate::test_utils::ClusterSandboxBuilder;
 
 fn initialize_tests() {
     quickwit_common::setup_logging_for_tests();
@@ -47,15 +47,13 @@ fn initialize_tests() {
 #[tokio::test]
 async fn test_ingest_traces_with_otlp_grpc_api() {
     initialize_tests();
-    let mut sandbox = ClusterSandboxConfigBuilder::default()
+    let mut sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Searcher])
         .add_node([QuickwitService::Metastore])
         .add_node_with_otlp([QuickwitService::Indexer])
         .add_node([QuickwitService::ControlPlane])
         .add_node([QuickwitService::Janitor])
-        .build()
-        .await
-        .start()
+        .build_and_start()
         .await;
     // Wait for the pipelines to start (one for logs and one for traces)
     sandbox.wait_for_indexing_pipelines(2).await.unwrap();
@@ -142,15 +140,13 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
 #[tokio::test]
 async fn test_ingest_logs_with_otlp_grpc_api() {
     initialize_tests();
-    let mut sandbox = ClusterSandboxConfigBuilder::default()
+    let mut sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Searcher])
         .add_node([QuickwitService::Metastore])
         .add_node_with_otlp([QuickwitService::Indexer])
         .add_node([QuickwitService::ControlPlane])
         .add_node([QuickwitService::Janitor])
-        .build()
-        .await
-        .start()
+        .build_and_start()
         .await;
     // Wait fo the pipelines to start (one for logs and one for traces)
     sandbox.wait_for_indexing_pipelines(2).await.unwrap();
@@ -218,15 +214,13 @@ async fn test_ingest_logs_with_otlp_grpc_api() {
 #[tokio::test]
 async fn test_jaeger_api() {
     initialize_tests();
-    let mut sandbox = ClusterSandboxConfigBuilder::default()
+    let mut sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Searcher])
         .add_node([QuickwitService::Metastore])
         .add_node_with_otlp([QuickwitService::Indexer])
         .add_node([QuickwitService::ControlPlane])
         .add_node([QuickwitService::Janitor])
-        .build()
-        .await
-        .start()
+        .build_and_start()
         .await;
     // Wait fo the pipelines to start (one for logs and one for traces)
     sandbox.wait_for_indexing_pipelines(2).await.unwrap();

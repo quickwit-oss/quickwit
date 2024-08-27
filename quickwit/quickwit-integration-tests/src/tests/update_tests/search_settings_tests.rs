@@ -25,20 +25,18 @@ use serde_json::json;
 
 use super::assert_hits_unordered;
 use crate::ingest_json;
-use crate::test_utils::{ingest_with_retry, ClusterSandboxConfigBuilder};
+use crate::test_utils::{ingest_with_retry, ClusterSandboxBuilder};
 
 #[tokio::test]
 async fn test_update_search_settings_on_multi_nodes_cluster() {
     quickwit_common::setup_logging_for_tests();
-    let sandbox = ClusterSandboxConfigBuilder::default()
+    let sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Searcher])
         .add_node([QuickwitService::Metastore])
         .add_node([QuickwitService::Indexer])
         .add_node([QuickwitService::ControlPlane])
         .add_node([QuickwitService::Janitor])
-        .build()
-        .await
-        .start()
+        .build_and_start()
         .await;
 
     {

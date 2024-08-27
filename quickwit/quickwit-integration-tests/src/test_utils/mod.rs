@@ -20,4 +20,4 @@
 mod cluster_sandbox;
 mod shutdown;
 
-pub(crate) use cluster_sandbox::{ingest_with_retry, ClusterSandbox, ClusterSandboxConfigBuilder};
+pub(crate) use cluster_sandbox::{ingest_with_retry, ClusterSandbox, ClusterSandboxBuilder};
