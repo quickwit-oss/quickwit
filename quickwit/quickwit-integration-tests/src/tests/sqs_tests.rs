@@ -32,7 +32,7 @@ use quickwit_serve::SearchRequestQueryString;
 use tempfile::NamedTempFile;
 use tracing::info;
 
-use crate::test_utils::ClusterSandboxConfigBuilder;
+use crate::test_utils::ClusterSandboxBuilder;
 
 fn create_mock_data_file(num_lines: usize) -> (NamedTempFile, Uri) {
     let mut temp_file = tempfile::NamedTempFile::new().unwrap();
@@ -48,10 +48,7 @@ fn create_mock_data_file(num_lines: usize) -> (NamedTempFile, Uri) {
 #[tokio::test]
 async fn test_sqs_single_node_cluster() {
     quickwit_common::setup_logging_for_tests();
-    let sandbox = ClusterSandboxConfigBuilder::build_standalone()
-        .await
-        .start()
-        .await;
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let index_id = "test-sqs-source-single-node-cluster";
     let index_config = format!(
         r#"
