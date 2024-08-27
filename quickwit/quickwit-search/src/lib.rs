@@ -97,7 +97,11 @@ pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
 
 fn search_thread_pool() -> &'static ThreadPool {
     static SEARCH_THREAD_POOL: OnceLock<ThreadPool> = OnceLock::new();
-    SEARCH_THREAD_POOL.get_or_init(|| ThreadPool::new("search", None))
+    SEARCH_THREAD_POOL.get_or_init(|| {
+        let search_thread_pool_size =
+            quickwit_common::get_from_env_opt("QW_SEARCH_THREAD_POOL_SIZE");
+        ThreadPool::new("search", search_thread_pool_size)
+    })
 }
 
 /// GlobalDocAddress serves as a hit address.
