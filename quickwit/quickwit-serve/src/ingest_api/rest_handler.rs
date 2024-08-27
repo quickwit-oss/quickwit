@@ -129,6 +129,12 @@ async fn ingest_v2(
     ingest_options: IngestV2Options,
     ingest_router: IngestRouterServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
+    if ingest_options.commit_type == CommitTypeV2::WaitFor {
+        return Err(IngestServiceError::Unimplemented(
+            "ingest API v2 does not support the `refrcommitesh=wait_for` parameter (yet)"
+                .to_string(),
+        ));
+    }
     let mut doc_batch_builder = DocBatchV2Builder::default();
     let mut doc_uid_generator = DocUidGenerator::default();
 

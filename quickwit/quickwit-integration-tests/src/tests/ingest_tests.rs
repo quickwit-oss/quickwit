@@ -219,7 +219,7 @@ async fn test_ingest_v2_index_not_found() {
             ingest_json!({"body": "doc1"}),
             None,
             None,
-            CommitType::WaitFor,
+            CommitType::Auto,
         )
         .await
         .unwrap_err();
@@ -281,7 +281,7 @@ async fn test_ingest_v2_happy_path() {
                 ingest_json!({"body": "doc1"}),
                 None,
                 None,
-                CommitType::WaitFor,
+                CommitType::Auto,
             )
             .await;
         let Some(ingest_error) = ingest_res.err() else {
@@ -365,49 +365,52 @@ async fn test_commit_force() {
     sandbox.shutdown().await.unwrap();
 }
 
-// #[tokio::test]
-// async fn test_commit_wait_for() {
-//     initialize_tests();
-//     let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
-//     let index_id = "test_commit_wait_for";
-//     let index_config = format!(
-//         r#"
-//         version: 0.8
-//         index_id: {index_id}
-//         doc_mapping:
-//             field_mappings:
-//             - name: body type: text
-//         indexing_settings:
-//             commit_timeout_secs: 2
-//         "#
-//     );
+#[tokio::test]
+async fn test_commit_wait_for() {
+    initialize_tests();
+    let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let index_id = "test_commit_wait_for";
+    let index_config = format!(
+        r#"
+        version: 0.8
+        index_id: {index_id}
+        doc_mapping:
+            field_mappings:
+            - name: body 
+              type: text
+        indexing_settings:
+            commit_timeout_secs: 2
+        "#
+    );
 
-//     // Create index
-//     sandbox
-//         .indexer_rest_client
-//         .indexes()
-//         .create(index_config, ConfigFormat::Yaml, false)
-//         .await
-//         .unwrap();
+    // Create index
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(index_config, ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
 
-//     sandbox.enable_ingest_v2();
+    sandbox.enable_ingest_v2();
 
-//     sandbox
-//         .indexer_rest_client
-//         .ingest(
-//             index_id,
-//             ingest_json!({"body": "wait"}),
-//             None,
-//             None,
-//             CommitType::WaitFor,
-//         )
-//         .await
-//         .unwrap();
+    let ingest_error = sandbox
+        .indexer_rest_client
+        .ingest(
+            index_id,
+            ingest_json!({"body": "wait"}),
+            None,
+            None,
+            CommitType::WaitFor,
+        )
+        .await
+        .unwrap_err();
 
-//     sandbox.assert_hit_count(index_id, "body:wait", 1).await;
+    // TODO https://github.com/quickwit-oss/quickwit/issues/5351
+    assert_eq!(ingest_error.status_code(), Some(StatusCode::BAD_REQUEST));
+    // sandbox.assert_hit_count(index_id, "body:wait", 1).await;
 
-//     sandbox.shutdown().await.unwrap();
-// }
+    sandbox.shutdown().await.unwrap();
+}
 
 #[tokio::test]
 async fn test_commit_auto() {
@@ -507,7 +510,7 @@ async fn test_very_large_index_name() {
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "not too long"}),
-        CommitType::WaitFor,
+        CommitType::Auto,
     )
     .await
     .unwrap();
@@ -667,7 +670,7 @@ async fn test_shutdown_control_plane_early_shutdown() {
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "one"}),
-        CommitType::WaitFor,
+        CommitType::Force,
     )
     .await
     .unwrap();
@@ -726,7 +729,7 @@ async fn test_shutdown_separate_indexer() {
         &sandbox.indexer_rest_client,
         index_id,
         ingest_json!({"body": "one"}),
-        CommitType::WaitFor,
+        CommitType::Force,
     )
     .await
     .unwrap();
