@@ -17,10 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
 use std::time::Duration;
 
-use quickwit_config::service::QuickwitService;
 use serde_json::{json, Value};
 
 use super::assert_hits_unordered;
@@ -37,17 +35,7 @@ async fn validate_search_across_doc_mapping_updates(
     query_and_expect: &[(&str, Result<&[Value], ()>)],
 ) {
     quickwit_common::setup_logging_for_tests();
-    let nodes_services = vec![HashSet::from_iter([
-        QuickwitService::Searcher,
-        QuickwitService::Metastore,
-        QuickwitService::Indexer,
-        QuickwitService::ControlPlane,
-        QuickwitService::Janitor,
-    ])];
-    let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
-        .await
-        .unwrap();
-    sandbox.wait_for_cluster_num_ready_nodes(1).await.unwrap();
+    let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
 
     {
         // Wait for indexer to fully start.
@@ -229,7 +217,6 @@ async fn test_update_doc_mapping_json_to_text() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_update_doc_mapping_json_to_object() {
     let index_id = "update-json-to-object";
     let original_doc_mappings = json!({
@@ -251,6 +238,54 @@ async fn test_update_doc_mapping_json_to_object() {
                     {"name": "field2", "type": "text"},
                 ]
             }
+        ]
+    });
+    let ingest_after_update = &[
+        json!({"body": {"field1": "hola"}}),
+        json!({"body": {"field2": "mundo"}}),
+    ];
+    validate_search_across_doc_mapping_updates(
+        index_id,
+        original_doc_mappings,
+        ingest_before_update,
+        updated_doc_mappings,
+        ingest_after_update,
+        &[
+            (
+                "body.field1:hello",
+                Ok(&[json!({"body": {"field1": "hello"}})]),
+            ),
+            (
+                "body.field1:hola",
+                Ok(&[json!({"body": {"field1": "hola"}})]),
+            ),
+        ],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_update_doc_mapping_object_to_json() {
+    let index_id = "update-object-to-json";
+    let original_doc_mappings = json!({
+        "field_mappings": [
+            {
+                "name": "body",
+                "type": "object",
+                "field_mappings": [
+                    {"name": "field1", "type": "text"},
+                    {"name": "field2", "type": "text"},
+                ]
+            }
+        ]
+    });
+    let ingest_before_update = &[
+        json!({"body": {"field1": "hello"}}),
+        json!({"body": {"field2": "world"}}),
+    ];
+    let updated_doc_mappings = json!({
+        "field_mappings": [
+            {"name": "body", "type": "json"}
         ]
     });
     let ingest_after_update = &[
@@ -448,7 +483,6 @@ async fn test_update_doc_mapping_unindexed_to_indexed() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_update_doc_mapping_strict_to_dynamic() {
     let index_id = "update-strict-to-dynamic";
     let original_doc_mappings = json!({

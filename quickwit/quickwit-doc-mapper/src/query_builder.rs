@@ -218,10 +218,12 @@ impl<'a> ExtractPrefixTermRanges<'a> {
             end,
             limit: Some(max_expansions as u64),
         };
-        self.term_ranges_to_warm_up
+        *self
+            .term_ranges_to_warm_up
             .entry(field)
             .or_default()
-            .insert(term_range, position_needed);
+            .entry(term_range)
+            .or_default() |= position_needed;
     }
 }
 
@@ -274,12 +276,17 @@ fn extract_prefix_term_ranges(
 
 #[cfg(test)]
 mod test {
-    use quickwit_query::create_default_quickwit_tokenizer_manager;
-    use quickwit_query::query_ast::query_ast_from_user_text;
-    use tantivy::schema::{DateOptions, DateTimePrecision, Schema, FAST, INDEXED, STORED, TEXT};
+    use std::ops::Bound;
 
-    use super::build_query;
-    use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
+    use quickwit_query::query_ast::{
+        query_ast_from_user_text, FullTextMode, FullTextParams, PhrasePrefixQuery, QueryAstVisitor,
+    };
+    use quickwit_query::{create_default_quickwit_tokenizer_manager, MatchAllOrNone};
+    use tantivy::schema::{DateOptions, DateTimePrecision, Schema, FAST, INDEXED, STORED, TEXT};
+    use tantivy::Term;
+
+    use super::{build_query, ExtractPrefixTermRanges};
+    use crate::{TermRange, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
 
     enum TestExpectation<'a> {
         Err(&'a str),
@@ -671,5 +678,55 @@ mod test {
         )
         .unwrap();
         assert!(warmup_info.term_dict_fields.is_empty());
+    }
+
+    #[test]
+    fn test_extract_phrase_prefix_position_required() {
+        let schema = make_schema(false);
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+
+        let params = FullTextParams {
+            tokenizer: None,
+            mode: FullTextMode::Phrase { slop: 0 },
+            zero_terms_query: MatchAllOrNone::MatchNone,
+        };
+        let short = PhrasePrefixQuery {
+            field: "title".to_string(),
+            phrase: "short".to_string(),
+            max_expansions: 50,
+            params: params.clone(),
+        };
+        let long = PhrasePrefixQuery {
+            field: "title".to_string(),
+            phrase: "not so short".to_string(),
+            max_expansions: 50,
+            params: params.clone(),
+        };
+        let mut extractor1 = ExtractPrefixTermRanges::with_schema(&schema, &tokenizer_manager);
+        extractor1.visit_phrase_prefix(&short).unwrap();
+        extractor1.visit_phrase_prefix(&long).unwrap();
+
+        let mut extractor2 = ExtractPrefixTermRanges::with_schema(&schema, &tokenizer_manager);
+        extractor2.visit_phrase_prefix(&long).unwrap();
+        extractor2.visit_phrase_prefix(&short).unwrap();
+
+        assert_eq!(
+            extractor1.term_ranges_to_warm_up,
+            extractor2.term_ranges_to_warm_up
+        );
+
+        let field = tantivy::schema::Field::from_field_id(0);
+        let mut expected_inner = std::collections::HashMap::new();
+        expected_inner.insert(
+            TermRange {
+                start: Bound::Included(Term::from_field_text(field, "short")),
+                end: Bound::Excluded(Term::from_field_text(field, "shoru")),
+                limit: Some(50),
+            },
+            true,
+        );
+        let mut expected = std::collections::HashMap::new();
+        expected.insert(field, expected_inner);
+        assert_eq!(extractor1.term_ranges_to_warm_up, expected);
     }
 }

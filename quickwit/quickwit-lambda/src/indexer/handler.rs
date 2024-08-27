@@ -36,7 +36,6 @@ async fn indexer_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     let ingest_res = ingest(IngestArgs {
         input_path: payload.uri()?,
         input_format: quickwit_config::SourceInputFormat::Json,
-        overwrite: false,
         vrl_script: None,
         // TODO: instead of clearing the cache, we use a cache and set its max
         // size with indexer_config.split_store_max_num_bytes

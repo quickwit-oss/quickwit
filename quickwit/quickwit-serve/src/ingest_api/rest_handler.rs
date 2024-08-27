@@ -24,10 +24,9 @@ use quickwit_ingest::{
     IngestService, IngestServiceClient, IngestServiceError, TailRequest,
 };
 use quickwit_proto::ingest::router::{
-    IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
-    IngestRouterServiceClient, IngestSubrequest,
+    IngestRequestV2, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
+    IngestSubrequest,
 };
-use quickwit_proto::ingest::RateLimitingCause;
 use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
@@ -167,39 +166,7 @@ fn convert_ingest_response_v2(
         });
     }
     let ingest_failure = response.failures.pop().unwrap();
-    let reason = ingest_failure.reason();
-    Err(match reason {
-        IngestFailureReason::Unspecified => {
-            IngestServiceError::Internal("unknown error".to_string())
-        }
-        IngestFailureReason::IndexNotFound => IngestServiceError::IndexNotFound {
-            index_id: ingest_failure.index_id,
-        },
-        IngestFailureReason::SourceNotFound => IngestServiceError::Internal(format!(
-            "Ingest v2 source not found for index {}",
-            ingest_failure.index_id
-        )),
-        IngestFailureReason::Internal => IngestServiceError::Internal("internal error".to_string()),
-        IngestFailureReason::NoShardsAvailable => {
-            IngestServiceError::Unavailable("no shards available".to_string())
-        }
-        IngestFailureReason::ShardRateLimited => {
-            IngestServiceError::RateLimited(RateLimitingCause::ShardRateLimiting)
-        }
-        IngestFailureReason::WalFull => IngestServiceError::RateLimited(RateLimitingCause::WalFull),
-        IngestFailureReason::Timeout => {
-            IngestServiceError::Internal("request timed out".to_string())
-        }
-        IngestFailureReason::RouterLoadShedding => {
-            IngestServiceError::RateLimited(RateLimitingCause::RouterLoadShedding)
-        }
-        IngestFailureReason::LoadShedding => {
-            IngestServiceError::RateLimited(RateLimitingCause::LoadShedding)
-        }
-        IngestFailureReason::CircuitBreaker => {
-            IngestServiceError::RateLimited(RateLimitingCause::CircuitBreaker)
-        }
-    })
+    Err(ingest_failure.into())
 }
 
 #[utoipa::path(
