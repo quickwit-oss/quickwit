@@ -43,7 +43,7 @@ mod rest;
 mod rest_api_response;
 mod search_api;
 pub(crate) mod simple_list;
-mod tcp_listener;
+pub mod tcp_listener;
 mod template_api;
 mod ui_handler;
 
@@ -116,7 +116,7 @@ use quickwit_search::{
     SearchServiceClient, SearcherContext, SearcherPool,
 };
 use quickwit_storage::{SplitCache, StorageResolver};
-pub use tcp_listener::TcpListenerResolver;
+use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
 use tower::timeout::Timeout;
 use tower::ServiceBuilder;
@@ -389,7 +389,7 @@ pub async fn serve_quickwit(
     runtimes_config: RuntimesConfig,
     metastore_resolver: MetastoreResolver,
     storage_resolver: StorageResolver,
-    tcp_listener_resolver: TcpListenerResolver,
+    tcp_listener_resolver: impl TcpListenerResolver,
     shutdown_signal: BoxFutureInfaillible<()>,
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {

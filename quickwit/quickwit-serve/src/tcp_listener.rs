@@ -17,61 +17,65 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
 
-use anyhow::Context;
+use quickwit_proto::tonic;
 use tokio::net::TcpListener;
-use tokio::sync::Mutex;
+use tonic::async_trait;
 
-/// A [`TcpListener`] constructor that can re-use existing listeners in tests.
+/// Resolve `SocketAddr` into `TcpListener` instances.
 ///
-/// When building a local test cluster we want to reserve all the ports of all
-/// the nodes before starting the first one.
-#[derive(Clone)]
-pub enum TcpListenerResolver {
-    Default,
-    #[cfg(any(test, feature = "testsuite"))]
-    Test(Arc<Mutex<HashMap<SocketAddr, TcpListener>>>),
+/// This trait can be used to inject existing [`TcpListener`] instances to the
+/// Quickwit REST and gRPC servers when running them in tests.
+#[async_trait]
+pub trait TcpListenerResolver: Clone + Send + 'static {
+    async fn resolve(&self, addr: SocketAddr) -> anyhow::Result<TcpListener>;
 }
 
-impl Default for TcpListenerResolver {
-    fn default() -> Self {
-        Self::Default
+#[derive(Clone)]
+pub struct DefaultTcpListenerResolver;
+
+#[async_trait]
+impl TcpListenerResolver for DefaultTcpListenerResolver {
+    async fn resolve(&self, addr: SocketAddr) -> anyhow::Result<TcpListener> {
+        TcpListener::bind(addr)
+            .await
+            .map_err(|err| anyhow::anyhow!(err))
     }
 }
 
 #[cfg(any(test, feature = "testsuite"))]
-impl TcpListenerResolver {
-    pub fn for_test() -> Self {
-        Self::Test(Arc::new(Mutex::new(HashMap::new())))
-    }
-}
+pub mod for_tests {
+    use std::collections::HashMap;
+    use std::sync::Arc;
 
-impl TcpListenerResolver {
-    pub async fn resolve(&self, addr: SocketAddr) -> anyhow::Result<TcpListener> {
-        match self {
-            TcpListenerResolver::Default => TcpListener::bind(addr).await.map_err(|e| e.into()),
-            #[cfg(any(test, feature = "testsuite"))]
-            TcpListenerResolver::Test(listeners) => listeners
+    use anyhow::Context;
+    use tokio::sync::Mutex;
+
+    use super::*;
+
+    #[derive(Clone, Default)]
+    pub struct TestTcpListenerResolver {
+        listeners: Arc<Mutex<HashMap<SocketAddr, TcpListener>>>,
+    }
+
+    #[async_trait]
+    impl TcpListenerResolver for TestTcpListenerResolver {
+        async fn resolve(&self, addr: SocketAddr) -> anyhow::Result<TcpListener> {
+            self.listeners
                 .lock()
                 .await
                 .remove(&addr)
-                .context(format!("No listener found for address {}", addr)),
+                .context(format!("No listener found for address {}", addr))
         }
     }
 
-    #[cfg(any(test, feature = "testsuite"))]
-    pub async fn add_listener(&self, listener: TcpListener) {
-        match self {
-            TcpListenerResolver::Default => {
-                panic!("Cannot add listener in default mode.");
-            }
-            TcpListenerResolver::Test(listeners) => listeners
+    impl TestTcpListenerResolver {
+        pub async fn add_listener(&self, listener: TcpListener) {
+            self.listeners
                 .lock()
                 .await
-                .insert(listener.local_addr().unwrap(), listener),
-        };
+                .insert(listener.local_addr().unwrap(), listener);
+        }
     }
 }

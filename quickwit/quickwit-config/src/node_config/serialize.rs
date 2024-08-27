@@ -467,15 +467,6 @@ pub fn node_config_for_tests_from_ports(
     }
 }
 
-/// Creates a config with defaults that are suitable for testing.
-///
-/// Uses the default ports without ensuring that they are available.
-#[cfg(any(test, feature = "testsuite"))]
-pub fn node_config_for_tests() -> NodeConfig {
-    let default_rest = default_rest_listen_port();
-    node_config_for_tests_from_ports(default_rest, default_rest + 1)
-}
-
 #[cfg(test)]
 mod tests {
     use std::env;

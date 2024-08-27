@@ -43,9 +43,8 @@ use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{
     CommitType, QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL,
 };
-use quickwit_serve::{
-    serve_quickwit, ListSplitsQueryParams, SearchRequestQueryString, TcpListenerResolver,
-};
+use quickwit_serve::tcp_listener::for_tests::TestTcpListenerResolver;
+use quickwit_serve::{serve_quickwit, ListSplitsQueryParams, SearchRequestQueryString};
 use quickwit_storage::StorageResolver;
 use reqwest::Url;
 use serde_json::Value;
@@ -76,8 +75,8 @@ pub struct ClusterSandbox {
 
 pub struct ClusterSandboxConfig {
     temp_dir: TempDir,
-    pub node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
-    tcp_listener_resolver: TcpListenerResolver,
+    node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
+    tcp_listener_resolver: TestTcpListenerResolver,
 }
 
 pub struct ClusterSandboxConfigBuilder {
@@ -136,7 +135,7 @@ impl ClusterSandboxConfigBuilder {
         let mut resolved_node_configs = Vec::new();
         let mut peers: Vec<String> = Vec::new();
         let unique_dir_name = new_coolid("test-dir");
-        let tcp_listener_resolver = TcpListenerResolver::for_test();
+        let tcp_listener_resolver = TestTcpListenerResolver::default();
         for (node_idx, node_builder) in self.node_configs.iter().enumerate() {
             let socket: SocketAddr = ([127, 0, 0, 1], 0u16).into();
             let rest_tcp_listener = TcpListener::bind(socket).await.unwrap();
