@@ -1687,6 +1687,7 @@ mod tests {
             doc_mapping_uid: Some(doc_mapping_uid),
             publish_position_inclusive: None,
             publish_token: None,
+            update_timestamp: 1724158996,
         };
         let init_shards_request = InitShardsRequest {
             subrequests: vec![InitShardSubrequest {

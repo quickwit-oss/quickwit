@@ -793,6 +793,7 @@ impl IngestController {
                 doc_mapping_uid: Some(doc_mapping_uid),
                 publish_position_inclusive: Some(Position::Beginning),
                 publish_token: None,
+                update_timestamp: 0, // assigned later by the metastore
             };
             let init_shard_subrequest = InitShardSubrequest {
                 subrequest_id: subrequest_id as u32,
@@ -2136,6 +2137,7 @@ mod tests {
                     doc_mapping_uid: subrequest.doc_mapping_uid,
                     publish_position_inclusive: Some(Position::Beginning),
                     publish_token: None,
+                    update_timestamp: 1724158996,
                 };
                 let response = OpenShardsResponse {
                     subresponses: vec![OpenShardSubresponse {
