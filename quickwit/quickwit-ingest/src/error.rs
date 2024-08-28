@@ -32,8 +32,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, thiserror::Error, Serialize, Deserialize)]
 pub enum IngestServiceError {
-    #[error("unimplemented: {0}")]
-    Unimplemented(String),
     #[error("data corruption: {0}")]
     Corruption(String),
     #[error("index `{index_id}` already exists")]
@@ -143,7 +141,6 @@ impl From<IngestFailure> for IngestServiceError {
 impl ServiceError for IngestServiceError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::Unimplemented(_) => ServiceErrorCode::BadRequest,
             Self::Corruption(err_msg) => {
                 rate_limited_error!(
                     limit_per_min = 6,
@@ -199,7 +196,6 @@ impl From<CorruptedKey> for IngestServiceError {
 impl From<IngestServiceError> for tonic::Status {
     fn from(error: IngestServiceError) -> tonic::Status {
         let code = match &error {
-            IngestServiceError::Unimplemented(_) => tonic::Code::InvalidArgument,
             IngestServiceError::Corruption { .. } => tonic::Code::DataLoss,
             IngestServiceError::IndexAlreadyExists { .. } => tonic::Code::AlreadyExists,
             IngestServiceError::IndexNotFound { .. } => tonic::Code::NotFound,

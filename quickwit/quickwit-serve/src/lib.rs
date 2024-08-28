@@ -861,8 +861,9 @@ async fn setup_ingest_v2(
         control_plane.clone(),
         ingester_pool.clone(),
         replication_factor,
+        event_broker.clone(),
     );
-    ingest_router.subscribe(event_broker);
+    ingest_router.subscribe();
 
     let ingest_router_service = IngestRouterServiceClient::tower()
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
