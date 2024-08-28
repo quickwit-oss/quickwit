@@ -876,7 +876,7 @@ mod tests {
     #[test]
     fn test_retention_schedule_duration() {
         let schedule_test_helper_fn = |schedule_str: &str| {
-            let hourly_schedule = Schedule::from_str(&prepend_at_char(schedule_str)).unwrap();
+            let schedule = Schedule::from_str(&prepend_at_char(schedule_str)).unwrap();
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: schedule_str.to_string(),
@@ -890,8 +890,48 @@ mod tests {
                     .as_nanos() as i64,
             );
             let next_evaluation_date = Utc::now() + next_evaluation_duration;
-            let expected_date = hourly_schedule.upcoming(Utc).next().unwrap();
+            let expected_date = schedule.upcoming(Utc).next().unwrap();
             assert_eq!(next_evaluation_date.timestamp(), expected_date.timestamp());
+        };
+
+        schedule_test_helper_fn("hourly");
+        schedule_test_helper_fn("daily");
+        schedule_test_helper_fn("weekly");
+        schedule_test_helper_fn("monthly");
+        schedule_test_helper_fn("* * * ? * ?");
+    }
+
+    #[test]
+    fn test_retention_schedule_durationi_with_jitter() {
+        let schedule_test_helper_fn = |schedule_str: &str| {
+            let schedule = Schedule::from_str(&prepend_at_char(schedule_str)).unwrap();
+            let retention_policy = RetentionPolicy {
+                retention_period: "1 hour".to_string(),
+                evaluation_schedule: schedule_str.to_string(),
+                jitter_sec: Some(60 * 30),
+            };
+
+            for _ in 0..11 {
+                // we run this a few times in case we are unlucky and pick a null jitter.
+                // This happens in one in 3601 tries, 11 unlucky tries in a row is as likely as
+                // finding the right aes128 key to decrypt some message at random on 1st try.
+                let next_evaluation_duration = chrono::Duration::nanoseconds(
+                    retention_policy
+                        .duration_until_next_evaluation()
+                        .unwrap()
+                        .as_nanos() as i64,
+                );
+                let next_evaluation_date = Utc::now() + next_evaluation_duration;
+                let expected_date_early = schedule.upcoming(Utc).next().unwrap();
+                let expected_date_late =
+                    schedule.upcoming(Utc).next().unwrap() + chrono::Duration::seconds(30 * 60);
+                assert!(next_evaluation_date.timestamp() >= expected_date_early.timestamp());
+                assert!(next_evaluation_date.timestamp() <= expected_date_late.timestamp());
+                if next_evaluation_date.timestamp() != expected_date_early.timestamp() {
+                    return;
+                }
+            }
+            panic!("got no jitter at all on multiple successive runs")
         };
 
         schedule_test_helper_fn("hourly");
