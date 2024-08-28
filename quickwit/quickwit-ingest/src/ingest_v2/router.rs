@@ -457,7 +457,7 @@ impl IngestRouter {
         max_num_attempts: usize,
     ) -> IngestResponseV2 {
         let commit_type = ingest_request.commit_type();
-        let mut workbench = if commit_type == CommitTypeV2::WaitFor {
+        let mut workbench = if matches!(commit_type, CommitTypeV2::Force | CommitTypeV2::WaitFor) {
             IngestWorkbench::new_with_publish_tracking(
                 ingest_request.subrequests,
                 max_num_attempts,
