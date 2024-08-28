@@ -113,6 +113,7 @@ pub async fn test_metastore_update_retention_policy<
     let new_retention_policy_opt = Some(RetentionPolicy {
         retention_period: String::from("3 days"),
         evaluation_schedule: String::from("daily"),
+        jitter_sec: None,
     });
 
     // set and unset retention policy multiple times
