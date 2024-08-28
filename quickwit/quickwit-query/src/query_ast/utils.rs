@@ -31,7 +31,7 @@ use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::tokenizers::TokenizerManager;
 use crate::InvalidQuery;
 
-const DYNAMIC_FIELD_NAME: &str = "_dynamic";
+pub(crate) const DYNAMIC_FIELD_NAME: &str = "_dynamic";
 
 fn make_term_query(term: Term) -> TantivyQueryAst {
     TantivyTermQuery::new(term, IndexRecordOption::WithFreqs).into()

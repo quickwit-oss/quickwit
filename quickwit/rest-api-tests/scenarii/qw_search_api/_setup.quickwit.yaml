@@ -82,3 +82,29 @@ params:
   commit: force
 ndjson:
   - {"seq": 4, "tag": 1}
+---
+method: DELETE
+endpoint: indexes/dyn
+status_code: null
+---
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: dyn
+  doc_mapping:
+    mode: dynamic
+    dynamic_mapping:
+      tokenizer: default
+      expand_dots: false
+      fast: false
+---
+method: POST
+endpoint: dyn/ingest
+params:
+  commit: force
+ndjson:
+  - {"my_field": "lower case"}
+  - {"my_field": "UPPER CASE"}
+  - {"my_field": "MiXeD CaSe"}
+---
