@@ -330,7 +330,7 @@ async fn test_commit_force() {
             - name: body
               type: text
         indexing_settings:
-            commit_timeout_secs: 20
+            commit_timeout_secs: 60
         "#
     );
 
@@ -344,21 +344,20 @@ async fn test_commit_force() {
 
     sandbox.enable_ingest_v2();
 
-    ingest_with_retry(
-        &sandbox.indexer_rest_client,
-        index_id,
-        ingest_json!({"body": "force"}),
-        CommitType::Force,
+    // commit_timeout_secs is set to a large value, so this would timeout if
+    // the commit isn't forced
+    tokio::time::timeout(
+        Duration::from_secs(20),
+        ingest_with_retry(
+            &sandbox.indexer_rest_client,
+            index_id,
+            ingest_json!({"body": "force"}),
+            CommitType::Force,
+        ),
     )
     .await
+    .unwrap()
     .unwrap();
-
-    // commit_timeout_secs is set to a large value, so this would timeout if
-    // CommitType::Force is not working
-    sandbox
-        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
-        .await
-        .unwrap();
 
     sandbox.assert_hit_count(index_id, "body:force", 1).await;
 
@@ -405,6 +404,7 @@ async fn test_commit_wait_for() {
         .await
         .unwrap();
 
+    // This test is not powerful enough to ensure that `wait_for` does not force the commit
     sandbox.assert_hit_count(index_id, "body:wait", 1).await;
 
     sandbox.shutdown().await.unwrap();
