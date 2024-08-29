@@ -27,6 +27,7 @@ use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
     IngestSubrequest,
 };
+use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::{DocUidGenerator, IndexId};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
@@ -54,6 +55,13 @@ struct IngestOptions {
     #[serde(alias = "commit")]
     #[serde(default)]
     commit_type: CommitType,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+struct IngestV2Options {
+    #[serde(alias = "commit")]
+    #[serde(default)]
+    commit_type: CommitTypeV2,
 }
 
 pub(crate) fn ingest_api_handlers(
@@ -92,14 +100,14 @@ fn ingest_handler(
 
 fn ingest_v2_filter(
     config: IngestApiConfig,
-) -> impl Filter<Extract = (String, Body, IngestOptions), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (String, Body, IngestV2Options), Error = Rejection> + Clone {
     warp::path!(String / "ingest-v2")
         .and(warp::post())
         .and(warp::body::content_length_limit(
             config.content_length_limit.as_u64(),
         ))
         .and(get_body_bytes())
-        .and(serde_qs::warp::query::<IngestOptions>(
+        .and(serde_qs::warp::query::<IngestV2Options>(
             serde_qs::Config::default(),
         ))
 }
@@ -118,7 +126,7 @@ fn ingest_v2_handler(
 async fn ingest_v2(
     index_id: IndexId,
     body: Body,
-    ingest_options: IngestOptions,
+    ingest_options: IngestV2Options,
     ingest_router: IngestRouterServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
     let mut doc_batch_builder = DocBatchV2Builder::default();
