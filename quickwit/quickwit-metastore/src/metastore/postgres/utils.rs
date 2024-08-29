@@ -44,6 +44,7 @@ pub(super) async fn establish_connection(
     acquire_timeout: Duration,
     idle_timeout_opt: Option<Duration>,
     max_lifetime_opt: Option<Duration>,
+    read_only: bool,
 ) -> MetastoreResult<TrackedPool<Postgres>> {
     let pool_options = PgPoolOptions::new()
         .min_connections(min_connections as u32)
@@ -51,9 +52,16 @@ pub(super) async fn establish_connection(
         .acquire_timeout(acquire_timeout)
         .idle_timeout(idle_timeout_opt)
         .max_lifetime(max_lifetime_opt);
-    let connect_options: PgConnectOptions = PgConnectOptions::from_str(connection_uri.as_str())?
-        .application_name("quickwit-metastore")
-        .log_statements(LevelFilter::Info);
+
+    let mut connect_options: PgConnectOptions =
+        PgConnectOptions::from_str(connection_uri.as_str())?
+            .application_name("quickwit-metastore")
+            .log_statements(LevelFilter::Info);
+
+    if read_only {
+        // this isn't a security mechanism, only a safeguard against involontary missuse
+        connect_options = connect_options.options([("default_transaction_read_only", "on")]);
+    }
     let sqlx_pool = pool_options
         .connect_with(connect_options)
         .await
