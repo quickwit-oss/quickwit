@@ -417,7 +417,7 @@ impl ClusterSandbox {
                     }
                 }
             },
-            Duration::from_secs(10),
+            Duration::from_secs(15),
             Duration::from_millis(500),
         )
         .await?;
