@@ -51,7 +51,7 @@ use super::{
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{extract_attributes, SpanId, TraceId};
 
-pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_7";
+pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_9";
 pub const OTEL_TRACES_INDEX_ID_PATTERN: &str = "otel-traces-v0_*";
 
 const OTEL_TRACES_INDEX_CONFIG: &str = r#"
@@ -143,6 +143,10 @@ doc_mapping:
       input_format: hex
       output_format: hex
       indexed: false
+    - name: is_root
+      type: bool
+      indexed: true
+      stored: false
     - name: events
       type: array<json>
       tokenizer: raw
@@ -230,6 +234,8 @@ pub struct Span {
     pub span_status: SpanStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_span_id: Option<SpanId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_root: Option<bool>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<Event>,
@@ -311,6 +317,7 @@ impl Span {
             span_dropped_events_count: span.dropped_events_count,
             span_dropped_links_count: span.dropped_links_count,
             span_status: span.status.map(SpanStatus::from_otlp).unwrap_or_default(),
+            is_root: Some(parent_span_id.is_none()),
             parent_span_id,
             events,
             event_names,
@@ -1267,6 +1274,7 @@ mod tests {
                 span_dropped_links_count: 0,
                 span_status: SpanStatus::default(),
                 parent_span_id: None,
+                is_root: Some(true),
                 events: Vec::new(),
                 event_names: Vec::new(),
                 links: Vec::new(),
@@ -1309,6 +1317,7 @@ mod tests {
                     message: None,
                 },
                 parent_span_id: Some(SpanId::new([3; 8])),
+                is_root: Some(false),
                 events: vec![Event {
                     event_timestamp_nanos: 1,
                     event_name: "event_name".to_string(),
@@ -1362,6 +1371,7 @@ mod tests {
             span_dropped_links_count: 0,
             span_status: SpanStatus::default(),
             parent_span_id: None,
+            is_root: Some(true),
             events: Vec::new(),
             event_names: Vec::new(),
             links: Vec::new(),

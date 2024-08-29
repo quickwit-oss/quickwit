@@ -193,6 +193,7 @@ impl JaegerService {
         operation_name: &'static str,
         request_start: Instant,
         index_id_patterns: Vec<String>,
+        root_only: bool,
     ) -> JaegerResult<SpanStream> {
         debug!(request=?request, "`find_traces` request");
 
@@ -212,6 +213,7 @@ impl JaegerService {
                 operation_name,
                 request_start,
                 index_id_patterns,
+                root_only,
             )
             .await?;
         Ok(response)
@@ -239,6 +241,7 @@ impl JaegerService {
                 operation_name,
                 request_start,
                 index_id_patterns,
+                false,
             )
             .await?;
         Ok(response)
@@ -302,6 +305,7 @@ impl JaegerService {
         operation_name: &'static str,
         request_start: Instant,
         index_id_patterns: Vec<String>,
+        root_only: bool,
     ) -> Result<SpanStream, Status> {
         if trace_ids.is_empty() {
             let (_tx, rx) = mpsc::channel(1);
@@ -317,6 +321,15 @@ impl JaegerService {
                 value,
             };
             query.should.push(term_query.into());
+        }
+        if root_only {
+            // TODO this isn't backward compatible. We could do NOT is_root:false with a lenient
+            // UserInputQuery once we support being lenient on missing fields
+            let term_query = TermQuery {
+                field: "is_root".to_string(),
+                value: "true".to_string(),
+            };
+            query.must.push(term_query.into());
         }
 
         let query_ast: QueryAst = query.into();
@@ -525,6 +538,9 @@ impl SpanReaderPlugin for JaegerService {
             "find_traces",
             Instant::now(),
             index_id_patterns,
+            false, /* if we use true, Jaeger will display "1 Span", and display an empty trace
+                    * when clicking on the ui (but display the full trace after reloading the
+                    * page) */
         )
         .await
         .map(Response::new)
@@ -2162,6 +2178,7 @@ mod tests {
                 message: Some("An error occurred.".to_string()),
             },
             parent_span_id: Some(SpanId::new([3; 8])),
+            is_root: Some(false),
             events: vec![QwEvent {
                 event_timestamp_nanos: 1000500003,
                 event_name: "event_name".to_string(),
