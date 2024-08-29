@@ -393,7 +393,7 @@ async fn test_commit_wait_for() {
 
     sandbox.enable_ingest_v2();
 
-    let ingest_error = sandbox
+    sandbox
         .indexer_rest_client
         .ingest(
             index_id,
@@ -403,11 +403,9 @@ async fn test_commit_wait_for() {
             CommitType::WaitFor,
         )
         .await
-        .unwrap_err();
+        .unwrap();
 
-    // TODO https://github.com/quickwit-oss/quickwit/issues/5351
-    assert_eq!(ingest_error.status_code(), Some(StatusCode::BAD_REQUEST));
-    // sandbox.assert_hit_count(index_id, "body:wait", 1).await;
+    sandbox.assert_hit_count(index_id, "body:wait", 1).await;
 
     sandbox.shutdown().await.unwrap();
 }
