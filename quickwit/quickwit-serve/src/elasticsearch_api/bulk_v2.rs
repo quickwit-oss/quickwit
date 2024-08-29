@@ -777,4 +777,40 @@ mod tests {
         assert_eq!(error.exception, ElasticException::IndexNotFound);
         assert_eq!(error.reason, "no such index [test-index-bar]");
     }
+
+    #[tokio::test]
+    async fn test_refresh_param() {
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
+            .expect_ingest()
+            .once()
+            .returning(|ingest_request| {
+                assert_eq!(ingest_request.commit_type(), CommitTypeV2::WaitFor);
+                Ok(IngestResponseV2 {
+                    successes: vec![IngestSuccess {
+                        subrequest_id: 0,
+                        index_uid: Some(IndexUid::for_test("my-index-1", 0)),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                        shard_id: Some(ShardId::from(1)),
+                        replication_position_inclusive: Some(Position::offset(1u64)),
+                        num_ingested_docs: 2,
+                        parse_failures: Vec::new(),
+                    }],
+                    failures: Vec::new(),
+                })
+            });
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
+        let handler = es_compat_bulk_handler_v2(ingest_router);
+
+        let payload = r#"
+            {"create": {"_index": "my-index-1", "_id" : "1"}}
+            {"ts": 1, "message": "my-message-1"}
+        "#;
+        warp::test::request()
+            .path("/_elastic/_bulk?refresh=wait_for")
+            .method("POST")
+            .body(payload)
+            .reply(&handler)
+            .await;
+    }
 }
