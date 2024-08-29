@@ -19,12 +19,14 @@
 
 use std::time::Duration;
 
+use futures_util::FutureExt;
 use hyper::StatusCode;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
 use quickwit_metastore::SplitState;
 use quickwit_rest_client::error::{ApiError, Error};
 use quickwit_rest_client::rest_client::CommitType;
+use quickwit_serve::ListSplitsQueryParams;
 use serde_json::json;
 
 use crate::ingest_json;
@@ -378,7 +380,7 @@ async fn test_commit_wait_for() {
             - name: body 
               type: text
         indexing_settings:
-            commit_timeout_secs: 2
+            commit_timeout_secs: 3
         "#
     );
 
@@ -392,20 +394,54 @@ async fn test_commit_wait_for() {
 
     sandbox.enable_ingest_v2();
 
-    sandbox
+    // run 2 ingest requests at the same time on the same index
+    // wait_for shouldn't force the commit so expect only 1 published split
+
+    let ingest_1_fut = sandbox
         .indexer_rest_client
         .ingest(
             index_id,
-            ingest_json!({"body": "wait"}),
+            ingest_json!({"body": "wait for"}),
             None,
             None,
             CommitType::WaitFor,
         )
+        .then(|res| async {
+            let resp = res.unwrap();
+            sandbox.assert_hit_count(index_id, "body:for", 1).await;
+            resp
+        });
+
+    let ingest_2_fut = sandbox
+        .indexer_rest_client
+        .ingest(
+            index_id,
+            ingest_json!({"body": "wait again"}),
+            None,
+            None,
+            CommitType::WaitFor,
+        )
+        .then(|res| async {
+            let resp = res.unwrap();
+            sandbox.assert_hit_count(index_id, "body:again", 1).await;
+            resp
+        });
+
+    tokio::join!(ingest_1_fut, ingest_2_fut);
+
+    sandbox.assert_hit_count(index_id, "body:wait", 2).await;
+
+    let splits_query_params = ListSplitsQueryParams {
+        split_states: Some(vec![SplitState::Published]),
+        ..Default::default()
+    };
+    let published_splits = sandbox
+        .indexer_rest_client
+        .splits(index_id)
+        .list(splits_query_params)
         .await
         .unwrap();
-
-    // This test is not powerful enough to ensure that `wait_for` does not force the commit
-    sandbox.assert_hit_count(index_id, "body:wait", 1).await;
+    assert_eq!(published_splits.len(), 1);
 
     sandbox.shutdown().await.unwrap();
 }
