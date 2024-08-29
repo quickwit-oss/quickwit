@@ -17,21 +17,101 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
+use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limited_error;
 use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason,
 };
+use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{PersistFailure, PersistFailureReason, PersistSuccess};
 use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
 use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
-use quickwit_proto::types::{NodeId, ShardId, SubrequestId};
+use quickwit_proto::types::{NodeId, Position, ShardId, SubrequestId};
+use tokio::sync::Notify;
 use tracing::warn;
 
 use super::router::PersistRequestSummary;
+
+#[derive(Default)]
+struct PublishState {
+    awaiting_publish: HashMap<ShardId, Position>,
+    already_published: HashMap<ShardId, Position>,
+}
+
+/// A helper for tracking the progress of the publish events when running in
+/// `wait_for` commit mode.
+///
+/// Registers a set of shard positions and listens to [`ShardPositionsUpdate`]
+/// events to assert when all the persisted events have been published. To make
+/// sure that no events are missed:
+/// - the tracker should be created before the persist requests are sent
+/// - the `shard_persisted` method should for all successful persist subrequests
+struct PublishTracker {
+    state: Arc<Mutex<PublishState>>,
+    publish_complete: Arc<Notify>,
+    _publish_listen_handle: EventSubscriptionHandle,
+}
+
+impl PublishTracker {
+    fn new(event_tracker: EventBroker) -> Self {
+        let state = Arc::new(Mutex::new(PublishState::default()));
+        let state_clone = state.clone();
+        let publish_complete = Arc::new(Notify::new());
+        let publish_complete_notifier = publish_complete.clone();
+        let _publish_listen_handle =
+            event_tracker.subscribe(move |update: ShardPositionsUpdate| {
+                let mut state_handle = state_clone.lock().unwrap();
+                for (updated_shard_id, updated_position) in &update.updated_shard_positions {
+                    if let Some(shard_position) =
+                        state_handle.awaiting_publish.get(updated_shard_id)
+                    {
+                        if updated_position >= shard_position {
+                            state_handle.awaiting_publish.remove(updated_shard_id);
+                            if state_handle.awaiting_publish.is_empty() {
+                                publish_complete_notifier.notify_one();
+                            }
+                        }
+                    } else {
+                        // Save this position update in case the publish update
+                        // event arrived before the shard persist response. We
+                        // might build a state that tracks irrelevant shards for
+                        // the duration of the query but that should be fine.
+                        state_handle
+                            .already_published
+                            .insert(updated_shard_id.clone(), updated_position.clone());
+                    }
+                }
+            });
+        Self {
+            state,
+            _publish_listen_handle,
+            publish_complete,
+        }
+    }
+
+    fn shard_persisted(&self, shard_id: ShardId, new_position: Position) {
+        let mut state_handle = self.state.lock().unwrap();
+        match state_handle.already_published.get(&shard_id) {
+            Some(already_published_position) if new_position <= *already_published_position => {
+                // already published, no need to track this shard's position updates
+            }
+            _ => {
+                state_handle
+                    .awaiting_publish
+                    .insert(shard_id.clone(), new_position.clone());
+            }
+        }
+    }
+
+    async fn wait_publish_complete(self) {
+        self.publish_complete.notified().await;
+    }
+}
 
 /// A helper struct for managing the state of the subrequests of an ingest request during multiple
 /// persist attempts.
@@ -44,13 +124,14 @@ pub(super) struct IngestWorkbench {
     /// subrequest.
     pub num_attempts: usize,
     pub max_num_attempts: usize,
-    // List of leaders that have been marked as temporarily unavailable.
-    // These leaders have encountered a transport error during an attempt and will be treated as if
-    // they were out of the pool for subsequent attempts.
-    //
-    // (The point here is to make sure we do not wait for the failure detection to kick the node
-    // out of the ingest node.)
+    /// List of leaders that have been marked as temporarily unavailable.
+    /// These leaders have encountered a transport error during an attempt and will be treated as
+    /// if they were out of the pool for subsequent attempts.
+    ///
+    /// (The point here is to make sure we do not wait for the failure detection to kick the node
+    /// out of the ingest node.)
     pub unavailable_leaders: HashSet<NodeId>,
+    publish_tracker: Option<PublishTracker>,
 }
 
 /// Returns an iterator of pending of subrequests, sorted by sub request id.
@@ -67,7 +148,11 @@ pub(super) fn pending_subrequests(
 }
 
 impl IngestWorkbench {
-    pub fn new(ingest_subrequests: Vec<IngestSubrequest>, max_num_attempts: usize) -> Self {
+    fn new_inner(
+        ingest_subrequests: Vec<IngestSubrequest>,
+        max_num_attempts: usize,
+        publish_tracker: Option<PublishTracker>,
+    ) -> Self {
         let subworkbenches: BTreeMap<SubrequestId, IngestSubworkbench> = ingest_subrequests
             .into_iter()
             .map(|subrequest| {
@@ -81,8 +166,25 @@ impl IngestWorkbench {
         Self {
             subworkbenches,
             max_num_attempts,
+            publish_tracker,
             ..Default::default()
         }
+    }
+
+    pub fn new(ingest_subrequests: Vec<IngestSubrequest>, max_num_attempts: usize) -> Self {
+        Self::new_inner(ingest_subrequests, max_num_attempts, None)
+    }
+
+    pub fn new_with_publish_tracking(
+        ingest_subrequests: Vec<IngestSubrequest>,
+        max_num_attempts: usize,
+        event_broker: EventBroker,
+    ) -> Self {
+        Self::new_inner(
+            ingest_subrequests,
+            max_num_attempts,
+            Some(PublishTracker::new(event_broker)),
+        )
     }
 
     pub fn new_attempt(&mut self) {
@@ -138,6 +240,12 @@ impl IngestWorkbench {
             );
             return;
         };
+        if let Some(publish_tracker) = &mut self.publish_tracker {
+            if let Some(position) = &persist_success.replication_position_inclusive {
+                publish_tracker
+                    .shard_persisted(persist_success.shard_id().clone(), position.clone());
+            }
+        }
         self.num_successes += 1;
         subworkbench.num_attempts += 1;
         subworkbench.persist_success_opt = Some(persist_success);
@@ -223,7 +331,7 @@ impl IngestWorkbench {
         );
     }
 
-    pub fn into_ingest_result(self) -> IngestResponseV2 {
+    pub async fn into_ingest_result(self) -> IngestResponseV2 {
         let num_subworkbenches = self.subworkbenches.len();
         let mut successes = Vec::with_capacity(self.num_successes);
         let mut failures = Vec::with_capacity(num_subworkbenches - self.num_successes);
@@ -254,6 +362,10 @@ impl IngestWorkbench {
         let num_successes = successes.len();
         let num_failures = failures.len();
         assert_eq!(num_successes + num_failures, num_subworkbenches);
+
+        if let Some(publish_tracker) = self.publish_tracker {
+            publish_tracker.wait_publish_complete().await;
+        }
 
         // For tests, we sort the successes and failures by subrequest_id
         #[cfg(test)]
@@ -358,10 +470,86 @@ impl IngestSubworkbench {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use quickwit_proto::ingest::ingester::PersistFailureReason;
-    use quickwit_proto::types::ShardId;
+    use quickwit_proto::types::{IndexUid, ShardId, SourceUid};
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_publish_tracker() {
+        let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
+        let event_broker = EventBroker::default();
+        let tracker = PublishTracker::new(event_broker.clone());
+        let shard_id_1 = ShardId::from("test-shard-1");
+        let shard_id_2 = ShardId::from("test-shard-2");
+        let shard_id_3 = ShardId::from("test-shard-3");
+        let shard_id_4 = ShardId::from("test-shard-3");
+        let position = Position::offset(42usize);
+        let greater_position = Position::offset(666usize);
+        tracker.shard_persisted(shard_id_1.clone(), position.clone());
+        tracker.shard_persisted(shard_id_2.clone(), position.clone());
+        tracker.shard_persisted(shard_id_3.clone(), position.clone());
+
+        event_broker.publish(ShardPositionsUpdate {
+            source_uid: SourceUid {
+                index_uid: index_uid.clone(),
+                source_id: "test-source".to_string(),
+            },
+            updated_shard_positions: vec![
+                (shard_id_1.clone(), position.clone()),
+                (shard_id_2.clone(), greater_position),
+            ]
+            .into_iter()
+            .collect(),
+        });
+
+        event_broker.publish(ShardPositionsUpdate {
+            source_uid: SourceUid {
+                index_uid: index_uid.clone(),
+                source_id: "test-source".to_string(),
+            },
+            updated_shard_positions: vec![
+                (shard_id_3.clone(), position.clone()),
+                (shard_id_4.clone(), position.clone()),
+            ]
+            .into_iter()
+            .collect(),
+        });
+
+        // persist response received after the publish event
+        tracker.shard_persisted(shard_id_4.clone(), position.clone());
+
+        tokio::time::timeout(Duration::from_millis(200), tracker.wait_publish_complete())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_publish_tracker_waits() {
+        let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
+        let event_broker = EventBroker::default();
+        let tracker = PublishTracker::new(event_broker.clone());
+        let shard_id_1 = ShardId::from("test-shard-1");
+        let position = Position::offset(42usize);
+        tracker.shard_persisted(shard_id_1.clone(), position.clone());
+        tracker.shard_persisted(ShardId::from("test-shard-2"), position.clone());
+
+        event_broker.publish(ShardPositionsUpdate {
+            source_uid: SourceUid {
+                index_uid: index_uid.clone(),
+                source_id: "test-source".to_string(),
+            },
+            updated_shard_positions: vec![(shard_id_1.clone(), position.clone())]
+                .into_iter()
+                .collect(),
+        });
+
+        tokio::time::timeout(Duration::from_millis(200), tracker.wait_publish_complete())
+            .await
+            .unwrap_err();
+    }
 
     #[test]
     fn test_ingest_subworkbench() {
@@ -680,10 +868,10 @@ mod tests {
         assert_eq!(subworkbench.num_attempts, 1);
     }
 
-    #[test]
-    fn test_ingest_workbench_into_ingest_result() {
+    #[tokio::test]
+    async fn test_ingest_workbench_into_ingest_result() {
         let workbench = IngestWorkbench::new(Vec::new(), 0);
-        let response = workbench.into_ingest_result();
+        let response = workbench.into_ingest_result().await;
         assert!(response.successes.is_empty());
         assert!(response.failures.is_empty());
 
@@ -706,7 +894,7 @@ mod tests {
 
         workbench.record_no_shards_available(1);
 
-        let response = workbench.into_ingest_result();
+        let response = workbench.into_ingest_result().await;
         assert_eq!(response.successes.len(), 1);
         assert_eq!(response.successes[0].subrequest_id, 0);
 
@@ -725,7 +913,7 @@ mod tests {
         let failure = SubworkbenchFailure::Persist(PersistFailureReason::Timeout);
         workbench.record_failure(0, failure);
 
-        let ingest_response = workbench.into_ingest_result();
+        let ingest_response = workbench.into_ingest_result().await;
         assert_eq!(ingest_response.successes.len(), 0);
         assert_eq!(
             ingest_response.failures[0].reason(),
