@@ -407,9 +407,8 @@ async fn test_commit_wait_for() {
             CommitType::WaitFor,
         )
         .then(|res| async {
-            let resp = res.unwrap();
+            res.unwrap();
             sandbox.assert_hit_count(index_id, "body:for", 1).await;
-            resp
         });
 
     let ingest_2_fut = sandbox
@@ -422,9 +421,8 @@ async fn test_commit_wait_for() {
             CommitType::WaitFor,
         )
         .then(|res| async {
-            let resp = res.unwrap();
+            res.unwrap();
             sandbox.assert_hit_count(index_id, "body:again", 1).await;
-            resp
         });
 
     tokio::join!(ingest_1_fut, ingest_2_fut);
