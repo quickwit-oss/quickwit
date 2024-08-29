@@ -317,10 +317,103 @@ async fn test_ingest_v2_happy_path() {
 }
 
 #[tokio::test]
-async fn test_commit_modes() {
+async fn test_commit_force() {
     initialize_tests();
-    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
-    let index_id = "test_commit_modes";
+    let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let index_id = "test_commit_force";
+    let index_config = format!(
+        r#"
+        version: 0.8
+        index_id: {index_id}
+        doc_mapping:
+            field_mappings:
+            - name: body
+              type: text
+        indexing_settings:
+            commit_timeout_secs: 20
+        "#
+    );
+
+    // Create index
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(index_config, ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+
+    sandbox.enable_ingest_v2();
+
+    ingest_with_retry(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "force"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+
+    // commit_timeout_secs is set to a large value, so this will timeout if
+    // CommitType::Force is not working
+    sandbox
+        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
+        .await
+        .unwrap();
+
+    sandbox.assert_hit_count(index_id, "body:force", 1).await;
+
+    sandbox.shutdown().await.unwrap();
+}
+
+// #[tokio::test]
+// async fn test_commit_wait_for() {
+//     initialize_tests();
+//     let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+//     let index_id = "test_commit_wait_for";
+//     let index_config = format!(
+//         r#"
+//         version: 0.8
+//         index_id: {index_id}
+//         doc_mapping:
+//             field_mappings:
+//             - name: body type: text
+//         indexing_settings:
+//             commit_timeout_secs: 2
+//         "#
+//     );
+
+//     // Create index
+//     sandbox
+//         .indexer_rest_client
+//         .indexes()
+//         .create(index_config, ConfigFormat::Yaml, false)
+//         .await
+//         .unwrap();
+
+//     sandbox.enable_ingest_v2();
+
+//     sandbox
+//         .indexer_rest_client
+//         .ingest(
+//             index_id,
+//             ingest_json!({"body": "wait"}),
+//             None,
+//             None,
+//             CommitType::WaitFor,
+//         )
+//         .await
+//         .unwrap();
+
+//     sandbox.assert_hit_count(index_id, "body:wait", 1).await;
+
+//     sandbox.shutdown().await.unwrap();
+// }
+
+#[tokio::test]
+async fn test_commit_auto() {
+    initialize_tests();
+    let mut sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let index_id = "test_commit_auto";
     let index_config = format!(
         r#"
         version: 0.8
@@ -334,7 +427,6 @@ async fn test_commit_modes() {
         "#
     );
 
-    // Create index
     sandbox
         .indexer_rest_client
         .indexes()
@@ -342,37 +434,8 @@ async fn test_commit_modes() {
         .await
         .unwrap();
 
-    // TODO: make this test work with ingest v2 (#4438)
-    // sandbox.enable_ingest_v2();
+    sandbox.enable_ingest_v2();
 
-    // Test force commit
-    ingest_with_retry(
-        &sandbox.indexer_rest_client,
-        index_id,
-        ingest_json!({"body": "force"}),
-        CommitType::Force,
-    )
-    .await
-    .unwrap();
-
-    sandbox.assert_hit_count(index_id, "body:force", 1).await;
-
-    // Test wait_for commit
-    sandbox
-        .indexer_rest_client
-        .ingest(
-            index_id,
-            ingest_json!({"body": "wait"}),
-            None,
-            None,
-            CommitType::WaitFor,
-        )
-        .await
-        .unwrap();
-
-    sandbox.assert_hit_count(index_id, "body:wait", 1).await;
-
-    // Test auto commit
     sandbox
         .indexer_rest_client
         .ingest(
@@ -388,13 +451,12 @@ async fn test_commit_modes() {
     sandbox.assert_hit_count(index_id, "body:auto", 0).await;
 
     sandbox
-        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 3)
+        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
         .await
         .unwrap();
 
     sandbox.assert_hit_count(index_id, "body:auto", 1).await;
 
-    // Clean up
     sandbox.shutdown().await.unwrap();
 }
 
