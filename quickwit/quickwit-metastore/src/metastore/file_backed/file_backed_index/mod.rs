@@ -108,6 +108,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
             follower_id: Some("follower-ingester".to_string()),
             doc_mapping_uid: Some(DocMappingUid::for_test(1)),
             publish_position_inclusive: Some(Position::Beginning),
+            update_timestamp: 1724240908,
             ..Default::default()
         };
         let shards = Shards::from_shards_vec(index_uid.clone(), source_id.clone(), vec![shard]);

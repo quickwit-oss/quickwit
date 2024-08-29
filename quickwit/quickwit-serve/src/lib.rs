@@ -338,7 +338,10 @@ async fn start_control_plane_if_needed(
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
 
         // If the node is a metastore, we skip this check in order to avoid a deadlock.
-        if !node_config.is_service_enabled(QuickwitService::Metastore) {
+        // If the node is a searcher, we skip this check because the searcher does not need to.
+        if !(node_config.is_service_enabled(QuickwitService::Metastore)
+            || node_config.is_service_enabled(QuickwitService::Searcher))
+        {
             info!("connecting to control plane");
 
             if !balance_channel

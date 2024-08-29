@@ -29,6 +29,7 @@ use quickwit_proto::metastore::{
     OpenShardSubrequest, OpenShardSubresponse,
 };
 use quickwit_proto::types::{queue_id, IndexUid, Position, PublishToken, ShardId, SourceId};
+use time::OffsetDateTime;
 use tracing::{info, warn};
 
 use crate::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
@@ -132,6 +133,7 @@ impl Shards {
                     doc_mapping_uid: subrequest.doc_mapping_uid,
                     publish_position_inclusive: Some(Position::Beginning),
                     publish_token: subrequest.publish_token.clone(),
+                    update_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                 };
                 mutation_occurred = true;
                 entry.insert(shard.clone());
@@ -288,6 +290,7 @@ impl Shards {
                 shard.shard_state = ShardState::Closed as i32;
             }
             shard.publish_position_inclusive = Some(publish_position_inclusive);
+            shard.update_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         }
         Ok(MutationOccurred::Yes(()))
     }

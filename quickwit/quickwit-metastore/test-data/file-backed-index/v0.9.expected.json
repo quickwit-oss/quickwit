@@ -179,7 +179,8 @@
         "follower_id": "follower-ingester",
         "shard_state": 1,
         "publish_position_inclusive": "",
-        "doc_mapping_uid": "00000000000000000000000001"
+        "doc_mapping_uid": "00000000000000000000000001",
+        "update_timestamp": 1724240908
       }
     ]
   },
