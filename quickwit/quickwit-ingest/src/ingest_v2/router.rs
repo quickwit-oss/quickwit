@@ -606,9 +606,14 @@ impl IngestRouterService for IngestRouter {
             .try_acquire_many_owned(request_size_bytes as u32)
             .map_err(|_| IngestV2Error::TooManyRequests(RateLimitingCause::RouterLoadShedding))?;
 
-        let ingest_res = self
-            .ingest_timeout(ingest_request, ingest_request_timeout())
-            .await;
+        let ingest_res = if ingest_request.commit_type() == CommitTypeV2::Auto {
+            self.ingest_timeout(ingest_request, ingest_request_timeout())
+                .await
+        } else {
+            Ok(self
+                .retry_batch_persist(ingest_request, MAX_PERSIST_ATTEMPTS)
+                .await)
+        };
 
         update_ingest_metrics(&ingest_res, num_subrequests);
 
