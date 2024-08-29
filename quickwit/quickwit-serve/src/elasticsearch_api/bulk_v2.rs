@@ -30,7 +30,6 @@ use quickwit_proto::ingest::router::{
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::{DocUid, IndexId};
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 
 use super::model::ElasticException;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
@@ -140,8 +139,12 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     }
     let commit_type: CommitTypeV2 = bulk_options.refresh.into();
 
-    if commit_type != CommitTypeV2::Auto {
-        warn!("ingest API v2 does not support the `refresh` parameter (yet)");
+    if commit_type == CommitTypeV2::WaitFor {
+        ElasticsearchError::new(
+            StatusCode::BAD_REQUEST,
+            "ingest API v2 does not support the `refresh=wait_for` parameter (yet)".to_string(),
+            Some(ElasticException::IllegalArgument),
+        );
     }
     let ingest_request_opt = ingest_request_builder.build(INGEST_V2_SOURCE_ID, commit_type);
 
