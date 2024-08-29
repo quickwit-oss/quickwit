@@ -353,7 +353,7 @@ async fn test_commit_force() {
     .await
     .unwrap();
 
-    // commit_timeout_secs is set to a large value, so this will timeout if
+    // commit_timeout_secs is set to a large value, so this would timeout if
     // CommitType::Force is not working
     sandbox
         .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
