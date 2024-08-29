@@ -210,13 +210,13 @@ mod tests {
                 .unwrap();
             let mut conn = connection_pool.acquire().await.unwrap();
 
-            conn.revert(&down_migration).await.unwrap();
+            conn.revert(down_migration).await.unwrap();
 
             run_migrations(&connection_pool, true, false)
                 .await
                 .unwrap_err();
 
-            conn.apply(&up_migration).await.unwrap();
+            conn.apply(up_migration).await.unwrap();
         }
 
         {
