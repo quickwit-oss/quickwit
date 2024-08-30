@@ -458,6 +458,8 @@ pub struct SearcherContext {
     pub split_cache_opt: Option<Arc<SplitCache>>,
     /// List fields cache. Caches the list fields response for a given split.
     pub list_fields_cache: ListFieldsCache,
+    /// The aggregation limits are passed to limit the memory usage.
+    pub aggregation_limit: AggregationLimits,
 }
 
 impl std::fmt::Debug for SearcherContext {
@@ -498,6 +500,10 @@ impl SearcherContext {
             LeafSearchCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
         let list_fields_cache =
             ListFieldsCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
+        let aggregation_limit = AggregationLimits::new(
+            Some(searcher_config.aggregation_memory_limit.as_u64()),
+            Some(searcher_config.aggregation_bucket_limit),
+        );
 
         Self {
             searcher_config,
@@ -508,14 +514,12 @@ impl SearcherContext {
             leaf_search_cache,
             list_fields_cache,
             split_cache_opt,
+            aggregation_limit,
         }
     }
 
-    /// Returns a new instance to track the aggregation memory usage.
-    pub fn create_new_aggregation_limits(&self) -> AggregationLimits {
-        AggregationLimits::new(
-            Some(self.searcher_config.aggregation_memory_limit.as_u64()),
-            Some(self.searcher_config.aggregation_bucket_limit),
-        )
+    /// Returns the shared instance to track the aggregation memory usage.
+    pub fn get_aggregation_limits(&self) -> AggregationLimits {
+        self.aggregation_limit.clone()
     }
 }
