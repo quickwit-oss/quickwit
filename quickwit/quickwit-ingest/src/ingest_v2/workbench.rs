@@ -43,16 +43,17 @@ struct PublishState {
     already_published: HashMap<ShardId, Position>,
 }
 
-/// A helper for tracking the progress of the publish events when running in
-/// `wait_for` commit mode.
+/// A helper for awaiting shard publish events when running in `wait_for` and
+/// `force` commit mode.
 ///
 /// Registers a set of shard positions and listens to [`ShardPositionsUpdate`]
 /// events to assert when all the persisted events have been published. To make
 /// sure that no events are missed:
 /// - the tracker should be created before the persist requests are sent
-/// - the `shard_persisted` method should for all successful persist subrequests
+/// - `track_persisted_position` should be called for all successful persist subrequests
 struct PublishTracker {
     state: Arc<Mutex<PublishState>>,
+    // sync::notify instead of sync::oneshot because we don't want to store the permit
     publish_complete: Arc<Notify>,
     _publish_listen_handle: EventSubscriptionHandle,
 }
@@ -73,7 +74,11 @@ impl PublishTracker {
                         if updated_position >= shard_position {
                             state_handle.awaiting_publish.remove(updated_shard_id);
                             if state_handle.awaiting_publish.is_empty() {
-                                publish_complete_notifier.notify_one();
+                                // The notification is only relevant once
+                                // `self.wait_publish_complete()` is called.
+                                // Before that, `state.awaiting_publish` might
+                                // still be re-populated.
+                                publish_complete_notifier.notify_waiters();
                             }
                         }
                     } else {
@@ -109,13 +114,15 @@ impl PublishTracker {
     }
 
     async fn wait_publish_complete(self) {
-        // correctness:
-        // - `state.awaiting_publish` can only grow before this (`self` is consumed)
-        // - `publish_complete.notify()` is called as soon as the last shard is published
+        // correctness: new shards cannot be added to `state.awaiting_publish`
+        // at this point because `self` is consumed. By subscribing to
+        // `publish_complete` before checking `awaiting_publish`, we make sure we
+        // don't miss the moment when it becomes empty.
+        let notified = self.publish_complete.notified();
         if self.state.lock().unwrap().awaiting_publish.is_empty() {
             return;
         }
-        self.publish_complete.notified().await;
+        notified.await;
     }
 }
 
