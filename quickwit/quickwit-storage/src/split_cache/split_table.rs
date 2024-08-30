@@ -206,9 +206,10 @@ impl SplitTable {
     fn insert(&mut self, split_info: SplitInfo) {
         let was_not_in_queue = match split_info.status {
             Status::Candidate { .. } => {
-                let was_not_in_queue = self.candidate_splits.insert(split_info.split_key);
+                // we truncate *before* inserting, otherwise way may end up in an inconsistent
+                // state which make truncate_candidate_list loop indefinitely
                 self.truncate_candidate_list();
-                was_not_in_queue
+                self.candidate_splits.insert(split_info.split_key)
             }
             Status::Downloading { .. } => self.downloading_splits.insert(split_info.split_key),
             Status::OnDisk { num_bytes } => {
@@ -224,6 +225,8 @@ impl SplitTable {
                 self.on_disk_splits.insert(split_info.split_key)
             }
         };
+        // this is fine to do in an inconsistent state, the last entry will just be ignored while
+        // gcing
         self.gc_downloading_splits_if_necessary();
         assert!(was_not_in_queue);
         let split_ulid_was_absent = self
@@ -323,7 +326,8 @@ impl SplitTable {
 
     /// Make sure we have at most `MAX_CANDIDATES` candidate splits.
     fn truncate_candidate_list(&mut self) {
-        while self.candidate_splits.len() > MAX_NUM_CANDIDATES {
+        // we remove one more to make place for one candidate about to be inserted
+        while self.candidate_splits.len() >= MAX_NUM_CANDIDATES {
             let worst_candidate = self.candidate_splits.first().unwrap().split_ulid;
             self.remove(worst_candidate);
         }
@@ -448,13 +452,16 @@ pub(crate) struct DownloadOpportunity {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
+    use std::sync::Arc;
 
     use bytesize::ByteSize;
     use quickwit_common::uri::Uri;
     use quickwit_config::SplitCacheLimits;
     use ulid::Ulid;
 
-    use crate::split_cache::split_table::{DownloadOpportunity, SplitTable};
+    use crate::split_cache::split_table::{
+        CandidateSplit, DownloadOpportunity, SplitInfo, SplitKey, SplitTable, Status,
+    };
 
     const TEST_STORAGE_URI: &str = "s3://test";
 
@@ -662,5 +669,39 @@ mod tests {
                 i.min(super::MAX_NUM_CANDIDATES)
             );
         }
+    }
+
+    // Unit test for #5334
+    #[test]
+    fn test_split_inserted_is_the_worst_candidate_5334() {
+        let mut split_table = SplitTable::with_limits_and_existing_splits(
+            SplitCacheLimits {
+                max_num_bytes: ByteSize::mb(10),
+                max_num_splits: NonZeroU32::new(2).unwrap(),
+                num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
+                max_file_descriptors: NonZeroU32::new(100).unwrap(),
+            },
+            Default::default(),
+        );
+        for i in (0u128..=super::MAX_NUM_CANDIDATES as u128).rev() {
+            let split_ulid = Ulid(i);
+            let candidate_split = CandidateSplit {
+                storage_uri: Uri::for_test(TEST_STORAGE_URI),
+                split_ulid,
+                living_token: Arc::new(()),
+            };
+            let split_info = SplitInfo {
+                split_key: SplitKey {
+                    last_accessed: 0u64,
+                    split_ulid,
+                },
+                status: Status::Candidate(candidate_split),
+            };
+            split_table.insert(split_info);
+        }
+        assert_eq!(
+            split_table.candidate_splits.len(),
+            super::MAX_NUM_CANDIDATES
+        );
     }
 }

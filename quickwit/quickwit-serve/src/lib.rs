@@ -338,7 +338,10 @@ async fn start_control_plane_if_needed(
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
 
         // If the node is a metastore, we skip this check in order to avoid a deadlock.
-        if !node_config.is_service_enabled(QuickwitService::Metastore) {
+        // If the node is a searcher, we skip this check because the searcher does not need to.
+        if !(node_config.is_service_enabled(QuickwitService::Metastore)
+            || node_config.is_service_enabled(QuickwitService::Searcher))
+        {
             info!("connecting to control plane");
 
             if !balance_channel
@@ -655,7 +658,7 @@ pub async fn serve_quickwit(
     let otlp_logs_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer)
         && node_config.indexer_config.enable_otlp_endpoint
     {
-        Some(OtlpGrpcLogsService::new(ingest_service.clone()))
+        Some(OtlpGrpcLogsService::new(ingest_router_service.clone()))
     } else {
         None
     };
@@ -663,7 +666,10 @@ pub async fn serve_quickwit(
     let otlp_traces_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer)
         && node_config.indexer_config.enable_otlp_endpoint
     {
-        Some(OtlpGrpcTracesService::new(ingest_service.clone(), None))
+        Some(OtlpGrpcTracesService::new(
+            ingest_router_service.clone(),
+            None,
+        ))
     } else {
         None
     };

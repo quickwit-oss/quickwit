@@ -57,7 +57,7 @@ pub(crate) struct JaegerApi;
 ///
 /// This is where all Jaeger handlers
 /// should be registered.
-/// Request are executed on the `otel traces v0_7` index.
+/// Request are executed on the `otel-traces-v0_*` indexes.
 pub(crate) fn jaeger_api_handlers(
     jaeger_service_opt: Option<JaegerService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -261,6 +261,7 @@ async fn jaeger_traces_search(
             "find_traces",
             Instant::now(),
             index_id_patterns,
+            true,
         )
         .await
         .map_err(|error| {
@@ -353,7 +354,7 @@ mod tests {
     async fn test_when_jaeger_not_found() {
         let jaeger_api_handler = jaeger_api_handlers(None).recover(crate::rest::recover_fn_final);
         let resp = warp::test::request()
-            .path("/otel-traces-v0_7/jaeger/api/services")
+            .path("/otel-traces-v0_9/jaeger/api/services")
             .reply(&jaeger_api_handler)
             .await;
         assert_eq!(resp.status(), 404);
@@ -385,7 +386,7 @@ mod tests {
 
         let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/otel-traces-v0_7/jaeger/api/services")
+            .path("/otel-traces-v0_9/jaeger/api/services")
             .reply(&jaeger_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
@@ -421,7 +422,7 @@ mod tests {
         let jaeger = JaegerService::new(JaegerConfig::default(), mock_search_service);
         let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/otel-traces-v0_7/jaeger/api/services/service1/operations")
+            .path("/otel-traces-v0_9/jaeger/api/services/service1/operations")
             .reply(&jaeger_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
@@ -469,7 +470,7 @@ mod tests {
         let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
         let resp = warp::test::request()
             .path(
-                "/otel-traces-v0_7/jaeger/api/traces?service=quickwit&\
+                "/otel-traces-v0_9/jaeger/api/traces?service=quickwit&\
                  operation=delete_splits_marked_for_deletion&minDuration=500us&maxDuration=1.2s&\
                  tags=%7B%22tag.first%22%3A%22common%22%2C%22tag.second%22%3A%22true%22%7D&\
                  limit=1&start=1702352106016000&end=1702373706016000&lookback=custom",
@@ -500,7 +501,7 @@ mod tests {
 
         let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/otel-traces-v0_7/jaeger/api/traces/1506026ddd216249555653218dc88a6c")
+            .path("/otel-traces-v0_9/jaeger/api/traces/1506026ddd216249555653218dc88a6c")
             .reply(&jaeger_api_handler)
             .await;
 

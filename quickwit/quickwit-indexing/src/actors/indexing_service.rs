@@ -435,7 +435,7 @@ impl IndexingService {
         let mut num_immature_splits = 0usize;
 
         while let Some(list_splits_response) = immature_splits_stream.try_next().await? {
-            for split_metadata in list_splits_response.deserialize_splits_metadata()? {
+            for split_metadata in list_splits_response.deserialize_splits_metadata().await? {
                 num_immature_splits += 1;
 
                 let merge_pipeline_id = MergePipelineId {

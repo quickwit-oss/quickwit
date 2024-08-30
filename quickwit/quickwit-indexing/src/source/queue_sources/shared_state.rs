@@ -194,6 +194,7 @@ pub mod shared_state_for_tests {
                                     doc_mapping_uid: sub_req.doc_mapping_uid,
                                     publish_position_inclusive: Some(position),
                                     shard_state: ShardState::Open as i32,
+                                    update_timestamp: 1724158996,
                                 }),
                             }
                         })
@@ -233,6 +234,7 @@ pub mod shared_state_for_tests {
                             doc_mapping_uid: None,
                             publish_position_inclusive: Some(position),
                             shard_state: ShardState::Open as i32,
+                            update_timestamp: 1724158996,
                         }
                     })
                     .collect();

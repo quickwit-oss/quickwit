@@ -98,6 +98,9 @@ message Shard {
 
   // The UID of the index doc mapping when the shard was created.
   quickwit.common.DocMappingUid doc_mapping_uid = 11;
+
+  // Time when the shard was last updated
+  int64 update_timestamp = 12;
 }
 
 // A group of shards belonging to the same index and source.

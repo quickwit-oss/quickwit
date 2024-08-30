@@ -158,6 +158,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .field_attribute(
             "Shard.replication_position_inclusive",
             "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
+        )
+        .field_attribute(
+            "Shard.update_timestamp",
+            "#[serde(default = \"super::compatibility_shard_update_timestamp\")]",
         );
 
     Codegen::builder()

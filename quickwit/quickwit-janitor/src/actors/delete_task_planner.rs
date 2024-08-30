@@ -357,7 +357,8 @@ impl DeleteTaskPlanner {
         let stale_splits = ctx
             .protect_future(self.metastore.list_stale_splits(list_stale_splits_request))
             .await?
-            .deserialize_splits()?;
+            .deserialize_splits()
+            .await?;
         debug!(
             index_id = index_uid.index_id,
             last_delete_opstamp = last_delete_opstamp,

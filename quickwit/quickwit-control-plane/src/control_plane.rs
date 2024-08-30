@@ -1924,6 +1924,7 @@ mod tests {
                             doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: None,
                             publish_token: None,
+                            update_timestamp: 1724158996,
                         }],
                     }],
                 };
@@ -2054,6 +2055,7 @@ mod tests {
                             doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: None,
                             publish_token: None,
+                            update_timestamp: 1724158996,
                         }],
                     }],
                 };
@@ -2342,6 +2344,7 @@ mod tests {
                         doc_mapping_uid: Some(DocMappingUid::default()),
                         publish_position_inclusive: Some(Position::Beginning),
                         publish_token: None,
+                        update_timestamp: 1724158996,
                     }),
                 }],
             };
@@ -2495,6 +2498,7 @@ mod tests {
                         doc_mapping_uid: Some(DocMappingUid::default()),
                         publish_position_inclusive: Some(Position::Beginning),
                         publish_token: None,
+                        update_timestamp: 1724158996,
                     }),
                 }],
             };

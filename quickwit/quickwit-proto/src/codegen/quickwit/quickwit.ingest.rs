@@ -67,6 +67,10 @@ pub struct Shard {
     /// The UID of the index doc mapping when the shard was created.
     #[prost(message, optional, tag = "11")]
     pub doc_mapping_uid: ::core::option::Option<crate::types::DocMappingUid>,
+    /// Time when the shard was last updated
+    #[prost(int64, tag = "12")]
+    #[serde(default = "super::compatibility_shard_update_timestamp")]
+    pub update_timestamp: i64,
 }
 /// A group of shards belonging to the same index and source.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

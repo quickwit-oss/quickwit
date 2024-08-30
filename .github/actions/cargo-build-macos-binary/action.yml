@@ -30,9 +30,8 @@ runs:
     - name: Install rustup
       shell: bash
       run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
-    - name: Add target aarch64-apple-darwin
-      if: "${{ inputs.target == 'aarch64-apple-darwin' }}"
-      run: rustup target add aarch64-apple-darwin
+    - name: Add target ${{ inputs.target }}
+      run: rustup target add ${{ inputs.target }}
       shell: bash
       working-directory: ./quickwit
     - name: Retrieve and export commit date, hash, and tags

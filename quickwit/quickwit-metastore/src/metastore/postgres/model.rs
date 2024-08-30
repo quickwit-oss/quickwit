@@ -263,6 +263,7 @@ pub(super) struct PgShard {
     pub doc_mapping_uid: DocMappingUid,
     pub publish_position_inclusive: String,
     pub publish_token: Option<String>,
+    pub update_timestamp: sqlx::types::time::PrimitiveDateTime,
 }
 
 impl From<PgShard> for Shard {
@@ -277,6 +278,7 @@ impl From<PgShard> for Shard {
             doc_mapping_uid: Some(pg_shard.doc_mapping_uid),
             publish_position_inclusive: Some(pg_shard.publish_position_inclusive.into()),
             publish_token: pg_shard.publish_token,
+            update_timestamp: pg_shard.update_timestamp.assume_utc().unix_timestamp(),
         }
     }
 }

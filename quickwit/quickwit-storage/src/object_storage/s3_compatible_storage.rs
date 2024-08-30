@@ -144,6 +144,7 @@ async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_http_client(aws_config.http_client());
     s3_config.set_retry_config(aws_config.retry_config().cloned());
     s3_config.set_sleep_impl(aws_config.sleep_impl());
+    s3_config.set_stalled_stream_protection(aws_config.stalled_stream_protection());
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
     if let Some(endpoint) = s3_storage_config.endpoint() {
