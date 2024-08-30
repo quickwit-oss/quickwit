@@ -58,7 +58,7 @@ struct ShardPublishStates {
 /// events to assert when all the persisted events have been published. To
 /// ensure that no events are missed:
 /// - create the tracker before any persist requests is sent
-/// - call `register_requested_shard` before each persist request to ensure that
+/// - call `register_requested_shards` before each persist request to ensure that
 /// the associated publish events are recorded
 /// - call `track_persisted_shard_position` after each successful persist subrequests
 struct PublishTracker {
@@ -119,7 +119,7 @@ impl PublishTracker {
         }
     }
 
-    fn register_requested_shard<'a>(&'a self, shard_ids: impl IntoIterator<Item = &'a ShardId>) {
+    fn register_requested_shards<'a>(&'a self, shard_ids: impl IntoIterator<Item = &'a ShardId>) {
         let mut state_handle = self.state.lock().unwrap();
         for shard_id in shard_ids {
             state_handle
@@ -269,7 +269,7 @@ impl IngestWorkbench {
                 .subrequests
                 .iter()
                 .map(|subrequest| subrequest.shard_id());
-            publish_tracker.register_requested_shard(shards);
+            publish_tracker.register_requested_shards(shards);
         }
     }
 
@@ -554,8 +554,7 @@ mod tests {
         let shard_id_4 = ShardId::from("test-shard-4");
         let shard_id_5 = ShardId::from("test-shard-5"); // not tracked
 
-        tracker
-            .register_requested_shard([&shard_id_1, &shard_id_2, &shard_id_3, &shard_id_4].clone());
+        tracker.register_requested_shards([&shard_id_1, &shard_id_2, &shard_id_3, &shard_id_4]);
 
         tracker.track_persisted_shard_position(shard_id_1.clone(), Position::offset(42usize));
         tracker.track_persisted_shard_position(shard_id_2.clone(), Position::offset(42usize));
@@ -606,7 +605,7 @@ mod tests {
         {
             let event_broker = EventBroker::default();
             let tracker = PublishTracker::new(event_broker.clone());
-            tracker.register_requested_shard([&shard_id_1, &shard_id_2].clone());
+            tracker.register_requested_shards([&shard_id_1, &shard_id_2]);
             tracker.track_persisted_shard_position(shard_id_1.clone(), position.clone());
             tracker.track_persisted_shard_position(shard_id_2.clone(), position.clone());
 
@@ -627,7 +626,7 @@ mod tests {
         {
             let event_broker = EventBroker::default();
             let tracker = PublishTracker::new(event_broker.clone());
-            tracker.register_requested_shard([&shard_id_1, &shard_id_2].clone());
+            tracker.register_requested_shards([&shard_id_1, &shard_id_2]);
             tracker.track_persisted_shard_position(shard_id_1.clone(), position.clone());
             event_broker.publish(ShardPositionsUpdate {
                 source_uid: SourceUid {
