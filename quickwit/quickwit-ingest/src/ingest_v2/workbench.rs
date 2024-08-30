@@ -534,26 +534,50 @@ mod tests {
     #[tokio::test]
     async fn test_publish_tracker_waits() {
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
-        let event_broker = EventBroker::default();
-        let tracker = PublishTracker::new(event_broker.clone());
         let shard_id_1 = ShardId::from("test-shard-1");
         let position = Position::offset(42usize);
-        tracker.track_persisted_position(shard_id_1.clone(), position.clone());
-        tracker.track_persisted_position(ShardId::from("test-shard-2"), position.clone());
 
-        event_broker.publish(ShardPositionsUpdate {
-            source_uid: SourceUid {
-                index_uid: index_uid.clone(),
-                source_id: "test-source".to_string(),
-            },
-            updated_shard_positions: vec![(shard_id_1.clone(), position.clone())]
-                .into_iter()
-                .collect(),
-        });
+        {
+            let event_broker = EventBroker::default();
+            let tracker = PublishTracker::new(event_broker.clone());
+            tracker.track_persisted_position(shard_id_1.clone(), position.clone());
+            tracker.track_persisted_position(ShardId::from("test-shard-2"), position.clone());
 
-        tokio::time::timeout(Duration::from_millis(200), tracker.wait_publish_complete())
-            .await
-            .unwrap_err();
+            event_broker.publish(ShardPositionsUpdate {
+                source_uid: SourceUid {
+                    index_uid: index_uid.clone(),
+                    source_id: "test-source".to_string(),
+                },
+                updated_shard_positions: vec![(shard_id_1.clone(), position.clone())]
+                    .into_iter()
+                    .collect(),
+            });
+
+            tokio::time::timeout(Duration::from_millis(200), tracker.wait_publish_complete())
+                .await
+                .unwrap_err();
+        }
+        {
+            let event_broker = EventBroker::default();
+            let tracker = PublishTracker::new(event_broker.clone());
+            tracker.track_persisted_position(shard_id_1.clone(), position.clone());
+            event_broker.publish(ShardPositionsUpdate {
+                source_uid: SourceUid {
+                    index_uid: index_uid.clone(),
+                    source_id: "test-source".to_string(),
+                },
+                updated_shard_positions: vec![(shard_id_1.clone(), position.clone())]
+                    .into_iter()
+                    .collect(),
+            });
+            // sleep to make sure the event is processed
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            tracker.track_persisted_position(ShardId::from("test-shard-2"), position.clone());
+
+            tokio::time::timeout(Duration::from_millis(200), tracker.wait_publish_complete())
+                .await
+                .unwrap_err();
+        }
     }
 
     #[test]
