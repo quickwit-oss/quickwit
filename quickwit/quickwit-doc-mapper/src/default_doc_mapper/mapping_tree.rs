@@ -314,14 +314,13 @@ impl LeafType {
 
     fn supported_for_concat(&self) -> bool {
         use LeafType::*;
-        matches!(self, Text(_) | U64(_) | I64(_) | Bool(_) | Json(_))
+        matches!(self, Text(_) | U64(_) | I64(_) | F64(_) | Bool(_) | Json(_))
         /*
-            // will be supported if possible
-            DateTime(_),
+            // Since concat is a JSON field, anything that JSON supports can be supported
+            DateTime(_), // Could be supported if the date is converted to Rfc3339
             IpAddr(_),
             // won't be supported
             Bytes(_),
-            F64(_),
         */
     }
 }
