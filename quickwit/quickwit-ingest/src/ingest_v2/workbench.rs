@@ -40,8 +40,13 @@ use tracing::{error, warn};
 use super::router::PersistRequestSummary;
 
 enum PublishState {
+    /// The persist request for this shard has been sent
     Tracked,
+    /// The persist request for this shard success response has been received
+    /// but the position has not yet been published
     AwaitingPublish(Position),
+    ///  The shard has been published up to this position (might happen before
+    ///  the persist success is received)
     Published(Position),
 }
 
