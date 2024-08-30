@@ -221,3 +221,21 @@ expected:
   hits:
     total:
       value: 1
+---
+json:
+  query:
+    query_string:
+      query: "true"
+      fields: ["public", "public.inner"]
+      lenient: true
+expected:
+  hits:
+    total:
+      value: 100
+---
+json:
+  query:
+    query_string:
+      query: "true"
+      fields: ["public", "public.inner"]
+status_code: 400

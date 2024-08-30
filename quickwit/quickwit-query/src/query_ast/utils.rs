@@ -30,6 +30,7 @@ use crate::query_ast::full_text_query::FullTextParams;
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::tokenizers::TokenizerManager;
 use crate::InvalidQuery;
+use crate::MatchAllOrNone::MatchNone as TantivyEmptyQuery;
 
 const DYNAMIC_FIELD_NAME: &str = "_dynamic";
 
@@ -71,8 +72,15 @@ pub(crate) fn full_text_query(
     full_text_params: &FullTextParams,
     schema: &TantivySchema,
     tokenizer_manager: &TokenizerManager,
+    lenient: bool,
 ) -> Result<TantivyQueryAst, InvalidQuery> {
-    let (field, field_entry, path) = find_field_or_hit_dynamic(full_path, schema)?;
+    let (field, field_entry, path) = match find_field_or_hit_dynamic(full_path, schema) {
+        Ok(res) => res,
+        Err(InvalidQuery::FieldDoesNotExist { .. }) if lenient => {
+            return Ok(TantivyEmptyQuery.into())
+        }
+        Err(e) => return Err(e),
+    };
     compute_query_with_field(
         field,
         field_entry,

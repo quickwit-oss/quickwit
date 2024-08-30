@@ -316,6 +316,7 @@ pub fn query_ast_from_user_text(user_text: &str, default_fields: Option<Vec<Stri
         user_text: user_text.to_string(),
         default_fields,
         default_operator: BooleanOperand::And,
+        lenient: false,
     }
     .into()
 }
@@ -334,6 +335,7 @@ mod tests {
             user_text: "*".to_string(),
             default_fields: Default::default(),
             default_operator: Default::default(),
+            lenient: false,
         }
         .into();
         let schema = tantivy::schema::Schema::builder().build();
@@ -357,6 +359,7 @@ mod tests {
             user_text: "*".to_string(),
             default_fields: Default::default(),
             default_operator: Default::default(),
+            lenient: false,
         }
         .into();
         let query_ast_with_parsed_user_query: QueryAst = query_ast.parse_user_query(&[]).unwrap();
@@ -378,6 +381,7 @@ mod tests {
             user_text: "*".to_string(),
             default_fields: Default::default(),
             default_operator: Default::default(),
+            lenient: false,
         }
         .into();
         let bool_query_ast: QueryAst = BoolQuery {
@@ -412,6 +416,7 @@ mod tests {
             user_text: "field:hello field:toto".to_string(),
             default_fields: None,
             default_operator: crate::BooleanOperand::And,
+            lenient: false,
         }
         .parse_user_query(&[])
         .unwrap();
@@ -427,6 +432,7 @@ mod tests {
             user_text: "field:hello field:toto".to_string(),
             default_fields: None,
             default_operator: crate::BooleanOperand::Or,
+            lenient: false,
         }
         .parse_user_query(&[])
         .unwrap();
