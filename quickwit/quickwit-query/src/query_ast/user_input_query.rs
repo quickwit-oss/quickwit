@@ -101,6 +101,8 @@ impl BuildTantivyAst for UserInputQuery {
     }
 }
 
+/// Convert the AST of a text query to a QueryAst, filling in default field and default occur when
+/// they were not present.
 fn convert_user_input_ast_to_query_ast(
     user_input_ast: UserInputAst,
     default_occur: Occur,
@@ -224,6 +226,8 @@ fn is_wildcard(phrase: &str) -> bool {
         .is_break()
 }
 
+/// Convert a leaf of a text query AST to a QueryAst.
+/// This may generate more than a single leaf if there are multiple default fields.
 fn convert_user_input_literal(
     user_input_literal: UserInputLiteral,
     default_search_fields: &[String],

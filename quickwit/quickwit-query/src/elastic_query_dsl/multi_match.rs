@@ -48,9 +48,9 @@ struct MultiMatchQueryForDeserialization {
     #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
     #[serde(default)]
     fields: Vec<String>,
-    // Regardless of this option Quickwit behaves in elasticsearch definition of
-    // lenient. We include this property here just to accept user queries containing
-    // this option.
+    // Quickwit and Elastic have different notions of lenient. For us, it means it's okay to
+    // disregard part of the query where which uses non-existing collumn (which Elastic does by
+    // default). For Elastic, it covers type errors (searching text in an integer field).
     #[serde(default)]
     lenient: bool,
 }
