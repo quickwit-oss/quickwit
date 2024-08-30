@@ -282,7 +282,10 @@ impl LeafType {
                 let val = u64::from_json_to_self(&json_val, numeric_options.coerce)?;
                 Ok(OneOrIter::one((val).into()))
             }
-            LeafType::F64(_) => Err("unsupported concat type: f64".to_string()),
+            LeafType::F64(numeric_options) => {
+                let val = f64::from_json_to_self(&json_val, numeric_options.coerce)?;
+                Ok(OneOrIter::one((val).into()))
+            }
             LeafType::Bool(_) => {
                 if let JsonValue::Bool(val) = json_val {
                     Ok(OneOrIter::one((val).into()))
@@ -294,9 +297,7 @@ impl LeafType {
             LeafType::DateTime(_date_time_options) => {
                 Err("unsupported concat type: DateTime".to_string())
             }
-            LeafType::Bytes(_binary_options) => {
-                Err("unsupported concat type: DateTime".to_string())
-            }
+            LeafType::Bytes(_binary_options) => Err("unsupported concat type: Bytes".to_string()),
             LeafType::Json(_) => {
                 if let JsonValue::Object(json_obj) = json_val {
                     Ok(OneOrIter::Iter(
@@ -314,14 +315,13 @@ impl LeafType {
 
     fn supported_for_concat(&self) -> bool {
         use LeafType::*;
-        matches!(self, Text(_) | U64(_) | I64(_) | Bool(_) | Json(_))
+        matches!(self, Text(_) | U64(_) | I64(_) | F64(_) | Bool(_) | Json(_))
         /*
-            // will be supported if possible
-            DateTime(_),
+            // Since concat is a JSON field, anything that JSON supports can be supported
+            DateTime(_), // Could be supported if the date is converted to Rfc3339
             IpAddr(_),
             // won't be supported
             Bytes(_),
-            F64(_),
         */
     }
 }
