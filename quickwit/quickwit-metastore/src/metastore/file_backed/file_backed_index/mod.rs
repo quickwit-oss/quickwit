@@ -27,6 +27,7 @@ mod shards;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Bound;
+use tokio::time::Instant;
 
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
@@ -76,7 +77,9 @@ pub(crate) struct FileBackedIndex {
     /// Has been discarded. This field exists to make
     /// it possible to discard this entry if there is an error
     /// while mutating the Index.
+    // TODO move this logic to the cell.
     pub discarded: bool,
+
 }
 
 #[cfg(any(test, feature = "testsuite"))]

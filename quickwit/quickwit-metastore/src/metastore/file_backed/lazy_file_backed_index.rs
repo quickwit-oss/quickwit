@@ -24,10 +24,12 @@ use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
 use quickwit_proto::types::IndexId;
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OnceCell};
+use tokio::time::Instant;
 use tracing::error;
 
 use super::file_backed_index::FileBackedIndex;
 use super::store_operations::{load_index, METASTORE_FILE_NAME};
+use super::{FileBackedIndexCell, WriteBatchState};
 
 /// Lazy [`FileBackedIndex`]. It loads a `FileBackedIndex` on demand. When the index is first
 /// loaded, it optionally spawns a task to periodically poll the storage and update the index.
@@ -35,7 +37,7 @@ pub(crate) struct LazyFileBackedIndex {
     index_id: IndexId,
     storage: Arc<dyn Storage>,
     polling_interval_opt: Option<Duration>,
-    lazy_index: OnceCell<Arc<Mutex<FileBackedIndex>>>,
+    lazy_index: OnceCell<Arc<Mutex<FileBackedIndexCell>>>,
 }
 
 impl LazyFileBackedIndex {
@@ -46,7 +48,8 @@ impl LazyFileBackedIndex {
         polling_interval_opt: Option<Duration>,
         file_backed_index: Option<FileBackedIndex>,
     ) -> Self {
-        let index_mutex_opt = file_backed_index.map(|index| Arc::new(Mutex::new(index)));
+        let index_mutex_opt = file_backed_index
+            .map(|index| Arc::new(Mutex::new(FileBackedIndexCell::new(index))));
         // If the polling interval is configured and the index is already loaded,
         // spawn immediately the polling task
         if let Some(index_mutex) = &index_mutex_opt {
@@ -69,11 +72,12 @@ impl LazyFileBackedIndex {
 
     /// Gets a synchronized `FileBackedIndex`. If the index wasn't provided on creation, we load it
     /// lazily on the first call of this method.
-    pub async fn get(&self) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
+    pub async fn get(&self) -> MetastoreResult<Arc<Mutex<FileBackedIndexCell>>> {
         self.lazy_index
             .get_or_try_init(|| async move {
                 let index = load_index(&*self.storage, &self.index_id).await?;
-                let index_mutex = Arc::new(Mutex::new(index));
+                let file_backed_index_cell = FileBackedIndexCell::new(index);
+                let index_mutex = Arc::new(Mutex::new(file_backed_index_cell));
                 // When the index is loaded lazily, the polling task is not started in the
                 // constructor so we do it here when the index is actually loaded.
                 if let Some(polling_interval) = self.polling_interval_opt {
@@ -94,8 +98,11 @@ impl LazyFileBackedIndex {
 async fn poll_index_metadata_once(
     storage: &dyn Storage,
     index_id: &str,
-    index_mutex: &Mutex<FileBackedIndex>,
+    index_mutex: &Mutex<FileBackedIndexCell>,
 ) {
+    todo!();
+    // FIXME
+    /*
     let mut locked_index = index_mutex.lock().await;
     if locked_index.flip_recently_modified_down() {
         return;
@@ -120,12 +127,13 @@ async fn poll_index_metadata_once(
             );
         }
     }
+    */
 }
 
 fn spawn_index_metadata_polling_task(
     storage: Arc<dyn Storage>,
     index_id: IndexId,
-    metastore_weak: Weak<Mutex<FileBackedIndex>>,
+    metastore_weak: Weak<Mutex<FileBackedIndexCell>>,
     polling_interval: Duration,
 ) {
     tokio::task::spawn(async move {

@@ -65,7 +65,8 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
 use time::OffsetDateTime;
-use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
+use tokio::sync::{Mutex, Notify, OwnedMutexGuard, RwLock};
+use tokio::time::Instant;
 
 use self::file_backed_index::FileBackedIndex;
 pub use self::file_backed_metastore_factory::FileBackedMetastoreFactory;
@@ -108,6 +109,45 @@ impl From<bool> for MutationOccurred<()> {
             Self::No(())
         }
     }
+}
+
+struct WriteBatchState {
+    file_backed_index: FileBackedIndex,
+    publish_notify: Arc<Notify>,
+}
+
+impl WriteBatchState {
+    fn new(index: FileBackedIndex) -> Self {
+        WriteBatchState {
+            file_backed_index: index,
+            publish_notify: Arc::new(Notify::const_new()),
+        }
+    }
+}
+
+struct FileBackedIndexCell {
+    pub file_backed_index: FileBackedIndex,
+
+    /// The last time an index was modified and pushed.
+    /// This instant is to ensure we enforce a cooldown between 2
+    /// push requests.
+    pub last_update: Instant,
+    pub write_state: WriteBatchState,
+    // `true` if the write_state is potentially differetn from
+    // the read state, and a push should be triggered eventually.
+    pub dirty: bool,
+}
+
+impl FileBackedIndexCell {
+    pub fn new(file_backed_index: FileBackedIndex) -> Self {
+        FileBackedIndexCell {
+            file_backed_index: file_backed_index.clone(),
+            last_update: Instant::now(),
+            write_state: WriteBatchState::new(file_backed_index),
+            dirty: false,
+        }
+    }
+
 }
 
 /// A metastore implementation that stores all the metadata associated to each index
@@ -200,63 +240,147 @@ impl FileBackedMetastore {
         Ok(metastore)
     }
 
+    /// Mutates an index state.
     async fn mutate<T>(
         &self,
         index_uid: &IndexUid,
         mutate_fn: impl FnOnce(&mut FileBackedIndex) -> MetastoreResult<MutationOccurred<T>>,
     ) -> MetastoreResult<T> {
         let index_id = &index_uid.index_id;
-        let mut locked_index = self.get_locked_index(index_id).await?;
-        if locked_index.index_uid() != index_uid {
+        let mut locked_index_cell = self.get_locked_index(index_id).await?;
+        if locked_index_cell.file_backed_index.index_uid() != index_uid {
             return Err(MetastoreError::NotFound(EntityKind::Index {
                 index_id: index_id.to_string(),
             }));
         }
-        let mut index = locked_index.clone();
 
-        let value = match mutate_fn(&mut index)? {
-            MutationOccurred::Yes(value) => value,
-            MutationOccurred::No(value) => {
-                return Ok(value);
+            // if locked_index_cell.write_batch_state.is_none() {
+            //     // There is no ongoing batch.
+            //     // We create a new batch and add our mutation to it.
+            //     let write_batch = WriteBatchState {
+            //         file_backed_index: locked_index_cell.file_backed_index.clone(),
+            //         publish_notify: Arc::new(Notify::new()),
+            //     };
+            //     locked_index_cell.write_batch_state = Some(write_batch);
+            //     true
+            // } else {
+            //     false
+            // };
+
+        let write_batch_state: &mut WriteBatchState = &mut locked_index_cell.write_state;
+
+        let mut trigger_eventual_sync = false;
+
+        match mutate_fn(&mut write_batch_state.file_backed_index) {
+            Ok(MutationOccurred::Yes(value)) => {
+                if !locked_index_cell.dirty {
+                    trigger_eventual_sync = true;
+                    locked_index_cell.dirty = true;
+                }
+            },
+            Ok(MutationOccurred::No(value)) => {
+                if !locked_index_cell.dirty {
+                    // The write state has not been modified yes. We can simply return.
+                    return Ok(value);
+                }
+            }
+            Err(_metastore_error) => {
+                // Mark the batch as failed.
+                todo!();
             }
         };
-        locked_index.set_recently_modified();
 
-        let put_result = put_index(&*self.storage, &index).await;
-        match put_result {
-            Ok(()) => {
-                *locked_index = index;
-                Ok(value)
-            }
-            Err(error) => {
-                // For some of the error type here, we cannot know for sure
-                // whether the content was written or not.
-                //
-                // Just to be sure, let's discard the cache.
-                let mut state_wlock_guard = self.state.write().await;
+        todo!();
 
-                // At this point, we hold both locks.
-                state_wlock_guard.indexes.insert(
-                    index_id.to_string(),
-                    LazyIndexStatus::Active(LazyFileBackedIndex::new(
-                        self.storage.clone(),
-                        index_id.to_string(),
-                        self.polling_interval_opt,
-                        None,
-                    )),
-                );
-                locked_index.discarded = true;
-                Err(error)
-            }
-        }
+        // let (value, publish_notify) = if let Some(write_batch_state) = locked_index.write_batch_state.as_mut() {
+        //     // There is some ongoing batch.
+        //     // We just add our mutation to the batch.
+        //     let value = match mutate_fn(&mut write_batch_state.file_backed_index) {
+        //         Ok(MutationOccurred::Yes(value)) |  Ok(MutationOccurred::No(value)) => {
+        //             value
+        //         }
+        //         Err(_metastore_error) => {
+        //             // Mark the batch as failed.
+        //             todo!();
+        //         }
+        //     };
+        //     let publish_notify = write_batch_state.publish_notify.clone();
+        //     (value, publish_notify)
+        // } else {
+        //     // No ongoing batch. We need to start a new batch.
+        //     let write_batch_state = WriteBatchState {
+        //         file_backed_index: locked_index.file_backed_index.clone(),
+        //         publish_notify: Arc::new(Notify::new()),
+        //     };
+        //     let value = match mutate_fn(&mut write_batch_state.file_backed_index) {
+        //         Ok(MutationOccurred::Yes(value)) |  Ok(MutationOccurred::No(value)) => {
+        //             value
+        //         }
+        //         Err(_metastore_error) => {
+        //             // Mark the batch as failed.
+        //             todo!();
+        //         }
+        //     };
+        //     let publish_notify = write_batch_state.publish_notify.clone();
+        //     (value, publish_notify)
+        // };
+
+        //     let value = match mutate_fn(&mut write_batch_state.file_backed_index) {
+        //         Ok(MutationOccurred::Yes(value)) |  Ok(MutationOccurred::No(value)) => {
+        //             return Ok(value);
+        //         }
+        //         Err(_metastore_error) => {
+        //             // Mark the batch as failed.
+        //             todo!();
+        //         }
+        //     };
+        //     locked_index.write_batch_state = Some(write_batch_state);
+        // }
+
+        // let mut index = locked_index.file_backed_index.clone();
+        // let value = match mutate_fn(&mut index)? {
+        //     MutationOccurred::Yes(value) => value,
+        //     MutationOccurred::No(value) => {
+        //         return Ok(value);
+        //     }
+        // };
+        // locked_index.set_recently_modified();
+
+        // let put_result = put_index(&*self.storage, &index).await;
+        // match put_result {
+        //     Ok(()) => {
+        //         *locked_index = index;
+        //         Ok(value)
+        //     }
+        //     Err(error) => {
+        //         // For some of the error type here, we cannot know for sure
+        //         // whether the content was written or not.
+        //         //
+        //         // Just to be sure, let's discard the cache.
+        //         let mut state_wlock_guard = self.state.write().await;
+
+        //         // At this point, we hold both locks.
+        //         state_wlock_guard.indexes.insert(
+        //             index_id.to_string(),
+        //             LazyIndexStatus::Active(LazyFileBackedIndex::new(
+        //                 self.storage.clone(),
+        //                 index_id.to_string(),
+        //                 self.polling_interval_opt,
+        //                 None,
+        //             )),
+        //         );
+        //         locked_index.discarded = true;
+        //         Err(error)
+        //     }
+        // }
     }
 
     async fn read<T, F>(&self, index_uid: &IndexUid, view: F) -> MetastoreResult<T>
     where F: FnOnce(&FileBackedIndex) -> MetastoreResult<T> {
         let index_id = &index_uid.index_id;
         let locked_index = self.get_locked_index(index_id).await?;
-        if locked_index.index_uid() == index_uid {
-            view(&locked_index)
+        if locked_index.file_backed_index.index_uid() == index_uid {
+            view(&locked_index.file_backed_index)
         } else {
             Err(MetastoreError::NotFound(EntityKind::Index {
                 index_id: index_id.to_string(),
@@ -267,7 +391,7 @@ impl FileBackedMetastore {
     async fn read_any<T, F>(&self, index_id: &str, view: F) -> MetastoreResult<T>
     where F: FnOnce(&FileBackedIndex) -> MetastoreResult<T> {
         let locked_index = self.get_locked_index(index_id).await?;
-        view(&locked_index)
+        view(&locked_index.file_backed_index)
     }
 
     /// Returns a valid locked index.
@@ -277,12 +401,11 @@ impl FileBackedMetastore {
     async fn get_locked_index(
         &self,
         index_id: &str,
-    ) -> MetastoreResult<OwnedMutexGuard<FileBackedIndex>> {
+    ) -> MetastoreResult<OwnedMutexGuard<FileBackedIndexCell>> {
         loop {
             let index = self.index(index_id).await?;
             let locked_index = index.lock_owned().await;
-
-            if !locked_index.discarded {
+            if !locked_index.file_backed_index.discarded {
                 return Ok(locked_index);
             }
         }
@@ -296,7 +419,7 @@ impl FileBackedMetastore {
     /// a fetch to the storage will be initiated and might trigger an error.
     ///
     /// For a given index_id, only copies of the same index_view are returned.
-    async fn index(&self, index_id: &str) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
+    async fn index(&self, index_id: &str) -> MetastoreResult<Arc<Mutex<FileBackedIndexCell>>> {
         {
             // Happy path!
             // If the object is already in our cache then we just return a copy
@@ -1131,7 +1254,7 @@ impl MetastoreServiceExt for FileBackedMetastore {}
 async fn get_index_mutex(
     index_id: &str,
     lazy_index_status: &LazyIndexStatus,
-) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
+) -> MetastoreResult<Arc<Mutex<FileBackedIndexCell>>> {
     match lazy_index_status {
         LazyIndexStatus::Active(lazy_index) => lazy_index.get().await,
         LazyIndexStatus::Creating => Err(MetastoreError::Internal {
