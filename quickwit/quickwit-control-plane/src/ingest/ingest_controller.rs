@@ -779,7 +779,11 @@ impl IngestController {
             let index_metadata = model
                 .index_metadata(&source_uid.index_uid)
                 .expect("index should exist");
-            let validate_docs = true; // TODO get this from model
+            let validate_docs = model
+                .source_metadata(source_uid)
+                .expect("source should exist")
+                .transform_config
+                .is_none();
             let doc_mapping = &index_metadata.index_config.doc_mapping;
             let doc_mapping_uid = doc_mapping.doc_mapping_uid;
             let doc_mapping_json = serde_utils::to_json_str(doc_mapping)?;
@@ -1326,7 +1330,7 @@ mod tests {
 
                 let shard = subrequest.shard();
                 assert_eq!(shard.index_uid(), &index_uid_1_clone);
-                assert_eq!(shard.source_id, "test-source");
+                assert_eq!(shard.source_id, source_id);
                 assert_eq!(shard.leader_id, "test-ingester-2");
 
                 let successes = vec![InitShardSuccess {
@@ -1509,7 +1513,7 @@ mod tests {
 
                 let shard = subrequest.shard();
                 assert_eq!(shard.index_uid(), &index_uid_0);
-                assert_eq!(shard.source_id, "test-source");
+                assert_eq!(shard.source_id, source_id);
                 assert_eq!(shard.leader_id, "test-ingester-1");
 
                 let successes = vec![InitShardSuccess {
@@ -2040,6 +2044,10 @@ mod tests {
             source_id: source_id.clone(),
         };
         let mut index_metadata = IndexMetadata::for_test("test-index", "ram://indexes/test-index");
+        index_metadata.sources.insert(
+            source_id.clone(),
+            SourceConfig::for_test(&source_id, quickwit_config::SourceParams::void()),
+        );
 
         let doc_mapping_json = format!(
             r#"{{
@@ -2166,8 +2174,12 @@ mod tests {
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
-        let index_metadata = IndexMetadata::for_test("test-index", "ram://indexes/test-index");
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram://indexes/test-index");
         let source_id: SourceId = "test-source".to_string();
+        index_metadata.sources.insert(
+            source_id.clone(),
+            SourceConfig::for_test(&source_id, quickwit_config::SourceParams::void()),
+        );
 
         let source_uid = SourceUid {
             index_uid: index_uid.clone(),
