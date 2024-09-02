@@ -29,7 +29,7 @@ use tracing::error;
 
 use super::file_backed_index::FileBackedIndex;
 use super::store_operations::{load_index, METASTORE_FILE_NAME};
-use super::{FileBackedIndexCell, WriteBatchState};
+use super::FileBackedIndexCell;
 
 /// Lazy [`FileBackedIndex`]. It loads a `FileBackedIndex` on demand. When the index is first
 /// loaded, it optionally spawns a task to periodically poll the storage and update the index.

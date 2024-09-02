@@ -33,6 +33,7 @@ mod store_operations;
 use core::fmt;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -65,7 +66,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
 use time::OffsetDateTime;
-use tokio::sync::{Mutex, Notify, OwnedMutexGuard, RwLock};
+use tokio::sync::{oneshot, Mutex, Notify, OnceCell, OwnedMutexGuard, RwLock};
 use tokio::time::Instant;
 
 use self::file_backed_index::FileBackedIndex;
@@ -111,20 +112,6 @@ impl From<bool> for MutationOccurred<()> {
     }
 }
 
-struct WriteBatchState {
-    file_backed_index: FileBackedIndex,
-    publish_notify: Arc<Notify>,
-}
-
-impl WriteBatchState {
-    fn new(index: FileBackedIndex) -> Self {
-        WriteBatchState {
-            file_backed_index: index,
-            publish_notify: Arc::new(Notify::const_new()),
-        }
-    }
-}
-
 struct FileBackedIndexCell {
     pub file_backed_index: FileBackedIndex,
 
@@ -132,10 +119,9 @@ struct FileBackedIndexCell {
     /// This instant is to ensure we enforce a cooldown between 2
     /// push requests.
     pub last_update: Instant,
-    pub write_state: WriteBatchState,
-    // `true` if the write_state is potentially differetn from
-    // the read state, and a push should be triggered eventually.
-    pub dirty: bool,
+    pub write_state: FileBackedIndex,
+    pub batch_result: Arc<OnceCell<MetastoreResult<()>>>,
+    scheduled_write_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl FileBackedIndexCell {
@@ -143,11 +129,32 @@ impl FileBackedIndexCell {
         FileBackedIndexCell {
             file_backed_index: file_backed_index.clone(),
             last_update: Instant::now(),
-            write_state: WriteBatchState::new(file_backed_index),
-            dirty: false,
+            write_state: file_backed_index,
+            batch_result: Arc::new(OnceCell::const_new()),
+            scheduled_write_handle: None,
         }
     }
 
+    pub async fn cancel_scheduled_write(&mut self) {
+        if let Some(handle) = self.scheduled_write_handle.take() {
+            handle.abort();
+        }
+        // better message FIXME.
+        // TODO check the property described in the expect.
+        self.batch_result.set(Err(MetastoreError::Internal { message: "".to_string(), cause: "".to_string() }))
+            .expect("The update task is supposed to be hold the lock when it attempts to persist the state");
+    }
+
+    pub async fn execute_scheduled_write(&mut self,) {
+        todo!()
+    }
+
+    pub fn schedule_write(&mut self) -> oneshot::Receiver<()> {
+        // if self.scheduled_write_handle.is_some() {
+        //     return self.
+        // }
+        todo!()
+    }
 }
 
 /// A metastore implementation that stores all the metadata associated to each index
@@ -248,6 +255,7 @@ impl FileBackedMetastore {
     ) -> MetastoreResult<T> {
         let index_id = &index_uid.index_id;
         let mut locked_index_cell = self.get_locked_index(index_id).await?;
+
         if locked_index_cell.file_backed_index.index_uid() != index_uid {
             return Err(MetastoreError::NotFound(EntityKind::Index {
                 index_id: index_id.to_string(),
@@ -267,30 +275,39 @@ impl FileBackedMetastore {
             //     false
             // };
 
-        let write_batch_state: &mut WriteBatchState = &mut locked_index_cell.write_state;
+        let write_state: &mut FileBackedIndex = &mut locked_index_cell.write_state;
 
         let mut trigger_eventual_sync = false;
 
-        match mutate_fn(&mut write_batch_state.file_backed_index) {
+        match mutate_fn(write_state) {
             Ok(MutationOccurred::Yes(value)) => {
-                if !locked_index_cell.dirty {
+                if locked_index_cell.scheduled_write_handle.is_none() {
                     trigger_eventual_sync = true;
-                    locked_index_cell.dirty = true;
                 }
             },
             Ok(MutationOccurred::No(value)) => {
-                if !locked_index_cell.dirty {
-                    // The write state has not been modified yes. We can simply return.
+                if locked_index_cell.scheduled_write_handle.is_none() {
+                    // The write state has not been modified yes. We can simply return right away.
                     return Ok(value);
                 }
             }
             Err(_metastore_error) => {
-                // Mark the batch as failed.
-                todo!();
+                // TODO mark the batch as failed to prevent the schedule batch to be written.
+                locked_index_cell.cancel_scheduled_write().await;
             }
         };
 
-        todo!();
+        let batch_result = locked_index_cell.batch_result.clone();
+
+        drop(locked_index_cell);
+
+        // batch_result.get().await;
+        todo!()
+
+        // if trigger_eventual_sync {
+        //     self.schedule_eventual_index_write();
+        // }
+
 
         // let (value, publish_notify) = if let Some(write_batch_state) = locked_index.write_batch_state.as_mut() {
         //     // There is some ongoing batch.
