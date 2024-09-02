@@ -474,6 +474,12 @@ macro_rules! metastore_test_suite {
 
             #[tokio::test]
             #[serial_test::file_serial]
+            async fn test_metastore_prune_shards() {
+                $crate::tests::shard::test_metastore_prune_shards::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::serial]
             async fn test_metastore_apply_checkpoint_delta_v2_single_shard() {
                 $crate::tests::shard::test_metastore_apply_checkpoint_delta_v2_single_shard::<$metastore_type>().await;
             }
