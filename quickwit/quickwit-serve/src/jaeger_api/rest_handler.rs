@@ -352,7 +352,7 @@ mod tests {
     async fn test_when_jaeger_not_found() {
         let jaeger_api_handler = jaeger_api_handlers(None).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/otel-traces-v0_9/jaeger/api/services")
+            .path("/otel-traces-v0_7/jaeger/api/services")
             .reply(&jaeger_api_handler)
             .await;
         let error_body = serde_json::from_slice::<HashMap<String, String>>(resp.body()).unwrap();
@@ -384,7 +384,7 @@ mod tests {
 
         let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/otel-traces-v0_9/jaeger/api/services")
+            .path("/otel-traces-v0_7/jaeger/api/services")
             .reply(&jaeger_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
@@ -420,7 +420,7 @@ mod tests {
         let jaeger = JaegerService::new(JaegerConfig::default(), mock_search_service);
         let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/otel-traces-v0_9/jaeger/api/services/service1/operations")
+            .path("/otel-traces-v0_7/jaeger/api/services/service1/operations")
             .reply(&jaeger_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
@@ -468,7 +468,7 @@ mod tests {
         let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
         let resp = warp::test::request()
             .path(
-                "/otel-traces-v0_9/jaeger/api/traces?service=quickwit&\
+                "/otel-traces-v0_7/jaeger/api/traces?service=quickwit&\
                  operation=delete_splits_marked_for_deletion&minDuration=500us&maxDuration=1.2s&\
                  tags=%7B%22tag.first%22%3A%22common%22%2C%22tag.second%22%3A%22true%22%7D&\
                  limit=1&start=1702352106016000&end=1702373706016000&lookback=custom",
@@ -499,7 +499,7 @@ mod tests {
 
         let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/otel-traces-v0_9/jaeger/api/traces/1506026ddd216249555653218dc88a6c")
+            .path("/otel-traces-v0_7/jaeger/api/traces/1506026ddd216249555653218dc88a6c")
             .reply(&jaeger_api_handler)
             .await;
 
