@@ -40,8 +40,8 @@ use tantivy::TantivyDocument as Document;
 use super::field_mapping_entry::RAW_TOKENIZER_NAME;
 use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{
-    build_mapping_tree, map_primitive_json_to_tantivy, JsonValueIterator, MappingNode,
-    MappingNodeRoot,
+    build_field_path_from_str, build_mapping_tree, map_primitive_json_to_tantivy,
+    JsonValueIterator, MappingNode, MappingNodeRoot,
 };
 use crate::default_doc_mapper::FieldMappingType;
 use crate::doc_mapper::{JsonObject, Partition};
@@ -81,6 +81,8 @@ pub struct DefaultDocMapper {
     default_search_field_names: Vec<String>,
     /// Timestamp field name.
     timestamp_field_name: Option<String>,
+    /// Timestamp field path (name parsed)
+    timestamp_field_path: Option<Vec<String>>,
     /// Root node of the field mapping tree.
     /// See [`MappingNode`].
     field_mappings: MappingNode,
@@ -197,8 +199,12 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         if !concatenate_dynamic_fields.is_empty() && dynamic_field.is_none() {
             bail!("concatenate field has `include_dynamic_fields` set, but index isn't dynamic");
         }
-        if let Some(timestamp_field_path) = &doc_mapping.timestamp_field {
-            validate_timestamp_field(timestamp_field_path, &field_mappings)?;
+        let timestamp_field_path = if let Some(timestamp_field_name) = &doc_mapping.timestamp_field
+        {
+            validate_timestamp_field(timestamp_field_name, &field_mappings)?;
+            Some(build_field_path_from_str(timestamp_field_name))
+        } else {
+            None
         };
         let schema = schema_builder.build();
 
@@ -288,6 +294,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             document_size_field,
             default_search_field_names,
             timestamp_field_name: doc_mapping.timestamp_field,
+            timestamp_field_path,
             field_mappings,
             concatenate_dynamic_fields,
             tag_field_names,
@@ -513,6 +520,32 @@ impl DocMapper for DefaultDocMapper {
         let mut field_path = Vec::new();
         self.field_mappings
             .validate_from_json(json_obj, is_strict, &mut field_path)?;
+        if let Some(timestamp_field_path) = &self.timestamp_field_path {
+            let missing_ts_field =
+                || DocParsingError::RequiredField("timestamp field is required".to_string());
+            match &timestamp_field_path[..] {
+                [] => (), // ?
+                [single_part] => {
+                    let obj = json_obj.get(single_part).ok_or_else(missing_ts_field)?;
+                    if !(obj.is_string() || obj.is_number()) {
+                        return Err(missing_ts_field());
+                    }
+                }
+                [first_part, more_part @ ..] => {
+                    let mut obj = json_obj.get(first_part).ok_or_else(missing_ts_field)?;
+                    for part in more_part {
+                        obj = obj
+                            .as_object()
+                            .ok_or_else(missing_ts_field)?
+                            .get(part)
+                            .ok_or_else(missing_ts_field)?;
+                    }
+                    if !(obj.is_string() || obj.is_number()) {
+                        return Err(missing_ts_field());
+                    }
+                }
+            };
+        }
         Ok(())
     }
 
