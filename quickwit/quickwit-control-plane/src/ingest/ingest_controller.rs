@@ -2247,6 +2247,7 @@ mod tests {
                 assert_eq!(init_shard_request.subrequests.len(), 1);
                 let init_shard_subrequest: &InitShardSubrequest =
                     &init_shard_request.subrequests[0];
+                assert!(init_shard_subrequest.validate_docs);
                 Ok(InitShardsResponse {
                     successes: vec![InitShardSuccess {
                         subrequest_id: init_shard_subrequest.subrequest_id,
@@ -2324,6 +2325,115 @@ mod tests {
         };
 
         // The second request works!
+        controller
+            .handle_local_shards_update(local_shards_update, &mut model, &progress)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_ingest_controller_disable_validation_when_vrl() {
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_open_shards()
+            .once()
+            .returning(|request| {
+                let subrequest: &OpenShardSubrequest = &request.subrequests[0];
+                let shard = Shard {
+                    index_uid: subrequest.index_uid.clone(),
+                    source_id: subrequest.source_id.clone(),
+                    shard_id: subrequest.shard_id.clone(),
+                    shard_state: ShardState::Open as i32,
+                    leader_id: subrequest.leader_id.clone(),
+                    follower_id: subrequest.follower_id.clone(),
+                    doc_mapping_uid: subrequest.doc_mapping_uid,
+                    publish_position_inclusive: Some(Position::Beginning),
+                    publish_token: None,
+                    update_timestamp: 1724158996,
+                };
+                let response = OpenShardsResponse {
+                    subresponses: vec![OpenShardSubresponse {
+                        subrequest_id: subrequest.subrequest_id,
+                        open_shard: Some(shard),
+                    }],
+                };
+                Ok(response)
+            });
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
+        let ingester_pool = IngesterPool::default();
+        let replication_factor = 1;
+
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool.clone(),
+            replication_factor,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+        );
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram://indexes/test-index");
+        let source_id: SourceId = "test-source".to_string();
+        let mut source_config =
+            SourceConfig::for_test(&source_id, quickwit_config::SourceParams::void());
+        // set a vrl script
+        source_config.transform_config =
+            Some(quickwit_config::TransformConfig::new("".to_string(), None));
+        index_metadata
+            .sources
+            .insert(source_id.clone(), source_config);
+
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
+        let mut model = ControlPlaneModel::default();
+        model.add_index(index_metadata);
+        let progress = Progress::default();
+
+        let shards = vec![Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(1)),
+            leader_id: "test-ingester".to_string(),
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        }];
+        model.insert_shards(&index_uid, &source_id, shards);
+
+        let mut mock_ingester = MockIngesterService::new();
+
+        mock_ingester.expect_init_shards().returning(
+            move |init_shard_request: InitShardsRequest| {
+                assert_eq!(init_shard_request.subrequests.len(), 1);
+                let init_shard_subrequest: &InitShardSubrequest =
+                    &init_shard_request.subrequests[0];
+                // we have vrl, so no validation
+                assert!(!init_shard_subrequest.validate_docs);
+                Ok(InitShardsResponse {
+                    successes: vec![InitShardSuccess {
+                        subrequest_id: init_shard_subrequest.subrequest_id,
+                        shard: init_shard_subrequest.shard.clone(),
+                    }],
+                    failures: Vec::new(),
+                })
+            },
+        );
+
+        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        ingester_pool.insert("test-ingester".into(), ingester);
+
+        let shard_infos = BTreeSet::from_iter([ShardInfo {
+            shard_id: ShardId::from(1),
+            shard_state: ShardState::Open,
+            short_term_ingestion_rate: RateMibPerSec(4),
+            long_term_ingestion_rate: RateMibPerSec(4),
+        }]);
+        let local_shards_update = LocalShardsUpdate {
+            leader_id: "test-ingester".into(),
+            source_uid: source_uid.clone(),
+            shard_infos,
+        };
+
         controller
             .handle_local_shards_update(local_shards_update, &mut model, &progress)
             .await

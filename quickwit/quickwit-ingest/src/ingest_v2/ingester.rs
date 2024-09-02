@@ -2002,6 +2002,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ingester_persist_doesnt_validates_docs_when_requested() {
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(
+            r#"{{
+                "doc_mapping_uid": "{doc_mapping_uid}",
+                "mode": "strict",
+                "field_mappings": [{{"name": "doc", "type": "text"}}]
+            }}"#
+        );
+        let init_shards_request = InitShardsRequest {
+            subrequests: vec![InitShardSubrequest {
+                subrequest_id: 0,
+                shard: Some(Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "test-source".to_string(),
+                    shard_id: Some(ShardId::from(0)),
+                    shard_state: ShardState::Open as i32,
+                    leader_id: ingester_ctx.node_id.to_string(),
+                    doc_mapping_uid: Some(doc_mapping_uid),
+                    ..Default::default()
+                }),
+                doc_mapping_json,
+                validate_docs: false,
+            }],
+        };
+        let response = ingester.init_shards(init_shards_request).await.unwrap();
+        assert_eq!(response.successes.len(), 1);
+        assert_eq!(response.failures.len(), 0);
+
+        let persist_request = PersistRequest {
+            leader_id: ingester_ctx.node_id.to_string(),
+            commit_type: CommitTypeV2::Force as i32,
+            subrequests: vec![PersistSubrequest {
+                subrequest_id: 0,
+                index_uid: Some(index_uid.clone()),
+                source_id: "test-source".to_string(),
+                shard_id: Some(ShardId::from(0)),
+                doc_batch: Some(DocBatchV2::for_test([
+                    "",                           // invalid
+                    "[]",                         // invalid
+                    r#"{"foo": "bar"}"#,          // invalid
+                    r#"{"doc": "test-doc-000"}"#, // valid
+                ])),
+            }],
+        };
+        let persist_response = ingester.persist(persist_request).await.unwrap();
+        assert_eq!(persist_response.leader_id, "test-ingester");
+        assert_eq!(persist_response.successes.len(), 1);
+        assert_eq!(persist_response.failures.len(), 0);
+
+        let persist_success = &persist_response.successes[0];
+        assert_eq!(persist_success.num_persisted_docs, 4);
+        assert_eq!(persist_success.parse_failures.len(), 0);
+    }
+
+    #[tokio::test]
     async fn test_ingester_persist_checks_capacity_before_validating_docs() {
         let (ingester_ctx, ingester) = IngesterForTest::default()
             .with_memory_capacity(ByteSize(0))
