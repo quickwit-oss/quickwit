@@ -42,7 +42,7 @@ pub struct QueueSharedState {
     pub reacquire_grace_period: Duration,
     pub max_age: Option<u32>,
     pub max_count: Option<u32>,
-    pub last_pruning: Instant,
+    pub last_initiated_pruning: Instant,
     pub pruning_interval: Duration,
 }
 
@@ -71,12 +71,16 @@ impl QueueSharedState {
     /// is returned along with the partition id, otherwise the partition id is
     /// dropped.
     async fn acquire_partitions(
-        &self,
+        &mut self,
         publish_token: &str,
         partitions: Vec<PartitionId>,
     ) -> anyhow::Result<Vec<(PartitionId, Position)>> {
-        if self.last_pruning.elapsed() > self.pruning_interval {
-            self.clean_partitions().await;
+        if self.last_initiated_pruning.elapsed() > self.pruning_interval {
+            let self_cloned = self.clone();
+            tokio::spawn(async move {
+                self_cloned.clean_partitions().await;
+            });
+            self.last_initiated_pruning = Instant::now();
         }
         let open_shard_subrequests = partitions
             .iter()
@@ -150,7 +154,7 @@ impl QueueSharedState {
 /// Acquires shards from the shared state for the provided list of messages and
 /// maps results to that same list
 pub async fn checkpoint_messages(
-    shared_state: &QueueSharedState,
+    shared_state: &mut QueueSharedState,
     publish_token: &str,
     messages: Vec<PreProcessedMessage>,
 ) -> anyhow::Result<Vec<(PreProcessedMessage, Position)>> {
@@ -319,7 +323,7 @@ pub mod shared_state_for_tests {
             index_uid,
             source_id: "test-queue-src".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
-            last_pruning: Instant::now(),
+            last_initiated_pruning: Instant::now(),
             max_age: None,
             max_count: None,
             pruning_interval: Duration::from_secs(10),
@@ -369,12 +373,12 @@ mod tests {
         )];
         let metastore = mock_metastore(init_state, Some(1), Some(0));
 
-        let shared_state = QueueSharedState {
+        let mut shared_state = QueueSharedState {
             metastore,
             index_uid,
             source_id: "test-sqs-source".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
-            last_pruning: Instant::now(),
+            last_initiated_pruning: Instant::now(),
             max_age: None,
             max_count: None,
             pruning_interval: Duration::from_secs(10),
@@ -402,12 +406,12 @@ mod tests {
         )];
         let metastore = mock_metastore(init_state, Some(1), Some(0));
 
-        let shared_state = QueueSharedState {
+        let mut shared_state = QueueSharedState {
             metastore,
             index_uid,
             source_id: "test-sqs-source".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
-            last_pruning: Instant::now(),
+            last_initiated_pruning: Instant::now(),
             max_age: None,
             max_count: None,
             pruning_interval: Duration::from_secs(10),
@@ -435,12 +439,12 @@ mod tests {
         )];
         let metastore = mock_metastore(init_state, Some(1), Some(1));
 
-        let shared_state = QueueSharedState {
+        let mut shared_state = QueueSharedState {
             metastore,
             index_uid,
             source_id: "test-sqs-source".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
-            last_pruning: Instant::now(),
+            last_initiated_pruning: Instant::now(),
             max_age: None,
             max_count: None,
             pruning_interval: Duration::from_secs(10),
@@ -472,18 +476,18 @@ mod tests {
             ),
         )];
         let metastore = mock_metastore(init_state, Some(1), Some(0));
-        let shared_state = QueueSharedState {
+        let mut shared_state = QueueSharedState {
             metastore,
             index_uid,
             source_id: "test-sqs-source".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
-            last_pruning: Instant::now(),
+            last_initiated_pruning: Instant::now(),
             max_age: None,
             max_count: None,
             pruning_interval: Duration::from_secs(10),
         };
 
-        let checkpointed_msg = checkpoint_messages(&shared_state, "token1", source_messages)
+        let checkpointed_msg = checkpoint_messages(&mut shared_state, "token1", source_messages)
             .await
             .unwrap();
         assert_eq!(checkpointed_msg.len(), 2);

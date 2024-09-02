@@ -105,7 +105,7 @@ impl QueueCoordinator {
                 reacquire_grace_period: Duration::from_secs(
                     2 * source_runtime.indexing_setting.commit_timeout_secs as u64,
                 ),
-                last_pruning: Instant::now(),
+                last_initiated_pruning: Instant::now(),
                 max_age: None,
                 max_count: None,
                 pruning_interval: Duration::from_secs(60),
@@ -207,8 +207,12 @@ impl QueueCoordinator {
             }
         }
 
-        let checkpointed_messages =
-            checkpoint_messages(&self.shared_state, &self.publish_token, untracked_locally).await?;
+        let checkpointed_messages = checkpoint_messages(
+            &mut self.shared_state,
+            &self.publish_token,
+            untracked_locally,
+        )
+        .await?;
 
         let mut ready_messages = Vec::new();
         for (message, position) in checkpointed_messages {
