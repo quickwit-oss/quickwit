@@ -192,6 +192,7 @@ impl Ingester {
         shard: Shard,
         doc_mapping_json: &str,
         now: Instant,
+        validate: bool,
     ) -> IngestV2Result<()> {
         let queue_id = shard.queue_id();
         info!(
@@ -252,6 +253,7 @@ impl Ingester {
                 Position::Beginning,
                 doc_mapper,
                 now,
+                validate,
             )
         } else {
             IngesterShard::new_solo(
@@ -260,6 +262,7 @@ impl Ingester {
                 Position::Beginning,
                 Some(doc_mapper),
                 now,
+                validate,
             )
         };
         entry.insert(primary_shard);
@@ -516,6 +519,7 @@ impl Ingester {
                     continue;
                 }
                 let doc_mapper = shard.doc_mapper_opt.clone().expect("shard should be open");
+                let validate_shard = shard.validate;
                 let follower_id_opt = shard.follower_id_opt().cloned();
                 let from_position_exclusive = shard.replication_position_inclusive.clone();
 
@@ -570,8 +574,12 @@ impl Ingester {
 
                 // Total number of bytes (valid and invalid documents)
                 let original_batch_num_bytes = doc_batch.num_bytes() as u64;
-                let (valid_doc_batch, parse_failures) =
-                    validate_doc_batch(doc_batch, doc_mapper).await?;
+
+                let (valid_doc_batch, parse_failures) = if validate_shard {
+                    validate_doc_batch(doc_batch, doc_mapper).await?
+                } else {
+                    (doc_batch, Vec::new())
+                };
 
                 if valid_doc_batch.is_empty() {
                     crate::metrics::INGEST_METRICS
@@ -947,6 +955,7 @@ impl Ingester {
                     subrequest.shard().clone(),
                     &subrequest.doc_mapping_json,
                     now,
+                    subrequest.validate_docs,
                 )
                 .await;
             if init_primary_shard_result.is_ok() {
@@ -1551,6 +1560,7 @@ mod tests {
             Position::Beginning,
             None,
             Instant::now(),
+            false,
         );
         state_guard.shards.insert(queue_id_00.clone(), shard_00);
 
@@ -1561,6 +1571,7 @@ mod tests {
             Position::Beginning,
             None,
             Instant::now(),
+            false,
         );
         shard_01.is_advertisable = true;
         state_guard.shards.insert(queue_id_01.clone(), shard_01);
@@ -1652,6 +1663,7 @@ mod tests {
                 primary_shard,
                 &doc_mapping_json,
                 Instant::now(),
+                true,
             )
             .await
             .unwrap();
@@ -1694,6 +1706,7 @@ mod tests {
                 subrequest_id: 0,
                 shard: Some(shard.clone()),
                 doc_mapping_json,
+                validate_docs: true,
             }],
         };
         let response = ingester.init_shards(init_shards_request).await.unwrap();
@@ -1744,6 +1757,7 @@ mod tests {
                         ..Default::default()
                     }),
                     doc_mapping_json: doc_mapping_json.clone(),
+                    validate_docs: true,
                 },
                 InitShardSubrequest {
                     subrequest_id: 1,
@@ -1757,6 +1771,7 @@ mod tests {
                         ..Default::default()
                     }),
                     doc_mapping_json,
+                    validate_docs: true,
                 },
             ],
         };
@@ -1867,6 +1882,7 @@ mod tests {
                     ..Default::default()
                 }),
                 doc_mapping_json,
+                validate_docs: true,
             }],
         };
         let response = ingester.init_shards(init_shards_request).await.unwrap();
@@ -1937,6 +1953,7 @@ mod tests {
                     ..Default::default()
                 }),
                 doc_mapping_json,
+                validate_docs: true,
             }],
         };
         let response = ingester.init_shards(init_shards_request).await.unwrap();
@@ -2014,6 +2031,7 @@ mod tests {
                     ..Default::default()
                 }),
                 doc_mapping_json,
+                validate_docs: true,
             }],
         };
         let response = ingester.init_shards(init_shards_request).await.unwrap();
@@ -2074,6 +2092,7 @@ mod tests {
                     ..Default::default()
                 }),
                 doc_mapping_json,
+                validate_docs: true,
             }],
         };
         let response = ingester.init_shards(init_shards_request).await.unwrap();
@@ -2125,6 +2144,7 @@ mod tests {
             Position::Beginning,
             None,
             Instant::now(),
+            false,
         );
         state_guard.shards.insert(queue_id.clone(), solo_shard);
 
@@ -2190,6 +2210,7 @@ mod tests {
             Position::Beginning,
             Some(doc_mapper),
             Instant::now(),
+            false,
         );
         state_guard.shards.insert(queue_id.clone(), solo_shard);
 
@@ -2276,6 +2297,7 @@ mod tests {
                         ..Default::default()
                     }),
                     doc_mapping_json: doc_mapping_json.clone(),
+                    validate_docs: true,
                 },
                 InitShardSubrequest {
                     subrequest_id: 1,
@@ -2290,6 +2312,7 @@ mod tests {
                         ..Default::default()
                     }),
                     doc_mapping_json,
+                    validate_docs: true,
                 },
             ],
         };
@@ -2481,6 +2504,7 @@ mod tests {
                         ..Default::default()
                     }),
                     doc_mapping_json: doc_mapping_json.clone(),
+                    validate_docs: true,
                 },
                 InitShardSubrequest {
                     subrequest_id: 1,
@@ -2495,6 +2519,7 @@ mod tests {
                         ..Default::default()
                     }),
                     doc_mapping_json,
+                    validate_docs: true,
                 },
             ],
         };
@@ -2618,6 +2643,7 @@ mod tests {
             Position::Beginning,
             None,
             Instant::now(),
+            false,
         );
         ingester
             .state
@@ -2696,6 +2722,7 @@ mod tests {
                 primary_shard,
                 &doc_mapping_json,
                 Instant::now(),
+                true,
             )
             .await
             .unwrap();
@@ -2776,6 +2803,7 @@ mod tests {
                 primary_shard,
                 &doc_mapping_json,
                 Instant::now(),
+                true,
             )
             .await
             .unwrap();
@@ -2898,6 +2926,7 @@ mod tests {
                 shard,
                 &doc_mapping_json,
                 Instant::now(),
+                true,
             )
             .await
             .unwrap();
@@ -3022,6 +3051,7 @@ mod tests {
                 shard_01,
                 &doc_mapping_json_01,
                 now,
+                true,
             )
             .await
             .unwrap();
@@ -3032,6 +3062,7 @@ mod tests {
                 shard_02,
                 &doc_mapping_json_02,
                 now,
+                true,
             )
             .await
             .unwrap();
@@ -3122,6 +3153,7 @@ mod tests {
             Position::Beginning,
             None,
             Instant::now(),
+            false,
         );
         state_guard.shards.insert(queue_id.clone(), solo_shard);
 
@@ -3232,6 +3264,7 @@ mod tests {
                 shard_01,
                 &doc_mapping_json,
                 now,
+                true,
             )
             .await
             .unwrap();
@@ -3242,6 +3275,7 @@ mod tests {
                 shard_02,
                 &doc_mapping_json,
                 now,
+                true,
             )
             .await
             .unwrap();
@@ -3314,6 +3348,7 @@ mod tests {
                 shard_17,
                 &doc_mapping_json,
                 now,
+                true,
             )
             .await
             .unwrap();
@@ -3325,6 +3360,7 @@ mod tests {
                 shard_18,
                 &doc_mapping_json,
                 now,
+                true,
             )
             .await
             .unwrap();
@@ -3382,6 +3418,7 @@ mod tests {
                 shard,
                 &doc_mapping_json,
                 Instant::now(),
+                true,
             )
             .await
             .unwrap();
@@ -3495,6 +3532,7 @@ mod tests {
                 Position::Beginning,
                 None,
                 Instant::now(),
+                false,
             ),
         );
         ingester.check_decommissioning_status(&mut state_guard);
@@ -3551,6 +3589,7 @@ mod tests {
                 shard_01,
                 &doc_mapping_json,
                 now,
+                true,
             )
             .await
             .unwrap();
@@ -3561,6 +3600,7 @@ mod tests {
                 shard_02,
                 &doc_mapping_json,
                 now,
+                true,
             )
             .await
             .unwrap();
@@ -3656,6 +3696,7 @@ mod tests {
                 shard_01,
                 &doc_mapping_json,
                 now - idle_shard_timeout,
+                true,
             )
             .await
             .unwrap();
@@ -3723,6 +3764,7 @@ mod tests {
                 shard_01,
                 &doc_mapping_json,
                 now,
+                true,
             )
             .await
             .unwrap();
@@ -3733,6 +3775,7 @@ mod tests {
                 shard_02,
                 &doc_mapping_json,
                 now,
+                true,
             )
             .await
             .unwrap();
@@ -3743,6 +3786,7 @@ mod tests {
                 shard_03,
                 &doc_mapping_json,
                 now,
+                true,
             )
             .await
             .unwrap();

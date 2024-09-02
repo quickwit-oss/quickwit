@@ -55,6 +55,9 @@ pub(super) struct IngesterShard {
     pub is_advertisable: bool,
     /// Document mapper for the shard. Replica shards and closed solo shards do not have one.
     pub doc_mapper_opt: Option<Arc<dyn DocMapper>>,
+    /// Whether to validate documents in this shard. True if no preprocessing (VLR) happends before
+    /// indexing.
+    pub validate: bool,
     pub shard_status_tx: watch::Sender<ShardStatus>,
     pub shard_status_rx: watch::Receiver<ShardStatus>,
     /// Instant at which the shard was last written to.
@@ -69,6 +72,7 @@ impl IngesterShard {
         truncation_position_inclusive: Position,
         doc_mapper: Arc<dyn DocMapper>,
         now: Instant,
+        validate: bool,
     ) -> Self {
         let shard_status = (shard_state, replication_position_inclusive.clone());
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
@@ -79,6 +83,7 @@ impl IngesterShard {
             truncation_position_inclusive,
             is_advertisable: false,
             doc_mapper_opt: Some(doc_mapper),
+            validate,
             shard_status_tx,
             shard_status_rx,
             last_write_instant: now,
@@ -103,6 +108,7 @@ impl IngesterShard {
             // anyway.
             is_advertisable: false,
             doc_mapper_opt: None,
+            validate: false,
             shard_status_tx,
             shard_status_rx,
             last_write_instant: now,
@@ -115,6 +121,7 @@ impl IngesterShard {
         truncation_position_inclusive: Position,
         doc_mapper_opt: Option<Arc<dyn DocMapper>>,
         now: Instant,
+        validate: bool,
     ) -> Self {
         let shard_status = (shard_state, replication_position_inclusive.clone());
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
@@ -125,6 +132,7 @@ impl IngesterShard {
             truncation_position_inclusive,
             is_advertisable: false,
             doc_mapper_opt,
+            validate,
             shard_status_tx,
             shard_status_rx,
             last_write_instant: now,
@@ -253,6 +261,7 @@ mod tests {
             Position::Beginning,
             doc_mapper,
             Instant::now(),
+            true,
         );
         assert!(matches!(
             &primary_shard.shard_type,
@@ -305,6 +314,7 @@ mod tests {
             Position::Beginning,
             None,
             Instant::now(),
+            false,
         );
         solo_shard.assert_is_solo();
         assert!(!solo_shard.is_replica());
