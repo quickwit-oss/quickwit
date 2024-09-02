@@ -29,6 +29,7 @@ mod lazy_file_backed_index;
 pub(crate) mod manifest;
 mod state;
 mod store_operations;
+mod broadcast_oneshot;
 
 use core::fmt;
 use std::collections::hash_map::Entry;
@@ -141,11 +142,18 @@ impl FileBackedIndexCell {
         }
         // better message FIXME.
         // TODO check the property described in the expect.
-        self.batch_result.set(Err(MetastoreError::Internal { message: "".to_string(), cause: "".to_string() }))
-            .expect("The update task is supposed to be hold the lock when it attempts to persist the state");
+        self.batch_result
+            .set(Err(MetastoreError::Internal {
+                message: "".to_string(),
+                cause: "".to_string(),
+            }))
+            .expect(
+                "The update task is supposed to be hold the lock when it attempts to persist the \
+                 state",
+            );
     }
 
-    pub async fn execute_scheduled_write(&mut self,) {
+    pub async fn execute_scheduled_write(&mut self) {
         todo!()
     }
 
@@ -262,18 +270,18 @@ impl FileBackedMetastore {
             }));
         }
 
-            // if locked_index_cell.write_batch_state.is_none() {
-            //     // There is no ongoing batch.
-            //     // We create a new batch and add our mutation to it.
-            //     let write_batch = WriteBatchState {
-            //         file_backed_index: locked_index_cell.file_backed_index.clone(),
-            //         publish_notify: Arc::new(Notify::new()),
-            //     };
-            //     locked_index_cell.write_batch_state = Some(write_batch);
-            //     true
-            // } else {
-            //     false
-            // };
+        // if locked_index_cell.write_batch_state.is_none() {
+        //     // There is no ongoing batch.
+        //     // We create a new batch and add our mutation to it.
+        //     let write_batch = WriteBatchState {
+        //         file_backed_index: locked_index_cell.file_backed_index.clone(),
+        //         publish_notify: Arc::new(Notify::new()),
+        //     };
+        //     locked_index_cell.write_batch_state = Some(write_batch);
+        //     true
+        // } else {
+        //     false
+        // };
 
         let write_state: &mut FileBackedIndex = &mut locked_index_cell.write_state;
 
@@ -284,7 +292,7 @@ impl FileBackedMetastore {
                 if locked_index_cell.scheduled_write_handle.is_none() {
                     trigger_eventual_sync = true;
                 }
-            },
+            }
             Ok(MutationOccurred::No(value)) => {
                 if locked_index_cell.scheduled_write_handle.is_none() {
                     // The write state has not been modified yes. We can simply return right away.
@@ -308,9 +316,8 @@ impl FileBackedMetastore {
         //     self.schedule_eventual_index_write();
         // }
 
-
-        // let (value, publish_notify) = if let Some(write_batch_state) = locked_index.write_batch_state.as_mut() {
-        //     // There is some ongoing batch.
+        // let (value, publish_notify) = if let Some(write_batch_state) =
+        // locked_index.write_batch_state.as_mut() {     // There is some ongoing batch.
         //     // We just add our mutation to the batch.
         //     let value = match mutate_fn(&mut write_batch_state.file_backed_index) {
         //         Ok(MutationOccurred::Yes(value)) |  Ok(MutationOccurred::No(value)) => {

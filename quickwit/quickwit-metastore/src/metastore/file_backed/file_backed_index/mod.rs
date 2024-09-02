@@ -27,7 +27,6 @@ mod shards;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Bound;
-use tokio::time::Instant;
 
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
@@ -44,6 +43,7 @@ use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
 use shards::Shards;
 use time::OffsetDateTime;
+use tokio::time::Instant;
 use tracing::{info, warn};
 
 use super::MutationOccurred;
@@ -79,7 +79,6 @@ pub(crate) struct FileBackedIndex {
     /// while mutating the Index.
     // TODO move this logic to the cell.
     pub discarded: bool,
-
 }
 
 #[cfg(any(test, feature = "testsuite"))]
