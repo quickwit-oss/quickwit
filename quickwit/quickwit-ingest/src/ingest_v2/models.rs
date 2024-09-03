@@ -55,8 +55,8 @@ pub(super) struct IngesterShard {
     pub is_advertisable: bool,
     /// Document mapper for the shard. Replica shards and closed solo shards do not have one.
     pub doc_mapper_opt: Option<Arc<dyn DocMapper>>,
-    /// Whether to validate documents in this shard. True if no preprocessing (VLR) happends before
-    /// indexing.
+    /// Whether to validate documents in this shard. True if no preprocessing (VRL) will happen
+    /// before indexing.
     pub validate: bool,
     pub shard_status_tx: watch::Sender<ShardStatus>,
     pub shard_status_rx: watch::Receiver<ShardStatus>,
