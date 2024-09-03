@@ -35,8 +35,9 @@ use quickwit_proto::metastore::{
     ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult, MetastoreService,
     MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
-    UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    PruneShardsRequest, PruneShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSplitsDeleteOpstampRequest,
+    UpdateSplitsDeleteOpstampResponse,
 };
 
 /// A [`MetastoreService`] implementation that proxies some requests to the control plane so it can
@@ -234,6 +235,14 @@ impl MetastoreService for ControlPlaneMetastore {
         request: DeleteShardsRequest,
     ) -> MetastoreResult<DeleteShardsResponse> {
         self.metastore.delete_shards(request).await
+    }
+
+    async fn prune_shards(
+        &self,
+        request: PruneShardsRequest,
+    ) -> MetastoreResult<PruneShardsResponse> {
+        // TODO this call should go through the control plane which should apply debounce
+        self.metastore.prune_shards(request).await
     }
 
     // Index Template API

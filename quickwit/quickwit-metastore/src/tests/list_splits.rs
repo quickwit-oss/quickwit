@@ -225,6 +225,7 @@ pub async fn test_metastore_stream_splits<MetastoreToTest: MetastoreServiceExt +
             .unwrap()
             .unwrap()
             .deserialize_splits()
+            .await
             .unwrap();
         assert_eq!(splits.len(), 100);
         all_splits.append(&mut splits);
@@ -1025,6 +1026,7 @@ pub async fn test_metastore_list_stale_splits<
         .await
         .unwrap()
         .deserialize_splits()
+        .await
         .unwrap();
     assert!(no_splits.is_empty());
 
@@ -1090,6 +1092,7 @@ pub async fn test_metastore_list_stale_splits<
             .await
             .unwrap()
             .deserialize_splits()
+            .await
             .unwrap();
         assert_eq!(splits.len(), 1);
         assert_eq!(
@@ -1107,6 +1110,7 @@ pub async fn test_metastore_list_stale_splits<
             .await
             .unwrap()
             .deserialize_splits()
+            .await
             .unwrap();
         assert_eq!(splits.len(), 3);
         assert_eq!(splits[0].split_id(), split_metadata_2.split_id());
@@ -1127,6 +1131,7 @@ pub async fn test_metastore_list_stale_splits<
             .await
             .unwrap()
             .deserialize_splits()
+            .await
             .unwrap();
         assert_eq!(splits.len(), 1);
         assert_eq!(
@@ -1144,6 +1149,7 @@ pub async fn test_metastore_list_stale_splits<
             .await
             .unwrap()
             .deserialize_splits()
+            .await
             .unwrap();
         assert!(splits.is_empty());
         cleanup_index(&mut metastore, index_uid).await;

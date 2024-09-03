@@ -45,7 +45,8 @@ use quickwit_proto::jaeger::storage::v1::{
 };
 use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
 use quickwit_proto::search::{CountHits, ListTermsRequest, SearchRequest};
-use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, TermQuery};
+use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, TermQuery, UserInputQuery};
+use quickwit_query::BooleanOperand;
 use quickwit_search::{FindTraceIdsCollector, SearchService};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -191,6 +192,7 @@ impl JaegerService {
         operation_name: &'static str,
         request_start: Instant,
         index_id_patterns: Vec<String>,
+        root_only: bool,
     ) -> JaegerResult<SpanStream> {
         debug!(request=?request, "`find_traces` request");
 
@@ -210,6 +212,7 @@ impl JaegerService {
                 operation_name,
                 request_start,
                 index_id_patterns,
+                root_only,
             )
             .await?;
         Ok(response)
@@ -237,6 +240,7 @@ impl JaegerService {
                 operation_name,
                 request_start,
                 index_id_patterns,
+                false,
             )
             .await?;
         Ok(response)
@@ -300,6 +304,7 @@ impl JaegerService {
         operation_name: &'static str,
         request_start: Instant,
         index_id_patterns: Vec<String>,
+        root_only: bool,
     ) -> Result<SpanStream, Status> {
         if trace_ids.is_empty() {
             let (_tx, rx) = mpsc::channel(1);
@@ -315,6 +320,20 @@ impl JaegerService {
                 value,
             };
             query.should.push(term_query.into());
+        }
+        if root_only {
+            // we do this so we don't error on old indexes, and instead return both root and non
+            // root spans
+            let is_root = UserInputQuery {
+                user_text: "NOT is_root:false".to_string(),
+                default_fields: None,
+                default_operator: BooleanOperand::And,
+                lenient: true,
+            };
+            let mut new_query = BoolQuery::default();
+            new_query.must.push(query.into());
+            new_query.must.push(is_root.into());
+            query = new_query;
         }
 
         let query_ast: QueryAst = query.into();
@@ -523,6 +542,9 @@ impl SpanReaderPlugin for JaegerService {
             "find_traces",
             Instant::now(),
             index_id_patterns,
+            false, /* if we use true, Jaeger will display "1 Span", and display an empty trace
+                    * when clicking on the ui (but display the full trace after reloading the
+                    * page) */
         )
         .await
         .map(Response::new)
@@ -1166,7 +1188,8 @@ mod tests {
                 quickwit_query::query_ast::UserInputQuery {
                     user_text: "query".to_string(),
                     default_fields: None,
-                    default_operator: quickwit_query::BooleanOperand::And
+                    default_operator: quickwit_query::BooleanOperand::And,
+                    lenient: false,
                 }
                 .into()
             );
@@ -2160,6 +2183,7 @@ mod tests {
                 message: Some("An error occurred.".to_string()),
             },
             parent_span_id: Some(SpanId::new([3; 8])),
+            is_root: Some(false),
             events: vec![QwEvent {
                 event_timestamp_nanos: 1000500003,
                 event_name: "event_name".to_string(),

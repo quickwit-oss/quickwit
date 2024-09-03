@@ -260,6 +260,7 @@ message InitShardSubrequest {
   uint32 subrequest_id = 1;
   quickwit.ingest.Shard shard = 2;
   string doc_mapping_json = 3;
+  bool validate_docs = 4;
 }
 
 message InitShardsResponse {

@@ -27,6 +27,7 @@ mod metrics;
 mod models;
 mod mrecord;
 mod mrecordlog_utils;
+mod publish_tracker;
 mod rate_meter;
 mod replication;
 mod router;

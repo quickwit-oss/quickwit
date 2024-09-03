@@ -360,6 +360,8 @@ pub struct InitShardSubrequest {
     pub shard: ::core::option::Option<super::Shard>,
     #[prost(string, tag = "3")]
     pub doc_mapping_json: ::prost::alloc::string::String,
+    #[prost(bool, tag = "4")]
+    pub validate_docs: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

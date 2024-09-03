@@ -42,7 +42,7 @@ pub trait EventSubscriber<E>: Send + Sync + 'static {
 impl<E, F> EventSubscriber<E> for F
 where
     E: Event,
-    F: Fn(E) + Send + Sync + 'static,
+    F: FnMut(E) + Send + Sync + 'static,
 {
     async fn handle_event(&mut self, event: E) {
         (self)(event);

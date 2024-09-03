@@ -101,6 +101,7 @@ pub struct IngestRouter {
     replication_factor: usize,
     // Limits the number of ingest requests in-flight to some capacity in bytes.
     ingest_semaphore: Arc<Semaphore>,
+    event_broker: EventBroker,
 }
 
 struct RouterState {
@@ -125,6 +126,7 @@ impl IngestRouter {
         control_plane: ControlPlaneServiceClient,
         ingester_pool: IngesterPool,
         replication_factor: usize,
+        event_broker: EventBroker,
     ) -> Self {
         let state = Arc::new(Mutex::new(RouterState {
             debouncer: GetOrCreateOpenShardsRequestDebouncer::default(),
@@ -143,15 +145,16 @@ impl IngestRouter {
             state,
             replication_factor,
             ingest_semaphore,
+            event_broker,
         }
     }
 
-    pub fn subscribe(&self, event_broker: &EventBroker) {
+    pub fn subscribe(&self) {
         let weak_router_state = WeakRouterState(Arc::downgrade(&self.state));
-        event_broker
+        self.event_broker
             .subscribe::<LocalShardsUpdate>(weak_router_state.clone())
             .forever();
-        event_broker
+        self.event_broker
             .subscribe::<ShardPositionsUpdate>(weak_router_state)
             .forever();
     }
@@ -422,6 +425,7 @@ impl IngestRouter {
                 subrequests,
                 commit_type: commit_type as i32,
             };
+            workbench.record_persist_request(&persist_request);
             let persist_future = async move {
                 let persist_result = tokio::time::timeout(
                     PERSIST_REQUEST_TIMEOUT,
@@ -454,12 +458,20 @@ impl IngestRouter {
         max_num_attempts: usize,
     ) -> IngestResponseV2 {
         let commit_type = ingest_request.commit_type();
-        let mut workbench = IngestWorkbench::new(ingest_request.subrequests, max_num_attempts);
+        let mut workbench = if matches!(commit_type, CommitTypeV2::Force | CommitTypeV2::WaitFor) {
+            IngestWorkbench::new_with_publish_tracking(
+                ingest_request.subrequests,
+                max_num_attempts,
+                self.event_broker.clone(),
+            )
+        } else {
+            IngestWorkbench::new(ingest_request.subrequests, max_num_attempts)
+        };
         while !workbench.is_complete() {
             workbench.new_attempt();
             self.batch_persist(&mut workbench, commit_type).await;
         }
-        workbench.into_ingest_result()
+        workbench.into_ingest_result().await
     }
 
     async fn ingest_timeout(
@@ -595,9 +607,14 @@ impl IngestRouterService for IngestRouter {
             .try_acquire_many_owned(request_size_bytes as u32)
             .map_err(|_| IngestV2Error::TooManyRequests(RateLimitingCause::RouterLoadShedding))?;
 
-        let ingest_res = self
-            .ingest_timeout(ingest_request, ingest_request_timeout())
-            .await;
+        let ingest_res = if ingest_request.commit_type() == CommitTypeV2::Auto {
+            self.ingest_timeout(ingest_request, ingest_request_timeout())
+                .await
+        } else {
+            Ok(self
+                .retry_batch_persist(ingest_request, MAX_PERSIST_ATTEMPTS)
+                .await)
+        };
 
         update_ingest_metrics(&ingest_res, num_subrequests);
 
@@ -712,6 +729,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            EventBroker::default(),
         );
         let mut workbench = IngestWorkbench::default();
         let (get_or_create_open_shard_request_opt, rendezvous) = router
@@ -948,6 +966,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            EventBroker::default(),
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -1062,6 +1081,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            EventBroker::default(),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1120,6 +1140,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            EventBroker::default(),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1149,6 +1170,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            EventBroker::default(),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1200,6 +1222,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            EventBroker::default(),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1251,6 +1274,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            EventBroker::default(),
         );
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         let mut state_guard = router.state.lock().await;
@@ -1337,6 +1361,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            EventBroker::default(),
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -1416,6 +1441,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            EventBroker::default(),
         );
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         let index_uid2: IndexUid = IndexUid::for_test("test-index-1", 0);
@@ -1653,6 +1679,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            EventBroker::default(),
         );
         let mut state_guard = router.state.lock().await;
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
@@ -1757,14 +1784,15 @@ mod tests {
         let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
+        let event_broker = EventBroker::default();
         let router = IngestRouter::new(
             self_node_id,
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            event_broker.clone(),
         );
-        let event_broker = EventBroker::default();
-        router.subscribe(&event_broker);
+        router.subscribe();
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
 
         let mut state_guard = router.state.lock().await;
@@ -1854,6 +1882,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            EventBroker::default(),
         );
         let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
         let index_uid_1: IndexUid = IndexUid::for_test("test-index-1", 0);
@@ -1903,6 +1932,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             replication_factor,
+            EventBroker::default(),
         );
         let mut state_guard = router.state.lock().await;
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);

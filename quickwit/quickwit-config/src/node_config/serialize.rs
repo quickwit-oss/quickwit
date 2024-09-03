@@ -411,13 +411,13 @@ impl RestConfigBuilder {
 }
 
 #[cfg(any(test, feature = "testsuite"))]
-pub fn node_config_for_test() -> NodeConfig {
-    use quickwit_common::net::find_available_tcp_port;
-
+pub fn node_config_for_tests_from_ports(
+    rest_listen_port: u16,
+    grpc_listen_port: u16,
+) -> NodeConfig {
     let node_id = NodeId::new(default_node_id().unwrap());
     let enabled_services = QuickwitService::supported_services();
     let listen_address = Host::default();
-    let rest_listen_port = find_available_tcp_port().expect("OS should find an available port");
     let rest_listen_addr = listen_address
         .with_port(rest_listen_port)
         .to_socket_addr()
@@ -426,7 +426,6 @@ pub fn node_config_for_test() -> NodeConfig {
         .with_port(rest_listen_port)
         .to_socket_addr()
         .expect("default host should be an IP address");
-    let grpc_listen_port = find_available_tcp_port().expect("OS should find an available port");
     let grpc_listen_addr = listen_address
         .with_port(grpc_listen_port)
         .to_socket_addr()

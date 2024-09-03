@@ -68,7 +68,7 @@ impl From<ElasticRefresh> for CommitTypeV2 {
         match val {
             ElasticRefresh::False => Self::Auto,
             ElasticRefresh::True => Self::Force,
-            ElasticRefresh::WaitFor => Self::Wait,
+            ElasticRefresh::WaitFor => Self::WaitFor,
         }
     }
 }

@@ -1,7 +1,7 @@
 # Backward compatibility in Quickwit.
 
 If you are reading this, chances are you want to make a change to one of the resource
-of quickwit's meta/config:
+of Quickwit's meta/config:
 
 User edited:
 - QuickwitConfig
@@ -19,7 +19,7 @@ Quickwit currently manages backward compatibility of all of these resources but 
 This document describes how to handle a change, and how to make test such a change,
 and spot eventual regression.
 
-# How do I update `{IndexMetadata, SplitMetadata, FileBackedIndex, SourceConfig, IndexConfig}`?
+## How do I update `{IndexMetadata, SplitMetadata, FileBackedIndex, SourceConfig, IndexConfig}`?
 
 There are two types of upgrades.
 
@@ -45,6 +45,7 @@ non-regression.
 
 When introducing such a change:
 - modify your model with the help of the attributes above.
+- modify the example for the model by editing its `TestableForRegression` trait implementation.
 - commit the 2 files that were updated by build.rs
 - eyeball the diff on the `.expected.json` that failed, and send it with your PR.
 
@@ -121,5 +122,3 @@ most recent version.
 
 The unit test will start making sense in future updates thanks to the update phase
 described in the previous section.
-
-

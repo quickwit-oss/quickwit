@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use anyhow::{bail, Context};
 use quickwit_metastore::checkpoint::PartitionId;
@@ -26,6 +27,7 @@ use quickwit_proto::metastore::{
     OpenShardsRequest,
 };
 use quickwit_proto::types::{DocMappingUid, IndexUid, Position, ShardId};
+use time::OffsetDateTime;
 use tracing::info;
 
 use super::message::PreProcessedMessage;
@@ -35,6 +37,9 @@ pub struct QueueSharedState {
     pub metastore: MetastoreServiceClient,
     pub index_uid: IndexUid,
     pub source_id: String,
+    /// Duration after which the processing of a shard is considered stale and
+    /// should be reacquired
+    pub reacquire_grace_period: Duration,
 }
 
 impl QueueSharedState {
@@ -78,11 +83,13 @@ impl QueueSharedState {
             let shard = sub.open_shard();
             let position = shard.publish_position_inclusive.clone().unwrap_or_default();
             let is_owned = sub.open_shard().publish_token.as_deref() == Some(publish_token);
+            let update_datetime = OffsetDateTime::from_unix_timestamp(shard.update_timestamp)
+                .context("Invalid shard update timestamp")?;
+            let is_stale =
+                OffsetDateTime::now_utc() - update_datetime > self.reacquire_grace_period;
             if position.is_eof() || (is_owned && position.is_beginning()) {
                 shards.push((partition_id, position));
-            } else if !is_owned {
-                // TODO: Add logic to only re-acquire shards that have a token that is not
-                // the local token when they haven't been updated recently
+            } else if !is_owned && is_stale {
                 info!(previous_token = shard.publish_token, "shard re-acquired");
                 re_acquired_shards.push(shard.shard_id().clone());
             } else if is_owned && !position.is_beginning() {
@@ -146,6 +153,7 @@ pub async fn checkpoint_messages(
 pub mod shared_state_for_tests {
     use std::sync::{Arc, Mutex};
 
+    use itertools::Itertools;
     use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::{
         AcquireShardsResponse, MockMetastoreService, OpenShardSubresponse, OpenShardsResponse,
@@ -153,9 +161,14 @@ pub mod shared_state_for_tests {
 
     use super::*;
 
+    /// Creates a metastore that mocks the behavior of the Shard API on the open
+    /// and acquire methods using a simplified in-memory state.
     pub(super) fn mock_metastore(
-        initial_state: &[(PartitionId, (String, Position))],
+        // Shards (token, position, update_timestamp) in the initial state
+        initial_state: &[(PartitionId, (String, Position, i64))],
+        // Times open_shards is expected to be called (None <=> no expectation)
         open_shard_times: Option<usize>,
+        // Times acquire_shards is expected to be called (None <=> no expectation)
         acquire_times: Option<usize>,
     ) -> MetastoreServiceClient {
         let mut mock_metastore = MockMetastoreService::new();
@@ -172,16 +185,22 @@ pub mod shared_state_for_tests {
                         .into_iter()
                         .map(|sub_req| {
                             let partition_id: PartitionId = sub_req.shard_id().to_string().into();
-                            let (token, position) = inner_state_ref
+                            let req_token = sub_req.publish_token.unwrap();
+                            let (token, position, update_timestamp) = inner_state_ref
                                 .lock()
                                 .unwrap()
                                 .get(&partition_id)
                                 .cloned()
-                                .unwrap_or((sub_req.publish_token.unwrap(), Position::Beginning));
-                            inner_state_ref
-                                .lock()
-                                .unwrap()
-                                .insert(partition_id, (token.clone(), position.clone()));
+                                .unwrap_or((
+                                    req_token.clone(),
+                                    Position::Beginning,
+                                    OffsetDateTime::now_utc().unix_timestamp(),
+                                ));
+
+                            inner_state_ref.lock().unwrap().insert(
+                                partition_id,
+                                (token.clone(), position.clone(), update_timestamp),
+                            );
                             OpenShardSubresponse {
                                 subrequest_id: sub_req.subrequest_id,
                                 open_shard: Some(Shard {
@@ -194,6 +213,7 @@ pub mod shared_state_for_tests {
                                     doc_mapping_uid: sub_req.doc_mapping_uid,
                                     publish_position_inclusive: Some(position),
                                     shard_state: ShardState::Open as i32,
+                                    update_timestamp,
                                 }),
                             }
                         })
@@ -203,57 +223,77 @@ pub mod shared_state_for_tests {
         if let Some(times) = open_shard_times {
             open_shards_expectation.times(times);
         }
-        let acquire_shards_expectation = mock_metastore
-            .expect_acquire_shards()
-            // .times(acquire_times)
-            .returning(move |request| {
-                let acquired_shards = request
-                    .shard_ids
-                    .into_iter()
-                    .map(|shard_id| {
-                        let partition_id: PartitionId = shard_id.to_string().into();
-                        let (existing_token, position) = inner_state
-                            .lock()
-                            .unwrap()
-                            .get(&partition_id)
-                            .cloned()
-                            .expect("we should never try to acquire a shard that doesn't exist");
-                        inner_state.lock().unwrap().insert(
-                            partition_id,
-                            (request.publish_token.clone(), position.clone()),
-                        );
-                        assert_ne!(existing_token, request.publish_token);
-                        Shard {
-                            shard_id: Some(shard_id),
-                            source_id: "dummy".to_string(),
-                            publish_token: Some(request.publish_token.clone()),
-                            index_uid: None,
-                            follower_id: None,
-                            leader_id: "dummy".to_string(),
-                            doc_mapping_uid: None,
-                            publish_position_inclusive: Some(position),
-                            shard_state: ShardState::Open as i32,
-                        }
-                    })
-                    .collect();
-                Ok(AcquireShardsResponse { acquired_shards })
-            });
+        let acquire_shards_expectation =
+            mock_metastore
+                .expect_acquire_shards()
+                .returning(move |request| {
+                    let acquired_shards = request
+                        .shard_ids
+                        .into_iter()
+                        .map(|shard_id| {
+                            let partition_id: PartitionId = shard_id.to_string().into();
+                            let (existing_token, position, update_timestamp) = inner_state
+                                .lock()
+                                .unwrap()
+                                .get(&partition_id)
+                                .cloned()
+                                .expect(
+                                    "we should never try to acquire a shard that doesn't exist",
+                                );
+                            inner_state.lock().unwrap().insert(
+                                partition_id,
+                                (
+                                    request.publish_token.clone(),
+                                    position.clone(),
+                                    update_timestamp,
+                                ),
+                            );
+                            assert_ne!(existing_token, request.publish_token);
+                            Shard {
+                                shard_id: Some(shard_id),
+                                source_id: "dummy".to_string(),
+                                publish_token: Some(request.publish_token.clone()),
+                                index_uid: None,
+                                follower_id: None,
+                                leader_id: "dummy".to_string(),
+                                doc_mapping_uid: None,
+                                publish_position_inclusive: Some(position),
+                                shard_state: ShardState::Open as i32,
+                                update_timestamp,
+                            }
+                        })
+                        .collect();
+                    Ok(AcquireShardsResponse { acquired_shards })
+                });
         if let Some(times) = acquire_times {
             acquire_shards_expectation.times(times);
         }
         MetastoreServiceClient::from_mock(mock_metastore)
     }
 
-    pub fn shared_state_for_tests(
+    pub fn init_state(
         index_id: &str,
-        initial_state: &[(PartitionId, (String, Position))],
+        // Shards (token, position, is_stale) in the initial state
+        initial_state: &[(PartitionId, (String, Position, bool))],
     ) -> QueueSharedState {
         let index_uid = IndexUid::new_with_random_ulid(index_id);
-        let metastore = mock_metastore(initial_state, None, None);
+        let metastore_state = initial_state
+            .iter()
+            .map(|(pid, (token, pos, is_stale))| {
+                let update_timestamp = if *is_stale {
+                    OffsetDateTime::now_utc().unix_timestamp() - 100
+                } else {
+                    OffsetDateTime::now_utc().unix_timestamp()
+                };
+                (pid.clone(), (token.clone(), pos.clone(), update_timestamp))
+            })
+            .collect_vec();
+        let metastore = mock_metastore(&metastore_state, None, None);
         QueueSharedState {
             metastore,
             index_uid,
             source_id: "test-queue-src".to_string(),
+            reacquire_grace_period: Duration::from_secs(10),
         }
     }
 }
@@ -290,13 +330,21 @@ mod tests {
     async fn test_acquire_shards_with_completed() {
         let index_id = "test-sqs-index";
         let index_uid = IndexUid::new_with_random_ulid(index_id);
-        let init_state = &[("p1".into(), ("token2".to_string(), Position::eof(100usize)))];
+        let init_state = &[(
+            "p1".into(),
+            (
+                "token2".to_string(),
+                Position::eof(100usize),
+                OffsetDateTime::now_utc().unix_timestamp(),
+            ),
+        )];
         let metastore = mock_metastore(init_state, Some(1), Some(0));
 
         let shared_state = QueueSharedState {
             metastore,
             index_uid,
             source_id: "test-sqs-source".to_string(),
+            reacquire_grace_period: Duration::from_secs(10),
         };
 
         let aquired = shared_state
@@ -308,12 +356,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_re_acquire_shards() {
+    async fn test_re_acquire_shards_within_grace_period() {
         let index_id = "test-sqs-index";
         let index_uid = IndexUid::new_with_random_ulid(index_id);
         let init_state = &[(
             "p1".into(),
-            ("token2".to_string(), Position::offset(100usize)),
+            (
+                "token2".to_string(),
+                Position::offset(100usize),
+                OffsetDateTime::now_utc().unix_timestamp(),
+            ),
+        )];
+        let metastore = mock_metastore(init_state, Some(1), Some(0));
+
+        let shared_state = QueueSharedState {
+            metastore,
+            index_uid,
+            source_id: "test-sqs-source".to_string(),
+            reacquire_grace_period: Duration::from_secs(10),
+        };
+
+        let acquired = shared_state
+            .acquire_partitions("token1", vec!["p1".into(), "p2".into()])
+            .await
+            .unwrap();
+        assert_eq!(acquired.len(), 1);
+        assert!(acquired.contains(&("p2".into(), Position::Beginning)));
+    }
+
+    #[tokio::test]
+    async fn test_re_acquire_shards_after_grace_period() {
+        let index_id = "test-sqs-index";
+        let index_uid = IndexUid::new_with_random_ulid(index_id);
+        let init_state = &[(
+            "p1".into(),
+            (
+                "token2".to_string(),
+                Position::offset(100usize),
+                OffsetDateTime::now_utc().unix_timestamp() - 100,
+            ),
         )];
         let metastore = mock_metastore(init_state, Some(1), Some(1));
 
@@ -321,14 +402,13 @@ mod tests {
             metastore,
             index_uid,
             source_id: "test-sqs-source".to_string(),
+            reacquire_grace_period: Duration::from_secs(10),
         };
 
         let aquired = shared_state
             .acquire_partitions("token1", vec!["p1".into(), "p2".into()])
             .await
             .unwrap();
-        // TODO: this test should fail once we implement the grace
-        // period before a partition can be re-acquired
         assert!(aquired.contains(&("p1".into(), Position::offset(100usize))));
         assert!(aquired.contains(&("p2".into(), Position::Beginning)));
     }
@@ -344,13 +424,18 @@ mod tests {
 
         let init_state = &[(
             completed_partition_id.clone(),
-            ("token2".to_string(), Position::eof(100usize)),
+            (
+                "token2".to_string(),
+                Position::eof(100usize),
+                OffsetDateTime::now_utc().unix_timestamp(),
+            ),
         )];
         let metastore = mock_metastore(init_state, Some(1), Some(0));
         let shared_state = QueueSharedState {
             metastore,
             index_uid,
             source_id: "test-sqs-source".to_string(),
+            reacquire_grace_period: Duration::from_secs(10),
         };
 
         let checkpointed_msg = checkpoint_messages(&shared_state, "token1", source_messages)

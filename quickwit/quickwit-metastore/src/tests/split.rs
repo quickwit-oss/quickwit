@@ -1764,6 +1764,7 @@ pub async fn test_metastore_update_splits_delete_opstamp<
             .await
             .unwrap()
             .deserialize_splits()
+            .await
             .unwrap();
         assert_eq!(splits.len(), 2);
 
@@ -1787,6 +1788,7 @@ pub async fn test_metastore_update_splits_delete_opstamp<
             .await
             .unwrap()
             .deserialize_splits()
+            .await
             .unwrap();
         assert_eq!(splits.len(), 0);
 
@@ -1800,6 +1802,7 @@ pub async fn test_metastore_update_splits_delete_opstamp<
             .await
             .unwrap()
             .deserialize_splits()
+            .await
             .unwrap();
         assert_eq!(splits.len(), 2);
         assert_eq!(splits[0].split_metadata.delete_opstamp, 100);

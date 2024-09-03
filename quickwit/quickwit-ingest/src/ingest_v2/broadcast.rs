@@ -606,6 +606,7 @@ mod tests {
             Position::Beginning,
             None,
             Instant::now(),
+            false,
         );
         state_guard.shards.insert(queue_id_00.clone(), shard_00);
 
@@ -616,6 +617,7 @@ mod tests {
             Position::Beginning,
             None,
             Instant::now(),
+            false,
         );
         shard_01.is_advertisable = true;
         state_guard.shards.insert(queue_id_01.clone(), shard_01);
