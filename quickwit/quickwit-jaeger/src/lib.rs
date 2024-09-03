@@ -330,7 +330,10 @@ impl JaegerService {
                 default_operator: BooleanOperand::And,
                 lenient: true,
             };
-            query.must.push(is_root.into());
+            let mut new_query = BoolQuery::default();
+            new_query.must.push(query.into());
+            new_query.must.push(is_root.into());
+            query = new_query;
         }
 
         let query_ast: QueryAst = query.into();
