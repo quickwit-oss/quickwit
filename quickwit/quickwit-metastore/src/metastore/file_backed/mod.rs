@@ -21,6 +21,7 @@
 //! can import [`FileBackedIndex`] and run backward-compatibility tests. You should not have to
 //! import anything from here directly.
 
+mod broadcast_oneshot;
 pub mod file_backed_index;
 mod file_backed_metastore_factory;
 mod index_id_matcher;
@@ -29,7 +30,6 @@ mod lazy_file_backed_index;
 pub(crate) mod manifest;
 mod state;
 mod store_operations;
-mod broadcast_oneshot;
 
 use core::fmt;
 use std::collections::hash_map::Entry;
@@ -39,6 +39,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use broadcast_oneshot::broadcast_oneshot_channel;
 use futures::future::try_join_all;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -254,6 +255,12 @@ impl FileBackedMetastore {
         Ok(metastore)
     }
 
+    /// - cancel
+    /// - return
+    /// - wait
+    /// - schedule now
+    /// - schedule later
+
     /// Mutates an index state.
     async fn mutate<T>(
         &self,
@@ -262,6 +269,7 @@ impl FileBackedMetastore {
     ) -> MetastoreResult<T> {
         let index_id = &index_uid.index_id;
         let mut locked_index_cell = self.get_locked_index(index_id).await?;
+        let index_lock = self.index(index_id).await?;
 
         if locked_index_cell.file_backed_index.index_uid() != index_uid {
             return Err(MetastoreError::NotFound(EntityKind::Index {
@@ -269,64 +277,75 @@ impl FileBackedMetastore {
             }));
         }
 
-        // if locked_index_cell.write_batch_state.is_none() {
-        //     // There is no ongoing batch.
-        //     // We create a new batch and add our mutation to it.
-        //     let write_batch = WriteBatchState {
-        //         file_backed_index: locked_index_cell.file_backed_index.clone(),
-        //         publish_notify: Arc::new(Notify::new()),
-        //     };
-        //     locked_index_cell.write_batch_state = Some(write_batch);
-        //     true
-        // } else {
-        //     false
-        // };
-
         let write_state: &mut FileBackedIndex = &mut locked_index_cell.write_state;
 
         let mut trigger_eventual_sync = false;
 
-        let value: T =
-            match mutate_fn(write_state) {
-                Ok(MutationOccurred::Yes(value)) => {
-                    value
+        let value: T = match mutate_fn(write_state) {
+            Ok(MutationOccurred::Yes(value)) => value,
+            Ok(MutationOccurred::No(value)) => {
+                if locked_index_cell.upload_task.is_none() {
+                    // The write state has not been modified yes. We can simply return right away.
+                    return Ok(value);
                 }
-                Ok(MutationOccurred::No(value)) => {
-                    if locked_index_cell.upload_task.is_none() {
-                        // The write state has not been modified yes. We can simply return right away.
-                        return Ok(value);
+                value
+            }
+            Err(metastore_error) => {
+                // TODO mark the batch as failed to prevent the schedule batch to be written.
+                locked_index_cell.cancel_scheduled_write().await;
+                return Err(metastore_error);
+            }
+        };
+
+        let upload_result_opt: Option<broadcast_oneshot::Receiver<_>> = locked_index_cell
+            .upload_task
+            .as_ref()
+            .map(|upload_task| upload_task.upload_result.clone());
+
+
+        // drop(locked_index_cell);
+
+        // if let Some(upload_result) = upload_result_opt {
+        //     upload_result
+        //         .receive()
+        //         .await
+        //         .map_err(|_cancelled| MetastoreError::Internal {
+        //             message: "".to_string(),
+        //             cause: "".to_string(),
+        //         })?;
+        //     return Ok(value);
+        // }
+
+        let storage = self.storage.clone();
+        // put_index(storage, index).await;
+
+        let rx: broadcast_oneshot::Receiver<MetastoreResult<()>> =
+            if let Some(upload_result) = locked_index_cell.upload_task.as_ref() {
+                upload_result.upload_result.clone()
+            } else {
+                let index_lock = self.index(index_id).await?;
+                let (tx, rx) = broadcast_oneshot_channel::<MetastoreResult<()>>();
+                let elapsed_since_last_update: Duration = locked_index_cell.last_update.elapsed();
+                let remaining_until_end_of_cooldown_opt = COOLDOWN.checked_sub(elapsed_since_last_update);
+                tokio::task::spawn(async move {
+                    if let Some(remaining_until_end_of_cooldown) = remaining_until_end_of_cooldown_opt {
+                        tokio::time::sleep(remaining_until_end_of_cooldown).await;
                     }
-                    value
-                }
-                Err(metastore_error) => {
-                    // TODO mark the batch as failed to prevent the schedule batch to be written.
-                    locked_index_cell.cancel_scheduled_write().await;
-                    return Err(metastore_error);
-                }
+                    // std::mem::drop();
+                    todo!()
+                });
+                rx
             };
 
-        let upload_result_opt: Option<broadcast_oneshot::Receiver<_>> =
-            locked_index_cell.upload_task.as_ref().map(|upload_task| upload_task.upload_result.clone());
+        rx.receive()
+          .await
+          .map_err(|_cancelled| MetastoreError::Internal {
+              message: "".to_string(),
+              cause: "".to_string(),
+          })?;
 
-        let elapsed_since_last_update: Duration = locked_index_cell.last_update.elapsed();
+        Ok(value)
 
-        drop(locked_index_cell);
-
-        if let Some(upload_result) = upload_result_opt {
-            upload_result.receive().await
-                .map_err(|_recv_err| {
-                    MetastoreError::Internal { message: "".to_string(), cause: "".to_string() }
-                })?;
-            return Ok(value);
-        }
-
-        if elapsed_since_last_update > COOLDOWN {
-            // We are outside of the upload task. Let's push right away.
-            self.push(index_id).await?;
-            return Ok(value);
-        }
-
-        todo!();
         // if trigger_eventual_sync {
         //     self.schedule_eventual_index_write();
         // }
