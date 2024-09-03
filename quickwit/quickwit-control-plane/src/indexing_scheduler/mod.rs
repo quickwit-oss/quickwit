@@ -168,6 +168,10 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
         if !source_config.enabled {
             continue;
         }
+        let params_fingerprint = model
+            .index_metadata(&source_uid.index_uid)
+            .map(|index_meta| index_meta.index_config.indexing_params_fingerprint())
+            .unwrap_or_default();
         match source_config.source_params {
             SourceParams::File(FileSourceParams::Filepath(_))
             | SourceParams::IngestCli
@@ -181,6 +185,7 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::IngestV1,
+                    params_fingerprint,
                 });
             }
             SourceParams::Ingest => {
@@ -206,6 +211,7 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                         shard_ids,
                         load_per_shard,
                     },
+                    params_fingerprint,
                 });
             }
             SourceParams::Kafka(_)
@@ -221,6 +227,7 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                         load_per_pipeline: NonZeroU32::new(PIPELINE_FULL_CAPACITY.cpu_millis())
                             .unwrap(),
                     },
+                    params_fingerprint,
                 });
             }
         }
@@ -680,18 +687,21 @@ mod tests {
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                params_fingerprint: 0,
             };
             let task_1b = IndexingTask {
                 pipeline_uid: Some(PipelineUid::for_test(11u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                params_fingerprint: 0,
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::for_test(20u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
+                params_fingerprint: 0,
             };
             running_plan.insert(
                 "indexer-1".to_string(),
@@ -712,12 +722,14 @@ mod tests {
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                params_fingerprint: 0,
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::for_test(2u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
+                params_fingerprint: 0,
             };
             running_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
             desired_plan.insert("indexer-1".to_string(), vec![task_2.clone()]);
@@ -744,12 +756,14 @@ mod tests {
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                params_fingerprint: 0,
             };
             let task_2 = IndexingTask {
                 pipeline_uid: Some(PipelineUid::for_test(2u128)),
                 index_uid: Some(index_uid2.clone()),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
+                params_fingerprint: 0,
             };
             running_plan.insert("indexer-2".to_string(), vec![task_2.clone()]);
             desired_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
@@ -784,18 +798,21 @@ mod tests {
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                params_fingerprint: 0,
             };
             let task_1b = IndexingTask {
                 pipeline_uid: Some(PipelineUid::for_test(11u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                params_fingerprint: 0,
             };
             let task_1c = IndexingTask {
                 pipeline_uid: Some(PipelineUid::for_test(12u128)),
                 index_uid: Some(index_uid.clone()),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
+                params_fingerprint: 0,
             };
             running_plan.insert("indexer-1".to_string(), vec![task_1a.clone()]);
             desired_plan.insert(
@@ -938,6 +955,7 @@ mod tests {
                     num_pipelines: 3,
                     load_per_pipeline: NonZeroU32::new(1_000).unwrap(),
                 },
+                params_fingerprint: 0,
             },
             SourceToSchedule {
                 source_uid: source_2.clone(),
@@ -945,6 +963,7 @@ mod tests {
                     num_pipelines: 2,
                     load_per_pipeline: NonZeroU32::new(1_000).unwrap(),
                 },
+                params_fingerprint: 0,
             },
         ];
         let mut indexer_max_loads = FnvHashMap::default();
@@ -968,18 +987,21 @@ mod tests {
             source_id: "my-source".to_string(),
             pipeline_uid: Some(PipelineUid::random()),
             shard_ids: vec!["shard1".into()],
+            params_fingerprint: 0,
         };
         let task2 = IndexingTask {
             index_uid: Some(IndexUid::for_test("index2", 123)),
             source_id: "my-source".to_string(),
             pipeline_uid: Some(PipelineUid::random()),
             shard_ids: vec!["shard2".into(), "shard3".into()],
+            params_fingerprint: 0,
         };
         let task3 = IndexingTask {
             index_uid: Some(IndexUid::for_test("index3", 123)),
             source_id: "my-source".to_string(),
             pipeline_uid: Some(PipelineUid::random()),
             shard_ids: vec!["shard6".into()],
+            params_fingerprint: 0,
         };
         // order made to map with the debug for lisibility
         map.insert("indexer5", vec![&task2]);
