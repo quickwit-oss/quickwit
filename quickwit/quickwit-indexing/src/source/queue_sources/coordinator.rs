@@ -96,6 +96,8 @@ impl QueueCoordinator {
         source_runtime: SourceRuntime,
         queue: Arc<dyn Queue>,
         message_type: MessageType,
+        shard_max_age: Option<u32>,
+        shard_max_count: Option<u32>,
     ) -> Self {
         Self {
             shared_state: QueueSharedState {
@@ -106,8 +108,8 @@ impl QueueCoordinator {
                     2 * source_runtime.indexing_setting.commit_timeout_secs as u64,
                 ),
                 last_initiated_pruning: Instant::now(),
-                max_age: None,
-                max_count: None,
+                max_age: shard_max_age,
+                max_count: shard_max_count,
                 pruning_interval: Duration::from_secs(60),
             },
             local_state: QueueLocalState::default(),
@@ -141,6 +143,8 @@ impl QueueCoordinator {
             source_runtime,
             Arc::new(queue),
             message_type,
+            Some(config.deduplication_window_duration_sec),
+            Some(config.deduplication_window_max_messages),
         ))
     }
 

@@ -435,6 +435,8 @@ mod localstack_tests {
             FileSourceParams::Notifications(FileSourceNotification::Sqs(FileSourceSqs {
                 queue_url,
                 message_type: FileSourceMessageType::RawUri,
+                deduplication_window_duration_sec: 100,
+                deduplication_window_max_messages: 100,
             }));
         let source_config = SourceConfig::for_test(
             "test-file-source-sqs-notifications",

@@ -56,6 +56,8 @@ Required fields for the SQS `notifications` parameter items:
 - `message_type`: format of the message payload, either
   - `s3_notification`: an [S3 event notification](https://docs.aws.amazon.com/AmazonS3/latest/userguide/EventNotifications.html)
   - `raw_uri`: a message containing just the file object URI (e.g. `s3://mybucket/mykey`)
+  - `deduplication_window_duration_sec`: maximum duration for which ingested files checkpoints are kept (default 3600)
+  - `deduplication_window_max_messages`: maximum number of ingested file checkpoints kept (default 100k)
 
 *Adding a file source with SQS notifications to an index with the [CLI](../reference/cli.md#source)*
 
@@ -82,6 +84,7 @@ EOF
   - the notification message could not be parsed (e.g it is not a valid S3 notification)
   - the file was not found
   - the file is corrupted (e.g unexpected compression)
+- AWS S3 notifications and AWS SQS provide "at least once" delivery guaranties. To avoid duplicates, the file source includes a mechanism that prevents the same file from being ingested twice. It works by storing checkpoints in the metastore that track the indexing progress for each file. You can decrease `deduplication_window_duration_sec` and/or `deduplication_window_max_messages` to reduce the load on the metastore.
 
 :::
 
