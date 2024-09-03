@@ -43,7 +43,6 @@ use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
 use shards::Shards;
 use time::OffsetDateTime;
-use tokio::time::Instant;
 use tracing::{info, warn};
 
 use super::MutationOccurred;

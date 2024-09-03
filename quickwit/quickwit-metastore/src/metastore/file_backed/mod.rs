@@ -69,6 +69,7 @@ use quickwit_storage::Storage;
 use time::OffsetDateTime;
 use tokio::sync::{oneshot, Mutex, Notify, OnceCell, OwnedMutexGuard, RwLock};
 use tokio::time::Instant;
+use tracing::Instrument;
 
 use self::file_backed_index::FileBackedIndex;
 pub use self::file_backed_metastore_factory::FileBackedMetastoreFactory;
@@ -297,52 +298,53 @@ impl FileBackedMetastore {
             }
         };
 
-        let upload_result_opt: Option<broadcast_oneshot::Receiver<_>> = locked_index_cell
+        let storage: Arc<dyn Storage> = self.storage.clone();
+
+        if locked_index_cell.upload_task.is_none() {
+            let index_lock = self.index(index_id).await?;
+            let (tx, rx) = broadcast_oneshot_channel::<MetastoreResult<()>>();
+            let elapsed_since_last_update: Duration = locked_index_cell.last_update.elapsed();
+            let remaining_until_end_of_cooldown_opt =
+                COOLDOWN.checked_sub(elapsed_since_last_update);
+            let task_handle = tokio::task::spawn(async move {
+                if let Some(remaining_until_end_of_cooldown) = remaining_until_end_of_cooldown_opt {
+                    tokio::time::sleep(remaining_until_end_of_cooldown).await;
+                }
+
+                let mut locked_index = index_lock.lock().await;
+                let put_index_result = put_index(&*storage, &locked_index.write_state).await;
+
+                if put_index_result.is_err() {
+                    // Depending on the error, the write may have been successful. We mark the current
+                    // index as discarded to make sure we reload the data from the metastore before using it.
+                    locked_index.file_backed_index.discarded = true;
+                    locked_index.write_state.discarded = true;
+                } else {
+                    locked_index.file_backed_index = locked_index.write_state.clone();
+                }
+                tx.send(put_index_result);
+
+                locked_index.last_update = Instant::now();
+                locked_index.upload_task = None;
+            });
+            locked_index_cell.upload_task = Some(UploadTask {
+                upload_result: rx,
+                task_handle,
+            });
+        }
+
+        let rx = locked_index_cell
             .upload_task
             .as_ref()
-            .map(|upload_task| upload_task.upload_result.clone());
-
-
-        // drop(locked_index_cell);
-
-        // if let Some(upload_result) = upload_result_opt {
-        //     upload_result
-        //         .receive()
-        //         .await
-        //         .map_err(|_cancelled| MetastoreError::Internal {
-        //             message: "".to_string(),
-        //             cause: "".to_string(),
-        //         })?;
-        //     return Ok(value);
-        // }
-
-        let storage = self.storage.clone();
-        // put_index(storage, index).await;
-
-        let rx: broadcast_oneshot::Receiver<MetastoreResult<()>> =
-            if let Some(upload_result) = locked_index_cell.upload_task.as_ref() {
-                upload_result.upload_result.clone()
-            } else {
-                let index_lock = self.index(index_id).await?;
-                let (tx, rx) = broadcast_oneshot_channel::<MetastoreResult<()>>();
-                let elapsed_since_last_update: Duration = locked_index_cell.last_update.elapsed();
-                let remaining_until_end_of_cooldown_opt = COOLDOWN.checked_sub(elapsed_since_last_update);
-                tokio::task::spawn(async move {
-                    if let Some(remaining_until_end_of_cooldown) = remaining_until_end_of_cooldown_opt {
-                        tokio::time::sleep(remaining_until_end_of_cooldown).await;
-                    }
-                    // std::mem::drop();
-                    todo!()
-                });
-                rx
-            };
-
+            .unwrap()
+            .upload_result
+            .clone();
         rx.receive()
-          .await
-          .map_err(|_cancelled| MetastoreError::Internal {
-              message: "".to_string(),
-              cause: "".to_string(),
-          })?;
+            .await
+            .map_err(|_cancelled| MetastoreError::Internal {
+                message: "".to_string(),
+                cause: "".to_string(),
+            })?;
 
         Ok(value)
 
