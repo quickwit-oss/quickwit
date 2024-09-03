@@ -34,7 +34,6 @@ mod broadcast_oneshot;
 use core::fmt;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -113,6 +112,17 @@ impl From<bool> for MutationOccurred<()> {
     }
 }
 
+struct UploadTask {
+    upload_result: broadcast_oneshot::Receiver<MetastoreResult<()>>,
+    task_handle: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for UploadTask {
+    fn drop(&mut self) {
+        self.task_handle.abort();
+    }
+}
+
 struct FileBackedIndexCell {
     pub file_backed_index: FileBackedIndex,
 
@@ -121,8 +131,7 @@ struct FileBackedIndexCell {
     /// push requests.
     pub last_update: Instant,
     pub write_state: FileBackedIndex,
-    pub batch_result: Arc<OnceCell<MetastoreResult<()>>>,
-    scheduled_write_handle: Option<tokio::task::JoinHandle<()>>,
+    upload_task: Option<UploadTask>,
 }
 
 impl FileBackedIndexCell {
@@ -131,26 +140,14 @@ impl FileBackedIndexCell {
             file_backed_index: file_backed_index.clone(),
             last_update: Instant::now(),
             write_state: file_backed_index,
-            batch_result: Arc::new(OnceCell::const_new()),
-            scheduled_write_handle: None,
+            upload_task: None,
         }
     }
 
     pub async fn cancel_scheduled_write(&mut self) {
-        if let Some(handle) = self.scheduled_write_handle.take() {
-            handle.abort();
-        }
+        drop(self.upload_task.take());
         // better message FIXME.
         // TODO check the property described in the expect.
-        self.batch_result
-            .set(Err(MetastoreError::Internal {
-                message: "".to_string(),
-                cause: "".to_string(),
-            }))
-            .expect(
-                "The update task is supposed to be hold the lock when it attempts to persist the \
-                 state",
-            );
     }
 
     pub async fn execute_scheduled_write(&mut self) {
@@ -214,6 +211,8 @@ impl fmt::Debug for FileBackedMetastore {
             .finish()
     }
 }
+
+const COOLDOWN: Duration = Duration::from_secs(1);
 
 impl FileBackedMetastore {
     /// Creates a [`FileBackedMetastore`] for tests.
@@ -287,31 +286,47 @@ impl FileBackedMetastore {
 
         let mut trigger_eventual_sync = false;
 
-        match mutate_fn(write_state) {
-            Ok(MutationOccurred::Yes(value)) => {
-                if locked_index_cell.scheduled_write_handle.is_none() {
-                    trigger_eventual_sync = true;
+        let value: T =
+            match mutate_fn(write_state) {
+                Ok(MutationOccurred::Yes(value)) => {
+                    value
                 }
-            }
-            Ok(MutationOccurred::No(value)) => {
-                if locked_index_cell.scheduled_write_handle.is_none() {
-                    // The write state has not been modified yes. We can simply return right away.
-                    return Ok(value);
+                Ok(MutationOccurred::No(value)) => {
+                    if locked_index_cell.upload_task.is_none() {
+                        // The write state has not been modified yes. We can simply return right away.
+                        return Ok(value);
+                    }
+                    value
                 }
-            }
-            Err(_metastore_error) => {
-                // TODO mark the batch as failed to prevent the schedule batch to be written.
-                locked_index_cell.cancel_scheduled_write().await;
-            }
-        };
+                Err(metastore_error) => {
+                    // TODO mark the batch as failed to prevent the schedule batch to be written.
+                    locked_index_cell.cancel_scheduled_write().await;
+                    return Err(metastore_error);
+                }
+            };
 
-        let batch_result = locked_index_cell.batch_result.clone();
+        let upload_result_opt: Option<broadcast_oneshot::Receiver<_>> =
+            locked_index_cell.upload_task.as_ref().map(|upload_task| upload_task.upload_result.clone());
+
+        let elapsed_since_last_update: Duration = locked_index_cell.last_update.elapsed();
 
         drop(locked_index_cell);
 
-        // batch_result.get().await;
-        todo!()
+        if let Some(upload_result) = upload_result_opt {
+            upload_result.receive().await
+                .map_err(|_recv_err| {
+                    MetastoreError::Internal { message: "".to_string(), cause: "".to_string() }
+                })?;
+            return Ok(value);
+        }
 
+        if elapsed_since_last_update > COOLDOWN {
+            // We are outside of the upload task. Let's push right away.
+            self.push(index_id).await?;
+            return Ok(value);
+        }
+
+        todo!();
         // if trigger_eventual_sync {
         //     self.schedule_eventual_index_write();
         // }
@@ -416,6 +431,10 @@ impl FileBackedMetastore {
     where F: FnOnce(&FileBackedIndex) -> MetastoreResult<T> {
         let locked_index = self.get_locked_index(index_id).await?;
         view(&locked_index.file_backed_index)
+    }
+
+    async fn push(&self, index_id: &str) -> MetastoreResult<()> {
+        todo!();
     }
 
     /// Returns a valid locked index.

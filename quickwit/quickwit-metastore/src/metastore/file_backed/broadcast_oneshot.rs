@@ -19,7 +19,7 @@ pub struct Receiver<T> {
 pub struct Cancelled;
 
 impl<T: Clone> Receiver<T> {
-    async fn receive(mut self) -> Result<T, Cancelled> {
+    pub async fn receive(mut self) -> Result<T, Cancelled> {
         let result_opt = self.watch_rx
             .wait_for(|result_opt| result_opt.is_some())
             .await
