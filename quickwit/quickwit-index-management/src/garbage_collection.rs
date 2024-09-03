@@ -67,6 +67,7 @@ where Fut: Future<Output = T> {
 }
 
 /// Information on what splits have and have not been cleaned up by the GC.
+#[derive(Debug)]
 pub struct SplitRemovalInfo {
     /// The set of splits that have been removed.
     pub removed_split_entries: Vec<SplitInfo>,
@@ -384,6 +385,12 @@ mod tests {
     use super::*;
     use crate::run_garbage_collect;
 
+    fn hashmap<K: Eq + std::hash::Hash, V>(key: K, value: V) -> HashMap<K, V> {
+        let mut map = HashMap::new();
+        map.insert(key, value);
+        map
+    }
+
     #[tokio::test]
     async fn test_run_gc_marks_stale_staged_splits_for_deletion_after_grace_period() {
         let storage = storage_for_test();
@@ -429,8 +436,7 @@ mod tests {
 
         // The staging grace period hasn't passed yet so the split remains staged.
         run_garbage_collect(
-            index_uid.clone(),
-            storage.clone(),
+            hashmap(index_uid.clone(), storage.clone()),
             metastore.clone(),
             Duration::from_secs(30),
             Duration::from_secs(30),
@@ -457,8 +463,7 @@ mod tests {
 
         // The staging grace period has passed so the split is marked for deletion.
         run_garbage_collect(
-            index_uid.clone(),
-            storage.clone(),
+            hashmap(index_uid.clone(), storage.clone()),
             metastore.clone(),
             Duration::from_secs(0),
             Duration::from_secs(30),
@@ -504,7 +509,7 @@ mod tests {
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
             split_id: split_id.to_string(),
-            index_uid: IndexUid::new_with_random_ulid(index_id),
+            index_uid: index_uid.clone(),
             ..Default::default()
         };
         let stage_splits_request =
@@ -535,8 +540,7 @@ mod tests {
 
         // The delete grace period hasn't passed yet so the split remains marked for deletion.
         run_garbage_collect(
-            index_uid.clone(),
-            storage.clone(),
+            hashmap(index_uid.clone(), storage.clone()),
             metastore.clone(),
             Duration::from_secs(30),
             Duration::from_secs(30),
@@ -563,8 +567,7 @@ mod tests {
 
         // The delete grace period has passed so the split is deleted.
         run_garbage_collect(
-            index_uid.clone(),
-            storage.clone(),
+            hashmap(index_uid.clone(), storage.clone()),
             metastore.clone(),
             Duration::from_secs(30),
             Duration::from_secs(0),
@@ -599,8 +602,10 @@ mod tests {
             .times(2)
             .returning(|_| Ok(ServiceStream::empty()));
         run_garbage_collect(
-            IndexUid::new_with_random_ulid("index-test-gc-deletes"),
-            storage.clone(),
+            hashmap(
+                IndexUid::new_with_random_ulid("index-test-gc-deletes"),
+                storage.clone(),
+            ),
             MetastoreServiceClient::from_mock(mock_metastore),
             Duration::from_secs(30),
             Duration::from_secs(30),

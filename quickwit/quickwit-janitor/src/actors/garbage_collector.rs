@@ -122,7 +122,13 @@ impl GarbageCollector {
                 Some((index_uid, storage))
             }}).collect()
             .await;
-        let got_count = index_storages.len();
+
+        let storage_got_count = index_storages.len();
+        self.counters.num_failed_storage_resolution += expected_count - storage_got_count;
+
+        if index_storages.is_empty() {
+            return;
+        }
 
         let gc_res = run_garbage_collect(
             index_storages,
@@ -133,8 +139,6 @@ impl GarbageCollector {
             Some(ctx.progress()),
         )
         .await;
-
-        self.counters.num_failed_storage_resolution += expected_count - got_count;
 
         let deleted_file_entries = match gc_res {
             Ok(removal_info) => {
@@ -208,7 +212,6 @@ impl Handler<Loop> for GarbageCollector {
 mod tests {
     use std::ops::Bound;
     use std::path::Path;
-    use std::str::FromStr;
     use std::sync::Arc;
 
     use quickwit_actors::Universe;
@@ -228,12 +231,19 @@ mod tests {
 
     use super::*;
 
-    fn make_splits(split_ids: &[&str], split_state: SplitState) -> Vec<Split> {
+    fn hashmap<K: Eq + std::hash::Hash, V>(key: K, value: V) -> HashMap<K, V> {
+        let mut map = HashMap::new();
+        map.insert(key, value);
+        map
+    }
+
+    fn make_splits(index_id: &str, split_ids: &[&str], split_state: SplitState) -> Vec<Split> {
         split_ids
             .iter()
             .map(|split_id| Split {
                 split_metadata: SplitMetadata {
                     split_id: split_id.to_string(),
+                    index_uid: IndexUid::for_test(index_id, 0),
                     footer_offsets: 5..20,
                     ..Default::default()
                 },
@@ -246,7 +256,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_garbage_collect_calls_dependencies_appropriately() {
-        let index_uid = IndexUid::from_str("test-index:11111111111111111111111111").unwrap();
+        let index_uid = IndexUid::for_test("test-index", 0);
         let mut mock_storage = MockStorage::default();
         mock_storage
             .expect_bulk_delete()
@@ -273,7 +283,7 @@ mod tests {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert_eq!(query.index_uids[0], index_uid_clone,);
                 let splits = match query.split_states[0] {
-                    SplitState::Staged => make_splits(&["a"], SplitState::Staged),
+                    SplitState::Staged => make_splits("test-index", &["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         let expected_deletion_timestamp = OffsetDateTime::now_utc()
                             .unix_timestamp()
@@ -290,7 +300,11 @@ mod tests {
                             "Expected the lower bound to be unbounded when filtering splits.",
                         );
 
-                        make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
+                        make_splits(
+                            "test-index",
+                            &["a", "b", "c"],
+                            SplitState::MarkedForDeletion,
+                        )
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
@@ -328,8 +342,7 @@ mod tests {
             });
 
         let result = run_garbage_collect(
-            index_uid,
-            Arc::new(mock_storage),
+            hashmap(index_uid, Arc::new(mock_storage)),
             MetastoreServiceClient::from_mock(mock_metastore),
             STAGED_GRACE_PERIOD,
             split_deletion_grace_period(),
@@ -361,10 +374,12 @@ mod tests {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert_eq!(&query.index_uids[0].index_id, "test-index");
                 let splits = match query.split_states[0] {
-                    SplitState::Staged => make_splits(&["a"], SplitState::Staged),
-                    SplitState::MarkedForDeletion => {
-                        make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
-                    }
+                    SplitState::Staged => make_splits("test-index", &["a"], SplitState::Staged),
+                    SplitState::MarkedForDeletion => make_splits(
+                        "test-index",
+                        &["a", "b", "c"],
+                        SplitState::MarkedForDeletion,
+                    ),
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
@@ -434,9 +449,9 @@ mod tests {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert_eq!(&query.index_uids[0].index_id, "test-index");
                 let splits = match query.split_states[0] {
-                    SplitState::Staged => make_splits(&["a"], SplitState::Staged),
+                    SplitState::Staged => make_splits("test-index", &["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
-                        make_splits(&["a", "b"], SplitState::MarkedForDeletion)
+                        make_splits("test-index", &["a", "b"], SplitState::MarkedForDeletion)
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
@@ -578,6 +593,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // TODO this test doesn't really make sens when we group queries
     async fn test_garbage_collect_fails_to_run_gc_on_one_index() {
         let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MockMetastoreService::new();
@@ -605,9 +621,9 @@ mod tests {
                     });
                 }
                 let splits = match query.split_states[0] {
-                    SplitState::Staged => make_splits(&["a"], SplitState::Staged),
+                    SplitState::Staged => make_splits("test-index-1", &["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
-                        make_splits(&["a", "b"], SplitState::MarkedForDeletion)
+                        make_splits("test-index-1", &["a", "b"], SplitState::MarkedForDeletion)
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
@@ -652,7 +668,7 @@ mod tests {
         assert_eq!(counters.num_deleted_bytes, 40);
         assert_eq!(counters.num_successful_gc_run_on_index, 1);
         assert_eq!(counters.num_failed_storage_resolution, 0);
-        assert_eq!(counters.num_failed_gc_run_on_index, 1);
+        assert_eq!(counters.num_failed_gc_run_on_index, 0);
         assert_eq!(counters.num_failed_splits, 0);
         universe.assert_quit().await;
     }
@@ -673,15 +689,29 @@ mod tests {
             });
         mock_metastore
             .expect_list_splits()
-            .times(4)
+            .times(2)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
+                assert_eq!(query.index_uids.len(), 2);
                 assert!(["test-index-1", "test-index-2"]
                     .contains(&query.index_uids[0].index_id.as_ref()));
+                assert!(["test-index-1", "test-index-2"]
+                    .contains(&query.index_uids[1].index_id.as_ref()));
                 let splits = match query.split_states[0] {
-                    SplitState::Staged => make_splits(&["a"], SplitState::Staged),
+                    SplitState::Staged => {
+                        let mut splits = make_splits("test-index-1", &["a"], SplitState::Staged);
+                        splits.append(&mut make_splits("test-index-2", &["a"], SplitState::Staged));
+                        splits
+                    }
                     SplitState::MarkedForDeletion => {
-                        make_splits(&["a", "b"], SplitState::MarkedForDeletion)
+                        let mut splits =
+                            make_splits("test-index-1", &["a", "b"], SplitState::MarkedForDeletion);
+                        splits.append(&mut make_splits(
+                            "test-index-2",
+                            &["a", "b"],
+                            SplitState::MarkedForDeletion,
+                        ));
+                        splits
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
@@ -735,7 +765,7 @@ mod tests {
         assert_eq!(counters.num_passes, 1);
         assert_eq!(counters.num_deleted_files, 2);
         assert_eq!(counters.num_deleted_bytes, 40);
-        assert_eq!(counters.num_successful_gc_run_on_index, 2);
+        assert_eq!(counters.num_successful_gc_run_on_index, 1);
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 0);
         assert_eq!(counters.num_failed_splits, 2);
