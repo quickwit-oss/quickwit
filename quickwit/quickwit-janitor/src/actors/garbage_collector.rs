@@ -17,8 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -30,7 +31,8 @@ use quickwit_metastore::ListIndexesMetadataResponseExt;
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_storage::StorageResolver;
+use quickwit_proto::types::IndexUid;
+use quickwit_storage::{Storage, StorageResolver};
 use serde::Serialize;
 use tracing::{debug, error, info};
 
@@ -40,8 +42,6 @@ const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
 /// TODO ideally we want clean up all staged splits every time we restart the indexing pipeline, but
 /// the grace period strategy should do the job for the moment.
 const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60 * 24); // 24 hours
-
-const MAX_CONCURRENT_GC_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct GarbageCollectorCounters {
@@ -106,68 +106,64 @@ impl GarbageCollector {
         };
         info!("loaded {} indexes from the metastore", indexes.len());
 
-        let mut gc_futures = stream::iter(indexes).map(|index| {
-            let metastore = self.metastore.clone();
+        let expected_count = indexes.len();
+        let index_storages: HashMap<IndexUid, Arc<dyn Storage>> = stream::iter(indexes).filter_map(|index| {
             let storage_resolver = self.storage_resolver.clone();
             async move {
-            let index_uri = index.index_uri();
-            let storage = match storage_resolver.resolve(index_uri).await {
-                Ok(storage) => storage,
-                Err(error) => {
-                    error!(index=%index.index_id(), error=?error, "failed to resolve the index storage Uri");
-                    return None;
-                }
-            };
-            let index_uid = index.index_uid;
-            let gc_res = run_garbage_collect(
-                index_uid.clone(),
-                storage,
-                metastore,
-                STAGED_GRACE_PERIOD,
-                split_deletion_grace_period(),
-                false,
-                Some(ctx.progress()),
-            ).await;
-            Some((index_uid, gc_res))
-        }}).buffer_unordered(MAX_CONCURRENT_GC_TASKS);
+                let index_uid = index.index_uid.clone();
+                let index_uri = index.index_uri();
+                let storage = match storage_resolver.resolve(index_uri).await {
+                    Ok(storage) => storage,
+                    Err(error) => {
+                        error!(index=%index.index_id(), error=?error, "failed to resolve the index storage Uri");
+                        return None;
+                    }
+                };
+                Some((index_uid, storage))
+            }}).collect()
+            .await;
+        let got_count = index_storages.len();
 
-        while let Some(gc_future_res) = gc_futures.next().await {
-            let Some((index_uid, gc_res)) = gc_future_res else {
-                self.counters.num_failed_storage_resolution += 1;
-                continue;
-            };
-            let deleted_file_entries = match gc_res {
-                Ok(removal_info) => {
-                    self.counters.num_successful_gc_run_on_index += 1;
-                    self.counters.num_failed_splits += removal_info.failed_splits.len();
-                    removal_info.removed_split_entries
-                }
-                Err(error) => {
-                    self.counters.num_failed_gc_run_on_index += 1;
-                    error!(index_id=%index_uid.index_id, error=?error, "failed to run garbage collection on index");
-                    continue;
-                }
-            };
-            if !deleted_file_entries.is_empty() {
-                let num_deleted_splits = deleted_file_entries.len();
-                let deleted_files: HashSet<&Path> = deleted_file_entries
-                    .iter()
-                    .map(|deleted_entry| deleted_entry.file_name.as_path())
-                    .take(5)
-                    .collect();
-                info!(
-                    index_id=%index_uid.index_id,
-                    num_deleted_splits=num_deleted_splits,
-                    "Janitor deleted {:?} and {} other splits.",
-                    deleted_files,
-                    num_deleted_splits,
-                );
-                self.counters.num_deleted_files += deleted_file_entries.len();
-                self.counters.num_deleted_bytes += deleted_file_entries
-                    .iter()
-                    .map(|entry| entry.file_size_bytes.as_u64() as usize)
-                    .sum::<usize>();
+        let gc_res = run_garbage_collect(
+            index_storages,
+            self.metastore.clone(),
+            STAGED_GRACE_PERIOD,
+            split_deletion_grace_period(),
+            false,
+            Some(ctx.progress()),
+        )
+        .await;
+
+        self.counters.num_failed_storage_resolution += expected_count - got_count;
+
+        let deleted_file_entries = match gc_res {
+            Ok(removal_info) => {
+                self.counters.num_successful_gc_run_on_index += 1;
+                self.counters.num_failed_splits += removal_info.failed_splits.len();
+                removal_info.removed_split_entries
             }
+            Err(error) => {
+                self.counters.num_failed_gc_run_on_index += 1;
+                error!(error=?error, "failed to run garbage collection");
+                return;
+            }
+        };
+        if !deleted_file_entries.is_empty() {
+            let num_deleted_splits = deleted_file_entries.len();
+            let deleted_files: HashSet<&Path> = deleted_file_entries
+                .iter()
+                .map(|deleted_entry| deleted_entry.file_name.as_path())
+                .take(5)
+                .collect();
+            info!(
+                num_deleted_splits = num_deleted_splits,
+                "Janitor deleted {:?} and {} other splits.", deleted_files, num_deleted_splits,
+            );
+            self.counters.num_deleted_files += deleted_file_entries.len();
+            self.counters.num_deleted_bytes += deleted_file_entries
+                .iter()
+                .map(|entry| entry.file_size_bytes.as_u64() as usize)
+                .sum::<usize>();
         }
     }
 }
