@@ -17,12 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use aws_sdk_s3::Client as S3Client;
 use quickwit_common::uri::Uri;
 use quickwit_config::{S3StorageConfig, StorageBackend};
 
+use super::s3_compatible_storage::create_s3_client;
 use crate::{
     DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError,
 };
@@ -30,12 +32,16 @@ use crate::{
 /// S3 compatible object storage resolver.
 pub struct S3CompatibleObjectStorageFactory {
     storage_config: S3StorageConfig,
+    s3_client: Mutex<Option<S3Client>>,
 }
 
 impl S3CompatibleObjectStorageFactory {
     /// Creates a new S3-compatible storage factory.
     pub fn new(storage_config: S3StorageConfig) -> Self {
-        Self { storage_config }
+        Self {
+            storage_config,
+            s3_client: Mutex::new(None),
+        }
     }
 }
 
@@ -46,7 +52,17 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
     }
 
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let storage = S3CompatibleObjectStorage::from_uri(&self.storage_config, uri).await?;
+        let s3_client_opt = self.s3_client.lock().unwrap().clone();
+        let s3_client = if let Some(s3_client) = s3_client_opt {
+            s3_client
+        } else {
+            let s3_client = create_s3_client(&self.storage_config).await;
+            *self.s3_client.lock().unwrap() = Some(s3_client.clone());
+            s3_client
+        };
+        let storage =
+            S3CompatibleObjectStorage::from_uri_and_client(&self.storage_config, uri, s3_client)
+                .await?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
 }

@@ -127,7 +127,7 @@ fn get_region(s3_storage_config: &S3StorageConfig) -> Option<Region> {
     })
 }
 
-async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
+pub(crate) async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     let aws_config = get_aws_config().await;
     let credentials_provider =
         get_credentials_provider(s3_storage_config).or(aws_config.credentials_provider());
@@ -155,13 +155,13 @@ async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
 }
 
 impl S3CompatibleObjectStorage {
-    /// Creates an object storage given a region and a bucket name.
+    /// Creates an object storage given a region, a bucket name and an S3 client.
     pub async fn new(
         s3_storage_config: &S3StorageConfig,
         uri: Uri,
         bucket: String,
+        s3_client: S3Client,
     ) -> Result<Self, StorageResolverError> {
-        let s3_client = create_s3_client(s3_storage_config).await;
         let retry_params = RetryParams::aggressive();
         let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
         let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
@@ -182,11 +182,21 @@ impl S3CompatibleObjectStorage {
         s3_storage_config: &S3StorageConfig,
         uri: &Uri,
     ) -> Result<Self, StorageResolverError> {
+        let s3_client = create_s3_client(s3_storage_config).await;
+        Self::from_uri_and_client(s3_storage_config, uri, s3_client).await
+    }
+
+    /// Creates an object storage given a region, an uri and an S3 client.
+    pub async fn from_uri_and_client(
+        s3_storage_config: &S3StorageConfig,
+        uri: &Uri,
+        s3_client: S3Client,
+    ) -> Result<Self, StorageResolverError> {
         let (bucket, prefix) = parse_s3_uri(uri).ok_or_else(|| {
             let message = format!("failed to extract bucket name from S3 URI: {uri}");
             StorageResolverError::InvalidUri(message)
         })?;
-        let storage = Self::new(s3_storage_config, uri.clone(), bucket).await?;
+        let storage = Self::new(s3_storage_config, uri.clone(), bucket, s3_client).await?;
         Ok(storage.with_prefix(prefix))
     }
 
