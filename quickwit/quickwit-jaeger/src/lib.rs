@@ -45,7 +45,8 @@ use quickwit_proto::jaeger::storage::v1::{
 };
 use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
 use quickwit_proto::search::{CountHits, ListTermsRequest, SearchRequest};
-use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, TermQuery};
+use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, TermQuery, UserInputQuery};
+use quickwit_query::BooleanOperand;
 use quickwit_search::{FindTraceIdsCollector, SearchService};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -321,13 +322,15 @@ impl JaegerService {
             query.should.push(term_query.into());
         }
         if root_only {
-            // TODO this isn't backward compatible. We could do NOT is_root:false with a lenient
-            // UserInputQuery once we support being lenient on missing fields
-            let term_query = TermQuery {
-                field: "is_root".to_string(),
-                value: "true".to_string(),
+            // we do this so we don't error on old indexes, and instead return both root and non
+            // root spans
+            let is_root = UserInputQuery {
+                user_text: "NOT is_root:false".to_string(),
+                default_fields: None,
+                default_operator: BooleanOperand::And,
+                lenient: true,
             };
-            query.must.push(term_query.into());
+            query.must.push(is_root.into());
         }
 
         let query_ast: QueryAst = query.into();
@@ -1182,7 +1185,8 @@ mod tests {
                 quickwit_query::query_ast::UserInputQuery {
                     user_text: "query".to_string(),
                     default_fields: None,
-                    default_operator: quickwit_query::BooleanOperand::And
+                    default_operator: quickwit_query::BooleanOperand::And,
+                    lenient: false,
                 }
                 .into()
             );

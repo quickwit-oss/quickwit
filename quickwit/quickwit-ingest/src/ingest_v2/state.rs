@@ -190,6 +190,7 @@ impl IngesterState {
                     truncation_position_inclusive,
                     None,
                     now,
+                    false,
                 );
                 // We want to advertise the shard as read-only right away.
                 solo_shard.is_advertisable = true;

@@ -3951,6 +3951,7 @@ mod tests {
                         mode: FullTextMode::PhraseFallbackToIntersection,
                         zero_terms_query: MatchAllOrNone::MatchNone,
                     },
+                    lenient: false,
                 },),
                 tantivy_ast: r#"BooleanQuery {
     subqueries: [

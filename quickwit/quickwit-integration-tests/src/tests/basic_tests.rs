@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
@@ -28,7 +27,7 @@ use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
 
-use crate::test_utils::{ingest_with_retry, ClusterSandbox};
+use crate::test_utils::{ingest_with_retry, ClusterSandboxBuilder};
 
 fn get_ndjson_filepath(ndjson_dataset_filename: &str) -> String {
     format!(
@@ -41,18 +40,15 @@ fn get_ndjson_filepath(ndjson_dataset_filename: &str) -> String {
 #[tokio::test]
 async fn test_ui_redirect_on_get() {
     quickwit_common::setup_logging_for_tests();
-    let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let node_config = sandbox.node_configs.first().unwrap();
     let client = hyper::Client::builder()
         .pool_idle_timeout(Duration::from_secs(30))
         .http2_only(true)
         .build_http();
-    let root_uri = format!(
-        "http://{}/",
-        node_config.node_config.rest_config.listen_addr
-    )
-    .parse::<hyper::Uri>()
-    .unwrap();
+    let root_uri = format!("http://{}/", node_config.0.rest_config.listen_addr)
+        .parse::<hyper::Uri>()
+        .unwrap();
     let response = client.get(root_uri.clone()).await.unwrap();
     assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
     let post_request = Request::builder()
@@ -68,7 +64,7 @@ async fn test_ui_redirect_on_get() {
 #[tokio::test]
 async fn test_standalone_server() {
     quickwit_common::setup_logging_for_tests();
-    let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     {
         // The indexing service should be running.
         let counters = sandbox
@@ -125,17 +121,14 @@ async fn test_standalone_server() {
 #[tokio::test]
 async fn test_multi_nodes_cluster() {
     quickwit_common::setup_logging_for_tests();
-    let nodes_services = vec![
-        HashSet::from_iter([QuickwitService::Searcher]),
-        HashSet::from_iter([QuickwitService::Metastore]),
-        HashSet::from_iter([QuickwitService::Indexer]),
-        HashSet::from_iter([QuickwitService::ControlPlane]),
-        HashSet::from_iter([QuickwitService::Janitor]),
-    ];
-    let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
-        .await
-        .unwrap();
-    sandbox.wait_for_cluster_num_ready_nodes(5).await.unwrap();
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Metastore])
+        .add_node([QuickwitService::Indexer])
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Janitor])
+        .build_and_start()
+        .await;
 
     {
         // Wait for indexer to fully start.

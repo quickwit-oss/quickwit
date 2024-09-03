@@ -71,6 +71,7 @@ impl BuildTantivyAst for TermQuery {
             &full_text_params,
             schema,
             tokenizer_manager,
+            false,
         )
     }
 }

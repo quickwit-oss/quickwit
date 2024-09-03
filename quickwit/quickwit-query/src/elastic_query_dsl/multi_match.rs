@@ -30,7 +30,7 @@ use crate::elastic_query_dsl::phrase_prefix_query::{
 };
 use crate::elastic_query_dsl::{ConvertibleToQueryAst, ElasticQueryDslInner};
 
-/// Multi match queries are a bit odd. They end up being expanded into another type query of query.
+/// Multi match queries are a bit odd. They end up being expanded into another type of query.
 /// In Quickwit, we operate this expansion in generic way at the time of deserialization.
 #[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
 #[serde(try_from = "MultiMatchQueryForDeserialization")]
@@ -48,11 +48,11 @@ struct MultiMatchQueryForDeserialization {
     #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
     #[serde(default)]
     fields: Vec<String>,
-    // Regardless of this option Quickwit behaves in elasticsearch definition of
-    // lenient. We include this property here just to accept user queries containing
-    // this option.
-    #[serde(default, rename = "lenient")]
-    _lenient: bool,
+    // Quickwit and Elastic have different notions of lenient. For us, it means it's okay to
+    // disregard part of the query where which uses non-existing collumn (which Elastic does by
+    // default). For Elastic, it covers type errors (searching text in an integer field).
+    #[serde(default)]
+    lenient: bool,
 }
 
 fn deserialize_match_query_for_one_field(
@@ -198,7 +198,7 @@ mod tests {
                         query: "quick brown fox".to_string(),
                         operator: crate::BooleanOperand::Or,
                         zero_terms_query: Default::default(),
-                        _lenient: false,
+                        lenient: false,
                     },
                 }
                 .into(),
@@ -208,7 +208,7 @@ mod tests {
                         query: "quick brown fox".to_string(),
                         operator: crate::BooleanOperand::Or,
                         zero_terms_query: Default::default(),
-                        _lenient: false,
+                        lenient: false,
                     },
                 }
                 .into(),
@@ -228,7 +228,7 @@ mod tests {
                         query: "quick brown fox".to_string(),
                         operator: crate::BooleanOperand::Or,
                         zero_terms_query: Default::default(),
-                        _lenient: false,
+                        lenient: false,
                     },
                 }
                 .into(),
@@ -238,7 +238,7 @@ mod tests {
                         query: "quick brown fox".to_string(),
                         operator: crate::BooleanOperand::Or,
                         zero_terms_query: Default::default(),
-                        _lenient: false,
+                        lenient: false,
                     },
                 }
                 .into(),
@@ -258,7 +258,7 @@ mod tests {
                         query: "quick brown fox".to_string(),
                         operator: crate::BooleanOperand::Or,
                         zero_terms_query: Default::default(),
-                        _lenient: false,
+                        lenient: false,
                     },
                 }
                 .into(),
@@ -268,7 +268,7 @@ mod tests {
                         query: "quick brown fox".to_string(),
                         operator: crate::BooleanOperand::Or,
                         zero_terms_query: Default::default(),
-                        _lenient: false,
+                        lenient: false,
                     },
                 }
                 .into(),
@@ -350,7 +350,7 @@ mod tests {
                         query: "quick brown".to_string(),
                         operator: crate::BooleanOperand::Or,
                         zero_terms_query: Default::default(),
-                        _lenient: false,
+                        lenient: false,
                     },
                 }
                 .into(),
@@ -360,7 +360,7 @@ mod tests {
                         query: "quick brown".to_string(),
                         operator: crate::BooleanOperand::Or,
                         zero_terms_query: Default::default(),
-                        _lenient: false,
+                        lenient: false,
                     },
                 }
                 .into(),

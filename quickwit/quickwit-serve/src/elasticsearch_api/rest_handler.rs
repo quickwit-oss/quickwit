@@ -254,6 +254,7 @@ fn build_request_for_es_api(
             user_text: q.to_string(),
             default_fields: None,
             default_operator,
+            lenient: false,
         };
         user_text_query.into()
     } else if let Some(query_dsl) = search_body.query {
@@ -272,6 +273,7 @@ fn build_request_for_es_api(
                     user_text: query.to_string(),
                     default_fields: None,
                     default_operator,
+                    lenient: false,
                 };
                 QueryAst::UserInput(user_text_query)
             })

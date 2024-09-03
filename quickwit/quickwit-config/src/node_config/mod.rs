@@ -480,9 +480,17 @@ impl NodeConfig {
         self.storage_configs.redact();
     }
 
+    /// Creates a config with defaults suitable for testing.
+    ///
+    /// Uses the default ports without ensuring that they are available.
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
-        serialize::node_config_for_test()
+        serialize::node_config_for_tests_from_ports(7280, 7281)
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test_from_ports(rest_listen_port: u16, grpc_listen_port: u16) -> Self {
+        serialize::node_config_for_tests_from_ports(rest_listen_port, grpc_listen_port)
     }
 }
 

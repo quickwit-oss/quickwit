@@ -59,6 +59,7 @@ impl ConvertibleToQueryAst for MatchPhraseQuery {
             field: self.field,
             text: self.params.query,
             params: full_text_params,
+            lenient: false,
         }))
     }
 }
@@ -159,6 +160,7 @@ mod tests {
             field,
             text,
             params,
+            lenient: _,
         }) = ast
         else {
             panic!()
