@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
 use std::fmt::Write;
 use std::time::Duration;
 
@@ -29,23 +28,22 @@ use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::ListSplitsQueryParams;
 use serde_json::json;
 
-use crate::test_utils::ClusterSandbox;
+use crate::test_utils::ClusterSandboxBuilder;
 
 #[tokio::test]
 async fn test_update_doc_mapping_restart_indexing_pipeline() {
     let index_id = "update-restart-ingest";
     quickwit_common::setup_logging_for_tests();
-    let nodes_services = vec![HashSet::from_iter([
-        QuickwitService::Searcher,
-        QuickwitService::Metastore,
-        QuickwitService::Indexer,
-        QuickwitService::ControlPlane,
-        QuickwitService::Janitor,
-    ])];
-    let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
-        .await
-        .unwrap();
-    sandbox.wait_for_cluster_num_ready_nodes(1).await.unwrap();
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([
+            QuickwitService::Searcher,
+            QuickwitService::Metastore,
+            QuickwitService::Indexer,
+            QuickwitService::ControlPlane,
+            QuickwitService::Janitor,
+        ])
+        .build_and_start()
+        .await;
 
     {
         // Wait for indexer to fully start.
