@@ -325,11 +325,14 @@ impl JaegerService {
         if root_only {
             // TODO this isn't backward compatible. We could do NOT is_root:false with a lenient
             // UserInputQuery once we support being lenient on missing fields
-            let term_query = TermQuery {
+            let is_root = TermQuery {
                 field: "is_root".to_string(),
                 value: "true".to_string(),
             };
-            query.must.push(term_query.into());
+            let mut new_query = BoolQuery::default();
+            new_query.must.push(query.into());
+            new_query.must.push(is_root.into());
+            query = new_query;
         }
 
         let query_ast: QueryAst = query.into();
