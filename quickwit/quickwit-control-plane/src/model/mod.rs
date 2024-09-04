@@ -160,6 +160,12 @@ impl ControlPlaneModel {
         self.index_table.get(index_uid)
     }
 
+    pub fn source_metadata(&self, source_uid: &SourceUid) -> Option<&SourceConfig> {
+        self.index_metadata(&source_uid.index_uid)?
+            .sources
+            .get(&source_uid.source_id)
+    }
+
     fn update_metrics(&self) {
         crate::metrics::CONTROL_PLANE_METRICS
             .indexes_total
@@ -204,13 +210,15 @@ impl ControlPlaneModel {
         &mut self,
         index_uid: &IndexUid,
         index_config: IndexConfig,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<bool> {
         let Some(index_model) = self.index_table.get_mut(index_uid) else {
             bail!("index `{}` not found", index_uid.index_id);
         };
+        let fp_changed = index_model.index_config.indexing_params_fingerprint()
+            != index_config.indexing_params_fingerprint();
         index_model.index_config = index_config;
         self.update_metrics();
-        Ok(())
+        Ok(fp_changed)
     }
 
     pub(crate) fn delete_index(&mut self, index_uid: &IndexUid) {

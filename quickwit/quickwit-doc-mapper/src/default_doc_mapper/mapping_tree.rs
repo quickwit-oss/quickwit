@@ -1410,7 +1410,7 @@ fn field_name_for_field_path(field_path: &[&str]) -> String {
 /// starting from the root of the document.
 /// Dots '.' define the boundaries between field names.
 /// If a dot is part of a field name, it must be escaped with '\'.
-fn build_field_path_from_str(field_path_as_str: &str) -> Vec<String> {
+pub(crate) fn build_field_path_from_str(field_path_as_str: &str) -> Vec<String> {
     let mut field_path = Vec::new();
     let mut current_path_fragment = String::new();
     let mut escaped = false;

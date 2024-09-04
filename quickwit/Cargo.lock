@@ -5846,6 +5846,7 @@ dependencies = [
  "serde_json",
  "serde_with 3.9.0",
  "serde_yaml",
+ "siphasher",
  "tokio",
  "toml",
  "tracing",
