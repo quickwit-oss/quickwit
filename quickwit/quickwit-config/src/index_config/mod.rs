@@ -19,6 +19,7 @@
 
 pub(crate) mod serialize;
 
+use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,6 +34,7 @@ use quickwit_doc_mapper::{DefaultDocMapperBuilder, DocMapper, DocMapping};
 use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 pub use serialize::{load_index_config_from_user_config, load_index_config_update};
+use siphasher::sip::SipHasher;
 use tracing::warn;
 
 use crate::index_config::serialize::VersionedIndexConfig;
@@ -54,6 +56,12 @@ pub struct IndexingResources {
 impl PartialEq for IndexingResources {
     fn eq(&self, other: &Self) -> bool {
         self.heap_size == other.heap_size
+    }
+}
+
+impl Hash for IndexingResources {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.heap_size.hash(state);
     }
 }
 
@@ -90,7 +98,7 @@ impl Default for IndexingResources {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Hash, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
     #[schema(default = 60)]
@@ -253,6 +261,14 @@ pub struct IndexConfig {
 }
 
 impl IndexConfig {
+    /// Return a fingerprint of parameters relevant for indexers
+    pub fn indexing_params_fingerprint(&self) -> u64 {
+        let mut hasher = SipHasher::new();
+        self.doc_mapping.doc_mapping_uid.hash(&mut hasher);
+        self.indexing_settings.hash(&mut hasher);
+        hasher.finish()
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
         let index_uri = Uri::from_str(index_uri).unwrap();

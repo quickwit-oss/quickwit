@@ -1437,6 +1437,7 @@ mod tests {
             index_uid: Some(IndexUid::for_test("test-index", 0)),
             source_id: "test-source".to_string(),
             shard_ids: Vec::new(),
+            params_fingerprint: 0,
         };
         let updated_indexer_node = ClusterNode::for_test(
             "test-indexer-node",
