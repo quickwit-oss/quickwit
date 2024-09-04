@@ -143,7 +143,7 @@ impl QueueCoordinator {
             message_type,
             Some(config.deduplication_window_duration_secs),
             Some(config.deduplication_window_max_messages),
-            Duration::from_secs(config.checkpoint_cleanup_interval_secs as u64),
+            Duration::from_secs(config.deduplication_cleanup_interval_secs as u64),
         ))
     }
 

@@ -191,7 +191,7 @@ async fn test_sqs_garbage_collect() {
                     queue_url: {}
                     message_type: raw_uri
                     deduplication_window_max_messages: 5
-                    checkpoint_cleanup_interval_secs: 3
+                    deduplication_cleanup_interval_secs: 3
             input_format: plain_text
         "#,
         source_id, queue_url

@@ -437,7 +437,7 @@ mod localstack_tests {
                 message_type: FileSourceMessageType::RawUri,
                 deduplication_window_duration_secs: 100,
                 deduplication_window_max_messages: 100,
-                checkpoint_cleanup_interval_secs: 60,
+                deduplication_cleanup_interval_secs: 60,
             }));
         let source_config = SourceConfig::for_test(
             "test-file-source-sqs-notifications",
