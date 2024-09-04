@@ -1170,4 +1170,68 @@ mod tests {
         let delete_objects_error = bulk_delete_error.error.unwrap();
         assert!(delete_objects_error.to_string().contains("MalformedXML"));
     }
+
+    #[tokio::test]
+    async fn test_s3_compatible_storage_retry_put() {
+        let client = StaticReplayClient::new(vec![
+            ReplayEvent::new(
+                // This is quite fragile, currently this is *not* validated by the SDK
+                // but may in future, that being said, there is no way to know what the
+                // request should look like until it raises an error in reality as this
+                // is up to how the validation is implemented.
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
+                http::Response::builder()
+                    .status(429)
+                    .body(SdkBody::from_body_0_4(Body::from(Bytes::from(
+                        r#"<?xml version="1.0" encoding="UTF-8"?>
+                        <Error>
+                          <Code>SlowDown</Code>
+                          <Message>message</Message>
+                          <Resource>/my-path</Resource>
+                          <RequestId>4442587FB7D0A2F9</RequestId>
+                        </Error>"#,
+                    ))))
+                    .unwrap(),
+            ),
+            ReplayEvent::new(
+                // This is quite fragile, currently this is *not* validated by the SDK
+                // but may in future, that being said, there is no way to know what the
+                // request should look like until it raises an error in reality as this
+                // is up to how the validation is implemented.
+                http::Request::builder()
+                    .body(SdkBody::from_body_0_4(Body::empty()))
+                    .unwrap(),
+                http::Response::builder()
+                    .status(200)
+                    .body(SdkBody::from_body_0_4(Body::empty()))
+                    .unwrap(),
+            ),
+        ]);
+        let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
+        let config = aws_sdk_s3::Config::builder()
+            .behavior_version(BehaviorVersion::v2024_03_28())
+            .region(Some(Region::new("Foo")))
+            .http_client(client)
+            .credentials_provider(credentials)
+            .build();
+        let s3_client = S3Client::from_conf(config);
+        let uri = Uri::for_test("s3://bucket/indexes");
+        let bucket = "bucket".to_string();
+        let prefix = PathBuf::new();
+
+        let s3_storage = S3CompatibleObjectStorage {
+            s3_client,
+            uri,
+            bucket,
+            prefix,
+            multipart_policy: MultiPartPolicy::default(),
+            retry_params: RetryParams::for_test(),
+            disable_multi_object_delete: false,
+            disable_multipart_upload: false,
+        };
+        s3_storage
+            .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))
+            .await
+            .unwrap();
+    }
 }
