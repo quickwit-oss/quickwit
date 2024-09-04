@@ -424,7 +424,7 @@ to the field being searched.
 ```yaml
 name: my_default_field
 type: concatenate
-concatenated_fields:
+concatenate_fields:
   - text # things inside text, tokenized with the `default` tokenizer
   - resource.author # all fields in resource.author, assuming resource is an `object` field.
 include_dynamic_fields: true
@@ -435,7 +435,7 @@ record: basic
 Concatenate fields don't support fast fields, and are never stored. They uses their own tokenizer, independently of the
 tokenizer configured on the individual fields.
 At query time, concatenate fields don't support range queries.
-Only the following types are supported inside a concatenate field: text, bool, i64, u64, json. Other types are rejected
+Only the following types are supported inside a concatenate field: text, bool, i64, u64, f64, json. Other types are rejected
 at index creation, or silently discarded during indexation if they are found inside a json field.
 Adding an object field to a concatenate field doesn't automatically add its subfields (yet).
 <!-- typing is made so it wouldn't be too hard do add, as well as things like params_* matching all fields which starts name with params_ , but the feature isn't implemented yet -->
