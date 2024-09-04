@@ -33,11 +33,12 @@ use quickwit_metastore::{
     ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitInfo, SplitState,
     UpdateIndexRequestExt,
 };
+use quickwit_proto::ingest::Shard;
 use quickwit_proto::metastore::{
     DeleteSourceRequest, EntityKind, IndexMetadataRequest, ListIndexesMetadataRequest,
-    ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
-    MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest, ToggleSourceRequest,
-    UpdateIndexRequest,
+    ListShardsRequest, ListShardsSubrequest, ListSplitsRequest, MarkSplitsForDeletionRequest,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    ResetSourceCheckpointRequest, ToggleSourceRequest, UpdateIndexRequest,
 };
 use quickwit_proto::types::{IndexId, IndexUid, SourceId};
 use quickwit_query::query_ast::{query_ast_from_user_text, QueryAst};
@@ -104,6 +105,7 @@ pub fn index_management_handlers(
         .or(create_source_handler(index_service.clone()))
         .or(get_source_handler(index_service.metastore()))
         .or(delete_source_handler(index_service.metastore()))
+        .or(get_source_shards_handler(index_service.metastore()))
         // Tokenizer handlers.
         .or(analyze_request_handler())
         // Parse query into query AST handler.
@@ -917,6 +919,42 @@ async fn delete_source(
     };
     metastore.delete_source(delete_source_request).await?;
     Ok(())
+}
+
+fn get_source_shards_handler(
+    metastore: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("indexes" / String / "sources" / String / "shards")
+        .and(warp::get())
+        .and(with_arg(metastore))
+        .then(get_source_shards)
+        .and(extract_format_from_qs())
+        .map(into_rest_api_response)
+}
+
+async fn get_source_shards(
+    index_id: IndexId,
+    source_id: SourceId,
+    metastore: MetastoreServiceClient,
+) -> MetastoreResult<Vec<Shard>> {
+    info!(index_id = %index_id, source_id = %source_id, "get-source-shards");
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+    let index_uid: IndexUid = metastore
+        .index_metadata(index_metadata_request)
+        .await?
+        .deserialize_index_metadata()?
+        .index_uid;
+    let shards = metastore
+        .list_shards(ListShardsRequest {
+            subrequests: vec![ListShardsSubrequest {
+                index_uid: Some(index_uid),
+                source_id: source_id.to_string(),
+                ..Default::default()
+            }],
+        })
+        .await?;
+
+    Ok(shards.subresponses[0].clone().shards)
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]

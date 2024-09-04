@@ -19,7 +19,7 @@
 
 use std::fmt;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
@@ -98,20 +98,18 @@ impl QueueCoordinator {
         message_type: MessageType,
         shard_max_age: Option<u32>,
         shard_max_count: Option<u32>,
+        shard_pruning_interval: Duration,
     ) -> Self {
         Self {
-            shared_state: QueueSharedState {
-                metastore: source_runtime.metastore,
-                source_id: source_runtime.pipeline_id.source_id.clone(),
-                index_uid: source_runtime.pipeline_id.index_uid.clone(),
-                reacquire_grace_period: Duration::from_secs(
-                    2 * source_runtime.indexing_setting.commit_timeout_secs as u64,
-                ),
-                last_initiated_pruning: Instant::now(),
-                max_age: shard_max_age,
-                max_count: shard_max_count,
-                pruning_interval: Duration::from_secs(60),
-            },
+            shared_state: QueueSharedState::new(
+                source_runtime.metastore,
+                source_runtime.pipeline_id.index_uid.clone(),
+                source_runtime.pipeline_id.source_id.clone(),
+                Duration::from_secs(2 * source_runtime.indexing_setting.commit_timeout_secs as u64),
+                shard_max_age,
+                shard_max_count,
+                shard_pruning_interval,
+            ),
             local_state: QueueLocalState::default(),
             pipeline_id: source_runtime.pipeline_id,
             source_type: source_runtime.source_config.source_type(),
@@ -143,8 +141,9 @@ impl QueueCoordinator {
             source_runtime,
             Arc::new(queue),
             message_type,
-            Some(config.deduplication_window_duration_sec),
+            Some(config.deduplication_window_duration_secs),
             Some(config.deduplication_window_max_messages),
+            Duration::from_secs(config.checkpoint_cleanup_interval_secs as u64),
         ))
     }
 

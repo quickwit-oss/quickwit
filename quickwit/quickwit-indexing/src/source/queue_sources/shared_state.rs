@@ -18,7 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{bail, Context};
 use quickwit_metastore::checkpoint::PartitionId;
@@ -34,35 +35,78 @@ use super::message::PreProcessedMessage;
 
 #[derive(Clone)]
 pub struct QueueSharedState {
-    pub metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
     pub index_uid: IndexUid,
     pub source_id: String,
     /// Duration after which the processing of a shard is considered stale and
     /// should be reacquired
-    pub reacquire_grace_period: Duration,
-    pub max_age: Option<u32>,
-    pub max_count: Option<u32>,
-    pub last_initiated_pruning: Instant,
-    pub pruning_interval: Duration,
+    reacquire_grace_period: Duration,
+    _cleanup_handle: Arc<()>,
 }
 
 impl QueueSharedState {
-    async fn clean_partitions(&self) {
-        if self.max_count.is_none() && self.max_age.is_none() {
+    /// Create a shared state service and runs a cleanup task that prunes shards
+    /// in the background
+    pub fn new(
+        metastore: MetastoreServiceClient,
+        index_uid: IndexUid,
+        source_id: String,
+        reacquire_grace_period: Duration,
+        max_age: Option<u32>,
+        max_count: Option<u32>,
+        pruning_interval: Duration,
+    ) -> Self {
+        let cleanup_handle = Arc::new(());
+        tokio::spawn(Self::run_cleanup_task(
+            metastore.clone(),
+            index_uid.clone(),
+            source_id.clone(),
+            max_age,
+            max_count,
+            pruning_interval,
+            cleanup_handle.clone(),
+        ));
+        Self {
+            metastore,
+            index_uid,
+            source_id,
+            reacquire_grace_period,
+            _cleanup_handle: cleanup_handle,
+        }
+    }
+
+    async fn run_cleanup_task(
+        metastore: MetastoreServiceClient,
+        index_uid: IndexUid,
+        source_id: String,
+        max_age: Option<u32>,
+        max_count: Option<u32>,
+        pruning_interval: Duration,
+        owner_handle: Arc<()>,
+    ) {
+        if max_count.is_none() && max_age.is_none() {
             return;
         }
-        let result = self
-            .metastore
-            .prune_shards(PruneShardsRequest {
-                index_uid: Some(self.index_uid.clone()),
-                source_id: self.source_id.clone(),
-                max_age: self.max_age,
-                max_count: self.max_count,
-            })
-            .await;
-        if let Err(err) = result {
-            error!(error = ?err, "failed to prune shards");
-        }
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(pruning_interval);
+            loop {
+                interval.tick().await;
+                if Arc::strong_count(&owner_handle) == 1 {
+                    break;
+                }
+                let result: Result<_, _> = metastore
+                    .prune_shards(PruneShardsRequest {
+                        index_uid: Some(index_uid.clone()),
+                        source_id: source_id.clone(),
+                        max_age,
+                        max_count,
+                    })
+                    .await;
+                if let Err(err) = result {
+                    error!(error = ?err, "failed to prune shards");
+                }
+            }
+        });
     }
 
     /// Tries to acquire the ownership for the provided messages from the global
@@ -75,13 +119,6 @@ impl QueueSharedState {
         publish_token: &str,
         partitions: Vec<PartitionId>,
     ) -> anyhow::Result<Vec<(PartitionId, Position)>> {
-        if self.last_initiated_pruning.elapsed() > self.pruning_interval {
-            let self_cloned = self.clone();
-            tokio::spawn(async move {
-                self_cloned.clean_partitions().await;
-            });
-            self.last_initiated_pruning = Instant::now();
-        }
         let open_shard_subrequests = partitions
             .iter()
             .enumerate()
@@ -323,10 +360,7 @@ pub mod shared_state_for_tests {
             index_uid,
             source_id: "test-queue-src".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
-            last_initiated_pruning: Instant::now(),
-            max_age: None,
-            max_count: None,
-            pruning_interval: Duration::from_secs(10),
+            _cleanup_handle: Arc::new(()),
         }
     }
 }
@@ -378,10 +412,7 @@ mod tests {
             index_uid,
             source_id: "test-sqs-source".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
-            last_initiated_pruning: Instant::now(),
-            max_age: None,
-            max_count: None,
-            pruning_interval: Duration::from_secs(10),
+            _cleanup_handle: Arc::new(()),
         };
 
         let aquired = shared_state
@@ -411,10 +442,7 @@ mod tests {
             index_uid,
             source_id: "test-sqs-source".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
-            last_initiated_pruning: Instant::now(),
-            max_age: None,
-            max_count: None,
-            pruning_interval: Duration::from_secs(10),
+            _cleanup_handle: Arc::new(()),
         };
 
         let acquired = shared_state
@@ -444,10 +472,7 @@ mod tests {
             index_uid,
             source_id: "test-sqs-source".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
-            last_initiated_pruning: Instant::now(),
-            max_age: None,
-            max_count: None,
-            pruning_interval: Duration::from_secs(10),
+            _cleanup_handle: Arc::new(()),
         };
 
         let aquired = shared_state
@@ -481,10 +506,7 @@ mod tests {
             index_uid,
             source_id: "test-sqs-source".to_string(),
             reacquire_grace_period: Duration::from_secs(10),
-            last_initiated_pruning: Instant::now(),
-            max_age: None,
-            max_count: None,
-            pruning_interval: Duration::from_secs(10),
+            _cleanup_handle: Arc::new(()),
         };
 
         let checkpointed_msg = checkpoint_messages(&mut shared_state, "token1", source_messages)
