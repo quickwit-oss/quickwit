@@ -5651,6 +5651,7 @@ name = "quickwit-aws"
 version = "0.8.0"
 dependencies = [
  "aws-config",
+ "aws-runtime",
  "aws-sdk-kinesis",
  "aws-sdk-s3",
  "aws-sdk-sqs",
