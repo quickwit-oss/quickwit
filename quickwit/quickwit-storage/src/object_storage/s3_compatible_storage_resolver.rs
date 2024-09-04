@@ -17,12 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use aws_sdk_s3::Client as S3Client;
 use quickwit_common::uri::Uri;
 use quickwit_config::{S3StorageConfig, StorageBackend};
+use tokio::sync::OnceCell;
 
 use super::s3_compatible_storage::create_s3_client;
 use crate::{
@@ -32,7 +33,11 @@ use crate::{
 /// S3 compatible object storage resolver.
 pub struct S3CompatibleObjectStorageFactory {
     storage_config: S3StorageConfig,
-    s3_client: Mutex<Option<S3Client>>,
+    // we cache the S3Client so we don't rebuild one every time we need to connect to S3.
+    // We don't build it in advance because we don't know if this factory is one that will
+    // end up being used, or if something like azure, gcs, or even local files, will be used
+    // instead.
+    s3_client: OnceCell<S3Client>,
 }
 
 impl S3CompatibleObjectStorageFactory {
@@ -40,7 +45,7 @@ impl S3CompatibleObjectStorageFactory {
     pub fn new(storage_config: S3StorageConfig) -> Self {
         Self {
             storage_config,
-            s3_client: Mutex::new(None),
+            s3_client: OnceCell::new(),
         }
     }
 }
@@ -52,14 +57,11 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
     }
 
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let s3_client_opt = self.s3_client.lock().unwrap().clone();
-        let s3_client = if let Some(s3_client) = s3_client_opt {
-            s3_client
-        } else {
-            let s3_client = create_s3_client(&self.storage_config).await;
-            *self.s3_client.lock().unwrap() = Some(s3_client.clone());
-            s3_client
-        };
+        let s3_client = self
+            .s3_client
+            .get_or_init(|| create_s3_client(&self.storage_config))
+            .await
+            .clone();
         let storage =
             S3CompatibleObjectStorage::from_uri_and_client(&self.storage_config, uri, s3_client)
                 .await?;
