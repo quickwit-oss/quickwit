@@ -1259,7 +1259,10 @@ pub async fn wait_for_ingester_status(
     Ok(())
 }
 
-pub async fn wait_for_ingester_decommission(ingester: Ingester) -> anyhow::Result<()> {
+pub async fn wait_for_ingester_decommission(
+    ingester: Ingester,
+    timeout: Duration,
+) -> anyhow::Result<()> {
     let now = Instant::now();
 
     ingester
@@ -1267,7 +1270,11 @@ pub async fn wait_for_ingester_decommission(ingester: Ingester) -> anyhow::Resul
         .await
         .context("failed to initiate ingester decommission")?;
 
-    wait_for_ingester_status(ingester, IngesterStatus::Decommissioned).await?;
+    tokio::time::timeout(
+        timeout,
+        wait_for_ingester_status(ingester, IngesterStatus::Decommissioned),
+    )
+    .await??;
 
     info!(
         "successfully decommissioned ingester in {}",

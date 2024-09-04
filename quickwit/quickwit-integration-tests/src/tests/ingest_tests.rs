@@ -659,7 +659,7 @@ async fn test_shutdown_single_node() {
 #[tokio::test]
 async fn test_shutdown_control_plane_early_shutdown() {
     initialize_tests();
-    let sandbox = ClusterSandboxBuilder::default()
+    let mut sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Indexer])
         .add_node([
             QuickwitService::ControlPlane,
@@ -671,8 +671,7 @@ async fn test_shutdown_control_plane_early_shutdown() {
         .await;
     let index_id = "test_shutdown_separate_indexer";
 
-    // TODO: make this test work with ingest v2 (#5068)
-    // sandbox.enable_ingest_v2();
+    sandbox.enable_ingest_v2();
 
     // Create index
     sandbox
@@ -718,7 +717,7 @@ async fn test_shutdown_control_plane_early_shutdown() {
 #[tokio::test]
 async fn test_shutdown_separate_indexer() {
     initialize_tests();
-    let sandbox = ClusterSandboxBuilder::default()
+    let mut sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Indexer])
         .add_node([
             QuickwitService::ControlPlane,
@@ -730,8 +729,7 @@ async fn test_shutdown_separate_indexer() {
         .await;
     let index_id = "test_shutdown_separate_indexer";
 
-    // TODO: make this test work with ingest v2 (#5068)
-    // sandbox.enable_ingest_v2();
+    sandbox.enable_ingest_v2();
 
     // Create index
     sandbox

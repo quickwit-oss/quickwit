@@ -760,7 +760,9 @@ pub async fn serve_quickwit(
         // We must decommission the ingester first before terminating the indexing pipelines that
         // may consume from it. We also need to keep the gRPC server running while doing so.
         if let Some(ingester) = ingester_opt {
-            if let Err(error) = wait_for_ingester_decommission(ingester).await {
+            if let Err(error) =
+                wait_for_ingester_decommission(ingester, Duration::from_secs(5)).await
+            {
                 error!("failed to decommission ingester gracefully: {:?}", error);
             }
         }
