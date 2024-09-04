@@ -33,7 +33,8 @@ use crate::{
 /// S3 compatible object storage resolver.
 pub struct S3CompatibleObjectStorageFactory {
     storage_config: S3StorageConfig,
-    // we cache the S3Client so we don't rebuild one every time we need to connect to S3.
+    // we cache the S3Client so we don't rebuild one every time we build a new Storage (for
+    // every search query).
     // We don't build it in advance because we don't know if this factory is one that will
     // end up being used, or if something like azure, gcs, or even local files, will be used
     // instead.
