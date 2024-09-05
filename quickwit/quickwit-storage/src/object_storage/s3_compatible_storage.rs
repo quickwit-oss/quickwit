@@ -33,7 +33,7 @@ use aws_sdk_s3::operation::delete_objects::DeleteObjectsOutput;
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
-use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
+use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier, ServerSideEncryption};
 use aws_sdk_s3::Client as S3Client;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use futures::{stream, StreamExt};
@@ -91,6 +91,7 @@ pub struct S3CompatibleObjectStorage {
     retry_params: RetryParams,
     disable_multi_object_delete: bool,
     disable_multipart_upload: bool,
+    server_side_encryption: Option<String>,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -177,6 +178,7 @@ impl S3CompatibleObjectStorage {
         let retry_params = RetryParams::aggressive();
         let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
         let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
+        let server_side_encryption = s3_storage_config.server_side_encryption.clone();
         Ok(Self {
             s3_client,
             uri: uri.clone(),
@@ -186,6 +188,7 @@ impl S3CompatibleObjectStorage {
             retry_params,
             disable_multi_object_delete,
             disable_multipart_upload,
+            server_side_encryption,
         })
     }
 
@@ -203,6 +206,7 @@ impl S3CompatibleObjectStorage {
             retry_params: self.retry_params,
             disable_multi_object_delete: self.disable_multi_object_delete,
             disable_multipart_upload: self.disable_multipart_upload,
+            server_side_encryption: self.server_side_encryption,
         }
     }
 
@@ -289,12 +293,20 @@ impl S3CompatibleObjectStorage {
             .byte_stream()
             .await
             .map_err(|io_error| Retry::Permanent(StorageError::from(io_error)))?;
-        self.s3_client
+        let mut put_object_request = self.s3_client
             .put_object()
             .bucket(bucket)
             .key(key)
             .body(body)
-            .content_length(len as i64)
+            .content_length(len as i64);
+        if let Some(_encryption) = &self.server_side_encryption {
+            put_object_request = match _encryption.as_str() {
+                "Aes256" => put_object_request.server_side_encryption(ServerSideEncryption::Aes256),
+                "AwsKms" => put_object_request.server_side_encryption(ServerSideEncryption::AwsKms),
+                _ => put_object_request,
+            };
+        }
+        put_object_request
             .send()
             .await
             .map_err(|sdk_error| {
@@ -956,6 +968,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
+            server_side_encryption: None,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -1011,6 +1024,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: true,
             disable_multipart_upload: false,
+            server_side_encryption: None,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1052,6 +1066,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
+            server_side_encryption: None,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1134,6 +1149,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
+            server_side_encryption: None,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[
@@ -1227,6 +1243,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
+            server_side_encryption: None,
         };
         s3_storage
             .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))

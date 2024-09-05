@@ -333,6 +333,8 @@ pub struct S3StorageConfig {
     pub disable_multi_object_delete: bool,
     #[serde(default)]
     pub disable_multipart_upload: bool,
+    #[serde(default)]
+    pub server_side_encryption: Option<String>,
 }
 
 impl S3StorageConfig {
@@ -393,6 +395,7 @@ impl fmt::Debug for S3StorageConfig {
                 "disable_multi_object_delete",
                 &self.disable_multi_object_delete,
             )
+            .field("server_side_encryption", &self.server_side_encryption)
             .finish()
     }
 }
