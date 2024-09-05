@@ -616,7 +616,7 @@ async fn test_shutdown_single_node() {
               - name: body
                 type: text
             indexing_settings:
-              commit_timeout_secs: 1
+              commit_timeout_secs: 60
             "#
             ),
             ConfigFormat::Yaml,
