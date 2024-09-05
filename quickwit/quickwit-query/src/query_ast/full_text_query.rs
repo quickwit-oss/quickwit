@@ -227,6 +227,7 @@ pub struct FullTextQuery {
     pub field: String,
     pub text: String,
     pub params: FullTextParams,
+    pub lenient: bool,
 }
 
 impl From<FullTextQuery> for QueryAst {
@@ -249,6 +250,7 @@ impl BuildTantivyAst for FullTextQuery {
             &self.params,
             schema,
             tokenizer_manager,
+            self.lenient,
         )
     }
 }
@@ -323,6 +325,7 @@ mod tests {
                 mode: BooleanOperand::And.into(),
                 zero_terms_query: crate::MatchAllOrNone::MatchAll,
             },
+            lenient: false,
         };
         let mut schema_builder = Schema::builder();
         schema_builder.add_text_field("body", TEXT);
@@ -348,6 +351,7 @@ mod tests {
                 mode: FullTextMode::Phrase { slop: 1 },
                 zero_terms_query: crate::MatchAllOrNone::MatchAll,
             },
+            lenient: false,
         };
         let mut schema_builder = Schema::builder();
         schema_builder.add_text_field("body", TEXT);
@@ -378,6 +382,7 @@ mod tests {
                 mode: FullTextMode::Phrase { slop: 1 },
                 zero_terms_query: crate::MatchAllOrNone::MatchAll,
             },
+            lenient: false,
         };
         let mut schema_builder = Schema::builder();
         schema_builder.add_text_field("body", TEXT);
@@ -407,6 +412,7 @@ mod tests {
                 mode: BooleanOperand::And.into(),
                 zero_terms_query: crate::MatchAllOrNone::MatchAll,
             },
+            lenient: false,
         };
         let mut schema_builder = Schema::builder();
         schema_builder.add_text_field("body", TEXT);

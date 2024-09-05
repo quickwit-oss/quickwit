@@ -122,7 +122,7 @@ pub struct ParseFailure {
 pub enum CommitTypeV2 {
     Unspecified = 0,
     Auto = 1,
-    Wait = 2,
+    WaitFor = 2,
     Force = 3,
 }
 impl CommitTypeV2 {
@@ -134,7 +134,7 @@ impl CommitTypeV2 {
         match self {
             CommitTypeV2::Unspecified => "COMMIT_TYPE_V2_UNSPECIFIED",
             CommitTypeV2::Auto => "COMMIT_TYPE_V2_AUTO",
-            CommitTypeV2::Wait => "COMMIT_TYPE_V2_WAIT",
+            CommitTypeV2::WaitFor => "COMMIT_TYPE_V2_WAIT_FOR",
             CommitTypeV2::Force => "COMMIT_TYPE_V2_FORCE",
         }
     }
@@ -143,7 +143,7 @@ impl CommitTypeV2 {
         match value {
             "COMMIT_TYPE_V2_UNSPECIFIED" => Some(Self::Unspecified),
             "COMMIT_TYPE_V2_AUTO" => Some(Self::Auto),
-            "COMMIT_TYPE_V2_WAIT" => Some(Self::Wait),
+            "COMMIT_TYPE_V2_WAIT_FOR" => Some(Self::WaitFor),
             "COMMIT_TYPE_V2_FORCE" => Some(Self::Force),
             _ => None,
         }

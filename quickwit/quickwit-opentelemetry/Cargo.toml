@@ -19,7 +19,7 @@ prost = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-time = { workspace = true, optional = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
@@ -30,10 +30,8 @@ quickwit-ingest = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
-time = { workspace = true }
-
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 
 [features]
-testsuite = ["time"]
+testsuite = []

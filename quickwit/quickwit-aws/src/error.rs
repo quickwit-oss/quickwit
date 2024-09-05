@@ -19,6 +19,7 @@
 
 #![allow(clippy::match_like_matches_macro)]
 
+use aws_runtime::retries::classifiers::{THROTTLING_ERRORS, TRANSIENT_ERRORS};
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
 use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError;
@@ -47,57 +48,65 @@ where E: AwsRetryable
     }
 }
 
+fn is_retryable(meta: &aws_sdk_s3::error::ErrorMetadata) -> bool {
+    if let Some(code) = meta.code() {
+        THROTTLING_ERRORS.contains(&code) || TRANSIENT_ERRORS.contains(&code)
+    } else {
+        false
+    }
+}
+
 impl AwsRetryable for GetObjectError {
     fn is_retryable(&self) -> bool {
-        false
+        is_retryable(self.meta())
     }
 }
 
 impl AwsRetryable for DeleteObjectError {
     fn is_retryable(&self) -> bool {
-        false
+        is_retryable(self.meta())
     }
 }
 
 impl AwsRetryable for DeleteObjectsError {
     fn is_retryable(&self) -> bool {
-        false
+        is_retryable(self.meta())
     }
 }
 
 impl AwsRetryable for UploadPartError {
     fn is_retryable(&self) -> bool {
-        false
+        is_retryable(self.meta())
     }
 }
 
 impl AwsRetryable for CompleteMultipartUploadError {
     fn is_retryable(&self) -> bool {
-        false
+        is_retryable(self.meta())
     }
 }
 
 impl AwsRetryable for AbortMultipartUploadError {
     fn is_retryable(&self) -> bool {
-        false
+        is_retryable(self.meta())
     }
 }
 
 impl AwsRetryable for CreateMultipartUploadError {
     fn is_retryable(&self) -> bool {
-        false
+        is_retryable(self.meta())
     }
 }
 
 impl AwsRetryable for PutObjectError {
     fn is_retryable(&self) -> bool {
-        false
+        is_retryable(self.meta())
     }
 }
 
 impl AwsRetryable for HeadObjectError {
     fn is_retryable(&self) -> bool {
-        false
+        is_retryable(self.meta())
     }
 }
 

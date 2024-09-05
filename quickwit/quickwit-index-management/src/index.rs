@@ -365,8 +365,7 @@ impl IndexService {
             .await?;
 
         let deleted_entries = run_garbage_collect(
-            index_uid,
-            storage,
+            [(index_uid, storage)].into_iter().collect(),
             self.metastore.clone(),
             grace_period,
             // deletion_grace_period of zero, so that a cli call directly deletes splits after

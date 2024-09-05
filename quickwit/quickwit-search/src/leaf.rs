@@ -1072,7 +1072,7 @@ pub async fn multi_leaf_search(
         .map(|doc_mapper| deserialize_doc_mapper(doc_mapper))
         .collect::<crate::Result<_>>()?;
     // Creates a collector which merges responses into one
-    let aggregation_limits = searcher_context.create_new_aggregation_limits();
+    let aggregation_limits = searcher_context.get_aggregation_limits();
     // TODO: to avoid lockstep, we should pull up the future creation over the list of split ids
     // and have the semaphore on this level.
     // This will lower resource consumption due to less in-flight futures and avoid contention.

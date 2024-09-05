@@ -21,6 +21,10 @@ pub struct IndexingTask {
     /// The shards assigned to the indexer.
     #[prost(message, repeated, tag = "3")]
     pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
+    /// Fingerprint of the pipeline parameters. Anything that should cause a pipeline restart (such
+    /// as updating indexing settings or doc mapping) should influence this value.
+    #[prost(uint64, tag = "6")]
+    pub params_fingerprint: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
