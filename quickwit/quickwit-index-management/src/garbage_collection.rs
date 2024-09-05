@@ -183,6 +183,7 @@ async fn delete_splits_marked_for_deletion(
     let mut failed_splits = Vec::new();
 
     'outer: loop {
+        let mut exit = false;
         let query = ListSplitsQuery::try_from_index_uids(index_uids.clone())?
             .with_split_state(SplitState::MarkedForDeletion)
             .with_update_timestamp_lte(updated_before_timestamp)
@@ -248,11 +249,13 @@ async fn delete_splits_marked_for_deletion(
                 Err(delete_splits_error) => {
                     failed_splits.extend(delete_splits_error.storage_failures);
                     failed_splits.extend(delete_splits_error.metastore_failures);
-                    break;
+                    exit = true;
                 }
             }
         }
-        if num_splits_to_delete < DELETE_SPLITS_BATCH_SIZE {
+        if num_splits_to_delete < DELETE_SPLITS_BATCH_SIZE || exit {
+            // stop the gc if this was the last batch or we encountered an error
+            // (otherwise we might try deleting the same splits in an endless loop)
             break;
         }
     }
