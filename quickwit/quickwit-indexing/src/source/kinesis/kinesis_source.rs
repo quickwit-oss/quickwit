@@ -214,7 +214,7 @@ impl Source for KinesisSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::Kinesis);
-        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
+        let deadline = time::sleep(*EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
         loop {
