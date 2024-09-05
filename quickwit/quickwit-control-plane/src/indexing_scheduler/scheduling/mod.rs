@@ -633,13 +633,13 @@ fn inflate_node_capacities_if_necessary(problem: &mut SchedulingProblem) {
 /// to transform scheduling into a math problem.
 ///
 /// This function implementation therefore goes
-/// - 1) transform our problem into a scheduling problem. Something closer to a well-defined
-///   optimization problem. In particular this step removes:
-///      - the notion of shard ids, and only considers a number of shards being allocated.
-///      - node_ids and shard ids. These are replaced by integers.
-/// - 2) convert the current situation of the cluster into something a previous scheduling solution.
-/// - 3) compute the new scheduling solution.
-/// - 4) convert the new scheduling solution back to the real world by reallocating the shard ids.
+/// 1) transform our problem into a scheduling problem. Something closer to a well-defined
+///    optimization problem. In particular this step removes:
+///    - the notion of shard ids, and only considers a number of shards being allocated.
+///    - node_ids and shard ids. These are replaced by integers.
+/// 2) convert the current situation of the cluster into something a previous scheduling solution.
+/// 3) compute the new scheduling solution.
+/// 4) convert the new scheduling solution back to the real world by reallocating the shard ids.
 ///
 /// TODO cut into pipelines.
 /// Panics if any sources has no shards.

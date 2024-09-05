@@ -114,7 +114,6 @@ pub struct TestResourceFiles {
     pub index_config_without_uri: Uri,
     pub index_config_with_retention: Uri,
     pub log_docs: Uri,
-    pub wikipedia_docs: Uri,
 }
 
 /// A struct to hold few info about the test environment.
@@ -130,7 +129,6 @@ pub struct TestEnv {
     /// The metastore URI.
     pub metastore_uri: Uri,
     pub metastore_resolver: MetastoreResolver,
-    pub metastore: MetastoreServiceClient,
 
     pub cluster_endpoint: Url,
 
@@ -219,7 +217,6 @@ pub async fn create_test_env(
     let storage_resolver = StorageResolver::unconfigured();
     let storage = storage_resolver.resolve(&metastore_uri).await?;
     let metastore_resolver = MetastoreResolver::unconfigured();
-    let metastore = metastore_resolver.resolve(&metastore_uri).await?;
     let index_uri = metastore_uri.join(&index_id).unwrap();
     let index_config_path = resources_dir_path.join("index_config.yaml");
     fs::write(
@@ -258,7 +255,7 @@ pub async fn create_test_env(
     let log_docs_path = resources_dir_path.join("logs.json");
     fs::write(&log_docs_path, LOGS_JSON_DOCS)?;
     let wikipedia_docs_path = resources_dir_path.join("wikis.json");
-    fs::write(&wikipedia_docs_path, WIKI_JSON_DOCS)?;
+    fs::write(wikipedia_docs_path, WIKI_JSON_DOCS)?;
 
     let cluster_endpoint = Url::parse(&format!("http://localhost:{rest_listen_port}"))
         .context("failed to parse cluster endpoint")?;
@@ -269,7 +266,6 @@ pub async fn create_test_env(
         index_config_without_uri: uri_from_path(&index_config_without_uri_path),
         index_config_with_retention: uri_from_path(&index_config_with_retention_path),
         log_docs: uri_from_path(&log_docs_path),
-        wikipedia_docs: uri_from_path(&wikipedia_docs_path),
     };
 
     Ok(TestEnv {
@@ -279,7 +275,6 @@ pub async fn create_test_env(
         resource_files,
         metastore_uri,
         metastore_resolver,
-        metastore,
         cluster_endpoint,
         index_id,
         index_uri,
