@@ -249,12 +249,13 @@ async fn delete_splits_marked_for_deletion(
                 Err(delete_splits_error) => {
                     failed_splits.extend(delete_splits_error.storage_failures);
                     failed_splits.extend(delete_splits_error.metastore_failures);
-                    // we don't break so we try other batches, but still leave 'outer after
                     exit = true;
                 }
             }
         }
         if num_splits_to_delete < DELETE_SPLITS_BATCH_SIZE || exit {
+            // stop the gc if this was the last batch or we encountered an error
+            // (otherwise we might try deleting the same splits in an endless loop)
             break;
         }
     }
