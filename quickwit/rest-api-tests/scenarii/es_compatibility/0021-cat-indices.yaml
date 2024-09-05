@@ -20,7 +20,7 @@ expected:
       $expect: 270 < float(val[:-2]) < 280
   rep: '1'
   #uuid: gharchive:01HN2SDANHDN6WFAFNH7BBMQ8C
-- index: otel-logs-v0_7
+- index: otel-logs-v0_9
   docs.count: '0'
 - index: otel-traces-v0_9
   docs.count: '0'
