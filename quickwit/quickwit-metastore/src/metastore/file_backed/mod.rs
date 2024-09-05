@@ -134,6 +134,12 @@ struct FileBackedIndexCell {
     pub last_update: Instant,
     pub write_state: FileBackedIndex,
     upload_task: Option<UploadTask>,
+
+    /// Has been discarded. This field exists to make
+    /// it possible to discard this entry if there is an error
+    /// while mutating the Index.
+    // TODO move this logic to the cell.
+    pub discarded: bool,
 }
 
 impl FileBackedIndexCell {
@@ -143,6 +149,7 @@ impl FileBackedIndexCell {
             last_update: Instant::now(),
             write_state: file_backed_index,
             upload_task: None,
+            discarded: false,
         }
     }
 
@@ -150,17 +157,6 @@ impl FileBackedIndexCell {
         drop(self.upload_task.take());
         // better message FIXME.
         // TODO check the property described in the expect.
-    }
-
-    pub async fn execute_scheduled_write(&mut self) {
-        todo!()
-    }
-
-    pub fn schedule_write(&mut self) -> oneshot::Receiver<()> {
-        // if self.scheduled_write_handle.is_some() {
-        //     return self.
-        // }
-        todo!()
     }
 }
 
@@ -206,7 +202,7 @@ pub struct FileBackedMetastore {
 }
 
 impl fmt::Debug for FileBackedMetastore {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("FileBackedMetastore")
             .field("storage_uri", self.storage.uri())
             .field("polling_interval_opt", &self.polling_interval_opt)
@@ -317,8 +313,7 @@ impl FileBackedMetastore {
                 if put_index_result.is_err() {
                     // Depending on the error, the write may have been successful. We mark the current
                     // index as discarded to make sure we reload the data from the metastore before using it.
-                    locked_index.file_backed_index.discarded = true;
-                    locked_index.write_state.discarded = true;
+                    locked_index.discarded = true;
                 } else {
                     locked_index.file_backed_index = locked_index.write_state.clone();
                 }
@@ -469,7 +464,7 @@ impl FileBackedMetastore {
         loop {
             let index = self.index(index_id).await?;
             let locked_index = index.lock_owned().await;
-            if !locked_index.file_backed_index.discarded {
+            if !locked_index.discarded {
                 return Ok(locked_index);
             }
         }
@@ -483,15 +478,27 @@ impl FileBackedMetastore {
     /// a fetch to the storage will be initiated and might trigger an error.
     ///
     /// For a given index_id, only copies of the same index_view are returned.
+    ///
+    /// If an index is stored in the metastore state but is marked as discarded,
+    /// it is not returned, and it is treated as if it was not there in the first place.
     async fn index(&self, index_id: &str) -> MetastoreResult<Arc<Mutex<FileBackedIndexCell>>> {
         {
             // Happy path!
             // If the object is already in our cache then we just return a copy
-            let inner_rlock_guard = self.state.read().await;
-            if let Some(index_state) = inner_rlock_guard.indexes.get(index_id) {
-                return get_index_mutex(index_id, index_state).await;
+            {
+                let inner_rlock_guard = self.state.read().await;
+                if let Some(index_state) = inner_rlock_guard.indexes.get(index_id) {
+                    let index_mutex = get_index_mutex(index_id, index_state).await?;
+                    // TODO this could be a long lock to acquire.
+                    // We need to find a way to work around this.
+                    let index_discarded = index_mutex.lock().await.discarded;
+                    if !index_discarded {
+                        return Ok(index_mutex);
+                    }
+                }
             }
         }
+
         // At this point we do not hold our mutex, so we need to do a little dance
         // to make sure we return the same instance.
         //
@@ -503,11 +510,15 @@ impl FileBackedMetastore {
         // Here we retake the lock, still no io ongoing.
         let mut state_wlock_guard = self.state.write().await;
 
-        // At this point, some other client might have added another instance of the Metadataet in
+        // At this point, some other client might have added another instance of the Metadataset in
         // the map. We want to avoid two copies to exist in the application, so we keep only
         // one.
         if let Some(index_state) = state_wlock_guard.indexes.get(index_id) {
-            return get_index_mutex(index_id, index_state).await;
+            let index_mutex = get_index_mutex(index_id, index_state).await?;
+            let discarded = index_mutex.lock().await.discarded;
+            if !discarded {
+                return Ok(index_mutex);
+            }
         }
 
         // We need to instantiate a `LazyFileBackedIndex` that will hold the mutex

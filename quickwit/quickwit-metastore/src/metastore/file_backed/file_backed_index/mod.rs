@@ -73,11 +73,7 @@ pub(crate) struct FileBackedIndex {
     /// if the metastore wrote some value since the last
     /// polling loop.
     recently_modified: bool,
-    /// Has been discarded. This field exists to make
-    /// it possible to discard this entry if there is an error
-    /// while mutating the Index.
-    // TODO move this logic to the cell.
-    pub discarded: bool,
+
 }
 
 #[cfg(any(test, feature = "testsuite"))]
@@ -155,7 +151,6 @@ impl From<IndexMetadata> for FileBackedIndex {
             delete_tasks: Default::default(),
             stamper: Default::default(),
             recently_modified: false,
-            discarded: false,
         }
     }
 }
@@ -191,7 +186,6 @@ impl FileBackedIndex {
             delete_tasks,
             stamper: Stamper::new(last_opstamp),
             recently_modified: false,
-            discarded: false,
         }
     }
 
