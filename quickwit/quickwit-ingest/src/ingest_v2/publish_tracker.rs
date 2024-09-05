@@ -33,8 +33,8 @@ use tracing::error;
 /// events to assert when all the persisted events have been published. To
 /// ensure that no events are missed:
 /// - create the tracker before any persist requests is sent
-/// - call `register_requested_shards` before each persist request to ensure that
-/// the associated publish events are recorded
+/// - call `register_requested_shards` before each persist request to ensure that the associated
+///   publish events are recorded
 /// - call `track_persisted_shard_position` after each successful persist subrequests
 pub struct PublishTracker {
     state: Arc<Mutex<ShardPublishStates>>,

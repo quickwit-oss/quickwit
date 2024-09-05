@@ -416,6 +416,7 @@ impl Cluster {
     /// Tasks are grouped by (index_id, source_id), each group is stored in a key as follows:
     /// - key: `{INDEXING_TASK_PREFIX}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`
     /// - value: Number of indexing tasks in the group.
+    ///
     /// Keys present in chitchat state but not in the given `indexing_tasks` are marked for
     /// deletion.
     pub async fn update_self_node_indexing_tasks(&self, indexing_tasks: &[IndexingTask]) {

@@ -41,9 +41,8 @@ use crate::{OwnedBytes, Storage};
 ///
 /// FIXME The current approach is quite horrible in that:
 /// - it uses a global
-/// - it relies on the idea that all of the files we attempt to cache
-/// have universally unique names. It happens to be true today, but this might be very error prone
-/// in the future.
+/// - it relies on the idea that all of the files we attempt to cache have universally unique names.
+///   It happens to be true today, but this might be very error prone in the future.
 pub fn wrap_storage_with_cache(
     long_term_cache: Arc<dyn StorageCache>,
     storage: Arc<dyn Storage>,

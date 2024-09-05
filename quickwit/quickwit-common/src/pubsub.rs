@@ -54,6 +54,7 @@ type EventSubscriptions<E> = HashMap<usize, EventSubscription<E>>;
 /// The event broker makes it possible to
 /// - emit specific local events
 /// - subscribe to these local events
+///
 /// The event broker is not distributed in itself. Only events emitted
 /// locally will be received by the subscribers.
 ///
