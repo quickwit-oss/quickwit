@@ -12,6 +12,7 @@ license.workspace = true
 
 [dependencies]
 aws-config = { workspace = true }
+aws-runtime = { workspace = true }
 aws-sdk-kinesis = { workspace = true, optional = true }
 aws-sdk-s3 = { workspace = true }
 aws-sdk-sqs = { workspace = true, optional = true }

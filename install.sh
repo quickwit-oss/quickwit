@@ -57,6 +57,7 @@ install_from_archive() {
     need_cmd mv
     need_cmd rm
     need_cmd tar
+    need_cmd gzip
     need_cmd chmod
     need_cmd grep
     need_cmd head
