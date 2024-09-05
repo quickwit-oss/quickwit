@@ -66,14 +66,6 @@ pub(crate) struct FileBackedIndex {
     delete_tasks: Vec<DeleteTask>,
     /// Stamper.
     stamper: Stamper,
-    /// Flag used to avoid polling the metastore if
-    /// the process is actually writing the metastore.
-    ///
-    /// The logic is "soft". We avoid the polling step
-    /// if the metastore wrote some value since the last
-    /// polling loop.
-    recently_modified: bool,
-
 }
 
 #[cfg(any(test, feature = "testsuite"))]
@@ -150,7 +142,6 @@ impl From<IndexMetadata> for FileBackedIndex {
             per_source_shards,
             delete_tasks: Default::default(),
             stamper: Default::default(),
-            recently_modified: false,
         }
     }
 }
@@ -185,18 +176,7 @@ impl FileBackedIndex {
             per_source_shards,
             delete_tasks,
             stamper: Stamper::new(last_opstamp),
-            recently_modified: false,
         }
-    }
-
-    /// Sets the `recently_modified` flag to false and returns the previous value.
-    pub fn flip_recently_modified_down(&mut self) -> bool {
-        std::mem::replace(&mut self.recently_modified, false)
-    }
-
-    /// Marks the file as `recently_modified`.
-    pub fn set_recently_modified(&mut self) {
-        self.recently_modified = true;
     }
 
     /// Index ID accessor.
