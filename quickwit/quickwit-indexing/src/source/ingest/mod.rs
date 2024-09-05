@@ -470,8 +470,7 @@ impl Source for IngestSource {
         let mut batch_builder = BatchBuilder::new(SourceType::IngestV2);
 
         let now = time::Instant::now();
-        let deadline = now + EMIT_BATCHES_TIMEOUT;
-
+        let deadline = now + *EMIT_BATCHES_TIMEOUT;
         loop {
             match time::timeout_at(deadline, self.fetch_stream.next()).await {
                 Ok(Ok(fetch_message)) => match fetch_message.message {

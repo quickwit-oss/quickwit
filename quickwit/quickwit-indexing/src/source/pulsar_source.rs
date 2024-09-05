@@ -223,7 +223,7 @@ impl Source for PulsarSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch_builder = BatchBuilder::new(SourceType::Pulsar);
-        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
+        let deadline = time::sleep(*EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
         loop {
