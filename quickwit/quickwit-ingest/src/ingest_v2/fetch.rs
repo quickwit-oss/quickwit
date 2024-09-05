@@ -294,6 +294,14 @@ impl MultiFetchStream {
         self.fetch_message_tx.clone()
     }
 
+    pub fn has_active_shard_subscriptions(&self) -> bool {
+        tracing::info!(
+            tx_count = self.fetch_message_tx.strong_count(),
+            "has_active_shard_subscriptions"
+        );
+        self.fetch_message_tx.strong_count() > 1
+    }
+
     /// Subscribes to a shard and fails over to the replica if an error occurs.
     #[allow(clippy::too_many_arguments)]
     pub async fn subscribe(
@@ -1864,8 +1872,9 @@ pub(super) mod tests {
         let client_id = "test-client".to_string();
         let ingester_pool = IngesterPool::default();
         let retry_params = RetryParams::for_test();
-        let _multi_fetch_stream =
+        let multi_fetch_stream =
             MultiFetchStream::new(self_node_id, client_id, ingester_pool, retry_params);
+        assert!(!multi_fetch_stream.has_active_shard_subscriptions())
         // TODO: Backport from original branch.
     }
 }

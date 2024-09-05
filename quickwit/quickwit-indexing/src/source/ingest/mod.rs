@@ -506,6 +506,9 @@ impl Source for IngestSource {
                 num_millis=%now.elapsed().as_millis(),
                 "Sending doc batch to indexer."
             );
+            if !self.fetch_stream.has_active_shard_subscriptions() {
+                batch_builder.force_commit();
+            }
             let message = batch_builder.build();
             ctx.send_message(doc_processor_mailbox, message).await?;
         }
