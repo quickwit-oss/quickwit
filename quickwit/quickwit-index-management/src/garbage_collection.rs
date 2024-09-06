@@ -166,7 +166,7 @@ pub async fn run_garbage_collect(
     )
     .await
 }
-#[instrument(skip(storages, metastore, progress_opt))]
+#[instrument(skip(index_uids, storages, metastore, progress_opt), fields(num_index=%index_uids.len()))]
 /// Removes any splits marked for deletion which haven't been
 /// updated after `updated_before_timestamp` in batches of 1000 splits.
 ///
