@@ -342,6 +342,8 @@ pub struct FetchEof {
     pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "4")]
     pub eof_position: ::core::option::Option<crate::types::Position>,
+    #[prost(bool, tag = "5")]
+    pub is_decommissioning: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

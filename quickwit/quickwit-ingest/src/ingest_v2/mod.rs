@@ -54,7 +54,7 @@ use serde::Serialize;
 use tracing::{error, info};
 use workbench::pending_subrequests;
 
-pub use self::fetch::{FetchStreamError, MultiFetchStream};
+pub use self::fetch::{FetchStreamError, MultiFetchMessage, MultiFetchStream};
 pub use self::ingester::{wait_for_ingester_decommission, wait_for_ingester_status, Ingester};
 use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{decoded_mrecords, MRecord};

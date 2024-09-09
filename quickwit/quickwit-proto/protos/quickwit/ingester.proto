@@ -249,6 +249,7 @@ message FetchEof {
   string source_id = 2;
   quickwit.ingest.ShardId shard_id = 3;
   quickwit.ingest.Position eof_position = 4;
+  bool is_decommissioning = 5;
 }
 
 message InitShardsRequest {

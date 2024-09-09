@@ -34,6 +34,7 @@ pub mod pubsub;
 pub mod rand;
 pub mod rate_limited_tracing;
 pub mod rate_limiter;
+pub mod ref_tracker;
 pub mod rendezvous_hasher;
 pub mod retry;
 pub mod runtimes;

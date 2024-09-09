@@ -913,6 +913,7 @@ impl Ingester {
             mrecordlog,
             shard_status_rx,
             get_batch_num_bytes(),
+            self.state.status_rx.clone(),
         );
         Ok(service_stream)
     }
