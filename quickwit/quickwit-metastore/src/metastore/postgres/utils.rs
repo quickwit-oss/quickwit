@@ -24,16 +24,16 @@ use std::time::Duration;
 
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
-use sea_query::{any, Expr, Func, Order, SelectStatement};
+use sea_query::{any, Expr, Func, JoinType, Order, SelectStatement};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, Postgres};
 use tracing::error;
 use tracing::log::LevelFilter;
 
-use super::model::{Splits, ToTimestampFunc};
+use super::model::{Indexes, Splits, ToTimestampFunc};
 use super::pool::TrackedPool;
 use super::tags::generate_sql_condition;
-use crate::metastore::FilterRange;
+use crate::metastore::{FilterRange, SortBy};
 use crate::{ListSplitsQuery, SplitMaturity, SplitMetadata};
 
 /// Establishes a connection to the given database URI.
@@ -96,7 +96,7 @@ pub(super) fn append_range_filters<V: Display>(
 pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplitsQuery) {
     // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
 
-    sql.cond_where(Expr::col(Splits::IndexUid).is_in(&query.index_uids));
+    sql.cond_where(Expr::col((Splits::Table, Splits::IndexUid)).is_in(&query.index_uids));
 
     if let Some(node_id) = &query.node_id {
         sql.cond_where(Expr::col(Splits::NodeId).eq(node_id));
@@ -178,6 +178,39 @@ pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplits
     append_range_filters(sql, Splits::DeleteOpstamp, &query.delete_opstamp, |&val| {
         Expr::expr(val)
     });
+
+    match query.sort_by {
+        SortBy::Staleness => {
+            sql.order_by(
+                (Splits::DeleteOpstamp, Splits::PublishTimestamp),
+                Order::Asc,
+            );
+        }
+        SortBy::IndexUid => {
+            // this order by can be fairly costly,
+            // from testing, adding a join here was way faster, because we do an index-only scan on
+            // indexes.index_uid, nested-loop merged with a bitmap index scan on splits.index_uid,
+            // filter for our conditions, and just take the first N results. This is guaranteed to
+            // return correct result because indexes.index_uid is a non-null foreign key
+            //
+            // We also need to do .column((Splits::Table, Asterisk)) from the caller side, to not
+            // return unexpected columns
+            //
+            // On the other hand, without join, we do a seq scan on splits, sort everything, and
+            // truncate.
+            //
+            // Or we could just add a btree index to splits.index_uid. That might be the better
+            // long term solution.
+            sql.join(
+                JoinType::Join,
+                Indexes::Table,
+                Expr::col((Splits::Table, Splits::IndexUid))
+                    .equals((Indexes::Table, Indexes::IndexUid)),
+            )
+            .order_by(Splits::IndexUid, Order::Asc);
+        }
+        SortBy::None => (),
+    }
 
     if let Some(limit) = query.limit {
         sql.limit(limit as u64);

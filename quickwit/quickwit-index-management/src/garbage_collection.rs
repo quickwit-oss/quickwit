@@ -41,7 +41,7 @@ use time::OffsetDateTime;
 use tracing::{error, instrument};
 
 /// The maximum number of splits that the GC should delete per attempt.
-const DELETE_SPLITS_BATCH_SIZE: usize = 1000;
+const DELETE_SPLITS_BATCH_SIZE: usize = 10_000;
 
 /// [`DeleteSplitsError`] describes the errors that occurred during the deletion of splits from
 /// storage and metastore.
@@ -182,12 +182,13 @@ async fn delete_splits_marked_for_deletion(
     let mut removed_splits = Vec::new();
     let mut failed_splits = Vec::new();
 
-    'outer: loop {
+    loop {
         let mut exit = false;
         let query = ListSplitsQuery::try_from_index_uids(index_uids.clone())?
             .with_split_state(SplitState::MarkedForDeletion)
             .with_update_timestamp_lte(updated_before_timestamp)
-            .with_limit(DELETE_SPLITS_BATCH_SIZE);
+            .with_limit(DELETE_SPLITS_BATCH_SIZE)
+            .sort_by_index_uid();
 
         let list_splits_request = match ListSplitsRequest::try_from_list_splits_query(&query) {
             Ok(request) => request,
@@ -229,29 +230,30 @@ async fn delete_splits_marked_for_deletion(
                 .into_group_map();
 
         for (index_uid, splits_metadata_to_delete) in splits_metadata_to_delete_per_index {
-            let Some(storage) = storages.get(&index_uid).cloned() else {
+            if let Some(storage) = storages.get(&index_uid).cloned() {
+                let delete_splits_result = delete_splits_from_storage_and_metastore(
+                    index_uid,
+                    storage,
+                    metastore.clone(),
+                    splits_metadata_to_delete,
+                    progress_opt,
+                )
+                .await;
+
+                match delete_splits_result {
+                    Ok(entries) => removed_splits.extend(entries),
+                    Err(delete_splits_error) => {
+                        failed_splits.extend(delete_splits_error.storage_failures);
+                        failed_splits.extend(delete_splits_error.metastore_failures);
+                        exit = true;
+                    }
+                }
+            } else {
                 error!("we are trying to GC without knowing the storage, this shouldn't happen");
                 // we stop there, or we could easily end up looping indefinitely if there are more
                 // than DELETE_SPLITS_BATCH_SIZE to delete in this index
-                break 'outer;
+                exit = true;
             };
-            let delete_splits_result = delete_splits_from_storage_and_metastore(
-                index_uid,
-                storage,
-                metastore.clone(),
-                splits_metadata_to_delete,
-                progress_opt,
-            )
-            .await;
-
-            match delete_splits_result {
-                Ok(entries) => removed_splits.extend(entries),
-                Err(delete_splits_error) => {
-                    failed_splits.extend(delete_splits_error.storage_failures);
-                    failed_splits.extend(delete_splits_error.metastore_failures);
-                    exit = true;
-                }
-            }
         }
         if num_splits_to_delete < DELETE_SPLITS_BATCH_SIZE || exit {
             // stop the gc if this was the last batch or we encountered an error
