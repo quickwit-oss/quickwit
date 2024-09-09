@@ -21,6 +21,7 @@ use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use chitchat::{ChitchatId, NodeState};
 use futures::Stream;
@@ -79,6 +80,7 @@ pub(crate) async fn compute_cluster_change_events(
     previous_nodes: &mut BTreeMap<NodeId, ClusterNode>,
     previous_node_states: &BTreeMap<ChitchatId, NodeState>,
     new_node_states: &BTreeMap<ChitchatId, NodeState>,
+    request_timeout: Duration,
 ) -> Vec<ClusterChange> {
     let mut cluster_events = Vec::new();
 
@@ -95,6 +97,7 @@ pub(crate) async fn compute_cluster_change_events(
                     chitchat_id,
                     node_state,
                     previous_nodes,
+                    request_timeout,
                 )
                 .await;
 
@@ -139,6 +142,7 @@ async fn compute_cluster_change_events_on_added(
     new_chitchat_id: &ChitchatId,
     new_node_state: &NodeState,
     previous_nodes: &mut BTreeMap<NodeId, ClusterNode>,
+    request_timeout: Duration,
 ) -> Vec<ClusterChange> {
     let is_self_node = self_chitchat_id == new_chitchat_id;
     let new_node_id: NodeId = new_chitchat_id.node_id.clone().into();
@@ -166,8 +170,14 @@ async fn compute_cluster_change_events_on_added(
             events.push(ClusterChange::Remove(previous_node));
         }
     }
-    let Some(new_node) =
-        try_new_node(cluster_id, new_chitchat_id, new_node_state, is_self_node).await
+    let Some(new_node) = try_new_node(
+        cluster_id,
+        new_chitchat_id,
+        new_node_state,
+        is_self_node,
+        request_timeout,
+    )
+    .await
     else {
         return events;
     };
@@ -300,10 +310,11 @@ async fn try_new_node(
     chitchat_id: &ChitchatId,
     node_state: &NodeState,
     is_self_node: bool,
+    request_timeout: Duration,
 ) -> Option<ClusterNode> {
     match node_state.grpc_advertise_addr() {
         Ok(socket_addr) => {
-            let channel = make_channel(socket_addr).await;
+            let channel = make_channel(socket_addr, request_timeout).await;
             try_new_node_with_channel(cluster_id, chitchat_id, node_state, channel, is_self_node)
         }
         Err(error) => {
@@ -443,6 +454,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
+                Duration::from_secs(30),
             )
             .await;
             assert!(events.is_empty());
@@ -465,6 +477,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
+                Duration::from_secs(30),
             )
             .await;
             assert!(events.is_empty());
@@ -493,6 +506,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
+                Duration::from_secs(30),
             )
             .await;
 
@@ -515,6 +529,7 @@ pub(crate) mod tests {
                 &rejoined_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
+                Duration::from_secs(30),
             )
             .await;
             assert_eq!(events.len(), 2);
@@ -543,6 +558,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
+                Duration::from_secs(30),
             )
             .await;
             assert!(events.is_empty());
@@ -567,6 +583,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
+                Duration::from_secs(30),
             )
             .await;
             assert_eq!(events.len(), 1);
@@ -897,6 +914,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
+                Duration::from_secs(30),
             )
             .await;
             assert!(events.is_empty());
@@ -926,6 +944,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
+                Duration::from_secs(30),
             )
             .await;
             assert!(events.is_empty());
@@ -943,6 +962,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
+                Duration::from_secs(30),
             )
             .await;
             assert_eq!(events.len(), 1);
@@ -957,6 +977,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &new_node_states,
                 &new_node_states,
+                Duration::from_secs(30),
             )
             .await;
             assert_eq!(events.len(), 0);
@@ -989,6 +1010,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
+                Duration::from_secs(30),
             )
             .await;
             assert_eq!(events.len(), 1);
@@ -1008,6 +1030,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
+                Duration::from_secs(30),
             )
             .await;
             assert_eq!(events.len(), 1);

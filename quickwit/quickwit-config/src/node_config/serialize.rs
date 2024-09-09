@@ -52,6 +52,8 @@ pub const DEFAULT_GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "tests
     Duration::from_secs(1)
 };
 
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
 // Default config values in the order they appear in [`NodeConfigBuilder`].
 fn default_cluster_id() -> ConfigValue<String, QW_CLUSTER_ID> {
     ConfigValue::with_default(DEFAULT_CLUSTER_ID.to_string())
@@ -182,6 +184,7 @@ struct NodeConfigBuilder {
     gossip_listen_port: ConfigValue<u16, QW_GOSSIP_LISTEN_PORT>,
     grpc_listen_port: ConfigValue<u16, QW_GRPC_LISTEN_PORT>,
     gossip_interval_ms: ConfigValue<u32, QW_GOSSIP_INTERVAL_MS>,
+    request_timeout_sec: ConfigValue<u32, QW_REQUEST_TIMEOUT>,
     #[serde(default)]
     peer_seeds: ConfigValue<List, QW_PEER_SEEDS>,
     #[serde(rename = "data_dir")]
@@ -305,6 +308,12 @@ impl NodeConfigBuilder {
             .map(|gossip_interval_ms| Duration::from_millis(gossip_interval_ms as u64))
             .unwrap_or(DEFAULT_GOSSIP_INTERVAL);
 
+        let request_timeout = self
+            .request_timeout_sec
+            .resolve_optional(env_vars)?
+            .map(|request_timeout_sec| Duration::from_secs(request_timeout_sec as u64))
+            .unwrap_or(DEFAULT_REQUEST_TIMEOUT);
+
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id,
@@ -314,6 +323,7 @@ impl NodeConfigBuilder {
             gossip_advertise_addr,
             grpc_advertise_addr,
             gossip_interval,
+            request_timeout,
             peer_seeds: self.peer_seeds.resolve(env_vars)?.0,
             data_dir_path,
             metastore_uri,
@@ -358,6 +368,7 @@ impl Default for NodeConfigBuilder {
             gossip_listen_port: ConfigValue::none(),
             grpc_listen_port: ConfigValue::none(),
             gossip_interval_ms: ConfigValue::none(),
+            request_timeout_sec: ConfigValue::none(),
             advertise_address: ConfigValue::none(),
             peer_seeds: ConfigValue::with_default(List::default()),
             data_dir_uri: default_data_dir_uri(),
@@ -452,6 +463,7 @@ pub fn node_config_for_tests_from_ports(
         gossip_listen_addr,
         grpc_listen_addr,
         gossip_interval: Duration::from_millis(25u64),
+        request_timeout: Duration::from_secs(30),
         peer_seeds: Vec::new(),
         data_dir_path,
         metastore_uri,
