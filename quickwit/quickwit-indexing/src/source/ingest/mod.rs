@@ -33,8 +33,7 @@ use quickwit_ingest::{
 };
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::ingest::ingester::{
-    fetch_message, FetchEof, FetchPayload, IngesterService, TruncateShardsRequest,
-    TruncateShardsSubrequest,
+    FetchEof, FetchPayload, IngesterService, TruncateShardsRequest, TruncateShardsSubrequest,
 };
 use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::metastore::{
@@ -473,33 +472,28 @@ impl Source for IngestSource {
         let deadline = now + *EMIT_BATCHES_TIMEOUT;
         loop {
             match time::timeout_at(deadline, self.fetch_stream.next()).await {
-                Ok(Ok(MultiFetchMessage {
-                    fetch_message,
-                    force_commit,
-                })) => {
-                    if force_commit {
-                        batch_builder.force_commit();
-                    }
-                    match fetch_message.message {
-                        Some(fetch_message::Message::Payload(fetch_payload)) => {
-                            self.process_fetch_payload(&mut batch_builder, fetch_payload)?;
+                Ok(Ok(multi_fetch_message)) => match multi_fetch_message {
+                    MultiFetchMessage::Payload(fetch_payload) => {
+                        self.process_fetch_payload(&mut batch_builder, fetch_payload)?;
 
-                            if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
-                                break;
-                            }
-                        }
-                        Some(fetch_message::Message::Eof(fetch_eof)) => {
-                            self.process_fetch_eof(&mut batch_builder, fetch_eof)?;
-                            if force_commit {
-                                batch_builder.force_commit()
-                            }
-                        }
-                        None => {
-                            warn!("received empty fetch message");
-                            continue;
+                        if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
+                            break;
                         }
                     }
-                }
+                    MultiFetchMessage::Eof {
+                        fetch_eof,
+                        force_commit,
+                    } => {
+                        self.process_fetch_eof(&mut batch_builder, fetch_eof)?;
+                        if force_commit {
+                            batch_builder.force_commit()
+                        }
+                    }
+                    MultiFetchMessage::Empty => {
+                        warn!("received empty fetch message");
+                        continue;
+                    }
+                },
                 Ok(Err(fetch_stream_error)) => {
                     self.process_fetch_stream_error(&mut batch_builder, fetch_stream_error)?;
                 }

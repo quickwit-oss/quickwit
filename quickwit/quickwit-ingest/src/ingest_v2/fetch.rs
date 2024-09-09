@@ -77,23 +77,6 @@ impl fmt::Debug for FetchStreamTask {
     }
 }
 
-/// Wrapper around [`FetchMessage`] that keeps track of both the amount of data
-/// in flight and its origin
-#[derive(Debug)]
-struct TrackedFetchMessage {
-    /// the ingester from which the message was fetched
-    source_node_id: NodeId,
-    /// the actual message and a tracker of the amount of in flight data
-    fetch_message: InFlightValue<FetchMessage>,
-    /// a guard to track the ingesters that still have in flight data
-    _tracked_ingesters_ref: Arc<Vec<NodeId>>,
-}
-
-pub struct MultiFetchMessage {
-    pub force_commit: bool,
-    pub fetch_message: FetchMessage,
-}
-
 impl FetchStreamTask {
     pub fn spawn(
         open_fetch_stream_request: OpenFetchStreamRequest,
@@ -282,6 +265,28 @@ pub struct FetchStreamError {
     pub ingest_error: IngestV2Error,
 }
 
+/// Wrapper around [`FetchMessage`] that keeps track of both the amount of data
+/// in flight and its origin
+#[derive(Debug)]
+struct TrackedFetchMessage {
+    /// the ingester from which the message was fetched
+    source_node_id: NodeId,
+    /// the actual message and a tracker of the amount of in flight data
+    fetch_message: InFlightValue<FetchMessage>,
+    /// a guard to track the ingesters that still have in flight data
+    _tracked_ingesters_ref: Arc<Vec<NodeId>>,
+}
+
+pub enum MultiFetchMessage {
+    Payload(FetchPayload),
+    Eof {
+        fetch_eof: FetchEof,
+        force_commit: bool,
+    },
+    /// Fetch messages should not be empty
+    Empty,
+}
+
 /// Combines multiple fetch streams originating from different ingesters into a single stream. It
 /// tolerates the failure of ingesters and automatically fails over to replica shards.
 pub struct MultiFetchStream {
@@ -409,17 +414,19 @@ impl MultiFetchStream {
         let fetch_message = fetch_message.into_inner();
         drop(_tracked_ingesters_ref);
 
-        let force_commit =
-            if let Some(fetch_message::Message::Eof(fetch_eof)) = &fetch_message.message {
-                fetch_eof.is_decommissioning && !self.active_ingesters.contains(&source_node_id)
-            } else {
-                false
-            };
+        let multi_fetch_message = match fetch_message.message {
+            Some(fetch_message::Message::Payload(fetch_payload)) => {
+                MultiFetchMessage::Payload(fetch_payload)
+            }
+            Some(fetch_message::Message::Eof(fetch_eof)) => MultiFetchMessage::Eof {
+                force_commit: fetch_eof.is_decommissioning
+                    && !self.active_ingesters.contains(&source_node_id),
+                fetch_eof,
+            },
+            None => MultiFetchMessage::Empty,
+        };
 
-        Ok(MultiFetchMessage {
-            force_commit,
-            fetch_message,
-        })
+        Ok(multi_fetch_message)
     }
 
     /// Resets the stream by aborting all the active fetch tasks and dropping all queued responses.
@@ -712,7 +719,13 @@ pub(super) mod tests {
 
     impl From<MultiFetchMessage> for FetchMessage {
         fn from(val: MultiFetchMessage) -> Self {
-            val.fetch_message
+            match val {
+                MultiFetchMessage::Payload(fetch_payload) => {
+                    FetchMessage::new_payload(fetch_payload)
+                }
+                MultiFetchMessage::Eof { fetch_eof, .. } => FetchMessage::new_eof(fetch_eof),
+                MultiFetchMessage::Empty => panic!("fetch messages should not be empty"),
+            }
         }
     }
 
@@ -924,6 +937,7 @@ pub(super) mod tests {
         assert_eq!(fetch_eof.source_id, source_id);
         assert_eq!(fetch_eof.shard_id(), shard_id);
         assert_eq!(fetch_eof.eof_position, Some(Position::eof(3u64)));
+        assert_eq!(fetch_eof.is_decommissioning, false);
 
         fetch_task_handle.await.unwrap();
     }
