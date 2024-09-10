@@ -29,12 +29,11 @@ use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::retry::RetryParams;
 use quickwit_ingest::{
-    decoded_mrecords, FetchStreamError, IngesterPool, MRecord, MultiFetchStream,
+    decoded_mrecords, FetchStreamError, IngesterPool, MRecord, MultiFetchMessage, MultiFetchStream,
 };
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::ingest::ingester::{
-    fetch_message, FetchEof, FetchPayload, IngesterService, TruncateShardsRequest,
-    TruncateShardsSubrequest,
+    FetchEof, FetchPayload, IngesterService, TruncateShardsRequest, TruncateShardsSubrequest,
 };
 use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::metastore::{
@@ -180,6 +179,7 @@ impl IngestSource {
             client_id.to_string(),
             ingester_pool.clone(),
             retry_params,
+            source_runtime.event_broker.clone(),
         );
         // We start as dead. The first reset with a non-empty list of shards will create an alive
         // publish lock.
@@ -473,20 +473,23 @@ impl Source for IngestSource {
         let deadline = now + *EMIT_BATCHES_TIMEOUT;
         loop {
             match time::timeout_at(deadline, self.fetch_stream.next()).await {
-                Ok(Ok(fetch_message)) => match fetch_message.message {
-                    Some(fetch_message::Message::Payload(fetch_payload)) => {
+                Ok(Ok(multi_fetch_message)) => match multi_fetch_message {
+                    MultiFetchMessage::Payload(fetch_payload, _gauge_guard) => {
                         self.process_fetch_payload(&mut batch_builder, fetch_payload)?;
 
                         if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
                             break;
                         }
                     }
-                    Some(fetch_message::Message::Eof(fetch_eof)) => {
+                    MultiFetchMessage::Eof(fetch_eof) => {
                         self.process_fetch_eof(&mut batch_builder, fetch_eof)?;
                     }
-                    None => {
-                        warn!("received empty fetch message");
-                        continue;
+                    MultiFetchMessage::Decommissioning {
+                        last_fetch_forwarded: _,
+                    } => {
+                        // force commit only if last commit is recent compared to
+                        // last_fetch_forwarded
+                        batch_builder.force_commit();
                     }
                 },
                 Ok(Err(fetch_stream_error)) => {
@@ -670,11 +673,8 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
-    use bytesize::ByteSize;
     use itertools::Itertools;
     use quickwit_actors::{ActorContext, Universe};
-    use quickwit_common::metrics::MEMORY_METRICS;
-    use quickwit_common::stream_utils::InFlightValue;
     use quickwit_common::ServiceStream;
     use quickwit_config::{IndexingSettings, SourceConfig, SourceParams};
     use quickwit_proto::indexing::IndexingPipelineId;
@@ -1363,8 +1363,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_source_emit_batches() {
+        let node_id = NodeId::from("test-node");
         let pipeline_id = IndexingPipelineId {
-            node_id: NodeId::from("test-node"),
+            node_id: node_id.clone(),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1418,7 +1419,6 @@ mod tests {
                 status: IndexingStatus::Active,
             },
         );
-        let fetch_message_tx = source.fetch_stream.fetch_message_tx();
 
         let fetch_payload = FetchPayload {
             index_uid: Some(IndexUid::for_test("test-index", 0)),
@@ -1432,14 +1432,10 @@ mod tests {
             from_position_exclusive: Some(Position::offset(11u64)),
             to_position_inclusive: Some(Position::offset(14u64)),
         };
-        let batch_size = fetch_payload.estimate_size();
-        let fetch_message = FetchMessage::new_payload(fetch_payload);
-        let in_flight_value = InFlightValue::new(
-            fetch_message,
-            batch_size,
-            &MEMORY_METRICS.in_flight.fetch_stream,
-        );
-        fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
+        source
+            .fetch_stream
+            .send_message(&node_id, Ok(FetchMessage::new_payload(fetch_payload)))
+            .await;
 
         let fetch_payload = FetchPayload {
             index_uid: Some(IndexUid::for_test("test-index", 0)),
@@ -1449,14 +1445,10 @@ mod tests {
             from_position_exclusive: Some(Position::offset(22u64)),
             to_position_inclusive: Some(Position::offset(23u64)),
         };
-        let batch_size = fetch_payload.estimate_size();
-        let fetch_message = FetchMessage::new_payload(fetch_payload);
-        let in_flight_value = InFlightValue::new(
-            fetch_message,
-            batch_size,
-            &MEMORY_METRICS.in_flight.fetch_stream,
-        );
-        fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
+        source
+            .fetch_stream
+            .send_message(&node_id, Ok(FetchMessage::new_payload(fetch_payload)))
+            .await;
 
         let fetch_eof = FetchEof {
             index_uid: Some(IndexUid::for_test("test-index", 0)),
@@ -1464,13 +1456,10 @@ mod tests {
             shard_id: Some(ShardId::from(2)),
             eof_position: Some(Position::eof(23u64)),
         };
-        let fetch_message = FetchMessage::new_eof(fetch_eof);
-        let in_flight_value = InFlightValue::new(
-            fetch_message,
-            ByteSize(0),
-            &MEMORY_METRICS.in_flight.fetch_stream,
-        );
-        fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
+        source
+            .fetch_stream
+            .send_message(&node_id, Ok(FetchMessage::new_eof(fetch_eof)))
+            .await;
 
         source
             .emit_batches(&doc_processor_mailbox, &ctx)
@@ -1508,15 +1497,18 @@ mod tests {
         let shard = source.assigned_shards.get(&ShardId::from(2)).unwrap();
         assert_eq!(shard.status, IndexingStatus::ReachedEof);
 
-        fetch_message_tx
-            .send(Err(FetchStreamError {
-                index_uid: IndexUid::for_test("test-index", 0),
-                source_id: "test-source".into(),
-                shard_id: ShardId::from(1),
-                ingest_error: IngestV2Error::Internal("test-error".to_string()),
-            }))
-            .await
-            .unwrap();
+        source
+            .fetch_stream
+            .send_message(
+                &node_id,
+                Err(FetchStreamError {
+                    index_uid: IndexUid::for_test("test-index", 0),
+                    source_id: "test-source".into(),
+                    shard_id: ShardId::from(1),
+                    ingest_error: IngestV2Error::Internal("test-error".to_string()),
+                }),
+            )
+            .await;
 
         source
             .emit_batches(&doc_processor_mailbox, &ctx)
@@ -1533,14 +1525,10 @@ mod tests {
             from_position_exclusive: Some(Position::offset(14u64)),
             to_position_inclusive: Some(Position::offset(15u64)),
         };
-        let batch_size = fetch_payload.estimate_size();
-        let fetch_message = FetchMessage::new_payload(fetch_payload);
-        let in_flight_value = InFlightValue::new(
-            fetch_message,
-            batch_size,
-            &MEMORY_METRICS.in_flight.fetch_stream,
-        );
-        fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
+        source
+            .fetch_stream
+            .send_message(&node_id, Ok(FetchMessage::new_payload(fetch_payload)))
+            .await;
 
         source
             .emit_batches(&doc_processor_mailbox, &ctx)
@@ -1552,8 +1540,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_source_emit_batches_shard_not_found() {
+        let node_id = NodeId::from("test-node");
         let pipeline_id = IndexingPipelineId {
-            node_id: NodeId::from("test-node"),
+            node_id: node_id.clone(),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),

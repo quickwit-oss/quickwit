@@ -443,6 +443,13 @@ pub async fn setup_local_shards_update_listener(
         .await
 }
 
+#[derive(Debug, Clone)]
+pub struct IngesterDecommissioning {
+    pub node_id: NodeId,
+}
+
+impl Event for IngesterDecommissioning {}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;

@@ -22,14 +22,16 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
+use std::time::Instant;
 
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
 use futures::StreamExt;
 use mrecordlog::Record;
-use quickwit_common::metrics::MEMORY_METRICS;
+use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::retry::RetryParams;
-use quickwit_common::stream_utils::{InFlightValue, TrackedSender};
+use quickwit_common::stream_utils::TrackedSender;
 use quickwit_common::{spawn_named_task, ServiceStream};
 use quickwit_proto::ingest::ingester::{
     fetch_message, FetchEof, FetchMessage, FetchPayload, IngesterService, OpenFetchStreamRequest,
@@ -40,6 +42,7 @@ use tokio::sync::{mpsc, watch, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, warn};
 
+use super::broadcast::IngesterDecommissioning;
 use super::models::ShardStatus;
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{with_lock_metrics, ClientId, IngesterPool};
@@ -256,16 +259,184 @@ pub struct FetchStreamError {
     pub ingest_error: IngestV2Error,
 }
 
+type FetchResult<T> = Result<T, FetchStreamError>;
+
+#[derive(Debug)]
+pub enum MultiFetchMessage {
+    Payload(FetchPayload, GaugeGuard<'static>),
+    Eof(FetchEof),
+    Decommissioning { last_fetch_forwarded: Instant },
+}
+
+#[derive(Debug)]
+struct TrackedFetchMessage {
+    node_id: NodeId,
+    message: FetchMessage,
+    shard_id: ShardId,
+    subscription_guard: Arc<()>,
+    _gauge_guard: GaugeGuard<'static>,
+}
+
+struct SubscriptionStates {
+    subscription_guards: HashMap<ShardId, Arc<()>>,
+    is_decommissioning: bool,
+    last_fetch_forwarded: Option<Instant>,
+}
+
+struct DecommissioningFilter {
+    active_ingesters: HashMap<NodeId, SubscriptionStates>,
+    fetch_message_rx: mpsc::Receiver<FetchResult<TrackedFetchMessage>>,
+    decommissioning_rx: mpsc::UnboundedReceiver<NodeId>,
+    multi_fetch_message_tx: mpsc::Sender<FetchResult<MultiFetchMessage>>,
+    _decommissioning_subscription: EventSubscriptionHandle,
+}
+
+impl DecommissioningFilter {
+    fn new(
+        event_broker: EventBroker,
+        fetch_message_rx: mpsc::Receiver<FetchResult<TrackedFetchMessage>>,
+        multi_fetch_message_tx: mpsc::Sender<FetchResult<MultiFetchMessage>>,
+    ) -> Self {
+        let (decommissioning_tx, decommissioning_rx) = mpsc::unbounded_channel();
+        let _decommissioning_subscription =
+            event_broker.subscribe(move |event: IngesterDecommissioning| {
+                let _ = decommissioning_tx.send(event.node_id);
+            });
+        Self {
+            active_ingesters: HashMap::new(),
+            fetch_message_rx,
+            multi_fetch_message_tx,
+            decommissioning_rx,
+            _decommissioning_subscription,
+        }
+    }
+
+    fn run(mut self) {
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    Some(fetch_message_result) = self.fetch_message_rx.recv() => {
+                        self.handle_fetch_message(fetch_message_result).await;
+                    }
+                    Some(node_id) = self.decommissioning_rx.recv() => {
+                        self.handle_decommissioning_message(node_id).await;
+                    }
+                    else => {
+                        // fetch message channel was dropped (decommissioning
+                        // channel can only be dropped when self is dropped
+                        // along with its subscription to the event broken
+                        // decommissioning events)
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
+    async fn handle_fetch_message(&mut self, fetch_message_res: FetchResult<TrackedFetchMessage>) {
+        let fetch_message = match fetch_message_res {
+            Ok(fetch_message) => fetch_message,
+            Err(err) => {
+                let _ = self.multi_fetch_message_tx.send(Err(err)).await;
+                return;
+            }
+        };
+        let TrackedFetchMessage {
+            node_id,
+            message,
+            shard_id,
+            subscription_guard,
+            _gauge_guard,
+        } = fetch_message;
+
+        let subscription_states =
+            self.active_ingesters
+                .entry(node_id)
+                .or_insert(SubscriptionStates {
+                    subscription_guards: HashMap::new(),
+                    is_decommissioning: false,
+                    last_fetch_forwarded: None,
+                });
+        let subscription_entry = subscription_states
+            .subscription_guards
+            .entry(shard_id.clone());
+
+        let mut multi_fetch_messages = Vec::new();
+        match message.message {
+            Some(fetch_message::Message::Payload(fetch_payload)) => {
+                subscription_entry.or_insert(subscription_guard);
+                subscription_states.last_fetch_forwarded = Some(Instant::now());
+                multi_fetch_messages
+                    .push(Ok(MultiFetchMessage::Payload(fetch_payload, _gauge_guard)));
+            }
+            Some(fetch_message::Message::Eof(fetch_eof)) => {
+                subscription_states.subscription_guards.remove(&shard_id);
+                let now = Instant::now();
+                subscription_states.last_fetch_forwarded = Some(now);
+                if subscription_states.is_decommissioning {
+                    let mut has_active_subscriptions = false;
+                    subscription_states.subscription_guards.retain(|_, guard| {
+                        let has_active_refs = Arc::strong_count(guard) > 1;
+                        has_active_subscriptions |= has_active_refs;
+                        has_active_refs
+                    });
+                    if !has_active_subscriptions {
+                        multi_fetch_messages.push(Ok(MultiFetchMessage::Decommissioning {
+                            last_fetch_forwarded: now,
+                        }));
+                    }
+                }
+                multi_fetch_messages.push(Ok(MultiFetchMessage::Eof(fetch_eof)));
+            }
+            None => {
+                warn!("received empty fetch message");
+            }
+        }
+
+        for message in multi_fetch_messages {
+            let _ = self.multi_fetch_message_tx.send(message).await;
+        }
+    }
+
+    async fn handle_decommissioning_message(&mut self, node_id: NodeId) {
+        if let Some(subscription_states) = self.active_ingesters.get_mut(&node_id) {
+            let mut has_active_subscriptions = false;
+            subscription_states.subscription_guards.retain(|_, guard| {
+                let has_active_refs = Arc::strong_count(guard) > 1;
+                has_active_subscriptions |= has_active_refs;
+                has_active_refs
+            });
+            if has_active_subscriptions {
+                // we postpone the decommissioning to the reception of the last EOF
+                subscription_states.is_decommissioning = true;
+                return;
+            }
+            if let Some(last_fetch_forwarded) = subscription_states.last_fetch_forwarded {
+                let _ = self
+                    .multi_fetch_message_tx
+                    .send(Ok(MultiFetchMessage::Decommissioning {
+                        last_fetch_forwarded,
+                    }))
+                    .await;
+            } else {
+                warn!("instant of last fetch is missing");
+            }
+        }
+        // else the node that is being decommissioned was never subscribed to
+    }
+}
+
 /// Combines multiple fetch streams originating from different ingesters into a single stream. It
 /// tolerates the failure of ingesters and automatically fails over to replica shards.
 pub struct MultiFetchStream {
     self_node_id: NodeId,
     client_id: ClientId,
     ingester_pool: IngesterPool,
+    event_broker: EventBroker,
     retry_params: RetryParams,
     fetch_task_handles: HashMap<QueueId, JoinHandle<()>>,
-    fetch_message_rx: mpsc::Receiver<Result<InFlightValue<FetchMessage>, FetchStreamError>>,
-    fetch_message_tx: mpsc::Sender<Result<InFlightValue<FetchMessage>, FetchStreamError>>,
+    multi_fetch_message_rx: mpsc::Receiver<FetchResult<MultiFetchMessage>>,
+    fetch_message_tx: mpsc::Sender<FetchResult<TrackedFetchMessage>>,
 }
 
 impl MultiFetchStream {
@@ -274,24 +445,59 @@ impl MultiFetchStream {
         client_id: ClientId,
         ingester_pool: IngesterPool,
         retry_params: RetryParams,
+        event_broker: EventBroker,
     ) -> Self {
-        let (fetch_message_tx, fetch_message_rx) = mpsc::channel(3);
+        let (fetch_message_tx, fetch_message_rx) = mpsc::channel(1);
+        let (multi_fetch_message_tx, multi_fetch_message_rx) = mpsc::channel(3);
+
+        DecommissioningFilter::new(
+            event_broker.clone(),
+            fetch_message_rx,
+            multi_fetch_message_tx,
+        )
+        .run();
+
         Self {
             self_node_id,
             client_id,
             ingester_pool,
+            event_broker,
             retry_params,
             fetch_task_handles: HashMap::new(),
-            fetch_message_rx,
             fetch_message_tx,
+            multi_fetch_message_rx,
         }
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn fetch_message_tx(
-        &self,
-    ) -> mpsc::Sender<Result<InFlightValue<FetchMessage>, FetchStreamError>> {
-        self.fetch_message_tx.clone()
+    pub async fn send_message(&self, node_id: &NodeId, message_res: FetchResult<FetchMessage>) {
+        let message = match message_res {
+            Ok(message) => message,
+            Err(err) => {
+                self.fetch_message_tx.send(Err(err)).await.unwrap();
+                return;
+            }
+        }
+        .message
+        .unwrap();
+        let mut _gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.fetch_stream);
+        if let fetch_message::Message::Payload(fetch_payload) = &message {
+            _gauge_guard.add(fetch_payload.estimate_size().as_u64() as i64);
+        }
+        let _tracked_ingesters_ref = Arc::new(vec![node_id.clone()]);
+        self.fetch_message_tx
+            .send(Ok(TrackedFetchMessage {
+                node_id: node_id.clone(),
+                message: FetchMessage {
+                    message: Some(message),
+                },
+                // decommissioning is not testable here
+                shard_id: "send_message".into(),
+                subscription_guard: Arc::new(()),
+                _gauge_guard,
+            }))
+            .await
+            .unwrap();
     }
 
     /// Subscribes to a shard and fails over to the replica if an error occurs.
@@ -332,52 +538,51 @@ impl MultiFetchStream {
             self.ingester_pool.clone(),
             self.retry_params,
             self.fetch_message_tx.clone(),
+            Arc::new(()),
         );
         let fetch_task_handle = spawn_named_task(fetch_stream_future, "fetch_stream");
         self.fetch_task_handles.insert(queue_id, fetch_task_handle);
         Ok(())
     }
 
-    pub fn unsubscribe(
-        &mut self,
-        index_uid: &IndexUid,
-        source_id: &str,
-        shard_id: ShardId,
-    ) -> IngestV2Result<()> {
-        let queue_id = queue_id(index_uid, source_id, &shard_id);
-
-        if let Some(fetch_stream_handle) = self.fetch_task_handles.remove(&queue_id) {
-            fetch_stream_handle.abort();
-        }
-        Ok(())
-    }
-
-    /// Returns the next fetch response. This method blocks until a response is available.
+    /// Returns the next fetch response and a boolean. This method blocks until
+    /// a response is available.
     ///
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub async fn next(&mut self) -> Result<FetchMessage, FetchStreamError> {
-        // Because we always hold a sender and never call `close()` on the receiver, the channel is
-        // always open.
-        self.fetch_message_rx
+    pub async fn next(&mut self) -> FetchResult<MultiFetchMessage> {
+        // This channel is always open because `multi_fetch_message_tx` is dropped
+        // only when `fetch_message_tx` is dropped, which is owned by `self`
+        let message = self
+            .multi_fetch_message_rx
             .recv()
             .await
-            .expect("channel should be open")
-            .map(|value: InFlightValue<FetchMessage>| value.into_inner())
+            .expect("channel should be open")?;
+
+        Ok(message)
     }
 
     /// Resets the stream by aborting all the active fetch tasks and dropping all queued responses.
+    /// Information about nodes that are being decommissioned is lost.
     ///
     /// The borrow checker guarantees that both `next()` and `reset()` cannot be called
     /// simultaneously because they are both `&mut self` methods.
     pub fn reset(&mut self) {
         for (_queue_id, fetch_stream_handle) in self.fetch_task_handles.drain() {
-            fetch_stream_handle.abort();
+            fetch_stream_handle.abort()
         }
-        let (fetch_message_tx, fetch_message_rx) = mpsc::channel(3);
+        let (fetch_message_tx, fetch_message_rx) = mpsc::channel(1);
+        let (multi_fetch_message_tx, multi_fetch_message_rx) = mpsc::channel(3);
+        DecommissioningFilter::new(
+            self.event_broker.clone(),
+            fetch_message_rx,
+            multi_fetch_message_tx,
+        )
+        .run();
+        // Dropping the existing `fetch_message_tx` will stop the old `DecommissioningFilter`
         self.fetch_message_tx = fetch_message_tx;
-        self.fetch_message_rx = fetch_message_rx;
+        self.multi_fetch_message_rx = multi_fetch_message_rx;
     }
 }
 
@@ -420,7 +625,8 @@ async fn retrying_fetch_stream(
     ingester_ids: Vec<NodeId>,
     ingester_pool: IngesterPool,
     retry_params: RetryParams,
-    fetch_message_tx: mpsc::Sender<Result<InFlightValue<FetchMessage>, FetchStreamError>>,
+    fetch_message_tx: mpsc::Sender<Result<TrackedFetchMessage, FetchStreamError>>,
+    subscription_guard: Arc<()>,
 ) {
     for num_attempts in 1..=retry_params.max_attempts {
         fault_tolerant_fetch_stream(
@@ -432,6 +638,7 @@ async fn retrying_fetch_stream(
             &ingester_ids,
             ingester_pool.clone(),
             fetch_message_tx.clone(),
+            &subscription_guard,
         )
         .await;
 
@@ -454,7 +661,8 @@ async fn fault_tolerant_fetch_stream(
     from_position_exclusive: &mut Position,
     ingester_ids: &[NodeId],
     ingester_pool: IngesterPool,
-    fetch_message_tx: mpsc::Sender<Result<InFlightValue<FetchMessage>, FetchStreamError>>,
+    fetch_message_tx: mpsc::Sender<FetchResult<TrackedFetchMessage>>,
+    subscription_guard: &Arc<()>,
 ) {
     // TODO: We can probably simplify this code by breaking it into smaller functions.
     'outer: for (ingester_idx, ingester_id) in ingester_ids.iter().enumerate() {
@@ -557,12 +765,22 @@ async fn fault_tolerant_fetch_stream(
                     Some(fetch_message::Message::Payload(fetch_payload)) => {
                         let batch_size = fetch_payload.estimate_size();
                         let to_position_inclusive = fetch_payload.to_position_inclusive();
-                        let in_flight_value = InFlightValue::new(
-                            fetch_message,
-                            batch_size,
-                            &MEMORY_METRICS.in_flight.multi_fetch_stream,
-                        );
-                        if fetch_message_tx.send(Ok(in_flight_value)).await.is_err() {
+
+                        let mut gauge_guard =
+                            GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.fetch_stream);
+                        gauge_guard.add(batch_size.as_u64() as i64);
+
+                        if fetch_message_tx
+                            .send(Ok(TrackedFetchMessage {
+                                node_id: ingester_id.clone(),
+                                _gauge_guard: gauge_guard,
+                                message: fetch_message,
+                                subscription_guard: subscription_guard.clone(),
+                                shard_id: shard_id.clone(),
+                            }))
+                            .await
+                            .is_err()
+                        {
                             // The consumer was dropped.
                             return;
                         }
@@ -570,14 +788,19 @@ async fn fault_tolerant_fetch_stream(
                     }
                     Some(fetch_message::Message::Eof(fetch_eof)) => {
                         let eof_position = fetch_eof.eof_position();
-                        let in_flight_value = InFlightValue::new(
-                            fetch_message,
-                            ByteSize(0),
-                            &MEMORY_METRICS.in_flight.multi_fetch_stream,
-                        );
+                        let gauge_guard =
+                            GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.fetch_stream);
                         // We ignore the send error if the consumer was dropped because we're going
                         // to return anyway.
-                        let _ = fetch_message_tx.send(Ok(in_flight_value)).await;
+                        let _ = fetch_message_tx
+                            .send(Ok(TrackedFetchMessage {
+                                node_id: ingester_id.clone(),
+                                _gauge_guard: gauge_guard,
+                                message: fetch_message,
+                                subscription_guard: subscription_guard.clone(),
+                                shard_id: shard_id.clone(),
+                            }))
+                            .await;
 
                         *from_position_exclusive = eof_position;
                         return;
@@ -635,15 +858,35 @@ pub(super) mod tests {
     use super::*;
     use crate::MRecord;
 
-    pub fn into_fetch_payload(fetch_message: FetchMessage) -> FetchPayload {
-        match fetch_message.message.unwrap() {
+    impl From<TrackedFetchMessage> for FetchMessage {
+        fn from(val: TrackedFetchMessage) -> Self {
+            val.message
+        }
+    }
+
+    impl From<MultiFetchMessage> for FetchMessage {
+        fn from(val: MultiFetchMessage) -> Self {
+            match val {
+                MultiFetchMessage::Payload(fetch_payload, ..) => {
+                    FetchMessage::new_payload(fetch_payload)
+                }
+                MultiFetchMessage::Eof(fetch_eof) => FetchMessage::new_eof(fetch_eof),
+                MultiFetchMessage::Decommissioning { .. } => {
+                    panic!("decommissioning message cannot be turned into fetch message")
+                }
+            }
+        }
+    }
+
+    pub fn into_fetch_payload(fetch_message: impl Into<FetchMessage>) -> FetchPayload {
+        match fetch_message.into().message.unwrap() {
             fetch_message::Message::Payload(fetch_payload) => fetch_payload,
             other => panic!("expected fetch payload, got `{other:?}`"),
         }
     }
 
-    pub fn into_fetch_eof(fetch_message: FetchMessage) -> FetchEof {
-        match fetch_message.message.unwrap() {
+    pub fn into_fetch_eof(fetch_message: impl Into<FetchMessage>) -> FetchEof {
+        match fetch_message.into().message.unwrap() {
             fetch_message::Message::Eof(fetch_eof) => fetch_eof,
             other => panic!("expected fetch EOF, got `{other:?}`"),
         }
@@ -887,7 +1130,6 @@ pub(super) mod tests {
         };
         let shard_status = (ShardState::Closed, Position::offset(0u64));
         let (_shard_status_tx, shard_status_rx) = watch::channel(shard_status);
-
         let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
             mrecordlog.clone(),
@@ -1311,8 +1553,9 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
+        let ingester_ids = vec!["test-ingester-0".into(), "test-ingester-1".into()];
         let ingester_pool = IngesterPool::default();
+        let subscription_guard = Arc::new(());
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
@@ -1363,6 +1606,7 @@ pub(super) mod tests {
             &ingester_ids,
             ingester_pool,
             fetch_message_tx,
+            &subscription_guard,
         )
         .await;
 
@@ -1370,8 +1614,7 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap()
-            .into_inner();
+            .unwrap();
         let fetch_payload = into_fetch_payload(fetch_message);
 
         assert_eq!(
@@ -1387,8 +1630,7 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap()
-            .into_inner();
+            .unwrap();
         let fetch_eof = into_fetch_eof(fetch_message);
 
         assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
@@ -1407,8 +1649,9 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
+        let ingester_ids = Arc::new(vec!["test-ingester-0".into(), "test-ingester-1".into()]);
         let ingester_pool = IngesterPool::default();
+        let subscription_guard = Arc::new(());
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
@@ -1477,6 +1720,7 @@ pub(super) mod tests {
             &ingester_ids,
             ingester_pool,
             fetch_message_tx,
+            &subscription_guard,
         )
         .await;
 
@@ -1484,8 +1728,7 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap()
-            .into_inner();
+            .unwrap();
         let fetch_payload = into_fetch_payload(fetch_message);
 
         assert_eq!(
@@ -1501,8 +1744,7 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap()
-            .into_inner();
+            .unwrap();
         let fetch_eof = into_fetch_eof(fetch_message);
 
         assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
@@ -1521,8 +1763,9 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
+        let ingester_ids = Arc::new(vec!["test-ingester-0".into(), "test-ingester-1".into()]);
         let ingester_pool = IngesterPool::default();
+        let subscription_guard = Arc::new(());
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
         let (service_stream_tx_0, service_stream_0) = ServiceStream::new_unbounded();
@@ -1593,6 +1836,7 @@ pub(super) mod tests {
             &ingester_ids,
             ingester_pool,
             fetch_message_tx,
+            &subscription_guard,
         )
         .await;
 
@@ -1600,8 +1844,7 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap()
-            .into_inner();
+            .unwrap();
         let fetch_payload = into_fetch_payload(fetch_message);
 
         assert_eq!(
@@ -1617,8 +1860,7 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap()
-            .into_inner();
+            .unwrap();
         let fetch_eof = into_fetch_eof(fetch_message);
 
         assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
@@ -1637,8 +1879,9 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
+        let ingester_ids = Arc::new(vec!["test-ingester-0".into(), "test-ingester-1".into()]);
         let ingester_pool = IngesterPool::default();
+        let subscription_guard = Arc::new(());
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
 
@@ -1669,6 +1912,7 @@ pub(super) mod tests {
             &ingester_ids,
             ingester_pool,
             fetch_message_tx,
+            &subscription_guard,
         )
         .await;
 
@@ -1695,6 +1939,7 @@ pub(super) mod tests {
 
         let ingester_ids: Vec<NodeId> = vec!["test-ingester".into()];
         let ingester_pool = IngesterPool::default();
+        let subscription_guard = Arc::new(());
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
@@ -1787,6 +2032,7 @@ pub(super) mod tests {
             ingester_pool,
             retry_params,
             fetch_message_tx,
+            subscription_guard,
         )
         .await;
 
@@ -1804,8 +2050,7 @@ pub(super) mod tests {
             .await
             .unwrap()
             .unwrap()
-            .unwrap()
-            .into_inner();
+            .unwrap();
         let fetch_payload = into_fetch_payload(fetch_message);
 
         assert_eq!(
@@ -1823,15 +2068,15 @@ pub(super) mod tests {
             .unwrap()
             .unwrap_err();
         assert!(
-            matches!(fetch_stream_error.ingest_error, IngestV2Error::Internal(message) if message == "fetch stream error #1")
+            matches!(fetch_stream_error.ingest_error, IngestV2Error::Internal(message) if
+    message == "fetch stream error #1")
         );
 
         let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
-            .unwrap()
-            .into_inner();
+            .unwrap();
         let fetch_payload = into_fetch_payload(fetch_message);
 
         assert_eq!(
@@ -1864,8 +2109,14 @@ pub(super) mod tests {
         let client_id = "test-client".to_string();
         let ingester_pool = IngesterPool::default();
         let retry_params = RetryParams::for_test();
-        let _multi_fetch_stream =
-            MultiFetchStream::new(self_node_id, client_id, ingester_pool, retry_params);
+        let event_broker = EventBroker::default();
+        let _multi_fetch_stream = MultiFetchStream::new(
+            self_node_id,
+            client_id,
+            ingester_pool,
+            retry_params,
+            event_broker,
+        );
         // TODO: Backport from original branch.
     }
 }

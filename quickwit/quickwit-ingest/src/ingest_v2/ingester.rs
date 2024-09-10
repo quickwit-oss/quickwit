@@ -80,6 +80,7 @@ use super::replication::{
 };
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use super::IngesterPool;
+use crate::ingest_v2::broadcast::IngesterDecommissioning;
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
 use crate::ingest_v2::metrics::report_wal_usage;
 use crate::ingest_v2::models::IngesterShardType;
@@ -115,6 +116,7 @@ pub struct Ingester {
     self_node_id: NodeId,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
+    event_broker: EventBroker,
     state: IngesterState,
     disk_capacity: ByteSize,
     memory_capacity: ByteSize,
@@ -139,6 +141,7 @@ impl Ingester {
         cluster: Cluster,
         control_plane: ControlPlaneServiceClient,
         ingester_pool: Pool<NodeId, IngesterServiceClient>,
+        event_broker: EventBroker,
         wal_dir_path: &Path,
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
@@ -157,6 +160,7 @@ impl Ingester {
             self_node_id,
             control_plane,
             ingester_pool,
+            event_broker,
             state,
             disk_capacity,
             memory_capacity,
@@ -165,6 +169,14 @@ impl Ingester {
             reset_shards_permits: Arc::new(Semaphore::new(1)),
         };
         ingester.background_reset_shards();
+        let weak_ingester_state = ingester.state.weak();
+
+        // This subscription is the one in charge of truncating the mrecordlog.
+        info!("subscribing ingester to shard positions updates");
+        ingester
+            .event_broker
+            .subscribe_without_timeout::<ShardPositionsUpdate>(weak_ingester_state)
+            .forever();
 
         Ok(ingester)
     }
@@ -422,15 +434,6 @@ impl Ingester {
         let replication_client = replication_stream_task_handle.replication_client();
         entry.insert(replication_stream_task_handle);
         Ok(replication_client)
-    }
-
-    pub fn subscribe(&self, event_broker: &EventBroker) {
-        let weak_ingester_state = self.state.weak();
-        // This subscription is the one in charge of truncating the mrecordlog.
-        info!("subscribing ingester to shard positions updates");
-        event_broker
-            .subscribe_without_timeout::<ShardPositionsUpdate>(weak_ingester_state)
-            .forever();
     }
 
     async fn persist_inner(
@@ -1048,6 +1051,9 @@ impl Ingester {
             shard.close();
         }
         state_guard.set_status(IngesterStatus::Decommissioning);
+        self.event_broker.publish(IngesterDecommissioning {
+            node_id: self.self_node_id.clone(),
+        });
         self.check_decommissioning_status(&mut state_guard);
 
         Ok(DecommissionResponse {})
@@ -1421,10 +1427,13 @@ mod tests {
             .await
             .unwrap();
 
+            let event_broker = EventBroker::default();
+
             let ingester = Ingester::try_new(
                 cluster.clone(),
                 self.control_plane.clone(),
                 self.ingester_pool.clone(),
+                event_broker.clone(),
                 wal_dir_path,
                 self.disk_capacity,
                 self.memory_capacity,
@@ -1445,6 +1454,7 @@ mod tests {
                 node_id: self.node_id,
                 cluster,
                 ingester_pool: self.ingester_pool,
+                event_broker,
             };
             (ingester_env, ingester)
         }
@@ -1456,6 +1466,7 @@ mod tests {
         node_id: NodeId,
         cluster: Cluster,
         ingester_pool: IngesterPool,
+        event_broker: EventBroker,
     }
 
     #[tokio::test]
@@ -3607,9 +3618,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_truncate_on_shard_positions_update() {
-        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
-        let event_broker = EventBroker::default();
-        ingester.subscribe(&event_broker);
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
 
@@ -3698,10 +3707,12 @@ mod tests {
                 (ShardId::from(1337), Position::offset(1337u64)),
             ],
         };
-        event_broker.publish(shard_position_update.clone());
+        ingester_ctx
+            .event_broker
+            .publish(shard_position_update.clone());
 
         // Verify idempotency.
-        event_broker.publish(shard_position_update);
+        ingester_ctx.event_broker.publish(shard_position_update);
 
         // Yield so that the event is processed.
         yield_now().await;

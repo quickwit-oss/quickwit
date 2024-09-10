@@ -897,6 +897,7 @@ async fn setup_ingest_v2(
             cluster.clone(),
             control_plane,
             ingester_pool.clone(),
+            event_broker.clone(),
             &wal_dir_path,
             node_config.ingest_api_config.max_queue_disk_usage,
             node_config.ingest_api_config.max_queue_memory_usage,
@@ -905,7 +906,6 @@ async fn setup_ingest_v2(
             idle_shard_timeout,
         )
         .await?;
-        ingester.subscribe(event_broker);
         // We will now receive all new shard positions update events, from chitchat.
         // Unfortunately at this point, chitchat is already running.
         //

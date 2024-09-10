@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use futures_util::FutureExt;
@@ -602,7 +603,6 @@ async fn test_shutdown_single_node() {
 
     sandbox.enable_ingest_v2();
 
-    // Create index
     sandbox
         .indexer_rest_client
         .indexes()
@@ -616,7 +616,7 @@ async fn test_shutdown_single_node() {
               - name: body
                 type: text
             indexing_settings:
-              commit_timeout_secs: 1
+              commit_timeout_secs: 60
             "#
             ),
             ConfigFormat::Yaml,
@@ -625,28 +625,87 @@ async fn test_shutdown_single_node() {
         .await
         .unwrap();
 
-    // Ensure that the index is ready to accept records.
-    ingest_with_retry(
-        &sandbox.indexer_rest_client,
-        index_id,
-        ingest_json!({"body": "one"}),
-        CommitType::Force,
-    )
-    .await
-    .unwrap();
-
-    // Test force commit
     sandbox
         .indexer_rest_client
         .ingest(
             index_id,
-            ingest_json!({"body": "two"}),
+            ingest_json!({"body": "commit me before shutdown"}),
             None,
             None,
-            CommitType::Force,
+            CommitType::Auto,
         )
         .await
         .unwrap();
+
+    // assert that we don't wait the commit timeout (60s)
+    tokio::time::timeout(std::time::Duration::from_secs(10), sandbox.shutdown())
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn test_shutdown_indexer_first() {
+    initialize_tests();
+    let mut sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Indexer])
+        .add_node([
+            QuickwitService::ControlPlane,
+            QuickwitService::Searcher,
+            QuickwitService::Metastore,
+            QuickwitService::Janitor,
+        ])
+        .build_and_start()
+        .await;
+    let index_id = "test_shutdown_separate_indexer";
+
+    sandbox.enable_ingest_v2();
+
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(
+            format!(
+                r#"
+            version: 0.8
+            index_id: {index_id}
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 60
+            "#
+            ),
+            ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    sandbox
+        .indexer_rest_client
+        .ingest(
+            index_id,
+            ingest_json!({"body": "commit me before shutdown"}),
+            None,
+            None,
+            CommitType::Auto,
+        )
+        .await
+        .unwrap();
+
+    // assert that we don't wait the commit timeout (60s)
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        sandbox.shutdown_services(&HashSet::from_iter([QuickwitService::Indexer])),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    // still, the doc should be committed during the graceful shutdown
+    sandbox.assert_hit_count(index_id, "body:before", 1).await;
 
     tokio::time::timeout(std::time::Duration::from_secs(10), sandbox.shutdown())
         .await
@@ -654,12 +713,10 @@ async fn test_shutdown_single_node() {
         .unwrap();
 }
 
-/// When the control plane is on a different node, it might be shutdown
-/// before the ingest pipeline is scheduled on the indexer.
 #[tokio::test]
-async fn test_shutdown_control_plane_early_shutdown() {
+async fn test_shutdown_metastore_first() {
     initialize_tests();
-    let sandbox = ClusterSandboxBuilder::default()
+    let mut sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Indexer])
         .add_node([
             QuickwitService::ControlPlane,
@@ -672,6 +729,8 @@ async fn test_shutdown_control_plane_early_shutdown() {
     let index_id = "test_shutdown_separate_indexer";
 
     // TODO: make this test work with ingest v2 (#5068)
+    // When the control plane/metastore are shutdown before the indexer, the
+    // indexer shutdown should not hang indefinitely
     // sandbox.enable_ingest_v2();
 
     // Create index
@@ -707,69 +766,18 @@ async fn test_shutdown_control_plane_early_shutdown() {
     .await
     .unwrap();
 
-    tokio::time::timeout(std::time::Duration::from_secs(10), sandbox.shutdown())
-        .await
-        .unwrap()
-        .unwrap();
-}
-
-/// When the control plane/metastore are shutdown before the indexer, the
-/// indexer shutdown should not hang indefinitely
-#[tokio::test]
-async fn test_shutdown_separate_indexer() {
-    initialize_tests();
-    let sandbox = ClusterSandboxBuilder::default()
-        .add_node([QuickwitService::Indexer])
-        .add_node([
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        sandbox.shutdown_services(&HashSet::from_iter([
             QuickwitService::ControlPlane,
             QuickwitService::Searcher,
             QuickwitService::Metastore,
             QuickwitService::Janitor,
-        ])
-        .build_and_start()
-        .await;
-    let index_id = "test_shutdown_separate_indexer";
-
-    // TODO: make this test work with ingest v2 (#5068)
-    // sandbox.enable_ingest_v2();
-
-    // Create index
-    sandbox
-        .indexer_rest_client
-        .indexes()
-        .create(
-            format!(
-                r#"
-            version: 0.8
-            index_id: {index_id}
-            doc_mapping:
-              field_mappings:
-              - name: body
-                type: text
-            indexing_settings:
-              commit_timeout_secs: 1
-            "#
-            ),
-            ConfigFormat::Yaml,
-            false,
-        )
-        .await
-        .unwrap();
-
-    // Ensure that the index is ready to accept records.
-    ingest_with_retry(
-        &sandbox.indexer_rest_client,
-        index_id,
-        ingest_json!({"body": "one"}),
-        CommitType::Force,
+        ])),
     )
     .await
+    .unwrap()
     .unwrap();
-
-    sandbox
-        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
-        .await
-        .unwrap();
 
     tokio::time::timeout(std::time::Duration::from_secs(10), sandbox.shutdown())
         .await
