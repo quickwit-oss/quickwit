@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::ops::Deref;
+use std::sync::OnceLock;
 use std::{env, fmt};
 
 use anyhow::ensure;
@@ -372,11 +373,14 @@ impl S3StorageConfig {
     }
 
     pub fn force_path_style_access(&self) -> Option<bool> {
-        let force_path_style_access = get_bool_from_env(
-            "QW_S3_FORCE_PATH_STYLE_ACCESS",
-            self.force_path_style_access,
-        );
-        Some(force_path_style_access)
+        static FORCE_PATH_STYLE: OnceLock<Option<bool>> = OnceLock::new();
+        *FORCE_PATH_STYLE.get_or_init(|| {
+            let force_path_style_access = get_bool_from_env(
+                "QW_S3_FORCE_PATH_STYLE_ACCESS",
+                self.force_path_style_access,
+            );
+            Some(force_path_style_access)
+        })
     }
 }
 

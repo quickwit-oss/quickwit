@@ -48,3 +48,47 @@ pub static MAX_CHECKPOINTS: Lazy<usize> = Lazy::new(|| {
             .expect("QW_LAMBDA_MAX_CHECKPOINTS must be a positive integer")
     })
 });
+
+#[cfg(test)]
+mod tests {
+
+    use quickwit_config::{ConfigFormat, NodeConfig};
+
+    use super::*;
+
+    #[tokio::test]
+    #[serial_test::file_serial(with_env)]
+    async fn test_load_config() {
+        let bucket = "mock-test-bucket";
+        std::env::set_var("QW_LAMBDA_METASTORE_BUCKET", bucket);
+        std::env::set_var("QW_LAMBDA_INDEX_BUCKET", bucket);
+        std::env::set_var(
+            "QW_LAMBDA_INDEX_CONFIG_URI",
+            "s3://mock-index-config-bucket",
+        );
+        std::env::set_var("QW_LAMBDA_INDEX_ID", "lambda-test");
+
+        let node_config = NodeConfig::load(ConfigFormat::Yaml, CONFIGURATION_TEMPLATE.as_bytes())
+            .await
+            .unwrap();
+        //
+        assert_eq!(
+            node_config.data_dir_path.to_string_lossy(),
+            "/tmp",
+            "only `/tmp` is writeable in AWS Lambda"
+        );
+        assert_eq!(
+            node_config.default_index_root_uri,
+            "s3://mock-test-bucket/index"
+        );
+        assert_eq!(
+            node_config.metastore_uri.to_string(),
+            "s3://mock-test-bucket/index"
+        );
+
+        std::env::remove_var("QW_LAMBDA_METASTORE_BUCKET");
+        std::env::remove_var("QW_LAMBDA_INDEX_BUCKET");
+        std::env::remove_var("QW_LAMBDA_INDEX_CONFIG_URI");
+        std::env::remove_var("QW_LAMBDA_INDEX_ID");
+    }
+}

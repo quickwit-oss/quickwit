@@ -68,8 +68,8 @@ impl SourceConfigForSerialization {
     /// Checks the validity of the `SourceConfig` as a "deserializable source".
     ///
     /// Two remarks:
-    /// - This does not check connectivity, it just validate configuration,
-    /// without performing any IO. See `check_connectivity(..)`.
+    /// - This does not check connectivity, it just validate configuration, without performing any
+    ///   IO. See `check_connectivity(..)`.
     /// - This is used each time the `SourceConfig` is deserialized (at creation but also during
     ///   communications with the metastore). When ingesting from stdin, we programmatically create
     ///   an invalid `SourceConfig` and only use it locally.
