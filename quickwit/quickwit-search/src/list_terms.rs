@@ -90,8 +90,11 @@ pub async fn root_list_terms(
         .iter()
         .map(|index_metadata| index_metadata.index_uid.clone())
         .collect();
-    let mut query = quickwit_metastore::ListSplitsQuery::try_from_index_uids(index_uids)?
-        .with_split_state(quickwit_metastore::SplitState::Published);
+
+    let Some(mut query) = quickwit_metastore::ListSplitsQuery::try_from_index_uids(index_uids) else {
+        return Ok(ListTermsResponse::default());
+    };
+    query = query.with_split_state(quickwit_metastore::SplitState::Published);
 
     if let Some(start_ts) = list_terms_request.start_timestamp {
         query = query.with_time_range_start_gte(start_ts);

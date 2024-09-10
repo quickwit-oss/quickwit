@@ -662,15 +662,12 @@ impl ListSplitsQuery {
     }
 
     /// Creates a new [`ListSplitsQuery`] from a non-empty list of index UIDs.
-    /// Returns an error if the list is empty.
-    pub fn try_from_index_uids(index_uids: Vec<IndexUid>) -> MetastoreResult<Self> {
+    /// Returns None if the list is empty.
+    pub fn try_from_index_uids(index_uids: Vec<IndexUid>) -> Option<Self> {
         if index_uids.is_empty() {
-            return Err(MetastoreError::Internal {
-                message: "ListSplitQuery should define at least one index uid".to_string(),
-                cause: "".to_string(),
-            });
+            return None;
         }
-        Ok(Self {
+        Some(Self {
             index_uids,
             node_id: None,
             limit: None,
