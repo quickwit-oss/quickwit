@@ -91,7 +91,8 @@ pub async fn root_list_terms(
         .map(|index_metadata| index_metadata.index_uid.clone())
         .collect();
 
-    let Some(mut query) = quickwit_metastore::ListSplitsQuery::try_from_index_uids(index_uids) else {
+    let Some(mut query) = quickwit_metastore::ListSplitsQuery::try_from_index_uids(index_uids)
+    else {
         return Ok(ListTermsResponse::default());
     };
     query = query.with_split_state(quickwit_metastore::SplitState::Published);
