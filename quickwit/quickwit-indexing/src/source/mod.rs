@@ -90,7 +90,7 @@ pub use gcp_pubsub_source::{GcpPubSubSource, GcpPubSubSourceFactory};
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 #[cfg(feature = "kinesis")]
 pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
@@ -138,7 +138,19 @@ use crate::source::ingest_api_source::IngestApiSourceFactory;
 /// 5MB seems like a good one size fits all value.
 const BATCH_NUM_BYTES_LIMIT: u64 = ByteSize::mib(5).as_u64();
 
-const EMIT_BATCHES_TIMEOUT: Duration = Duration::from_millis(if cfg!(test) { 100 } else { 1_000 });
+static EMIT_BATCHES_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
+    if cfg!(any(test, feature = "testsuite")) {
+        let timeout = Duration::from_millis(100);
+        assert!(timeout < *quickwit_actors::HEARTBEAT);
+        timeout
+    } else {
+        let timeout = Duration::from_millis(1_000);
+        if *quickwit_actors::HEARTBEAT < timeout {
+            error!("QW_ACTOR_HEARTBEAT_SECS smaller than batch timeout");
+        }
+        timeout
+    }
+});
 
 /// Runtime configuration used during execution of a source actor.
 #[derive(Clone)]

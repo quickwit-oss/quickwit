@@ -1564,6 +1564,7 @@ pub fn jobs_to_leaf_request(
     let mut search_request_for_leaf = request.clone();
     search_request_for_leaf.start_offset = 0;
     search_request_for_leaf.max_hits += request.start_offset;
+    search_request_for_leaf.index_id_patterns = Vec::new();
 
     let mut leaf_search_request = LeafSearchRequest {
         search_request: Some(search_request_for_leaf),
@@ -1576,6 +1577,12 @@ pub fn jobs_to_leaf_request(
     // Group jobs by index uid, as the split offsets are relative to the index.
     group_jobs_by_index_id(jobs, |job_group| {
         let index_uid = &job_group[0].index_uid;
+        leaf_search_request
+            .search_request
+            .as_mut()
+            .unwrap()
+            .index_id_patterns
+            .push(index_uid.index_id.to_string());
         let search_index_meta = search_indexes_metadatas.get(index_uid).ok_or_else(|| {
             SearchError::Internal(format!(
                 "received job for an unknown index {index_uid}. it should never happen"

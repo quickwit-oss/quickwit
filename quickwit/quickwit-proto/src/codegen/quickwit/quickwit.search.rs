@@ -258,8 +258,9 @@ pub struct SplitSearchError {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequest {
-    /// Search request. This is a perfect copy of the original search request,
-    /// that was sent to root apart from the start_offset & max_hits params.
+    /// Search request. This is a perfect copy of the original search request
+    /// that was sent to root apart from the start_offset, max_hits params and index_id_patterns.
+    /// index_id_patterns contains the actual index ids queried on that leaf.
     #[prost(message, optional, tag = "1")]
     pub search_request: ::core::option::Option<SearchRequest>,
     /// List of leaf requests, one per index.

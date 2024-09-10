@@ -465,7 +465,7 @@ impl Source for KafkaSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch_builder = BatchBuilder::new(SourceType::Kafka);
-        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
+        let deadline = time::sleep(*EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
         loop {
