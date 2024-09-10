@@ -838,6 +838,15 @@ Disables [telemetry](../telemetry.md) when set to any non-empty value.
 
 `QW_DISABLE_TELEMETRY=1 quickwit help`
 
+### QW_POSTGRES_SKIP_MIGRATIONS
+
+Don't run database migrations (but verify migrations were run succesfully before, and no unknown migration was run).
+
+### QW_POSTGRES_SKIP_MIGRATION_LOCKING
+
+Don't lock the database during migration. This may increase compatiblity with altenrative databases using the postgres wire protocol. It is dangerous
+to use this if you can't guarantee only one node will run the migrations.
+
 ### RUST_LOG
 
 Configure quickwit log level.
