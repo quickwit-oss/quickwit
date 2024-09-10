@@ -111,8 +111,8 @@ impl ReadOperationBuilder {
 /// recording all of its read operations.
 ///
 /// It has two purpose
-/// - It is used when building our hotcache, to identify the file sections that
-/// should be in the hotcache.
+/// - It is used when building our hotcache, to identify the file sections that should be in the
+///   hotcache.
 /// - It is used in the search-api to provide debugging/performance information.
 #[derive(Debug)]
 pub struct DebugProxyDirectory<D: Directory> {

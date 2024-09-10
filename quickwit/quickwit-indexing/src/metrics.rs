@@ -33,6 +33,7 @@ pub struct IndexerMetrics {
     pub pending_merge_operations: IntGauge,
     pub pending_merge_bytes: IntGauge,
     // We use a lazy counter, as most users do not use Kafka.
+    #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub kafka_rebalance_total: Lazy<IntCounter>,
 }
 

@@ -119,7 +119,7 @@ pub(crate) async fn list_shards(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "kinesis-localstack-tests"))]
 pub(crate) mod tests {
     use std::collections::BTreeSet;
     use std::time::Duration;

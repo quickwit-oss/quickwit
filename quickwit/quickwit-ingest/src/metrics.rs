@@ -28,6 +28,7 @@ pub struct IngestMetrics {
 
     pub replicated_num_bytes_total: IntCounter,
     pub replicated_num_docs_total: IntCounter,
+    #[allow(dead_code)] // this really shouldn't be dead, it needs to be used somewhere
     pub queue_count: IntGauge,
 }
 
