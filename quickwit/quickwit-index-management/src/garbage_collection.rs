@@ -22,17 +22,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use futures::{Future, StreamExt};
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
-use quickwit_common::{Progress, ServiceStream};
+use quickwit_common::Progress;
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitInfo,
     SplitMetadata, SplitState,
 };
 use quickwit_proto::metastore::{
-    DeleteSplitsRequest, ListSplitsRequest, ListSplitsResponse, MarkSplitsForDeletionRequest,
-    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    DeleteSplitsRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_storage::{BulkDeleteError, Storage};
@@ -94,23 +95,23 @@ pub async fn run_garbage_collect(
     dry_run: bool,
     progress_opt: Option<&Progress>,
 ) -> anyhow::Result<SplitRemovalInfo> {
-
-
-
     let grace_period_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
 
     let index_uids: Vec<IndexUid> = indexes.keys().cloned().collect();
 
-    let Some(list_splits_query_for_index_uids) = ListSplitsQuery::try_from_index_uids(index_uids.clone()) else {
-        return Ok(SplitRemovalInfo::default())
+    let Some(list_splits_query_for_index_uids) =
+        ListSplitsQuery::try_from_index_uids(index_uids.clone())
+    else {
+        return Ok(SplitRemovalInfo::default());
     };
     let list_splits_query = list_splits_query_for_index_uids
         .clone()
         .with_split_state(SplitState::Staged)
         .with_update_timestamp_lte(grace_period_timestamp);
 
-    let list_deletable_staged_request = ListSplitsRequest::try_from_list_splits_query(&list_splits_query)?;
+    let list_deletable_staged_request =
+        ListSplitsRequest::try_from_list_splits_query(&list_splits_query)?;
     let deletable_staged_splits: Vec<SplitMetadata> = protect_future(
         progress_opt,
         metastore.list_splits(list_deletable_staged_request),
@@ -120,8 +121,8 @@ pub async fn run_garbage_collect(
     .await?;
 
     if dry_run {
-        let marked_for_deletion_query = list_splits_query_for_index_uids
-            .with_split_state(SplitState::MarkedForDeletion);
+        let marked_for_deletion_query =
+            list_splits_query_for_index_uids.with_split_state(SplitState::MarkedForDeletion);
         let marked_for_deletion_request =
             ListSplitsRequest::try_from_list_splits_query(&marked_for_deletion_query)?;
         let mut splits_marked_for_deletion: Vec<SplitMetadata> = protect_future(
@@ -241,18 +242,20 @@ async fn delete_splits(
     }
 }
 
-use anyhow::Context;
-
 /// Fetch the list metadata from the metastore and returns them as a Vec.
-async fn list_splits_metadata(metastore: &MetastoreServiceClient, query: &ListSplitsQuery) -> anyhow::Result<Vec<SplitMetadata>> {
-    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)
+async fn list_splits_metadata(
+    metastore: &MetastoreServiceClient,
+    query: &ListSplitsQuery,
+) -> anyhow::Result<Vec<SplitMetadata>> {
+    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)
         .context("failed to build list splits request")?;
-    let metastore = metastore.clone();
-    let splits_to_delete_stream =
-        metastore
-            .list_splits(list_splits_request).await
-            .context("failed to fetch stream splits")?;
-    let splits = splits_to_delete_stream.collect_splits_metadata().await
+    let splits_to_delete_stream = metastore
+        .list_splits(list_splits_request)
+        .await
+        .context("failed to fetch stream splits")?;
+    let splits = splits_to_delete_stream
+        .collect_splits_metadata()
+        .await
         .context("failed to collect splits")?;
     Ok(splits)
 }
@@ -284,7 +287,12 @@ async fn delete_splits_marked_for_deletion_several_indexes(
         .sort_by_index_uid();
 
     loop {
-        let splits_metadata_to_delete: Vec<SplitMetadata> = match protect_future(progress_opt, list_splits_metadata(&metastore, &list_splits_query)).await {
+        let splits_metadata_to_delete: Vec<SplitMetadata> = match protect_future(
+            progress_opt,
+            list_splits_metadata(&metastore, &list_splits_query),
+        )
+        .await
+        {
             Ok(splits) => splits,
             Err(list_splits_err) => {
                 error!(error=?list_splits_err, "failed to list splits");
