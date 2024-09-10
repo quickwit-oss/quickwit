@@ -150,6 +150,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::file_serial(with_env)]
     async fn test_ingest() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let bucket = "quickwit-integration-tests";
@@ -245,6 +246,13 @@ mod tests {
             assert_eq!(stats.num_invalid_docs, 0);
             assert_eq!(stats.num_docs, 1);
         }
+
+        std::env::remove_var("QW_LAMBDA_METASTORE_BUCKET");
+        std::env::remove_var("QW_LAMBDA_INDEX_BUCKET");
+        std::env::remove_var("QW_LAMBDA_METASTORE_PREFIX");
+        std::env::remove_var("QW_LAMBDA_INDEX_PREFIX");
+        std::env::remove_var("QW_LAMBDA_INDEX_CONFIG_URI");
+        std::env::remove_var("QW_LAMBDA_INDEX_ID");
 
         Ok(())
     }

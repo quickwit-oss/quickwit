@@ -30,7 +30,7 @@ use tracing::debug;
 // `ENV_VAR` or `ENV_VAR:DEFAULT`
 // Ignores whitespaces in curly braces
 static TEMPLATE_ENV_VAR_CAPTURE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\$\{\s*([A-Za-z0-9_]+)\s*(?::\-\s*([\S]+)\s*)?}")
+    Regex::new(r"\$\{\s*([A-Za-z0-9_]+)\s*(?::\-\s*([^\s\}]+)\s*)?}")
         .expect("regular expression should compile")
 });
 
@@ -156,6 +156,23 @@ mod test {
         let rendered = render_config(config_content).unwrap();
         std::env::remove_var("TEST_TEMPLATE_RENDER_ENV_VAR_DEFAULT_USE_ENV");
         assert_eq!(rendered, "metastore_uri: s3://test-bucket/metastore");
+    }
+
+    #[test]
+    fn test_template_render_with_multiple_vars_per_line() {
+        let config_content =
+            b"metastore_uri: s3://${RENDER_MULTIPLE_BUCKET}/${RENDER_MULTIPLE_PREFIX:-index}#polling_interval=${RENDER_MULTIPLE_INTERVAL}s";
+        env::set_var("RENDER_MULTIPLE_BUCKET", "test-bucket");
+        env::set_var("RENDER_MULTIPLE_PREFIX", "metastore");
+        env::set_var("RENDER_MULTIPLE_INTERVAL", "30");
+        let rendered = render_config(config_content).unwrap();
+        std::env::remove_var("RENDER_MULTIPLE_BUCKET");
+        std::env::remove_var("RENDER_MULTIPLE_PREFIX");
+        std::env::remove_var("RENDER_MULTIPLE_INTERVAL");
+        assert_eq!(
+            rendered,
+            "metastore_uri: s3://test-bucket/metastore#polling_interval=30s"
+        );
     }
 
     #[test]

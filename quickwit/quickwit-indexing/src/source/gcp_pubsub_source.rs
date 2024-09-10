@@ -166,7 +166,7 @@ impl Source for GcpPubSubSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch_builder = BatchBuilder::new(SourceType::PubSub);
-        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
+        let deadline = time::sleep(*EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
         // TODO: ensure we ACK the message after being commit: at least once
         // TODO: ensure we increase_ack_deadline for the items
