@@ -323,9 +323,9 @@ pub struct SplitIdAndFooterOffsets {
 /// For instance:
 /// - it may contain a _source and a _dynamic field.
 /// - since tantivy has no notion of cardinality,
-/// all fields is  are arrays.
+///    all fields are arrays.
 /// - since tantivy has no notion of object, the object is
-/// flattened by concatenating the path to the root.
+///    flattened by concatenating the path to the root.
 ///
 /// See  `quickwit_search::convert_leaf_hit`
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
@@ -911,7 +911,7 @@ pub mod search_service_client {
         ///
         /// It is like a regular search except that:
         /// - the node should perform the search locally instead of dispatching
-        /// it to other nodes.
+        ///   it to other nodes.
         /// - it should be applied on the given subset of splits
         /// - Hit content is not fetched, and we instead return so called `PartialHit`.
         pub async fn leaf_search(
@@ -1030,7 +1030,7 @@ pub mod search_service_client {
         ///
         /// It is like a regular list term except that:
         /// - the node should perform the listing locally instead of dispatching
-        /// it to other nodes.
+        ///   it to other nodes.
         /// - it should be applied on the given subset of splits
         pub async fn leaf_list_terms(
             &mut self,
@@ -1257,7 +1257,7 @@ pub mod search_service_server {
         ///
         /// It is like a regular search except that:
         /// - the node should perform the search locally instead of dispatching
-        /// it to other nodes.
+        ///   it to other nodes.
         /// - it should be applied on the given subset of splits
         /// - Hit content is not fetched, and we instead return so called `PartialHit`.
         async fn leaf_search(
@@ -1309,7 +1309,7 @@ pub mod search_service_server {
         ///
         /// It is like a regular list term except that:
         /// - the node should perform the listing locally instead of dispatching
-        /// it to other nodes.
+        ///   it to other nodes.
         /// - it should be applied on the given subset of splits
         async fn leaf_list_terms(
             &self,

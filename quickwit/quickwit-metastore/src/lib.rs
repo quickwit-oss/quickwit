@@ -26,7 +26,7 @@
 //! metastore:
 //! - file-backed metastore
 //! - PostgreSQL metastore
-//! etc.
+//! - etc.
 
 #[allow(missing_docs)]
 pub mod checkpoint;

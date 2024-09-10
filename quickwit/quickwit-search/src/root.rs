@@ -177,6 +177,7 @@ struct RequestMetadata {
 /// - resolved query ASTs are the same across indexes.
 /// - if a sort field is of type datetime, it must be a datetime field on all indexes. This
 ///   constraint come from the need to support datetime formatting on sort values.
+///
 /// Returns the timestamp field, the resolved query AST and the indexes metadatas
 /// needed for leaf search requests.
 /// Note: the requirements on timestamp fields and resolved query ASTs can be lifted

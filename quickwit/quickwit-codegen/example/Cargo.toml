@@ -36,3 +36,6 @@ quickwit-actors = { workspace = true, features = ["testsuite"] }
 
 [build-dependencies]
 quickwit-codegen = { workspace = true }
+
+[features]
+testsuite = []

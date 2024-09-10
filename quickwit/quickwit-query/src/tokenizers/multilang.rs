@@ -66,8 +66,9 @@ static KOR_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
 /// and uses the appropriate tokenizer for the detected language:
 /// - lindera for Chinese, Japanese, and Korean.
 /// - Quickwit's default tokenizer for other languages.
+///
 /// It is possible to bypass the language detection by prefixing the text with the language code
-/// followed by a colon. For example, `KOR:일본입니다` will be tokenized by the english tokenizer.
+/// followed by a colon. For example, `KOR:일본입니다` will be tokenized by the korean tokenizer.
 /// Current supported prefix are:
 /// - `KOR:` for Korean tokenizer
 /// - `JPN:` for Japanese tokenizer

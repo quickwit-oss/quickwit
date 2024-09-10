@@ -59,7 +59,7 @@ fn parse_duration_nanos(input: &str) -> anyhow::Result<i64> {
                 "h" => num * 3600.0 * 1_000_000_000.0,
                 _ => anyhow::bail!("Invalid time unit: {}", unit),
             };
-            if num < std::i64::MIN as f64 || num > std::i64::MAX as f64 {
+            if num < i64::MIN as f64 || num > i64::MAX as f64 {
                 anyhow::bail!("Invalid duration: {}", num_str)
             }
             return Ok(duration.round() as i64);

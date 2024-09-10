@@ -17,28 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::Infallible;
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serializer};
-
-/// A helper struct to serialize/deserialize a comma separated list.
-/// Used by the Elasticsearch and Quickwit REST API.
-#[derive(Debug, Deserialize)]
-pub struct SimpleList(pub Vec<String>);
-
-impl FromStr for SimpleList {
-    type Err = Infallible;
-
-    fn from_str(str_sequence: &str) -> Result<Self, Self::Err> {
-        let items = str_sequence
-            .trim_matches(',')
-            .split(',')
-            .map(|item| item.to_owned())
-            .collect::<Vec<_>>();
-        Ok(Self(items))
-    }
-}
 
 /// Serializes an `Option<&[Serialize]>` with
 /// `Some(value)` to a comma separated string of values.

@@ -69,12 +69,11 @@ impl ThreadPool {
     ///
     /// Here are two important differences however:
     ///
-    /// 1) The task runs on a rayon thread pool managed by Quickwit.
-    /// This pool is specifically used only to run CPU-intensive work
-    /// and is configured to contain `num_cpus` cores.
+    /// 1) The task runs on a rayon thread pool managed by Quickwit. This pool is specifically used
+    ///    only to run CPU-intensive work and is configured to contain `num_cpus` cores.
     ///
-    /// 2) Before the task is effectively scheduled, we check that
-    /// the spawner is still interested in its result.
+    /// 2) Before the task is effectively scheduled, we check that the spawner is still interested
+    ///    in its result.
     ///
     /// It is therefore required to `await` the result of this
     /// function to get any work done.
