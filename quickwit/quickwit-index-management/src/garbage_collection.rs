@@ -280,7 +280,7 @@ async fn delete_splits_marked_for_deletion_several_indexes(
         return split_removal_info;
     };
 
-    let list_splits_query = list_splits_query
+    let mut list_splits_query = list_splits_query
         .with_split_state(SplitState::MarkedForDeletion)
         .with_update_timestamp_lte(updated_before_timestamp)
         .with_limit(DELETE_SPLITS_BATCH_SIZE)
@@ -306,13 +306,18 @@ async fn delete_splits_marked_for_deletion_several_indexes(
             break;
         }
 
+        // set split after which to search for the next loop
+        list_splits_query =
+            list_splits_query.after_split(splits_metadata_to_delete.last().unwrap());
+
         let splits_metadata_to_delete_per_index: HashMap<IndexUid, Vec<SplitMetadata>> =
             splits_metadata_to_delete
                 .into_iter()
                 .map(|meta| (meta.index_uid.clone(), meta))
                 .into_group_map();
 
-        let delete_split_res = delete_splits(
+        // ignore return we continue either way
+        let _: Result<(), ()> = delete_splits(
             splits_metadata_to_delete_per_index,
             &storages,
             metastore.clone(),
@@ -321,9 +326,9 @@ async fn delete_splits_marked_for_deletion_several_indexes(
         )
         .await;
 
-        if num_splits_to_delete < DELETE_SPLITS_BATCH_SIZE || delete_split_res.is_err() {
-            // stop the gc if this was the last batch or we encountered an error
-            // (otherwise we might try deleting the same splits in an endless loop)
+        if num_splits_to_delete < DELETE_SPLITS_BATCH_SIZE {
+            // stop the gc if this was the last batch
+            // we are guaranteed to make progress due to .after_split()
             break;
         }
     }

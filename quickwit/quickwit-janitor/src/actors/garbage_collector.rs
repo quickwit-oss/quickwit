@@ -608,7 +608,7 @@ mod tests {
             });
         mock_metastore
             .expect_list_splits()
-            .times(2)
+            .times(3)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert_eq!(query.index_uids.len(), 2);
@@ -616,24 +616,40 @@ mod tests {
                     .contains(&query.index_uids[0].index_id.as_ref()));
                 assert!(["test-index-1", "test-index-2"]
                     .contains(&query.index_uids[1].index_id.as_ref()));
-                let splits = match query.split_states[0] {
+                let splits_ids_string: Vec<String> =
+                    (0..8000).map(|seq| format!("split-{seq:04}")).collect();
+                let splits_ids: Vec<&str> = splits_ids_string
+                    .iter()
+                    .map(|string| string.as_str())
+                    .collect();
+                let mut splits = match query.split_states[0] {
                     SplitState::Staged => {
                         let mut splits = make_splits("test-index-1", &["a"], SplitState::Staged);
                         splits.append(&mut make_splits("test-index-2", &["a"], SplitState::Staged));
                         splits
                     }
                     SplitState::MarkedForDeletion => {
+                        assert_eq!(query.limit, Some(10_000));
                         let mut splits =
-                            make_splits("test-index-1", &["a", "b"], SplitState::MarkedForDeletion);
+                            make_splits("test-index-1", &splits_ids, SplitState::MarkedForDeletion);
                         splits.append(&mut make_splits(
                             "test-index-2",
-                            &["a", "b"],
+                            &splits_ids,
                             SplitState::MarkedForDeletion,
                         ));
                         splits
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
+                if let Some((index_uid, split_id)) = query.after_split {
+                    splits = splits.retain(|split| {
+                        (
+                            &split.split_metadata.index_uid,
+                            &split.split_metadata.split_id,
+                        ) > (&index_uid, &split_id)
+                    });
+                }
+                splits.truncate(10_000);
                 let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
                 Ok(ServiceStream::from(vec![Ok(splits)]))
             });
@@ -648,7 +664,7 @@ mod tests {
             });
         mock_metastore
             .expect_delete_splits()
-            .times(2)
+            .times(3)
             .returning(|delete_splits_request| {
                 let index_uid: IndexUid = delete_splits_request.index_uid().clone();
                 let split_ids = HashSet::<&str>::from_iter(
@@ -657,14 +673,30 @@ mod tests {
                         .iter()
                         .map(|split_id| split_id.as_str()),
                 );
-                let expected_split_ids = HashSet::<&str>::from_iter(["a", "b"]);
-
-                assert_eq!(split_ids, expected_split_ids);
+                if index_uid.index_id == "test-index-1" {
+                    assert_eq!(split_ids.len(), 8000);
+                    for seq in 0..8000 {
+                        let split_id = format!("split-{seq:04}");
+                        assert!(split_ids.contains(&*split_id));
+                    }
+                } else if split_ids.len() == 2000 {
+                    for seq in 0..2000 {
+                        let split_id = format!("split-{seq:04}");
+                        assert!(split_ids.contains(&*split_id));
+                    }
+                } else if split_ids.len() == 6000 {
+                    for seq in 2000..8000 {
+                        let split_id = format!("split-{seq:04}");
+                        assert!(split_ids.contains(&*split_id));
+                    }
+                } else {
+                    panic!();
+                }
 
                 // This should not cause the whole run to fail and return an error,
                 // instead this should simply get logged and return the list of splits
                 // which have successfully been deleted.
-                if index_uid.index_id == "test-index-2" {
+                if index_uid.index_id == "test-index-2" && split_ids.len() == 2000 {
                     Err(MetastoreError::Db {
                         message: "fail to delete".to_string(),
                     })
@@ -682,12 +714,12 @@ mod tests {
 
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_passes, 1);
-        assert_eq!(counters.num_deleted_files, 2);
-        assert_eq!(counters.num_deleted_bytes, 40);
+        assert_eq!(counters.num_deleted_files, 14000);
+        assert_eq!(counters.num_deleted_bytes, 20 * 14000);
         assert_eq!(counters.num_successful_gc_run_on_index, 1);
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 0);
-        assert_eq!(counters.num_failed_splits, 2);
+        assert_eq!(counters.num_failed_splits, 2000);
         universe.assert_quit().await;
     }
 }
