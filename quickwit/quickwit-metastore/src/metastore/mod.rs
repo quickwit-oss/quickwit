@@ -632,6 +632,9 @@ pub struct ListSplitsQuery {
     /// Sorts the splits by staleness, i.e. by delete opstamp and publish timestamp in ascending
     /// order.
     pub sort_by: SortBy,
+
+    /// Only return splits whose (index_uid, split_id) are lexicographically after this split
+    pub after_split: Option<(IndexUid, SplitId)>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -658,6 +661,7 @@ impl ListSplitsQuery {
             create_timestamp: Default::default(),
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
+            after_split: None,
         }
     }
 
@@ -680,6 +684,7 @@ impl ListSplitsQuery {
             create_timestamp: Default::default(),
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
+            after_split: None,
         })
     }
 
@@ -853,6 +858,12 @@ impl ListSplitsQuery {
     /// Sorts the splits by index_uid.
     pub fn sort_by_index_uid(mut self) -> Self {
         self.sort_by = SortBy::IndexUid;
+        self
+    }
+
+    /// Only return splits whose (index_uid, split_id) are lexicographically after this split
+    pub fn after_split(mut self, split_meta: &SplitMetadata) -> Self {
+        self.after_split = Some((split_meta.index_uid.clone(), split_meta.split_id.clone()));
         self
     }
 }
