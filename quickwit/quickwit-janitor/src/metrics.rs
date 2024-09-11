@@ -18,10 +18,19 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_gauge_vec, IntGaugeVec};
+use quickwit_common::metrics::{
+    new_counter, new_counter_vec, new_gauge_vec, IntCounter, IntCounterVec, IntGaugeVec,
+};
 
 pub struct JanitorMetrics {
     pub ongoing_num_delete_operations_total: IntGaugeVec<1>,
+    pub gc_deleted_splits: IntCounter,
+    pub gc_deleted_bytes: IntCounter,
+    pub gc_failed_deleted_splits: IntCounter,
+    pub gc_run_count: IntCounterVec<1>,
+    pub gc_duration_seconds_sum: IntCounter,
+    // TODO having a current run duration which is 0|undefined out of run, and returns `now -
+    // start_time` during a run would be nice
 }
 
 impl Default for JanitorMetrics {
@@ -33,6 +42,37 @@ impl Default for JanitorMetrics {
                 "quickwit_janitor",
                 &[],
                 ["index"],
+            ),
+            gc_deleted_splits: new_counter(
+                "gc_deleted_splits_count",
+                "Total number of splits deleted by the garbage collector.",
+                "quickwit_janitor",
+                &[],
+            ),
+            gc_deleted_bytes: new_counter(
+                "gc_deleted_bytes_count",
+                "Total number of bytes deleted by the garbage collector.",
+                "quickwit_janitor",
+                &[],
+            ),
+            gc_failed_deleted_splits: new_counter(
+                "gc_deleted_splits_error_count",
+                "Total number of splits that failed to be delete.",
+                "quickwit_janitor",
+                &[],
+            ),
+            gc_run_count: new_counter_vec(
+                "gc_run_count",
+                "Total number of garbage collector execition.",
+                "quickwit_janitor",
+                &[],
+                ["result"],
+            ),
+            gc_duration_seconds_sum: new_counter(
+                "gc_duration_seconds_sum",
+                "Total time spent running the garbage collector",
+                "quickwit_janitor",
+                &[],
             ),
         }
     }
