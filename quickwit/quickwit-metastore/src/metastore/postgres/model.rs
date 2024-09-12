@@ -30,6 +30,16 @@ use tracing::error;
 
 use crate::{IndexMetadata, Split, SplitMetadata, SplitState};
 
+#[derive(Iden, Clone, Copy)]
+#[allow(dead_code)]
+pub enum Indexes {
+    Table,
+    IndexUid,
+    IndexId,
+    IndexMetadataJson,
+    CreateTimestamp,
+}
+
 /// A model structure for handling index metadata in a database.
 #[derive(sqlx::FromRow)]
 pub(super) struct PgIndex {

@@ -48,7 +48,7 @@ use tracing::{info, warn};
 
 use super::MutationOccurred;
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::metastore::use_shard_api;
+use crate::metastore::{use_shard_api, SortBy};
 use crate::{split_tag_filter, IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState};
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -428,8 +428,9 @@ impl FileBackedIndex {
         let limit = query.limit.unwrap_or(usize::MAX);
         let offset = query.offset.unwrap_or_default();
 
-        let splits: Vec<Split> = if query.sort_by_staleness {
-            self.splits
+        let splits: Vec<Split> = match query.sort_by {
+            SortBy::Staleness => self
+                .splits
                 .values()
                 .filter(|split| split_query_predicate(split, query))
                 .sorted_unstable_by(|left_split, right_split| {
@@ -446,15 +447,24 @@ impl FileBackedIndex {
                 .skip(offset)
                 .take(limit)
                 .cloned()
-                .collect()
-        } else {
-            self.splits
+                .collect(),
+            SortBy::IndexUid => self
+                .splits
+                .values()
+                .filter(|split| split_query_predicate(split, query))
+                .sorted_unstable_by_key(|split| &split.split_metadata.index_uid)
+                .skip(offset)
+                .take(limit)
+                .cloned()
+                .collect(),
+            SortBy::None => self
+                .splits
                 .values()
                 .filter(|split| split_query_predicate(split, query))
                 .skip(offset)
                 .take(limit)
                 .cloned()
-                .collect()
+                .collect(),
         };
         Ok(splits)
     }

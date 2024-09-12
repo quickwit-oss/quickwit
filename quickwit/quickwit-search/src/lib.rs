@@ -193,8 +193,10 @@ pub async fn list_relevant_splits(
     tags_filter_opt: Option<TagFilterAst>,
     metastore: &mut MetastoreServiceClient,
 ) -> crate::Result<Vec<SplitMetadata>> {
-    let mut query =
-        ListSplitsQuery::try_from_index_uids(index_uids)?.with_split_state(SplitState::Published);
+    let Some(mut query) = ListSplitsQuery::try_from_index_uids(index_uids) else {
+        return Ok(Vec::new());
+    };
+    query = query.with_split_state(SplitState::Published);
 
     if let Some(start_ts) = start_timestamp {
         query = query.with_time_range_start_gte(start_ts);
