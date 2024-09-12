@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::ops::Deref;
+use std::sync::OnceLock;
 use std::{env, fmt};
 
 use anyhow::ensure;
@@ -311,7 +312,13 @@ impl fmt::Debug for AzureStorageConfig {
             .finish()
     }
 }
-
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum S3ServerSideEncryption {
+    Aes256,
+    AwsKms,
+    AwsKmsDsse,
+}
 #[derive(Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct S3StorageConfig {
@@ -334,7 +341,7 @@ pub struct S3StorageConfig {
     #[serde(default)]
     pub disable_multipart_upload: bool,
     #[serde(default)]
-    pub server_side_encryption: Option<String>,
+    pub server_side_encryption: Option<S3ServerSideEncryption>,
 }
 
 impl S3StorageConfig {
@@ -372,11 +379,14 @@ impl S3StorageConfig {
     }
 
     pub fn force_path_style_access(&self) -> Option<bool> {
-        let force_path_style_access = get_bool_from_env(
-            "QW_S3_FORCE_PATH_STYLE_ACCESS",
-            self.force_path_style_access,
-        );
-        Some(force_path_style_access)
+        static FORCE_PATH_STYLE: OnceLock<Option<bool>> = OnceLock::new();
+        *FORCE_PATH_STYLE.get_or_init(|| {
+            let force_path_style_access = get_bool_from_env(
+                "QW_S3_FORCE_PATH_STYLE_ACCESS",
+                self.force_path_style_access,
+            );
+            Some(force_path_style_access)
+        })
     }
 }
 

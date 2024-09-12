@@ -27,9 +27,9 @@
 //! - object storages (S3)
 //! - local filesystem
 //! - distributed filesystems.
-//! etc.
+//! - etc.
 //!
-//! - The `BundleStorage` bundles together multiple files into a single file.
+//! The `BundleStorage` bundles together multiple files into a single file.
 mod cache;
 mod debouncer;
 mod file_descriptor_cache;

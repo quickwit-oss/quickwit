@@ -323,10 +323,9 @@ impl Scheduler {
     /// Updates the simulated time shift, if appropriate.
     ///
     /// We advance time if:
-    /// - someone is actually requesting for a simulated fast forward in time.
-    /// (if Universe::simulate_time_shift(..) has been called).
-    /// - no message is queued for processing, no initialize or no finalize
-    /// is being processed.
+    /// - someone is actually requesting for a simulated fast forward in time. (if
+    ///   Universe::simulate_time_shift(..) has been called).
+    /// - no message is queued for processing, no initialize or no finalize is being processed.
     fn advance_time_if_necessary(&mut self) {
         let Some(scheduler_client) = self.scheduler_client() else {
             return;

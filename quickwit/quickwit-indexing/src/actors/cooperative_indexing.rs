@@ -36,18 +36,17 @@ static ORIGIN_OF_TIME: Lazy<Instant> = Lazy::new(Instant::now);
 /// Cooperative indexing is a mechanism to deal with a large amount of pipelines.
 ///
 /// Instead of having all pipelines index concurrently, cooperative indexing:
-/// - have them take turn, making sure that at most only N pipelines are indexing
-/// at the same time. This has the benefit is reducing RAM using (by having a limited number
-/// of `IndexWriter` at the same time), reducing context switching.
-/// - keeps the different pipelines work uniformously spread in time. If the system is not
-/// at capacity, we prefer to have the indexing pipeline as desynchronized as possible
-/// to make sure they don't all use the same resources (disk/cpu/network) at the
-/// same time.
+/// - have them take turn, making sure that at most only N pipelines are indexing at the same time.
+///   This has the benefit is reducing RAM using (by having a limited number of `IndexWriter` at the
+///   same time), reducing context switching.
+/// - keeps the different pipelines work uniformously spread in time. If the system is not at
+///   capacity, we prefer to have the indexing pipeline as desynchronized as possible to make sure
+///   they don't all use the same resources (disk/cpu/network) at the same time.
 ///
 /// It works by:
 /// - a semaphore is used to restrict the number of pipelines indexing at the same time.
-/// - in the indexer when `on_drain` is called, the indexer will cut a split and
-/// "go to sleep" for a given amount of time.
+/// - in the indexer when `on_drain` is called, the indexer will cut a split and "go to sleep" for a
+///   given amount of time.
 ///
 /// The key logic is in the computation of that sleep time.
 ///

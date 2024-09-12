@@ -161,7 +161,7 @@ impl sqlx::Type<sqlx::Postgres> for DocMappingUid {
 #[cfg(feature = "postgres")]
 impl sqlx::Encode<'_, sqlx::Postgres> for DocMappingUid {
     fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
-        sqlx::Encode::<sqlx::Postgres>::encode(&self.0.to_string(), buf)
+        sqlx::Encode::<sqlx::Postgres>::encode(self.0.to_string(), buf)
     }
 }
 

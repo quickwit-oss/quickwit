@@ -627,7 +627,10 @@ mod tests {
             }
         }
 
-        #[cfg(any(feature = "kafka", feature = "sqs"))]
+        #[cfg(all(
+            test,
+            any(feature = "kafka-broker-tests", feature = "sqs-localstack-tests")
+        ))]
         pub fn with_metastore(mut self, metastore: MetastoreServiceClient) -> Self {
             self.metastore_opt = Some(metastore);
             self

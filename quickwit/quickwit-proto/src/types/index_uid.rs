@@ -199,7 +199,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for IndexUid {
     fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
         let _ = sqlx::Encode::<sqlx::Postgres>::encode(&self.index_id, buf);
         let _ = sqlx::Encode::<sqlx::Postgres>::encode(":", buf);
-        sqlx::Encode::<sqlx::Postgres>::encode(&self.incarnation_id.to_string(), buf)
+        sqlx::Encode::<sqlx::Postgres>::encode(self.incarnation_id.to_string(), buf)
     }
 }
 
