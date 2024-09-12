@@ -26,7 +26,7 @@ use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
-use quickwit_common::ServiceStream;
+use quickwit_common::{get_bool_from_env, ServiceStream};
 use quickwit_config::{
     validate_index_id_pattern, IndexTemplate, IndexTemplateId, PostgresMetastoreConfig,
 };
@@ -63,6 +63,10 @@ use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Spl
 use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
 use super::utils::{append_query_filters, establish_connection};
+use super::{
+    QW_POSTGRES_READ_ONLY_ENV_KEY, QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
+    QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
+};
 use crate::checkpoint::{
     IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
 };
@@ -111,6 +115,10 @@ impl PostgresqlMetastore {
             .max_connection_lifetime_opt()
             .expect("PostgreSQL metastore config should have been validated");
 
+        let read_only = get_bool_from_env(QW_POSTGRES_READ_ONLY_ENV_KEY, false);
+        let skip_migrations = get_bool_from_env(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false);
+        let skip_locking = get_bool_from_env(QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, false);
+
         let connection_pool = establish_connection(
             connection_uri,
             min_connections,
@@ -118,10 +126,11 @@ impl PostgresqlMetastore {
             acquire_timeout,
             idle_timeout_opt,
             max_lifetime_opt,
+            read_only,
         )
         .await?;
 
-        run_migrations(&connection_pool).await?;
+        run_migrations(&connection_pool, skip_migrations, skip_locking).await?;
 
         let metastore = PostgresqlMetastore {
             uri: connection_uri.clone(),
