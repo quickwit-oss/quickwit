@@ -840,12 +840,12 @@ Disables [telemetry](../telemetry.md) when set to any non-empty value.
 
 ### QW_POSTGRES_SKIP_MIGRATIONS
 
-Don't run database migrations (but verify migrations were run succesfully before, and no unknown migration was run).
+Don't run database migrations (but verify that migrations were run successfully before, and no that unknown migration was run).
 
 ### QW_POSTGRES_SKIP_MIGRATION_LOCKING
 
-Don't lock the database during migration. This may increase compatiblity with altenrative databases using the postgres wire protocol. It is dangerous
-to use this if you can't guarantee only one node will run the migrations.
+Don't lock the database during migration. This may increase compatibility with alternative databases using the PostgreSQL wire protocol. However, it
+is dangerous to use this if you can't guarantee that only one node will run the migrations.
 
 ### RUST_LOG
 
