@@ -87,7 +87,6 @@ pub(super) async fn create_empty_cluster(
         config.gossip_interval,
         FailureDetectorConfig::default(),
         &ChannelTransport::default(),
-        config.request_timeout,
     )
     .await?;
     Ok(cluster)

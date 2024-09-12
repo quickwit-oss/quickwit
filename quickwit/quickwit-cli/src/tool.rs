@@ -945,7 +945,6 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         config.gossip_interval,
         FailureDetectorConfig::default(),
         &ChannelTransport::default(),
-        config.request_timeout,
     )
     .await?;
 

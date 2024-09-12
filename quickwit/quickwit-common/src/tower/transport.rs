@@ -200,7 +200,7 @@ where K: Hash + Eq + Clone + Send + Sync + 'static
 /// Creates a channel from a socket address.
 ///
 /// The function is marked as `async` because it requires an executor (`connect_lazy`).
-pub async fn make_channel(socket_addr: SocketAddr, request_timeout: Duration) -> Channel {
+pub async fn make_channel(socket_addr: SocketAddr) -> Channel {
     let uri = Uri::builder()
         .scheme("http")
         .authority(socket_addr.to_string())
@@ -209,7 +209,6 @@ pub async fn make_channel(socket_addr: SocketAddr, request_timeout: Duration) ->
         .expect("provided arguments should be valid");
     Endpoint::from(uri)
         .connect_timeout(Duration::from_secs(5))
-        .timeout(request_timeout)
         .connect_lazy()
 }
 

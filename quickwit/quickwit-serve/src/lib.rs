@@ -74,7 +74,7 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
     ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
-    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator,
+    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
@@ -946,6 +946,7 @@ async fn setup_ingest_v2(
                     } else {
                         let ingester_service = IngesterServiceClient::tower()
                             .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .stack_layer(TimeoutLayer::new(Duration::from_secs(30)))
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),
@@ -990,7 +991,7 @@ async fn setup_searcher(
     .await?;
     let search_service_clone = search_service.clone();
     let max_message_size = node_config.grpc_config.max_message_size;
-    let request_timeout = node_config.request_timeout;
+    let request_timeout = node_config.searcher_config.request_timeout();
     let searcher_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let search_service_clone = search_service_clone.clone();
         Box::pin(async move {
@@ -1146,6 +1147,7 @@ fn setup_indexer_pool(
                     } else {
                         let client = IndexingServiceClient::tower()
                             .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .stack_layer(TimeoutLayer::new(Duration::from_secs(30)))
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
                                 node.channel(),

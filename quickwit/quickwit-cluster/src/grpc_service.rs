@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::net::SocketAddr;
-use std::time::Duration;
 
 use bytesize::ByteSize;
 use itertools::Itertools;
@@ -41,11 +40,8 @@ static CLUSTER_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
 static CLUSTER_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
     Lazy::new(|| GrpcMetricsLayer::new("cluster", "server"));
 
-pub(crate) async fn cluster_grpc_client(
-    socket_addr: SocketAddr,
-    request_timeout: Duration,
-) -> ClusterServiceClient {
-    let channel = make_channel(socket_addr, request_timeout).await;
+pub(crate) async fn cluster_grpc_client(socket_addr: SocketAddr) -> ClusterServiceClient {
+    let channel = make_channel(socket_addr).await;
 
     ClusterServiceClient::tower()
         .stack_layer(CLUSTER_GRPC_CLIENT_METRICS_LAYER.clone())

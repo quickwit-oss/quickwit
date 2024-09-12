@@ -159,7 +159,6 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         node_config.gossip_interval,
         failure_detector_config,
         &CountingUdpTransport,
-        node_config.request_timeout,
     )
     .await?;
     if node_config
