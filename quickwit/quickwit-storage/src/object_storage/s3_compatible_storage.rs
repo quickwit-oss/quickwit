@@ -92,7 +92,6 @@ pub struct S3CompatibleObjectStorage {
     disable_multi_object_delete: bool,
     disable_multipart_upload: bool,
     server_side_encryption: Option<S3ServerSideEncryption>,
-    // server_side_encryption: Option<String>,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
