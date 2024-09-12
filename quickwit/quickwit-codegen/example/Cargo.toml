@@ -16,6 +16,7 @@ async-trait = { workspace = true }
 bytesize = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
+mockall = { workspace = true, optional = true }
 prost = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
@@ -30,12 +31,10 @@ quickwit-common = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
-mockall = { workspace = true }
-
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 
 [build-dependencies]
 quickwit-codegen = { workspace = true }
 
 [features]
-testsuite = []
+testsuite = ["mockall"]
