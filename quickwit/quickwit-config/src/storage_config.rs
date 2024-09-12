@@ -312,7 +312,13 @@ impl fmt::Debug for AzureStorageConfig {
             .finish()
     }
 }
-
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum S3ServerSideEncryption {
+    Aes256,
+    AwsKms,
+    AwsKmsDsse,
+}
 #[derive(Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct S3StorageConfig {
@@ -335,7 +341,7 @@ pub struct S3StorageConfig {
     #[serde(default)]
     pub disable_multipart_upload: bool,
     #[serde(default)]
-    pub server_side_encryption: Option<String>,
+    pub server_side_encryption: Option<S3ServerSideEncryption>,
 }
 
 impl S3StorageConfig {

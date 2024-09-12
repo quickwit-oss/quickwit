@@ -43,7 +43,7 @@ use quickwit_aws::retry::{aws_retry, AwsRetryable};
 use quickwit_common::retry::{Retry, RetryParams};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
-use quickwit_config::S3StorageConfig;
+use quickwit_config::{S3StorageConfig, S3ServerSideEncryption};
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
@@ -91,7 +91,8 @@ pub struct S3CompatibleObjectStorage {
     retry_params: RetryParams,
     disable_multi_object_delete: bool,
     disable_multipart_upload: bool,
-    server_side_encryption: Option<String>,
+    server_side_encryption: Option<S3ServerSideEncryption>,
+    // server_side_encryption: Option<String>,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -299,10 +300,11 @@ impl S3CompatibleObjectStorage {
             .key(key)
             .body(body)
             .content_length(len as i64);
-        if let Some(_encryption) = &self.server_side_encryption {
-            put_object_request = match _encryption.as_str() {
-                "Aes256" => put_object_request.server_side_encryption(ServerSideEncryption::Aes256),
-                "AwsKms" => put_object_request.server_side_encryption(ServerSideEncryption::AwsKms),
+        if let Some(encryption) = &self.server_side_encryption {
+            put_object_request = match encryption {
+                S3ServerSideEncryption::Aes256 => put_object_request.server_side_encryption(ServerSideEncryption::Aes256),
+                S3ServerSideEncryption::AwsKms => put_object_request.server_side_encryption(ServerSideEncryption::AwsKms),
+                S3ServerSideEncryption::AwsKmsDsse => put_object_request.server_side_encryption(ServerSideEncryption::AwsKmsDsse),
                 _ => put_object_request,
             };
         }
