@@ -172,9 +172,8 @@ fn make_elastic_bulk_response_v2(
             &mut per_subrequest_doc_handles,
             success.subrequest_id,
         )
-        .map_err(|err| {
+        .inspect_err(|_| {
             rate_limited_error!(limit_per_min=6, index_id=%index_id, "could not find subrequest id");
-            err
         })?;
         doc_handles.sort_unstable_by(|left, right| left.doc_uid.cmp(&right.doc_uid));
 
@@ -236,16 +235,14 @@ fn make_elastic_bulk_response_v2(
 
         // Find the doc handles for the subrequest.
         let doc_handles =
-            remove_doc_handles(&mut per_subrequest_doc_handles, failure.subrequest_id).map_err(
-                |err| {
+            remove_doc_handles(&mut per_subrequest_doc_handles, failure.subrequest_id)
+                .inspect_err(|_| {
                     rate_limited_error!(
                         limit_per_min = 6,
                         subrequest = failure.subrequest_id,
                         "failed to find error subrequest"
                     );
-                    err
-                },
-            )?;
+                })?;
 
         // Populate the response items with one error per doc handle.
         let (exception, reason, status) = match failure.reason() {

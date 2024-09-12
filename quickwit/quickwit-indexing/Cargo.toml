@@ -101,6 +101,7 @@ testsuite = [
   "quickwit-storage/testsuite"
 ]
 vrl = ["dep:vrl", "quickwit-config/vrl"]
+ci-test = []
 
 [dev-dependencies]
 bytes = { workspace = true }

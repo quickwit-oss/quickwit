@@ -234,7 +234,7 @@ searcher:
 Example:
 
 ```yaml
-searcher:
+jaeger:
   enable_endpoint: true
 ```
 

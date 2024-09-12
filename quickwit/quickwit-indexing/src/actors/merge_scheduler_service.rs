@@ -114,9 +114,9 @@ impl Ord for ScheduledMerge {
 /// This actor is not supervised and should stay as simple as possible.
 /// In particular,
 /// - the `ScheduleMerge` handler should reply in microseconds.
-/// - the task should never be dropped before reaching its `split_downloader_mailbox` destination
-/// as it would break the consistency of `MergePlanner` with the metastore (ie: several splits will
-/// never be merged).
+/// - the task should never be dropped before reaching its `split_downloader_mailbox` destination as
+///   it would break the consistency of `MergePlanner` with the metastore (ie: several splits will
+///   never be merged).
 pub struct MergeSchedulerService {
     merge_semaphore: Arc<Semaphore>,
     merge_concurrency: usize,

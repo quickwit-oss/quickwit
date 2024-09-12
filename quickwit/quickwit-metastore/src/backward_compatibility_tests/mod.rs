@@ -192,8 +192,8 @@ where for<'a> T: Serialize {
 /// for JSON deserialization regression tests and runs them sequentially.
 ///
 /// - `test_name` is just the subdirectory name, for the type being test.
-/// - `test` is a function asserting the equality of the deserialized version
-/// and the expected version.
+/// - `test` is a function asserting the equality of the deserialized version and the expected
+///   version.
 pub(crate) fn test_json_backward_compatibility_helper<T>(test_name: &str) -> anyhow::Result<()>
 where T: TestableForRegression + std::fmt::Debug {
     let sample_instance: T = T::sample_for_regression();

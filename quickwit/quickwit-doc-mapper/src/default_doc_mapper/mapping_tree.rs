@@ -1735,7 +1735,7 @@ mod tests {
     #[test]
     fn test_parse_i64_too_large() {
         let leaf = LeafType::I64(QuickwitNumericOptions::default());
-        let err = leaf.value_from_json(json!(u64::max_value())).err().unwrap();
+        let err = leaf.value_from_json(json!(u64::MAX)).err().unwrap();
         assert_eq!(
             err,
             "expected i64, got inconvertible JSON number `18446744073709551615`"

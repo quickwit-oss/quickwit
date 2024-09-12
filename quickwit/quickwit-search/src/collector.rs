@@ -343,7 +343,7 @@ impl SortingFieldExtractorComponent {
                             return None;
                         }
                         // clamp value for comparison
-                        val = val.min(1).max(0);
+                        val = val.clamp(0, 1);
                         (val == 1).to_u64()
                     }
                     (SortValue::I64(mut val), SortFieldType::Bool) => {
@@ -353,7 +353,7 @@ impl SortingFieldExtractorComponent {
                             return None;
                         }
                         // clamp value for comparison
-                        val = val.min(1).max(0);
+                        val = val.clamp(0, 1);
                         (val == 1).to_u64()
                     }
                     (SortValue::F64(mut val), SortFieldType::Bool) => {
@@ -362,7 +362,7 @@ impl SortingFieldExtractorComponent {
                         if all_values_ahead1 || all_values_ahead2 {
                             return None;
                         }
-                        val = val.min(1.0).max(0.0);
+                        val = val.clamp(0.0, 1.0);
                         (val >= 0.5).to_u64() // Is this correct?
                     }
                 };

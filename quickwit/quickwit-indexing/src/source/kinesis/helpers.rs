@@ -50,7 +50,7 @@ pub async fn get_kinesis_client(region_or_endpoint: RegionOrEndpoint) -> anyhow:
     Ok(Client::from_conf(kinesis_config.build()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "kinesis-localstack-tests"))]
 pub(crate) mod tests {
     use std::collections::HashMap;
     use std::time::Duration;

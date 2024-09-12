@@ -631,7 +631,14 @@ pub struct ListSplitsQuery {
 
     /// Sorts the splits by staleness, i.e. by delete opstamp and publish timestamp in ascending
     /// order.
-    pub sort_by_staleness: bool,
+    pub sort_by: SortBy,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum SortBy {
+    None,
+    Staleness,
+    IndexUid,
 }
 
 #[allow(unused_attributes)]
@@ -650,20 +657,17 @@ impl ListSplitsQuery {
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
             mature: Bound::Unbounded,
-            sort_by_staleness: false,
+            sort_by: SortBy::None,
         }
     }
 
     /// Creates a new [`ListSplitsQuery`] from a non-empty list of index UIDs.
-    /// Returns an error if the list is empty.
-    pub fn try_from_index_uids(index_uids: Vec<IndexUid>) -> MetastoreResult<Self> {
+    /// Returns None if the list is empty.
+    pub fn try_from_index_uids(index_uids: Vec<IndexUid>) -> Option<Self> {
         if index_uids.is_empty() {
-            return Err(MetastoreError::Internal {
-                message: "ListSplitQuery should define at least one index uid".to_string(),
-                cause: "".to_string(),
-            });
+            return None;
         }
-        Ok(Self {
+        Some(Self {
             index_uids,
             node_id: None,
             limit: None,
@@ -675,7 +679,7 @@ impl ListSplitsQuery {
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
             mature: Bound::Unbounded,
-            sort_by_staleness: false,
+            sort_by: SortBy::None,
         })
     }
 
@@ -842,7 +846,13 @@ impl ListSplitsQuery {
     /// Sorts the splits by staleness, i.e. by delete opstamp and publish timestamp in ascending
     /// order.
     pub fn sort_by_staleness(mut self) -> Self {
-        self.sort_by_staleness = true;
+        self.sort_by = SortBy::Staleness;
+        self
+    }
+
+    /// Sorts the splits by index_uid.
+    pub fn sort_by_index_uid(mut self) -> Self {
+        self.sort_by = SortBy::IndexUid;
         self
     }
 }
