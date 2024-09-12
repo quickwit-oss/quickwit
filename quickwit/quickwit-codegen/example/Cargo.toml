@@ -31,6 +31,8 @@ quickwit-common = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
+mockall = { workspace = true }
+
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 
 [build-dependencies]
