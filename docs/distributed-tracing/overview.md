@@ -14,9 +14,11 @@ Moreover, Quickwit supports natively the [OpenTelemetry gRPC and HTTP (protobuf 
 
 ## Plug Quickwit to Jaeger
 
-Quickwit implements a gRPC service compatible with Jaeger UI. All you need is to configure Jaeger with a (span) storage type `grpc-plugin` and you will be able to visualize your traces in Jaeger that are stored in any Quickwit's indexes matching the pattern `otel-traces-v0_*`.
+Quickwit implements a gRPC service compatible with Jaeger UI. All you need is to configure Jaeger with a (span) storage type `grpc`[^1] and you will be able to visualize your traces in Jaeger that are stored in any Quickwit's indexes matching the pattern `otel-traces-v0_*`.
 
 We made a tutorial on [how to plug Quickwit to Jaeger UI](plug-quickwit-to-jaeger.md) that will guide you through the process.
+
+[^1]: It was `grpc-plugin` until the version 1.58 of Jaeger.
 
 ## Send traces to Quickwit
 
