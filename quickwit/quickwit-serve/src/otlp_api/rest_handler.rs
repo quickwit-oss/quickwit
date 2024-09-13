@@ -270,11 +270,40 @@ mod tests {
         let mut mock_ingest_router = MockIngestRouterService::new();
         mock_ingest_router
             .expect_ingest()
+            .times(2)
             .withf(|request| {
-                request.subrequests.len() == 1
-                    && request.subrequests[0].doc_batch.is_some()
+                if request.subrequests.len() == 1 {
+                    let subrequest = &request.subrequests[0];
+                    subrequest.doc_batch.is_some()
                     // && request.commit == CommitType::Auto as i32
-                    && request.subrequests[0].doc_batch.as_ref().unwrap().doc_lengths.len() == 1
+                    && subrequest.doc_batch.as_ref().unwrap().doc_lengths.len() == 1
+                    && subrequest.index_id == quickwit_opentelemetry::otlp::OTEL_LOGS_INDEX_ID
+                } else {
+                    false
+                }
+            })
+            .returning(|_| {
+                Ok(IngestResponseV2 {
+                    successes: vec![IngestSuccess {
+                        num_ingested_docs: 1,
+                        ..Default::default()
+                    }],
+                    failures: Vec::new(),
+                })
+            });
+        mock_ingest_router
+            .expect_ingest()
+            .times(1)
+            .withf(|request| {
+                if request.subrequests.len() == 1 {
+                    let subrequest = &request.subrequests[0];
+                    subrequest.doc_batch.is_some()
+                    // && request.commit == CommitType::Auto as i32
+                    && subrequest.doc_batch.as_ref().unwrap().doc_lengths.len() == 1
+                    && subrequest.index_id == "otel-traces-v0_6"
+                } else {
+                    false
+                }
             })
             .returning(|_| {
                 Ok(IngestResponseV2 {
@@ -387,11 +416,40 @@ mod tests {
         let mut mock_ingest_router = MockIngestRouterService::new();
         mock_ingest_router
             .expect_ingest()
+            .times(2)
             .withf(|request| {
-                request.subrequests.len() == 1
-                        && request.subrequests[0].doc_batch.is_some()
-                        // && request.commit == CommitType::Auto as i32
-                        && request.subrequests[0].doc_batch.as_ref().unwrap().doc_lengths.len() == 5
+                if request.subrequests.len() == 1 {
+                    let subrequest = &request.subrequests[0];
+                    subrequest.doc_batch.is_some()
+                    // && request.commit == CommitType::Auto as i32
+                    && subrequest.doc_batch.as_ref().unwrap().doc_lengths.len() == 5
+                    && subrequest.index_id == quickwit_opentelemetry::otlp::OTEL_TRACES_INDEX_ID
+                } else {
+                    false
+                }
+            })
+            .returning(|_| {
+                Ok(IngestResponseV2 {
+                    successes: vec![IngestSuccess {
+                        num_ingested_docs: 1,
+                        ..Default::default()
+                    }],
+                    failures: Vec::new(),
+                })
+            });
+        mock_ingest_router
+            .expect_ingest()
+            .times(1)
+            .withf(|request| {
+                if request.subrequests.len() == 1 {
+                    let subrequest = &request.subrequests[0];
+                    subrequest.doc_batch.is_some()
+                    // && request.commit == CommitType::Auto as i32
+                    && subrequest.doc_batch.as_ref().unwrap().doc_lengths.len() == 5
+                    && subrequest.index_id == "otel-traces-v0_6"
+                } else {
+                    false
+                }
             })
             .returning(|_| {
                 Ok(IngestResponseV2 {
