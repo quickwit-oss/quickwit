@@ -108,4 +108,4 @@ Quickwit supports sorting docs by their BM25 scores. In order to query by score,
 
 ### Document ID
 
-Each document in Quickwit is assigned a unique document ID which is a combination of the split ID and the Tantivy DocId within the split. You cannot assign a custom ID. This ID is used for every search query as sort order (after the explicitly specified sort values) to make the results deterministic.
+Each document in Quickwit is assigned a unique document ID, which is a combination of the split ID and the Tantivy DocId within the split. This implies that you cannot assign a custom ID and that the ID changes when splits undergo merges. This ID is used for every search query as sort order (after the explicitly specified sort values) to make the results deterministic.
