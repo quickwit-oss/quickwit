@@ -104,7 +104,7 @@ pub(super) fn append_range_filters<V: Display>(
 pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplitsQuery) {
     // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
 
-    sql.cond_where(Expr::col((Splits::Table, Splits::IndexUid)).is_in(&query.index_uids));
+    sql.cond_where(Expr::col(Splits::IndexUid).is_in(&query.index_uids));
 
     if let Some(node_id) = &query.node_id {
         sql.cond_where(Expr::col(Splits::NodeId).eq(node_id));
@@ -195,27 +195,7 @@ pub(super) fn append_query_filters(sql: &mut SelectStatement, query: &ListSplits
             );
         }
         SortBy::IndexUid => {
-            // this order by can be fairly costly,
-            // from testing, adding a join here was way faster, because we do an index-only scan on
-            // indexes.index_uid, nested-loop merged with a bitmap index scan on splits.index_uid,
-            // filter for our conditions, and just take the first N results. This is guaranteed to
-            // return correct result because indexes.index_uid is a non-null foreign key
-            //
-            // We also need to do .column((Splits::Table, Asterisk)) from the caller side, to not
-            // return unexpected columns
-            //
-            // On the other hand, without join, we do a seq scan on splits, sort everything, and
-            // truncate.
-            //
-            // Or we could just add a btree index to splits.index_uid. That might be the better
-            // long term solution.
-            sql.join(
-                JoinType::Join,
-                Indexes::Table,
-                Expr::col((Splits::Table, Splits::IndexUid))
-                    .equals((Indexes::Table, Indexes::IndexUid)),
-            )
-            .order_by(Splits::IndexUid, Order::Asc);
+            sql.order_by(Splits::IndexUid, Order::Asc);
         }
         SortBy::None => (),
     }
