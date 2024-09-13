@@ -313,7 +313,7 @@ mod tests {
             index.retention_policy_opt = Some(RetentionPolicy {
                 retention_period: retention_period.to_string(),
                 evaluation_schedule: EVALUATION_SCHEDULE.to_string(),
-                jitter_sec: None,
+                jitter_secs: None,
             })
         }
         index
@@ -347,7 +347,7 @@ mod tests {
         let scheduler = RetentionPolicy {
             retention_period: "".to_string(),
             evaluation_schedule: EVALUATION_SCHEDULE.to_string(),
-            jitter_sec: None,
+            jitter_secs: None,
         };
 
         scheduler.duration_until_next_evaluation().unwrap() + Duration::from_secs(1)
