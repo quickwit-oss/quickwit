@@ -342,6 +342,8 @@ pub struct S3StorageConfig {
     pub disable_multipart_upload: bool,
     #[serde(default)]
     pub server_side_encryption: Option<S3ServerSideEncryption>,
+    #[serde(default)]
+    pub sse_kms_key_id: Option<String>,
 }
 
 impl S3StorageConfig {
@@ -406,6 +408,7 @@ impl fmt::Debug for S3StorageConfig {
                 &self.disable_multi_object_delete,
             )
             .field("server_side_encryption", &self.server_side_encryption)
+            .field("sse_kms_key_id", &self.sse_kms_key_id)
             .finish()
     }
 }
