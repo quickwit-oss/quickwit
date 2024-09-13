@@ -18,8 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
 
 use assert_json_diff::{assert_json_eq, assert_json_include};
+use leaf::TimeoutHandle;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::DefaultDocMapper;
@@ -1061,6 +1063,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         splits_offsets,
         test_sandbox.doc_mapper(),
         agg_limits,
+        TimeoutHandle::new(Duration::from_secs(30)),
     )
     .await
     .unwrap();
