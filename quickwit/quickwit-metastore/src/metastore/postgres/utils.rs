@@ -24,13 +24,13 @@ use std::time::Duration;
 
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
-use sea_query::{any, Expr, Func, JoinType, Order, SelectStatement};
+use sea_query::{any, Expr, Func, Order, SelectStatement};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, Postgres};
 use tracing::error;
 use tracing::log::LevelFilter;
 
-use super::model::{Indexes, Splits, ToTimestampFunc};
+use super::model::{Splits, ToTimestampFunc};
 use super::pool::TrackedPool;
 use super::tags::generate_sql_condition;
 use crate::metastore::{FilterRange, SortBy};
