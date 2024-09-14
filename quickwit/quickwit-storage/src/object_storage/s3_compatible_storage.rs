@@ -286,6 +286,25 @@ impl S3CompatibleObjectStorage {
             .to_path_buf()
     }
 
+    fn apply_server_side_encryption<'a>(
+        &'a self,
+        encryption: Option<S3ServerSideEncryption>,
+        kms_key_id: Option<String>,
+    ) -> (Option<ServerSideEncryption>, Option<String>) {
+        let server_side_encryption = match encryption {
+            Some(S3ServerSideEncryption::Aes256) => Some(ServerSideEncryption::Aes256),
+            Some(S3ServerSideEncryption::AwsKms) => Some(ServerSideEncryption::AwsKms),
+            Some(S3ServerSideEncryption::AwsKmsDsse) => Some(ServerSideEncryption::AwsKmsDsse),
+            None => None,
+        };
+        let kms_key_id = match server_side_encryption {
+            Some(ServerSideEncryption::AwsKms) | Some(ServerSideEncryption::AwsKmsDsse) => kms_key_id,
+            _ => None,
+        };
+        (server_side_encryption, kms_key_id)
+    }
+    
+
     async fn put_single_part_single_try<'a>(
         &'a self,
         bucket: &'a str,
@@ -303,28 +322,37 @@ impl S3CompatibleObjectStorage {
             .key(key)
             .body(body)
             .content_length(len as i64);
-        if let Some(encryption) = &self.server_side_encryption {
-            put_object_request = match encryption {
-                S3ServerSideEncryption::Aes256 => put_object_request.server_side_encryption(ServerSideEncryption::Aes256),
-                S3ServerSideEncryption::AwsKms => { 
-                    if let Some(kms_key_id) = &self.sse_kms_key_id {
-                        put_object_request
-                            .server_side_encryption(ServerSideEncryption::AwsKms)
-                            .ssekms_key_id(kms_key_id)
-                    } else {
-                        put_object_request.server_side_encryption(ServerSideEncryption::AwsKms)
-                    }
-                },
-                S3ServerSideEncryption::AwsKmsDsse => {
-                    if let Some(kms_key_id) = &self.sse_kms_key_id {
-                        put_object_request
-                            .server_side_encryption(ServerSideEncryption::AwsKmsDsse)
-                            .ssekms_key_id(kms_key_id)
-                    } else {
-                        put_object_request.server_side_encryption(ServerSideEncryption::AwsKmsDsse)
-                    }
-                }
+        let (server_side_encryption, kms_key_id) = self.apply_server_side_encryption(
+            self.server_side_encryption.clone(),
+            self.sse_kms_key_id.clone()
+        );
+        if let Some(encryption) = server_side_encryption {
+            put_object_request = put_object_request.server_side_encryption(encryption);
+
+            if let Some(kms_key_id) = kms_key_id {
+                put_object_request = put_object_request.ssekms_key_id(kms_key_id);
             }
+            // put_object_request = match encryption {
+            //     S3ServerSideEncryption::Aes256 => put_object_request.server_side_encryption(ServerSideEncryption::Aes256),
+            //     S3ServerSideEncryption::AwsKms => { 
+            //         if let Some(kms_key_id) = &self.sse_kms_key_id {
+            //             put_object_request
+            //                 .server_side_encryption(ServerSideEncryption::AwsKms)
+            //                 .ssekms_key_id(kms_key_id)
+            //         } else {
+            //             put_object_request.server_side_encryption(ServerSideEncryption::AwsKms)
+            //         }
+            //     },
+            //     S3ServerSideEncryption::AwsKmsDsse => {
+            //         if let Some(kms_key_id) = &self.sse_kms_key_id {
+            //             put_object_request
+            //                 .server_side_encryption(ServerSideEncryption::AwsKmsDsse)
+            //                 .ssekms_key_id(kms_key_id)
+            //         } else {
+            //             put_object_request.server_side_encryption(ServerSideEncryption::AwsKmsDsse)
+            //         }
+            //     }
+            // }
         }
         put_object_request
             .send()
